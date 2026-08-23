@@ -1079,6 +1079,75 @@ def test_run_turn_trail_continuation_backfills_the_targets_own_action():
     assert p1_entry.result.actions is ActionCode.WAIT
 
 
+def test_run_turn_unresolved_move_chase_preempts_p1_and_continues_the_chase():
+    # Phase 632: CHASE_TARGET is 2 hexes from CHASE_START (same geometry
+    # the Pursue/Trail tests above reuse) -- P0's own LMOVE hop lands at
+    # CHASE_STEP (not yet arrived), P1's own explicit LMOVE-to-DECOY
+    # order is preempted by the ongoing chase's own continuation instead
+    # (the user's own confirmed "mirror Pursue/Trail exactly" broad
+    # reading), and once the chase resolves at P1, P2 dispatches
+    # normally again.
+    state = _chase_state()
+    p0 = _lmove_phase("P0", CHASE_TARGET)
+    p1 = _lmove_phase("P1", DECOY)  # would relocate the mover to DECOY if NOT preempted
+    p2 = PlanPhase(label="P2", action=ActionCode.WAIT, obj=0, extra=[0])
+    mover = _three_phase_leader(10, "Mover", p0, p1, p2)
+
+    results = run_turn([TurnLeader(mover, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.5] * 10))
+
+    by_label = {(r.leader_id, r.phase_label): r for r in results}
+
+    p0_result = by_label[(10, "P0")].result
+    assert p0_result.reached_target is False
+    assert p0_result.stopped_chasing is False
+    # new_location, not state.leaders[10].location -- by the time run_turn()
+    # returns, the P1 continuation below has already advanced the mover
+    # further; new_location is P0's own immutable snapshot of the hop it
+    # actually took.
+    assert p0_result.new_location == CHASE_STEP
+
+    # P1's own LMOVE-to-DECOY order never dispatched -- the chase
+    # continuation ran instead, at segment_index=-1 (not tied to a real
+    # plan segment).
+    p1_entry = by_label[(10, "P1")]
+    assert p1_entry.segment_index == -1
+    assert p1_entry.action is ActionCode.LMOVE
+    assert p1_entry.result.reached_target is True
+    assert state.leaders[10].location == CHASE_TARGET  # not DECOY
+
+    # Resolved -- P2's own WAIT order dispatches normally again.
+    p2_entry = by_label[(10, "P2")]
+    assert p2_entry.segment_index == 0
+    assert p2_entry.action is ActionCode.WAIT
+
+
+def test_run_turn_move_chase_that_stops_does_not_preempt_the_next_phase():
+    # Mirrors turn/move_execution.py's own "stop chasing" geometry (a
+    # mover pinned at the board's own southern edge, y=14 of
+    # NORMAL_MAP_BOUNDS' 0..14 range, with a target further south than
+    # any real province can be -- no neighbor can possibly get closer)
+    # via non-negative coordinates so it round-trips through the real
+    # LMOVE hex-number encode/decode path, not synthesized directly.
+    state = GameState()
+    origin = HexCoord(5, 14)
+    unreachable_target = HexCoord(5, 200)
+    state.add_kingdom(KingdomState(1, "Stuckia", Race.HUMAN, Alignment.NEUTRAL, origin))
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Mover", location=origin))
+    p0 = _lmove_phase("P0", unreachable_target)
+    p1 = PlanPhase(label="P1", action=ActionCode.WAIT, obj=0, extra=[0])
+    mover = _leader_with_phase(10, "Mover", "P0", p0)
+    mover.plan.segments[0] = PlanSegment(0, 1, (), {"P0": p0, "P1": p1})
+
+    results = run_turn([TurnLeader(mover, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+
+    by_label = {(r.leader_id, r.phase_label): r for r in results}
+    assert by_label[(10, "P0")].result.stopped_chasing is True
+    p1_entry = by_label[(10, "P1")]
+    assert p1_entry.segment_index == 0  # ordinary dispatch, not a continuation
+    assert p1_entry.action is ActionCode.WAIT
+
+
 def test_run_turn_pursue_with_no_target_is_not_registered_for_continuation():
     # "pursuer or target not found" is a terminal reason, not "did not
     # catch up this phase" -- P1's own order must dispatch normally, not

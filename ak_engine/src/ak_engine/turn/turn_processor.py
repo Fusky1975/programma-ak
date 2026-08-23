@@ -129,6 +129,33 @@ cost and never trigger Defend reinforcement (a continuing pursuer's
 hex-step never appears in ``move_targets``), matching
 ``advance_pursuit``/``advance_trail``'s own already-documented scope.
 
+**PERSISTENT MOVE CHASE (Phase 632)**: rulebook [3.1]: "The movement
+order will override orders in a subsequent phase only if the character
+is practicing in that phase." ``turn/move_execution.py execute_move()``
+(Phase 85) already resolves a non-adjacent target as a chase, one
+hex-step per call -- what was still missing was the *persistence*
+itself. Two readings were laid out in that module's own docstring
+(narrow: only a later Practice order is overridden; broad: blanket
+preemption of every subsequent order, mirroring Pursue/Trail exactly)
+-- **the user directly confirmed the broad reading**, so this reuses
+the exact same mechanism as "PERSISTENT PURSUE/TRAIL CHASE" above, just
+simpler: Move's own chase-stepping already lives inside
+``execute_move()`` itself, so a continuation is just re-dispatching the
+*same* ordinary LMOVE phase again (via ``_dispatch_single``) with the
+same ultimate target -- no dedicated ``advance_*`` function needed the
+way Pursue/Trail's own mechanics required. ``active_move_chases``
+(leader_id -> ``_ActiveMoveChase``) is checked alongside
+``active_pursuits`` in the same preemption filter and the same
+continuation-dispatch call; ``_register_move_chase_continuation`` re-
+registers a still-unresolved chase (``MoveExecutionResult.reached_
+target`` and ``.stopped_chasing`` both ``False``) for the next phase,
+mirroring ``_register_pursuit_continuation``'s own shape. Like Pursue/
+Trail, this only ever registers from the plain single-leader
+``_dispatch_single`` path -- ``_dispatch_multi_attacker_lmove()``'s own
+grouped-battle path assumes an already-adjacent shared target and never
+calls ``step_toward_non_adjacent_target()`` at all, so extending chase
+persistence there is a separate, unattempted question.
+
 **PLAGUE SPREAD rule (Phase 233, extended Phase 234)**: ``turn/plague_
 spread.py resolve_plague_spread()`` runs at the same phase-boundary
 point as ``_dispatch_contested_rebattles`` -- rulebook [4.25.3]'s own
@@ -242,13 +269,13 @@ from ak_engine.turn.contested_province import (
     contested_battle_movement_cost,
     is_illegal_move_from_contested,
 )
-from ak_engine.turn.hex_numbering import decode_hex_number
+from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.plague_spread import resolve_plague_spread
 from ak_engine.turn.missed_deadline import build_missed_deadline_plan
 from ak_engine.turn.move_execution import MoveExecutionResult, record_kingdom_exploration, reveal_adjacent_provinces
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 from ak_engine.turn.office_holder import apply_cravenest_temperament_escalation
-from ak_engine.turn.plan_dispatch import PhaseDispatchResult, run_leader_plan
+from ak_engine.turn.plan_dispatch import PhaseDispatchResult, dispatch_phase, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import execute_practice_group
 from ak_engine.turn.patrol_execution import execute_patrol
@@ -302,6 +329,21 @@ class _ActivePursuit:
 
 
 @dataclass(slots=True)
+class _ActiveMoveChase:
+    """One leader's still-unresolved Move-chase toward a non-adjacent
+    target, carried across phases -- see the module docstring's
+    "PERSISTENT MOVE CHASE" section. Deliberately minimal: ``army_ids``
+    and every AdvancedAbility-derived dispatch flag are re-derived fresh
+    from ``state`` on every continuation dispatch, the same way an
+    ordinary fresh LMOVE already does, so there's nothing else to
+    snapshot here.
+    """
+
+    kingdom_id: int
+    target: HexCoord
+
+
+@dataclass(slots=True)
 class MultiAttackerMoveResult:
     moved: bool
     battle: MultiAttackerBattle
@@ -343,6 +385,7 @@ def run_turn(
     bounds = MapBounds(*NORMAL_MAP_BOUNDS)
     active_defends: dict[int, DefendCoverage] = {}  # defender leader_id -> origin + coverage area
     active_pursuits: dict[int, _ActivePursuit] = {}  # pursuer/trailer leader_id -> ongoing chase
+    active_move_chases: dict[int, _ActiveMoveChase] = {}  # mover leader_id -> ongoing non-adjacent Move chase
     active_patrols: dict[int, object] = {}  # patroller leader_id -> its own PursueRequest (standing order)
     # Rulebook [3.15]'s other Defend-cancellation trigger ("cancelled if
     # he loses a battle"): once a leader loses the one battle their own
@@ -373,11 +416,18 @@ def run_turn(
         # convention trail_execution.py's own module docstring already
         # uses for its other fields. See that docstring's Phase 252 note.
         action_this_phase_by_leader = {tl.leader.leader_id: phase.action for tl, _segment_index, phase in entries}
-        # A leader still mid-chase has this phase's own order preempted
-        # entirely -- see "PERSISTENT PURSUE/TRAIL CHASE" in the module
-        # docstring for why this is checked once, at the phase's start.
-        entries = [entry for entry in entries if entry[0].leader.leader_id not in active_pursuits]
+        # A leader still mid-chase (Pursue/Trail, or a Move chase toward
+        # a non-adjacent target) has this phase's own order preempted
+        # entirely -- see "PERSISTENT PURSUE/TRAIL CHASE"/"PERSISTENT
+        # MOVE CHASE" in the module docstring for why this is checked
+        # once, at the phase's start.
+        entries = [
+            entry
+            for entry in entries
+            if entry[0].leader.leader_id not in active_pursuits and entry[0].leader.leader_id not in active_move_chases
+        ]
         results.extend(_continue_active_pursuits(active_pursuits, label, state, rng, action_this_phase_by_leader))
+        results.extend(_continue_active_move_chases(active_move_chases, label, state, board_width, explorer_skill, rng))
 
         # A self-targeting PURSUE phase is a Patrol declaration ("Characters
         # On Patrol", see turn/patrol_execution.py's own docstring) -- it
@@ -527,6 +577,9 @@ def run_turn(
                 target = move_targets.get(index)
                 if target is not None:
                     _apply_defend_battle_loss(defeated_while_defending, reinforced_by_target, target, dispatch_results)
+                    _register_move_chase_continuation(
+                        active_move_chases, tl.leader.leader_id, tl.kingdom_id, target, dispatch_results
+                    )
 
     visitor = finalize_gate_angel_visit(state, rng, board_width=board_width)
     if visitor is not None:
@@ -982,6 +1035,78 @@ def _register_pursuit_continuation(
             return
         request = decode_trail_phase(phase)
         active_pursuits[leader_id] = _ActivePursuit(kind="trail", request=request)
+
+
+def _continue_active_move_chases(
+    active_move_chases: dict[int, _ActiveMoveChase],
+    label: str,
+    state: GameState,
+    board_width: int,
+    explorer_skill: int,
+    rng: random.Random,
+) -> list[PhaseDispatchResult]:
+    """Dispatches one more LMOVE hop toward each still-mid-chase leader's own
+    ultimate target, and drops resolved (or stopped) chases from
+    ``active_move_chases``. See the module docstring's "PERSISTENT MOVE
+    CHASE" section for why this simply redispatches an ordinary LMOVE
+    phase rather than needing a dedicated ``advance_*`` function --
+    ``execute_move()`` itself already knows how to take one more chase
+    step toward a non-adjacent target.
+
+    Calls ``turn/plan_dispatch.py dispatch_phase()`` directly (not
+    ``_dispatch_single()``, which always reports ``segment_index=0`` --
+    its own synthetic one-segment wrapper has no other value to give):
+    a continuation isn't tied to any real plan segment, so this builds
+    its own ``PhaseDispatchResult`` with ``segment_index=-1``, the same
+    sentinel ``_continue_active_pursuits`` already uses, with the same
+    broad ``except Exception`` ``run_leader_plan()`` itself uses so one
+    leader's own dispatch error can't crash the whole phase loop.
+    """
+
+    results: list[PhaseDispatchResult] = []
+    for leader_id, chase in list(active_move_chases.items()):
+        leader_state = state.leaders.get(leader_id)
+        if leader_state is None:
+            del active_move_chases[leader_id]
+            continue
+        phase = PlanPhase(label=label, action=ActionCode.LMOVE, obj=encode_hex_number(chase.target, board_width), extra=[])
+        try:
+            result = dispatch_phase(
+                phase, state, chase.kingdom_id, leader_id, board_width=board_width, explorer_skill=explorer_skill, rng=rng
+            )
+            dispatch_result = PhaseDispatchResult(leader_id, -1, label, phase.action, result, None)
+        except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
+            dispatch_result = PhaseDispatchResult(leader_id, -1, label, phase.action, None, exc)
+            result = None
+        results.append(dispatch_result)
+        still_chasing = isinstance(result, MoveExecutionResult) and not result.reached_target and not result.stopped_chasing
+        if not still_chasing:
+            del active_move_chases[leader_id]
+    return results
+
+
+def _register_move_chase_continuation(
+    active_move_chases: dict[int, _ActiveMoveChase],
+    leader_id: int,
+    kingdom_id: int,
+    target: HexCoord,
+    dispatch_results: list[PhaseDispatchResult],
+) -> None:
+    """After a freshly-dispatched LMOVE phase, registers the chase for
+    continuation next phase if -- and only if -- this hop didn't reach
+    ``target`` and didn't stop chasing (no legal closer neighbor). An
+    ordinary already-adjacent Move always has ``reached_target=True``
+    and never registers here. See module docstring.
+    """
+
+    if not dispatch_results:
+        return
+    result = dispatch_results[-1].result
+    if not isinstance(result, MoveExecutionResult):
+        return
+    if result.reached_target or result.stopped_chasing:
+        return
+    active_move_chases[leader_id] = _ActiveMoveChase(kingdom_id=kingdom_id, target=target)
 
 
 def _apply_patrol_cancellations(

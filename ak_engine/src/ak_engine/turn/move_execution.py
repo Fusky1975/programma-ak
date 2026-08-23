@@ -106,26 +106,24 @@ address this case explicitly, so this project treats a chase step as
 mechanically identical to a directly-ordered Move to that same hex, a
 documented consistency choice rather than a sourced special case.
 
-**Still explicitly out of scope**: the rulebook's own multi-phase
-persistence rule -- "The movement order will override orders in a
-subsequent phase only if the character is practicing in that phase" --
-isn't wired into ``turn/turn_processor.py`` this phase. This project
-reads that sentence narrowly (a documented interpretation, not the only
-possible one): the ongoing chase overrides *specifically* a later
-Practice order (letting the character keep chasing instead of stopping
-to practice), not every other order type the way Pursue/Trail's own
-"for the rest of the turn" persistence (Phase 70) blanket-preempts a
-leader's entire remaining plan. Under this reading, any other explicit
-later-phase order (another Move, a Search, ...) simply runs as written,
-and the chase doesn't auto-continue that phase without a fresh
-non-adjacent Move order from the player. The alternative, broader
-reading (blanket preemption, mirroring Pursue/Trail exactly) is also
-grammatically plausible from the rulebook's own wording alone; this
-project didn't find a way to disambiguate it further from the
-available source, so wiring *either* interpretation into the
-phase-by-phase orchestrator is deferred to a real follow-up phase --
-mirroring the same primitive-now/wiring-later split Phase 66 and 70
-already used for Pursue/Trail.
+**Cross-phase persistence -- closed, Phase 632.** The rulebook's own
+multi-phase persistence rule -- "The movement order will override
+orders in a subsequent phase only if the character is practicing in
+that phase" -- has two grammatically plausible readings this project
+couldn't disambiguate from the available source alone (narrow: only a
+later Practice order is overridden, any other order type runs as
+written and the chase doesn't auto-continue without a fresh Move
+order; broad: blanket preemption of every subsequent order, mirroring
+Pursue/Trail's own "for the rest of the turn" persistence, Phase 70,
+exactly). **The user directly confirmed the broad reading.**
+``turn/turn_processor.py run_turn()`` now wires it in, reusing the
+exact same "PERSISTENT PURSUE/TRAIL CHASE" mechanism (see that
+module's own "PERSISTENT MOVE CHASE" docstring section) -- genuinely
+simpler than Pursue/Trail's own mirror, since Move's own chase-
+stepping already lives entirely inside ``execute_move()`` itself: a
+continuation is just redispatching the same ordinary LMOVE phase again
+with the same ultimate target, no dedicated ``advance_*`` function
+needed.
 
 **Leader-only movement** (Phase 14): pass ``leader_id`` and an empty
 ``army_ids`` for a character moving without any army. Per rulebook [3.1]

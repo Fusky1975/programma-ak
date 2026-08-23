@@ -26131,7 +26131,7 @@ follow-up request after the original 431-435 plan shipped.
   own docstrings updated from "field-only, no writer yet" to "live as
   of Phase 630." Full suite: 5279 -> 5289 (net +10).
 
-- **Phase 631 (current)**: closes `Maneuver.SQUEEZE` as a genuine dead
+- **Phase 631**: closes `Maneuver.SQUEEZE` as a genuine dead
   end, not a wiring gap -- docstring/comment-only, no functional code
   changed. `turn/search_execution.py`'s own tactic-dispatch loop had
   flagged this since Phase 401 as a possible unwired player Search
@@ -26157,6 +26157,60 @@ follow-up request after the original 431-435 plan shipped.
   instead of leaving it as an open question. No tests changed (nothing
   functional changed); full suite re-run to confirm: 5289 passed,
   unchanged.
+
+- **Phase 632 (current)**: closes Move-chase cross-phase persistence
+  (rulebook [3.1]). `turn/move_execution.py execute_move()` (Phase 85)
+  already resolved a non-adjacent Move target as a chase, one hex-step
+  per call -- what was still missing was the rulebook's own multi-phase
+  persistence rule: "The movement order will override orders in a
+  subsequent phase only if the character is practicing in that phase."
+  Two grammatically plausible readings were laid out in that module's
+  own docstring (narrow: only a later Practice order is overridden;
+  broad: blanket preemption of every subsequent order, mirroring
+  Pursue/Trail's own "for the rest of the turn" persistence, Phase 70,
+  exactly) -- this project couldn't disambiguate further from the
+  available source alone. **The user directly confirmed the broad
+  reading.**
+
+  `turn/turn_processor.py run_turn()` now wires this in by reusing the
+  exact "PERSISTENT PURSUE/TRAIL CHASE" mechanism already built for
+  Pursue/Trail, just simpler: since Move's own chase-stepping already
+  lives entirely inside `execute_move()` itself, a continuation is just
+  redispatching the *same* ordinary LMOVE phase again with the same
+  ultimate target, not a dedicated `advance_*` function the way
+  Pursue/Trail needed. New `_ActiveMoveChase` dataclass (`kingdom_id`,
+  `target` -- deliberately minimal, since `army_ids` and every
+  AdvancedAbility-derived dispatch flag are already re-derived fresh
+  from `state` on every dispatch, the same way an ordinary fresh LMOVE
+  already works). New `active_move_chases: dict[int, _ActiveMoveChase]`
+  in `run_turn()`, checked alongside `active_pursuits` in the same
+  preemption filter and continuation-dispatch call. New
+  `_continue_active_move_chases()` calls `turn/plan_dispatch.py
+  dispatch_phase()` directly (not `_dispatch_single()`, which always
+  reports `segment_index=0` regardless of what's passed to it, since
+  its own synthetic one-segment wrapper has nothing else to give) and
+  builds its own `PhaseDispatchResult` with `segment_index=-1`, the
+  same sentinel `_continue_active_pursuits` already uses -- caught via
+  a failing test, not assumed correct. New
+  `_register_move_chase_continuation()` re-registers a still-unresolved
+  chase (`MoveExecutionResult.reached_target` and `.stopped_chasing`
+  both `False`) for the next phase, mirroring
+  `_register_pursuit_continuation()`'s own shape exactly. Only the
+  plain single-leader `_dispatch_single` path registers a chase --
+  `_dispatch_multi_attacker_lmove()`'s own grouped-battle path assumes
+  an already-adjacent shared target and never calls `step_toward_non_
+  adjacent_target()` at all, so extending persistence there is a
+  separate, unattempted question.
+
+  Tests: `tests/test_turn_processor.py` gained 2 -- an unresolved chase
+  preempting an explicit P1 LMOVE-to-elsewhere order (proving blanket,
+  not Practice-only, preemption) and continuing until it resolves, with
+  the following phase's own order dispatching normally again once it
+  does; a chase that hits `stopped_chasing` (no legal closer neighbor,
+  same real geometry as `tests/test_move_execution.py`'s own existing
+  case, re-expressed with non-negative coordinates so it round-trips
+  through the real LMOVE hex-number encoding) does NOT preempt the
+  following phase. Full suite: 5289 -> 5291 (net +2).
 
 ## Setup
 
