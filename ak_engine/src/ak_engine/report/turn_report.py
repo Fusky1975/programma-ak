@@ -3504,6 +3504,17 @@ def render_fire_arrow_attack(character_name: str, opponent_name: str, rng: rando
 # built it: the user's own direct play experience is its real basis,
 # not this newer, more precisely-sourced-but-still-inconclusive Pascal
 # citation.
+#
+# **Phase 631 -- closed for good.** The user directly reconfirmed this
+# reading ("lo squeeze e' il prose dello spell Hand of Death") this
+# phase. `CTME.PAS`'s `Death` enum and `CTBOTH.PAS`'s `maneuver` enum
+# both naming "Squeeze" are the same underlying narration concept, not
+# competing theories -- Hand of Death borrows Giant Octopus's own
+# natural-weapon damage-narration category to narrate its own spell
+# attack. See `turn/encounter.py resolve_hand_of_death_channel()`'s own
+# Phase 631 addendum for the full account, including why `Maneuver.
+# SQUEEZE` was also confirmed to not be a real, separately-wireable
+# player Search tactic (a question raised independently the same phase).
 _SQUEEZE_TEMPLATES: list[str] = [
     "< curled/Rwrapped > phantasmal hand around ['s heart and squeezed it{ viciously/Rmercilessly}",
     "< curled/Rwrapped > phantasmal hand around ['s liver and squeezed it{ viciously/Rmercilessly}",

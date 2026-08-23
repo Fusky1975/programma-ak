@@ -3617,6 +3617,21 @@ def resolve_hand_of_death_channel(
     Phase 413 built it -- the user's own direct play experience is the
     basis, not the Pascal source -- see `report/turn_report.py
     render_squeeze_attack()`'s own Phase 414 note for the full citation.
+
+    **Phase 631 -- closed for good.** The user directly reconfirmed
+    this reading ("lo squeeze e' il prose dello spell Hand of Death")
+    while `turn/search_execution.py` was being re-checked for a
+    separate, unrelated question ("is `Maneuver.SQUEEZE` a real,
+    unwired player Search tactic?"). It isn't: `CSqueeze` is CTBOTH.
+    PAS's own *only* reference to that maneuver anywhere in the
+    surviving source, `Regolamento AK.txt` never documents "Squeeze" as
+    a player action, and no real sample `.K1` Encounter Plan ever
+    writes `SQ`. The two `Death`-enum and `maneuver`-enum "Squeeze"
+    entries are the same underlying narration concept, not competing
+    theories -- Hand of Death borrows Giant Octopus's own natural-
+    weapon damage-narration category (a category with a genuine
+    monster-species owner, `weapkill[Tentacles]`) to narrate its own
+    spell attack, exactly as this module already implements.
     """
 
     if target_is_immune:

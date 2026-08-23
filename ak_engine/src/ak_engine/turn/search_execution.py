@@ -2562,32 +2562,30 @@ def _resolve_search_encounter(
         #   tactic walk finishes -- see `_apply_scout()`'s own docstring
         #   for why it can't simply take a branch here like every other
         #   tactic above.
-        # - **Squeeze** (`Maneuver.SQUEEZE`, `manab`'s own `'SQ'`, Phase
-        #   401): `SAY.PAS`'s `_LSquee: FD2('squeeze',S_PCom,5)` prose
-        #   itself is recovered as of Phase 413 and wired via
-        #   `resolve_hand_of_death_channel()`'s own `squeeze_hits` +
-        #   `report/turn_report.py render_squeeze_attack()`, on the
-        #   theory it's Hand of Death's own per-round narration (real
-        #   turn-report text across 8 files, confirmed by the user's own
-        #   direct play experience). **Phase 414 correction**: this
-        #   project's Pascal source turned out to still be reachable,
-        #   and a direct check found `_LSquee` is formally declared as a
-        #   per-*weapon* damage-narration category (`CTME.PAS`'s `Death`
-        #   enum, `weapkill[Tentacles] = Squeeze`), whose only real owner
-        #   is Giant Octopus -- not a spell. `_LSquee`'s real *caller*
-        #   is still missing from the surviving source either way, so
-        #   this stayed genuinely unconfirmed; the wiring is kept as
-        #   Phase 413 built it, per the user's own explicit choice (the
-        #   play-experience confirmation, not the Pascal source, is its
-        #   real basis) -- see `report/turn_report.py
-        #   render_squeeze_attack()`'s own Phase 414 note for the full
-        #   citation. `Maneuver.SQUEEZE` the enum value itself remains
-        #   genuinely unwired as a possible player-selectable tactic --
-        #   `CTBOTH.PAS`'s own `maneuver` enum confirms `CSqueeze` really
-        #   is a distinct value from `CCast`, not a spell-casting alias,
-        #   which if anything favors the Giant-Octopus reading -- still
-        #   nothing here dispatches on it, narrower than Phase 401 left
-        #   it, not fully closed.
+        # - **Squeeze** (`Maneuver.SQUEEZE`, `manab`'s own `'SQ'`) --
+        #   **closed, Phase 631**: not a player-selectable tactic at all.
+        #   `SAY.PAS`'s `_LSquee: FD2('squeeze',S_PCom,5)` prose (Phase
+        #   413) is Hand of Death's own per-round attack narration,
+        #   wired via `resolve_hand_of_death_channel()`'s own `squeeze_
+        #   hits` + `report/turn_report.py render_squeeze_attack()` --
+        #   the user directly reconfirmed this ("lo squeeze e' il prose
+        #   dello spell Hand of Death") when this comment's own earlier,
+        #   more hedged framing was re-checked this phase. `CTBOTH.PAS`'s
+        #   own `maneuver` enum declares `CSqueeze` as a real, distinct
+        #   value, but it is the *only* reference to it anywhere in the
+        #   13 surviving `.PAS` files -- no dispatch/resolution logic for
+        #   it survives, `Regolamento AK.txt` never once mentions
+        #   "Squeeze" as a player action, and none of this project's own
+        #   22 real sample `.K1` Encounter Plans ever writes `SQ`. Read
+        #   together with the user's own confirmation, `CSqueeze`'s
+        #   membership in the shared `maneuver` type is an internal
+        #   narration-category marker the compiled engine reuses while
+        #   resolving Hand of Death (matching `CTME.PAS`'s own `Death`
+        #   enum, a per-weapon damage-narration category with `weapkill
+        #   [Tentacles] = Squeeze`, Giant Octopus's own natural weapon --
+        #   the same "squeeze" narration concept, reused, not two
+        #   unrelated mechanics), not real Encounter Plan input syntax.
+        #   There is nothing left here to dispatch on.
 
     if combat_attempted:
         # Phase 178: the plan's own tactic list ran out without a winner

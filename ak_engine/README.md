@@ -26063,7 +26063,7 @@ follow-up request after the original 431-435 plan shipped.
   anticipated signature/behavior changes). Full suite after all fixes
   and new tests: 5279 passed (net +5).
 
-- **Phase 630 (current)**: wires the last 10 dormant `MeritTally` royal-
+- **Phase 630**: wires the last 10 dormant `MeritTally` royal-
   title counters -- the 4 magic-school titles (Master of Elements/
   Amazing Houdini/Sorceror of Black Magic/Master Mind, `AKGEN_embedded_
   catalogs.json.txt gw_format.royal_title_system` ids 16/21/28/46) and
@@ -26130,6 +26130,33 @@ follow-up request after the original 431-435 plan shipped.
   unit-level function. All 10 `turn/merit_points.py` reader functions'
   own docstrings updated from "field-only, no writer yet" to "live as
   of Phase 630." Full suite: 5279 -> 5289 (net +10).
+
+- **Phase 631 (current)**: closes `Maneuver.SQUEEZE` as a genuine dead
+  end, not a wiring gap -- docstring/comment-only, no functional code
+  changed. `turn/search_execution.py`'s own tactic-dispatch loop had
+  flagged this since Phase 401 as a possible unwired player Search
+  tactic (`manab`'s own `'SQ'` abbreviation). Checked directly against
+  `HostAK/TP/CTBOTH.PAS`: `CSqueeze` is declared in the `maneuver`
+  enum, but that declaration is the *only* reference to it anywhere in
+  the 13 surviving `.PAS` files -- no dispatch/resolution logic
+  survives at all. `Regolamento AK.txt` never once documents "Squeeze"
+  as a player action, and none of this project's own 22 real sample
+  `.K1` Encounter Plans ever writes `SQ`. The user directly reconfirmed
+  ("lo squeeze e' il prose dello spell Hand of Death") that this is
+  already fully and correctly modeled -- `SAY.PAS _LSquee` (Phase 413)
+  is Hand of Death's own per-round attack narration, already wired via
+  `turn/encounter.py resolve_hand_of_death_channel()`'s own `squeeze_
+  hits` + `report/turn_report.py render_squeeze_attack()`. `CTME.PAS`'s
+  own `Death` enum (Phase 414's own finding, `weapkill[Tentacles] =
+  Squeeze`, Giant Octopus's natural weapon) and `CTBOTH.PAS`'s
+  `maneuver` enum both naming "Squeeze" turn out to be the *same*
+  underlying narration concept, not two competing theories -- Hand of
+  Death borrows Giant Octopus's own damage-narration category to
+  narrate its own spell attack. Comments in `search_execution.py`,
+  `encounter.py`, and `turn_report.py` updated to state this plainly
+  instead of leaving it as an open question. No tests changed (nothing
+  functional changed); full suite re-run to confirm: 5289 passed,
+  unchanged.
 
 ## Setup
 
