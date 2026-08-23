@@ -177,6 +177,8 @@ def test_dispatch_explore_uses_leader_location():
 
     assert result.new_percent == 100  # Plains(50) * (skill 1 + 1) = 100
     assert state.provinces[location].explored_percent == 100
+    # Phase 630: Ranger of the Plains (Office.PLAINS_KING) merit.
+    assert state.leaders[LEADER_ID].merit_tally.plains_explorations == 1
 
 
 def test_dispatch_explore_wires_difficult_terrain_from_the_leaders_own_advanced_ability():

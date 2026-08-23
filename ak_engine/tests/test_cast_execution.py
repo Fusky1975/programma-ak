@@ -2713,6 +2713,114 @@ def test_execute_cast_wand_triggered_cast_at_natural_skill_0_grants_no_add_exper
 
 
 # ---------------------------------------------------------------------------
+# Magic-school royal-title merit crediting (Phase 630) --
+# AKGEN_embedded_catalogs.json.txt gw_format.royal_title_system entries
+# 16/21/28/46 -- unlike Add_Experience above, this counter has no
+# "skill 0 excluded" gate of its own.
+# ---------------------------------------------------------------------------
+
+
+def test_execute_cast_credits_elemental_school_title_merit():
+    state = build_state()
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION, movement_points=0, commanded_by=CASTER_ID))
+    request = CastRequest(spell=Spell.MYSTIC_WINDS, target=CASTER_ID)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].merit_tally.elemental_spell_casts == 1
+    assert state.leaders[CASTER_ID].merit_tally.illusionist_spell_casts == 0
+    assert state.leaders[CASTER_ID].merit_tally.necromancy_spell_casts == 0
+    assert state.leaders[CASTER_ID].merit_tally.psychic_spell_casts == 0
+
+
+def test_execute_cast_credits_illusionist_school_title_merit():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ILLUSION, 2)
+    request = CastRequest(spell=Spell.ILLUS_ARMIES, target=CASTER_ID)
+    rng = ScriptedRandom([0.01, 0.5, 0.5])  # 15% + 15%*2 = 45% chance
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].merit_tally.illusionist_spell_casts == 1
+
+
+def test_execute_cast_credits_necromancy_school_title_merit():
+    state = build_state()
+    state.battle_graveyard[LOCATION] = [GraveyardEntry(ArmyType.LEGION, Quality.VETERAN, kingdom_id=2)]
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 1)
+    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+    rng = ScriptedRandom([0.01, 0.5, 0.5])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].merit_tally.necromancy_spell_casts == 1
+
+
+def test_execute_cast_credits_psychic_school_title_merit():
+    state = build_state()
+    request = CastRequest(spell=Spell.LOCATE_OBJECT, target=1)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].merit_tally.psychic_spell_casts == 1
+
+
+def test_execute_cast_charm_by_undead_caster_credits_necromancy_not_psychic():
+    # _award_royal_title_spell_merit() reuses _spell_ability(), so it
+    # inherits Charm's own Phase 183 Undead-caster override for free.
+    state = build_state()
+    state.leaders[CASTER_ID].alignment = Alignment.UNDEAD
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)
+    state.add_leader(LeaderState(78, None, "Wandering Hero", LOCATION))
+    request = CastRequest(spell=Spell.CHARM, target=78)
+    rng = ScriptedRandom([0.44, 0.5, 0.5])  # 15% + 15%*2 = 45% chance
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].merit_tally.necromancy_spell_casts == 1
+    assert state.leaders[CASTER_ID].merit_tally.psychic_spell_casts == 0
+
+
+def test_execute_cast_white_magic_credits_no_school_title_merit():
+    # Bless is Ability.WHITE -- the Priest office's own formula reads a
+    # live ability-skill sum, not one of these 4 Tit_Pts counters.
+    state = build_state()
+    state.add_province(ProvinceState(ELSEWHERE, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.BLESS, target=_target(ELSEWHERE))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    tally = state.leaders[CASTER_ID].merit_tally
+    assert (tally.elemental_spell_casts, tally.illusionist_spell_casts, tally.necromancy_spell_casts, tally.psychic_spell_casts) == (
+        0,
+        0,
+        0,
+        0,
+    )
+
+
+def test_execute_cast_failed_cast_credits_no_school_title_merit():
+    # Ability.ILLUSION, skill 1 -> 15%+15%*1 = 30% success chance
+    # (matches test_illus_armies_can_target_the_caster_himself's own
+    # formula); a 0.99 roll fails cleanly.
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ILLUSION, 1)
+    request = CastRequest(spell=Spell.ILLUS_ARMIES, target=CASTER_ID)
+    rng = ScriptedRandom([0.99])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert state.leaders[CASTER_ID].merit_tally.illusionist_spell_casts == 0
+
+
+# ---------------------------------------------------------------------------
 # Province spell-chance halving (Phase 533) -- AKGEN_reverse_engineering_
 # report (4).md SS8: each of the 5 protection amulets also halves the
 # cast-success chance of any matching-college spell targeted at a province

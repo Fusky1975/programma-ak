@@ -159,6 +159,10 @@ def test_run_turn_multi_attacker_lmove_records_each_movers_own_kingdom_explorati
     explored = state.provinces[TARGET].explored_percent_by_kingdom
     assert explored.get(1, 0) > 0
     assert explored.get(3, 0) > 0
+    # Phase 630: each mover's own Ranger of the Plains merit (TARGET is
+    # Plains terrain, per _base_state()), not just one shared credit.
+    assert state.leaders[10].merit_tally.plains_explorations == 1
+    assert state.leaders[30].merit_tally.plains_explorations == 1
 
 
 def test_run_turn_peaceful_mover_unaffected_by_a_lone_attacker_targeting_the_same_hex():

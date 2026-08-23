@@ -351,13 +351,23 @@ composed from data that already exists:
 - **4 magic-school titles** (`ELE_MAGE`/`ILLUS_MAGE`/`NECRO_MAGE`/
   `PSYCHIC_MAGE`, ids 16/21/28/46): `Tit_Pts`, "+1 cumulative point when
   a successful [school]-school spell reaches the compiled title-award
-  branch." No writer yet increments these counters (no cast-execution
-  call site is touched this phase) -- same "field exists, no populating
-  consumer yet" shape as Chancellor's own discovery terms above.
+  branch." **Live as of Phase 630**, credited by `turn/cast_execution.py
+  execute_cast()` via `_award_royal_title_spell_merit()` at the same
+  `result.applied` choke point `_award_cast_experience()` already uses
+  for XP -- deliberately *without* that function's own separate "skill
+  0 excluded" gate, since this counter's own sourced text names no such
+  exclusion.
 - **6 terrain-King titles** (`PLAINS_KING`/`DESERT_KING`/`JUNGLE_KING`/
   `FOREST_KING`/`MOUNTAIN_KING`/`SEA_KING`, ids 30-35): `Tit_Pts`, "+1
   cumulative point when an Explore result is recorded in [terrain]
-  terrain." Also field-only for now.
+  terrain." **Live as of Phase 630**, credited by `turn/move_
+  execution.py record_kingdom_exploration()`'s new `leader_id`
+  parameter, applied unconditionally (partial or full Explore alike)
+  at all 4 real call sites. Neither this nor the 4 magic-school titles
+  above have their own `"effect_while_held"` bonus (auto-Flee, double-
+  speed terrain exploration, etc.) wired -- deliberately deferred, same
+  "merit counter first, effect later" precedent as Curator/Assassin/
+  Duellist below.
 - **`BATTLE_FOOL`** (id 37, "Fool of Battles"): `-(lgenp+ladmp)` --
   the *negative* of the combined land-and-naval battle-merit total,
   i.e. whoever has the *worst* combined record. Computed directly from
@@ -788,63 +798,91 @@ _CURATOR_EXCLUDED_CATEGORIES: frozenset[TreasureCategory] = frozenset(
 
 
 def elementalmage_merit_points(leader: LeaderState) -> int:
-    """Master of Elements (Office.ELE_MAGE, id 16) -- see module
-    docstring's Phase 379 addendum: field-only, no writer yet.
+    """Master of Elements (Office.ELE_MAGE, id 16) -- **live as of Phase
+    630**, credited by `turn/cast_execution.py execute_cast()` via
+    `_award_royal_title_spell_merit()`: +1 per successful Elemental-
+    school spell cast by this leader.
     """
 
     return leader.merit_tally.elemental_spell_casts
 
 
 def illusionistmage_merit_points(leader: LeaderState) -> int:
-    """Amazing Houdini (Office.ILLUS_MAGE, id 21) -- field-only."""
+    """Amazing Houdini (Office.ILLUS_MAGE, id 21) -- **live as of Phase
+    630**, same `_award_royal_title_spell_merit()` writer as the other
+    3 magic-school titles, keyed on `Ability.ILLUSION`.
+    """
 
     return leader.merit_tally.illusionist_spell_casts
 
 
 def necromancermage_merit_points(leader: LeaderState) -> int:
-    """Sorceror of Black Magic (Office.NECRO_MAGE, id 28) -- field-only."""
+    """Sorceror of Black Magic (Office.NECRO_MAGE, id 28) -- **live as
+    of Phase 630**; also credited by an Undead caster's own Charm
+    (`turn/cast_execution.py _spell_ability()`'s Phase 183 override).
+    """
 
     return leader.merit_tally.necromancy_spell_casts
 
 
 def psychicmage_merit_points(leader: LeaderState) -> int:
-    """Master Mind (Office.PSYCHIC_MAGE, id 46) -- field-only."""
+    """Master Mind (Office.PSYCHIC_MAGE, id 46) -- **live as of Phase
+    630**, same `_award_royal_title_spell_merit()` writer.
+    """
 
     return leader.merit_tally.psychic_spell_casts
 
 
 def plainsking_merit_points(leader: LeaderState) -> int:
-    """Ranger of the Plains (Office.PLAINS_KING, id 30) -- field-only."""
+    """Ranger of the Plains (Office.PLAINS_KING, id 30) -- **live as of
+    Phase 630**, credited by `turn/move_execution.py record_kingdom_
+    exploration()`: +1 per Explore result recorded in Plains terrain by
+    this leader (any of the 4 real call sites -- Move's own partial
+    exploration, a dedicated Explore order, or the multi-attacker LMOVE
+    branch).
+    """
 
     return leader.merit_tally.plains_explorations
 
 
 def desertking_merit_points(leader: LeaderState) -> int:
-    """Desert Rat (Office.DESERT_KING, id 31) -- field-only."""
+    """Desert Rat (Office.DESERT_KING, id 31) -- **live as of Phase
+    630**, same `record_kingdom_exploration()` writer, Desert terrain.
+    """
 
     return leader.merit_tally.desert_explorations
 
 
 def jungleking_merit_points(leader: LeaderState) -> int:
-    """Lord of the Jungle (Office.JUNGLE_KING, id 32) -- field-only."""
+    """Lord of the Jungle (Office.JUNGLE_KING, id 32) -- **live as of
+    Phase 630**, same `record_kingdom_exploration()` writer, Jungle
+    terrain.
+    """
 
     return leader.merit_tally.jungle_explorations
 
 
 def forestking_merit_points(leader: LeaderState) -> int:
-    """Warden of the Forests (Office.FOREST_KING, id 33) -- field-only."""
+    """Warden of the Forests (Office.FOREST_KING, id 33) -- **live as
+    of Phase 630**, same `record_kingdom_exploration()` writer, Forest
+    terrain.
+    """
 
     return leader.merit_tally.forest_explorations
 
 
 def mountainking_merit_points(leader: LeaderState) -> int:
-    """Mountain Man (Office.MOUNTAIN_KING, id 34) -- field-only."""
+    """Mountain Man (Office.MOUNTAIN_KING, id 34) -- **live as of Phase
+    630**, same `record_kingdom_exploration()` writer, Mountain terrain.
+    """
 
     return leader.merit_tally.mountain_explorations
 
 
 def seaking_merit_points(leader: LeaderState) -> int:
-    """Ruler of the Waves (Office.SEA_KING, id 35) -- field-only."""
+    """Ruler of the Waves (Office.SEA_KING, id 35) -- **live as of Phase
+    630**, same `record_kingdom_exploration()` writer, Sea terrain.
+    """
 
     return leader.merit_tally.sea_explorations
 

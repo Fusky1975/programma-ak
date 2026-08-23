@@ -25987,7 +25987,7 @@ follow-up request after the original 431-435 plan shipped.
   imply knowledge" rule this design relies on. Full suite after all
   fixes and new tests: 5274 passed (net +9).
 
-- **Phase 629 (current)**: closes the ASCII map's own last open gap --
+- **Phase 629**: closes the ASCII map's own last open gap --
   the dense and stride-9 layouts' "unexplained margin" Phase 568/571
   found and left unresolved (two real reports directly contradicted
   each other under any single, non-relative pixel-placement formula).
@@ -26062,6 +26062,74 @@ follow-up request after the original 431-435 plan shipped.
   test changes): 5274 passed, 6 failed as expected (matching the
   anticipated signature/behavior changes). Full suite after all fixes
   and new tests: 5279 passed (net +5).
+
+- **Phase 630 (current)**: wires the last 10 dormant `MeritTally` royal-
+  title counters -- the 4 magic-school titles (Master of Elements/
+  Amazing Houdini/Sorceror of Black Magic/Master Mind, `AKGEN_embedded_
+  catalogs.json.txt gw_format.royal_title_system` ids 16/21/28/46) and
+  the 6 terrain-King titles (Ranger of the Plains/Desert Rat/Lord of the
+  Jungle/Warden of the Forests/Mountain Man/Ruler of the Waves, ids
+  30-35), declared since Phase 379 but never populated by anything.
+  This closes the royal-title system's own last "field exists, no
+  consumer yet" gap -- every other title (Teacher, Assassin, Duellist,
+  Wingman, Cravenest, Bravest, Curator, Battle Fool) already had a live
+  writer since Phases 443-447.
+
+  **Re-read directly from `AKGEN_embedded_catalogs.json.txt`'s own
+  `royal_title_system.entries`** to confirm the exact source text before
+  designing the writers: all 10 titles are `"eligible": "leader (King
+  or Hero)"` -- any leader, not King-specific despite the "-King" title
+  names (flavor text only). The 4 magic-school titles: "+1 cumulative
+  point when a successful [school]-school spell reaches the compiled
+  title-award branch." The 6 terrain titles: "+1 cumulative point when
+  an Explore result is recorded in [terrain] terrain." Each entry's own
+  `"effect_while_held"` bonus (auto-Flee, chameleon initiative, double-
+  speed terrain exploration, etc.) is a separate, later concern --
+  deliberately out of scope here, matching how several already-merit-
+  wired titles (Curator, Assassin, Duellist) still have no effect wired
+  either.
+
+  New `turn/cast_execution.py _award_royal_title_spell_merit(state,
+  leader_id, spell)`: called from `execute_cast()`'s own `if result.
+  applied:` block, right alongside the existing Phase 460 `_award_cast_
+  experience()` call -- the same "this spell genuinely resolved"
+  trigger, but **deliberately without** that function's own separate
+  "skill 0 excluded" gate, since this counter's own sourced text names
+  no such exclusion. Reuses `_spell_ability()` (not the more generic
+  `worldgen/internal_magical_locations.py spell_college()`) specifically
+  to inherit Charm's own Phase 183 Undead-caster Necromancy override for
+  free. New `_TITLE_MAGIC_SCHOOL_FIELD` maps `Ability.ELEMENTAL/
+  ILLUSION/NECROMANCY/PSYCHIC` to their own `MeritTally` field --
+  `Ability.WHITE` deliberately absent (the Priest office's own formula
+  is a live ability-sum, not a `Tit_Pts` counter).
+
+  `turn/move_execution.py record_kingdom_exploration()` gains a new
+  `leader_id: int | None = None` parameter (opt-in, matching this
+  function's own established extensibility pattern -- `has_military_
+  maps`/`has_find_mines`/etc. were all added the same way): when given
+  alongside `state`, credits the acting leader's own matching terrain
+  field (new `_TERRAIN_KING_FIELD`, the same 6-member `Terrain` set
+  `report/ascii_map.py TERRAIN_SYMBOL` already uses) unconditionally --
+  partial or full Explore alike, regardless of whether the percentage
+  actually changed, since the source text names no such distinction.
+  Wired at all 4 real call sites already calling this function
+  (`move_execution.py execute_move()`'s own 2 calls, `plan_dispatch.py`'s
+  `EXPLORE` branch, `turn_processor.py`'s multi-attacker `LMOVE`
+  branch) -- every one already had the acting `leader_id` in scope.
+
+  Tests: `tests/test_cast_execution.py` gained 8 -- one successful-cast
+  credit test per magic school, a White-magic (Bless) negative control,
+  a failed-cast negative control, and the Charm-on-Undead-caster case
+  confirming it credits Necromancy, not Psychic. `tests/test_move_
+  execution.py` gained 3 -- all 6 terrains credited via a direct
+  `record_kingdom_exploration()` call, the `leader_id=None` no-op case,
+  and one `execute_move()` end-to-end case. `tests/test_plan_dispatch.py`
+  and `tests/test_turn_processor.py` each gained one assertion on an
+  existing `EXPLORE`/multi-attacker-`LMOVE` test rather than a new test,
+  proving the real dispatch paths credit the right leader, not just the
+  unit-level function. All 10 `turn/merit_points.py` reader functions'
+  own docstrings updated from "field-only, no writer yet" to "live as
+  of Phase 630." Full suite: 5279 -> 5289 (net +10).
 
 ## Setup
 

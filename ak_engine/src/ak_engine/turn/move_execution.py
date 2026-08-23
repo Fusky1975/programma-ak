@@ -324,6 +324,22 @@ class KingdomExplorationResult:
     discovered_features: list[Feature]
 
 
+# Phase 630: the 6 terrain-King royal titles' own MeritTally field
+# (`models/game_state.py`, Phase 379) -- `AKGEN_embedded_catalogs.
+# json.txt gw_format.royal_title_system` entries 30-35 (Ranger of the
+# Plains/Desert Rat/Lord of the Jungle/Warden of the Forests/Mountain
+# Man/Ruler of the Waves). Same 6-member `Terrain` set `report/
+# ascii_map.py TERRAIN_SYMBOL` already uses -- no 7th real terrain.
+_TERRAIN_KING_FIELD: dict[Terrain, str] = {
+    Terrain.PLAINS: "plains_explorations",
+    Terrain.DESERT: "desert_explorations",
+    Terrain.JUNGLE: "jungle_explorations",
+    Terrain.FOREST: "forest_explorations",
+    Terrain.MTNS: "mountain_explorations",
+    Terrain.SEA: "sea_explorations",
+}
+
+
 def record_kingdom_exploration(
     province: ProvinceState,
     kingdom_id: int,
@@ -335,6 +351,7 @@ def record_kingdom_exploration(
     has_military_maps: bool = False,
     has_difficult_terrain: bool = False,
     has_find_mines: bool = False,
+    leader_id: int | None = None,
 ) -> KingdomExplorationResult:
     """Advances ``kingdom_id``'s own cumulative exploration of ``province`` (Phase 69) --
     see ``models/game_state.py``'s own module docstring for why this is a
@@ -369,6 +386,18 @@ def record_kingdom_exploration(
     exactly. A successful roll mutates ``province.mine_gold_bonus``/
     ``mine_find_attempts`` directly (both province-global, not per-
     kingdom -- see that field's own docstring).
+
+    ``leader_id`` (Phase 630, default ``None``): when given alongside
+    ``state``, credits the acting leader's own ``MeritTally`` terrain-
+    King royal-title counter (`_TERRAIN_KING_FIELD`) for `province`'s
+    own `effective_terrain()` -- "+1 cumulative point when an Explore
+    result is recorded in [terrain] terrain" (`royal_title_system`
+    entries 30-35). Applies unconditionally on every call this
+    parameter is given for (partial or full explore alike, regardless
+    of whether the percentage actually changed) -- the real source text
+    names no such distinction, so none is invented here. ``None``
+    (every pre-Phase-630 caller) leaves this function's prior behavior
+    unchanged.
     """
 
     prior = province.explored_percent_by_kingdom.get(kingdom_id, 0)
@@ -381,6 +410,11 @@ def record_kingdom_exploration(
         has_difficult_terrain=has_difficult_terrain,
     )
     province.explored_percent_by_kingdom[kingdom_id] = result.new_percent
+    if state is not None and leader_id is not None:
+        leader = state.leaders.get(leader_id)
+        field = _TERRAIN_KING_FIELD.get(province.effective_terrain())
+        if leader is not None and field is not None:
+            setattr(leader.merit_tally, field, getattr(leader.merit_tally, field) + 1)
     discovered: list[Feature] = []
     if state is not None:
         rng = rng if rng is not None else random.Random()
@@ -640,6 +674,7 @@ def execute_move(
         has_military_maps=has_military_maps,
         has_difficult_terrain=has_difficult_terrain,
         has_find_mines=has_find_mines,
+        leader_id=leader_id,
     )
     reveal_adjacent_provinces(state, target_province, kingdom_id, bounds)
 
@@ -676,6 +711,7 @@ def execute_move(
                         has_military_maps=has_military_maps,
                         has_difficult_terrain=has_difficult_terrain,
                         has_find_mines=has_find_mines,
+                        leader_id=leader_id,
                     )
                     reveal_adjacent_provinces(state, further_province, kingdom_id, bounds)
                     break

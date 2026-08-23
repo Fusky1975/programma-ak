@@ -622,6 +622,7 @@ def dispatch_phase(
             has_military_maps=has_military_maps,
             has_difficult_terrain=has_difficult_terrain,
             has_find_mines=has_find_mines,
+            leader_id=leader_id,
         )
         reveal_adjacent_provinces(state, province, kingdom_id, MapBounds(*NORMAL_MAP_BOUNDS))
         result.discovered_features = exploration.discovered_features

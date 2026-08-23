@@ -989,6 +989,7 @@ def execute_cast(
 
     if result.applied:
         _award_cast_experience(state, leader_id, spell, rng)
+        _award_royal_title_spell_merit(state, leader_id, spell)
     return result
 
 
@@ -1030,6 +1031,46 @@ def _spell_ability(caster: LeaderState, spell: Spell) -> Ability:
     if spell is Spell.CHARM and caster.alignment is Alignment.UNDEAD:
         return Ability.NECROMANCY
     return _SPELL_ABILITY[spell]
+
+
+# Phase 630: the 4 magic-school royal titles' own MeritTally field
+# (`models/game_state.py`, Phase 379) -- `AKGEN_embedded_catalogs.
+# json.txt gw_format.royal_title_system` entries 16/21/28/46 (Master of
+# Elements/Amazing Houdini/Sorceror of Black Magic/Master Mind).
+# `Ability.WHITE` deliberately absent -- the Priest office's own formula
+# ("2*(Druid + White)", `turn/merit_points.py`) is a live ability-sum,
+# not a `Tit_Pts` cumulative counter, so it has no matching field.
+_TITLE_MAGIC_SCHOOL_FIELD: dict[Ability, str] = {
+    Ability.ELEMENTAL: "elemental_spell_casts",
+    Ability.ILLUSION: "illusionist_spell_casts",
+    Ability.NECROMANCY: "necromancy_spell_casts",
+    Ability.PSYCHIC: "psychic_spell_casts",
+}
+
+
+def _award_royal_title_spell_merit(state: GameState, leader_id: int, spell: Spell) -> None:
+    """``royal_title_system`` entries 16/21/28/46: "+1 cumulative point
+    when a successful [school]-school spell reaches the compiled
+    title-award branch" -- ``execute_cast()``'s own ``result.applied``
+    is that branch, the same "genuinely resolved" trigger ``_award_
+    cast_experience()`` already uses for XP (Phase 460), but
+    **deliberately without that function's own separate "skill 0
+    excluded" gate** -- this counter's own sourced text names no such
+    exclusion, so applying one here would be an unsourced guess.
+    Recomputes ``_spell_ability()`` independently (cheap, pure lookup)
+    rather than threading it through from ``_award_cast_experience``,
+    since the two functions have genuinely different gating rules and
+    shouldn't be coupled. Reuses ``_spell_ability()`` (not the more
+    generic ``worldgen/internal_magical_locations.py spell_college()``)
+    specifically to inherit Charm's own Undead-caster Necromancy
+    override for free.
+    """
+
+    caster = state.leaders[leader_id]
+    ability = _spell_ability(caster, spell)
+    field = _TITLE_MAGIC_SCHOOL_FIELD.get(ability)
+    if field is not None:
+        setattr(caster.merit_tally, field, getattr(caster.merit_tally, field) + 1)
 
 
 def _caster_kingdom_is_pagan(state: GameState, caster: LeaderState) -> bool:

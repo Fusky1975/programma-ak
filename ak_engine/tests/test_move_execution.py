@@ -202,6 +202,48 @@ def test_record_kingdom_exploration_seeds_from_that_kingdoms_own_prior_entry():
     assert province.explored_percent_by_kingdom == {1: 100, 2: 50}
 
 
+# -- Phase 630: record_kingdom_exploration()'s new leader_id -- the 6
+# terrain-King royal-title MeritTally counters --------------------------
+
+
+def test_record_kingdom_exploration_credits_the_matching_terrain_king_title():
+    state = GameState()
+    state.add_leader(LeaderState(1, 1, "Scout", TARGET))
+    terrain_fields = (
+        (Terrain.PLAINS, "plains_explorations"),
+        (Terrain.DESERT, "desert_explorations"),
+        (Terrain.JUNGLE, "jungle_explorations"),
+        (Terrain.FOREST, "forest_explorations"),
+        (Terrain.MTNS, "mountain_explorations"),
+        (Terrain.SEA, "sea_explorations"),
+    )
+    for terrain, field in terrain_fields:
+        province = ProvinceState(TARGET, terrain, Race.HUMAN, owner_kingdom_id=None)
+        record_kingdom_exploration(province, kingdom_id=1, explorer_skill=1, partial=True, state=state, leader_id=1)
+        assert getattr(state.leaders[1].merit_tally, field) == 1, field
+
+
+def test_record_kingdom_exploration_without_leader_id_credits_no_title_merit():
+    # None (every pre-Phase-630 caller) leaves prior behavior unchanged.
+    state = GameState()
+    state.add_leader(LeaderState(1, 1, "Scout", TARGET))
+    province = ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None)
+
+    record_kingdom_exploration(province, kingdom_id=1, explorer_skill=1, partial=True, state=state)
+
+    assert state.leaders[1].merit_tally.plains_explorations == 0
+
+
+def test_execute_move_credits_the_movers_own_terrain_king_title():
+    state = base_state()
+    state.add_leader(LeaderState(1, 1, "Scout", ORIGIN))
+    state.provinces[TARGET].terrain = Terrain.PLAINS
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, explorer_skill=1)
+
+    assert state.leaders[1].merit_tally.plains_explorations == 1
+
+
 # -- Phase 623: reveal_adjacent_provinces() ("known provinces") -------------
 
 
