@@ -21,6 +21,7 @@ from ak_engine.report.ascii_map import (
     TERRAIN_SYMBOL,
     _contiguous_run_through,
     _cylindrical_distance,
+    _cylindrical_x_min,
     _pad_center,
     _pad_framed,
     _pad_overlay,
@@ -49,6 +50,7 @@ from ak_engine.report.ascii_map import (
     stride10_cell_pixel_column,
     stride12_cell_pixel_column,
 )
+from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 
 HOME = HexCoord(0, 0)
 
@@ -80,8 +82,12 @@ def test_cell_pixel_column_even_row_staggers_by_half_a_cell():
     assert cell_pixel_column(HexCoord(1, 6), x_min=1) == 8
 
 
-def test_cell_pixel_column_clamps_below_x_min_instead_of_going_negative():
-    assert cell_pixel_column(HexCoord(0, 5), x_min=1) == cell_pixel_column(HexCoord(1, 5), x_min=1)
+def test_cell_pixel_column_wraps_below_x_min_instead_of_going_negative():
+    # Phase 629: the offset is now taken modulo board_width (cylindrical),
+    # not floored at 0 -- a coordinate "before" x_min (defensive only;
+    # no real province should ever trigger this) wraps to the far side
+    # of the board instead of colliding with x_min itself.
+    assert cell_pixel_column(HexCoord(0, 5), x_min=1) == cell_pixel_column(HexCoord(18, 5), x_min=1)
 
 
 def test_cell_pixel_column_is_relative_to_x_min_not_hardcoded_to_one():
@@ -383,23 +389,28 @@ def test_render_cell_humanoid_race_keeps_its_recruit_row():
 def test_dense_cell_pixel_column_odd_row_no_stagger():
     # SE3__T5.K2's own Jadegate/Kiska/Kaluga band (y=7, odd): x=1 -> 14,
     # x=2 -> 28, x=3 -> 42, confirmed against the real file's own column
-    # positions.
-    assert dense_cell_pixel_column(HexCoord(1, 7)) == 14
-    assert dense_cell_pixel_column(HexCoord(3, 7)) == 42
+    # positions. Phase 629: `x_min=18` is `Apurimac(1806)`'s own real
+    # coordinate -- the report's own true left edge (cylindrically
+    # adjacent to x=1, see module docstring's own Phase 629 addendum).
+    assert dense_cell_pixel_column(HexCoord(1, 7), x_min=18) == 14
+    assert dense_cell_pixel_column(HexCoord(3, 7), x_min=18) == 42
 
 
 def test_dense_cell_pixel_column_even_row_staggers_by_half_a_cell():
     # SE3__T5.K2's own Waterford Sea/Orielle/Shasta/Katanga band (y=4,
-    # even): x=1 -> 21, x=3 -> 49.
-    assert dense_cell_pixel_column(HexCoord(1, 4)) == 21
-    assert dense_cell_pixel_column(HexCoord(3, 4)) == 49
+    # even): x=1 -> 21, x=3 -> 49. Same `x_min=18` (Apurimac) anchor as
+    # above.
+    assert dense_cell_pixel_column(HexCoord(1, 4), x_min=18) == 21
+    assert dense_cell_pixel_column(HexCoord(3, 4), x_min=18) == 49
 
 
 def test_dense_cell_pixel_column_has_no_minus_one_unlike_the_wide_layout():
-    # The wide layout's own formula is (x - 1) * stride + stagger, so
-    # x=1 on an odd row lands at column 0. The dense layout's own real
-    # data rules that out: x=1 lands at column 14 (= 1 * stride), not 0.
-    assert dense_cell_pixel_column(HexCoord(1, 3)) == 14
+    # The wide layout's own formula is (x - x_min) * stride + stagger
+    # with x_min equal to the visible minimum. The dense layout's own
+    # real data rules that out for a naive x_min=1: x=1 lands at column
+    # 14, not 0 -- because the report's own true left edge is x_min=18
+    # (Apurimac), not the naive visible minimum (Phase 629).
+    assert dense_cell_pixel_column(HexCoord(1, 3), x_min=18) == 14
 
 
 def test_pad_overlay_non_space_content_overwrites_a_tick():
@@ -473,9 +484,16 @@ def test_render_cell_dense_matches_shastas_own_real_cell_with_no_recruit_row():
 
 
 def test_render_ascii_map_dense_matches_orielle_and_shasta_real_band():
-    # SE3__T5.K2 line 349-354, columns 35 onward: Orielle (this
-    # Kingdom's own, Tax: 10) and Shasta (unowned, recruit row skipped),
-    # byte-for-byte for every row this phase models.
+    # SE3__T5.K2 line 349-354: Orielle (this Kingdom's own, Tax: 10) and
+    # Shasta (unowned, recruit row skipped) -- byte-for-byte for every
+    # row this phase models, cell CONTENT and tick placement (not
+    # absolute column: the real report's own true left edge is
+    # `Apurimac(1806)`, a real province cylindrically adjacent to this
+    # report's `x == 1` cluster, Phase 629 -- not present in this
+    # deliberately narrow 2-province fixture, so `x_min` here is
+    # self-consistently `2`, not the full real report's `18`; see
+    # `test_render_ascii_map_dense_matches_the_real_apurimac_wraparound_anchor`
+    # below for the absolute-position, full-context verification).
     state = _state()
     state.add_leader(LeaderState(2, 2, "Bradipo I", HOME, is_king=True))
 
@@ -486,7 +504,7 @@ def test_render_ascii_map_dense_matches_orielle_and_shasta_real_band():
 
     lines = render_ascii_map_dense(state, 2)
 
-    pad = " " * 35
+    pad = " " * 7
     assert lines == [
         pad + "Orielle(0204) ^Shasta(0304)",
         pad + "_Bradipo I(2) ^ ^Unowned^ ^",
@@ -1117,3 +1135,72 @@ def test_render_ascii_map_stride8_visible_provinces_filters_by_knowledge():
     assert full != restricted
     assert "0101" in "".join(restricted)
     assert "0901" not in "".join(restricted)
+
+
+# -- Phase 629: the dense and stride-9 layouts' own "unexplained margin"
+# (Phase 568/571) -- both were the same real, unmodeled cylindrical
+# wraparound (column 18 borders column 1, Phase 624) never applied to
+# horizontal *placement* before. `_cylindrical_x_min()` is the fix:
+# finds the report's own true left edge via the cylindrically-
+# contiguous run containing the naive minimum, instead of trusting the
+# naive minimum itself.
+
+
+def test_cylindrical_x_min_reduces_to_plain_min_when_nothing_wraps():
+    # SE3__T2.K1's own real dense-layout map -- x_min=8, no province
+    # anywhere near the wrap boundary.
+    assert _cylindrical_x_min({8, 9, 10, 11, 12}, DEFAULT_WIDTH) == 8
+
+
+def test_cylindrical_x_min_finds_the_true_left_edge_across_the_wrap():
+    # SE3__T4.K2/SE3__T5.K2's own real Apurimac(1806) -- x=18,
+    # cylindrically adjacent to this report's own x=1 cluster -- is the
+    # report's own true left edge, not the naive visible minimum (x=1).
+    assert _cylindrical_x_min({1, 2, 3, 4, 18}, DEFAULT_WIDTH) == 18
+
+
+def test_cylindrical_x_min_finds_the_true_left_edge_two_strides_out():
+    # SE3__T4.K8's own real stride-9 report: known provinces at both
+    # x=17 and x=18, cylindrically adjacent to its own x=1..8 cluster --
+    # the true left edge is x=17, exactly 2 strides left of the naive
+    # visible minimum (x=1), matching Phase 571's own already-
+    # documented "2 strides" residual exactly.
+    assert _cylindrical_x_min({1, 2, 3, 4, 5, 6, 7, 8, 17, 18}, DEFAULT_WIDTH) == 17
+
+
+def test_render_ascii_map_dense_propagates_the_wraparound_anchor_across_rows():
+    # Phase 629: the true left edge can come from a province in a
+    # DIFFERENT row than the one being checked -- the old
+    # dense_cell_pixel_column() couldn't even represent this (it took
+    # no x_min parameter at all, Phase 568). Waterford Sea(0104) is the
+    # real leftmost cell of its own y=4 band in SE3__T4.K2/SE3__T5.K2,
+    # at the real, byte-verified column 21 -- only once `Apurimac(1806)`
+    # (a real province at y=6, cylindrically adjacent to x=1) is known
+    # to establish the report's own true left edge (x=18).
+    state = _state()
+    state.add_province(_province(1, 4, "Waterford Sea", Terrain.SEA, Race.WHALES, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(2, 4, "Orielle", Terrain.PLAINS, Race.HUMAN, owner=None, tax=10, t1=None, t2=None, expl=1))
+    state.add_province(_province(18, 6, "Apurimac", Terrain.DESERT, Race.DWARVEN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    lines = render_ascii_map_dense(state, 2)
+
+    waterford_row = next(line for line in lines if "Waterfor" in line)
+    apurimac_row = next(line for line in lines if "Apurimac" in line)
+    assert waterford_row.startswith(" " * 21)
+    assert apurimac_row.startswith(" " * 7)
+
+
+def test_render_ascii_map_stride9_propagates_the_wraparound_anchor_across_rows():
+    # Phase 629: SE3__T4.K8's own real report has known provinces at
+    # x=17 and x=18 in a DIFFERENT row than this one -- the report's
+    # own true left edge sits 2 strides left of a province at x=1,
+    # matching Phase 571's own already-documented residual exactly.
+    state = _state()
+    state.add_province(_province(1, 7, "Bizerte", Terrain.FOREST, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(17, 3, "Frigidis", Terrain.FOREST, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(18, 3, "First", Terrain.MTNS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    lines = render_ascii_map_stride9(state, 2)
+
+    bizerte_row = next(line for line in lines if "Bizerte" in line)
+    assert bizerte_row.startswith(" " * 18)

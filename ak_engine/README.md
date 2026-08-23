@@ -25920,7 +25920,7 @@ follow-up request after the original 431-435 plan shipped.
   fix): 5254 passed, unchanged from Phase 626's own count. Ran again
   with all new tests: 5265 passed (net +11).
 
-- **Phase 628 (current)**: closes the ASCII map's per-Kingdom
+- **Phase 628**: closes the ASCII map's per-Kingdom
   province-visibility gap -- `render_ascii_map()` and its 5 sibling
   tier renderers previously rendered *every* province in `state.
   provinces`, unfiltered by what the requesting Kingdom actually
@@ -25986,6 +25986,82 @@ follow-up request after the original 431-435 plan shipped.
   map, directly exercising the Phase 69/623 "ownership alone doesn't
   imply knowledge" rule this design relies on. Full suite after all
   fixes and new tests: 5274 passed (net +9).
+
+- **Phase 629 (current)**: closes the ASCII map's own last open gap --
+  the dense and stride-9 layouts' "unexplained margin" Phase 568/571
+  found and left unresolved (two real reports directly contradicted
+  each other under any single, non-relative pixel-placement formula).
+
+  **The real cause, found by re-reading the actual corpus rather than
+  re-guessing**: both "contradictions" are the exact same real
+  mechanism Phase 624 already confirmed for pagination -- the board is
+  cylindrical, column 18 borders column 1 -- just never applied to
+  horizontal cell *placement* before. `SE3__T4.K2`/`SE3__T5.K2` (the
+  dense-layout reports Phase 568 couldn't reconcile with `SE3__T2.K1`)
+  both have a real known province, `Apurimac`, at `x == 18`,
+  cylindrically adjacent to their own `x == 1` cluster; `SE3__T4.K8`
+  (the stride-9 report) has TWO, at `x == 17` and `x == 18`, exactly 2
+  strides left of its own `x == 1` cluster -- matching Phase 571's own
+  already-documented "2 strides" residual exactly. Verified directly,
+  character-column by character-column, against every real band in all
+  4 previously-contradicting/unresolved reports (not just the samples
+  originally checked): once `x_min` is the *true* left edge of the
+  report's own cylindrically-contiguous column run, not the raw
+  numeric minimum, and the pixel offset is taken modulo the board
+  width instead of assumed non-wrapping, all 4 reports match one
+  uniform formula with zero residual. `Apurimac`'s own "renders
+  immediately adjacent with no gap, not modeled" note (this module's
+  own Phase 566 section) is also explained now, not just tolerated: it
+  isn't a distant landmass packed in ad hoc, it's an ordinary
+  cylindrical neighbor of `x == 1`.
+
+  New `report/ascii_map.py _cylindrical_x_min(columns, board_width) ->
+  int`: `_contiguous_run_through()`'s own run (Phase 624), starting
+  from the naive `min(columns)`, and returns that run's own first
+  element -- the report's true left edge. Reduces to plain
+  `min(columns)` whenever no wrap-adjacent province exists, matching
+  every already-verified non-wrapping real sample (wide/stride12/
+  stride10/stride8's own byte-verified reports never included one)
+  unchanged. Every `*_cell_pixel_column()` function (`cell_pixel_
+  column`, `dense_cell_pixel_column`, `stride12/10/9/8_cell_pixel_
+  column`) now shares one identical formula shape, `((coord.x - x_min)
+  % board_width) * CELL_STRIDE + stagger`, and gained an explicit
+  `board_width: int = DEFAULT_WIDTH` parameter; `dense_cell_pixel_
+  column()` additionally gained the `x_min` parameter it never had
+  (Phase 568 left it hardcoded to an assumed `0`, the very gap that hid
+  this bug). Each of the 6 renderers now computes `x_min` via
+  `_cylindrical_x_min()` instead of a plain `min()`.
+
+  **A second, real bug was found and fixed while wiring this in**:
+  every renderer's own row-sort (`sorted(rows_by_y[y], key=lambda p:
+  p.coord.x)`) assumed raw `coord.x` order matches pixel-column order
+  -- true under the old, non-wrapping formula, but no longer once a
+  wrapped province (e.g. `x == 18`) can have a *smaller* unwrapped
+  position than a numerically larger, non-wrapped one (e.g. `x == 14`).
+  Left unfixed, a wrapped page's own leftmost provinces silently
+  vanished from the rendered row (the line-building loop skips any
+  cell whose column doesn't exceed the line's current length) --
+  caught by re-running the Phase 627 far-side-page test, not assumed
+  safe. Fixed by sorting on `(p.coord.x - x_min) % DEFAULT_WIDTH`
+  instead of raw `coord.x`, in all 6 renderers.
+
+  Tests: `tests/test_ascii_map.py` gained 5 -- `_cylindrical_x_min()`
+  against the no-wrap case (reduces to plain min), the real Apurimac
+  case (1 stride), and the real `SE3__T4.K8` case (2 strides); two
+  end-to-end renderer tests (dense, stride-9) proving the anchor
+  propagates correctly across rows -- the exact scenario the old,
+  parameterless `dense_cell_pixel_column()` couldn't even represent.
+  3 existing tests updated for the new explicit `x_min`/`board_width`
+  parameters (values unchanged, now passed explicitly instead of
+  assumed); 1 existing byte-for-byte test's expected padding corrected
+  (its own 2-province fixture never included the real anchor province,
+  so it now correctly reflects a self-consistent narrower `x_min` --
+  see that test's own updated comment); 1 defensive-clamp test updated
+  from "clamps to `x_min`" to "wraps to the far side of the board,"
+  matching the new modular behavior. Non-breaking check (before any
+  test changes): 5274 passed, 6 failed as expected (matching the
+  anticipated signature/behavior changes). Full suite after all fixes
+  and new tests: 5279 passed (net +5).
 
 ## Setup
 

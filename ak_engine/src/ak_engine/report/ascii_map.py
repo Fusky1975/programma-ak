@@ -126,6 +126,11 @@ layout's own `Transylvania` exclusion.
   renderer packs into a partially-empty row rather than a placement-
   formula exception; consistent with the already-deferred "multiple
   maps" gap above, not independently investigated further this phase.
+  **Phase 629 found the real explanation**: `Apurimac` isn't a distant
+  landmass at all -- `x=18` is cylindrically adjacent to `x=1`
+  (confirmed Phase 624), so it renders immediately adjacent for the
+  same reason any two ordinary neighboring columns would. See this
+  module's own Phase 629 addendum near the end of this docstring.
 - **Row 1 (name/id) and row 6 (border/Expl%, when nothing's skipped)**:
   same full-fill, tie-left, symbol-pad rule as the wide layout's own
   rows 1/6 (not independently re-confirmed against a short/padded dense
@@ -338,7 +343,10 @@ instead, still no Expl%).
   still exposes the same clean, `x_min`-relative formula shape the 3
   already-fixed layouts use, but callers should not assume the right
   `x_min` to pass is simply "the smallest known `x`" the way they
-  reasonably can for those three.
+  reasonably can for those three. **Closed by Phase 629**: the report's
+  own real corpus has two known provinces at `x == 17`/`x == 18`,
+  cylindrically adjacent to its own `x == 1` cluster -- exactly 2
+  strides, matching the residual found here exactly.
 - **Row 4 (race) and row 5 (recruit-or-shifted-status) each have their
   own distinct, real tick pattern**: row 4's is `{0, 6, 7}` (confirmed
   via `Moongard`'s own real "Orcs"). Row 5's is unusually tick-heavy
@@ -390,9 +398,10 @@ row for it to occupy in the first place).
   Phase 567 opened: all 6 real strides that survey found (17, 14, 12,
   10, 9, 8) are now implemented and byte-verified. What remains open
   is which of the 6 a given report actually uses (Phase 567's own
-  unresolved trigger) and the placement-formula anomalies specific to
-  the dense and stride-9 layouts (Phase 568/571) -- neither is guessed
-  at here either.
+  unresolved trigger, later shipped as a labeled 82% approximation,
+  Phase 627); the dense and stride-9 layouts' own placement-formula
+  anomalies (Phase 568/571) were later closed too, by Phase 629 (see
+  this docstring's own Phase 629 addendum).
 
 **Phase 577: the "Ice cap" region label, previously deferred.** Cross-
 checked against ~10 real samples spanning multiple turns/Kingdoms/
@@ -493,12 +502,14 @@ in `README.md` for the full account):
   (Phases 569/570/571/572, see below), closing the "how many layouts
   exist" question this phase opened, though not the selection-trigger
   one.
-- `cell_pixel_column()` clamps a coordinate below `x_min` to `x_min`
-  itself rather than letting it go negative -- defensive only (`x_min`
-  is computed as the true minimum of whatever's being rendered, so no
-  real province should ever trigger this in practice), covering this
-  project's own test fixtures more than any real, independently
-  confirmed pixel position.
+- `cell_pixel_column()` (and every sibling `*_cell_pixel_column()`)
+  takes the `coord.x - x_min` offset modulo `board_width` (Phase 629)
+  rather than letting it go negative or clamping at 0 -- defensive only
+  in the sense that `x_min` is computed as the report's own true left
+  edge (`_cylindrical_x_min()`), so no real province should ever fall
+  outside `[0, board_width)` once offset this way; covers this
+  project's own synthetic test fixtures more than any real,
+  independently confirmed pixel position.
 - **Phase 568: the wide layout's own horizontal-placement formula had a
   real bug, now fixed** -- `cell_pixel_column()` originally hardcoded
   `(x - 1) * CELL_STRIDE`, silently assuming every map's own leftmost
@@ -527,9 +538,10 @@ in `README.md` for the full account):
   contradict each other under any single formula tried; some Kingdom-
   or report-specific state not printed in the text itself must be
   involved, the same category of unresolved finding as Phase 567's own
-  stride-selection trigger. `dense_cell_pixel_column()` is left
-  unchanged (still only verified correct for `x_min == 1` maps) rather
-  than "fixed" with an unverified guess in either direction.
+  stride-selection trigger (at the time). **Closed by Phase 629** -- see
+  this docstring's own Phase 629 addendum below for the real
+  explanation (the "extra stride" was cylindrical wraparound, not an
+  unrelated per-report state).
 
 **Phase 624 -- "far side of the world" pagination, solved.** The real
 trigger for the dual map is a pure print-width overflow, not distance
@@ -608,6 +620,41 @@ through, and also uses that same filtered set (not the raw unfiltered
 `state.provinces`) to drive `select_layout_tier()`/`paginate_known_
 columns()`, so tier selection and pagination reflect what will
 actually be drawn, not merely what exists in `state`.
+
+**Phase 629 -- the dense and stride-9 layouts' own "unexplained
+margin," closed.** Phase 568 found `dense_cell_pixel_column()` needed a
+full extra `DENSE_CELL_STRIDE` for `SE3__T4.K2`/`SE3__T5.K2` (`x_min ==
+1`) but not for `SE3__T2.K1` (`x_min == 8`) -- two real reports that
+directly contradicted each other under any single, non-relative
+formula, left unresolved. Phase 571 found the same class of gap for
+`stride9_cell_pixel_column()`, worse: `SE3__T4.K8`'s own true anchor
+sat a full 2 strides left of its own visible minimum `x`.
+
+Re-investigating directly against the real corpus (not guessed): both
+"contradictions" are the exact same real mechanism Phase 624 already
+confirmed for pagination -- **the board is cylindrical, column 18
+borders column 1** -- just never applied to horizontal *placement*
+before. `SE3__T4.K2`/`SE3__T5.K2` both have a real known province,
+`Apurimac`, at `x == 18`, cylindrically adjacent to their own `x == 1`
+cluster; `SE3__T4.K8` has TWO, at `x == 17` and `x == 18`, exactly 2
+strides left of its own `x == 1` cluster. Once `x_min` is computed as
+the *true* left edge of the report's own cylindrically-contiguous
+column run (`_cylindrical_x_min()`, reusing `_contiguous_run_through()`
+from Phase 624) rather than the raw numeric minimum, and the pixel
+offset taken modulo `board_width` instead of assumed non-wrapping, all
+3 previously-contradicting real reports match one uniform formula with
+zero residual -- verified directly, character-column by character-
+column, against every real band in `SE3__T2.K1`, `SE3__T4.K2`,
+`SE3__T5.K2`, and `SE3__T4.K8` (not just the previously-checked
+samples). `dense_cell_pixel_column()` gained the `x_min` parameter it
+never had (Phase 568 left it hardcoded to an assumed `0`, the very gap
+that hid this bug); every `*_cell_pixel_column()` function now shares
+one identical formula shape, `((coord.x - x_min) % board_width) *
+CELL_STRIDE + stagger`. `Apurimac`'s own "renders immediately adjacent
+with no gap, not modeled" note (this docstring's own Phase 566 section)
+is also now explained, not just tolerated: it isn't a distant landmass
+packed in ad hoc -- it's an ordinary cylindrical neighbor of `x == 1`,
+rendering exactly where any neighboring column would.
 """
 
 from __future__ import annotations
@@ -758,14 +805,35 @@ def _race_name_plural(race: Race) -> str:
     return _RACE_NAME_PLURAL_OVERRIDE.get(race, f"{RACE_NAME[race]}s")
 
 
-def cell_pixel_column(coord: HexCoord, x_min: int) -> int:
+def _cylindrical_x_min(columns: set[int], board_width: int) -> int:
+    """The report's own true left edge for pixel-column placement --
+    **not** simply `min(columns)`, but the start of the cylindrically-
+    contiguous run (`_contiguous_run_through()`, Phase 624) containing
+    that naive minimum. Phase 629 finding: a province bordering the
+    naive minimum from the *other* side of the wrap (column
+    `board_width` borders column 1, confirmed Phase 624) renders to its
+    own visual *left*, not off at some huge, unrelated `x` -- this is
+    the real cause of the "unexplained margin" Phase 568/571 found and
+    left open for the dense and stride-9 layouts (see module docstring
+    for the full, real-corpus-verified account). Reduces to plain
+    `min(columns)` whenever no such wrap-adjacent member exists, which
+    is every already-verified non-wrapping real sample (wide/stride12/
+    stride10/stride8's own byte-verified reports never included one).
+    """
+
+    naive_min = min(columns)
+    return _contiguous_run_through(naive_min, columns, board_width)[0]
+
+
+def cell_pixel_column(coord: HexCoord, x_min: int, board_width: int = DEFAULT_WIDTH) -> int:
     """The real horizontal pixel column a province's own cell starts at,
-    relative to `x_min` -- the leftmost `x` among every province the
-    map actually renders (see module docstring's own Phase 568 note on
-    why this is relative, not the fixed `x - 1` this phase-562 formula
-    originally hardcoded). Even-`y` rows are staggered right by half a
-    cell width relative to odd-`y` rows -- the same real hex offset
-    `turn/movement.py neighbors()` already uses (`coord.y % 2`), just
+    relative to `x_min` -- the report's own true left edge (see
+    `_cylindrical_x_min()`), not necessarily the raw numeric minimum
+    (see module docstring's own Phase 568 note on why this is relative
+    at all, not the fixed `x - 1` this phase-562 formula originally
+    hardcoded). Even-`y` rows are staggered right by half a cell width
+    relative to odd-`y` rows -- the same real hex offset `turn/
+    movement.py neighbors()` already uses (`coord.y % 2`), just
     expressed here in pixel columns instead of neighbor deltas.
 
     Confirmed against 4 independent bands within a single report
@@ -773,92 +841,106 @@ def cell_pixel_column(coord: HexCoord, x_min: int) -> int:
     against `SE3__T1.K1` -- the *same real provinces*, same Kingdom,
     different turn, `x_min=9` there instead of 1 -- with zero
     contradictions once the formula is expressed relative to `x_min`
-    rather than a hardcoded `1`.
+    rather than a hardcoded `1`. **Phase 629**: the offset is now
+    computed modulo `board_width` (cylindrical), not floored at 0 --
+    this layout's own real corpus never needed it (no verified sample
+    wraps), but it keeps the formula uniform with the other 5 tiers,
+    all of which share this exact function shape.
     """
 
     stagger = CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
-    return max(0, coord.x - x_min) * CELL_STRIDE + stagger
+    return ((coord.x - x_min) % board_width) * CELL_STRIDE + stagger
 
 
-def dense_cell_pixel_column(coord: HexCoord) -> int:
+def dense_cell_pixel_column(coord: HexCoord, x_min: int, board_width: int = DEFAULT_WIDTH) -> int:
     """The dense layout's own horizontal pixel column -- see module
-    docstring's own Phase 568 note. Matches every real `SE3__T4.K2`/
-    `SE3__T5.K2` band this module was byte-verified against (both
-    reports' own maps have `x_min == 1`, where this reduces to
-    `x * DENSE_CELL_STRIDE`) -- **but Phase 568 found this does NOT
-    generalize the way `cell_pixel_column()`'s own wide-layout formula
-    does**: `SE3__T2.K1` (a *different* dense-layout report, `x_min ==
-    8`) needs a plain `(x - x_min) * DENSE_CELL_STRIDE`, with no extra
-    offset, to match its own real leading whitespace -- directly
-    contradicting the `+1 stride` that `SE3__T4.K2`/`SE3__T5.K2` need.
-    Left unchanged (not "fixed" with an unverified guess in either
-    direction) pending more samples or the user's own knowledge of the
-    real rule -- see the module docstring for the full account.
+    docstring's own Phase 629 addendum. **Closes the real contradiction
+    Phase 568 found and left open**: `SE3__T2.K1`'s own real map
+    (`x_min == 8`, no wrap-adjacent province anywhere nearby) matches a
+    plain `(x - x_min) * DENSE_CELL_STRIDE`, while `SE3__T4.K2`/
+    `SE3__T5.K2` (`x_min == 1`) appeared to need a full extra stride --
+    that "extra stride" is explained exactly by `Apurimac(1806)`, a
+    real known province at `x == 18`, cylindrically adjacent to `x ==
+    1` (column 18 borders column 1, confirmed Phase 624). Once `x_min`
+    is computed via `_cylindrical_x_min()` (which finds Apurimac as the
+    *true* left edge of the report's own contiguous run, not `1`) and
+    the offset taken modulo `board_width`, both reports match the exact
+    same formula with zero residual -- verified against every real band
+    in both reports, not just the previously-checked ones. Now takes an
+    explicit `x_min` (previously always assumed `0`, the very
+    assumption that hid this bug -- see module docstring for the full,
+    corrected account).
     """
 
     stagger = DENSE_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
-    return coord.x * DENSE_CELL_STRIDE + stagger
+    return ((coord.x - x_min) % board_width) * DENSE_CELL_STRIDE + stagger
 
 
-def stride12_cell_pixel_column(coord: HexCoord, x_min: int) -> int:
+def stride12_cell_pixel_column(coord: HexCoord, x_min: int, board_width: int = DEFAULT_WIDTH) -> int:
     """The stride-12 layout's own horizontal pixel column -- see module
-    docstring's own Phase 569 note. Confirmed against every one of
+    docstring's own Phase 569 section. Confirmed against every one of
     `SE3__T3.K1`'s own 5 real bands (`x_min = 8`, the true minimum
     across the whole report, not just the row being placed): a plain
     `(x - x_min) * STRIDE12_CELL_STRIDE + stagger`, zero residual --
     the same clean, `x_min`-relative shape `cell_pixel_column()` uses
-    for the wide layout, not `dense_cell_pixel_column()`'s own
-    unresolved one.
+    for the wide layout. **Phase 629**: offset now taken modulo
+    `board_width`, matching every sibling tier -- this report's own
+    corpus never wraps, so the result is unchanged.
     """
 
     stagger = STRIDE12_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
-    return max(0, coord.x - x_min) * STRIDE12_CELL_STRIDE + stagger
+    return ((coord.x - x_min) % board_width) * STRIDE12_CELL_STRIDE + stagger
 
 
-def stride10_cell_pixel_column(coord: HexCoord, x_min: int) -> int:
+def stride10_cell_pixel_column(coord: HexCoord, x_min: int, board_width: int = DEFAULT_WIDTH) -> int:
     """The stride-10 layout's own horizontal pixel column -- see module
-    docstring's own Phase 570 note. Confirmed against every one of
+    docstring's own Phase 570 section. Confirmed against every one of
     `SE3__T4.K3`'s own 6 real bands (`x_min = 4`, the true minimum
     across the whole report): the same clean, `x_min`-relative shape as
-    the wide and stride-12 layouts, zero residual.
+    the wide and stride-12 layouts, zero residual. **Phase 629**:
+    offset now taken modulo `board_width`, matching every sibling tier
+    -- this report's own corpus never wraps, so the result is unchanged.
     """
 
     stagger = STRIDE10_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
-    return max(0, coord.x - x_min) * STRIDE10_CELL_STRIDE + stagger
+    return ((coord.x - x_min) % board_width) * STRIDE10_CELL_STRIDE + stagger
 
 
-def stride9_cell_pixel_column(coord: HexCoord, x_min: int) -> int:
+def stride9_cell_pixel_column(coord: HexCoord, x_min: int, board_width: int = DEFAULT_WIDTH) -> int:
     """The stride-9 layout's own horizontal pixel column -- see module
-    docstring's own Phase 571 note. Uses the same clean `x_min`-relative
-    shape as the wide, stride-12, and stride-10 layouts, confirmed via
-    `SE3__T4.K8`'s own real bands (~25 independent `(x, y)` data
-    points, zero variance in the residual once the report's own real
-    anchor is used) -- **but that real anchor sits 2 full strides to
-    the left of the report's own visible minimum `x`** (a bigger version
-    of the same unexplained-margin phenomenon Phase 568 already found
-    for the dense layout's own `SE3__T4.K2`/`SE3__T5.K2`), so this
-    function's own `x_min` parameter should not be assumed to equal
-    "the smallest `x` this Kingdom currently knows about" the way it
-    does for the 3 already-fixed layouts -- see the module docstring
-    for the full account.
+    docstring's own Phase 571 section. Uses the same clean `x_min`-
+    relative shape as the wide, stride-12, and stride-10 layouts,
+    confirmed via `SE3__T4.K8`'s own real bands (~25 independent
+    `(x, y)` data points, zero variance once the report's own true
+    anchor is used). **Phase 629 closes the "2 strides left of the
+    visible minimum" mystery Phase 571 left open**: `SE3__T4.K8`'s own
+    real map has TWO known provinces at `x == 17` and `x == 18`,
+    cylindrically adjacent to its own `x == 1` cluster (column 18
+    borders column 1, confirmed Phase 624) -- `_cylindrical_x_min()`
+    finds `x == 17` as the report's own true left edge (exactly 2
+    strides left of the naive visible minimum, `x == 1`), and the
+    modular offset then matches every real band with zero residual,
+    including the wrap-adjacent provinces themselves.
     """
 
     stagger = STRIDE9_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
-    return max(0, coord.x - x_min) * STRIDE9_CELL_STRIDE + stagger
+    return ((coord.x - x_min) % board_width) * STRIDE9_CELL_STRIDE + stagger
 
 
-def stride8_cell_pixel_column(coord: HexCoord, x_min: int) -> int:
+def stride8_cell_pixel_column(coord: HexCoord, x_min: int, board_width: int = DEFAULT_WIDTH) -> int:
     """The stride-8 layout's own horizontal pixel column -- see module
-    docstring's own Phase 572 note. Confirmed against every one of
+    docstring's own Phase 572 section. Confirmed against every one of
     `SE3__T5.K1`'s own 7 real bands (~50 independent `(x, y)` data
     points, zero variance): the clean, `x_min`-relative shape, with
     `x_min` genuinely equal to the report's own visible minimum `x`
     here -- unlike the dense and stride-9 layouts, this one needed no
-    unexplained margin correction.
+    unexplained margin correction. **Phase 629**: offset now taken
+    modulo `board_width`, matching every sibling tier -- this report's
+    own corpus never wraps, so the result is unchanged.
     """
 
     stagger = STRIDE8_CELL_STRIDE // 2 if coord.y % 2 == 0 else 0
-    return max(0, coord.x - x_min) * STRIDE8_CELL_STRIDE + stagger
+    return ((coord.x - x_min) % board_width) * STRIDE8_CELL_STRIDE + stagger
 
 
 def _pad_center(content: str, width: int, pad: str) -> str:
@@ -1339,7 +1421,7 @@ def render_ascii_map(
     if not provinces:
         return []
 
-    x_min = min(p.coord.x for p in provinces)
+    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, DEFAULT_WIDTH)
 
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
@@ -1347,7 +1429,7 @@ def render_ascii_map(
 
     lines: list[str] = []
     for y in sorted(rows_by_y):
-        row_provinces = sorted(rows_by_y[y], key=lambda p: p.coord.x)
+        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % DEFAULT_WIDTH)
         cells = [render_cell(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
         columns = [cell_pixel_column(p.coord, x_min) for p in row_provinces]
 
@@ -1485,7 +1567,7 @@ def render_ascii_map_stride12(
     if not provinces:
         return []
 
-    x_min = min(p.coord.x for p in provinces)
+    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, DEFAULT_WIDTH)
 
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
@@ -1493,7 +1575,7 @@ def render_ascii_map_stride12(
 
     lines: list[str] = []
     for y in sorted(rows_by_y):
-        row_provinces = sorted(rows_by_y[y], key=lambda p: p.coord.x)
+        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % DEFAULT_WIDTH)
         cells = [render_cell_stride12(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
         columns = [stride12_cell_pixel_column(p.coord, x_min) for p in row_provinces]
 
@@ -1592,7 +1674,7 @@ def render_ascii_map_stride10(
     if not provinces:
         return []
 
-    x_min = min(p.coord.x for p in provinces)
+    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, DEFAULT_WIDTH)
 
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
@@ -1600,7 +1682,7 @@ def render_ascii_map_stride10(
 
     lines: list[str] = []
     for y in sorted(rows_by_y):
-        row_provinces = sorted(rows_by_y[y], key=lambda p: p.coord.x)
+        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % DEFAULT_WIDTH)
         cells = [render_cell_stride10(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
         columns = [stride10_cell_pixel_column(p.coord, x_min) for p in row_provinces]
 
@@ -1689,7 +1771,7 @@ def render_ascii_map_stride9(
     if not provinces:
         return []
 
-    x_min = min(p.coord.x for p in provinces)
+    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, DEFAULT_WIDTH)
 
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
@@ -1697,7 +1779,7 @@ def render_ascii_map_stride9(
 
     lines: list[str] = []
     for y in sorted(rows_by_y):
-        row_provinces = sorted(rows_by_y[y], key=lambda p: p.coord.x)
+        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % DEFAULT_WIDTH)
         cells = [render_cell_stride9(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
         columns = [stride9_cell_pixel_column(p.coord, x_min) for p in row_provinces]
 
@@ -1769,7 +1851,7 @@ def render_ascii_map_stride8(
     if not provinces:
         return []
 
-    x_min = min(p.coord.x for p in provinces)
+    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, DEFAULT_WIDTH)
 
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
@@ -1777,7 +1859,7 @@ def render_ascii_map_stride8(
 
     lines: list[str] = []
     for y in sorted(rows_by_y):
-        row_provinces = sorted(rows_by_y[y], key=lambda p: p.coord.x)
+        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % DEFAULT_WIDTH)
         cells = [render_cell_stride8(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
         columns = [stride8_cell_pixel_column(p.coord, x_min) for p in row_provinces]
 
@@ -1817,15 +1899,17 @@ def render_ascii_map_dense(
     if not provinces:
         return []
 
+    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, DEFAULT_WIDTH)
+
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
         rows_by_y.setdefault(province.coord.y, []).append(province)
 
     lines: list[str] = []
     for y in sorted(rows_by_y):
-        row_provinces = sorted(rows_by_y[y], key=lambda p: p.coord.x)
+        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % DEFAULT_WIDTH)
         cells = [render_cell_dense(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
-        columns = [dense_cell_pixel_column(p.coord) for p in row_provinces]
+        columns = [dense_cell_pixel_column(p.coord, x_min) for p in row_provinces]
 
         for band_row in range(6):
             line = ""
