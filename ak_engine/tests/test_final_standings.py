@@ -7,10 +7,12 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.army_type import ArmyType
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.final_standings import (
     compose_final_standings_report,
     final_standings,
@@ -43,15 +45,23 @@ def test_kingdom_points_combines_office_and_treasure_terms():
     # Kingdom 1 is both the elected Emperor (Office.EMPEROR value 20,
     # zero Alignment-distance discount against itself) and holds
     # Office.TREASURER (value 10, treasury > 0) via the same King, plus
-    # one real trvic=1 legendary item: 20 + 10 + 1 == 31.
+    # one real trvic=1 legendary item, plus Office.PRAETOR (Phase 633,
+    # value 2, army-scoped -- a Crack/Elite non-flying army with a valid
+    # player owner, also at zero Alignment-distance): 20 + 10 + 1 + 2 ==
+    # 33. Heavy Cavalry, not a flying/monstrous type, deliberately --
+    # avoids entangling this test with the unled-army Druidic-shortfall
+    # check (rulebook [4.32]) a monstrous type would trigger via
+    # Aldric's own King-substitution role, unrelated to what this test
+    # is about.
     state = _state_with_kingdom(1, Alignment.GOOD, HOME)
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=10))
     state.add_leader(LeaderState(1, 1, "Aldric", HOME, is_king=True))
     state.kingdoms[1].treasury = 7
     state.add_item(Treasure.WEAPON_1, owner_leader_id=1)
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, HOME))
     state.emperor_kingdom_id = 1
 
-    assert kingdom_points(state, 1) == 31.0
+    assert kingdom_points(state, 1) == 33.0
 
 
 def test_kingdom_points_undiscounted_treasure_term_even_far_from_the_emperor():

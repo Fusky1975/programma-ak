@@ -64,7 +64,7 @@ from __future__ import annotations
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.game_state import GameState
 from ak_engine.models.office import OFFICE_VALUE, Office
-from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.office_holder import ARMY_RANKED_OFFICES, resolve_army_office_holder, resolve_office_holder
 
 _HELLISH_ORDINAL = ALIGNMENT_ORDINAL[Alignment.ANTI_HOLY]
 
@@ -98,6 +98,42 @@ def office_victory_points(state: GameState, office: Office, kingdom_id: int) -> 
         return 0.0
 
     winner_kingdom_id = state.leaders[holder.leader_id].kingdom_id
+    if winner_kingdom_id != kingdom_id:
+        return 0.0
+
+    kalign = state.kingdoms[kingdom_id].alignment
+    empalign = state.kingdoms[state.emperor_kingdom_id].alignment
+    reduct = min(1.0, OUTLOOK_REDUCTION[kalign] * _alignment_distance_capped_at_hellish(kalign, empalign))
+    return OFFICE_VALUE[office] * (1.0 - reduct)
+
+
+def army_office_victory_points(state: GameState, office: Office, kingdom_id: int) -> float:
+    """`kingdom_id`'s own real Victory Point award for one of the 3 army-
+    scoped Royal Titles (`turn/office_holder.py ARMY_RANKED_OFFICES` --
+    Airforce/Praetor/Flagship, Phase 394) -- the same real formula
+    `office_victory_points()` uses for the 47 leader-scoped offices
+    (see that function's own docstring/module docstring for the full
+    derivation), just sourced from `resolve_army_office_holder()` and
+    the winning army's own `kingdom_id` instead of a leader's.
+
+    Phase 633: closes a real, quantifiable gap, not just a
+    documentation one -- `turn/final_standings.py kingdom_points()`
+    previously never summed these 3 offices at all (they're
+    deliberately excluded from `ALL_OFFICES`), so their own real
+    `OFFICE_VALUE` (2 each, 6 total) was unreachable by any Kingdom.
+    """
+
+    if office not in ARMY_RANKED_OFFICES:
+        raise ValueError(f"{office} is not one of the 3 army-scoped Royal Titles this project models")
+
+    if state.emperor_kingdom_id is None:
+        return 0.0
+
+    holder = resolve_army_office_holder(state, office)
+    if holder is None:
+        return 0.0
+
+    winner_kingdom_id = state.armies[holder.army_id].kingdom_id
     if winner_kingdom_id != kingdom_id:
         return 0.0
 

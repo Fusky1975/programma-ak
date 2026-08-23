@@ -1332,6 +1332,19 @@ class GameState:
     # qualifies for a turn or two), the same "stale until overwritten"
     # convention as `discoveries_first_found_by`.
     office_holders: dict[Office, int] = field(default_factory=dict)
+    # Phase 633: the same Phase 475 tier-1 stickiness tie-break, for the
+    # 3 army-scoped Royal Titles (`turn/office_holder.py ARMY_RANKED_
+    # OFFICES` -- Airforce/Praetor/Flagship, Phase 394) -- **not** folded
+    # into `office_holders` above, deliberately: that dict is `leader_id`
+    # valued, and leader ids/army ids are separate integer namespaces
+    # that can collide numerically, so mixing both kinds of id under one
+    # untyped `dict[Office, int]` risks a future reader assuming every
+    # entry is a `leader_id` and mis-resolving (or crashing) for one of
+    # these 3. Written by `commit_army_office_holders()`, read by
+    # `resolve_army_office_holder()`'s own tie-break -- same "caller-
+    # invoked commit step, never cleared automatically" shape as
+    # `office_holders` itself.
+    army_office_holders: dict[Office, int] = field(default_factory=dict)
     # Phase 614: the Grandfather of Assassins title's own free-attempt
     # queue -- `turn/plan_dispatch.py _dispatch_fire()` sets this instead
     # of running an ordinary Fire when the order-giver holds Office.

@@ -163,13 +163,29 @@ modified_quality()`, so a bonus that lifts an army up to Crack (or a
 penalty that drops it below) is honored consistently by both.
 Praetorian Guard's own extra `+base movement speed of army type` term
 reads `models/army_type.py ARMY_TABLE[army_type].speed` directly, no
-new data needed. **No "current title holder" stickiness modeled** here
-for these 3 army-scoped titles -- see the module docstring's own Phase
-475 addendum for why the 47 leader-scoped offices now have it (via
-`resolve_office_holder()`) but these 3 (`resolve_army_office_holder()`)
-deliberately don't yet: `GameState.office_holders` is keyed by `Office`
-regardless of scope, so extending it here is a natural, low-risk
-follow-up, just not attempted this same phase.
+new data needed.
+
+**Phase 633 closes the two loose ends Phase 394 itself flagged**:
+Victory Points were never actually awarded for these 3 titles (`turn/
+final_standings.py kingdom_points()` only ever summed `ALL_OFFICES`,
+which deliberately excludes `ARMY_RANKED_OFFICES` -- up to 6 real
+Victory Points per game were unreachable by any Kingdom; `turn/
+victory_points.py army_office_victory_points()` closes this, mirroring
+`office_victory_points()`'s own real formula exactly, sourced from
+`resolve_army_office_holder()` and the winning army's own `kingdom_id`
+instead of a leader's), and the same Phase 475 tier-1 stickiness tie-
+break now applies here too, via a new, deliberately separate `GameState.
+army_office_holders` dict (`leader_id`s and `army_id`s are different
+integer namespaces that can collide numerically, so this doesn't share
+`office_holders` -- see that new field's own docstring) and a new
+`commit_army_office_holders()` mirroring `commit_office_holders()`
+exactly. Each title's own `"effect_while_held"` bonus (`models/
+office.py`'s own real "Improved Training" text -- doubled quality-
+improvement chance for matching unit types) still has no functional
+hook anywhere, and report-layer visibility for these 3 is still
+untouched -- both explicitly out of scope, matching the "counters/VP
+first, effects and report visibility later" split Phase 630 already
+used for the 18 leader-scoped titles.
 
 **Phase 475 -- the real tier-1 tie-break, ``AKGEN_reverse_engineering_
 report (2).md`` SS14.4, real disassembly source**: "per i titoli
@@ -675,8 +691,9 @@ def resolve_army_office_holder(state: GameState, office: Office) -> ArmyOfficeHo
 
     ability = Ability.NAVAL if office is Office.FLAGSHIP else Ability.TACTICAL
     min_points = OFFICE_MIN_POINTS[office]
+    previous_holder_id = state.army_office_holders.get(office)
     best: ArmyOfficeHolder | None = None
-    best_tiebreak: tuple[int, int, int] | None = None
+    best_tiebreak: tuple[int, int, int, int] | None = None
 
     for army_id, army in state.armies.items():
         if army.kingdom_id is None:
@@ -689,7 +706,8 @@ def resolve_army_office_holder(state: GameState, office: Office) -> ArmyOfficeHo
             score += ARMY_TABLE[army.army_type].speed
         if score < min_points:
             continue
-        tiebreak = _army_office_tiebreak_key(state, army)
+        stickiness = 1 if army_id == previous_holder_id else 0
+        tiebreak = (stickiness, *_army_office_tiebreak_key(state, army))
         if best is None or score > best.merit_points or (score == best.merit_points and tiebreak > best_tiebreak):
             best = ArmyOfficeHolder(army_id, score)
             best_tiebreak = tiebreak
@@ -703,6 +721,28 @@ def resolve_all_army_office_holders(state: GameState) -> dict[Office, ArmyOffice
     """
 
     return {office: resolve_army_office_holder(state, office) for office in ARMY_RANKED_OFFICES}
+
+
+def commit_army_office_holders(state: GameState) -> dict[Office, ArmyOfficeHolder | None]:
+    """Phase 633: the same "settle this turn's results for next turn's
+    tie-break" commit step `commit_office_holders()` already provides
+    for the 47 leader-scoped offices, mirrored for the 3 army-scoped
+    ones. Resolves every one of `ARMY_RANKED_OFFICES` via `resolve_all_
+    army_office_holders()`, then persists each non-`None` result's own
+    `army_id` into `state.army_office_holders`. An office with no
+    current qualifying candidate is left untouched (its last known
+    holder stays sticky, same "stale until overwritten" convention).
+    Not wired into `turn_processor.py` automatically -- `commit_office_
+    holders()` itself has no such hook either, the caller's own
+    explicit step.
+    """
+
+    results = resolve_all_army_office_holders(state)
+    for office, holder in results.items():
+        if holder is None:
+            continue
+        state.army_office_holders[office] = holder.army_id
+    return results
 
 
 def apply_cravenest_temperament_escalation(state: GameState) -> None:

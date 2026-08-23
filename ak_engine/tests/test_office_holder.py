@@ -20,6 +20,7 @@ from ak_engine.turn.office_holder import (
     ARMY_RANKED_OFFICES,
     RANKED_OFFICES,
     apply_cravenest_temperament_escalation,
+    commit_army_office_holders,
     commit_office_holders,
     kingdom_best_candidate,
     kingdom_runner_up,
@@ -532,6 +533,67 @@ def test_resolve_all_army_office_holders_covers_all_three_titles():
     assert holders[Office.AIR_FORCE] is not None
     assert holders[Office.PRAETOR] is None
     assert holders[Office.FLAGSHIP] is None
+
+
+def test_resolve_army_office_holder_previous_holder_wins_a_tie():
+    # Phase 633: the same Phase 475 tier-1 stickiness, for the 3 army-
+    # scoped titles. Both armies are Elite Dragon Wings on Plains with
+    # no commander -- a genuine score tie (Dragon Wing is monstrous, so
+    # kingdom race never enters the formula either) -- so only
+    # stickiness can decide it. Army 201 belongs to kingdom 2, which has
+    # *less* treasury than kingdom 1 (see make_state()), so it would
+    # lose the ordinary treasury tie-break tier outright if stickiness
+    # didn't come first.
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HOME))
+    state.add_army(ArmyState(201, 2, ArmyType.DRAGON_WING, Quality.ELITE, HexCoord(1, 1)))
+    state.army_office_holders[Office.AIR_FORCE] = 201
+
+    holder = resolve_army_office_holder(state, Office.AIR_FORCE)
+
+    assert holder is not None
+    assert holder.army_id == 201
+
+
+def test_resolve_army_office_holder_no_stickiness_effect_without_a_recorded_previous_holder():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HOME))
+    state.add_army(ArmyState(201, 2, ArmyType.DRAGON_WING, Quality.ELITE, HexCoord(1, 1)))
+
+    holder = resolve_army_office_holder(state, Office.AIR_FORCE)
+
+    # state.army_office_holders is empty -- falls through to the
+    # pre-existing treasury tier: kingdom 1 (army 101) has more.
+    assert holder is not None
+    assert holder.army_id == 101
+
+
+def test_commit_army_office_holders_persists_the_winner_for_the_next_resolution():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HOME))
+
+    commit_army_office_holders(state)
+
+    assert state.army_office_holders[Office.AIR_FORCE] == 101
+
+
+def test_commit_army_office_holders_leaves_a_now_vacant_office_untouched():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    army = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HOME)
+    state.add_army(army)
+    commit_army_office_holders(state)
+    assert state.army_office_holders[Office.AIR_FORCE] == 101
+
+    army.quality = Quality.AVERAGE  # no longer Crack/Elite -- no longer eligible
+    commit_army_office_holders(state)
+
+    assert state.army_office_holders[Office.AIR_FORCE] == 101  # sticky, not cleared
 
 
 # -- Phase 438: office ranking primitives (Rank/ftoppts/per-Kingdom Best Hope/runner-up) --

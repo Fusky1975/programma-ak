@@ -124,18 +124,27 @@ from dataclasses import dataclass
 from ak_engine.models.game_state import GameState
 from ak_engine.turn.emperor_election import _kingdom_treasure_vote_points
 from ak_engine.turn.merit_points import legendary_item_victory_point_bonus_count
-from ak_engine.turn.office_holder import ALL_OFFICES, resolve_office_holder
+from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES, resolve_office_holder
 from ak_engine.turn.tax_base import compute_tax_base
-from ak_engine.turn.victory_points import office_victory_points
+from ak_engine.turn.victory_points import army_office_victory_points, office_victory_points
 
 
 def kingdom_points(state: GameState, kingdom_id: int) -> float:
-    """`kingdom_id`'s own real end-of-game `kingpoints` -- see module docstring."""
+    """`kingdom_id`'s own real end-of-game `kingpoints` -- see module docstring.
+
+    Phase 633: the real `ofcpoints` accumulator this module's own
+    docstring describes is a single global sum across every real
+    Imperial Office regardless of scope, so this now also includes the
+    3 army-scoped Royal Titles (`turn/victory_points.py army_office_
+    victory_points()`) alongside the 48 leader-scoped ones -- previously
+    unreachable by any Kingdom (see that function's own docstring).
+    """
 
     if state.emperor_kingdom_id is None:
         return 0.0
 
     office_points = sum(office_victory_points(state, office, kingdom_id) for office in ALL_OFFICES)
+    office_points += sum(army_office_victory_points(state, office, kingdom_id) for office in ARMY_RANKED_OFFICES)
     return office_points + _kingdom_treasure_vote_points(state, kingdom_id)
 
 

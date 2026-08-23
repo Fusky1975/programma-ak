@@ -26158,7 +26158,7 @@ follow-up request after the original 431-435 plan shipped.
   functional changed); full suite re-run to confirm: 5289 passed,
   unchanged.
 
-- **Phase 632 (current)**: closes Move-chase cross-phase persistence
+- **Phase 632**: closes Move-chase cross-phase persistence
   (rulebook [3.1]). `turn/move_execution.py execute_move()` (Phase 85)
   already resolved a non-adjacent Move target as a chase, one hex-step
   per call -- what was still missing was the rulebook's own multi-phase
@@ -26211,6 +26211,74 @@ follow-up request after the original 431-435 plan shipped.
   case, re-expressed with non-negative coordinates so it round-trips
   through the real LMOVE hex-number encoding) does NOT preempt the
   following phase. Full suite: 5289 -> 5291 (net +2).
+
+- **Phase 633 (current)**: closes the army-scoped Royal Titles'
+  (`AIR_FORCE`/`PRAETOR`/`FLAGSHIP`) real remaining gaps -- Victory
+  Point wiring and the same tier-1 stickiness tie-break the 47
+  leader-scoped offices already have.
+
+  **Found via a real "stale known-gap claim," a 3rd recurrence this
+  session**: `turn/merit_points.py`'s own Phase 379 addendum says these
+  3 titles were "deliberately not attempted... left for a future
+  phase," but `turn/office_holder.py`'s own module docstring shows
+  **Phase 394 already closed that gap in full** -- `ArmyOfficeHolder`,
+  `ARMY_RANKED_OFFICES`, `resolve_army_office_holder()`, and `turn/
+  army_quality.py army_peacetime_strength()` (the "Army_Str outside of
+  battle" formula) are all real, tested, and correct. Tracing every
+  real consumer found what's genuinely still open: (1) **Victory
+  Points were never awarded for these 3 titles at all** -- `turn/
+  final_standings.py kingdom_points()` only ever summed `ALL_OFFICES`,
+  which deliberately excludes the 3 army-scoped offices, so their own
+  real `OFFICE_VALUE` (2 each, 6 total per game) was unreachable by any
+  Kingdom; (2) **no "current holder retains precedence" stickiness**,
+  explicitly flagged in `office_holder.py`'s own Phase 394 addendum as
+  "a natural, low-risk follow-up, just not attempted this same phase."
+
+  New `GameState.army_office_holders: dict[Office, int]` -- deliberately
+  **not** folded into the existing `office_holders` dict (documented as
+  `leader_id`-valued): leader ids and army ids are separate integer
+  namespaces that can collide numerically, so mixing both kinds under
+  one untyped dict risks a future reader mis-resolving one as the
+  other. `resolve_army_office_holder()` gains the same stickiness tier
+  `resolve_office_holder()` already has (`(stickiness, *_army_office_
+  tiebreak_key(...))`, a 4-tuple mirroring the leader-scoped version's
+  own shape exactly). New `commit_army_office_holders()` mirrors
+  `commit_office_holders()` exactly (not auto-wired into `turn_
+  processor.py` either -- same caller's-own-explicit-step stance the
+  leader-scoped version already has). New `turn/victory_points.py
+  army_office_victory_points()` mirrors `office_victory_points()`'s own
+  real alignment-decay formula exactly, sourced from `resolve_army_
+  office_holder()` and the winning army's own `kingdom_id` instead of a
+  leader's. `turn/final_standings.py kingdom_points()` now sums this
+  over `ARMY_RANKED_OFFICES` too, alongside the existing `ALL_OFFICES`
+  sum -- the real `ofcpoints` accumulator is a single global sum across
+  every real Imperial Office regardless of scope, so this is the
+  correct shape, not an approximation.
+
+  **Explicitly still out of scope**, matching the same "counters/VP
+  first, effects and report visibility later" split Phase 630 already
+  used for the 18 leader-scoped titles: each title's own real
+  `"effect_while_held"` bonus (`models/office.py`'s own already-
+  transcribed "Improved Training" text) has no functional hook
+  anywhere yet, and no report composer shows who holds these 3 titles.
+
+  Tests: `tests/test_office_holder.py` gained 4 -- army-scoped
+  stickiness winning a genuine tie (against a rival with *more*
+  treasury, proving stickiness outranks the ordinary tie-break tier,
+  not just coincidentally agreeing with it), no stickiness effect
+  without a recorded previous holder, `commit_army_office_holders()`
+  persisting a winner and leaving a now-vacant office untouched (sticky,
+  not cleared). `tests/test_victory_points.py` gained 5 -- the same
+  zero-before-Emperor/zero-for-non-holder/full-value/alignment-distance-
+  reduced cases `office_victory_points()` already has, plus raising for
+  a non-army-scoped office. `tests/test_final_standings.py`: extended
+  (not just unit-tested) `kingdom_points()`'s own existing combined-
+  terms test with a real Praetor-eligible army, 20+10+1+2 == 33 --
+  Heavy Cavalry, not a flying/monstrous type, deliberately, to avoid
+  entangling the test with the unled-army Druidic-shortfall check
+  (rulebook [4.32]) a monstrous type would trigger via the King's own
+  substitution role, unrelated to what the test is about (caught by
+  running it, not assumed). Full suite: 5291 -> 5300 (net +9).
 
 ## Setup
 

@@ -6,11 +6,13 @@ Phase 439).
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState
-from ak_engine.models.map import HexCoord
+from ak_engine.models.army_type import ArmyType
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import OFFICE_VALUE, Office
 from ak_engine.models.race import Race
-from ak_engine.turn.victory_points import OUTLOOK_REDUCTION, office_victory_points
+from ak_engine.turn.combat import Quality
+from ak_engine.turn.victory_points import OUTLOOK_REDUCTION, army_office_victory_points, office_victory_points
 
 HOME = HexCoord(0, 0)
 AWAY = HexCoord(1, 1)
@@ -93,3 +95,59 @@ def test_outlook_reduction_covers_every_alignment_and_matches_the_real_outred_ta
     assert OUTLOOK_REDUCTION[Alignment.UNDEAD] == 0.20
     assert OUTLOOK_REDUCTION[Alignment.MECHANICAL] == 0.20
     assert OUTLOOK_REDUCTION[Alignment.SPECIAL] == 0.20
+
+
+# -- Army-scoped Royal Titles: Airforce/Praetor/Flagship (Phase 633) --------
+
+
+def _army_state(*, kalign: Alignment, empalign: Alignment) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, kalign, HOME))
+    state.add_kingdom(KingdomState(2, "Emperia", Race.HUMAN, empalign, AWAY))
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HOME))  # Attackia's own Airforce
+    return state
+
+
+def test_army_office_victory_points_zero_before_any_emperor_is_elected():
+    state = _army_state(kalign=Alignment.GOOD, empalign=Alignment.GOOD)
+
+    assert army_office_victory_points(state, Office.AIR_FORCE, 1) == 0.0
+
+
+def test_army_office_victory_points_zero_for_a_kingdom_that_doesnt_hold_the_office():
+    state = _army_state(kalign=Alignment.GOOD, empalign=Alignment.GOOD)
+    state.emperor_kingdom_id = 2
+
+    assert army_office_victory_points(state, Office.AIR_FORCE, 2) == 0.0  # Attackia's army holds it, not Emperia
+
+
+def test_army_office_victory_points_full_value_when_alignment_matches_the_emperor():
+    state = _army_state(kalign=Alignment.GOOD, empalign=Alignment.GOOD)
+    state.emperor_kingdom_id = 2
+
+    points = army_office_victory_points(state, Office.AIR_FORCE, 1)
+
+    assert points == OFFICE_VALUE[Office.AIR_FORCE]  # distance 0 -> reduct 0
+
+
+def test_army_office_victory_points_reduced_by_alignment_distance():
+    # Same real formula office_victory_points() already uses -- see that
+    # function's own analogous test for the worked distance/reduct math.
+    state = _army_state(kalign=Alignment.GOOD, empalign=Alignment.EVIL)
+    state.emperor_kingdom_id = 2
+
+    points = army_office_victory_points(state, Office.AIR_FORCE, 1)
+
+    expected_reduct = min(1.0, OUTLOOK_REDUCTION[Alignment.GOOD] * 4)
+    assert points == OFFICE_VALUE[Office.AIR_FORCE] * (1.0 - expected_reduct)
+    assert points < OFFICE_VALUE[Office.AIR_FORCE]
+
+
+def test_army_office_victory_points_raises_for_a_non_army_scoped_office():
+    import pytest
+
+    state = _army_state(kalign=Alignment.GOOD, empalign=Alignment.GOOD)
+
+    with pytest.raises(ValueError):
+        army_office_victory_points(state, Office.DEFENDER, 1)
