@@ -6467,7 +6467,11 @@ def test_describe_map_report_empty_when_no_provinces_known():
 def test_describe_map_report_starts_with_the_real_scribe_intro():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
-    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital"))
+    state.add_province(
+        ProvinceState(
+            HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital", explored_percent_by_kingdom={1: 100}
+        )
+    )
 
     lines = describe_map_report(state, 1)
 
@@ -6480,7 +6484,11 @@ def test_describe_map_report_inserts_ice_cap_label_when_topmost_row_is_y_1():
     # y == 1, the world's own northern edge.
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
-    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital"))
+    state.add_province(
+        ProvinceState(
+            HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital", explored_percent_by_kingdom={1: 100}
+        )
+    )
 
     lines = describe_map_report(state, 1)
 
@@ -6491,11 +6499,46 @@ def test_describe_map_report_inserts_ice_cap_label_when_topmost_row_is_y_1():
 def test_describe_map_report_omits_ice_cap_label_when_topmost_row_is_below_y_1():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
-    state.add_province(ProvinceState(HexCoord(1, 4), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital"))
+    state.add_province(
+        ProvinceState(
+            HexCoord(1, 4), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital", explored_percent_by_kingdom={1: 100}
+        )
+    )
 
     lines = describe_map_report(state, 1)
 
     assert "Ice cap" not in lines
+
+
+def test_describe_map_report_only_renders_provinces_this_kingdom_knows():
+    # Phase 628: ProvinceState.known_to_kingdom() (Phase 623) now gates
+    # what the map shows -- a province that merely exists in
+    # state.provinces, with no recorded exploration by this Kingdom,
+    # must not appear.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_province(
+        ProvinceState(
+            HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital", explored_percent_by_kingdom={1: 100}
+        )
+    )
+    state.add_province(ProvinceState(HexCoord(2, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None, name="Unseen"))
+
+    text = "\n".join(describe_map_report(state, 1))
+
+    assert "Capital" in text
+    assert "Unseen" not in text
+
+
+def test_describe_map_report_ownership_alone_does_not_imply_knowledge():
+    # Phase 69/623: a Kingdom that owns a province without a recorded
+    # Explore/Move order into it reads as 0% known, same as anyone
+    # else -- ownership must not silently substitute for knowledge here.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Unexplored Capital"))
+
+    assert describe_map_report(state, 1) == []
 
 
 def test_describe_map_report_splits_into_a_far_side_page_when_too_wide():
@@ -6512,8 +6555,16 @@ def test_describe_map_report_splits_into_a_far_side_page_when_too_wide():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(18, 1)))
     for x in (14, 15, 16, 17, 18, 1, 2, 3, 4):
-        state.add_province(ProvinceState(HexCoord(x, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name=f"P{x}"))
-    state.add_province(ProvinceState(HexCoord(13, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Farland"))
+        state.add_province(
+            ProvinceState(
+                HexCoord(x, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name=f"P{x}", explored_percent_by_kingdom={1: 100}
+            )
+        )
+    state.add_province(
+        ProvinceState(
+            HexCoord(13, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Farland", explored_percent_by_kingdom={1: 100}
+        )
+    )
 
     lines = describe_map_report(state, 1)
     text = "\n".join(lines)
@@ -6533,7 +6584,11 @@ def test_describe_map_report_splits_into_a_far_side_page_when_too_wide():
 def test_compose_letter_report_places_the_map_between_provinces_and_characters():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
-    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital"))
+    state.add_province(
+        ProvinceState(
+            HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital", explored_percent_by_kingdom={1: 100}
+        )
+    )
 
     lines = compose_letter_report([], state, 1, ScriptedRandom([]))
 
@@ -7157,6 +7212,7 @@ def test_describe_adventure_report_looted_feature_never_shows_a_treasure_line():
 
 def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_order():
     state = _armies_state()
+    state.provinces[HexCoord(0, 0)].explored_percent_by_kingdom[1] = 100
     state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
     state.add_leader(LeaderState(32, 1, "Borin", HexCoord(0, 0)))
     state.add_leader(LeaderState(40, 1, "Elena", HexCoord(0, 0)))
@@ -7422,6 +7478,7 @@ def test_compose_letter_report_narrates_a_non_king_leader_who_dies_this_turn():
 
 def test_compose_letter_report_all_four_wired_sections_present_even_when_empty():
     state = _armies_state()
+    state.provinces[HexCoord(0, 0)].explored_percent_by_kingdom[1] = 100
 
     lines = compose_letter_report([], state, 1, ScriptedRandom([]))
 

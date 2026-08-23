@@ -8957,9 +8957,17 @@ def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
     this project can't recover from report snapshots). Every page of a
     given report uses the same chosen tier, matching every real sample
     (a report's own far-side page never switches tiers mid-report).
+
+    Phase 628: only provinces this Kingdom actually knows about
+    (`ProvinceState.known_to_kingdom()`, Phase 623) are rendered --
+    previously every province in `state.provinces` rendered
+    unconditionally, a real gap flagged since Phase 624 (see `report/
+    ascii_map.py`'s own Phase 628 addendum). This filtered set also
+    drives tier selection and pagination, not just the grid itself.
     """
 
-    known_columns = {p.coord.x for p in state.provinces.values()}
+    visible_provinces = {coord for coord, province in state.provinces.items() if province.known_to_kingdom(kingdom_id)}
+    known_columns = {coord.x for coord in visible_provinces}
     if not known_columns:
         return []
 
@@ -8973,8 +8981,8 @@ def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
     lines: list[str] = ["", "", f"  {_MAP_REPORT_INTRO} ", ""]
     for page_index, page_columns in enumerate(pages):
         columns = set(page_columns)
-        grid_lines = renderer(state, kingdom_id, columns=columns)
-        region_label = map_region_label(state, columns=columns)
+        grid_lines = renderer(state, kingdom_id, columns=columns, visible_provinces=visible_provinces)
+        region_label = map_region_label(state, columns=columns, visible_provinces=visible_provinces)
         region_lines = [region_label, MAP_REGION_LABEL_RULE] if region_label else []
 
         if page_index > 0:

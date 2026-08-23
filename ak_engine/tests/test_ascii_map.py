@@ -1021,3 +1021,99 @@ def test_render_ascii_map_stride8_columns_filters_to_the_given_page():
     assert full != restricted
     assert "0101" in "".join(restricted)
     assert "0901" not in "".join(restricted)
+
+
+# -- Phase 628: `visible_provinces` -- the real per-Kingdom knowledge
+# filter (`ProvinceState.known_to_kingdom()`, Phase 623), independent of
+# `columns` (a page-column restriction). `None` (every test above)
+# leaves every renderer/`map_region_label()` unfiltered, exactly the
+# pre-Phase-628 behavior -- these tests cover the new, non-`None` case.
+
+
+def test_render_ascii_map_visible_provinces_filters_by_knowledge():
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    full = render_ascii_map(state, 2)
+    restricted = render_ascii_map(state, 2, visible_provinces={HexCoord(1, 1)})
+
+    assert full != restricted
+    assert "Alderwood" in "".join(restricted)
+    assert "Farland" not in "".join(restricted)
+
+
+def test_map_region_label_visible_provinces_checks_only_known_rows():
+    state = _state()
+    # y=1 (Ice cap trigger) only on the unknown province; the known one
+    # alone stays y=5.
+    state.add_province(_province(1, 5, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    assert map_region_label(state, visible_provinces={HexCoord(1, 5)}) is None
+    assert map_region_label(state, visible_provinces={HexCoord(9, 1)}) == "Ice cap"
+
+
+def test_render_ascii_map_dense_visible_provinces_filters_by_knowledge():
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    full = render_ascii_map_dense(state, 2)
+    restricted = render_ascii_map_dense(state, 2, visible_provinces={HexCoord(1, 1)})
+
+    assert full != restricted
+    assert "Alderwood" in "".join(restricted)
+    assert "Farland" not in "".join(restricted)
+
+
+def test_render_ascii_map_stride12_visible_provinces_filters_by_knowledge():
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    full = render_ascii_map_stride12(state, 2)
+    restricted = render_ascii_map_stride12(state, 2, visible_provinces={HexCoord(1, 1)})
+
+    assert full != restricted
+    assert "0101" in "".join(restricted)
+    assert "0901" not in "".join(restricted)
+
+
+def test_render_ascii_map_stride10_visible_provinces_filters_by_knowledge():
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    full = render_ascii_map_stride10(state, 2)
+    restricted = render_ascii_map_stride10(state, 2, visible_provinces={HexCoord(1, 1)})
+
+    assert full != restricted
+    assert "0101" in "".join(restricted)
+    assert "0901" not in "".join(restricted)
+
+
+def test_render_ascii_map_stride9_visible_provinces_filters_by_knowledge():
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    full = render_ascii_map_stride9(state, 2)
+    restricted = render_ascii_map_stride9(state, 2, visible_provinces={HexCoord(1, 1)})
+
+    assert full != restricted
+    assert "0101" in "".join(restricted)
+    assert "0901" not in "".join(restricted)
+
+
+def test_render_ascii_map_stride8_visible_provinces_filters_by_knowledge():
+    state = _state()
+    state.add_province(_province(1, 1, "Alderwood", Terrain.FOREST, Race.DRAGONS, owner=None, tax=1, t1=None, t2=None, expl=1))
+    state.add_province(_province(9, 1, "Farland", Terrain.PLAINS, Race.HUMAN, owner=None, tax=1, t1=None, t2=None, expl=1))
+
+    full = render_ascii_map_stride8(state, 2)
+    restricted = render_ascii_map_stride8(state, 2, visible_provinces={HexCoord(1, 1)})
+
+    assert full != restricted
+    assert "0101" in "".join(restricted)
+    assert "0901" not in "".join(restricted)

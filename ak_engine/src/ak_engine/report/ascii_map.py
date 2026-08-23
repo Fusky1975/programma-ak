@@ -586,6 +586,28 @@ refuted -- far-side provinces show real, substantial `Expl%` growth
 too). Shipped anyway, at the user's own explicit request, as the best
 available approximation -- see `select_layout_tier()`'s own docstring
 for the full account.
+
+**Phase 628 -- per-Kingdom province visibility, closed.** Every
+renderer plus `map_region_label()` previously rendered *every* province
+in `state.provinces`, unfiltered by what the requesting Kingdom
+actually knows -- flagged as a real gap during Phase 624, left open
+through Phase 627. `render_ascii_map()`'s own docstring additionally
+claimed this reused `describe_provinces_report()`'s own "any record of
+it" visibility convention; re-reading that report's own docstring
+(quoting `REPORTS.PAS Rep_Provs` directly: `IF powner[px,py] = kng`)
+shows it actually filters to provinces this Kingdom *owns* -- the
+opposite claim, and one that can't be right for the map either way,
+since this module's own byte-verified real samples show other
+Kingdoms' provinces and `Unowned` provinces printing right alongside
+this Kingdom's own. All 6 renderers and `map_region_label()` now take
+an optional `visible_provinces: set[HexCoord] | None` parameter (same
+`None`-means-unfiltered shape as the `columns` parameter Phase 624/627
+already established); `describe_map_report()` computes the real set
+via `ProvinceState.known_to_kingdom()` (Phase 623) and passes it
+through, and also uses that same filtered set (not the raw unfiltered
+`state.provinces`) to drive `select_layout_tier()`/`paginate_known_
+columns()`, so tier selection and pagination reflect what will
+actually be drawn, not merely what exists in `state`.
 """
 
 from __future__ import annotations
@@ -1277,27 +1299,43 @@ def paginate_known_columns(
     return pages
 
 
-def render_ascii_map(state: GameState, kingdom_id: int, *, columns: set[int] | None = None) -> list[str]:
+def render_ascii_map(
+    state: GameState, kingdom_id: int, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None
+) -> list[str]:
     """Renders every province this Kingdom's own report shows on the map --
     see module docstring for the exact scope this phase covers (a single,
     continuous map; no name-wrap; "Unowned" always shown, never skipped).
-
-    Reuses `describe_provinces_report()`'s own visibility convention:
-    every province this Kingdom currently has any record of at all
-    (`state.provinces`, unfiltered by exploration tier -- the same
-    "known enough to be worth listing" bar this project's own PROVINCES
-    table already uses).
 
     `columns` (Phase 624, default `None`): when given, only provinces
     whose `coord.x` is in this set are rendered -- one page of a multi-
     page "far side of the world" report (`describe_map_report()`'s own
     Phase 624 addendum). `None` renders everything, exactly this
     function's own pre-Phase-624 behavior.
+
+    `visible_provinces` (Phase 628, default `None`): when given, only
+    provinces whose `coord` is in this set are rendered -- the real
+    per-Kingdom knowledge filter (`ProvinceState.known_to_kingdom()`,
+    Phase 623), independent of `columns` (a known column can still
+    contain a province at some `y` this Kingdom doesn't know about).
+    `None` renders every province in `state.provinces` unfiltered by
+    knowledge, exactly this function's own pre-Phase-628 behavior --
+    this function's own earlier docstring claimed that was already
+    "`describe_provinces_report()`'s own visibility convention," which
+    turned out to be wrong once re-checked: that report filters to
+    provinces this Kingdom *owns* (`REPORTS.PAS Rep_Provs`'s own
+    `IF powner[px,py] = kng`), not "any record of it" -- and an
+    ownership filter can't be right for the map either way, since this
+    module's own byte-verified real samples show other Kingdoms'
+    provinces and `Unowned` provinces printing right alongside this
+    Kingdom's own. `describe_map_report()` is the real production
+    caller and passes the real `known_to_kingdom()`-derived set here.
     """
 
     provinces = list(state.provinces.values())
     if columns is not None:
         provinces = [p for p in provinces if p.coord.x in columns]
+    if visible_provinces is not None:
+        provinces = [p for p in provinces if p.coord in visible_provinces]
     if not provinces:
         return []
 
@@ -1347,7 +1385,7 @@ def render_ascii_map(state: GameState, kingdom_id: int, *, columns: set[int] | N
 MAP_REGION_LABEL_RULE = "-" * 78
 
 
-def map_region_label(state: GameState, *, columns: set[int] | None = None) -> str | None:
+def map_region_label(state: GameState, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None) -> str | None:
     """Returns ``"Ice cap"`` when this report's own map (see
     ``render_ascii_map()``, whose province set this reuses exactly) has
     a topmost row at ``y == 1``, else ``None`` -- see the module-level
@@ -1358,11 +1396,19 @@ def map_region_label(state: GameState, *, columns: set[int] | None = None) -> st
     runs per page (confirmed real: a "far side of the world" page can
     carry its own independent "Ice cap" header, see module docstring's
     own Phase 624 addendum), not once for the whole known set.
+
+    `visible_provinces` (Phase 628, default `None`): same per-Kingdom
+    knowledge restriction as `render_ascii_map()`'s own parameter of the
+    same name -- the topmost row this checks must be the topmost row
+    this Kingdom will actually see rendered, not the topmost row that
+    merely exists in `state.provinces`.
     """
 
     provinces = list(state.provinces.values())
     if columns is not None:
         provinces = [p for p in provinces if p.coord.x in columns]
+    if visible_provinces is not None:
+        provinces = [p for p in provinces if p.coord in visible_provinces]
     if not provinces:
         return None
     if min(p.coord.y for p in provinces) == 1:
@@ -1416,7 +1462,9 @@ def render_cell_stride12(state: GameState, province: ProvinceState, *, viewing_k
     return [line1, *middle_lines, last_line]
 
 
-def render_ascii_map_stride12(state: GameState, kingdom_id: int, *, columns: set[int] | None = None) -> list[str]:
+def render_ascii_map_stride12(
+    state: GameState, kingdom_id: int, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None
+) -> list[str]:
     """The stride-12 layout's own analogue of `render_ascii_map()` -- see
     module docstring's own Phase 569 section. Wired into `describe_map_
     report()` since Phase 627 -- `report/ascii_map.py select_layout_
@@ -1424,11 +1472,16 @@ def render_ascii_map_stride12(state: GameState, kingdom_id: int, *, columns: set
 
     `columns` (Phase 627): same as `render_ascii_map()`'s own parameter
     of the same name -- restricts rendering to one page's own columns.
+
+    `visible_provinces` (Phase 628): same as `render_ascii_map()`'s own
+    parameter of the same name -- the real per-Kingdom knowledge filter.
     """
 
     provinces = list(state.provinces.values())
     if columns is not None:
         provinces = [p for p in provinces if p.coord.x in columns]
+    if visible_provinces is not None:
+        provinces = [p for p in provinces if p.coord in visible_provinces]
     if not provinces:
         return []
 
@@ -1516,7 +1569,9 @@ def render_cell_stride10(state: GameState, province: ProvinceState, *, viewing_k
     return lines
 
 
-def render_ascii_map_stride10(state: GameState, kingdom_id: int, *, columns: set[int] | None = None) -> list[str]:
+def render_ascii_map_stride10(
+    state: GameState, kingdom_id: int, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None
+) -> list[str]:
     """The stride-10 layout's own analogue of `render_ascii_map()` -- see
     module docstring's own Phase 570 section. Wired into `describe_map_
     report()` since Phase 627 -- `report/ascii_map.py select_layout_
@@ -1524,11 +1579,16 @@ def render_ascii_map_stride10(state: GameState, kingdom_id: int, *, columns: set
 
     `columns` (Phase 627): same as `render_ascii_map()`'s own parameter
     of the same name -- restricts rendering to one page's own columns.
+
+    `visible_provinces` (Phase 628): same as `render_ascii_map()`'s own
+    parameter of the same name -- the real per-Kingdom knowledge filter.
     """
 
     provinces = list(state.provinces.values())
     if columns is not None:
         provinces = [p for p in provinces if p.coord.x in columns]
+    if visible_provinces is not None:
+        provinces = [p for p in provinces if p.coord in visible_provinces]
     if not provinces:
         return []
 
@@ -1606,7 +1666,9 @@ def render_cell_stride9(state: GameState, province: ProvinceState, *, viewing_ki
     return lines
 
 
-def render_ascii_map_stride9(state: GameState, kingdom_id: int, *, columns: set[int] | None = None) -> list[str]:
+def render_ascii_map_stride9(
+    state: GameState, kingdom_id: int, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None
+) -> list[str]:
     """The stride-9 layout's own analogue of `render_ascii_map()` -- see
     module docstring's own Phase 571 section. Wired into `describe_map_
     report()` since Phase 627 -- `report/ascii_map.py select_layout_
@@ -1614,11 +1676,16 @@ def render_ascii_map_stride9(state: GameState, kingdom_id: int, *, columns: set[
 
     `columns` (Phase 627): same as `render_ascii_map()`'s own parameter
     of the same name -- restricts rendering to one page's own columns.
+
+    `visible_provinces` (Phase 628): same as `render_ascii_map()`'s own
+    parameter of the same name -- the real per-Kingdom knowledge filter.
     """
 
     provinces = list(state.provinces.values())
     if columns is not None:
         provinces = [p for p in provinces if p.coord.x in columns]
+    if visible_provinces is not None:
+        provinces = [p for p in provinces if p.coord in visible_provinces]
     if not provinces:
         return []
 
@@ -1679,7 +1746,9 @@ def render_cell_stride8(state: GameState, province: ProvinceState, *, viewing_ki
     return [line1, line2, line3, line4]
 
 
-def render_ascii_map_stride8(state: GameState, kingdom_id: int, *, columns: set[int] | None = None) -> list[str]:
+def render_ascii_map_stride8(
+    state: GameState, kingdom_id: int, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None
+) -> list[str]:
     """The stride-8 layout's own analogue of `render_ascii_map()` -- see
     module docstring's own Phase 572 section. Wired into `describe_map_
     report()` since Phase 627 -- `report/ascii_map.py select_layout_
@@ -1687,11 +1756,16 @@ def render_ascii_map_stride8(state: GameState, kingdom_id: int, *, columns: set[
 
     `columns` (Phase 627): same as `render_ascii_map()`'s own parameter
     of the same name -- restricts rendering to one page's own columns.
+
+    `visible_provinces` (Phase 628): same as `render_ascii_map()`'s own
+    parameter of the same name -- the real per-Kingdom knowledge filter.
     """
 
     provinces = list(state.provinces.values())
     if columns is not None:
         provinces = [p for p in provinces if p.coord.x in columns]
+    if visible_provinces is not None:
+        provinces = [p for p in provinces if p.coord in visible_provinces]
     if not provinces:
         return []
 
@@ -1720,7 +1794,9 @@ def render_ascii_map_stride8(state: GameState, kingdom_id: int, *, columns: set[
     return lines
 
 
-def render_ascii_map_dense(state: GameState, kingdom_id: int, *, columns: set[int] | None = None) -> list[str]:
+def render_ascii_map_dense(
+    state: GameState, kingdom_id: int, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None
+) -> list[str]:
     """The dense layout's own analogue of `render_ascii_map()` -- see
     module docstring's own Phase 566 section. Wired into `describe_map_
     report()` since Phase 627 -- `report/ascii_map.py select_layout_
@@ -1728,11 +1804,16 @@ def render_ascii_map_dense(state: GameState, kingdom_id: int, *, columns: set[in
 
     `columns` (Phase 627): same as `render_ascii_map()`'s own parameter
     of the same name -- restricts rendering to one page's own columns.
+
+    `visible_provinces` (Phase 628): same as `render_ascii_map()`'s own
+    parameter of the same name -- the real per-Kingdom knowledge filter.
     """
 
     provinces = list(state.provinces.values())
     if columns is not None:
         provinces = [p for p in provinces if p.coord.x in columns]
+    if visible_provinces is not None:
+        provinces = [p for p in provinces if p.coord in visible_provinces]
     if not provinces:
         return []
 

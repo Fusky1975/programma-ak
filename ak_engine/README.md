@@ -25850,7 +25850,7 @@ follow-up request after the original 431-435 plan shipped.
   impact (docstring-only): 5254 passed, unchanged from Phase 625's own
   count, both before and after.
 
-- **Phase 627 (current)**: wires the ASCII map's own layout-*tier*
+- **Phase 627**: wires the ASCII map's own layout-*tier*
   selection trigger (`describe_map_report()`, deferred since Phase 567
   -- `report/ascii_map.py`'s 6 real cell-width renderers all existed
   and were tested, but nothing ever picked among them) -- shipped as a
@@ -25919,6 +25919,73 @@ follow-up request after the original 431-435 plan shipped.
   before writing new tests (non-breaking check, after that one fixture
   fix): 5254 passed, unchanged from Phase 626's own count. Ran again
   with all new tests: 5265 passed (net +11).
+
+- **Phase 628 (current)**: closes the ASCII map's per-Kingdom
+  province-visibility gap -- `render_ascii_map()` and its 5 sibling
+  tier renderers previously rendered *every* province in `state.
+  provinces`, unfiltered by what the requesting Kingdom actually
+  knows, flagged as a real gap since Phase 624 and left open through
+  Phase 627.
+
+  **A stale docstring claim was found and corrected while re-checking
+  it this session**: `render_ascii_map()`'s own docstring said the map
+  "reuses `describe_provinces_report()`'s own visibility convention:
+  every province this Kingdom currently has any record of at all."
+  Reading `describe_provinces_report()`'s own docstring directly
+  (quoting `REPORTS.PAS Rep_Provs`: `IF powner[px,py] = kng THEN ...`)
+  shows that report actually filters to provinces this Kingdom
+  **owns**, the opposite of "any record of it" -- and an ownership
+  filter can't be right for the map either way, since this module's
+  own byte-verified real samples show other Kingdoms' provinces and
+  `Unowned` provinces printing right alongside this Kingdom's own (the
+  map's own real intro text is "a map of all neighboring lands").
+
+  The real, already-sourced concept fits exactly: `ProvinceState.
+  known_to_kingdom(kingdom_id)` (Phase 623) -- `explored_percent_by_
+  kingdom.get(kingdom_id, 0) >= KNOWN_PROVINCE_MIN_PERCENT` (1%), the
+  same "known" concept `Power.MAP_PROV` already uses. All 6 renderers
+  (`render_ascii_map`/`_dense`/`_stride12`/`_stride10`/`_stride9`/
+  `_stride8`) and `map_region_label()` gained a new `visible_provinces:
+  set[HexCoord] | None = None` keyword parameter -- the exact same
+  `None`-means-unfiltered shape the `columns` parameter already has
+  (Phase 624/627), added as an independent second filter dimension
+  (`columns` restricts by x-coordinate for pagination; `visible_
+  provinces` restricts by exact coordinate, since a known column can
+  still contain an unknown province at a different `y`). `None` keeps
+  every one of `tests/test_ascii_map.py`'s own 75+ pre-existing direct
+  calls to these functions behaving exactly as before -- zero changes
+  needed there.
+
+  `describe_map_report()` (`report/turn_report.py`, the sole
+  production caller) now computes `visible_provinces = {coord for
+  coord, province in state.provinces.items() if province.known_to_
+  kingdom(kingdom_id)}` and derives `known_columns` from that filtered
+  set instead of every province that merely exists in `state` --
+  meaning `select_layout_tier()`/`paginate_known_columns()` now also
+  reflect what the Kingdom actually knows, not just the grid itself.
+  Each page's renderer/`map_region_label()` call now passes `visible_
+  provinces=visible_provinces` alongside the existing `columns=`
+  argument. A freshly generated real game is never left with an empty
+  map at turn 0: `worldgen/generate_new_game.py` (Phase 428) already
+  seeds a King Home's own province at `explored_percent_by_
+  kingdom[owner_kingdom_id] = 100`.
+
+  6 pre-existing `tests/test_turn_report.py` tests needed their
+  fixtures updated (province and shared-helper `explored_percent_by_
+  kingdom` entries added) once filtering went live for real, since
+  none of their `ProvinceState` fixtures previously set that field --
+  confirmed by running the suite before writing any new test and
+  finding exactly these 6 broke, not left as an assumption. Non-
+  breaking check (before any test changes): 5259 passed, 6 failed as
+  expected. Tests: `tests/test_ascii_map.py` gained 7 -- a `visible_
+  provinces`-filter test per renderer plus one for `map_region_label()`,
+  mirroring the existing `columns`-filter tests' own shape exactly.
+  `tests/test_turn_report.py` gained 2 -- a Kingdom that knows only one
+  of two real provinces renders just that one; a Kingdom that *owns* a
+  province but never recorded exploring it still doesn't see it on the
+  map, directly exercising the Phase 69/623 "ownership alone doesn't
+  imply knowledge" rule this design relies on. Full suite after all
+  fixes and new tests: 5274 passed (net +9).
 
 ## Setup
 
