@@ -134,6 +134,24 @@ province without a fight. Lone characters aren't subject to the
 movement-point check either: that's an army property (rulebook [6.2],
 "An army's speed determines how far it can move"), and this project
 doesn't track a separate per-character movement budget.
+
+**Mystic Winds wind-walking notice trigger -- closed, Phase 634.**
+``report/turn_report.py record_move_world_events()`` had left `SAY.PAS`
+``_LWWalk`` (the sibling of the already-wired ``_LFly`` "flew" notice)
+unwired: its own real trigger, ``LeaderState.mystic_winds_active``, is
+a single per-leader flag with no record of *which* move it was set
+during, and the effect lasts until the leader's own next real battle
+(``turn/battle_orchestrator.py fight_battle()``'s own Phase 250
+clearing), not just one move -- so reading the flag's *current* value
+post-turn can miss an earlier move that happened before an intervening
+same-turn battle cleared it. ``MoveExecutionResult.wind_walking`` now
+snapshots the flag at the *start* of each ``execute_move()`` call,
+before that same call's own ``fight_battle()`` (if any) can clear it --
+correct even when the move that triggers the notice is the very one
+that ends the spell. Deliberately not extended to `turn/turn_
+processor.py`'s own multi-attacker LMOVE path (a separate `resolve_
+move()`/`fight_multi_attacker_battle()` route that never calls
+``execute_move()`` at all).
 """
 
 from __future__ import annotations
@@ -295,6 +313,14 @@ class MoveExecutionResult:
     # successful move, the same "assign into the result after the fact"
     # convention the EXPLORE branch already uses for ``discovered_features``.
     sensed_magic_items: list[Treasure] | None = None
+    # Phase 634: SAY.PAS `_LWWalk`'s own real trigger -- was the mover's
+    # own leader under Mystic Winds (`LeaderState.mystic_winds_active`)
+    # at the *start* of this specific `execute_move()` call, snapshotted
+    # before this same call's own `fight_battle()` (if any) can clear it
+    # -- see `report/turn_report.py record_move_world_events()`'s own
+    # Phase 634 addendum for why the caller can't safely reconstruct
+    # this after the fact from the leader's own current flag value.
+    wind_walking: bool = False
 
 
 def _classify_hex_ownership(state: GameState, kingdom_id: int, coord: HexCoord) -> HexOwnershipTier:
@@ -602,6 +628,13 @@ def execute_move(
     else:
         current = state.leaders[leader_id].location
 
+    # Phase 634: snapshotted here, before this same call's own
+    # fight_battle() (below) can clear it -- see MoveExecutionResult.
+    # wind_walking's own docstring for why this must happen now, not
+    # read from the leader after the fact.
+    leader_snapshot = state.leaders.get(leader_id) if leader_id is not None else None
+    wind_walking = leader_snapshot is not None and leader_snapshot.mystic_winds_active
+
     bounds = MapBounds(*NORMAL_MAP_BOUNDS)
     is_hug_coastline_hop = (
         has_naval_hug_coastline
@@ -623,6 +656,7 @@ def execute_move(
                 new_location=None,
                 reached_target=False,
                 stopped_chasing=True,
+                wind_walking=wind_walking,
             )
         actual_target = next_hex
         reached_target = False
@@ -788,4 +822,5 @@ def execute_move(
         reached_target=reached_target,
         stopped_chasing=False,
         conquered=conquered,
+        wind_walking=wind_walking,
     )

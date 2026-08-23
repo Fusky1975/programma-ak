@@ -10690,19 +10690,32 @@ def record_plague_spread_world_events(state: GameState, results: list[PhaseDispa
 # unaffected by this addendum, and never itself GIR-visible.
 #
 # **`_LWWalk` (Mystic Winds wind-walking, the other `S_Army`-tagged
-# movement notice) is deliberately left unwired here.** Its own real
-# trigger, `LeaderState.mystic_winds_active` (Phase 204), is a single
-# per-leader flag with no record of *which* move it was set during --
-# by the time this recorder runs (once, after the whole turn's `results`
-# are complete), the flag reflects whatever the *last* relevant event
-# left it as, not necessarily this specific move, so attributing it to
-# one particular `PhaseDispatchResult` would risk misattributing it to
-# the wrong phase. No real fixture example of this wording was found in
-# any available sample file either, giving no way to validate a design
-# against real output. A real, sourced template with no reliable trigger
-# data -- the same category as the other deferred `S_Army` notices
-# above, not attempted here.
+# movement notice) -- closed, Phase 634.** Its own real trigger,
+# `LeaderState.mystic_winds_active` (Phase 204), is a single per-leader
+# flag with no record of *which* move it was set during, and the real
+# effect lasts until the leader's own next battle (`turn/battle_
+# orchestrator.py fight_battle()`'s own Phase 250 clearing), not just
+# one move -- so reading the flag's own *current* value here, post-turn,
+# could miss an earlier move that happened before a later, same-turn
+# battle cleared it. `turn/move_execution.py MoveExecutionResult.wind_
+# walking` (Phase 634) closes this: snapshotted at the *start* of each
+# `execute_move()` call, before that same call's own `fight_battle()`
+# (if any) can clear it -- correct even when the triggering move is the
+# one that ends the spell. Not extended to `turn/turn_processor.py`'s
+# own multi-attacker LMOVE path (a separate `resolve_move()`/
+# `fight_multi_attacker_battle()` route that never calls
+# `execute_move()` at all) -- a `MultiAttackerMoveResult` simply has no
+# `wind_walking` attribute, so `getattr(..., False)` below cleanly
+# falls through to the ordinary overflight check for that path,
+# matching this project's own "documented narrower scope" convention.
 _FLY_MOVE_TEMPLATE = "< flew/Rrode_>_flying_armies into/Rover_to @."
+
+# `SAY.PAS` line 470, verbatim: `_LWWalk: Say('< rode_the_Mystic_Winds/
+# Rwind-walked into/Rover @.',S_Army)` -- the same real-transcription
+# standard `_FLY_MOVE_TEMPLATE` above was already shipped under (no
+# real turn-report sample confirms either one's exact wording; both are
+# direct Pascal transcriptions, not fixture-derived).
+_WIND_WALK_MOVE_TEMPLATE = "< rode_the_Mystic_Winds/Rwind-walked into/Rover @."
 
 
 def render_fly_move_world_event(character_name: str, province_name: str, rng: random.Random) -> str:
@@ -10717,29 +10730,46 @@ def render_fly_move_world_event(character_name: str, province_name: str, rng: ra
     return render(_FLY_MOVE_TEMPLATE, values, rng=rng)
 
 
+def render_wind_walk_move_world_event(character_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders `SAY.PAS` `_LWWalk`'s own notice for a Move made under
+    Mystic Winds -- see the module-level comment above `_FLY_MOVE_
+    TEMPLATE` for the real trigger (`MoveExecutionResult.wind_walking`)
+    and why `record_move_world_events()` checks it ahead of the ordinary
+    overflight-army heuristic.
+    """
+
+    values = {"<": character_name, "@": province_name}
+    return render(_WIND_WALK_MOVE_TEMPLATE, values, rng=rng)
+
+
 def record_move_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
     """Populates ``state.world_events`` (Phase 257) from every Move whose
-    entire arriving force is overflight-capable -- the fourth real event
-    *source* wired for GENERAL INTELLIGENCE REPORT, alongside
-    ``record_battle_world_events()``/``record_spell_world_events()``/
-    ``record_plague_spread_world_events()``. Same "call once per turn,
-    before any ``compose_letter_report()`` call" contract as those three.
+    mover was under Mystic Winds (Phase 634) or whose entire arriving
+    force is overflight-capable -- the fourth real event *source* wired
+    for GENERAL INTELLIGENCE REPORT, alongside ``record_battle_world_
+    events()``/``record_spell_world_events()``/``record_plague_spread_
+    world_events()``. Same "call once per turn, before any ``compose_
+    letter_report()`` call" contract as those three.
 
-    Duck-types ``result.moved``/``result.new_location`` the same way
-    ``_battle_reports_from_results()`` duck-types battle shapes --
-    ``MoveExecutionResult`` and ``turn/turn_processor.py
-    MultiAttackerMoveResult`` both carry these two fields under the same
-    names. Reads each mover's own armies from ``GameState`` *after* the
-    whole turn has resolved (``state.armies_commanded_by(entry.leader_id)``,
-    filtered to ``new_location``) rather than from the move result itself
-    (neither result type stores which army ids moved) -- safe, since a
-    later phase reassigning command (Leave/Pick_Up) is a real, if rare,
-    possibility this reads around simply by asking "who commands what,
-    right now" rather than "what did this one phase's own army list say."
+    Duck-types ``result.moved``/``result.new_location``/``result.wind_
+    walking`` the same way ``_battle_reports_from_results()`` duck-types
+    battle shapes -- ``MoveExecutionResult`` and ``turn/turn_processor.py
+    MultiAttackerMoveResult`` both carry ``moved``/``new_location`` under
+    the same names, but only ``MoveExecutionResult`` has ``wind_
+    walking`` (see module-level comment for why that's the correct,
+    documented scope, not an oversight). Reads each mover's own armies
+    from ``GameState`` *after* the whole turn has resolved (``state.
+    armies_commanded_by(entry.leader_id)``, filtered to ``new_location``)
+    rather than from the move result itself (neither result type stores
+    which army ids moved) -- safe, since a later phase reassigning
+    command (Leave/Pick_Up) is a real, if rare, possibility this reads
+    around simply by asking "who commands what, right now" rather than
+    "what did this one phase's own army list say."
 
-    A mover with no armies at ``new_location``, or whose armies aren't
-    *all* overflight-capable, is skipped entirely -- no event, matching
-    the ordinary march staying private (see module-level comment).
+    A mover with no armies at ``new_location``, who wasn't wind-walking,
+    and whose armies aren't *all* overflight-capable, is skipped
+    entirely -- no event, matching the ordinary march staying private
+    (see module-level comment).
     """
 
     for entry in results:
@@ -10749,14 +10779,19 @@ def record_move_world_events(state: GameState, results: list[PhaseDispatchResult
         if not moved or new_location is None:
             continue
         armies = [army for army in state.armies_commanded_by(entry.leader_id) if army.location == new_location]
-        if not armies or not all(is_overflight_unit(army.army_type) for army in armies):
+        if not armies:
             continue
         leader = state.leaders.get(entry.leader_id)
         if leader is None:
             continue
         province_name = _province_label(state, new_location)
         prefix = _season_phrase_for_phase_label(entry.phase_label)
-        line = render_fly_move_world_event(leader.name, province_name, rng)
+        if getattr(result, "wind_walking", False):
+            line = render_wind_walk_move_world_event(leader.name, province_name, rng)
+        elif all(is_overflight_unit(army.army_type) for army in armies):
+            line = render_fly_move_world_event(leader.name, province_name, rng)
+        else:
+            continue
         state.record_world_event(new_location, [prefix + line])
 
 
@@ -10867,8 +10902,8 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
     module-level comment for the corrected "`S_Army` or higher, not
     `S_Comm`-only" GIR-visibility threshold this discovery required, the
     documented overflight-army heuristic that decides "flew" vs. the
-    ordinary private march, and why Mystic Winds wind-walking's own
-    matching `S_Army` notice stays unwired), and uncontested conquest
+    ordinary private march, and (Phase 634) Mystic Winds wind-walking's
+    own matching `S_Army` notice), and uncontested conquest
     (`record_uncontested_conquest_world_events()`, Phase 410 -- see that
     function's own docstring for why nothing fed
     `render_uncontested_conquest()`'s already-built CONQ.X template

@@ -437,6 +437,51 @@ def test_move_triggers_battle_and_conquest_relocates_the_attacker():
     assert result.battle_report is not None
     assert result.battle_report.conquered is True
     assert result.moved is True
+
+
+# -- Phase 634: MoveExecutionResult.wind_walking (Mystic Winds) ------------
+
+
+def test_execute_move_wind_walking_true_when_movers_leader_is_under_mystic_winds():
+    state = base_state()
+    state.add_leader(LeaderState(1, 1, "Mage", ORIGIN))
+    state.leaders[1].mystic_winds_active = True
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1)
+
+    assert result.wind_walking is True
+
+
+def test_execute_move_wind_walking_false_without_mystic_winds():
+    state = base_state()
+    state.add_leader(LeaderState(1, 1, "Mage", ORIGIN))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1)
+
+    assert result.wind_walking is False
+
+
+def test_execute_move_wind_walking_survives_a_battle_the_same_move_triggers():
+    # Mirrors test_move_triggers_battle_and_conquest_relocates_the_attacker's
+    # own scenario exactly, but the mover's own leader is under Mystic
+    # Winds -- fight_battle() (called from inside this same execute_move()
+    # call) clears LeaderState.mystic_winds_active once the battle
+    # resolves, so if the flag were read *after* that call instead of
+    # snapshotted before it, this would wrongly come back False.
+    state = base_state()
+    state.add_leader(LeaderState(1, 1, "Mage", ORIGIN))
+    state.leaders[1].mystic_winds_active = True
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))
+    state.armies[101].army_type = ArmyType.HVY_CAVALRY
+    state.armies[101].quality = Quality.ELITE
+    state.armies[101].commanded_by = 1  # so fight_battle() sees leader 1 as genuinely involved
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99])
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=rng)
+
+    assert result.battle_report is not None
+    assert result.wind_walking is True
+    assert state.leaders[1].mystic_winds_active is False  # cleared by the battle, as expected
     assert result.new_location == TARGET
     assert state.armies[101].location == TARGET
     assert state.provinces[TARGET].owner_kingdom_id == 1

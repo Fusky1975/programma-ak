@@ -116,6 +116,7 @@ from ak_engine.report.turn_report import (
     render_fly_move_world_event,
     render_illus_terrain_world_event,
     render_plague_world_event,
+    render_wind_walk_move_world_event,
     render_already_allied,
     render_ally_proposed,
     render_ally_refused,
@@ -8745,13 +8746,14 @@ def test_render_fly_move_world_event_renders_the_lfly_template():
     assert line == "Tlazolteotl flew into Waterford."
 
 
-def _fake_move_result(moved: bool, new_location: HexCoord | None):
+def _fake_move_result(moved: bool, new_location: HexCoord | None, *, wind_walking: bool = False):
     class _FakeMoveResult:
         pass
 
     result = _FakeMoveResult()
     result.moved = moved
     result.new_location = new_location
+    result.wind_walking = wind_walking
     return result
 
 
@@ -8820,6 +8822,56 @@ def test_record_move_world_events_skips_a_result_that_did_not_move():
     record_move_world_events(state, results, ScriptedRandom([]))
 
     assert state.world_events == []
+
+
+def test_render_wind_walk_move_world_event_renders_the_lwwalk_template():
+    rng = ScriptedRandom([0.1, 0.1])
+
+    line = render_wind_walk_move_world_event("Tlazolteotl", "Waterford", rng)
+
+    assert line == "Tlazolteotl rode the Mystic Winds into Waterford."
+
+
+def test_record_move_world_events_records_a_wind_walk_event_for_an_ordinary_ground_army():
+    # Phase 634: wind_walking=True renders _LWWalk even for an ordinary,
+    # non-overflight army -- the whole point of the spell is moving
+    # ground units as if they were air units.
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Tlazolteotl", battle_coord))
+    state.add_army(ArmyState(10, 1, ArmyType.BOWMEN, Quality.AVERAGE, battle_coord, commanded_by=1))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_move_result(True, battle_coord, wind_walking=True), error=None,
+        )
+    ]
+
+    record_move_world_events(state, results, ScriptedRandom([0.1, 0.1]))
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].lines == ["In late summer, Tlazolteotl rode the Mystic Winds into Border Fort."]
+
+
+def test_record_move_world_events_wind_walking_takes_priority_over_the_overflight_check():
+    # A wind-walking mover whose own armies also happen to be natively
+    # overflight-type still gets the more specific magical-effect
+    # notice, not the passive army-composition one -- a documented,
+    # unsourced tie-break (see module-level comment), not an accident.
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Tlazolteotl", battle_coord))
+    state.add_army(ArmyState(10, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, battle_coord, commanded_by=1))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_move_result(True, battle_coord, wind_walking=True), error=None,
+        )
+    ]
+
+    record_move_world_events(state, results, ScriptedRandom([0.1, 0.1]))
+
+    assert len(state.world_events) == 1
+    assert "rode the Mystic Winds" in state.world_events[0].lines[0]
+    assert "flew" not in state.world_events[0].lines[0]
 
 
 # -- Phase 410: record_uncontested_conquest_world_events() --------------

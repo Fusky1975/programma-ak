@@ -26212,7 +26212,7 @@ follow-up request after the original 431-435 plan shipped.
   through the real LMOVE hex-number encoding) does NOT preempt the
   following phase. Full suite: 5289 -> 5291 (net +2).
 
-- **Phase 633 (current)**: closes the army-scoped Royal Titles'
+- **Phase 633**: closes the army-scoped Royal Titles'
   (`AIR_FORCE`/`PRAETOR`/`FLAGSHIP`) real remaining gaps -- Victory
   Point wiring and the same tier-1 stickiness tie-break the 47
   leader-scoped offices already have.
@@ -26279,6 +26279,64 @@ follow-up request after the original 431-435 plan shipped.
   (rulebook [4.32]) a monstrous type would trigger via the King's own
   substitution role, unrelated to what the test is about (caught by
   running it, not assumed). Full suite: 5291 -> 5300 (net +9).
+
+- **Phase 634 (current)**: closes `SAY.PAS`'s own `_LWWalk` (Mystic
+  Winds "wind-walked" GENERAL INTELLIGENCE REPORT notice), the sibling
+  of the already-wired `_LFly` "flew" notice -- `report/turn_report.py`
+  had explicitly deferred it: "a single per-leader flag with no record
+  of *which* move it was set during... attributing it to one particular
+  `PhaseDispatchResult` would risk misattributing it to the wrong
+  phase."
+
+  **Re-read directly from `HostAK/TP/SAY.PAS` line 470**: the real
+  template (`Say('< rode_the_Mystic_Winds/Rwind-walked into/Rover
+  @.',S_Army)`) is fully sourced, the same direct-transcription
+  standard the already-shipped `_LFly` template was built under -- the
+  "no real fixture confirms this wording" caveat in the deferred note
+  was about real-sample validation, not about the template itself,
+  which was never actually missing. **The real trigger risk is
+  narrower than the deferred note framed it**, once re-read against
+  `turn/cast_execution.py`'s own Mystic Winds addendum: the effect
+  lasts until the leader's own next real battle (`turn/battle_
+  orchestrator.py fight_battle()`'s own Phase 250 clearing), not one
+  move only -- so *every* Move made while the flag is set should
+  render this notice. The genuine risk is a wind-walking leader moving
+  in an early phase, then getting into a battle in a *later* phase of
+  the *same* turn (clearing the flag) before `record_move_world_
+  events()` runs post-turn and reads a now-stale `False`.
+
+  Fix: `turn/move_execution.py MoveExecutionResult` gains `wind_
+  walking: bool = False`, computed at the *start* of `execute_move()`
+  (before that same call's own internal `fight_battle()`, if any, can
+  clear it) -- correct even when the triggering move is the very one
+  that ends the spell (the rulebook covers getting *into* the fight,
+  not surviving it). `report/turn_report.py record_move_world_events()`
+  now checks this field first, ahead of the existing overflight-army
+  heuristic (`getattr(result, "wind_walking", False)`, matching how
+  the recorder already duck-types other result shapes) -- a wind-
+  walking mover renders `_LWWalk` regardless of army composition
+  (including one whose armies also happen to be natively overflight-
+  type: the more specific magical-effect check wins, a documented,
+  unsourced tie-break, since no source resolves which of the two
+  notices the compiled game would actually pick in that redundant
+  case). New `render_wind_walk_move_world_event()`/`_WIND_WALK_MOVE_
+  TEMPLATE` mirror `render_fly_move_world_event()`/`_FLY_MOVE_TEMPLATE`
+  exactly. Deliberately **not** extended to `turn/turn_processor.py`'s
+  own multi-attacker LMOVE path (`_dispatch_multi_attacker_lmove()`/
+  `MultiAttackerMoveResult`), a separate `resolve_move()`/`fight_
+  multi_attacker_battle()` route that never calls `execute_move()` at
+  all -- `getattr(..., False)` cleanly falls through to the ordinary
+  overflight check there, same as before this phase.
+
+  Tests: `tests/test_move_execution.py` gained 3 -- `wind_walking` set
+  when the mover's own leader is under Mystic Winds, unset otherwise,
+  and (the scenario the original deferred note worried about) still
+  `True` even when that same `execute_move()` call's own battle clears
+  the leader's real flag mid-call. `tests/test_turn_report.py` gained
+  3 -- the template's own rendered text, a wind-walking notice for an
+  ordinary non-overflight army (the whole point of the spell), and the
+  documented priority over the overflight check when both conditions
+  apply. Full suite: 5300 -> 5306 (net +6).
 
 ## Setup
 
