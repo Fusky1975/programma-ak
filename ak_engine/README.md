@@ -26280,7 +26280,7 @@ follow-up request after the original 431-435 plan shipped.
   substitution role, unrelated to what the test is about (caught by
   running it, not assumed). Full suite: 5291 -> 5300 (net +9).
 
-- **Phase 634 (current)**: closes `SAY.PAS`'s own `_LWWalk` (Mystic
+- **Phase 634**: closes `SAY.PAS`'s own `_LWWalk` (Mystic
   Winds "wind-walked" GENERAL INTELLIGENCE REPORT notice), the sibling
   of the already-wired `_LFly` "flew" notice -- `report/turn_report.py`
   had explicitly deferred it: "a single per-leader flag with no record
@@ -26337,6 +26337,45 @@ follow-up request after the original 431-435 plan shipped.
   ordinary non-overflight army (the whole point of the spell), and the
   documented priority over the overflight check when both conditions
   apply. Full suite: 5300 -> 5306 (net +6).
+
+- **Phase 635 (current)**: closes the CHARACTERS report's real "M/F"
+  Gender column. `describe_characters_report()`'s own Phase 432
+  docstring claimed "no `Gender()` concept or field exists anywhere in
+  this project" -- **stale even when written**, a 4th recurrence of
+  this project's own "stale known-gap claims" pattern this session:
+  `models/sex.py Sex`/`LeaderState.sex` have existed since Phase 260
+  (predating Phase 432), and this same composer already imports `Sex`
+  for an unrelated NEW_SEX power message, one screen away from the
+  stale claim.
+
+  Fix: the previously-hardcoded 3 literal blank spaces in the fixed-
+  width Line 1 format string are now `f"{sex_label:>3}"`, `sex_label =
+  leader.sex.value if leader.sex is not None else ""` -- `Sex.MALE.
+  value`/`Sex.FEMALE.value` are already the literal `"M"`/`"F"` column
+  letters, so no new mapping table was needed. Total column width is
+  unchanged (`""` right-justified in 3 still renders 3 blank spaces),
+  confirmed by the full non-breaking suite run passing unmodified
+  before any new test was added.
+
+  **A second real Gender data source exists but is deliberately not
+  bridged here**: `parser/gw_world.py GWKingExtension.is_male` (Phase
+  320/380) parses a King's own real Gender byte straight from a `GW*`
+  save file, but nothing in this project bridges `GWKingExtension`
+  records into `GameState`/`LeaderState` at all yet (confirmed: grepped
+  every caller outside `parser/gw_world_writer.py`'s own round-trip
+  serializer -- none). Building that bridge would also need to solve
+  associating each extension record with the right King (the parser
+  discards the name it used for detection) -- a real, separate, larger
+  follow-up, not attempted here. `LeaderState.sex` currently has
+  exactly one real writer, `turn/succession.py create_king()` (a Royal
+  Heir's own sex chosen at succession) -- every other leader reads
+  blank, the field's own established "no data, don't guess" convention.
+
+  Tests: `tests/test_turn_report.py` gained 2 -- Male and Female both
+  render at the exact real column position with the exact real column
+  width preserved (computed directly from the running composer, not
+  hand-derived, to avoid a spacing miscount). Full suite: 5306 -> 5308
+  (net +2).
 
 ## Setup
 

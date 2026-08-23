@@ -9206,10 +9206,29 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     width 6 (`ALIGNMENT_ABBREVIATION`, `models/alignment.py`, sourced
     from `CTBOTH.PAS outab`); temper abbreviation right-justified width
     6 (`TEMPER_ABBREVIATION`, `models/temper.py`, sourced from `CTBOTH.
-    PAS tempab`); a blank width-3 "M/F" field (**Gender confirmed
-    absent** -- no `Gender()` concept or field exists anywhere in this
-    project; the real column position is kept, but left blank rather
-    than guessed); race name right-justified width 7 (`LeaderState.race`
+    PAS tempab`); `Sex.value` (`M`/`F`) right-justified width 3 (**Phase
+    635 correction**: this composer's own earlier claim that "no
+    `Gender()` concept or field exists anywhere in this project" was
+    stale even when written -- `models/sex.py Sex`/`LeaderState.sex`
+    have existed since Phase 260, this composer's own `Sex` import at
+    the top of this module already being used for an unrelated NEW_SEX
+    power message. `LeaderState.sex` currently has exactly one real
+    writer, `turn/succession.py create_king()` (a Royal Heir's sex is
+    chosen at succession, confirmed with the user, `models/sex.py`'s own
+    docstring); every other leader (anyone not created via succession
+    during this project's own simulated turns) reads `None` and renders
+    blank here, the same "no data, don't guess" convention this column
+    already used. **A second, real Gender data source exists but is
+    deliberately not bridged here**: `parser/gw_world.py GWKingExtension.
+    is_male` (Phase 320/380) parses a King's own real Gender byte
+    straight from a `GW*` save file, but nothing in this project bridges
+    `GWKingExtension` records into `GameState`/`LeaderState` at all yet
+    (confirmed: grepped every caller outside `parser/gw_world_writer.py`'s
+    own round-trip serializer -- none) -- building that bridge would also
+    need to solve associating each extension record with the right King
+    (the parser discards the name it used for detection), a real,
+    separate, larger follow-up this phase doesn't attempt); race name
+    right-justified width 7 (`LeaderState.race`
     if set, else the kingdom's own `KingdomState.race` -- `LeaderState.
     race`'s own docstring confirms this fallback is the real, general-
     case behavior; only a Valhalla visitor keeps an independent race);
@@ -9327,6 +9346,7 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         loc = province_code(leader.location)
         alignment_label = ALIGNMENT_ABBREVIATION[leader.alignment] if leader.alignment is not None else _CHARACTERS_UNKNOWN_ABBREVIATION
         temper_label = TEMPER_ABBREVIATION[leader.temper] if leader.temper is not None else _CHARACTERS_UNKNOWN_ABBREVIATION
+        sex_label = leader.sex.value if leader.sex is not None else ""
         race = leader.race if leader.race is not None else kingdom.race
         race_label = RACE_NAME[race]
         pay = leader_pay(state, leader, king)
@@ -9341,7 +9361,7 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         # ever set on a King's own slot (GameState.remove_leader()).
         display_name = "Royal Heir" if state.turn_number > 0 and is_unfinalized_royal_heir(leader) else leader.name
         lines.append(
-            f"{display_name:<14}{loc:>4}{alignment_label:>6}{temper_label:>6}   {race_label:>7}{pay:>3} {skill_row}"
+            f"{display_name:<14}{loc:>4}{alignment_label:>6}{temper_label:>6}{sex_label:>3}{race_label:>7}{pay:>3} {skill_row}"
         )
 
         skills = leader.skills

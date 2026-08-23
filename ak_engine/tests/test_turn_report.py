@@ -6764,6 +6764,41 @@ def test_describe_characters_report_uses_recorded_alignment_temper_and_race():
     assert lines[7] == f"Aldric           0  Good Brave       Elf  1 {_NO_SKILLS_LINE}"
 
 
+def test_describe_characters_report_uses_recorded_sex():
+    # Phase 635: the real "M/F" column, correcting this composer's own
+    # Phase 432 "no Gender() concept or field exists" claim -- stale
+    # even when written, since LeaderState.sex has existed since Phase
+    # 260. Blank (not "Unkn") when unset, the field's own established
+    # "no data, don't guess" convention.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    leader = LeaderState(1, 1, "Aldric", HexCoord(0, 0))
+    leader.alignment = Alignment.GOOD
+    leader.temper = Temper.BRAVE
+    leader.race = Race.ELVEN
+    leader.sex = Sex.MALE
+    state.add_leader(leader)
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[7] == f"Aldric           0  Good Brave  M    Elf  1 {_NO_SKILLS_LINE}"
+
+
+def test_describe_characters_report_female_sex():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    leader = LeaderState(1, 1, "Aldric", HexCoord(0, 0))
+    leader.alignment = Alignment.GOOD
+    leader.temper = Temper.BRAVE
+    leader.race = Race.ELVEN
+    leader.sex = Sex.FEMALE
+    state.add_leader(leader)
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines[7] == f"Aldric           0  Good Brave  F    Elf  1 {_NO_SKILLS_LINE}"
+
+
 def test_describe_characters_report_renders_recorded_skill_levels():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
