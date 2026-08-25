@@ -26338,7 +26338,7 @@ follow-up request after the original 431-435 plan shipped.
   documented priority over the overflight check when both conditions
   apply. Full suite: 5300 -> 5306 (net +6).
 
-- **Phase 635 (current)**: closes the CHARACTERS report's real "M/F"
+- **Phase 635**: closes the CHARACTERS report's real "M/F"
   Gender column. `describe_characters_report()`'s own Phase 432
   docstring claimed "no `Gender()` concept or field exists anywhere in
   this project" -- **stale even when written**, a 4th recurrence of
@@ -26376,6 +26376,71 @@ follow-up request after the original 431-435 plan shipped.
   width preserved (computed directly from the running composer, not
   hand-derived, to avoid a spacing miscount). Full suite: 5306 -> 5308
   (net +2).
+
+- **Phase 636 (current)**: `Ldr_Near`/`Known_Loc` primitives (`RUMORS.
+  PAS`) for the CHARACTERS report's still-unbuilt "impulse 2"/"impulse
+  3" passes -- **not wired into the report yet**, primitives only.
+
+  The user supplied `LDRNEAR.md` (Desktop/PROGRAMMA AK/LDRNEAR.md,
+  2026-08-25), a disassembly-level reverse-engineering report (real
+  `AKGEN.EXE`/`AKE.EXE` machine-instruction confirmation plus a real
+  `GW3__T2` corpus check) resolving `Ldr_Near`/`LKing`/`Dist`/`LDist` --
+  the "no source" blocker that had stopped an earlier impulse-2/3
+  investigation this session. New `turn/movement.py hex_distance_
+  wrapped()` (the real `Dist()` formula: offset hex distance with
+  horizontal cylindrical wraparound, the same wraparound Phase 624
+  already confirmed for the ASCII map, applied unconditionally since
+  this project doesn't model the Pascal `Europe_V` game-type exception
+  anywhere) and new `turn/leader_visibility.py leader_near()`/`leader_
+  location_known_to_kingdom()` (`Ldr_Near`/the `Known_Loc(ln,kng,0,
+  advrep=true)` reduction the CHARACTERS report actually calls).
+
+  Two real simplifications fall out of already-established facts
+  rather than new guesses: `Ldr_Near`'s own `LKing(ldr)=kng` maps
+  directly onto the already-existing `LeaderState.kingdom_id`, no new
+  concept needed; and `Known_Loc`'s own `ISpy_Cover`-based `cover_gate`
+  is unconditionally `True` in the standard, non-Moderator engine (this
+  session's own earlier `DEF2.PAS` grep: the only two `cover[ldr]`
+  setters are both inside `{$IFDEF Moderator}` blocks), so `orig_turn`/
+  `begvalkng` never actually matter for that half of the formula.
+  `Ldr_Near` has no `Dead` filter at all (confirmed directly in
+  `LDRNEAR.md`) -- `leader_near()` scans both `state.leaders` and
+  `state.dead_leaders` accordingly.
+
+  `leader_location_known_to_kingdom()` still takes `orig_turn` as an
+  explicit caller-supplied parameter rather than resolving it
+  internally -- the real Pascal reads it from a global `Known_Loc`
+  itself never derives, and its exact ak_engine mapping (plausibly
+  `GameState.turn_number`, not confirmed) is deliberately deferred to
+  whichever future phase wires this into the report. That future phase
+  also still needs `Was_Clairved`/`Desc_Stranger` (`REPORTS.PAS`'s own
+  prose-format rendering for these two passes -- an entirely different
+  shape from the fixed-width table Phase 432 built for impulse 1) and
+  `Known_Merc`'s own separate `radius=1` use of `leader_near()`
+  (mercenary-army visibility, a different report), neither touched
+  here.
+
+  **A real, unrelated stale-claim correction** (5th recurrence this
+  session, see `feedback_stale_known_gap_claims` project memory):
+  `describe_characters_report()`'s own docstring named "the Priest
+  office itself" as an unmodeled blocker for impulse 2/3 -- false even
+  when written, `turn/office_holder.py Office.PRIEST` has been fully
+  resolvable via `resolve_office_holder()` since well before Phase 432.
+  Docstring-only fix, no behavior change.
+
+  Tests: new `tests/test_leader_visibility.py` (17 tests) -- `hex_
+  distance_wrapped()` against `LDRNEAR.md`'s own worked vectors (same
+  cell, the six even-row neighbors, a non-adjacent diagonal, horizontal
+  wraparound); `leader_near()` (same-coord vs. one-hex-away radius
+  gating, a different kingdom's leader ignored, a kingdomless Hero
+  ignored, a **dead** loyal leader still counting at radius 0, no
+  loyal leader anywhere); `leader_location_known_to_kingdom()` (the
+  viewer's own leader is never a stranger, a King on his own throne is
+  never "found" via the leader-proximity path, the `powner = kng`
+  path needs no nearby leader, the mod-5 gate proven real by toggling
+  it open/closed with a loyal leader otherwise present, a dead target
+  still resolves via `dead_leaders`, an unknown target id returns
+  `False`). Full suite: 5308 -> 5325 (net +17).
 
 ## Setup
 

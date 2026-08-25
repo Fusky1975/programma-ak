@@ -9185,11 +9185,20 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     passes ("impulse 2": wandering Heroes/other Kings' leaders this
     kingdom happens to know the location of; "impulse 3": leaders a
     Priest-office-holding King can locate via `Was_Clairved`/religious
-    contact) both need data this project doesn't model at all --
-    `Known_Loc` (per-kingdom "have I seen this leader" tracking) and the
-    Priest office itself (the same IMPERIAL OFFICE REPORT gap
-    `compose_letter_report()`'s own docstring already names) -- so
-    neither pass is attempted here.
+    contact) both need data this project doesn't fully model yet.
+
+    **Phase 636 correction**: an earlier version of this docstring also
+    named "the Priest office itself" as an unmodeled gap here -- false
+    even when written: `turn/office_holder.py Office.PRIEST` has been a
+    fully live, resolvable office (`resolve_office_holder(state, Office.
+    PRIEST)`) since well before this project reached Phase 432 (see
+    [[feedback_stale_known_gap_claims]]). The real remaining blockers
+    are `Known_Loc` (`turn/leader_visibility.py leader_location_known_
+    to_kingdom()`, Phase 636 -- built as a pure primitive, but its own
+    `orig_turn` parameter has no confirmed ak_engine mapping yet) and
+    `Was_Clairved`/`Desc_Stranger` (`REPORTS.PAS`'s own prose-format
+    rendering for these two passes, entirely unmodeled) -- so neither
+    pass is attempted here.
 
     **Phase 432 rewrites this composer to the real fixed-width table**
     (the user's own explicit "tutto il report, pixel-perfect" scope

@@ -198,6 +198,34 @@ def hex_distance(a: HexCoord, b: HexCoord) -> int:
     return max(abs(ax - bx), abs(ay - by), abs(az - bz))
 
 
+_DEFAULT_BOARD_WIDTH = 18
+# Duplicated from ``worldgen/place_map.py DEFAULT_WIDTH`` (same value,
+# Phase 624) rather than imported: that module already imports
+# ``neighbors``/``MapBounds`` from *this* one, so an import the other
+# way would be circular.
+
+
+def hex_distance_wrapped(a: HexCoord, b: HexCoord, board_width: int = _DEFAULT_BOARD_WIDTH) -> int:
+    """``Dist(x1,y1,x2,y2)`` -- LDRNEAR.md section 5.1 (Phase 636), the
+    real offset-hex distance formula used by ``Ldr_Near``/``Known_Loc``
+    (``turn/leader_visibility.py``), independent of ``hex_distance()``
+    above (which is NOT wraparound-aware and stays that way -- still
+    only used by Pursue/Trail's own catch-up formula, a separate, out-
+    of-scope inconsistency noted since Phase 624).
+
+    Applies the same horizontal cylindrical wraparound Phase 624 already
+    confirmed for the ASCII map (column ``board_width - 1`` borders
+    column ``0``) unconditionally -- the real Pascal only skips it for
+    the ``Europe_V`` game-type variant, which ``ak_engine`` doesn't
+    model anywhere, so there is no non-wrapping case to preserve.
+    """
+
+    dy = abs(b.y - a.y)
+    dx2 = abs((2 * b.x + (b.y & 1)) - (2 * a.x + (a.y & 1)))
+    dx2 = min(dx2, 2 * board_width - dx2)
+    return dy if dy >= dx2 else dy + abs(dx2 - dy) // 2
+
+
 class HexOwnershipTier(IntEnum):
     """Rulebook [3.1]'s own tie-break order (quoted in full) for a
     non-adjacent Move's chase step, when two candidate hexes are equally
