@@ -26377,7 +26377,7 @@ follow-up request after the original 431-435 plan shipped.
   hand-derived, to avoid a spacing miscount). Full suite: 5306 -> 5308
   (net +2).
 
-- **Phase 636 (current)**: `Ldr_Near`/`Known_Loc` primitives (`RUMORS.
+- **Phase 636**: `Ldr_Near`/`Known_Loc` primitives (`RUMORS.
   PAS`) for the CHARACTERS report's still-unbuilt "impulse 2"/"impulse
   3" passes -- **not wired into the report yet**, primitives only.
 
@@ -26441,6 +26441,64 @@ follow-up request after the original 431-435 plan shipped.
   it open/closed with a loyal leader otherwise present, a dead target
   still resolves via `dead_leaders`, an unknown target id returns
   `False`). Full suite: 5308 -> 5325 (net +17).
+
+- **Phase 637 (current)**: `Was_Clairved` -- the CHARACTERS report's
+  "impulse 1" pass is now modeled in full, not just "a kingdom's own
+  leaders."
+
+  Re-reading `REPORTS.PAS Rep_Leaders` directly (`Dispable`'s own
+  impulse-1 branch: `(LKing(ldr) = kng) or (Was_Clairved)`) showed a
+  leader successfully targeted by an Enhanced-Clairvoyance-capable cast
+  from this kingdom also gets the exact same full fixed-width row as an
+  owned leader -- no new prose pipeline needed (`Was_Clairved` targets
+  never reach `Desc_Stranger`, the separate prose path impulse 2/3
+  still need). `AdvancedAbility.ENHANCED_CLAIRVOYANCE` (`models/
+  advanced_ability.py`, ordinal 79) is confirmed to be `CTBOTH.PAS
+  Expand_Clair` (ordinal 48 there -- a name-only match at first, but
+  its own effect text, "gives the target's characteristic lines that
+  are also printed out on your turn report," is a verbatim match for
+  what `Was_Clairved` does).
+
+  New `LeaderState.clairvoyance_cast_target: int | None` (`models/
+  game_state.py`) -- the caster's own most-recently-targeted leader id,
+  mirroring the real `lspec[l2]`'s single packed `clobj` value, written
+  unconditionally by `turn/cast_execution.py _execute_clairvoyance()`
+  alongside the existing (Phase 193) `target.clairvoyance_watchers.add(
+  kingdom_id)` write -- a *different*, separate field from `clairvoyance_
+  watchers` (which only records watching kingdoms, not which specific
+  leader cast it, and whose own real surfacing mechanism was separately
+  confirmed dead code, Phase 408). New `report/turn_report.py
+  _was_clairved()` checks `AdvancedAbility.ENHANCED_CLAIRVOYANCE` at
+  read time, exactly mirroring how the real `Has_SA` check is separate
+  from the `lspec` write.
+
+  `describe_characters_report()` now merges `owned` (unchanged) with a
+  new `clairved` list before rendering. Two real correctness fixes made
+  while tracing a foreign leader through the existing full-row renderer
+  for the first time: `king` (used by every row's `leader_pay()` call)
+  is resolved from `owned` alone, strictly *before* the merge, so a
+  Was_Clairved leader who happens to be a foreign King is never mistaken
+  for this kingdom's own King; and the `race` fallback for a leader with
+  no explicit `LeaderState.race` now falls back to *that leader's own*
+  kingdom's race, not the viewer's (`kingdom.race`) -- the old fallback
+  was only ever exercised by an owned leader before, where the two
+  values happen to coincide, so this was a latent bug this phase's own
+  new code path is the first to actually reach. `turn/hire_pay.py
+  required_pay()` (`leader_pay()`'s own real formula) needed no change:
+  it already computes "cost for `king`'s kingdom to hire this leader"
+  generically from the two `LeaderState`s alone, matching the real
+  `LCost(ldr,kng)`'s own unconditional use for every impulse-1 row.
+
+  Tests: `tests/test_cast_execution.py` gained 2 (`clairvoyance_cast_
+  target` set on a successful cast; a second cast overwrites the first).
+  `tests/test_turn_report.py` gained 4 -- a clairvoyance cast without
+  Enhanced Clairvoyance stays invisible (non-regression, proves the
+  ability gate is real); a Was_Clairved leader renders a full row;
+  a Was_Clairved foreign King doesn't corrupt another row's Pay column
+  (compares the rendered row with vs. without the link, rather than a
+  hand-typed expected string, avoiding a spacing miscount -- see Phase
+  635's own precedent); the race-fallback fix renders the target's own
+  kingdom's race. Full suite: 5325 -> 5331 (net +6).
 
 ## Setup
 

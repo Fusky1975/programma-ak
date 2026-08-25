@@ -2573,6 +2573,18 @@ def _execute_clairvoyance(
     Crystal Ball's own extra payload, ``CastExecutionResult.
     clairvoyance_target_offices`` -- "it will also list all offices and
     titles held by the kingdom of the spied-upon character."
+
+    **Phase 637 addendum -- ``Was_Clairved``'s own CHARACTERS-report
+    reveal** (``REPORTS.PAS Rep_Leaders``, a *different* real mechanic
+    from the Phase 193/408 watcher-feed above): every successful cast
+    also records ``caster.clairvoyance_cast_target = target.leader_id``
+    (``LeaderState.clairvoyance_cast_target``, mirroring the real
+    ``lspec[l2]``'s single packed ``clobj`` value) -- unconditionally,
+    not gated on ``AdvancedAbility.ENHANCED_CLAIRVOYANCE`` here. The
+    ability gate is checked separately at read time by ``report/
+    turn_report.py _was_clairved()``, exactly mirroring how the real
+    ``Was_Clairved`` checks ``Has_SA(l2,Expand_Clair)`` against the
+    already-written value rather than gating the write.
     """
 
     caster = state.leaders[leader_id]
@@ -2591,6 +2603,7 @@ def _execute_clairvoyance(
         return CastExecutionResult(request, applied=False, reason=reason)
 
     target.clairvoyance_watchers.add(kingdom_id)
+    caster.clairvoyance_cast_target = target.leader_id
 
     target_offices = None
     if is_chancellor and target.kingdom_id is not None:

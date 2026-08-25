@@ -715,6 +715,21 @@ class LeaderState:
     # Phase 193: kingdom ids currently watching this leader via a successful
     # Clairvoyance cast -- see module docstring. Not auto-cleared.
     clairvoyance_watchers: set[int] = field(default_factory=set)
+    # Phase 637: this leader's own most-recently-cast Clairvoyance target
+    # (the caster's side of the same successful cast that writes the
+    # *target's* `clairvoyance_watchers` above) -- mirrors `RUMORS.PAS`/
+    # `REPORTS.PAS`'s own `lspec[l2]`'s single packed `clobj` value, so a
+    # later cast simply overwrites it. Written unconditionally by every
+    # successful `_execute_clairvoyance()` call, regardless of whether
+    # this caster has `AdvancedAbility.ENHANCED_CLAIRVOYANCE` -- the
+    # ability gate is checked separately at read time (`report/turn_
+    # report.py _was_clairved()`), exactly mirroring how the real
+    # `Was_Clairved` checks `Has_SA(l2,Expand_Clair)` against the
+    # already-written `lspec` value rather than gating the write itself.
+    # Not auto-cleared at a turn boundary -- no source states a duration
+    # limit for this specific CHARACTERS-report reveal (distinct from the
+    # confirmed "for the rest of the turn" watcher-feed sentence above).
+    clairvoyance_cast_target: int | None = None
     # Phase 196: the leader's own individual Race, mirroring `temper`'s own
     # Phase 139 "None = not recorded" precedent. Unlike every other leader
     # in this project (whose race is always implicitly their serving

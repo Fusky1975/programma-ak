@@ -4,6 +4,7 @@ import random
 
 import pytest
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
@@ -6738,6 +6739,101 @@ def test_describe_characters_report_ignores_other_kingdoms_leaders():
     lines = describe_characters_report(state, 1)
 
     assert lines == [*_CHARACTERS_HEADER_LINES, "None at present"]
+
+
+# -- Phase 637: Was_Clairved -- a foreign leader targeted by an Enhanced-
+# Clairvoyance cast from this kingdom gets the full impulse-1 row too.
+
+
+def test_describe_characters_report_ignores_a_clairvoyance_cast_without_enhanced_ability():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    watcher = LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True)
+    watcher.clairvoyance_cast_target = 9  # no AdvancedAbility.ENHANCED_CLAIRVOYANCE
+    state.add_leader(watcher)
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1)))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines == [
+        *_CHARACTERS_HEADER_LINES,
+        f"Aldric           0  Unkn  Unkn     Human  0 {_NO_SKILLS_LINE}",
+        _NO_APTITUDE_LINE,
+    ]
+
+
+def test_describe_characters_report_was_clairved_leader_gets_a_full_row():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    watcher = LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True)
+    watcher.clairvoyance_cast_target = 9
+    watcher.advanced_abilities = {AdvancedAbility.ENHANCED_CLAIRVOYANCE}
+    state.add_leader(watcher)
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1)))
+
+    lines = describe_characters_report(state, 1)
+
+    assert lines == [
+        *_CHARACTERS_HEADER_LINES,
+        f"Aldric           0  Unkn  Unkn     Human  0 {_NO_SKILLS_LINE}",
+        _NO_APTITUDE_LINE,
+        f"Kwoth          101  Unkn  Unkn       Elf  1 {_NO_SKILLS_LINE}",
+        _NO_APTITUDE_LINE,
+    ]
+
+
+def test_describe_characters_report_was_clairved_foreign_king_is_not_mistaken_for_this_kingdoms_king():
+    # Testland has no King of its own recorded (`king=None`). If the
+    # displayed-leader merge were computed before resolving `king` (the
+    # bug this phase's design deliberately avoids), a Was_Clairved
+    # foreign King showing up in the merged list would get mistaken for
+    # this kingdom's own King, changing Bram's own Pay column. Compares
+    # the *rendered* row with vs. without the Was_Clairved link (rather
+    # than a hand-typed expected string, avoiding a spacing miscount --
+    # see Phase 635's own precedent for this) -- `king` must resolve to
+    # `None` identically either way, so Bram's row must be identical too.
+    def _build():
+        state = GameState()
+        state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+        state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+        watcher = LeaderState(1, 1, "Aldric", HexCoord(0, 0))
+        watcher.advanced_abilities = {AdvancedAbility.ENHANCED_CLAIRVOYANCE}
+        state.add_leader(watcher)
+        state.add_leader(LeaderState(9, 2, "Foreign King", HexCoord(1, 1), is_king=True))
+        state.add_leader(LeaderState(2, 1, "Bram", HexCoord(0, 0)))
+        return state, watcher
+
+    state_with_link, watcher = _build()
+    watcher.clairvoyance_cast_target = 9
+    lines_with_link = describe_characters_report(state_with_link, 1)
+    bram_with_link = next(line for line in lines_with_link if line.startswith("Bram"))
+
+    state_without_link, _ = _build()  # no Was_Clairved link -- foreign King never displayed
+    lines_without_link = describe_characters_report(state_without_link, 1)
+    bram_without_link = next(line for line in lines_without_link if line.startswith("Bram"))
+
+    assert bram_with_link == bram_without_link
+
+
+def test_describe_characters_report_was_clairved_leader_falls_back_to_own_kingdoms_race():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    watcher = LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True)
+    watcher.clairvoyance_cast_target = 9
+    watcher.advanced_abilities = {AdvancedAbility.ENHANCED_CLAIRVOYANCE}
+    state.add_leader(watcher)
+    kwoth = LeaderState(9, 2, "Kwoth", HexCoord(1, 1))
+    assert kwoth.race is None
+    state.add_leader(kwoth)
+
+    lines = describe_characters_report(state, 1)
+
+    kwoth_row = next(line for line in lines if line.startswith("Kwoth"))
+    assert "Elf" in kwoth_row  # Otherland's own race, not Testland's Human
+    assert "Human" not in kwoth_row
 
 
 def test_describe_characters_report_falls_back_to_province_code_when_unnamed_province():

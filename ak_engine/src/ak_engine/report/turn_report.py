@@ -1195,6 +1195,7 @@ from ak_engine.models.enums import (
     SPELL_NAME,
     Spell,
 )
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_ABBREVIATION, Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import (
@@ -9170,6 +9171,27 @@ def _skill_row_with_item_ticks(state: GameState, leader: LeaderState) -> str:
     return "".join(parts)
 
 
+def _was_clairved(state: GameState, target_leader_id: int, kingdom_id: int) -> bool:
+    """``Was_Clairved`` (`REPORTS.PAS Rep_Leaders`, Phase 637): does any
+    of `kingdom_id`'s own leaders currently hold an Enhanced-
+    Clairvoyance-backed watch on `target_leader_id`? Mirrors the real
+    ``FOR l2 ... IF LKing(l2)=kng THEN IF Has_SA(l2,Expand_Clair) THEN
+    IF clobj=ldr THEN`` loop exactly, reading `LeaderState.clairvoyance_
+    cast_target` (the caster's side, written by every successful
+    Clairvoyance cast -- `turn/cast_execution.py _execute_clairvoyance()`)
+    gated on `AdvancedAbility.ENHANCED_CLAIRVOYANCE` here rather than at
+    write time, matching how the real write (`lspec`) and the real
+    ability check (`Has_SA`) are two separate steps.
+    """
+
+    return any(
+        leader.kingdom_id == kingdom_id
+        and leader.clairvoyance_cast_target == target_leader_id
+        and AdvancedAbility.ENHANCED_CLAIRVOYANCE in leader.advanced_abilities
+        for leader in state.leaders.values()
+    )
+
+
 def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     """Assembles the "CHARACTERS" section (Phase 221) -- a deliberately
     much narrower slice of `REPORTS.PAS Rep_Leaders`, one of the largest
@@ -9178,27 +9200,34 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     the real procedure, documented why" precedent every other section
     composer in this module already established.
 
-    **Only the real procedure's "impulse 1" pass is modeled**: a
-    kingdom's own leaders (`LKing(ldr) = kng`, i.e. `LeaderState.
-    kingdom_id == kingdom_id` here) -- the one pass with genuinely full
-    character data in the real table. The real procedure's other two
-    passes ("impulse 2": wandering Heroes/other Kings' leaders this
-    kingdom happens to know the location of; "impulse 3": leaders a
-    Priest-office-holding King can locate via `Was_Clairved`/religious
-    contact) both need data this project doesn't fully model yet.
+    **The real procedure's "impulse 1" pass is modeled in full**
+    (Phase 637): a kingdom's own leaders (`LKing(ldr) = kng`, i.e.
+    `LeaderState.kingdom_id == kingdom_id` here) *plus* any other
+    leader successfully targeted by an Enhanced-Clairvoyance-capable
+    cast from one of this kingdom's own leaders (`Was_Clairved`,
+    `REPORTS.PAS Rep_Leaders` line 682 -- `_was_clairved()` below,
+    driven by `LeaderState.clairvoyance_cast_target`/`AdvancedAbility.
+    ENHANCED_CLAIRVOYANCE`). Both cases render through the identical
+    full-row table -- `Was_Clairved` targets never need the separate
+    `Desc_Stranger` prose format impulse 2/3 use, since the real
+    `Dispable`/rendering `CASE` only ever routes a leader to
+    `Desc_Stranger` when `impulse <> 1`.
 
-    **Phase 636 correction**: an earlier version of this docstring also
-    named "the Priest office itself" as an unmodeled gap here -- false
-    even when written: `turn/office_holder.py Office.PRIEST` has been a
-    fully live, resolvable office (`resolve_office_holder(state, Office.
-    PRIEST)`) since well before this project reached Phase 432 (see
-    [[feedback_stale_known_gap_claims]]). The real remaining blockers
-    are `Known_Loc` (`turn/leader_visibility.py leader_location_known_
-    to_kingdom()`, Phase 636 -- built as a pure primitive, but its own
-    `orig_turn` parameter has no confirmed ak_engine mapping yet) and
-    `Was_Clairved`/`Desc_Stranger` (`REPORTS.PAS`'s own prose-format
-    rendering for these two passes, entirely unmodeled) -- so neither
-    pass is attempted here.
+    **Impulse 2/3 remain unmodeled**: "impulse 2" (wandering Heroes/
+    other Kings' leaders this kingdom knows the location of via
+    `Known_Loc`) and "impulse 3" (leaders a Priest-office-holding King
+    can locate) both render through `Desc_Stranger`, an entirely
+    different prose format -- not attempted here. See
+    [[project_characters_impulse23_phase636]] for the full status:
+    `Known_Loc`/`Ldr_Near` primitives exist (Phase 636,
+    `turn/leader_visibility.py`) but aren't wired in (`orig_turn`'s
+    real ak_engine mapping is still unconfirmed), and `Desc_Stranger`
+    itself is entirely unbuilt. (**Phase 636 correction, kept for
+    the record**: an earlier version of this docstring also named "the
+    Priest office itself" as a blocker here -- false even when written,
+    `turn/office_holder.py Office.PRIEST` has been a fully live,
+    resolvable office since well before Phase 432; see
+    [[feedback_stale_known_gap_claims]].)
 
     **Phase 432 rewrites this composer to the real fixed-width table**
     (the user's own explicit "tutto il report, pixel-perfect" scope
@@ -9344,19 +9373,40 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     ]
 
     owned = [leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id]
-    if not owned:
+    king = next((leader for leader in owned if leader.is_king), None)
+
+    # Phase 637: Was_Clairved -- a foreign leader successfully targeted by
+    # an Enhanced-Clairvoyance cast from one of this kingdom's own leaders
+    # also gets the full impulse-1 row. `king` above is deliberately
+    # resolved from `owned` alone, before this merge, so a Was_Clairved
+    # leader who happens to be a foreign King is never mistaken for this
+    # kingdom's own King by any row's `leader_pay()` call below.
+    clairved = [
+        leader
+        for leader in state.leaders.values()
+        if leader.kingdom_id != kingdom_id and _was_clairved(state, leader.leader_id, kingdom_id)
+    ]
+    displayed = owned + clairved
+    if not displayed:
         lines.append(_CHARACTERS_NONE_AT_PRESENT)
         return lines
 
-    king = next((leader for leader in owned if leader.is_king), None)
-
-    owned.sort(key=lambda leader: leader.leader_id)
-    for leader in owned:
+    displayed.sort(key=lambda leader: leader.leader_id)
+    for leader in displayed:
         loc = province_code(leader.location)
         alignment_label = ALIGNMENT_ABBREVIATION[leader.alignment] if leader.alignment is not None else _CHARACTERS_UNKNOWN_ABBREVIATION
         temper_label = TEMPER_ABBREVIATION[leader.temper] if leader.temper is not None else _CHARACTERS_UNKNOWN_ABBREVIATION
         sex_label = leader.sex.value if leader.sex is not None else ""
-        race = leader.race if leader.race is not None else kingdom.race
+        if leader.race is not None:
+            race = leader.race
+        elif leader.kingdom_id is not None:
+            # Phase 637: a Was_Clairved leader with no explicit race falls
+            # back to his OWN kingdom's race, not the viewer's -- the
+            # viewer's own `kingdom.race` fallback below is only correct
+            # for a truly kingdomless leader.
+            race = state.kingdoms[leader.kingdom_id].race
+        else:
+            race = kingdom.race
         race_label = RACE_NAME[race]
         pay = leader_pay(state, leader, king)
 

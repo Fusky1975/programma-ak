@@ -2043,6 +2043,31 @@ def test_clairvoyance_adds_the_casters_kingdom_to_the_targets_watchers():
     assert state.leaders[78].clairvoyance_watchers == {1}
 
 
+def test_clairvoyance_records_the_casters_own_target_leader_id():
+    # Phase 637: LeaderState.clairvoyance_cast_target -- the caster's own
+    # side of the same successful cast, feeding Was_Clairved.
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", ELSEWHERE))
+    request = CastRequest(spell=Spell.CLAIRVOYANCE, target=78)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].clairvoyance_cast_target == 78
+
+
+def test_clairvoyance_a_second_cast_overwrites_the_casters_own_prior_target():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", ELSEWHERE))
+    state.add_leader(LeaderState(79, 2, "Another Enemy Hero", ELSEWHERE))
+
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.CLAIRVOYANCE, target=78))
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.CLAIRVOYANCE, target=79))
+
+    assert result.applied is True
+    assert state.leaders[CASTER_ID].clairvoyance_cast_target == 79
+
+
 def test_clairvoyance_fails_when_target_does_not_exist():
     state = build_state()
     request = CastRequest(spell=Spell.CLAIRVOYANCE, target=78)
