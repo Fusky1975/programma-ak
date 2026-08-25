@@ -307,6 +307,9 @@ from ak_engine.report.turn_report import (
     _leader_ability_description,
     _stranger_descriptor,
     _tell_align,
+    _impulse2_candidates,
+    _impulse3_candidates,
+    _resolve_viewer_priest,
 )
 from ak_engine.models.enums import SPELL_NAME, Ability, ActionCode, Spell
 from ak_engine.models.weapon import Weapon
@@ -6888,6 +6891,213 @@ def test_tell_align_requires_a_recorded_alignment():
 
     with pytest.raises(AssertionError):
         _tell_align(target, priest)
+
+
+# -- Phase 639: wires impulse 2 (Known_Loc)/impulse 3 (Tell_Align near
+# this kingdom's own Priest) into describe_characters_report(), using
+# the Phase 636/637/638 primitives built earlier.
+
+
+def _priest_leader(leader_id: int, kingdom_id: int, coord: HexCoord) -> LeaderState:
+    priest = LeaderState(leader_id, kingdom_id, "Priestly", coord)
+    priest.merit_tally.resurrection_bless_casts = 5  # wins Office.PRIEST (min 1 point)
+    return priest
+
+
+def test_resolve_viewer_priest_none_when_nobody_holds_the_office():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+
+    assert _resolve_viewer_priest(state, 1) is None
+
+
+def test_resolve_viewer_priest_none_when_a_different_kingdom_holds_it():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(_priest_leader(50, 2, HexCoord(0, 0)))
+
+    assert _resolve_viewer_priest(state, 1) is None
+
+
+def test_resolve_viewer_priest_found_when_this_kingdom_holds_it():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    priest = _priest_leader(50, 1, HexCoord(0, 0))
+    state.add_leader(priest)
+
+    assert _resolve_viewer_priest(state, 1) is priest
+
+
+def test_impulse2_candidates_includes_a_known_stranger_and_excludes_valhalla_visitor():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    stranger = LeaderState(9, 2, "Kwoth", HexCoord(5, 5))
+    state.add_leader(stranger)
+    visitor = LeaderState(199, 2, "Valhalla Visitor", HexCoord(5, 5))
+    state.add_leader(visitor)
+
+    result = _impulse2_candidates(state, 1, orig_turn=0)
+
+    assert result == [stranger]
+
+
+def test_impulse2_candidates_includes_a_dead_strangers_last_known_position():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(5, 5)))
+    state.remove_leader(9)
+
+    result = _impulse2_candidates(state, 1, orig_turn=0)
+
+    assert result == [state.dead_leaders[9]]
+
+
+def test_impulse3_candidates_empty_without_a_priest():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(9, 2, "Foreign King", HexCoord(2, 1), is_king=True))
+
+    assert _impulse3_candidates(state, 1, priest=None, orig_turn=0) == []
+
+
+def test_impulse3_candidates_excludes_a_hero_and_a_too_distant_king():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    priest = _priest_leader(50, 1, HexCoord(0, 0))
+    state.add_leader(priest)
+    hero = LeaderState(9, 2, "Kwoth", HexCoord(2, 1))  # distance 3, but not a King
+    state.add_leader(hero)
+    far_king = LeaderState(10, 2, "Far King", HexCoord(4, 1), is_king=True)  # distance 5 > 4
+    state.add_leader(far_king)
+
+    assert _impulse3_candidates(state, 1, priest=priest, orig_turn=0) == []
+
+
+def test_impulse3_candidates_excludes_a_king_already_known_via_impulse_2():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    priest = _priest_leader(50, 1, HexCoord(0, 0))
+    state.add_leader(priest)
+    state.add_province(ProvinceState(HexCoord(3, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))  # distance 4
+    known_king = LeaderState(10, 2, "Known King", HexCoord(3, 1), is_king=True)
+    state.add_leader(known_king)
+
+    assert _impulse3_candidates(state, 1, priest=priest, orig_turn=0) == []
+
+
+def test_impulse3_candidates_includes_a_real_unknown_king_within_range():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    priest = _priest_leader(50, 1, HexCoord(0, 0))
+    state.add_leader(priest)
+    king = LeaderState(10, 2, "Unknown King", HexCoord(3, 1), is_king=True)  # distance 4, unowned province
+    state.add_leader(king)
+
+    assert _impulse3_candidates(state, 1, priest=priest, orig_turn=0) == [king]
+
+
+def test_describe_characters_report_impulse2_known_stranger_appears_with_ability_text():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(5, 5)))
+    state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, 2, "Roderick", HexCoord(5, 5), is_king=True))
+    stranger = LeaderState(9, 2, "Kwoth", HexCoord(5, 5), skills=_skills_with(ARCHERY=2))
+    state.add_leader(stranger)
+
+    lines = describe_characters_report(state, 1)
+
+    stranger_row = next(line for line in lines if line.startswith("Kwoth"))
+    assert ": Roderick's Hero" in stranger_row
+    assert "a Elf famous for Archery" in stranger_row
+    assert not any('Rod senses' in line for line in lines)  # no Priest resolved
+
+
+def test_describe_characters_report_impulse2_secondary_reveal_fires_within_two_hexes():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(2, 0)))
+    priest = _priest_leader(50, 1, HexCoord(0, 0))
+    state.add_leader(priest)
+    state.add_province(ProvinceState(HexCoord(2, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))  # distance 2
+    stranger = LeaderState(9, 2, "Kwoth", HexCoord(2, 0))
+    stranger.alignment = Alignment.GOOD
+    state.add_leader(stranger)
+
+    lines = describe_characters_report(state, 1)
+
+    idx = next(i for i, line in enumerate(lines) if line.startswith("Kwoth"))
+    assert "Rod senses" in lines[idx + 1]
+
+
+def test_describe_characters_report_impulse2_secondary_reveal_does_not_fire_beyond_two_hexes():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(2, 1)))
+    priest = _priest_leader(50, 1, HexCoord(0, 0))
+    state.add_leader(priest)
+    state.add_province(ProvinceState(HexCoord(2, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))  # distance 3
+    stranger = LeaderState(9, 2, "Kwoth", HexCoord(2, 1))
+    stranger.alignment = Alignment.GOOD
+    state.add_leader(stranger)
+
+    lines = describe_characters_report(state, 1)
+
+    assert not any("Rod senses" in line for line in lines)
+
+
+def test_describe_characters_report_impulse2_no_reveal_when_target_alignment_unrecorded():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(2, 0)))
+    priest = _priest_leader(50, 1, HexCoord(0, 0))
+    state.add_leader(priest)
+    state.add_province(ProvinceState(HexCoord(2, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))  # distance 2
+    stranger = LeaderState(9, 2, "Kwoth", HexCoord(2, 0))
+    assert stranger.alignment is None
+    state.add_leader(stranger)
+
+    lines = describe_characters_report(state, 1)
+
+    assert any(line.startswith("Kwoth") for line in lines)
+    assert not any("Rod senses" in line for line in lines)
+
+
+def test_describe_characters_report_impulse3_king_shows_blank_location_and_unconditional_reveal():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(3, 1)))
+    priest = _priest_leader(50, 1, HexCoord(0, 0))
+    state.add_leader(priest)
+    king = LeaderState(10, 2, "Unknown King", HexCoord(3, 1), is_king=True)  # distance 4, unowned province
+    king.alignment = Alignment.EVIL
+    state.add_leader(king)
+
+    lines = describe_characters_report(state, 1)
+
+    idx = next(i for i, line in enumerate(lines) if line.startswith("Unknown King"))
+    assert lines[idx][14:18] == "    "  # blank Loc column
+    assert "Rod senses" in lines[idx + 1]
+
+
+def test_describe_characters_report_impulse3_king_already_known_appears_only_once_via_impulse2():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(3, 1)))
+    priest = _priest_leader(50, 1, HexCoord(0, 0))
+    state.add_leader(priest)
+    state.add_province(ProvinceState(HexCoord(3, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))  # distance 4, owned
+    king = LeaderState(10, 2, "Dupe King", HexCoord(3, 1), is_king=True)
+    state.add_leader(king)
+
+    lines = describe_characters_report(state, 1)
+
+    matching_rows = [line for line in lines if line.startswith("Dupe King")]
+    assert len(matching_rows) == 1
+    assert matching_rows[0][14:18] != "    "  # the impulse-2 row shows a real location, not blank
 
 
 # -- Phase 637: Was_Clairved -- a foreign leader targeted by an Enhanced-

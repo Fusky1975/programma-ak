@@ -26500,7 +26500,7 @@ follow-up request after the original 431-435 plan shipped.
   635's own precedent); the race-fallback fix renders the target's own
   kingdom's race. Full suite: 5325 -> 5331 (net +6).
 
-- **Phase 638 (current)**: `Desc_Stranger` rendering primitives --
+- **Phase 638**: `Desc_Stranger` rendering primitives --
   `Best_Ab`/`Get_AbDesc`/the "as" stranger descriptor/`Tell_Align` --
   **primitives only, not wired into `describe_characters_report()`
   yet**, continuing Phase 636's own "primitives now, wiring later"
@@ -26554,6 +26554,72 @@ follow-up request after the original 431-435 plan shipped.
   King-vs-Hero `tdmod` shift producing different results for otherwise
   identical inputs, both clamp directions, and the `alignment is None`
   guard. Full suite: 5331 -> 5346 (net +15).
+
+- **Phase 639 (current)**: wires impulse 2/3 into `describe_
+  characters_report()` -- the CHARACTERS report's own real `Rep_
+  Leaders` procedure is now modeled in full, closing `project_
+  characters_impulse23_phase636` except two deliberately-excluded
+  smaller gaps (mercenary hire-cost hint, `Known_Merc`).
+
+  The last blocker (`orig_turn`'s real ak_engine mapping) is now
+  resolved: the user supplied `ORIGTURN.md` (Desktop\ORIGTURN.md,
+  2026-08-26, disassembly-level, `AK.EXE` machine-instruction
+  confirmation) -- `orig_turn` is a runtime snapshot of `gameturn`
+  taken once at the start of turn resolution, never incremented during
+  the run; report generation happens before `gameturn` itself
+  advances, so for the CHARACTERS report's own real call path `orig_
+  turn == gameturn` always. This confirms `orig_turn = GameState.
+  turn_number` directly -- not a new assumption, a confirmed mapping.
+
+  Everything else needed was already built (Phase 636's `Known_Loc`/
+  `Ldr_Near`, Phase 637's `Was_Clairved`, Phase 638's `Desc_Stranger`
+  primitives) -- this phase is pure wiring. New private helpers in
+  `report/turn_report.py`: `_resolve_viewer_priest()` (`tcp`, only set
+  when this kingdom holds Priest office), `_impulse2_candidates()`
+  (`Dispable` case 2 -- `Known_Loc`-known strangers, excluding the
+  Valhalla visitor, scanning both living and archived-dead leaders
+  since a dead stranger's last known position is a real, intended
+  case), `_impulse3_candidates()` (`Dispable` case 3 -- Kings within 4
+  hexes of the Priest, *not* already shown via impulse 2's own `Known_
+  Loc` -- a real, deliberate anti-duplication in the source), and
+  `_render_stranger_row()` (the shared `Desc_Stranger` row renderer for
+  both impulses). Also extracted `_characters_report_display_name()`
+  (`Get_HName`'s own Royal-Heir substitution) out of the impulse-1
+  loop into a small shared helper, since the real procedure calls it
+  generically for every row regardless of impulse.
+
+  Two precise formatting details confirmed by re-reading the exact
+  source rather than assumed: `Desc_Stranger`'s own caller strips the
+  first and last character off `Get_AbDesc`'s returned string (`Delete
+  (s,1,1); Delete(s,Length(s),1)`) -- the parentheses `_leader_
+  ability_description()` correctly includes per its own Phase 638
+  scope are stripped at this call site, not inside the primitive; and
+  `Tell_Align`'s own body always opens with a bare `WRITELN` before
+  writing anything, so its "...the Rod senses" text is never on the
+  same line as whatever precedes it, in either impulse.
+
+  **One real structural bug found and fixed while writing the first
+  end-to-end test**: the pre-existing early return after impulse 1
+  (`if not displayed: return lines`, harmless before this phase since
+  impulse 2/3 didn't exist yet) was skipping real impulse 2/3 content
+  whenever the viewing kingdom happened to have zero leaders of its
+  own -- the real `none` flag is shared across all three impulses, not
+  scoped to impulse 1 alone. Fixed by computing all three impulses'
+  candidates before deciding whether to render "None at present".
+
+  Tests: `tests/test_turn_report.py` gained 15 -- `_resolve_viewer_
+  priest()`'s own 3 cases; `_impulse2_candidates()`/`_impulse3_
+  candidates()` unit cases (a known stranger, the Valhalla-visitor
+  exclusion, a dead stranger's last position, a Hero/too-distant-King
+  exclusion, the impulse-2-vs-3 anti-duplication, `[]` with no
+  Priest); end-to-end `describe_characters_report()` cases for a known
+  stranger's full row (descriptor + ability text), the Priest-
+  proximity secondary reveal firing and not firing, a missing-
+  alignment target omitting its own `Tell_Align` line, an impulse-3
+  King's blank location column with its unconditional reveal, and the
+  anti-duplication case rendering exactly once (under impulse 2, with
+  a real location, not impulse 3's blank one). Full suite: 5346 -> 5361
+  (net +15).
 
 ## Setup
 

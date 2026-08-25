@@ -1181,6 +1181,7 @@ directly callable by anyone who still has the original
 
 from __future__ import annotations
 
+import itertools
 import random
 from typing import Sequence
 
@@ -1218,6 +1219,7 @@ from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, describe_discovery_line, sorted_kingdom_discoveries
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import TEMPER_ABBREVIATION, TEMPER_NAME
+from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_CATEGORY, TREASURE_LABEL, TREASURE_NAME, Treasure, TreasureCategory
 from ak_engine.models.weapon import MONSTER_RANGED_WEAPON, Weapon
 from ak_engine.report.ascii_map import (
@@ -1251,6 +1253,7 @@ from ak_engine.turn.encounter import CombatRange, FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
+from ak_engine.turn.leader_visibility import leader_location_known_to_kingdom
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance_wrapped
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 from ak_engine.turn.discovery_effects import effective_skill_level, emperor_holds_arcanes_valor_unification
@@ -9301,6 +9304,121 @@ def _was_clairved(state: GameState, target_leader_id: int, kingdom_id: int) -> b
     )
 
 
+def _characters_report_display_name(state: GameState, leader: LeaderState) -> str:
+    """``Get_HName(ldr,14,s)`` (Phase 555/639): substitutes "Royal Heir"
+    for the stored name whenever this leader is still an unfinalized
+    Royal Heir (`turn/cast_execution.py is_unfinalized_royal_heir()`)
+    past the game's very first turn -- called generically for every
+    `Rep_Leaders` row regardless of impulse, so shared across impulse
+    1's own full table and impulse 2/3's `Desc_Stranger` rows alike.
+    """
+
+    if state.turn_number > 0 and is_unfinalized_royal_heir(leader):
+        return "Royal Heir"
+    return leader.name
+
+
+def _resolve_viewer_priest(state: GameState, kingdom_id: int) -> LeaderState | None:
+    """``tcp`` (`REPORTS.PAS Rep_Leaders`, Phase 639): the Priest-office
+    holder, but only when `kingdom_id` (the viewing Kingdom) currently
+    holds that office -- ``tcp:= titchar[Priest]`` only set ``IF LKing(
+    titchar[Priest]) = kng``. `None` otherwise (no impulse 3, and no
+    impulse-2 secondary `Tell_Align` reveal either).
+    """
+
+    holder = resolve_office_holder(state, Office.PRIEST)
+    if holder is None:
+        return None
+    priest = state.leaders.get(holder.leader_id)
+    if priest is None or priest.kingdom_id != kingdom_id:
+        return None
+    return priest
+
+
+def _impulse2_candidates(state: GameState, kingdom_id: int, orig_turn: int) -> list[LeaderState]:
+    """``Dispable`` impulse 2 (Phase 639): ``ldr <> valhero AND Known_
+    Loc(ldr,kng,0,true)``. `Known_Loc` already excludes `kingdom_id`'s
+    own leaders internally, so no separate ownership filter is needed
+    here. Scans both living and archived-dead leaders (`Known_Loc`'s
+    own `lstate=Dead` cover-gate bypass means a dead stranger's last
+    known position is a real, intended case -- mirrors `leader_near()`,
+    Phase 636).
+    """
+
+    candidates = [
+        leader
+        for leader in itertools.chain(state.leaders.values(), state.dead_leaders.values())
+        if leader.leader_id != VALHALLA_VISITOR_LEADER_ID
+        and leader_location_known_to_kingdom(state, leader.leader_id, kingdom_id, orig_turn=orig_turn)
+    ]
+    candidates.sort(key=lambda leader: leader.leader_id)
+    return candidates
+
+
+def _impulse3_candidates(state: GameState, kingdom_id: int, priest: LeaderState | None, orig_turn: int) -> list[LeaderState]:
+    """``Dispable`` impulse 3 (Phase 639): a King within 4 hexes of the
+    viewer's own Priest, *not* already shown via impulse 2's own
+    `Known_Loc` -- a real, deliberate anti-duplication in the source
+    (unlike impulse 1 vs. impulse 2, which has none). `[]` outright
+    when this kingdom holds no Priest.
+    """
+
+    if priest is None:
+        return []
+    candidates = [
+        leader
+        for leader in itertools.chain(state.leaders.values(), state.dead_leaders.values())
+        if leader.is_king
+        and leader.leader_id != VALHALLA_VISITOR_LEADER_ID
+        and hex_distance_wrapped(priest.location, leader.location) <= 4
+        and not leader_location_known_to_kingdom(state, leader.leader_id, kingdom_id, orig_turn=orig_turn)
+    ]
+    candidates.sort(key=lambda leader: leader.leader_id)
+    return candidates
+
+
+def _render_stranger_row(
+    state: GameState,
+    leader: LeaderState,
+    *,
+    show_location: bool,
+    priest: LeaderState | None,
+    tell_align_distance: int | None,
+) -> list[str]:
+    """``Desc_Stranger`` (`REPORTS.PAS` lines 690-754, Phase 639): the
+    impulse-2/3 row. Impulse 2 (`show_location=True`): name, Loc,
+    descriptor, `Get_AbDesc` text, all one line; a second, separate
+    line with `Tell_Align`'s own text when `priest` is within
+    `tell_align_distance` hexes (`Tell_Align`'s own body always starts
+    with a bare `WRITELN`, so its text is never on the same line as
+    what precedes it). Impulse 3 (`show_location=False`, `tell_align_
+    distance=None`): name, a blank Loc column, descriptor -- no ability
+    text -- then `Tell_Align`'s own line unconditionally (not distance-
+    gated). A missing `leader.alignment` simply omits the `Tell_Align`
+    line (this project's own "no data, don't guess" convention -- the
+    real `lalign` array is always populated, so the real source never
+    hits this case).
+    """
+
+    name = _characters_report_display_name(state, leader)
+    loc = province_code(leader.location) if show_location else ""
+    descriptor = f"{_stranger_descriptor(state, leader):<26}"
+    if show_location:
+        ability_desc = _leader_ability_description(state, leader)[1:-1]
+        lines = [f"{name:<14}{loc:>4}{descriptor}{ability_desc}"]
+    else:
+        lines = [f"{name:<14}{loc:>4}{descriptor}"]
+
+    show_tell_align = (
+        priest is not None
+        and leader.alignment is not None
+        and (tell_align_distance is None or hex_distance_wrapped(priest.location, leader.location) <= tell_align_distance)
+    )
+    if show_tell_align:
+        lines.append(f'  ...the Rod senses "{_tell_align(leader, priest).value}"')
+    return lines
+
+
 def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     """Assembles the "CHARACTERS" section (Phase 221) -- a deliberately
     much narrower slice of `REPORTS.PAS Rep_Leaders`, one of the largest
@@ -9322,21 +9440,34 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     `Dispable`/rendering `CASE` only ever routes a leader to
     `Desc_Stranger` when `impulse <> 1`.
 
-    **Impulse 2/3 remain unmodeled**: "impulse 2" (wandering Heroes/
-    other Kings' leaders this kingdom knows the location of via
-    `Known_Loc`) and "impulse 3" (leaders a Priest-office-holding King
-    can locate) both render through `Desc_Stranger`, an entirely
-    different prose format -- not attempted here. See
-    [[project_characters_impulse23_phase636]] for the full status:
-    `Known_Loc`/`Ldr_Near` primitives exist (Phase 636,
-    `turn/leader_visibility.py`) but aren't wired in (`orig_turn`'s
-    real ak_engine mapping is still unconfirmed), and `Desc_Stranger`
-    itself is entirely unbuilt. (**Phase 636 correction, kept for
-    the record**: an earlier version of this docstring also named "the
-    Priest office itself" as a blocker here -- false even when written,
-    `turn/office_holder.py Office.PRIEST` has been a fully live,
-    resolvable office since well before Phase 432; see
-    [[feedback_stale_known_gap_claims]].)
+    **Impulse 2/3 are now modeled too** (Phase 639): "impulse 2"
+    (wandering Heroes/other Kings' leaders this kingdom knows the
+    location of via `Known_Loc`, `_impulse2_candidates()` below) and
+    "impulse 3" (Kings within 4 hexes of this kingdom's own Priest,
+    `_impulse3_candidates()`) both render through `Desc_Stranger`
+    (`_render_stranger_row()`), an entirely different prose format
+    from impulse 1's fixed-width table. `orig_turn` (`Known_Loc`'s own
+    still-needed temporal gate) maps to `GameState.turn_number` --
+    confirmed, not assumed, by the user's own `ORIGTURN.md` (Desktop\
+    ORIGTURN.md, 2026-08-26, disassembly-level): `orig_turn` is a
+    runtime snapshot of `gameturn` taken once at the start of turn
+    resolution, and CHARACTERS-report generation always happens before
+    `gameturn` itself advances, so the two are always equal for this
+    report's own real call path.
+
+    **Deliberately still excluded**: the mercenary hire-cost hint
+    (`Desc_Stranger`'s own `IF lstate[ldr]=Mercenary...` block) -- a
+    leader's own "currently an available-for-hire wandering Hero"
+    personal state has no matching concept anywhere in `GameState`;
+    and `Known_Merc` (`RUMORS.PAS`), a *different* report's own
+    mercenary-army-visibility check. See [[project_characters_
+    impulse23_phase636]] for the full closure history across Phases
+    636-639. (**Phase 636 correction, kept for the record**: an
+    earlier version of this docstring also named "the Priest office
+    itself" as a blocker here -- false even when written, `turn/
+    office_holder.py Office.PRIEST` has been a fully live, resolvable
+    office since well before Phase 432; see [[feedback_stale_known_
+    gap_claims]].)
 
     **Phase 432 rewrites this composer to the real fixed-width table**
     (the user's own explicit "tutto il report, pixel-perfect" scope
@@ -9496,11 +9627,24 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         if leader.kingdom_id != kingdom_id and _was_clairved(state, leader.leader_id, kingdom_id)
     ]
     displayed = owned + clairved
-    if not displayed:
+    displayed.sort(key=lambda leader: leader.leader_id)
+
+    # Phase 639: impulse 2 (wandering Heroes/other Kings' leaders this
+    # kingdom knows the location of via Known_Loc) and impulse 3 (Kings
+    # near this kingdom's own Priest, via Tell_Align) -- each impulse is
+    # its own separate leader pass in the real source (not merged/sorted
+    # together with impulse 1's own owned+Was_Clairved leaders above).
+    # Computed *before* the "None at present" check: the real `none`
+    # flag is shared across all three impulses, not just impulse 1 --
+    # an empty impulse 1 must not skip real impulse 2/3 content.
+    priest = _resolve_viewer_priest(state, kingdom_id)
+    impulse2 = _impulse2_candidates(state, kingdom_id, state.turn_number)
+    impulse3 = _impulse3_candidates(state, kingdom_id, priest, state.turn_number)
+
+    if not displayed and not impulse2 and not impulse3:
         lines.append(_CHARACTERS_NONE_AT_PRESENT)
         return lines
 
-    displayed.sort(key=lambda leader: leader.leader_id)
     for leader in displayed:
         loc = province_code(leader.location)
         alignment_label = ALIGNMENT_ABBREVIATION[leader.alignment] if leader.alignment is not None else _CHARACTERS_UNKNOWN_ABBREVIATION
@@ -9520,14 +9664,7 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         pay = leader_pay(state, leader, king)
 
         skill_row = _skill_row_with_item_ticks(state, leader)
-        # Phase 555: REPORTS.PAS Get_HName (AKGEN_reverse_engineering_
-        # report (5).md SS6.1, machine-verified) substitutes "Royal
-        # Heir" for the stored name whenever this leader is still an
-        # unfinalized Royal Heir (turn/cast_execution.py
-        # is_unfinalized_royal_heir()) past the game's very first turn
-        # -- ldr < nkings is implicit here, since is_royal_heir is only
-        # ever set on a King's own slot (GameState.remove_leader()).
-        display_name = "Royal Heir" if state.turn_number > 0 and is_unfinalized_royal_heir(leader) else leader.name
+        display_name = _characters_report_display_name(state, leader)
         lines.append(
             f"{display_name:<14}{loc:>4}{alignment_label:>6}{temper_label:>6}{sex_label:>3}{race_label:>7}{pay:>3} {skill_row}"
         )
@@ -9542,6 +9679,11 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         if held_items:
             item_names = ", ".join(TREASURE_NAME[item.treasure] for item in held_items)
             lines.append(f"Items: {item_names}")
+
+    for leader in impulse2:
+        lines.extend(_render_stranger_row(state, leader, show_location=True, priest=priest, tell_align_distance=2))
+    for leader in impulse3:
+        lines.extend(_render_stranger_row(state, leader, show_location=False, priest=priest, tell_align_distance=None))
 
     return lines
 
