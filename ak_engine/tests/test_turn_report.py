@@ -303,6 +303,10 @@ from ak_engine.report.turn_report import (
     render_will,
     missile_attack_flavor,
     tactical_margin_bucket,
+    _best_ability,
+    _leader_ability_description,
+    _stranger_descriptor,
+    _tell_align,
 )
 from ak_engine.models.enums import SPELL_NAME, Ability, ActionCode, Spell
 from ak_engine.models.weapon import Weapon
@@ -6739,6 +6743,151 @@ def test_describe_characters_report_ignores_other_kingdoms_leaders():
     lines = describe_characters_report(state, 1)
 
     assert lines == [*_CHARACTERS_HEADER_LINES, "None at present"]
+
+
+# -- Phase 638: Desc_Stranger rendering primitives (Best_Ab/Get_AbDesc/
+# stranger descriptor/Tell_Align) -- primitives only, not wired into
+# describe_characters_report() yet, so tested directly.
+
+
+def test_best_ability_picks_the_clearly_highest_skilled_ability():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    leader = LeaderState(1, 1, "Aldric", HexCoord(0, 0), skills=_skills_with(ARCHERY=3, MELEE=1))
+
+    assert _best_ability(state, leader) == (Ability.ARCHERY, 3)
+
+
+def test_best_ability_ties_pick_the_earlier_declared_ability():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    leader = LeaderState(1, 1, "Aldric", HexCoord(0, 0), skills=_skills_with(MELEE=2, TACTICAL=2))
+
+    # Tactical is declared before Melee -- the documented, unsourced tie-break.
+    assert _best_ability(state, leader) == (Ability.TACTICAL, 2)
+
+
+def test_best_ability_with_no_skills_recorded_defaults_to_tactical_zero():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    leader = LeaderState(1, 1, "Aldric", HexCoord(0, 0))
+
+    assert _best_ability(state, leader) == (Ability.TACTICAL, 0)
+
+
+def test_leader_ability_description_matches_the_real_phrase_bands():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    cases = [(0, "noted for "), (1, "well known for "), (2, "famous for "), (3, "renowned for "), (4, "world-famous for "), (5, "revered for "), (6, "worshipped for "), (9, "worshipped for ")]
+    for level, phrase in cases:
+        # TACTICAL explicitly, not ARCHERY: level 0 ties with every other
+        # ability's own 0 default, and Tactical (declared first) wins that
+        # tie -- explicitly targeting it avoids the ambiguity entirely.
+        leader = LeaderState(1, 1, "Aldric", HexCoord(0, 0), skills=_skills_with(TACTICAL=level))
+        assert _leader_ability_description(state, leader) == f"(a Human {phrase}Tactics)"
+
+
+def test_leader_ability_description_race_falls_back_to_the_leaders_own_kingdom():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    leader = LeaderState(9, 2, "Kwoth", HexCoord(1, 1), skills=_skills_with(ARCHERY=2))
+
+    assert _leader_ability_description(state, leader) == "(a Elf famous for Archery)"
+
+
+def test_stranger_descriptor_dead_leader_shows_named_province():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(2, 2), Terrain.PLAINS, Race.HUMAN, name="Ashford"))
+    leader = LeaderState(9, 1, "Kwoth", HexCoord(2, 2))
+    state.add_leader(leader)
+    state.remove_leader(9)
+
+    assert _stranger_descriptor(state, state.dead_leaders[9]) == ": buried in Ashford"
+
+
+def test_stranger_descriptor_dead_leader_falls_back_to_province_code_when_unnamed():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    leader = LeaderState(9, 1, "Kwoth", HexCoord(2, 3))
+    state.add_leader(leader)
+    state.remove_leader(9)
+
+    assert _stranger_descriptor(state, state.dead_leaders[9]) == ": buried in 203"
+
+
+def test_stranger_descriptor_wandering_hero():
+    state = GameState()
+    leader = LeaderState(9, None, "Kwoth", HexCoord(1, 1))
+
+    assert _stranger_descriptor(state, leader) == ": a wandering Hero"
+
+
+def test_stranger_descriptor_a_king():
+    state = GameState()
+    leader = LeaderState(9, 2, "Foreign King", HexCoord(1, 1), is_king=True)
+
+    assert _stranger_descriptor(state, leader) == ": a King character"
+
+
+def test_stranger_descriptor_an_ordinary_hero_of_a_real_king():
+    state = GameState()
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 2, "Roderick", HexCoord(1, 1), is_king=True))
+    hero = LeaderState(9, 2, "Kwoth", HexCoord(1, 1))
+
+    assert _stranger_descriptor(state, hero) == ": Roderick's Hero"
+
+
+def test_stranger_descriptor_truncates_at_26_characters():
+    state = GameState()
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 2, "A Very Long Royal Name Indeed", HexCoord(1, 1), is_king=True))
+    hero = LeaderState(9, 2, "Kwoth", HexCoord(1, 1))
+
+    descriptor = _stranger_descriptor(state, hero)
+    assert len(descriptor) == 26
+    assert descriptor == ": A Very Long Royal Name I"
+
+
+def test_tell_align_basic_arithmetic_and_the_king_vs_hero_shift():
+    priest = LeaderState(1, 1, "Priest", HexCoord(0, 0))
+    hero_target = LeaderState(9, 2, "Kwoth", HexCoord(3, 5))
+    hero_target.alignment = Alignment.GOOD
+
+    assert _tell_align(hero_target, priest) is Alignment.DIVINE
+
+    king_target = LeaderState(9, 2, "Foreign King", HexCoord(3, 5), is_king=True)
+    king_target.alignment = Alignment.GOOD
+    # Same coordinates/alignment, only is_king differs -> different tdmod shift,
+    # so this is NOT a copy-paste of the assertion above.
+    assert _tell_align(king_target, priest) is Alignment.DRUID
+
+
+def test_tell_align_clamps_at_the_divine_floor():
+    priest = LeaderState(1, 1, "Priest", HexCoord(0, 0))
+    target = LeaderState(9, 2, "Kwoth", HexCoord(0, 3))
+    target.alignment = Alignment.GOOD  # raw ta computes to -2 here, unclamped
+
+    assert _tell_align(target, priest) is Alignment.DIVINE
+
+
+def test_tell_align_clamps_at_the_undead_ceiling():
+    priest = LeaderState(1, 1, "Priest", HexCoord(0, 0))
+    target = LeaderState(9, 2, "Kwoth", HexCoord(4, 0))
+    target.alignment = Alignment.ANTI_HOLY  # raw ta computes to 8 here, unclamped
+
+    assert _tell_align(target, priest) is Alignment.UNDEAD
+
+
+def test_tell_align_requires_a_recorded_alignment():
+    priest = LeaderState(1, 1, "Priest", HexCoord(0, 0))
+    target = LeaderState(9, 2, "Kwoth", HexCoord(3, 5))
+    assert target.alignment is None
+
+    with pytest.raises(AssertionError):
+        _tell_align(target, priest)
 
 
 # -- Phase 637: Was_Clairved -- a foreign leader targeted by an Enhanced-

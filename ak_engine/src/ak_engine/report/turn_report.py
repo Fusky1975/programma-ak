@@ -1196,7 +1196,7 @@ from ak_engine.models.enums import (
     Spell,
 )
 from ak_engine.models.advanced_ability import AdvancedAbility
-from ak_engine.models.alignment import ALIGNMENT_ABBREVIATION, Alignment
+from ak_engine.models.alignment import ALIGNMENT_ABBREVIATION, ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import (
     ARMY_TYPE_DESIGNATION,
@@ -1251,7 +1251,8 @@ from ak_engine.turn.encounter import CombatRange, FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance_wrapped
+from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 from ak_engine.turn.discovery_effects import effective_skill_level, emperor_holds_arcanes_valor_unification
 from ak_engine.turn.expenses import MaintenanceResult, compute_expected_expenses, leader_pay
 from ak_engine.turn.valhalla_execution import VALHALLA_VISITOR_RULES_TEMPLATE
@@ -9169,6 +9170,114 @@ def _skill_row_with_item_ticks(state: GameState, leader: LeaderState) -> str:
             parts.append('"')
         previous_owned_count = owned_count
     return "".join(parts)
+
+
+def _best_ability(state: GameState, leader: LeaderState) -> tuple[Ability, int]:
+    """``Best_Ab(ldr,ab,lev)`` (Phase 638): `ldr`'s highest-skilled
+    `Ability` and its level, feeding `_leader_ability_description()`
+    below. `Best_Ab`'s own body doesn't survive in any of the 13
+    available `.PAS` files -- only its call site (`RUMORS.PAS Get_
+    AbDesc`, line 486) does. The *concept* ("this leader's best
+    ability") is trivial; the exact tie-break when two abilities are
+    level-tied is genuinely unsourced. This picks the first `Ability`
+    (declaration order: Tactical, March, Naval, Archery, Melee, White,
+    Necromancy, Elemental, Psychic, Illusionist, Druid, Thief, Explorer,
+    Spy, Sage) reaching the max -- `max(..., key=...)` keeps the
+    first-seen maximum on a tie for free. Documented as a reasonable,
+    unproven choice, the same class of gap Phase 627's own tier-
+    selection tie-break already accepted. A `skills=None` leader reads
+    0 for every ability (`effective_skill_level()`'s own established
+    convention) and lands on `(Ability.TACTICAL, 0)`.
+    """
+
+    best = max(Ability, key=lambda ability: effective_skill_level(state, leader, ability))
+    return best, effective_skill_level(state, leader, best)
+
+
+_ABILITY_LEVEL_PHRASE = {
+    0: "noted for ",
+    1: "well known for ",
+    2: "famous for ",
+    3: "renowned for ",
+    4: "world-famous for ",
+    5: "revered for ",
+    6: "worshipped for ",
+}
+
+
+def _leader_ability_description(state: GameState, leader: LeaderState) -> str:
+    """``Get_AbDesc`` (`RUMORS.PAS` lines 481-507, Phase 638): "(a RACE
+    LEVEL_PHRASE for ABILITY_NOUN)", e.g. "(a Human famous for
+    Archery)". `anoun` (the ability-noun table `Get_AbDesc` reads) is
+    already ported verbatim as `models/enums.py ABILITY_NAME` --
+    confirmed via `Ability.MELEE: "Meleeing"`, an exact match -- no new
+    table needed. Race fallback mirrors Phase 637's own `describe_
+    characters_report()` fix: a `Desc_Stranger` target is exactly the
+    kind of non-owned leader with possibly no explicit `race` that fix
+    was written for.
+    """
+
+    ability, level = _best_ability(state, leader)
+    phrase = _ABILITY_LEVEL_PHRASE[min(level, 6)]
+    race = leader.race if leader.race is not None else state.kingdoms[leader.kingdom_id].race
+    return f"(a {RACE_NAME[race]} {phrase}{ABILITY_NAME[ability]})"
+
+
+def _king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | None:
+    return next((leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king), None)
+
+
+def _stranger_descriptor(state: GameState, target: LeaderState) -> str:
+    """The "as" descriptor string (`REPORTS.PAS Desc_Stranger`, Phase
+    638), capped at 26 characters like the real `Delete(as,27,99)`:
+    a dead leader shows "buried in {province}"; a kingdomless leader
+    shows "a wandering Hero"; a King shows "a King character";
+    otherwise "{their King's name}'s Hero". Only the real procedure's
+    English branch is modeled (the `Company = Roland` French variant
+    renders identical text either way -- every other composer in this
+    project already only renders the English branch).
+    """
+
+    if target.leader_id in state.dead_leaders:
+        province = state.provinces.get(target.location)
+        place = province.name if province is not None and province.name else province_code(target.location)
+        descriptor = f": buried in {place}"
+    elif target.kingdom_id is None:
+        descriptor = ": a wandering Hero"
+    elif target.is_king:
+        descriptor = ": a King character"
+    else:
+        king = _king_of_kingdom(state, target.kingdom_id)
+        descriptor = f": {king.name}'s Hero" if king is not None else ": a Hero"
+    return descriptor[:26]
+
+
+def _tell_align(target: LeaderState, priest: LeaderState, *, board_width: int = DEFAULT_WIDTH) -> Alignment:
+    """``Tell_Align`` (`REPORTS.PAS` lines 695-713, Phase 638) -- the
+    "Rod of alignment sensing" pseudo-random reveal impulse 3 always
+    shows, and impulse 2 shows too when the Priest is within 2 hexes of
+    the target. `target.alignment` must not be `None` -- a missing-
+    alignment rendering fallback belongs to the future wiring phase,
+    not this pure primitive.
+
+    ``ta := ord(lalign[ldr]) + ((lx[ldr]+ly[tcp]) MOD tdmod) Shr 1 -
+    ((100+ly[ldr]-lx[tcp]) MOD tdmod) Shr 1``, clamped to
+    ``[ord(Heavenly),ord(Undead)]`` -- `models/alignment.py
+    ALIGNMENT_ORDINAL`/`ALIGNMENT_BY_ORDINAL` (Phase 162) already give
+    the real Pascal `outlook` ordinal sequence this needs (`Heavenly`=0
+    is `Alignment.DIVINE`, `Undead`=7). `tdmod := (LDist(tcp,ldr)+1)
+    Shl ord(ldr >= nkings)` -- `ord(ldr >= nkings)` is 0 for a King, 1
+    for a Hero, translated here as `0 if target.is_king else 1`.
+    """
+
+    assert target.alignment is not None
+    td = hex_distance_wrapped(priest.location, target.location, board_width)
+    tdmod = (td + 1) << (0 if target.is_king else 1)
+    tx, ty = target.location.x, target.location.y
+    px, py = priest.location.x, priest.location.y
+    ta = ALIGNMENT_ORDINAL[target.alignment] + ((tx + py) % tdmod) // 2 - ((100 + ty - px) % tdmod) // 2
+    ta = max(ALIGNMENT_ORDINAL[Alignment.DIVINE], min(ALIGNMENT_ORDINAL[Alignment.UNDEAD], ta))
+    return ALIGNMENT_BY_ORDINAL[ta]
 
 
 def _was_clairved(state: GameState, target_leader_id: int, kingdom_id: int) -> bool:

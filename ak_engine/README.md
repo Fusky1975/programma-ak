@@ -26442,7 +26442,7 @@ follow-up request after the original 431-435 plan shipped.
   still resolves via `dead_leaders`, an unknown target id returns
   `False`). Full suite: 5308 -> 5325 (net +17).
 
-- **Phase 637 (current)**: `Was_Clairved` -- the CHARACTERS report's
+- **Phase 637**: `Was_Clairved` -- the CHARACTERS report's
   "impulse 1" pass is now modeled in full, not just "a kingdom's own
   leaders."
 
@@ -26499,6 +26499,61 @@ follow-up request after the original 431-435 plan shipped.
   hand-typed expected string, avoiding a spacing miscount -- see Phase
   635's own precedent); the race-fallback fix renders the target's own
   kingdom's race. Full suite: 5325 -> 5331 (net +6).
+
+- **Phase 638 (current)**: `Desc_Stranger` rendering primitives --
+  `Best_Ab`/`Get_AbDesc`/the "as" stranger descriptor/`Tell_Align` --
+  **primitives only, not wired into `describe_characters_report()`
+  yet**, continuing Phase 636's own "primitives now, wiring later"
+  pattern.
+
+  Re-reading `Desc_Stranger` (`REPORTS.PAS` lines 690-754, impulse
+  2/3's real prose renderer) line by line found it's more tractable
+  than previously assessed: 3 of its 4 real pieces are fully sourced.
+  `Get_AbDesc` (`RUMORS.PAS` lines 481-507, full body recovered):
+  "(a RACE LEVEL_PHRASE for ABILITY_NOUN)" -- its own ability-noun
+  table (`anoun`) turned out to already be ported verbatim as `models/
+  enums.py ABILITY_NAME` (`Ability.MELEE: "Meleeing"` is an exact
+  match), so only the 7 level phrases needed transcribing. `Tell_Align`
+  (`REPORTS.PAS` lines 695-713, full body recovered) -- a "Rod of
+  alignment sensing" pseudo-random reveal -- reuses `models/
+  alignment.py ALIGNMENT_ORDINAL`/`ALIGNMENT_BY_ORDINAL` (Phase 162,
+  built for an unrelated formula) for its own `[Heavenly,Undead]`
+  clamp range, and `turn/movement.py hex_distance_wrapped()` (Phase
+  636) for `LDist`. The "as" descriptor string (dead/wandering-Hero/
+  King/`"...'s Hero"`) needed no new state at all.
+
+  The one real gap: `Get_AbDesc` depends on `Best_Ab(ldr,ab,lev)`
+  ("this leader's best ability and its level"), whose own body doesn't
+  survive in any of the 13 available `.PAS` files -- only its call
+  site does. The concept is trivial (`max` skill level via the
+  already-existing `effective_skill_level()`); the exact tie-break
+  when two abilities are level-tied is genuinely unsourced. Implemented
+  as "first `Ability` in declaration order wins," documented as a
+  reasonable, unproven choice -- the same class of gap Phase 627's own
+  tier-selection tie-break already accepted.
+
+  **Deliberately excluded**: the mercenary hire-cost hint sub-block
+  (`IF lstate[ldr]=Mercenary THEN ...`) -- a leader's own "currently an
+  available-for-hire wandering Hero" personal state has no matching
+  concept anywhere in `GameState` today, a separate gap this phase
+  doesn't attempt to close.
+
+  New private helpers in `report/turn_report.py`: `_best_ability()`,
+  `_leader_ability_description()`, `_king_of_kingdom()`,
+  `_stranger_descriptor()`, `_tell_align()` -- none called from
+  `describe_characters_report()` yet. Wiring needs `Dispable`'s own
+  impulse-2/3 gates (`Known_Loc`, still blocked on `orig_turn`'s
+  unconfirmed real mapping) and a decision about the impulse-2-vs-3
+  loop structure, both left for a later phase (see
+  `project_characters_impulse23_phase636` project memory).
+
+  Tests: `tests/test_turn_report.py` gained 15 -- `_best_ability()`'s
+  own tie-break and no-skills default; all 7 real phrase bands plus
+  the race fallback; every `_stranger_descriptor()` branch including
+  26-character truncation; `_tell_align()`'s own arithmetic, the
+  King-vs-Hero `tdmod` shift producing different results for otherwise
+  identical inputs, both clamp directions, and the `alignment is None`
+  guard. Full suite: 5331 -> 5346 (net +15).
 
 ## Setup
 
