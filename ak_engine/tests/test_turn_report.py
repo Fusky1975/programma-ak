@@ -5670,6 +5670,109 @@ def test_describe_armies_report_non_skeletal_army_still_uses_atname():
     ]
 
 
+# -- Phase 642: ARMIES report's real "Mercenary" pass (Known_Merc) --
+
+_ARMIES_MERCENARY_INTRO = "The following unit(s) are independent mercenaries which you may Recruit:"
+_ARMIES_MERCENARY_CAPTION_LINE_1 = "                                                              Normal"
+_ARMIES_MERCENARY_COLUMN_HEADER = "Province          Leader         Designation           Race   Quality"
+
+
+def test_describe_armies_report_known_mercenary_in_owned_province():
+    state = _armies_state()
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == [
+        "None at present",
+        _ARMIES_MERCENARY_INTRO,
+        _ARMIES_MERCENARY_CAPTION_LINE_1,
+        _ARMIES_MERCENARY_COLUMN_HEADER,
+        "Capital City                     Bowmen                Human  Average",
+    ]
+
+
+def test_describe_armies_report_known_mercenary_via_adjacent_leader():
+    state = _armies_state()
+    state.add_province(ProvinceState(HexCoord(1, 0), Terrain.PLAINS, Race.HUMAN))  # unowned, adjacent to (0,0)
+    state.add_leader(LeaderState(1, 1, "Sir Aldric", HexCoord(0, 0)))  # this kingdom's own leader, radius 1 away
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(1, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert any(line.startswith("(1, 0)") or "Bowmen" in line for line in lines[2:])
+    assert _ARMIES_MERCENARY_INTRO in lines
+
+
+def test_describe_armies_report_unknown_mercenary_is_absent():
+    state = _armies_state()
+    state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN))  # unowned, far away
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(5, 5)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == ["None at present"]
+    assert _ARMIES_MERCENARY_INTRO not in lines
+
+
+def test_describe_armies_report_no_mercenary_section_when_none_known():
+    state = _armies_state()
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert _ARMIES_MERCENARY_INTRO not in lines
+
+
+def test_describe_armies_report_mercenary_section_appears_even_with_no_owned_armies():
+    # The real `none`/`strip` state is per-passtype (Phase 642 mirrors
+    # Phase 639's own CHARACTERS-report fix for the identical bug class):
+    # an empty Hired pass must not suppress a real Mercenary pass.
+    state = _armies_state()
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2] == "None at present"  # Hired pass, empty
+    assert _ARMIES_MERCENARY_INTRO in lines  # Mercenary pass, real content
+
+
+def test_describe_armies_report_mercenary_suppresses_province_column_after_the_second():
+    state = _armies_state()
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_army(ArmyState(10, None, ArmyType.AXEMEN, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    rows = lines[lines.index(_ARMIES_MERCENARY_COLUMN_HEADER) + 1 :]
+    assert rows == [
+        "Capital City                     Bowmen                Human  Average",
+        "(#0)                             Axemen                Human  Average",
+    ]
+
+
+def test_describe_armies_report_mercenary_race_falls_back_to_the_provinces_own_race():
+    state = _armies_state()  # viewing kingdom (Testland) is Human
+    state.add_province(ProvinceState(HexCoord(2, 2), Terrain.PLAINS, Race.ELVEN, owner_kingdom_id=1))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(2, 2)))
+
+    lines = describe_armies_report(state, 1)
+
+    mercenary_row = lines[-1]
+    assert "Elf" in mercenary_row  # the province's own race, not the viewer's Human
+    assert "Human" not in mercenary_row
+
+
+def test_describe_armies_report_mercenary_leader_column_is_blank_not_garrison():
+    state = _armies_state()
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    mercenary_row = lines[-1]
+    assert "Garrison" not in mercenary_row
+
+
 # -- Phase 217: describe_letter_reports() -- the "LETTER REPORTS" section --
 
 

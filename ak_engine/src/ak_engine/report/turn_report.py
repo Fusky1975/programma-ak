@@ -1254,7 +1254,7 @@ from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.imperial_intelligence import known_bordering_kingdom_tax_bases, known_bordering_kingdom_treasuries
-from ak_engine.turn.leader_visibility import leader_location_known_to_kingdom
+from ak_engine.turn.leader_visibility import known_mercenary, leader_location_known_to_kingdom
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance_wrapped
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 from ak_engine.turn.discovery_effects import effective_skill_level, emperor_holds_arcanes_valor_unification
@@ -9780,6 +9780,67 @@ _ARMIES_COLUMN_HEADER = "Province          Leader         Designation           
 # repeated province name.
 _ARMIES_BLANK_PROVINCE_COLUMN = " " * 18
 
+# REPORTS.PAS Rep_Armies Doit (~lines 942, 946, 949, Phase 642), the
+# Mercenary-pass variant: the same intro/caption/header shape as the
+# Hired pass above, transcribed independently from source rather than
+# derived by stripping the Hired constants' own trailing "  Modified"/
+# "  Quality" -- keeps both pairs independently verifiable.
+_ARMIES_MERCENARY_INTRO = "The following unit(s) are independent mercenaries which you may Recruit:"
+_ARMIES_MERCENARY_CAPTION_LINE_1 = "                                                              Normal"
+_ARMIES_MERCENARY_COLUMN_HEADER = "Province          Leader         Designation           Race   Quality"
+
+
+def _army_row_province_field(state: GameState, location: HexCoord, province_index: int) -> tuple[str, int]:
+    """The per-province column-suppression state (Phase 436's own
+    `Check_None`-equivalent, shared by both `describe_armies_report()`
+    passes): the first army at a province gets the full 18-char field,
+    the second gets `"(#code)"`, every later one a blank field. Returns
+    the rendered field and the incremented `province_index` for the
+    caller's own running per-province counter.
+    """
+
+    if province_index == 0:
+        province = state.provinces.get(location)
+        if province is not None and province.name:
+            province_field = f"{province.name[:18]:<18}"
+        else:
+            province_field = f"{f'({location.x}, {location.y})'[:18]:<18}"
+    elif province_index == 1:
+        province_field = f"{f'(#{province_code(location)})':<18}"
+    else:
+        province_field = _ARMIES_BLANK_PROVINCE_COLUMN
+    return province_field, province_index + 1
+
+
+def _render_army_row(
+    state: GameState,
+    army: ArmyState,
+    *,
+    province_field: str,
+    leader_label: str,
+    default_race: Race,
+    include_modified_quality: bool,
+) -> str:
+    """One ARMIES row (Hired or Mercenary pass alike, Phase 642
+    extracts this out of the Hired-only loop it originally lived in) --
+    province/leader/designation/race/quality, plus Modified Quality only
+    for the Hired pass (`include_modified_quality`, the real `Doit`'s
+    own `IF passtype = Hired THEN WRITE(...aq...)` branch).
+    """
+
+    if army.is_skeletal:
+        designation = f"Skel {ARMY_TYPE_DESIGNATION[army.army_type]}"
+    else:
+        designation = ARMY_TYPE_NAME[army.army_type]
+    race = MONSTROUS_ARMY_RACE.get(army.army_type, default_race)
+    race_name = RACE_NAME[race]
+    quality_name = QUALITY_NAME[army.quality]
+    row = f"{province_field}{leader_label[:15]:<15}{designation[:20]:<20}{race_name:>7}{quality_name:>9}"
+    if include_modified_quality:
+        modified_quality_name = QUALITY_NAME[compute_army_modified_quality(state, army)]
+        row += f"{modified_quality_name:>9}"
+    return row
+
 
 def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
     """Lists every army this kingdom currently owns, grouped by province --
@@ -9797,12 +9858,24 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
     is one of the largest procedures in the available Pascal archive,
     after `Rep_Leaders`/CHARACTERS and `List_Treas`):
 
-    - The real procedure makes two passes -- `Hired` (armies this kingdom
-      actually commands) and `Mercenary` (independent mercenaries visible
-      nearby that this kingdom *could* Recruit). Only the `Hired`-pass
-      concept is modeled here (armies with ``ArmyState.kingdom_id ==
-      kingdom_id``); the Mercenary pass needs `Known_Merc`/`Commanded`
-      eligibility state this project's `GameState` doesn't track.
+    - **Both real passes are now modeled** (Phase 642): `Hired` (armies
+      this kingdom actually commands, ``ArmyState.kingdom_id ==
+      kingdom_id``) and `Mercenary` (independent mercenaries this
+      kingdom can currently see and Recruit, via `Known_Merc` -- `turn/
+      leader_visibility.py known_mercenary()`, reusing `leader_near()`
+      at `radius=1`). An earlier version of this docstring called the
+      Mercenary pass blocked on "eligibility state this project's
+      `GameState` doesn't track" -- stale even when written, `astate[an]
+      = Mercenary` maps directly onto the already-existing `ArmyState.
+      kingdom_id is None` (the exact predicate `GameState.mercenaries_
+      at()` already used). Both passes share `_render_army_row()`/
+      `_army_row_province_field()` below; the Mercenary pass renders a
+      blank Leader column (the real `Doit`'s own `ELSE s:=''` for
+      `passtype <> Hired`, not `"Garrison"`) and no Modified-Quality
+      column, and -- matching `REPORTS.PAS`'s own `IF strip THEN IF
+      passtype = Hired THEN WRITELN('None at present')`, a guard that
+      only ever fires for the Hired pass -- renders nothing at all
+      (not even its own header) when no mercenary is currently known.
     - **Skeletal-Army designation (Phase 281)**: the real table's
       ``Doit`` procedure (nested inside ``Rep_Armies`` itself,
       ``REPORTS.PAS:986-992``, the exact site ``turn/army_naming.py
@@ -9880,48 +9953,70 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
     owned = [army for army in state.armies.values() if army.kingdom_id == kingdom_id]
     if not owned:
         lines.append(_ARMIES_REPORT_NONE_AT_PRESENT)
-        return lines
+    else:
+        lines.append(_ARMIES_CAPTION_LINE_1)
+        lines.append(_ARMIES_COLUMN_HEADER)
 
-    lines.append(_ARMIES_CAPTION_LINE_1)
-    lines.append(_ARMIES_COLUMN_HEADER)
+        owned.sort(key=lambda army: (army.location.x, army.location.y, army.army_id))
 
-    owned.sort(key=lambda army: (army.location.x, army.location.y, army.army_id))
+        province_index = 0
+        previous_coord: HexCoord | None = None
+        for army in owned:
+            if army.location != previous_coord:
+                previous_coord = army.location
+                province_index = 0
+            province_field, province_index = _army_row_province_field(state, army.location, province_index)
 
-    province_index = 0
-    previous_coord: HexCoord | None = None
-    for army in owned:
-        if army.location != previous_coord:
-            previous_coord = army.location
-            province_index = 0
-
-        if province_index == 0:
-            province = state.provinces.get(army.location)
-            if province is not None and province.name:
-                province_field = f"{province.name[:18]:<18}"
+            if army.commanded_by is not None and army.commanded_by in state.leaders:
+                leader_label = state.leaders[army.commanded_by].name
             else:
-                province_field = f"{f'({army.location.x}, {army.location.y})'[:18]:<18}"
-        elif province_index == 1:
-            province_field = f"{f'(#{province_code(army.location)})':<18}"
-        else:
-            province_field = _ARMIES_BLANK_PROVINCE_COLUMN
-        province_index += 1
+                leader_label = "Garrison"
+            default_race = kingdom.race
+            lines.append(
+                _render_army_row(
+                    state,
+                    army,
+                    province_field=province_field,
+                    leader_label=leader_label,
+                    default_race=default_race,
+                    include_modified_quality=True,
+                )
+            )
 
-        if army.commanded_by is not None and army.commanded_by in state.leaders:
-            leader_label = state.leaders[army.commanded_by].name
-        else:
-            leader_label = "Garrison"
-        if army.is_skeletal:
-            designation = f"Skel {ARMY_TYPE_DESIGNATION[army.army_type]}"
-        else:
-            designation = ARMY_TYPE_NAME[army.army_type]
-        race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race)
-        race_name = RACE_NAME[race]
-        quality_name = QUALITY_NAME[army.quality]
-        modified_quality_name = QUALITY_NAME[compute_army_modified_quality(state, army)]
-        lines.append(
-            f"{province_field}{leader_label[:15]:<15}{designation[:20]:<20}"
-            f"{race_name:>7}{quality_name:>9}{modified_quality_name:>9}"
-        )
+    # Phase 642: the real "Mercenary" pass -- independent mercenaries
+    # this kingdom can currently see and Recruit (Known_Merc, `turn/
+    # leader_visibility.py known_mercenary()`). No "None at present"
+    # fallback when empty (REPORTS.PAS's own `IF strip THEN IF passtype
+    # = Hired THEN WRITELN('None at present')` only ever fires for the
+    # Hired pass) -- the whole block, header included, is simply absent.
+    mercenaries = [army for army in state.armies.values() if known_mercenary(state, army, kingdom_id)]
+    if mercenaries:
+        lines.append(_ARMIES_MERCENARY_INTRO)
+        lines.append(_ARMIES_MERCENARY_CAPTION_LINE_1)
+        lines.append(_ARMIES_MERCENARY_COLUMN_HEADER)
+
+        mercenaries.sort(key=lambda army: (army.location.x, army.location.y, army.army_id))
+
+        province_index = 0
+        previous_coord = None
+        for army in mercenaries:
+            if army.location != previous_coord:
+                previous_coord = army.location
+                province_index = 0
+            province_field, province_index = _army_row_province_field(state, army.location, province_index)
+
+            province = state.provinces.get(army.location)
+            default_race = province.race if province is not None else kingdom.race
+            lines.append(
+                _render_army_row(
+                    state,
+                    army,
+                    province_field=province_field,
+                    leader_label="",
+                    default_race=default_race,
+                    include_modified_quality=False,
+                )
+            )
 
     return lines
 

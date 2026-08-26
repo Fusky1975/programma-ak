@@ -26677,7 +26677,7 @@ follow-up request after the original 431-435 plan shipped.
   "met" prerequisite at all; figures with no alignment sentence when
   neither condition applies. Full suite: 5361 -> 5371 (net +10).
 
-- **Phase 641 (current)**: Royal titles' "Improved Training" bonus
+- **Phase 641**: Royal titles' "Improved Training" bonus
   (`AIR_FORCE`/`PRAETOR`/`FLAGSHIP`) -- wired into [6.1]'s own army-
   quality-training roll.
 
@@ -26726,6 +26726,54 @@ follow-up request after the original 431-435 plan shipped.
   actually reaches the real roll and that the title-holder's own roll
   stays unboosted even while a sibling army in the same pool gets the
   full bonus. Full suite: 5371 -> 5379 (net +8).
+
+- **Phase 642 (current)**: ARMIES report -- wires the real "Mercenary"
+  pass (`Known_Merc`), the last item still open for this report.
+
+  `describe_armies_report()`'s own docstring said the Mercenary pass
+  (independent mercenaries a kingdom can currently see and Recruit)
+  "needs `Known_Merc`/`Commanded` eligibility state this project's
+  `GameState` doesn't track" -- stale: `Known_Merc`'s own real formula
+  (`RUMORS.PAS` lines 231-235) is `(astate[an]=Mercenary) and
+  (powner[...]=kng or Ldr_Near(kng,...,1))`, and every piece already
+  existed -- `astate[an]=Mercenary` is `ArmyState.kingdom_id is None`
+  (the exact predicate `GameState.mercenaries_at()` already used), and
+  `Ldr_Near(...,1)` is `turn/leader_visibility.py leader_near()` at
+  `radius=1`, exactly what that module's own Phase 636 docstring had
+  already flagged this exact function for. New `known_mercenary()`
+  there closes the module's own last originally-deferred item.
+
+  `describe_armies_report()`: extracted the existing Hired-pass row-
+  rendering body into shared `_render_army_row()`/`_army_row_province_
+  field()` helpers, then added the Mercenary pass using them -- a blank
+  Leader column (the real `Doit`'s own `ELSE s:=''` for `passtype <>
+  Hired`, not `"Garrison"`), no Modified-Quality column, and (matching
+  `REPORTS.PAS`'s own `IF strip THEN IF passtype = Hired THEN
+  WRITELN('None at present')`, which only ever fires for the Hired
+  pass) no fallback text at all when no mercenary is known -- the whole
+  block, header included, is simply absent. Also fixed the same "early
+  return before the second pass" bug class Phase 639 already found and
+  fixed for CHARACTERS: an empty Hired pass must not skip a real
+  Mercenary pass (the real `none`/`strip` state is per-`passtype`, not
+  shared across both). One real, undersourced choice made explicitly:
+  a mercenary army's own race (`Mod_ARace`, no surviving Pascal body)
+  falls back to the *province's* own race when the army type isn't
+  monstrous, not the viewing kingdom's -- a mercenary has no owning
+  kingdom to fall back to at all, and the province it's standing in is
+  the more sensible source of "what race is this unit" than an
+  unrelated foreign kingdom's own race.
+
+  Tests: `tests/test_leader_visibility.py` gained 4 -- `known_
+  mercenary()` in an owned province, via an adjacent (`radius=1`)
+  loyal leader, false beyond that radius, and false for a kingdom-
+  owned (non-mercenary) army. `tests/test_turn_report.py` gained 8 --
+  a known mercenary's full row (blank Leader, no Modified Quality); the
+  adjacent-leader case; an unknown mercenary produces no Mercenary
+  section at all; a kingdom with owned armies but no known mercenaries
+  shows Hired only; the Mercenary section still appears with zero
+  owned armies (the early-return fix); the province-suppression
+  sequence for 2+ mercenaries; the province-race fallback; the blank
+  (not "Garrison") Leader column. Full suite: 5379 -> 5391 (net +12).
 
 ## Setup
 

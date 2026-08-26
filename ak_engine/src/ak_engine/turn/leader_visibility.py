@@ -24,16 +24,17 @@ explicit caller-supplied parameter rather than resolving it internally
 itself never derives), but every real caller now simply passes `state.
 turn_number`.
 
-Also deliberately out of scope: ``Known_Merc`` (``RUMORS.PAS``), a
-*different* report's own mercenary-army-visibility check that reuses
-``leader_near()`` at ``radius=1`` -- not touched here.
+``known_mercenary()`` (Phase 642) closes the module's own last
+originally-deferred item: ``Known_Merc`` (``RUMORS.PAS``), the ARMIES
+report's own mercenary-army-visibility check, reusing ``leader_near()``
+at ``radius=1`` exactly as this docstring originally flagged.
 """
 
 from __future__ import annotations
 
 import itertools
 
-from ak_engine.models.game_state import GameState
+from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.map import HexCoord
 from ak_engine.turn.movement import hex_distance_wrapped
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
@@ -120,3 +121,30 @@ def leader_location_known_to_kingdom(
     )
 
     return cover_gate and location_gate
+
+
+def known_mercenary(
+    state: GameState,
+    army: ArmyState,
+    kingdom_id: int,
+    *,
+    board_width: int = DEFAULT_WIDTH,
+) -> bool:
+    """``Known_Merc(an,kng)`` -- ``RUMORS.PAS`` lines 231-235 (Phase 642),
+    the ARMIES report's own "which independent mercenaries can this
+    kingdom see and Recruit" check:
+
+    ``Known_Merc := (astate[an] = Mercenary) and ((powner[ax,ay] = kng)
+    or (Ldr_Near(kng,ax,ay,1)))``
+
+    ``astate[an] = Mercenary`` is ``army.kingdom_id is None`` -- the
+    exact predicate `GameState.mercenaries_at()` already uses. `radius=1`
+    here (adjacent province counts), unlike `Known_Loc`'s own `radius=0`
+    for the CHARACTERS report.
+    """
+
+    if army.kingdom_id is not None:
+        return False
+    province = state.provinces.get(army.location)
+    owner_kingdom_id = province.owner_kingdom_id if province is not None else None
+    return owner_kingdom_id == kingdom_id or leader_near(state, kingdom_id, army.location, 1, board_width=board_width)

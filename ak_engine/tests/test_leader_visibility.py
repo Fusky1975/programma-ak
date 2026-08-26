@@ -5,10 +5,12 @@ sourced derivation.
 
 from __future__ import annotations
 
-from ak_engine.models.game_state import GameState, LeaderState, ProvinceState
+from ak_engine.models.army_type import ArmyType
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
-from ak_engine.turn.leader_visibility import leader_location_known_to_kingdom, leader_near
+from ak_engine.turn.combat import Quality
+from ak_engine.turn.leader_visibility import known_mercenary, leader_location_known_to_kingdom, leader_near
 from ak_engine.turn.movement import hex_distance_wrapped
 
 HOME = HexCoord(5, 4)
@@ -142,3 +144,42 @@ def test_known_loc_resolves_a_dead_target_via_dead_leaders():
 def test_known_loc_false_for_an_unknown_leader_id():
     state = GameState()
     assert leader_location_known_to_kingdom(state, 999, 1, orig_turn=1) is False
+
+
+# -- known_mercenary() -- Known_Merc(an,kng) --
+
+
+def _mercenary(army_id: int, coord: HexCoord) -> ArmyState:
+    return ArmyState(army_id, None, ArmyType.BOWMEN, Quality.AVERAGE, coord)
+
+
+def test_known_mercenary_true_in_an_owned_province():
+    state = GameState()
+    state.provinces[HOME] = _province(HOME, owner=1)
+    mercenary = _mercenary(9, HOME)
+    assert known_mercenary(state, mercenary, 1) is True
+
+
+def test_known_mercenary_true_with_a_loyal_leader_within_one_hex():
+    state = GameState()
+    adjacent = HexCoord(6, 4)
+    state.provinces[adjacent] = _province(adjacent, owner=None)
+    state.add_leader(_leader(1, 1, HOME))
+    mercenary = _mercenary(9, adjacent)
+    assert known_mercenary(state, mercenary, 1) is True
+
+
+def test_known_mercenary_false_beyond_one_hex():
+    state = GameState()
+    far = HexCoord(8, 4)
+    state.provinces[far] = _province(far, owner=None)
+    state.add_leader(_leader(1, 1, HOME))
+    mercenary = _mercenary(9, far)
+    assert known_mercenary(state, mercenary, 1) is False
+
+
+def test_known_mercenary_false_for_an_owned_army():
+    state = GameState()
+    state.provinces[HOME] = _province(HOME, owner=1)
+    owned_army = ArmyState(9, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME)
+    assert known_mercenary(state, owned_army, 1) is False
