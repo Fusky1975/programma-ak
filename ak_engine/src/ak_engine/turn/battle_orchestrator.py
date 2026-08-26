@@ -213,7 +213,7 @@ from ak_engine.turn.encounter import (
 from ak_engine.turn.initiative import character_initiative
 from ak_engine.turn.merit_points import battle_quality_points
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
-from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles
+from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles, is_march_immune_party
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
@@ -2311,14 +2311,25 @@ def fight_multi_attacker_battle(
     # MARCH TABLE) -- 0 (the table's own floor) for a party whose leader
     # isn't recorded in `state.leaders`, the same permissive-missing-data
     # convention used throughout this project.
+    #
+    # Phase 647: a party whose entire army composition is Eagle Wing/
+    # Dragon Wing gets 0 too -- "not affected by March ability" at all,
+    # not just excluded from the movement-bonus half (Phase 523) --
+    # `is_march_immune_party()`'s own docstring for the full sourcing.
+    def _party_march_level(party: MultiAttackerParty) -> int:
+        army_types = [state.armies[aid].army_type for aid in party.army_ids if aid in state.armies]
+        if is_march_immune_party(army_types):
+            return 0
+        if party.leader_id not in state.leaders:
+            return 0
+        return effective_skill_level(state, state.leaders[party.leader_id], Ability.MARCH)
+
     attackers = [
         Attacker(
             leader_id=p.leader_id,
             kingdom_id=p.kingdom_id,
             origin_province=p.origin_province,
-            march_level=effective_skill_level(state, state.leaders[p.leader_id], Ability.MARCH)
-            if p.leader_id in state.leaders
-            else 0,
+            march_level=_party_march_level(p),
         )
         for p in parties
     ]

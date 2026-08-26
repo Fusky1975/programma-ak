@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import random
 
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.map import HexCoord
 from ak_engine.turn.multiple_contingents import (
     MARCH_UNITE_CHANCE,
     Attacker,
     eligible_to_unite,
     group_attackers_into_battles,
+    is_march_immune_party,
     march_unite_chance,
     roll_unite_for_battle,
 )
@@ -46,6 +48,26 @@ def test_roll_unite_uses_higher_chance_for_same_origin():
 
     assert roll_unite_for_battle(a, b_same, rng) is True
     assert roll_unite_for_battle(a, b_diff, rng) is False
+
+
+def test_is_march_immune_party_all_dragon_wing():
+    assert is_march_immune_party([ArmyType.DRAGON_WING, ArmyType.DRAGON_WING]) is True
+
+
+def test_is_march_immune_party_all_eagle_wing():
+    assert is_march_immune_party([ArmyType.EAGLE_WING]) is True
+
+
+def test_is_march_immune_party_mixed_air_and_land_is_not_immune():
+    assert is_march_immune_party([ArmyType.EAGLE_WING, ArmyType.BOWMEN]) is False
+
+
+def test_is_march_immune_party_all_land_is_not_immune():
+    assert is_march_immune_party([ArmyType.BOWMEN, ArmyType.AXEMEN]) is False
+
+
+def test_is_march_immune_party_empty_composition_is_not_immune():
+    assert is_march_immune_party([]) is False
 
 
 def test_roll_unite_uses_the_attackers_own_march_level():

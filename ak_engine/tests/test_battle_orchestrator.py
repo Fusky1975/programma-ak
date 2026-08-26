@@ -2725,6 +2725,52 @@ def test_fight_multi_attacker_battle_looks_up_each_leaders_own_march_skill():
     assert sorted(battles[0].leader_ids) == [10, 20]
 
 
+def test_fight_multi_attacker_battle_eagle_dragon_party_ignores_march_skill():
+    # Phase 647: "Aquile e Draghi non sono influenzati dal Talento
+    # Marcia" -- same setup as the March-lookup test above (real
+    # March-4 skill on leader 20), but army 102 is Dragon Wing this
+    # time, so the party's entire composition is Eagle/Dragon Wing.
+    # The 0.5 roll should now fail to unite (20% at the forced level
+    # 0), not succeed (60% at the real level 4).
+    state = build_state(attacker_quality=Quality.GREEN, defender_quality=Quality.ELITE)
+    state.armies[201].army_type = ArmyType.HVY_CAVALRY
+    state.add_army(ArmyState(102, 1, ArmyType.DRAGON_WING, Quality.GREEN, FIELD))
+    state.add_leader(
+        LeaderState(20, kingdom_id=1, name="Marcher", location=HexCoord(9, 9), skills=_skills_with(Ability.MARCH, 4, 9))
+    )
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5)),
+        MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102], origin_province=HexCoord(9, 9)),
+    ]
+    rng = ScriptedRandom([0.5] + [0.5] * 40, choice_indices=[0] * 40)
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 2  # not united -- march_level forced to 0 despite real skill 4
+
+
+def test_fight_multi_attacker_battle_mixed_eagle_and_land_party_keeps_march_skill():
+    # A party with even one non-Eagle/Dragon army isn't immune -- the
+    # real March-4 skill still applies, same outcome as the plain
+    # March-lookup test (united).
+    state = build_state(attacker_quality=Quality.GREEN, defender_quality=Quality.ELITE)
+    state.armies[201].army_type = ArmyType.HVY_CAVALRY
+    state.add_army(ArmyState(102, 1, ArmyType.DRAGON_WING, Quality.GREEN, FIELD))
+    state.add_army(ArmyState(103, 1, ArmyType.BOWMEN, Quality.GREEN, FIELD))
+    state.add_leader(
+        LeaderState(20, kingdom_id=1, name="Marcher", location=HexCoord(9, 9), skills=_skills_with(Ability.MARCH, 4, 9))
+    )
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5)),
+        MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102, 103], origin_province=HexCoord(9, 9)),
+    ]
+    rng = ScriptedRandom([0.5] + [0.5] * 40, choice_indices=[0] * 40)
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 1  # united -- the real March-4 skill still applies
+
+
 def test_fight_multi_attacker_battle_claims_province_for_largest_contingent_kingdom():
     state = build_state()
     state.add_kingdom(KingdomState(3, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))

@@ -65,20 +65,45 @@ supplies their own March level (typically 0, since it's irrelevant to
 them), which is the documented, conservative fallback rather than
 inventing a Naval-keyed table.
 
-**Eagles/Dragons' own carve-out** ("not affected by March ability") is
-not modeled -- ``Attacker`` has no army-composition field to check
-whether a given attacker's forces are entirely Eagles/Dragons, and
-guessing which army-type mix should bypass the table is out of scope
-for this phase.
+**Eagles/Dragons' own carve-out** ("not affected by March ability",
+Regolamento AK.txt's own "TABELLA DELLA MARCIA" addendum, word-for-
+word the same as RULES.AK [4.12]) -- **Phase 647's own follow-up,
+modeled now**: ``is_march_immune_party()`` below returns ``True`` only
+when a party's *entire* army composition is Eagle Wing/Dragon Wing
+(``models/army_type.py OVERFLIGHT_AIR``, the same set Phase 641's own
+AIR_FORCE title-matching already uses for this exact "flying" category)
+-- a mixed party (some flying, some not) still benefits from March
+normally, since the rulebook's text narrows the carve-out to the units
+themselves, not to a leader who merely commands some. The caller
+(``turn/battle_orchestrator.py fight_multi_attacker_battle()``) supplies
+``march_level=0`` for an immune party, reusing this module's own
+already-established "0 is the table's own floor, and the documented
+fallback for 'March doesn't apply here'" convention -- the same one
+already used for a sea invasion's own March level above, not a new
+mechanism invented for this case.
 """
 
 from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from typing import Iterable
 
+from ak_engine.models.army_type import ArmyType, OVERFLIGHT_AIR
 from ak_engine.models.map import HexCoord
 from ak_engine.turn.movement import hex_distance
+
+
+def is_march_immune_party(army_types: Iterable[ArmyType]) -> bool:
+    """"Aquile e Draghi non sono influenzati dal Talento Marcia" -- True
+    only when every army type given is Eagle Wing or Dragon Wing
+    (``OVERFLIGHT_AIR``), and at least one type was given at all (an
+    empty composition -- a leader invading with no army -- has no
+    sourced reading either way, so it doesn't count as immune).
+    """
+
+    types = list(army_types)
+    return bool(types) and all(army_type in OVERFLIGHT_AIR for army_type in types)
 
 # RULES.AK [4.12] MARCH TABLE / Regolamento AK.txt's own "TABELLA DELLA
 # MARCIA" -- "Contingents Unify %" half only (see module docstring).

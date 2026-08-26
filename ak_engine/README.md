@@ -26953,7 +26953,7 @@ follow-up request after the original 431-435 plan shipped.
 
   This closes the entire 2026-08-26 codebase survey.
 
-- **Phase 647 (current)**: Skeletal Army "digs its own grave" on
+- **Phase 647**: Skeletal Army "digs its own grave" on
   Leave/reassign, found by a fresh codebase survey after the 2026-08-26
   one closed out.
 
@@ -27002,6 +27002,43 @@ follow-up request after the original 431-435 plan shipped.
   `render_skeletal_army_dug_grave()`'s own template text; `describe_
   leave()` rendering the `_ADig` line alone and after an ordinary LEAVE
   sentence. Full suite: 5414 -> 5426 (net +12).
+
+- **Phase 648 (current)**: Eagles/Dragons' own March-immunity carve-out
+  in Multiple Contingents, the 2nd candidate from the fresh survey that
+  found Phase 647.
+
+  RULES.AK [4.12] MARCH TABLE / Regolamento AK.txt's own "TABELLA DELLA
+  MARCIA": "Aquile e Draghi non sono influenzati dal Talento Marcia" --
+  Eagles and Dragons aren't affected by the March ability *at all*, not
+  just its movement-bonus half (already closed by Phase 523's own
+  "air-unit correction"). The remaining half is `turn/multiple_
+  contingents.py`'s own "Contingents Unify %" table -- the chance that
+  two attackers invading the same province join into one battle --
+  which still used a leader's real March skill unconditionally for an
+  all-flying party.
+
+  New `turn/multiple_contingents.py is_march_immune_party(army_types)`:
+  `True` only when *every* army type given is Eagle Wing/Dragon Wing
+  (`models/army_type.py OVERFLIGHT_AIR`, the same set Phase 641's own
+  AIR_FORCE title-matching already uses) -- a mixed party (some flying,
+  some not) still benefits from March normally, since the rulebook's
+  carve-out is about the units themselves, not a leader who merely
+  commands some of them. `turn/battle_orchestrator.py fight_multi_
+  attacker_battle()`'s own `attackers` construction now resolves each
+  party's real army types and forces `march_level=0` for an immune
+  party -- reusing the module's own already-established "0 is the
+  documented fallback for 'March doesn't apply here'" convention (the
+  same one a sea invasion's own March level already used), not a new
+  mechanism.
+
+  Tests: `tests/test_multiple_contingents.py` gained 5 --
+  `is_march_immune_party()` for all-Dragon, all-Eagle, mixed-air-and-
+  land (not immune), all-land (not immune), and an empty composition
+  (not immune). `tests/test_battle_orchestrator.py` gained 2 --
+  an all-Dragon-Wing party with a real March-4 skill fails to unite at
+  distance 2+ (forced to level 0, 20% not 60%); a mixed Dragon-Wing +
+  Bowmen party still uses the real March-4 skill (unites normally).
+  Full suite: 5426 -> 5433 (net +7).
 
 ## Setup
 
