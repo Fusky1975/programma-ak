@@ -1,7 +1,13 @@
 """Executing a Trail (rulebook [3.17]) order -- Phase 52, extended with a
 standalone multi-phase chase-step primitive in Phase 68 (``advance_trail``,
-not auto-wired anywhere yet -- see that section below), and Actions
-backfilled from ``turn/turn_processor.py`` in Phase 252.
+auto-wired across phases since Phase 70 -- see that section below), and
+Actions backfilled from ``turn/turn_processor.py`` in Phase 252.
+
+**Phase 652 correction, kept for the record**: an earlier version of
+this note called ``advance_trail`` "not auto-wired anywhere yet" --
+stale even when written: ``turn/turn_processor.py``'s own "PERSISTENT
+PURSUE/TRAIL CHASE" mechanism (Phase 70) has called it across phases
+via ``active_pursuits`` since that same phase.
 
 **[3.17] Trail, quoted in full** (also quoted in ``turn/trail_decode.py``'s
 own docstring):

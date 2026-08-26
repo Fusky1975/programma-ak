@@ -73,10 +73,14 @@ reaches an LMOVE/PURSUE/TRAIL phase -- rulebook [3.15]: "If he receives
 a Move, Pursue or Trail order, the Defend order is cancelled." Runs
 before ``_apply_defend_reinforcements`` each phase, so a leader who's
 moving/pursuing/trailing this phase no longer reacts to an invasion
-this same phase either. Only this cancellation trigger is modeled; the
-rulebook's other one ("cancelled if he loses a battle") stays a
-distinct, still-open gap -- see ``_apply_defend_cancellations``'s own
-docstring for why.
+this same phase either. **Phase 652 correction, kept for the record**:
+an earlier version of this note called the rulebook's other trigger
+("cancelled if he loses a battle") "a distinct, still-open gap" --
+stale even when written, contradicted by ``_apply_defend_
+cancellations``'s own docstring two paragraphs below it in this same
+file: that trigger is handled separately (Phase 72, via the persistent
+``defeated_while_defending`` set) -- see that function's own docstring
+for the full account.
 
 **PERSISTENT PURSUE/TRAIL CHASE (Phase 70)**: rulebook [3.16]: "A
 character can be ordered to chase after another character for the
@@ -118,9 +122,11 @@ step rather than the whole approved ask**: "Characters On Patrol"
 a self-targeting Pursue's own detect-any-adjacent-enemy semantics are
 structurally different from directed chase-toward-one-target and would
 need a different implementation, not attempted here. Defend's other
-cancellation trigger ("cancelled if he loses a battle") remains the
-same open gap ``_apply_defend_cancellations`` already documents. A
-Pursue/Trail resolved via the *mutual-encounter* dispatch path is
+cancellation trigger ("cancelled if he loses a battle") is handled via
+the persistent ``defeated_while_defending`` set -- see ``_apply_
+defend_cancellations``'s own docstring for the full account, not a
+gap. A Pursue/Trail resolved via the *mutual-encounter* dispatch path
+is
 never registered for persistence either -- only the plain single-leader
 ``_dispatch_single`` path is, keeping continuation detection to the
 common case (PURSUE never participates in the multi-attacker LMOVE

@@ -27145,7 +27145,7 @@ follow-up request after the original 431-435 plan shipped.
   Mystic-Winds-affected land unit, and is skipped when neither province
   is fogged. Full suite: 5439 -> 5444 (net +5).
 
-- **Phase 652 (current)**: Election/coronation announcement prose --
+- **Phase 652**: Election/coronation announcement prose --
   4 real, tractable pieces from `REPORTS.PAS Pray_Report` (one of the
   largest procedures in the archive, read in full this phase, not just
   the fragment an earlier docstring quoted), the 2nd candidate from the
@@ -27216,6 +27216,30 @@ follow-up request after the original 431-435 plan shipped.
   integration tests and 2 stale-text assertions were also updated in
   place to match the new real content. Full suite: 5444 -> 5455
   (net +11).
+
+- **Phase 653 (current)**: 3 stale known-gap-claim docstring
+  corrections flagged during the third fresh survey -- no behavior
+  change, comment-only, same class of closure as Phases 631/650.
+
+  `turn/trail_execution.py`: called `advance_trail` "not auto-wired
+  anywhere yet" -- stale, `turn_processor.py`'s own "PERSISTENT PURSUE/
+  TRAIL CHASE" mechanism (Phase 70) has called it across phases since
+  that same phase (the exact sibling gap Phase 650 already fixed for
+  `pursue_execution.py`/`advance_pursuit`). `models/treasure.py`:
+  conflated two genuinely different things -- automatically *creating*
+  item instances during world generation (still a real, open gap) and
+  *resolving* an already-existing instance's id to its `Treasure` type
+  for Use_MI (closed since Phase 141, `turn/use_mi_execution.py` looks
+  it up in `GameState.items` directly); corrected to describe only the
+  first as still open. `turn/turn_processor.py`: two separate spots in
+  the same module-top docstring called Defend's "cancelled if he loses
+  a battle" trigger a "still-open gap" -- contradicted by `_apply_
+  defend_cancellations()`'s own docstring a few paragraphs below,
+  which already correctly documents that trigger as handled via the
+  persistent `defeated_while_defending` set (Phase 72).
+
+  Full suite: 5455 (unchanged -- no code behavior touched). This closes
+  the entire third fresh codebase survey (Phases 651-653).
 
 ## Setup
 

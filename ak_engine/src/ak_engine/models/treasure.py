@@ -164,14 +164,20 @@ at every boundary** (``15+20+5+4+5+3+15+3+22+1+6+14 == 113``):
   hand-copied, so they can't drift out of sync with ``Ability``/
   ``Spell`` if either ever gains a member.
 
-**Explicitly out of scope**: resolving a real item *instance* to its
-``Treasure`` type (needs the still-missing item-instance-creation
-pipeline, see this module's own opening paragraph); wiring
-``USE_MI_TARGET_CATEGORIES`` into ``turn/use_mi_decode.py``/a future
-Use_MI execution resolver (not attempted this phase -- there is still
-no way to resolve a real ``UseMIRequest.item_instance_id`` to a
-``Treasure`` at all, per that module's own docstring, so a lookup
-table alone doesn't unblock execution).
+**Explicitly out of scope**: automatically *creating* item instances
+during world generation (needs the still-missing item-instance-creation
+pipeline, see this module's own opening paragraph -- a real, still-open
+gap, unrelated to the point below).
+
+**Phase 652 correction, kept for the record**: an earlier version of
+this note also claimed "there is still no way to resolve a real
+``UseMIRequest.item_instance_id`` to a ``Treasure`` at all" and left
+wiring ``USE_MI_TARGET_CATEGORIES`` into a resolver as unattempted --
+stale even when written: ``turn/use_mi_execution.py`` (Phase 141) is
+exactly that resolver, looking up ``request.item_instance_id`` in
+``GameState.items`` directly and dispatching on the resulting
+``ItemInstance.treasure``. What's still genuinely missing is only the
+*creation* half above, not the resolution half.
 """
 
 from __future__ import annotations
