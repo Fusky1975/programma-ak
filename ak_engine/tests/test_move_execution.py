@@ -820,6 +820,68 @@ def test_execute_move_gives_no_march_bonus_without_the_ability():
     assert state.armies[101].march_bonus_applied_this_turn is False
 
 
+# -- Phase 651: Illusory Fog's own movement surcharge --
+
+
+def test_execute_move_deducts_illusory_fog_surcharge_for_air_unit_entering_fogged_province():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1  # no battle/conquest -- base cost stays 1
+    state.provinces[TARGET].illusory_fog_active = True
+    state.armies[101] = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, ORIGIN, movement_points=3)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert state.armies[101].movement_points == 1  # 3 - base(1) - fog(1)
+
+
+def test_execute_move_deducts_illusory_fog_surcharge_for_air_unit_leaving_fogged_province():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.provinces[ORIGIN].illusory_fog_active = True  # fogged at the origin, not the destination
+    state.armies[101] = ArmyState(101, 1, ArmyType.EAGLE_WING, Quality.AVERAGE, ORIGIN, movement_points=3)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert state.armies[101].movement_points == 1
+
+
+def test_execute_move_no_illusory_fog_surcharge_for_an_ordinary_land_unit():
+    # Non-regression/control: a non-air, non-Mystic-Winds unit is
+    # entirely unaffected even when the destination is fogged.
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.provinces[TARGET].illusory_fog_active = True
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert state.armies[101].movement_points == 2  # 3 - base(1) only
+
+
+def test_execute_move_illusory_fog_surcharge_applies_to_mystic_winds_affected_land_unit():
+    # "All air units (Dragon Wings, Eagle Wings and those affected by
+    # 'Mystic Winds' Spell)" -- an ordinary land army still pays the
+    # surcharge if its own commander is currently under Mystic Winds.
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.provinces[TARGET].illusory_fog_active = True
+    state.armies[101].commanded_by = 1
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Windwalker", location=ORIGIN, mystic_winds_active=True))
+
+    execute_move(state, kingdom_id=1, army_ids=[101], leader_id=1, target=TARGET)
+
+    assert state.armies[101].movement_points == 1
+
+
+def test_execute_move_no_illusory_fog_surcharge_when_neither_province_is_fogged():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.armies[101] = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, ORIGIN, movement_points=3)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert state.armies[101].movement_points == 2
+
+
 # -- Phase 523: Naval movement bonus (Whale League/Fleet/Mermen) --
 
 

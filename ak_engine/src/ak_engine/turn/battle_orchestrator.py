@@ -447,10 +447,13 @@ def _build_battle_units(
     illusory_fog_active`` (``False`` if the province is unknown), then
     combined per-army with ``turn/cast_execution.py is_illusory_fog_
     affected_air_unit(army.army_type, mystic_winds_active)`` --
-    ``mystic_winds_active`` resolved by ``_mystic_winds_active_for()``,
+    ``mystic_winds_active`` resolved by ``mystic_winds_active_for()``,
     the same "derive from the commanding leader, ``False`` for an unled
     army" pattern ``_phantasmal_armies_level_for()`` already
-    established. Fully deterministic, no ``rng`` involved.
+    established. Fully deterministic, no ``rng`` involved. Made public
+    (Phase 651, dropped its own leading underscore) once ``turn/move_
+    execution.py`` needed the identical derivation for the movement-
+    surcharge half of the same spell.
 
     **Osteopathic Germ Warfare / Observation Balloons** (Discovery.txt,
     Phase 270): two anti-spell ward Discoveries whose own effect only
@@ -596,7 +599,7 @@ def _build_battle_units(
                 is_fanatical = roll_title_fanaticism(title_office, rng)
         druidic_shortfall = druidic_shortfall_for(army, state, kingdom.race, province_coord)
         phantasmal_armies_level = _phantasmal_armies_level_for(army, state)
-        mystic_winds_active = _mystic_winds_active_for(army, state)
+        mystic_winds_active = mystic_winds_active_for(army, state)
         illusory_fog_affected = illusory_fog_active and is_illusory_fog_affected_air_unit(
             army.army_type, mystic_winds_active
         )
@@ -749,7 +752,7 @@ def _phantasmal_armies_level_for(army: ArmyState, state: GameState) -> int:
     return commander.phantasmal_armies_level
 
 
-def _mystic_winds_active_for(army: ArmyState, state: GameState) -> bool:
+def mystic_winds_active_for(army: ArmyState, state: GameState) -> bool:
     """Phase 249, Illusory Fog's "and those affected by 'Mystic Winds'" clause:
     an unled army has no commander to carry the flag, so it's simply
     ``False`` -- the same "no commander, no buff" shape ``_phantasmal_
@@ -772,7 +775,7 @@ def _clear_mystic_winds_before_battle(armies: list[ArmyState], state: GameState)
     leader gets involved in any military battle between armies," rulebook
     text quoted in full in ``turn/cast_execution.py``'s own Phase 204
     addendum. Called from ``fight_battle()`` itself, both sides, before
-    ``_build_battle_units()`` reads ``_mystic_winds_active_for()`` -- so a
+    ``_build_battle_units()`` reads ``mystic_winds_active_for()`` -- so a
     leader whose own army is *in* this battle never gets Illusory Fog's
     Mystic-Winds-affected treatment for it, even though the flag was true
     a moment ago.

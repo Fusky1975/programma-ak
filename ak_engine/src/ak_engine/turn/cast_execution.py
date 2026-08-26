@@ -630,19 +630,23 @@ text directly, one at a time.
      up `state.provinces.get(province_coord).illusory_fog_active`
      once per side and combines it with each army's own Mystic-Winds-
      derived affected flag -- see that function's own docstring.
-  3. **The movement surcharge and end-of-turn dissipation are
-     confirmed facts, not modeled.** `ILLUSORY_FOG_EXTRA_MOVEMENT_
-     COST = 1` records "must expend 1 additional movement point when
-     entering or leaving it... deducted after the unit(s) have already
-     moved" -- no movement pipeline in this project (`turn/movement.py`,
-     `turn/move_execution.py`) consults any per-province spell effect
-     at all, so there is nothing to hook this into yet.
-     `ILLUSORY_FOG_DISSIPATES_AT_END_OF_GAMETURN = True` records "it
-     dissipates at the end of the gameturn" -- the same unresolved
-     "when does a persistent province-level spell flag get cleared"
-     gap this project's own `tax_modifier_percent`/`illusory_terrain`
-     fields already carry, with no end-of-turn cleanup pass built for
-     any of them yet.
+  3. **The movement surcharge is wired (Phase 651); end-of-turn
+     dissipation is still not.** `ILLUSORY_FOG_EXTRA_MOVEMENT_COST = 1`
+     ("must expend 1 additional movement point when entering or
+     leaving it... deducted after the unit(s) have already moved") is
+     applied in `turn/move_execution.py execute_move()`, right
+     alongside `turn/conquest.py movement_cost_for_move()`'s own
+     deduction -- kept separate since it targets only `is_illusory_fog_
+     affected_air_unit()` units, not the whole moving party, using
+     `turn/battle_orchestrator.py mystic_winds_active_for()` (made
+     public this same phase) for the per-army Mystic Winds check, the
+     identical derivation the strength-halving effect above already
+     uses. `ILLUSORY_FOG_DISSIPATES_AT_END_OF_GAMETURN = True` records
+     "it dissipates at the end of the gameturn" -- still the same
+     unresolved "when does a persistent province-level spell flag get
+     cleared" gap this project's own `tax_modifier_percent`/`illusory_
+     terrain` fields already carry, with no end-of-turn cleanup pass
+     built for any of them yet.
 
 **Level-dependent magnitudes with no recorded caster skill** (Tornado's
 per-unit destroy chance, Plague's per-unit destroy chance, Illus_Armies'

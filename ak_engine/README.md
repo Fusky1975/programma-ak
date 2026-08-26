@@ -27086,7 +27086,7 @@ follow-up request after the original 431-435 plan shipped.
   leader no longer in `state.leaders` is silently skipped. Full suite:
   5433 -> 5439 (net +6).
 
-- **Phase 650 (current)**: 3 stale known-gap-claim docstring
+- **Phase 650**: 3 stale known-gap-claim docstring
   corrections flagged during the fresh survey that produced Phases
   647-649 -- no behavior change, comment-only, same class of closure
   as Phase 631.
@@ -27108,6 +27108,42 @@ follow-up request after the original 431-435 plan shipped.
   itself was never wrong.
 
   Full suite: 5439 (unchanged -- no code behavior touched).
+
+- **Phase 651 (current)**: Illusory Fog's own movement surcharge, the
+  1st candidate from a third fresh codebase survey.
+
+  `AdvancedAbility.ILLUSORY_FOG_SPELL`'s own verbatim rule text
+  (Phase 207): "All air units (Dragon Wings, Eagle Wings and those
+  affected by 'Mystic Winds' Spell)... must expend 1 additional
+  movement point when entering or leaving it. The movement point is
+  deducted after the unit(s) have already moved." The strength-halving
+  half of this spell was wired in Phase 249; the movement half sat
+  unwired since Phase 207, with `turn/cast_execution.py
+  ILLUSORY_FOG_EXTRA_MOVEMENT_COST = 1` and `is_illusory_fog_affected_
+  air_unit()` defined but never consulted by any movement code.
+
+  `turn/move_execution.py execute_move()` now deducts the surcharge
+  per army, right alongside `turn/conquest.py movement_cost_for_move()`'s
+  own deduction -- kept separate since it targets only affected units,
+  not the whole moving party uniformly, unlike the conquest/sea-battle
+  surcharges. Triggers when either the origin or destination province
+  has `ProvinceState.illusory_fog_active` set. `turn/battle_
+  orchestrator.py`'s own `_mystic_winds_active_for()` (the strength
+  effect's per-army Mystic Winds resolver, Phase 249) is made public
+  (`mystic_winds_active_for()`) and reused directly for the identical
+  per-army check, rather than re-derived. "May wind up with negative
+  movement points" is the same, already-established convention `turn/
+  conquest.py`'s own module docstring already documents for the
+  conquest/sea-battle surcharges. The spell's own end-of-gameturn
+  dissipation remains deliberately unmodeled -- no end-of-turn cleanup
+  pass exists for any persistent province-level spell flag in this
+  project yet.
+
+  Tests: `tests/test_move_execution.py` gained 5 -- the surcharge
+  applies to an air unit entering a fogged province, to one leaving a
+  fogged province, is skipped for an ordinary land unit, applies to a
+  Mystic-Winds-affected land unit, and is skipped when neither province
+  is fogged. Full suite: 5439 -> 5444 (net +5).
 
 ## Setup
 

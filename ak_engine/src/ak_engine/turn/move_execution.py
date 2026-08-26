@@ -24,7 +24,18 @@ Wires together, in order:
    with the mover, calls ``turn/battle_orchestrator.py fight_battle()``.
 4. ``turn/conquest.py movement_cost_for_move()`` -- movement-point
    deduction, including the extra point for conquering and/or for a sea
-   battle.
+   battle. **Phase 651 addendum**: a separate, per-army-type deduction
+   right alongside it for Illusory Fog's own "must expend 1 additional
+   movement point when entering or leaving" the affected province
+   (``turn/cast_execution.py ILLUSORY_FOG_EXTRA_MOVEMENT_COST``/``is_
+   illusory_fog_affected_air_unit()``) -- see the call site's own
+   comment for why this stays separate from ``movement_cost_for_move()``
+   itself (it targets specific army types, not the whole moving party).
+   The spell's own end-of-gameturn dissipation
+   (``ILLUSORY_FOG_DISSIPATES_AT_END_OF_GAMETURN``) is still not
+   modeled -- see ``turn/cast_execution.py``'s own Phase 207 addendum
+   for why (no end-of-turn cleanup pass exists for any persistent
+   province-level spell flag in this project yet, not just this one).
 5. ``GameState`` mutation: army relocation (only if the move actually
    succeeds -- an unconquered, contested, or repelled battle leaves the
    mover's surviving armies where ``fight_battle()`` put them, not at the
@@ -164,7 +175,8 @@ from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.treasure import Treasure
-from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
+from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle, mystic_winds_active_for
+from ak_engine.turn.cast_execution import ILLUSORY_FOG_EXTRA_MOVEMENT_COST, is_illusory_fog_affected_air_unit
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.contested_province import is_illegal_move_from_contested
 from ak_engine.turn.exploration import ExploreResult, discover_features, resolve_explore, resolve_find_mines
@@ -784,6 +796,21 @@ def execute_move(
         conquered=conquered,
     )
 
+    # Phase 651, Illusory Fog's own [3.11]-addendum text: "must expend 1
+    # additional movement point when entering or leaving it" -- either
+    # province being fogged triggers the surcharge (origin_province is
+    # already resolved above); "the movement point is deducted after the
+    # unit(s) have already moved," the same "may wind up with negative
+    # movement points" convention turn/conquest.py's own module docstring
+    # already established for the conquest/sea-battle surcharges -- kept
+    # as a separate, per-army-type deduction rather than folded into
+    # `cost` above, since (unlike those two) it applies only to affected
+    # units (`turn/cast_execution.py is_illusory_fog_affected_air_unit()`),
+    # not the whole moving party uniformly.
+    fog_affected_move = (origin_province is not None and origin_province.illusory_fog_active) or (
+        target_province.illusory_fog_active
+    )
+
     for army_id in army_ids:
         army = state.armies.get(army_id)
         if army is None:
@@ -805,6 +832,8 @@ def execute_move(
                 army.movement_points += naval_bonus
                 army.naval_bonus_applied_this_turn = True
         army.movement_points -= cost
+        if fog_affected_move and is_illusory_fog_affected_air_unit(army.army_type, mystic_winds_active_for(army, state)):
+            army.movement_points -= ILLUSORY_FOG_EXTRA_MOVEMENT_COST
         if moved and army.location == current:
             army.location = actual_target
 
