@@ -66,6 +66,7 @@ from ak_engine.report.turn_report import (
     compose_letter_report,
     describe_adventure_report,
     describe_alignment_victory_point_reduction,
+    describe_election_status_report,
     describe_final_standings_report,
     describe_map_report,
     describe_state_of_the_nation_report,
@@ -8405,6 +8406,10 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "",
         "IMPERIAL OFFICE REPORT",
         "",
+        "Into thy heroic dreams cometh an apparition heaven-sent, to speak to thee of thy progress in thy ambitions "
+        "for Imperial Office.  It is not for mortal Kings to know who rivals them for high offices, but the Divine "
+        "One will allow you to know thy place in the standings, and how thee compares to thy fiercest foreign rival "
+        'for each office (shown under "Riv%" as a percentage: your points divided by your rival\'s points, times 100.)',
         "World Emperor             Aldric (0 points, rank 1, None)",
         "Esteemed High Chancellor  Aldric (0 points, rank 1, None)",
         "                          Borin (0 points, rank 1, None)",
@@ -8642,6 +8647,10 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "",
         "IMPERIAL OFFICE REPORT",
         "",
+        "Into thy heroic dreams cometh an apparition heaven-sent, to speak to thee of thy progress in thy ambitions "
+        "for Imperial Office.  It is not for mortal Kings to know who rivals them for high offices, but the Divine "
+        "One will allow you to know thy place in the standings, and how thee compares to thy fiercest foreign rival "
+        'for each office (shown under "Riv%" as a percentage: your points divided by your rival\'s points, times 100.)',
         "World Emperor             None at present",
         "Esteemed High Chancellor  None at present",
         "Imperial Treasurer        None at present",
@@ -8884,6 +8893,33 @@ def test_describe_final_standings_report_announces_valhalla_qualifiers():
     )
 
 
+def test_describe_final_standings_report_announces_all_star_qualifiers():
+    # Phase 652: kingdom_points() == 30.0 here clears the real >= 7.5
+    # all-star threshold (same fixture the Valhalla test above already
+    # uses, which separately clears its own >= 20 threshold).
+    state = _armies_state()
+    state.provinces[HexCoord(0, 0)].tax = 10
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.kingdoms[1].treasury = 7
+    state.emperor_kingdom_id = 1
+
+    lines = describe_final_standings_report(state)
+
+    assert "Aldric of Testland has qualified for an all-star game of Adventurer-Kings." in lines
+
+
+def test_describe_final_standings_report_no_all_star_line_below_threshold():
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.emperor_kingdom_id = 1
+    state.add_kingdom(KingdomState(2, "Farland", Race.HUMAN, Alignment.EVIL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(2, 2, "Vraxis", HexCoord(1, 1), is_king=True))
+
+    lines = describe_final_standings_report(state)
+
+    assert not any("Vraxis" in line and "all-star" in line for line in lines)
+
+
 def test_describe_final_standings_report_no_valhalla_line_below_threshold():
     # Kingdom 1 is the elected Emperor (an automatic, undiscounted 20
     # office points -- enough to qualify on its own) so the Valhalla
@@ -8898,6 +8934,79 @@ def test_describe_final_standings_report_no_valhalla_line_below_threshold():
     lines = describe_final_standings_report(state)
 
     assert not any("Vraxis" in line and "Valhalla" in line for line in lines)
+
+
+# -- Phase 652: describe_election_status_report() -- ELECTION STATUS --
+
+
+def test_describe_election_status_report_empty_when_nothing_applies():
+    # Turn 1 (threshold hasn't decayed) and no tax base at all (world_
+    # total == 0, so the alignment vote-share line can't compute either).
+    state = _armies_state()
+
+    lines = describe_election_status_report(state, 1)
+
+    assert lines == []
+
+
+def test_describe_election_status_report_threshold_hint_after_turn_24():
+    state = _armies_state()
+    state.turn_number = 25  # 55 - 5*(25-24) = 50
+
+    lines = describe_election_status_report(state, 1)
+
+    assert "Note: it requires only 50% of world taxbase to become Emperor next turn." in lines
+
+
+def test_describe_election_status_report_no_threshold_hint_before_turn_25():
+    state = _armies_state()
+    state.turn_number = 24
+
+    lines = describe_election_status_report(state, 1)
+
+    assert not any("requires only" in line for line in lines)
+
+
+def test_describe_election_status_report_no_threshold_hint_once_emperor_elected():
+    state = _armies_state()
+    state.turn_number = 30
+    state.emperor_kingdom_id = 1
+
+    lines = describe_election_status_report(state, 1)
+
+    assert not any("requires only" in line for line in lines)
+
+
+def test_describe_election_status_report_shows_this_kingdoms_alignment_vote_share():
+    # A single Kingdom with a real tax base -- its own alignment holds
+    # 100% of world vote weight by construction (nobody else exists).
+    state = _armies_state()
+    state.provinces[HexCoord(0, 0)].tax = 10
+    state.kingdoms[1].alignment = Alignment.GOOD
+
+    lines = describe_election_status_report(state, 1)
+
+    assert lines == [
+        "ELECTION STATUS",
+        "The Good alignment now controls 100% of the world's votes (taxbase + (5 x office/treasure points)).",
+    ]
+
+
+def test_describe_election_status_report_omits_alignment_line_when_world_total_is_zero():
+    state = _armies_state()  # no tax base anywhere -- world_total == 0
+
+    lines = describe_election_status_report(state, 1)
+
+    assert not any("controls" in line for line in lines)
+
+
+def test_compose_letter_report_includes_election_status_section():
+    state = _armies_state()
+    state.provinces[HexCoord(0, 0)].tax = 10
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    assert "ELECTION STATUS" in lines
 
 
 def test_compose_letter_report_includes_final_standings_once_emperor_elected():
@@ -8926,13 +9035,14 @@ def test_describe_imperial_office_report_none_at_present_for_every_office_with_n
     lines = describe_imperial_office_report(state, 1)
 
     assert lines[0] == "IMPERIAL OFFICE REPORT"
+    assert lines[1].startswith("Into thy heroic dreams")  # Phase 652: pre-election framing
     assert lines.count("World Emperor             None at present") == 1
     assert lines.count("Arch-Mage Palatine        None at present") == 1
     assert lines.count("King of Pain              None at present") == 1
     assert lines.count("Prince of Thieves         None at present") == 1
     assert lines.count("Savior of Humankind       None at present") == 1
     assert lines.count("Dragon Lord               None at present") == 1
-    assert len(lines) == 48  # header + 47 offices
+    assert len(lines) == 49  # header + pre-election framing + 47 offices
 
 
 def test_describe_imperial_office_report_shows_a_real_office_holder():
@@ -9011,10 +9121,38 @@ def test_describe_imperial_office_report_riv_percent_and_runner_up_are_kingdom_s
     assert "                          Cassian (4 points, rank 2, 40%)" in rivalland_lines
 
 
+# -- Phase 652: IMPERIAL OFFICE REPORT's own real framing paragraphs --
+
+
+def test_describe_imperial_office_report_post_election_shows_coronation_banner():
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.emperor_kingdom_id = 1
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert lines[1] == (
+        "The world has finally been united under the rule of one Emperor.  All Kings now owe their allegiance to Aldric!"
+    )
+    assert lines[2].startswith("In his Divine wisdom")
+
+
+def test_describe_imperial_office_report_coronation_banner_falls_back_to_kingdom_name():
+    # No registered King for the Emperor's own kingdom -- falls back to
+    # the Kingdom's own name rather than guessing/blanking.
+    state = _armies_state()
+    state.emperor_kingdom_id = 1
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert "Testland" in lines[1]
+
+
 # -- Phase 543: Arcane's Valor "unification" report line -- SS11.3 --
 
-_UNIFICATION_LINE = (
-    "The Emperor's hoard of Rohan, Power, and Life artifacts is spoken of as the true Unification of Arcane's Valor."
+_UNIFICATION_LINE_1 = "The Crown of Rohan, Scepter of Life and Amulet of Power have been united!"
+_UNIFICATION_LINE_2 = (
+    'All races are unified under the awesome power of "Arcane\'s Valor" and its glorious wielder, Aldric!'
 )
 
 
@@ -9029,7 +9167,8 @@ def test_describe_imperial_office_report_shows_unification_line_in_the_emperors_
 
     lines = describe_imperial_office_report(state, 1)
 
-    assert _UNIFICATION_LINE in lines
+    assert _UNIFICATION_LINE_1 in lines
+    assert _UNIFICATION_LINE_2 in lines
 
 
 def test_describe_imperial_office_report_omits_unification_line_for_a_non_emperor_kingdom():
@@ -9044,7 +9183,7 @@ def test_describe_imperial_office_report_omits_unification_line_for_a_non_empero
 
     otherland_lines = describe_imperial_office_report(state, 2)
 
-    assert _UNIFICATION_LINE not in otherland_lines
+    assert _UNIFICATION_LINE_1 not in otherland_lines
 
 
 def test_describe_imperial_office_report_omits_unification_line_outside_arcanes():
@@ -9057,7 +9196,7 @@ def test_describe_imperial_office_report_omits_unification_line_outside_arcanes(
 
     lines = describe_imperial_office_report(state, 1)
 
-    assert _UNIFICATION_LINE not in lines
+    assert _UNIFICATION_LINE_1 not in lines
 
 
 def test_describe_imperial_office_report_extended_title_suppressed_below_minimum_points():

@@ -105,16 +105,19 @@ land in the *same* post-turn, never a turn later) -- returns `None`
 before any Emperor exists (the same gate `kingdom_points()` itself
 already uses), so every turn before a coronation costs nothing extra.
 
-**Deliberately not attempted this phase**: rendering these results into
-actual report prose (`report/turn_report.py describe_turn_results()`
-never renders `TurnOutcome.election_outcome` either, despite that field
-existing since Phase 466 -- the same "populate the structured data, defer
-prose composition" split this project already established for the
-election result, not a newly-invented shortcut). Prize money itself
-stays out of scope per this module's own opening paragraph -- `Pray_
-Report`'s own "premi" (prizes) are real-money moderator bookkeeping this
-project has never modeled, not new information `compose_final_standings_
-report()` could add.
+**Phase 652 correction, kept for the record**: an earlier version of
+this note said rendering these results into actual report prose was
+"deliberately not attempted this phase" -- stale by Phase 559, which
+built `report/turn_report.py describe_final_standings_report()` for
+exactly that. Prize money itself stays out of scope per this module's
+own opening paragraph -- `Pray_Report`'s own "premi" (prizes) are real-
+money moderator bookkeeping this project has never modeled, not new
+information `compose_final_standings_report()` could add. `TurnOutcome.
+election_outcome` (the separate election-call/vote-tally event, not
+these standings) is still not rendered anywhere except its own "ELECTION
+STATUS" slice (`describe_election_status_report()`, Phase 652) -- see
+that composer's own docstring for exactly what's covered versus still
+deferred.
 """
 
 from __future__ import annotations

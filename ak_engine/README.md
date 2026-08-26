@@ -27109,7 +27109,7 @@ follow-up request after the original 431-435 plan shipped.
 
   Full suite: 5439 (unchanged -- no code behavior touched).
 
-- **Phase 651 (current)**: Illusory Fog's own movement surcharge, the
+- **Phase 651**: Illusory Fog's own movement surcharge, the
   1st candidate from a third fresh codebase survey.
 
   `AdvancedAbility.ILLUSORY_FOG_SPELL`'s own verbatim rule text
@@ -27144,6 +27144,78 @@ follow-up request after the original 431-435 plan shipped.
   fogged province, is skipped for an ordinary land unit, applies to a
   Mystic-Winds-affected land unit, and is skipped when neither province
   is fogged. Full suite: 5439 -> 5444 (net +5).
+
+- **Phase 652 (current)**: Election/coronation announcement prose --
+  4 real, tractable pieces from `REPORTS.PAS Pray_Report` (one of the
+  largest procedures in the archive, read in full this phase, not just
+  the fragment an earlier docstring quoted), the 2nd candidate from the
+  third fresh survey.
+
+  1. **Arcane's Valor banner -- stale docstring, wrong text.**
+     `describe_imperial_office_report()`'s own comment claimed "no
+     TREASURE.X2/REPORTS.PAS string survives for this event" -- false,
+     the real text sits in the very same procedure this comment already
+     cited for the *gating* condition two lines earlier
+     (`REPORTS.PAS:1510-1515`). Replaced the project-original
+     placeholder with the real, verbatim text: "The Crown of Rohan,
+     Scepter of Life and Amulet of Power have been united! All races
+     are unified under the awesome power of \"Arcane's Valor\" and its
+     glorious wielder, `<name>`!"
+
+  2. **Imperial Office Report framing paragraphs -- never rendered.**
+     `REPORTS.PAS:1517-1576`: a pre-election "Into thy heroic dreams..."
+     paragraph explaining the "Riv%" column, and a post-election
+     coronation banner ("The world has finally been united under the
+     rule of one Emperor... Kings now owe their allegiance to
+     `<name>`!") plus its own follow-up sentence -- both gated on the
+     same `election_settled` boolean `describe_imperial_office_report()`
+     already computes for the per-office column logic, now reused for
+     this framing text too, prepended right after the section header.
+
+  3. **All-star game qualification -- data computed and stored, never
+     read.** `turn/final_standings.py FinalStandingsReport.all_star_
+     qualifiers` (real `qualifies_for_all_star()`, `>= 7.5`) had zero
+     readers anywhere in the codebase, confirmed by grep -- a silent
+     gap, not a documented one. One new line per qualifier in
+     `describe_final_standings_report()`, same shape/placement as the
+     existing Valhalla-qualifier loop right below it, matching its own
+     already-established short-form (not verbatim) convention.
+
+  4. **New "ELECTION STATUS" section -- 2 notices, fully computable
+     from `GameState` alone, no `TurnOutcome.election_outcome`
+     threading needed.** Verified directly (`REPORTS.PAS:1924-1936`,
+     `:1967-1985`): a decaying-threshold hint ("Note: it requires only
+     N% of world taxbase to become Emperor next turn.", pre-election
+     only, via the already-public `turn/emperor_election.py election_
+     threshold_percent()`) and this Kingdom's own alignment vote share
+     ("The `<alignment>` alignment now controls N% of the world's votes
+     (taxbase + (5 x office/treasure points)).", every turn, via the
+     already-public `alignment_bloc_vote_weights()`). New `describe_
+     election_status_report()`, wired into `compose_letter_report()`
+     right after FINAL STANDINGS.
+
+  **Explicitly deferred** (all confirmed real, not guessed): the
+  Election Report table (needs the real per-voter ballots mapping
+  `process_election_turn()` currently discards), the caller-percentage
+  and alignment-bloc-trigger notices (need percentages `evaluate_
+  election_call()` discards, plus -- for the alignment trigger -- state
+  that would need to persist across a full turn boundary), the real
+  Pascal `catchup` mode (no equivalent concept anywhere in this
+  project; treated as always `False`, since every turn this project
+  processes is a fresh on-time turn by construction), and the
+  `{$IFDEF More_Entry}`-gated same-alignment allies list (that compile
+  flag's real production status can't be confirmed from source alone).
+
+  Tests: `tests/test_turn_report.py` gained 11 -- Arcane's Valor's
+  updated real text; pre-election and post-election framing paragraphs
+  (plus a King-name-fallback case); the all-star qualifier line and its
+  below-threshold omission; `describe_election_status_report()`'s own
+  threshold hint (shown/hidden by turn number and election status),
+  alignment vote-share line, and both-empty case; the new section's own
+  presence in `compose_letter_report()`. 2 pre-existing exact-list
+  integration tests and 2 stale-text assertions were also updated in
+  place to match the new real content. Full suite: 5444 -> 5455
+  (net +11).
 
 ## Setup
 

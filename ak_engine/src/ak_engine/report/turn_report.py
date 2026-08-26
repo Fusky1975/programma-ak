@@ -1247,7 +1247,13 @@ from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult, is_unfinalized_royal_heir
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
-from ak_engine.turn.emperor_election import _ORDINARY_ALIGNMENTS, alignment_victory_point_reduction_percent
+from ak_engine.turn.emperor_election import (
+    _ORDINARY_ALIGNMENTS,
+    alignment_bloc_vote_weights,
+    alignment_victory_point_reduction_percent,
+    election_threshold_percent,
+    kingdom_election_vote_weight,
+)
 from ak_engine.turn.final_standings import compose_final_standings_report
 from ak_engine.turn.encounter import CombatRange, FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
@@ -10271,6 +10277,26 @@ def _adventure_monster_label(monster: Monster) -> str:
 _IMPERIAL_OFFICE_REPORT_HEADER = "IMPERIAL OFFICE REPORT"
 _IMPERIAL_OFFICE_REPORT_NONE = "None at present"
 
+# Phase 652: REPORTS.PAS:1517-1576 -- the section's own real framing
+# text, never rendered until now (only the per-office columns below it
+# were). Verbatim, reflowed from the source's own 80-column WRITELN
+# wrapping into one continuous paragraph each (no real sentence break
+# where the Pascal source's own line breaks fall).
+_IMPERIAL_OFFICE_REPORT_PRE_ELECTION_INTRO = (
+    "Into thy heroic dreams cometh an apparition heaven-sent, to speak to thee of thy progress in thy ambitions "
+    "for Imperial Office.  It is not for mortal Kings to know who rivals them for high offices, but the Divine "
+    "One will allow you to know thy place in the standings, and how thee compares to thy fiercest foreign rival "
+    'for each office (shown under "Riv%" as a percentage: your points divided by your rival\'s points, times 100.)'
+)
+_IMPERIAL_OFFICE_REPORT_CORONATION_BANNER = (
+    "The world has finally been united under the rule of one Emperor.  All Kings now owe their allegiance to {name}!"
+)
+_IMPERIAL_OFFICE_REPORT_CORONATION_FOLLOWUP = (
+    "In his Divine wisdom, the Emperor has distributed high imperial office to those Kings who merit it most.  "
+    "O King, here are the Officers of this glorious Empire, as well as the highest corresponding Officer in "
+    "thine own Kingdom:"
+)
+
 
 def _riv_percent_display(points: int | float, rival_points: int | float) -> str:
     """Real `rivstr`: `"None"` when there's no rival at all (`ftoppts ==
@@ -10311,6 +10337,18 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
     Emperor election result, Rank-contest resolution), and Phase 438/439
     gave it the rest (per-Kingdom ranking primitives, the real alignment
     Victory Point decay formula).
+
+    **Phase 652: the section's own real framing paragraphs, never
+    rendered before now** -- `REPORTS.PAS:1517-1576`, verified directly
+    against source, not just the fragment an earlier phase's docstring
+    quoted. Pre-election: a fixed "Into thy heroic dreams..." paragraph
+    explaining the "Riv%" column, shown to every Kingdom. Post-election:
+    the coronation banner ("The world has finally been united under the
+    rule of one Emperor...") naming the Emperor's own King, followed by
+    a fixed "In his Divine wisdom..." paragraph -- both gated on the
+    same `election_settled` boolean this composer already computes for
+    the per-office column logic below, now reused for the framing text
+    too.
 
     **This report is genuinely per-Kingdom and changes shape around the
     Emperor election** -- confirmed by direct re-read of the real source
@@ -10389,6 +10427,15 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
 
     lines = [_IMPERIAL_OFFICE_REPORT_HEADER]
     election_settled = state.emperor_kingdom_id is not None
+    if election_settled:
+        emperor_name = (
+            _leader_name(state, _king_leader_id(state, state.emperor_kingdom_id))
+            or state.kingdoms[state.emperor_kingdom_id].name
+        )
+        lines.append(_IMPERIAL_OFFICE_REPORT_CORONATION_BANNER.format(name=emperor_name))
+        lines.append(_IMPERIAL_OFFICE_REPORT_CORONATION_FOLLOWUP)
+    else:
+        lines.append(_IMPERIAL_OFFICE_REPORT_PRE_ELECTION_INTRO)
     for office in ALL_OFFICES:
         office_name = f"{OFFICE_NAME[office]:<26}"
         top = resolve_office_holder(state, office) if election_settled else kingdom_best_candidate(state, office, kingdom_id)
@@ -10414,11 +10461,18 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
     # gated to the Emperor's own Kingdom report (the only one that would
     # ever see this line in the real source's own Pray_Report, since the
     # underlying NT_Owned check reads the Emperor's own inventory).
-    # project-original text: no TREASURE.X2/REPORTS.PAS string survives
-    # for this event anywhere in the available archive.
+    # **Phase 652 correction, kept for the record**: an earlier version
+    # of this comment claimed "no TREASURE.X2/REPORTS.PAS string
+    # survives for this event anywhere in the available archive" --
+    # false, and already stale when written: the real text sits in the
+    # very same procedure this comment already cites for the gating
+    # condition, two lines earlier (`NT_Owned(emp,Crown_Rohan,Scepter_
+    # Life,trdex) >= 3`, `REPORTS.PAS:1510`). Real, verbatim text below.
     if state.emperor_kingdom_id == kingdom_id and emperor_holds_arcanes_valor_unification(state):
+        emperor_name = _leader_name(state, _king_leader_id(state, kingdom_id)) or state.kingdoms[kingdom_id].name
+        lines.append("The Crown of Rohan, Scepter of Life and Amulet of Power have been united!")
         lines.append(
-            "The Emperor's hoard of Rohan, Power, and Life artifacts is spoken of as the true Unification of Arcane's Valor."
+            f'All races are unified under the awesome power of "Arcane\'s Valor" and its glorious wielder, {emperor_name}!'
         )
     return lines
 
@@ -10837,6 +10891,19 @@ def describe_final_standings_report(state: GameState) -> list[str]:
     (`_format_victory_points()`, since alignment-discounted office
     points can be fractional).
 
+    **Phase 652**: one short line per `all_star_qualifiers` entry too --
+    a real, already-populated `FinalStandingsReport` field (`qualifies_
+    for_all_star()`, the `>= 7.5` new-rules formula) that had no reader
+    anywhere in the codebase until now (confirmed by grep -- a silent
+    gap, not a documented one). Real text is long moderator/PR prose
+    (`REPORTS.PAS:1883-1899`: "all-star" game placement, Flagship's
+    "Honor Roll", Paper Mayhem's "PBM Activity Corner", a request for a
+    victory quote) -- shortened here to match this composer's own
+    already-established convention for the Valhalla line right below
+    it (also real data, already-shortened project-original wording, not
+    verbatim), rather than mixing one verbatim block with one short one
+    in the same composer. Same "skip if no registered King" convention.
+
     Then, one instructional line per `valhalla_qualifiers` entry (real
     `qualifies_for_valhalla_induction()`: `individual_king_points >= 20`
     **or** first place -- the fuller, disassembly-sourced condition,
@@ -10867,6 +10934,14 @@ def describe_final_standings_report(state: GameState) -> list[str]:
         points = _format_victory_points(report.kingdom_points[kingdom_id])
         lines.append(f"{rank}. {king_name} of {kingdom.name}: {points} Victory Points")
 
+    for kingdom_id in report.all_star_qualifiers:
+        king_leader_id = _king_leader_id(state, kingdom_id)
+        if king_leader_id is None:
+            continue
+        king_name = state.leaders[king_leader_id].name
+        kingdom_name = state.kingdoms[kingdom_id].name
+        lines.append(f"{king_name} of {kingdom_name} has qualified for an all-star game of Adventurer-Kings.")
+
     for kingdom_id in report.valhalla_qualifiers:
         king_leader_id = _king_leader_id(state, kingdom_id)
         if king_leader_id is None:
@@ -10879,6 +10954,89 @@ def describe_final_standings_report(state: GameState) -> list[str]:
         )
 
     return lines
+
+
+# Phase 652: REPORTS.PAS:1924-1985's own real "election status" notices
+# -- project-original section label, same convention as `_FINAL_
+# STANDINGS_HEADER`/ALIGNMENT REDUCTION above (real data, invented
+# framing, since the real source has no separate section header for
+# this text either -- it's just more of the same giant `Pray_Report`
+# procedure's own tail end). Both pieces below are pure `GameState`
+# recomputations -- no `TurnOutcome.election_outcome` threading needed.
+_ELECTION_STATUS_HEADER = "ELECTION STATUS"
+_ELECTION_THRESHOLD_HINT_TEMPLATE = "Note: it requires only {percent}% of world taxbase to become Emperor next turn."
+_ALIGNMENT_VOTE_SHARE_TEMPLATE = (
+    "The {alignment} alignment now controls {percent}% of the world's votes (taxbase + (5 x office/treasure points))."
+)
+
+
+def describe_election_status_report(state: GameState, kingdom_id: int) -> list[str]:
+    """Assembles the project-original "ELECTION STATUS" section -- two
+    real notices from `REPORTS.PAS Pray_Report`'s own tail end,
+    verified directly against source, neither needing `TurnOutcome.
+    election_outcome` at all (both are pure per-turn `GameState`
+    recomputations, the same "no stored byte, recomputed on demand"
+    shape this project's own Feature->Power `Set_Event` formulas
+    already use).
+
+    **Decaying threshold hint** (`REPORTS.PAS:1924-1936`): shown only
+    pre-election (`state.emperor_kingdom_id is None`) and only once
+    `turn/emperor_election.py election_threshold_percent(state.
+    turn_number)` has actually decayed below the base 55% (the real
+    source's own `IF reqperc < 55` gate) -- a public, already-exported
+    function, no new plumbing.
+
+    **This Kingdom's own alignment vote share** (`REPORTS.PAS:
+    1967-1985`): shown every turn regardless of election status, using
+    `alignment_bloc_vote_weights()` (public) for this Kingdom's own
+    Alignment's share of the real `V_world` denominator (`sum(
+    kingdom_election_vote_weight(state, kid) for kid in state.
+    kingdoms)`, computed inline here rather than promoting the
+    private `_world_vote_weight()` for a single caller). Percentage
+    rounding uses `round()` -- the real Pascal `alperc[]` array has no
+    surviving assignment site in any available `.PAS` file to confirm
+    truncation-vs-rounding against (unlike the *different*, still-
+    deferred Election Report table's own confirmed `Trunc()`) -- the
+    same "no source, reasonable default" choice `turn/skeletal_decay.py`
+    already established for an analogous gap. Omitted entirely for a
+    Kingdom whose own Alignment isn't one of the 8 ordinary ones this
+    function keys (Mechanical/Special, never produced by this project's
+    own `KingdomState` data in practice) or when `V_world` is 0 (no
+    kingdoms/no vote weight at all).
+
+    **Explicitly deferred, not attempted this phase** (see
+    `project_third_survey_2026_08_27` memory for the full account):
+    the caller-percentage notice and the alignment-bloc-trigger/"a vote
+    will be held this turn" notice both need percentages `turn/
+    emperor_election.py evaluate_election_call()` computes and discards
+    today, and the latter additionally needs its own identity carried
+    forward across a full turn boundary -- neither is guessable from
+    what `GameState` currently persists. The real Pascal `catchup`
+    ("this report is being regenerated for an already-passed turn")
+    gates this whole block in the source; `ak_engine` has no `catchup`
+    concept anywhere, so it's treated as always `False` (every turn
+    this project processes is, by construction, a fresh on-time turn),
+    a documented simplification, not a guess.
+    """
+
+    lines: list[str] = []
+
+    if state.emperor_kingdom_id is None:
+        threshold = election_threshold_percent(state.turn_number)
+        if threshold < 55:
+            lines.append(_ELECTION_THRESHOLD_HINT_TEMPLATE.format(percent=threshold))
+
+    alignment = state.kingdoms[kingdom_id].alignment
+    bloc_weights = alignment_bloc_vote_weights(state)
+    if alignment in bloc_weights:
+        world_total = sum(kingdom_election_vote_weight(state, kid) for kid in state.kingdoms)
+        if world_total > 0:
+            percent = round(bloc_weights[alignment] / world_total * 100)
+            lines.append(_ALIGNMENT_VOTE_SHARE_TEMPLATE.format(alignment=alignment.value, percent=percent))
+
+    if not lines:
+        return []
+    return [_ELECTION_STATUS_HEADER, *lines]
 
 
 # CTBOTH.PAS `seastype`/`seasname` (Phase 257) -- the `{$IFNDEF Noble}`
@@ -11848,11 +12006,19 @@ def compose_letter_report(
     is also *not* one of the ten real sections -- same category as
     ALIGNMENT REDUCTION above: a project-original presentation of real,
     previously-computed-but-never-printed data (`turn/final_standings.py
-    compose_final_standings_report()`, Phase 454-476, whose own docstring
-    explicitly flagged rendering this into report prose as "deliberately
-    not attempted" until now). See `describe_final_standings_report()`'s
-    own docstring. Empty until an Emperor is elected, same as ALIGNMENT
-    REDUCTION.
+    compose_final_standings_report()`, Phase 454-476). See `describe_
+    final_standings_report()`'s own docstring. Empty until an Emperor is
+    elected, same as ALIGNMENT REDUCTION.
+
+    **ELECTION STATUS (Phase 652, appended after FINAL STANDINGS)** --
+    likewise project-original framing over real data: `REPORTS.PAS
+    Pray_Report`'s own decaying-threshold hint and this Kingdom's own
+    Alignment vote-share notice, both pure `GameState` recomputations
+    (no `election_outcome` needed). See `describe_election_status_
+    report()`'s own docstring for the full sourcing and what's still
+    deliberately deferred (the caller-percentage and alignment-bloc-
+    trigger notices, which need data `turn/emperor_election.py` still
+    discards).
 
     **ACTION REPORT** wraps `describe_turn_results()`, filtered here to
     only the King's own `PhaseDispatchResult` entries -- **narrowed as
@@ -12033,5 +12199,9 @@ def compose_letter_report(
     final_standings_lines = describe_final_standings_report(state)
     if final_standings_lines:
         _emit_section(final_standings_lines[0], final_standings_lines[1:])
+
+    election_status_lines = describe_election_status_report(state, kingdom_id)
+    if election_status_lines:
+        _emit_section(election_status_lines[0], election_status_lines[1:])
 
     return lines
