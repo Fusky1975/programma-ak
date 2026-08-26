@@ -946,9 +946,12 @@ spell already uses is passed and the cast succeeds. Its own halved
 disruption rate (`words_of_healing_disruption_chance()`) stays unused
 by any real caller -- `spell_disruption_chance()` itself is still never
 rolled anywhere in `turn/search_execution.py`'s own tactic walk (see
-that module's own Phase 289 addendum for precisely why: it needs a
-round-based combat engine this project still doesn't have, not a small
-addition).
+that module's own Phase 654 addendum for precisely why: it's that
+module's own whole-duel-call code shape that's structurally
+incompatible, not a missing engine project-wide -- the round-based
+`CombatRange` state machine this needs is real and already live for
+Challenge/Pursue, `challenge_execution.py resolve_challenge_combat()`,
+Phase 292).
 
 **Phase 202 addendum -- Gate Demon [GD], tied to Ability.NECROMANCY,
 project-original (user-supplied), the second Necromancy secret spell

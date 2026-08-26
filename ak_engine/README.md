@@ -27217,7 +27217,7 @@ follow-up request after the original 431-435 plan shipped.
   place to match the new real content. Full suite: 5444 -> 5455
   (net +11).
 
-- **Phase 653 (current)**: 3 stale known-gap-claim docstring
+- **Phase 653**: 3 stale known-gap-claim docstring
   corrections flagged during the third fresh survey -- no behavior
   change, comment-only, same class of closure as Phases 631/650.
 
@@ -27240,6 +27240,37 @@ follow-up request after the original 431-435 plan shipped.
 
   Full suite: 5455 (unchanged -- no code behavior touched). This closes
   the entire third fresh codebase survey (Phases 651-653).
+
+- **Phase 654 (current)**: 4 more stale known-gap-claim docstring
+  corrections, from a fourth fresh survey -- no behavior change,
+  comment-only.
+
+  `describe_characters_report()`'s own docstring still called "Move
+  precedence" unmodeled -- stale, contradicted two paragraphs above in
+  the same docstring (it's exactly `Total_Skill(leader) + M_Skill(
+  leader, ForcedMarch)*2`, already wired as line 2's own leading
+  value). `compose_letter_report()`'s own section-by-section summary
+  still called "per-kingdom Discovery tracking" absent for FINANCES
+  (closed Phase 268) and gender/Discovery-skill-modifiers/magic-item
+  ticks/wandering-Hero-Priest-clairvoyance absent for CHARACTERS
+  (closed Phases 260/635, 625, 437, 639 respectively) -- both
+  contradicted by those same two composers' own, already-accurate
+  docstrings. `search_execution.py`/`encounter.py` both still framed
+  Challenge/Pursue as lacking `CAST`-tactic support and the round-based
+  `CombatRange` disruption engine as project-wide unbuilt -- both
+  closed by `challenge_execution.py`'s own Phase 290/292 addenda
+  (`resolve_challenge_combat()`, already reused directly by `turn/
+  pursue_execution.py`). Re-scoped what's genuinely still open: Search's
+  own monster-`CAST` tactic (`_resolve_cast_tactic()`) could potentially
+  reuse `resolve_challenge_combat()` too (its `target`/`target_leader`
+  shape already supports a `None`-`LeaderState` side, built for Duel's
+  garrison-commander reuse) and gain real spell disruption the same way
+  Pursue did -- flagged as a promising, unverified follow-up needing
+  its own dedicated investigation (`Combatant` compatibility, Search-
+  specific branches like Gate Demon's own summon), not attempted this
+  phase.
+
+  Full suite: 5455 (unchanged -- no code behavior touched).
 
 ## Setup
 

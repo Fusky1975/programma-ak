@@ -9854,8 +9854,14 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
       project's own established "readable line, not the full real
       table" convention, kept for this one sub-piece even though the
       surrounding table itself is now pixel-perfect.
-    - **Move precedence** (the real line 2's other own real-world
-      content, alongside aptitude) still isn't modeled.
+
+    **Phase 654 correction, kept for the record**: an earlier version
+    of this docstring's own "what this does NOT reproduce" list also
+    named "Move precedence" as still unmodeled -- stale even when
+    written, contradicted two paragraphs above in this same docstring
+    (**Line 2 -- the aptitude row**): that's exactly `Total_Skill(leader)
+    + M_Skill(leader, ForcedMarch)*2`, already wired as line 2's own
+    leading value.
     """
 
     kingdom = state.kingdoms[kingdom_id]
@@ -11874,10 +11880,15 @@ def compose_letter_report(
     only render a real subset of their own real content, confirmed
     absent rather than merely unwired:
     - FINANCES itself is only partially wired -- see
-      `describe_finances_report()`'s own docstring for exactly which
-      of its real lines render (`"Gold in treasury"`/`"Expected
-      Revenues"`) and which are confirmed absent (`ACost`/`LCost`-derived
-      figures, per-kingdom Discovery tracking).
+      `describe_finances_report()`'s own docstring for exactly which of
+      its real lines render (`"Gold in treasury"`/`"Expected Revenues"`/
+      `"Expected Expenses"`, the Discoveries of the Sages list, Phase
+      268) and what's genuinely still absent (per-turn expense
+      cross-checks beyond the confirmed real samples). **Phase 654
+      correction, kept for the record**: an earlier version of this
+      bullet still called "per-kingdom Discovery tracking" confirmed
+      absent here -- stale, closed by Phase 268, as this same
+      composer's own docstring already correctly states.
     - PROVINCES itself is only partially wired -- see `describe_
       provinces_report()`'s own docstring for exactly which columns
       render (name, race, terrain, percent explored; as of Phase 278,
@@ -11893,13 +11904,20 @@ def compose_letter_report(
       full, sourced derivation and exactly which real cases this phase
       does and doesn't reproduce -- notably not name-wrapping, multiple
       maps, or region labels).
-    - CHARACTERS itself is only partially wired -- see
-      `describe_characters_report()`'s own docstring for exactly which
-      fields render (name, location, Alignment, Temperament, Race, Pay
-      as of Phase 280, and 15-ability skill levels for a kingdom's own
-      leaders only) and which are still confirmed absent (gender,
-      Discovery-based skill modifiers, magic-item ownership marks, the
-      real procedure's wandering-Hero/Priest-clairvoyance passes).
+    - CHARACTERS itself is only partially wired -- see `describe_
+      characters_report()`'s own docstring for exactly which fields
+      render (name, location, Alignment, Temperament, Sex, Race, Pay,
+      the aptitude row, the Discovery-based skill-modifier row, magic-
+      item ownership marks, and -- as of Phase 639/646 -- the real
+      procedure's wandering-Hero/Priest-clairvoyance passes and the
+      mercenary hire-cost hint) and what's genuinely still absent (the
+      real interleaved per-leader treasure-list layout). **Phase 654
+      correction, kept for the record**: an earlier version of this
+      bullet still called gender, the Discovery-based skill modifiers,
+      magic-item ownership marks, and the wandering-Hero/Priest-
+      clairvoyance passes confirmed absent -- all four were stale here,
+      closed by Phases 260/635, 625, 437, and 639 respectively, as this
+      same composer's own docstring already correctly states.
     - IMPERIAL OFFICE REPORT (Phase 230) renders between ARMIES and
       ADVENTURE, matching the real order -- see `describe_imperial_
       office_report()`'s own docstring for exactly which Merit Point

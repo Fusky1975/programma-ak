@@ -424,42 +424,58 @@ unbuilt" -- two specific, narrower gaps):**
 1. **Spell disruption (``spell_disruption_chance()``/``resolve_spell_
    disruption()``, ``turn/encounter.py``'s own Phase 179 addendum) is
    still never rolled anywhere in this walk.** Not an oversight like
-   Words of Healing was -- it is structurally unwireable at this walk's
-   own granularity. The formula needs "hits taken by the caster
-   *this round*, before the cast is attempted," but this module's own
-   tactics resolve as whole self-contained duels (``resolve_melee_
-   duel()``/``resolve_fire_arrow_duel()`` each fight an entire encounter
-   to its own conclusion in one call), not as a round-by-round loop a
-   ``CAST`` tactic could be interleaved into mid-round. Meaningfully
-   wiring disruption needs the same round-based, three-``CombatRange``
-   state machine ``turn/encounter.py``'s own module docstring has
-   flagged as unbuilt since Phase 60/179/209-211/237-238 -- this
-   project's largest single remaining piece of unbuilt personal-combat
-   machinery, not a small addition. A degenerate wiring (every ``CAST``
-   tactic sees "0 hits taken so far," since nothing in the current walk
-   ever precedes a ``CAST`` with a partial, still-in-progress duel)
-   would technically compile but would always resolve to 0% disruption
-   -- indistinguishable from not wiring it at all, so it is left
-   honestly unattempted rather than faked.
-2. **This dispatch is still Search-only.** ``_resolve_cast_tactic()``
-   is a private closure inside ``execute_search()``, never exposed to
-   ``turn/challenge_execution.py`` or ``turn/pursue_execution.py`` --
-   both of which still resolve personal combat via Melee/Fire Arrow
-   only (``turn/encounter.py resolve_encounter_combat()``), with no
-   ``CAST`` tactic support at all. ``turn/challenge_execution.py``'s own
-   docstring still says outright "classifying which spells count as
-   personal combat spells needs a spell-effect system this project
-   doesn't have" -- true when written (Phase 50), stale now that Phase
-   209-238 built exactly that system, just never circled back to update
-   the claim or extend the wiring. Generalizing ``_resolve_cast_
-   tactic()`` into a shared, cross-consumer function (it currently reads
-   Search-specific concepts throughout -- ``feature.guardian_monster``,
-   ``MONSTER_MAGIC_ABILITIES`` lookups, a rolled monster combat stat
-   block -- none of which apply to a Challenge/Pursue leader-vs-leader
-   encounter) is real, scoped follow-up work, deliberately not attempted
-   in this same phase alongside the narrower Words of Healing fix, the
-   same "one clear gap per phase" discipline this project has followed
-   throughout.
+   Words of Healing was -- it is structurally unwireable at *this
+   module's own* granularity. The formula needs "hits taken by the
+   caster *this round*, before the cast is attempted," but this
+   module's own tactics resolve as whole self-contained duels
+   (``resolve_melee_duel()``/``resolve_fire_arrow_duel()`` each fight an
+   entire encounter to its own conclusion in one call), not as a
+   round-by-round loop a ``CAST`` tactic could be interleaved into
+   mid-round. **Phase 654 correction**: the round-based, three-
+   ``CombatRange`` state machine this needs is *not* still unbuilt
+   project-wide (an earlier version of this bullet said so, citing
+   Phase 60/179/209-211/237-238) -- `turn/challenge_execution.py`'s own
+   Phase 292 addendum built exactly that (`turn/encounter.py
+   CombatRange`, `challenge_execution.py resolve_challenge_combat()`),
+   already live for Challenge and Pursue. It's this module's *own* code
+   shape (whole-duel calls, not a round-by-round walk) that's
+   structurally incompatible -- see bullet 2 below for whether reusing
+   the already-built engine, rather than rebuilding one here, is
+   viable. A degenerate wiring in this module's own current shape
+   (every ``CAST`` tactic sees "0 hits taken so far," since nothing in
+   the current walk ever precedes a ``CAST`` with a partial, still-in-
+   progress duel) would technically compile but would always resolve to
+   0% disruption -- indistinguishable from not wiring it at all, so it
+   is left honestly unattempted rather than faked.
+2. **Phase 654 correction, kept for the record**: this bullet used to
+   claim Challenge/Pursue "still resolve personal combat via Melee/Fire
+   Arrow only... with no ``CAST`` tactic support at all" and that
+   ``turn/challenge_execution.py``'s own "needs a spell-effect system
+   this project doesn't have" claim was merely stale-but-unfixed --
+   stale itself by the time this correction was written: `turn/
+   challenge_execution.py`'s own Phase 290/292 addenda already built a
+   full, generalized ``CAST``-aware combat walk (``resolve_challenge_
+   combat()``, a real round-based ``CombatRange`` state machine with
+   spell disruption, re-derived branch-for-branch from this module's
+   own leader-target code, *not* a reuse of ``_resolve_cast_tactic()``
+   itself), and ``turn/pursue_execution.py`` already imports and calls
+   that same function directly (confirmed by grep -- both modules
+   genuinely have ``CAST`` support and real disruption today). **What
+   remains a real, still-open, separate follow-up**: `_resolve_cast_
+   tactic()` here is Search's own closure for casting *at a monster*
+   (``feature.guardian_monster``, ``MONSTER_MAGIC_ABILITIES``, a rolled
+   monster combat stat block) -- none of Challenge/Pursue's own code
+   handles a monster target, since an Encounter/Pursue opponent is
+   always another leader. Whether Search's own monster-``CAST`` case
+   could instead call the already-generic ``resolve_challenge_combat()``
+   (its ``target``/``target_leader`` shape already supports a `None`
+   ``LeaderState`` side, built for Duel's garrison-commander reuse,
+   Phase 291 -- a monster `Combatant` may fit the identical shape) and
+   thereby gain real spell disruption here too, mirroring Pursue's own
+   reuse, is a genuinely promising but unverified follow-up -- not
+   attempted this phase, since confirming the `Combatant` compatibility
+   and auditing every Search-specific branch (Gate Demon's own summon,
+   the monster stat rolls) needs its own dedicated investigation.
 
 **Phase 459 -- Add_Experience's own Druid call site.** ``AKGEN_reverse_
 engineering_report (2).md`` SS3.3's own Druid row gives a fixed base
