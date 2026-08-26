@@ -311,6 +311,7 @@ from ak_engine.report.turn_report import (
     _impulse2_candidates,
     _impulse3_candidates,
     _resolve_viewer_priest,
+    _render_stranger_row,
 )
 from ak_engine.models.enums import SPELL_NAME, Ability, ActionCode, Spell
 from ak_engine.models.weapon import Weapon
@@ -7501,6 +7502,94 @@ def test_describe_characters_report_impulse3_king_already_known_appears_only_onc
     matching_rows = [line for line in lines if line.startswith("Dupe King")]
     assert len(matching_rows) == 1
     assert matching_rows[0][14:18] != "    "  # the impulse-2 row shows a real location, not blank
+
+
+# -- Phase 646: Desc_Stranger's mercenary hire-cost hint (impulse 2 only) --
+
+
+def test_render_stranger_row_shows_hire_hint_for_cheap_kingdomless_hero():
+    state = GameState()
+    hero = LeaderState(9, None, "Kwoth", HexCoord(5, 5), race=Race.HUMAN)
+
+    lines = _render_stranger_row(state, hero, show_location=True, priest=None, tell_align_distance=2, king=None)
+
+    # king=None -> required_pay() permissively returns 1.
+    assert lines[1] == "  (who, we hear, desires to enter thy Majesty's service for 1 gold per annum)"
+
+
+def test_render_stranger_row_omits_hire_hint_when_cost_exceeds_three():
+    state = GameState()
+    hero = LeaderState(9, None, "Kwoth", HexCoord(5, 5), race=Race.HUMAN)
+    hero.alignment = Alignment.DIVINE
+    king = LeaderState(1, 1, "Roderick", HexCoord(0, 0), is_king=True, race=Race.HUMAN)
+    king.alignment = Alignment.UNDEAD  # max alignment distance -> pay == 5
+
+    lines = _render_stranger_row(state, hero, show_location=True, priest=None, tell_align_distance=2, king=king)
+
+    assert len(lines) == 1
+
+
+def test_render_stranger_row_omits_hire_hint_for_a_dead_kingdomless_hero():
+    state = GameState()
+    state.add_leader(LeaderState(9, None, "Kwoth", HexCoord(5, 5), race=Race.HUMAN))
+    state.remove_leader(9)
+    dead_hero = state.dead_leaders[9]
+
+    lines = _render_stranger_row(state, dead_hero, show_location=True, priest=None, tell_align_distance=2, king=None)
+
+    assert len(lines) == 1
+    assert "Majesty's service" not in lines[0]
+
+
+def test_render_stranger_row_omits_hire_hint_for_a_leader_with_a_kingdom():
+    state = GameState()
+    hero = LeaderState(9, 2, "Kwoth", HexCoord(5, 5), race=Race.HUMAN)
+
+    lines = _render_stranger_row(state, hero, show_location=True, priest=None, tell_align_distance=2, king=None)
+
+    assert len(lines) == 1
+
+
+def test_render_stranger_row_never_shows_hire_hint_for_impulse_3():
+    state = GameState()
+    # A kingdomless "King" can't really occur in this game model, but this
+    # confirms the hint is gated on show_location (impulse 2) structurally,
+    # not merely absent because no real impulse-3 candidate is ever kingdomless.
+    hero = LeaderState(9, None, "Kwoth", HexCoord(5, 5))
+
+    lines = _render_stranger_row(state, hero, show_location=False, priest=None, tell_align_distance=None, king=None)
+
+    assert len(lines) == 1
+
+
+def test_describe_characters_report_impulse2_shows_hire_hint_after_ability_text():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    stranger = LeaderState(9, None, "Kwoth", HexCoord(5, 5), race=Race.HUMAN)
+    state.add_leader(stranger)
+
+    lines = describe_characters_report(state, 1)
+
+    idx = next(i for i, line in enumerate(lines) if line.startswith("Kwoth"))
+    assert lines[idx + 1] == "  (who, we hear, desires to enter thy Majesty's service for 1 gold per annum)"
+
+
+def test_describe_characters_report_impulse2_no_hire_hint_for_an_owned_stranger():
+    # Non-regression: a stranger who belongs to another kingdom (not a
+    # wandering Hero) never gets the hint, matching the real lstate<>
+    # Mercenary case.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(5, 5)))
+    state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, 2, "Roderick", HexCoord(5, 5), is_king=True))
+    stranger = LeaderState(9, 2, "Kwoth", HexCoord(5, 5))
+    state.add_leader(stranger)
+
+    lines = describe_characters_report(state, 1)
+
+    assert not any("Majesty's service" in line for line in lines)
 
 
 # -- Phase 637: Was_Clairved -- a foreign leader targeted by an Enhanced-

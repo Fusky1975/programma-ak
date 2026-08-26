@@ -9538,20 +9538,56 @@ def _render_stranger_row(
     show_location: bool,
     priest: LeaderState | None,
     tell_align_distance: int | None,
+    king: LeaderState | None = None,
 ) -> list[str]:
     """``Desc_Stranger`` (`REPORTS.PAS` lines 690-754, Phase 639): the
     impulse-2/3 row. Impulse 2 (`show_location=True`): name, Loc,
-    descriptor, `Get_AbDesc` text, all one line; a second, separate
-    line with `Tell_Align`'s own text when `priest` is within
-    `tell_align_distance` hexes (`Tell_Align`'s own body always starts
-    with a bare `WRITELN`, so its text is never on the same line as
-    what precedes it). Impulse 3 (`show_location=False`, `tell_align_
-    distance=None`): name, a blank Loc column, descriptor -- no ability
-    text -- then `Tell_Align`'s own line unconditionally (not distance-
-    gated). A missing `leader.alignment` simply omits the `Tell_Align`
-    line (this project's own "no data, don't guess" convention -- the
-    real `lalign` array is always populated, so the real source never
-    hits this case).
+    descriptor, `Get_AbDesc` text, all one line; then, when the target
+    is a live, kingdomless Hero whose hire cost is 3 gold or less, a
+    second line with the mercenary hire-cost hint (Phase 646); then a
+    third, separate line with `Tell_Align`'s own text when `priest` is
+    within `tell_align_distance` hexes (`Tell_Align`'s own body always
+    starts with a bare `WRITELN`, so its text is never on the same line
+    as what precedes it). Impulse 3 (`show_location=False`, `tell_
+    align_distance=None`): name, a blank Loc column, descriptor -- no
+    ability text, no hire-cost hint (the real source's own hint block
+    sits inside the `show_location`/impulse-2 branch only) -- then
+    `Tell_Align`'s own line unconditionally (not distance-gated). A
+    missing `leader.alignment` simply omits the `Tell_Align` line (this
+    project's own "no data, don't guess" convention -- the real
+    `lalign` array is always populated, so the real source never hits
+    this case).
+
+    **The mercenary hire-cost hint (Phase 646)**: `REPORTS.PAS`'s own
+    ``IF lstate[ldr] = Mercenary THEN IF LCost(ldr,kng) <= 3 THEN IF
+    LKing(ldr) = noleader THEN`` -- three conditions that collapse to
+    one here. `lstate`'s own write side (which sets a leader's real
+    engine-side condition to `Mercenary` in the first place) has no
+    surviving source anywhere in the 13 available ``.PAS`` files -- but
+    `turn/hire_pay.py hero_liking()` (Phase 505, built from a *separate*
+    disassembly-based reverse-engineering dossier of `AKGEN.EXE`/`AK.
+    OVR`) already resolves this exact question for the very same real
+    `LCost` formula this hint calls: its own `temper_conflict` term
+    reads "hero is still Mercenary (unhired)" as `hero.kingdom_id is
+    None` -- the same real per-leader `state` enum this composer's
+    `lstate[ldr] = Dead` check (`_stranger_descriptor()`) already reads
+    for the identical field. Reused here rather than re-derived,
+    closing what `describe_characters_report()`'s own earlier docstring
+    called "no matching concept anywhere in `GameState`" -- the concept
+    (`kingdom_id is None`) already existed, it just hadn't been
+    connected to this specific hint yet. `LKing(ldr) = noleader` is
+    therefore redundant with `lstate[ldr] = Mercenary` under this
+    reading (both true for exactly the same leaders) and isn't checked
+    twice here. A leader already archived in `state.dead_leaders` is
+    explicitly excluded even when `kingdom_id is None` (a leader's real
+    `lstate` is a single value, so `Dead` and `Mercenary` are mutually
+    exclusive -- a kingdomless leader who has since died no longer
+    reads as `Mercenary` in the real engine either). `LCost` itself is
+    `turn/expenses.py leader_pay()` (`required_pay()` plus King/
+    Valhalla-visitor exclusions that can never apply to a genuinely
+    kingdomless Hero reaching this branch, so the two functions agree
+    here) -- the same function the impulse-1 table's own "Pay" column
+    already calls, not a fresh formula.
     """
 
     name = _characters_report_display_name(state, leader)
@@ -9560,6 +9596,12 @@ def _render_stranger_row(
     if show_location:
         ability_desc = _leader_ability_description(state, leader)[1:-1]
         lines = [f"{name:<14}{loc:>4}{descriptor}{ability_desc}"]
+        if leader.kingdom_id is None and leader.leader_id not in state.dead_leaders:
+            hire_cost = leader_pay(state, leader, king)
+            if hire_cost <= 3:
+                lines.append(
+                    f"  (who, we hear, desires to enter thy Majesty's service for {hire_cost} gold per annum)"
+                )
     else:
         lines = [f"{name:<14}{loc:>4}{descriptor}"]
 
@@ -9609,14 +9651,19 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     `gameturn` itself advances, so the two are always equal for this
     report's own real call path.
 
-    **Deliberately still excluded**: the mercenary hire-cost hint
-    (`Desc_Stranger`'s own `IF lstate[ldr]=Mercenary...` block) -- a
-    leader's own "currently an available-for-hire wandering Hero"
-    personal state has no matching concept anywhere in `GameState`;
-    and `Known_Merc` (`RUMORS.PAS`), a *different* report's own
-    mercenary-army-visibility check. See [[project_characters_
-    impulse23_phase636]] for the full closure history across Phases
-    636-639. (**Phase 636 correction, kept for the record**: an
+    **The mercenary hire-cost hint is now modeled too** (Phase 646) --
+    `Desc_Stranger`'s own `IF lstate[ldr]=Mercenary...` block, see
+    `_render_stranger_row()`'s own docstring for the full sourcing of
+    why `leader.kingdom_id is None` (already an existing `GameState`
+    concept, not a new one) is the right reading of a leader's real
+    `lstate=Mercenary` condition.
+
+    **Still deliberately excluded**: `Known_Merc` (`RUMORS.PAS`), a
+    *different* report's own mercenary-*army*-visibility check (already
+    wired into ARMIES, Phase 642) -- not this leader-scoped concept. See
+    [[project_characters_impulse23_phase636]] for the full closure
+    history across Phases 636-639/646. (**Phase 636 correction, kept
+    for the record**: an
     earlier version of this docstring also named "the Priest office
     itself" as a blocker here -- false even when written, `turn/
     office_holder.py Office.PRIEST` has been a fully live, resolvable
@@ -9835,7 +9882,9 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
             lines.append(f"Items: {item_names}")
 
     for leader in impulse2:
-        lines.extend(_render_stranger_row(state, leader, show_location=True, priest=priest, tell_align_distance=2))
+        lines.extend(
+            _render_stranger_row(state, leader, show_location=True, priest=priest, tell_align_distance=2, king=king)
+        )
     for leader in impulse3:
         lines.extend(_render_stranger_row(state, leader, show_location=False, priest=priest, tell_align_distance=None))
 

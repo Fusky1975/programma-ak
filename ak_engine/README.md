@@ -26865,7 +26865,7 @@ follow-up request after the original 431-435 plan shipped.
   across co-practicing leaders the same way Tactical does. Full suite:
   5399 -> 5402 (net +3).
 
-- **Phase 645 (current)**: RECRUIT report's `_AAPay` ally-territory
+- **Phase 645**: RECRUIT report's `_AAPay` ally-territory
   recruiting fee sentence, closing the last blocker the 2026-08-26
   codebase survey left open.
 
@@ -26912,6 +26912,46 @@ follow-up request after the original 431-435 plan shipped.
   codebase survey (Phases 640-645) -- every item from that survey is
   now either done or genuinely needs a new state concept (`Known_Merc`
   mercenary hire-cost hint).
+
+- **Phase 646 (current)**: CHARACTERS report's mercenary hire-cost
+  hint (`Desc_Stranger`'s own `IF lstate[ldr]=Mercenary...` block) --
+  closes the last item flagged in the 2026-08-26 codebase survey.
+
+  `REPORTS.PAS`: `IF lstate[ldr] = Mercenary THEN IF LCost(ldr,kng) <=
+  3 THEN IF LKing(ldr) = noleader THEN` -- when an impulse-2 stranger
+  (a wandering Hero this kingdom knows the location of) would cost 3
+  gold or less to hire, a second line appears: "(who, we hear, desires
+  to enter thy Majesty's service for N gold per annum)". `lstate`'s
+  own *write* side (what sets a leader's real engine-side condition to
+  `Mercenary` in the first place) has no surviving source anywhere in
+  the 13 available `.PAS` files -- previously flagged as needing "a new
+  state concept... no matching concept anywhere in `GameState`".
+
+  That framing turned out to be incomplete: `turn/hire_pay.py hero_
+  liking()` (Phase 505, built from a *separate* disassembly-based
+  dossier of `AKGEN.EXE`/`AK.OVR`) already answers this exact question
+  for the very same real `LCost` formula this hint calls -- its own
+  `temper_conflict` term reads "hero is still Mercenary (unhired)" as
+  `hero.kingdom_id is None`. Reused directly rather than re-derived:
+  `_render_stranger_row()` now renders the hint whenever the impulse-2
+  target is a *live* (`leader.leader_id not in state.dead_leaders`,
+  since `Dead` and `Mercenary` are mutually exclusive real `lstate`
+  values), kingdomless leader whose `turn/expenses.py leader_pay()`
+  (the same "Pay" formula the impulse-1 table's own column already
+  calls) is 3 gold or less. `LKing(ldr) = noleader` becomes redundant
+  under this reading and isn't checked twice. No new `GameState` field
+  needed -- `LeaderState.kingdom_id is None` already existed.
+
+  Tests: `tests/test_turn_report.py` gained 7 -- `_render_stranger_
+  row()` shows the hint for a cheap kingdomless Hero, omits it above
+  the 3-gold threshold, omits it for a dead kingdomless Hero, omits it
+  for a leader with a kingdom, and never shows it for impulse 3
+  (structural, not incidental); `describe_characters_report()`
+  end-to-end shows the hint right after the ability-description line,
+  and confirms an owned stranger (belongs to another kingdom) never
+  gets it. Full suite: 5407 -> 5414 (net +7).
+
+  This closes the entire 2026-08-26 codebase survey.
 
 ## Setup
 
