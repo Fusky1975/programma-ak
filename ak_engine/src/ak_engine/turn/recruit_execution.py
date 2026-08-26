@@ -172,6 +172,12 @@ class RecruitedUnit:
     army_type: ArmyType
     gold_paid: int
     hired: bool = False  # True = an existing mercenary was hired, not freshly levied
+    # Phase 645: the ally-territory recruiting fee (rulebook [3.4], "you
+    # will need to pay him 1 gold for each unit recruited") already
+    # folded into `gold_paid` above -- kept separate here too so
+    # `report/turn_report.py describe_recruit()` can render the real
+    # `_AAPay` sentence without re-deriving it from `province`/`state`.
+    ally_fee_paid: int = 0
 
 
 @dataclass(slots=True)
@@ -308,7 +314,15 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             hired = False
         province.recruited_this_turn[army_type] = already_this_turn + 1
 
-        result.recruited.append(RecruitedUnit(army_id=army_id, army_type=army_type, gold_paid=unit_cost, hired=hired))
+        result.recruited.append(
+            RecruitedUnit(
+                army_id=army_id,
+                army_type=army_type,
+                gold_paid=unit_cost,
+                hired=hired,
+                ally_fee_paid=resolution.ally_fee_per_unit,
+            )
+        )
         result.total_gold_spent += unit_cost
 
     return result

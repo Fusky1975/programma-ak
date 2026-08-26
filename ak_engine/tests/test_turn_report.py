@@ -192,6 +192,7 @@ from ak_engine.report.turn_report import (
     render_pickup_unit,
     render_recruit_unit,
     render_recruit_hired_mercenary,
+    render_recruit_ally_fee,
     render_melee_attack,
     render_monster_offers_raid_truce,
     render_mortally_wounded,
@@ -1236,6 +1237,79 @@ def test_describe_recruit_hired_unit_uses_hiremerc_not_recruit():
     lines = describe_recruit(result, state, recruiter_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
 
     assert lines == ["Arthur hired Bowmen, a mercenary army which had made its way to Numenor."]
+
+
+# -- Phase 645: RUMORS.PAS _AAPay (ally-territory recruiting fee) --
+
+
+def test_render_recruit_ally_fee():
+    rng = ScriptedRandom([0.1], choice_indices=[0])
+    result = render_recruit_ally_fee("Arthur", 1, "Bors", rng)
+    assert result == "Arthur paid 1 gold to Bors for the privilege of recruiting these troops."
+
+
+def _ally_territory_recruit_state() -> GameState:
+    # Kingdom 1 (recruiter) has no King of its own here -- irrelevant to
+    # the ``_AAPay`` line, which names the *province owner*'s King.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(5, 5)))
+    state.add_leader(LeaderState(2, 2, "Bors", HexCoord(5, 5), is_king=True))
+    state.add_province(
+        ProvinceState(HexCoord(3, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, name="Numenor")
+    )
+    state.add_leader(LeaderState(1, 1, "Arthur", HexCoord(3, 9)))
+    return state
+
+
+def test_describe_recruit_appends_aapay_line_after_a_freshly_levied_unit():
+    state = _ally_territory_recruit_state()
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=None))
+    result = RecruitExecutionResult(
+        request=None,
+        recruited=[RecruitedUnit(army_id=100, army_type=ArmyType.BOWMEN, gold_paid=3, ally_fee_paid=1)],
+    )
+
+    rng = ScriptedRandom([0.1, 0.1, 0.1], choice_indices=[0])
+    lines = describe_recruit(result, state, recruiter_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert len(lines) == 2
+    assert lines[0] == (
+        "Arthur recruited Bowmen from among the people of Numenor, to serve under "
+        "the provincial garrison commander."
+    )
+    assert lines[1] == "Arthur paid 1 gold to Bors for the privilege of recruiting these troops."
+
+
+def test_describe_recruit_appends_aapay_line_after_a_hired_unit():
+    state = _ally_territory_recruit_state()
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=None))
+    result = RecruitExecutionResult(
+        request=None,
+        recruited=[RecruitedUnit(army_id=100, army_type=ArmyType.BOWMEN, gold_paid=6, hired=True, ally_fee_paid=1)],
+    )
+
+    rng = ScriptedRandom([0.1] * 6, choice_indices=[0])
+    lines = describe_recruit(result, state, recruiter_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert len(lines) == 2
+    assert lines[0] == "Arthur hired Bowmen, a mercenary army which had made its way to Numenor."
+    assert lines[1] == "Arthur paid 1 gold to Bors for the privilege of recruiting these troops."
+
+
+def test_describe_recruit_own_territory_has_no_aapay_line():
+    # Non-regression: `ally_fee_paid` defaults to 0 for a unit recruited
+    # in the kingdom's own territory, so no extra line appears.
+    state = _recruit_state()
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=None))
+    result = RecruitExecutionResult(
+        request=None, recruited=[RecruitedUnit(army_id=100, army_type=ArmyType.BOWMEN, gold_paid=2)]
+    )
+
+    rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
+    lines = describe_recruit(result, state, recruiter_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert len(lines) == 1
 
 
 def test_describe_recruit_multiple_units_render_one_line_each():

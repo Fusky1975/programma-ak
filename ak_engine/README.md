@@ -26823,7 +26823,7 @@ follow-up request after the original 431-435 plan shipped.
   Discovery, and no exchange record renders neither line. Full suite:
   5391 -> 5399 (net +8).
 
-- **Phase 644 (current)**: Practice Naval now trains armies too, per
+- **Phase 644**: Practice Naval now trains armies too, per
   [6.1]'s own "both methods, same effect" text -- a follow-up flagged
   during Phase 641.
 
@@ -26864,6 +26864,54 @@ follow-up request after the original 431-435 plan shipped.
   no armies to train; `execute_practice_group()` pools Naval armies
   across co-practicing leaders the same way Tactical does. Full suite:
   5399 -> 5402 (net +3).
+
+- **Phase 645 (current)**: RECRUIT report's `_AAPay` ally-territory
+  recruiting fee sentence, closing the last blocker the 2026-08-26
+  codebase survey left open.
+
+  Rulebook [3.4]: recruiting in an ally's territory costs 1 extra gold
+  per unit, paid to the ally -- `turn/recruit_execution.py` already
+  debited the recruiter and credited the ally's treasury for this
+  (`resolution.ally_fee_per_unit`), but the report never said so:
+  `RecruitedUnit` only carried the combined `gold_paid` total, with no
+  record of whether any of it was an ally fee. The real template
+  (`RUMORS.PAS _AAPay`, "< paid # gold to [ for the privilege of
+  recruiting these troops.") was already transcribed but never
+  rendered, blocked on the `[` marker's own referent: the real
+  `Imp_Code(_AAPay)` trigger call doesn't survive in any of the 13
+  available `.PAS` files, only the message-table declaration and
+  `SAY.PAS`'s own `Say(...)` text do -- so whether `[` names the ally
+  King or reuses the sibling `_ARecr` message's garrison-commander/
+  `Pronoun()` convention couldn't be settled from source alone.
+
+  **User-confirmed directly**: `[` is the ally King's own name. New
+  `RecruitedUnit.ally_fee_paid: int` (Phase 645) carries the real fee
+  per unit, set from `resolution.ally_fee_per_unit` in
+  `execute_recruit()` (already 0 outside ally territory, so no extra
+  gating needed). `report/turn_report.py` gains `render_recruit_
+  ally_fee()` (the new template) and `_ally_fee_recipient_name()`
+  (resolves the province owner's King via the existing `_king_leader_
+  id()`/`_leader_name()` helpers, Phase 217/612, falling back to the
+  Kingdom's own name in the unreached edge case of no recorded King).
+  `describe_recruit()` appends the `_AAPay` line right after a unit's
+  own RECRUIT.X/HIREMERC.X sentence whenever `ally_fee_paid` is set --
+  applies to both a freshly levied and a hired-mercenary unit alike,
+  since `execute_recruit()` charges the fee unconditionally in ally
+  territory with no `hired`-based exception.
+
+  Tests: `tests/test_recruit_execution.py` gained 1 (a new own-
+  territory case asserting `ally_fee_paid == 0`, plus an assertion
+  added to the existing ally-crediting test). `tests/test_turn_
+  report.py` gained 4 -- `render_recruit_ally_fee()`'s own template
+  text; the `_AAPay` line appended after a freshly levied unit and
+  after a hired unit alike; a non-regression case confirming no extra
+  line appears for own-territory recruiting. Full suite: 5402 -> 5407
+  (net +5).
+
+  This closes the last remaining candidate from the 2026-08-26
+  codebase survey (Phases 640-645) -- every item from that survey is
+  now either done or genuinely needs a new state concept (`Known_Merc`
+  mercenary hire-cost hint).
 
 ## Setup
 

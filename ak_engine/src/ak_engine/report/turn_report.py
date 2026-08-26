@@ -5111,6 +5111,40 @@ def render_recruit_hired_mercenary(
     return render(variant, values, rng=rng, is_sea=is_sea, lists={"=": [army_type_name]})
 
 
+# RUMORS.PAS -- ``_AAPay``, "< paid # gold to [ for the privilege of
+# recruiting these troops." -- rulebook [3.4]: recruiting in an ally's
+# territory costs 1 extra gold per unit, paid to the ally. Only one
+# real variant survives in the recovered text (no ``/R``/``{...}``
+# alternation). The ``[`` marker's own referent -- the ally King's own
+# name, not a reuse of ``_ARecr``'s garrison-commander/``Pronoun()``
+# convention -- was unresolvable from any surviving ``.PAS`` file (the
+# real ``Imp_Code(_AAPay)`` trigger doesn't survive); confirmed
+# directly by the user instead (Phase 645), closing the blocker Phase
+# 616's own codebase survey first flagged.
+_AAPAY_TEMPLATE = "< paid # gold to [ for the privilege of recruiting these troops."
+
+
+def render_recruit_ally_fee(payer_name: str, gold_amount: int, ally_king_name: str, rng: random.Random) -> str:
+    """Renders the ``_AAPay`` sentence for the ally-territory recruiting
+    fee (Phase 645) -- ``<`` the recruiter, ``#`` the fee paid, ``[``
+    the ally King who received it.
+    """
+
+    values = {"<": payer_name, "#": str(gold_amount), "[": ally_king_name}
+    return render(_AAPAY_TEMPLATE, values, rng=rng)
+
+
+def _ally_fee_recipient_name(state: GameState, owner_kingdom_id: int) -> str:
+    """The ally King's own name for the ``_AAPay`` ``[`` marker -- falls
+    back to the Kingdom's own name in the unreached edge case of no
+    recorded King (every real ally-territory Kingdom has one).
+    """
+
+    king_id = _king_leader_id(state, owner_kingdom_id)
+    name = _leader_name(state, king_id) if king_id is not None else None
+    return name if name is not None else state.kingdoms[owner_kingdom_id].name
+
+
 def describe_recruit(
     result: RecruitExecutionResult,
     state: GameState,
@@ -5148,12 +5182,18 @@ def describe_recruit(
       Shared with ``describe_leave()`` (Phase 420) via
       ``_unled_army_commander_name()``.
 
-    **Deliberately not rendered here**: ``_AAPay`` ("< paid # gold to
-    [ for the privilege of recruiting these troops.", the ally-fee
-    sentence) -- ``RecruitExecutionResult`` doesn't currently carry
-    which unit (if any) paid an ally fee, or how much, only each
-    ``RecruitedUnit.gold_paid``'s already-combined total (own cost +
-    ally fee). Left for a future phase rather than guessed here.
+    **The ally-territory recruiting fee (Phase 645)**: ``_AAPay``
+    ("< paid # gold to [ for the privilege of recruiting these
+    troops.") renders once per recruited unit with
+    ``RecruitedUnit.ally_fee_paid`` set, right after that unit's own
+    RECRUIT.X/HIREMERC.X sentence (applies to both a freshly levied
+    and a hired-mercenary unit alike -- the fee is charged
+    unconditionally in ``turn/recruit_execution.py`` whenever
+    ``in_ally_territory``, with no ``hired``-based exception). ``[``
+    is the ally King's own name (``_ally_fee_recipient_name()``),
+    user-confirmed directly -- the real ``Imp_Code(_AAPay)`` trigger
+    that would have settled this doesn't survive in any available
+    ``.PAS`` file.
 
     **Phase 595**: ``unit.hired`` (``turn/recruit_execution.py``'s own
     "an existing mercenary was hired, not freshly levied" flag) now
@@ -5172,13 +5212,16 @@ def describe_recruit(
         army_type_name = ARMY_TYPE_DESIGNATION[unit.army_type]
         if unit.hired:
             lines.append(render_recruit_hired_mercenary(recruiter_name, province_name, army_type_name, rng, is_sea=is_sea))
-            continue
-        army = state.armies.get(unit.army_id)
-        commander_id = army.commanded_by if army is not None else None
-        commander_name = _leader_name(state, commander_id)
-        if commander_name is None:
-            commander_name = _unled_army_commander_name(province)
-        lines.append(render_recruit_unit(recruiter_name, province_name, army_type_name, commander_name, rng))
+        else:
+            army = state.armies.get(unit.army_id)
+            commander_id = army.commanded_by if army is not None else None
+            commander_name = _leader_name(state, commander_id)
+            if commander_name is None:
+                commander_name = _unled_army_commander_name(province)
+            lines.append(render_recruit_unit(recruiter_name, province_name, army_type_name, commander_name, rng))
+        if unit.ally_fee_paid and province.owner_kingdom_id is not None:
+            ally_king_name = _ally_fee_recipient_name(state, province.owner_kingdom_id)
+            lines.append(render_recruit_ally_fee(recruiter_name, unit.ally_fee_paid, ally_king_name, rng))
     return lines
 
 

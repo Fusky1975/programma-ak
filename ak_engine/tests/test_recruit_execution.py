@@ -143,6 +143,16 @@ def test_recruiting_in_ally_territory_credits_the_ally():
     assert result.total_gold_spent == 3
     assert state.kingdoms[1].treasury == 97
     assert state.kingdoms[2].treasury == 1
+    assert result.recruited[0].ally_fee_paid == 1
+
+
+def test_recruit_in_own_territory_reports_no_ally_fee():
+    state = build_state(treasury=100)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited[0].ally_fee_paid == 0
 
 
 def test_recruiting_in_ally_territory_without_a_treat_order_is_blocked():
