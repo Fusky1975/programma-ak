@@ -49,6 +49,45 @@ def test_mutual_treat_between_allies_in_contact_exchanges_each_direction():
     assert Discovery.COMPASS in state.kingdoms[2].discoveries
 
 
+# -- Phase 643: GameState.discovery_exchanged_from (kexch) --
+
+
+def test_mutual_exchange_records_both_directions_in_discovery_exchanged_from():
+    state = build_state()
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+    state.kingdoms[2].discoveries.add(Discovery.TELESCOPE)
+
+    execute_scientific_treaties(state, **BOUNDS)
+
+    assert state.discovery_exchanged_from[(1, 2)] == Discovery.COMPASS  # 1 gave COMPASS to 2
+    assert state.discovery_exchanged_from[(2, 1)] == Discovery.TELESCOPE  # 2 gave TELESCOPE to 1
+
+
+def test_lopsided_exchange_only_records_the_one_real_direction():
+    state = build_state()
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+    # kingdom 2 has nothing kingdom 1 doesn't already have
+
+    execute_scientific_treaties(state, **BOUNDS)
+
+    assert state.discovery_exchanged_from == {(1, 2): Discovery.COMPASS}
+
+
+def test_a_later_exchange_between_the_same_pair_overwrites_the_earlier_entry():
+    # The real kexch[giver,receiver] holds a single value -- an earlier
+    # exchange between the same two Kingdoms is silently overwritten,
+    # not accumulated (a real, sourced limitation, not a bug to fix).
+    state = build_state()
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+    execute_scientific_treaties(state, **BOUNDS)
+    assert state.discovery_exchanged_from[(1, 2)] == Discovery.COMPASS
+
+    state.kingdoms[1].discoveries.add(Discovery.SEXTANT)
+    execute_scientific_treaties(state, **BOUNDS)
+
+    assert state.discovery_exchanged_from[(1, 2)] == Discovery.SEXTANT
+
+
 def test_no_exchange_when_treat_order_is_not_mutual():
     state = build_state()
     state.treat_permissions.discard((2, 1))  # only kingdom 1 issued Treat naming 2

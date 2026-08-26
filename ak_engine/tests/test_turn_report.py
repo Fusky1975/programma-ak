@@ -6297,6 +6297,76 @@ def test_describe_finances_report_discoveries_sorted_by_real_display_value():
     ]
 
 
+# -- Phase 643: Scientific Treaty exchange attribution (kexch) --
+
+
+def test_describe_finances_report_shows_received_from_line():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.kingdoms[1].discoveries = {Discovery.COMPASS}
+    state.discovery_exchanged_from[(3, 1)] = Discovery.COMPASS
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[-2:] == [
+        describe_discovery_line(Discovery.COMPASS),
+        "(Received from player(s) #3 by scientific treaty)",
+    ]
+
+
+def test_describe_finances_report_received_from_joins_multiple_givers():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.kingdoms[1].discoveries = {Discovery.COMPASS}
+    state.discovery_exchanged_from[(3, 1)] = Discovery.COMPASS
+    state.discovery_exchanged_from[(7, 1)] = Discovery.COMPASS
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[-1] == "(Received from player(s) #3, 7 by scientific treaty)"
+
+
+def test_describe_finances_report_shows_sent_to_line():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.kingdoms[1].discoveries = {Discovery.COMPASS}
+    state.discovery_exchanged_from[(1, 5)] = Discovery.COMPASS
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[-2:] == [
+        describe_discovery_line(Discovery.COMPASS),
+        "(Sent to player(s) #5 by scientific treaty)",
+    ]
+
+
+def test_describe_finances_report_received_from_and_sent_to_both_appear_in_order():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.kingdoms[1].discoveries = {Discovery.COMPASS}
+    state.discovery_exchanged_from[(3, 1)] = Discovery.COMPASS
+    state.discovery_exchanged_from[(1, 5)] = Discovery.COMPASS
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[-3:] == [
+        describe_discovery_line(Discovery.COMPASS),
+        "(Received from player(s) #3 by scientific treaty)",
+        "(Sent to player(s) #5 by scientific treaty)",
+    ]
+
+
+def test_describe_finances_report_no_exchange_lines_without_a_recorded_exchange():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.kingdoms[1].discoveries = {Discovery.COMPASS}
+
+    lines = describe_finances_report(state, 1)
+
+    assert lines[-1] == describe_discovery_line(Discovery.COMPASS)
+    assert "scientific treaty" not in "\n".join(lines)
+
+
 def test_describe_finances_report_shows_invention_bonus_when_positive():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))

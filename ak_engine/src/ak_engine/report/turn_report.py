@@ -8677,6 +8677,32 @@ _FINANCES_DISCOVERIES_INTRO = (
 _FINANCES_NONE_AT_PRESENT = "None at present"
 
 
+def _discovery_exchange_partners(
+    state: GameState, discovery: Discovery, *, giver: int | None = None, receiver: int | None = None
+) -> list[int]:
+    """The other Kingdom id(s) on the real `kexch[giver,receiver]` side
+    of `discovery` not fixed by the caller (Phase 643) -- pass `giver`
+    to find who `discovery` was *sent to* (`kexch[giver,x]`), or
+    `receiver` to find who it was *received from* (`kexch[x,receiver]`).
+    Exactly one of the two must be given.
+    """
+
+    if giver is not None:
+        return sorted(r for (g, r), d in state.discovery_exchanged_from.items() if g == giver and d == discovery)
+    return sorted(g for (g, r), d in state.discovery_exchanged_from.items() if r == receiver and d == discovery)
+
+
+def _discovery_exchange_line(prefix: str, partners: list[int]) -> str:
+    """`"(Received from player(s) #3, 7 by scientific treaty)"` (Phase
+    643) -- `REPORTS.PAS`'s own real formatting: only the first partner
+    gets the `#` marker, later ones are bare numbers after `", "`.
+    """
+
+    first, *rest = partners
+    names = f"#{first}" + "".join(f", {other}" for other in rest)
+    return f"({prefix} player(s) {names} by scientific treaty)"
+
+
 def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
     """Assembles the "FINANCES" section (Phase 219) -- a deliberately
     narrow slice of `REPORTS.PAS Rep_Econ`, rendering only the figures
@@ -8743,6 +8769,22 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
     one real report line per owned Discovery (`describe_discovery_line()`,
     sorted the real way via `sorted_kingdom_discoveries()`), falling back
     to `_FINANCES_NONE_AT_PRESENT` only when the kingdom holds none.
+
+    **Phase 643 adds the real Scientific Treaty exchange attribution**:
+    up to two extra lines right after a given Discovery's own name/
+    effect line -- `"(Received from player(s) #k1[, k2...] by
+    scientific treaty)"` when `GameState.discovery_exchanged_from`
+    records another Kingdom as this one's most recent source for it
+    (`_discovery_exchange_partners()`/`_discovery_exchange_line()`
+    below), and independently `"(Sent to player(s) #k1[, k2...] by
+    scientific treaty)"` for the reverse direction -- both, one, or
+    neither can appear per Discovery. `REPORTS.PAS`'s own internal
+    `Elite_On`/`Imp_Code`/`Check_DSpab` block in the same real
+    procedure produces no visible report text at all (confirmed by
+    tracing its own governing condition precisely) -- deliberately not
+    modeled, the same "internal messaging, not player-facing" stance
+    already established elsewhere in this project (e.g. the DIPLOMACY
+    composer's own `mknext1`/`Imp_Code` note).
     """
 
     kingdom = state.kingdoms[kingdom_id]
@@ -8765,7 +8807,14 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
         lines.append(f"+Invention Bonus: {invention_bonus_percent}%")
     lines.append(_FINANCES_DISCOVERIES_INTRO)
     if kingdom.discoveries:
-        lines.extend(describe_discovery_line(d) for d in sorted_kingdom_discoveries(kingdom.discoveries))
+        for discovery in sorted_kingdom_discoveries(kingdom.discoveries):
+            lines.append(describe_discovery_line(discovery))
+            received_from = _discovery_exchange_partners(state, discovery, receiver=kingdom_id)
+            if received_from:
+                lines.append(_discovery_exchange_line("Received from", received_from))
+            sent_to = _discovery_exchange_partners(state, discovery, giver=kingdom_id)
+            if sent_to:
+                lines.append(_discovery_exchange_line("Sent to", sent_to))
     else:
         lines.append(_FINANCES_NONE_AT_PRESENT)
     return lines

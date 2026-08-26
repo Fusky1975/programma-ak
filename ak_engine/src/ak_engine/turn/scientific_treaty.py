@@ -87,6 +87,19 @@ an espionage-obtained Discovery already behaves (``turn/
 practice_execution.py``'s own SAGE branch is the only writer of that
 registry).
 
+**Phase 643 -- exchange attribution now recorded**: `REPORTS.PAS`'s
+own "Discoveries of the Sages" list (`Rep_Econ`, lines 348-392) prints
+"(Received from player(s) #k1... by scientific treaty)"/"(Sent to
+player(s) #k1... by scientific treaty)" for a Discovery whose real
+`kexch[giver,receiver]` entry names this exchange -- confirmed to be
+*only* about this mechanic (the text is unconditionally "by scientific
+treaty"), not espionage. `execute_scientific_treaties()` now writes
+`GameState.discovery_exchanged_from[(giver_id, receiver_id)]` alongside
+each `KingdomState.discoveries.add(...)` call -- see that field's own
+docstring for the exact shape and the real "single value per directed
+pair" limitation it reproduces. Rendered by `report/turn_report.py
+describe_finances_report()`.
+
 **No ``turn_processor.py`` wiring**: "The exchange takes place after
 finances are computed" describes a sequencing point this project has
 no equivalent hook for -- ``turn/tax_base.py``'s own revenue/
@@ -282,8 +295,10 @@ def execute_scientific_treaties(
 
         if discovery_to_b is not None:
             kingdom_b.discoveries.add(discovery_to_b)
+            state.discovery_exchanged_from[(kingdom_a_id, kingdom_b_id)] = discovery_to_b
         if discovery_to_a is not None:
             kingdom_a.discoveries.add(discovery_to_a)
+            state.discovery_exchanged_from[(kingdom_b_id, kingdom_a_id)] = discovery_to_a
 
         results.append(
             ScientificTreatyResult(

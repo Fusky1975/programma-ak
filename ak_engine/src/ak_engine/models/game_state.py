@@ -1329,6 +1329,26 @@ class GameState:
     # also present in ``kingdoms_met`` (written together, same call),
     # but never removed once set, same one-way-ratchet convention.
     kingdoms_met_since: dict[frozenset[int], int] = field(default_factory=dict)
+    # Phase 643 -- ``RUMORS.PAS``'s own ``kexch[giver,receiver]``: which
+    # Discovery was most recently exchanged in this *directed* pair via
+    # a Scientific Treaty ([8.4], ``turn/scientific_treaty.py execute_
+    # scientific_treaties()``, the only writer). Keyed by an ordered
+    # ``(giver_kingdom_id, receiver_kingdom_id)`` tuple -- not a
+    # ``frozenset`` like ``kingdoms_met`` above, since direction matters
+    # here ("received from" vs. "sent to" are different report lines).
+    # A single value per pair, matching the real Pascal's own single-
+    # slot 2D array: a later exchange between the same two Kingdoms
+    # silently overwrites an earlier one rather than accumulating, a
+    # real, sourced limitation reproduced here, not a design choice of
+    # this port's own. Feeds the FINANCES report's own "(Received from
+    # player(s) #k1... by scientific treaty)"/"(Sent to player(s) #k1...
+    # by scientific treaty)" lines (``report/turn_report.py describe_
+    # finances_report()``) -- confirmed *not* related to espionage-
+    # obtained Discoveries at all (``MeritTally.discoveries_via_
+    # espionage`` is a separate, already-modeled counter with no
+    # per-source text of its own -- see ``turn/scientific_treaty.py``'s
+    # own module docstring).
+    discovery_exchanged_from: dict[tuple[int, int], Discovery] = field(default_factory=dict)
     # Phase 475: AKGEN_reverse_engineering_report (2).md SS14.4's own
     # tier-1 tie-break, "per i titoli avanzati, il titolare precedente
     # conserva precedenza se è fra i pari" (for advanced titles, the

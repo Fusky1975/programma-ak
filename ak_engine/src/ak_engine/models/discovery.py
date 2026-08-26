@@ -106,11 +106,19 @@ previously-unmodeled field, extracted verbatim from `CTBOTH.PAS` line
 `DISCOVERY_DISPLAY_VALUE` below -- Phase 93's own docstring called this
 field's only use "that one print loop"; this phase is exactly that use),
 ties broken by declaration order (the inner `FOR d` loop's own order).
-**Not modeled**: the `'(Received from player(s) #k1...'` parenthetical
-suffix naming who a discovery was received from (`kexch[k1,kng]`) --
-this project tracks *that* a Discovery was obtained via espionage
-(`MeritTally.discoveries_via_espionage`, Phase 267) but not *from whom*,
-so the suffix has nothing real to render and is left off entirely.
+**Phase 643 -- exchange attribution now modeled**: an earlier version
+of this note called the `'(Received from player(s) #k1...'` line
+blocked on tracking "from whom" a Discovery came, tying it (wrongly)
+to espionage. Re-reading `REPORTS.PAS` lines 348-392 directly found
+the real text is unconditionally "...by scientific treaty" -- this
+parenthetical (and its own sibling, "(Sent to player(s) #k1... by
+scientific treaty)", a second, independent line this note didn't even
+name) is *only* about `turn/scientific_treaty.py execute_scientific_
+treaties()` ([8.4]), never espionage; `MeritTally.discoveries_via_
+espionage` (Phase 267) remains the correct, separate, already-modeled
+counter for that. See `GameState.discovery_exchanged_from`'s own
+docstring for the real `kexch[giver,receiver]` shape now tracked, and
+`report/turn_report.py describe_finances_report()` for the rendering.
 """
 
 from __future__ import annotations

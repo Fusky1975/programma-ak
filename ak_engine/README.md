@@ -26727,7 +26727,7 @@ follow-up request after the original 431-435 plan shipped.
   stays unboosted even while a sibling army in the same pool gets the
   full bonus. Full suite: 5371 -> 5379 (net +8).
 
-- **Phase 642 (current)**: ARMIES report -- wires the real "Mercenary"
+- **Phase 642**: ARMIES report -- wires the real "Mercenary"
   pass (`Known_Merc`), the last item still open for this report.
 
   `describe_armies_report()`'s own docstring said the Mercenary pass
@@ -26774,6 +26774,54 @@ follow-up request after the original 431-435 plan shipped.
   owned armies (the early-return fix); the province-suppression
   sequence for 2+ mercenaries; the province-race fallback; the blank
   (not "Garrison") Leader column. Full suite: 5379 -> 5391 (net +12).
+
+- **Phase 643 (current)**: FINANCES report -- Scientific Treaty
+  exchange attribution (`kexch`), the "Received from"/"Sent to" lines
+  the Discoveries-of-the-Sages list still lacked.
+
+  `models/discovery.py`'s own docstring flagged this as blocked on
+  `KingdomState.discoveries` being "a plain `set[Discovery]` with no
+  room for per-entry metadata" -- re-reading `REPORTS.PAS` lines
+  348-392 directly found the real scope both richer and more tractable
+  than that. Richer: there are *two* independent parenthetical lines,
+  not one -- `"(Received from player(s) #k1... by scientific treaty)"`
+  (`kexch[k1,kng]`) and its own reverse, `"(Sent to player(s) #k1...
+  by scientific treaty)"` (`kexch[kng,k1]`) -- each its own separate
+  report line, not a same-line suffix. Always "...by scientific
+  treaty": this text turns out to be *only* about `turn/scientific_
+  treaty.py execute_scientific_treaties()` ([8.4], already fully built)
+  -- never espionage, confirmed independently by that module's own
+  docstring ("Scientific Treaty exchange is [not one of] the three
+  [Merit Point Discovery-attribution sources]... `MeritTally.
+  discoveries_via_espionage` is deliberately not touched here"). More
+  tractable: `kexch[giver,receiver]` is a single value per *directed*
+  pair (a real, sourced limitation -- an earlier exchange between the
+  same two Kingdoms is silently overwritten, not accumulated), so this
+  needed one small new `GameState.discovery_exchanged_from: dict[
+  tuple[int, int], Discovery]` field, not the invasive `KingdomState.
+  discoveries` data-shape change originally assumed.
+
+  `execute_scientific_treaties()` now writes both directions alongside
+  its existing `KingdomState.discoveries.add(...)` calls. `describe_
+  finances_report()` renders 0-2 extra lines per Discovery via new
+  `_discovery_exchange_partners()`/`_discovery_exchange_line()` --
+  only the first partner in a multi-giver line gets the `#` marker,
+  later ones are bare numbers (`"#3, 7"`), matching the real source
+  exactly. The same real procedure's own internal `Elite_On`/`Imp_
+  Code`/`Check_DSpab` block was traced and confirmed to produce no
+  visible report text at all -- deliberately not modeled, the same
+  "internal messaging, not player-facing" stance already established
+  elsewhere in this project.
+
+  Tests: `tests/test_scientific_treaty.py` gained 3 -- both directions
+  recorded for a mutual exchange, only the real direction recorded for
+  a lopsided one, and a second exchange between the same pair
+  overwriting the first (proving the single-value-per-pair limitation
+  is reproduced, not fixed). `tests/test_turn_report.py` gained 5 --
+  "Received from" and "Sent to" each render independently, multiple
+  givers join correctly, both lines can appear together for the same
+  Discovery, and no exchange record renders neither line. Full suite:
+  5391 -> 5399 (net +8).
 
 ## Setup
 
