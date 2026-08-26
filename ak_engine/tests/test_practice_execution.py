@@ -12,6 +12,7 @@ from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.turn.cast_execution import is_unfinalized_royal_heir
 from ak_engine.turn.combat import Quality
@@ -24,6 +25,7 @@ from ak_engine.turn.practice_execution import (
     SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL,
     TACTICAL_TRAINING_CHANCE,
     PracticeExecutionResult,
+    _improved_training_multiplier,
     _maybe_grant_advanced_ability,
     _maybe_receive_society_maps,
     _select_discovery_to_grant,
@@ -500,7 +502,137 @@ def test_execute_practice_tactical_fails_the_roll():
     trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.99]))
 
     assert trained == ()
-    assert state.armies[1].quality is Quality.GREEN
+
+
+# -- Phase 641: Improved Training (AIR_FORCE/PRAETOR/FLAGSHIP) --------------
+
+
+def _titled_army(army_id: int, army_type, *, commanded_by: int | None = None) -> ArmyState:
+    # ELITE clears every real army-office's own quality/strength minimum
+    # (mirrors tests/test_office_holder.py's own AIR_FORCE/PRAETOR/
+    # FLAGSHIP fixtures exactly). commanded_by defaults to None -- a
+    # Dragon/Eagle Wing is a monstrous type (turn/battle_orchestrator.py
+    # MONSTROUS_ARMY_RACE); commanding it with an ordinary Human, no-
+    # Druidic-skill leader would trigger a real [4.32] Druidic-shortfall
+    # quality penalty and defeat these fixtures' own point (the same
+    # class of test contamination Phase 633 already hit and fixed) --
+    # left uncommanded here since office *eligibility* itself never
+    # requires a commander (test_office_holder.py's own fixtures don't
+    # set one either).
+    return ArmyState(army_id, 1, army_type, Quality.ELITE, LOCATION, commanded_by=commanded_by)
+
+
+def _state_with_air_force_title() -> GameState:
+    state = _state_with_leader(skills=None)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(_titled_army(900, ArmyType.DRAGON_WING))
+    return state
+
+
+def _max_druid_skills() -> SkillTable:
+    # Clears any real [4.32] Druidic-shortfall requirement outright, so
+    # the end-to-end tests below can safely have their own practicing
+    # leader directly command a monstrous Dragon/Eagle Wing army without
+    # that unrelated mechanic interfering with the Improved Training
+    # roll being tested.
+    raw = [0] * 31
+    raw[Ability.DRUID.value * 2] = 9
+    raw[Ability.DRUID.value * 2 + 1] = 9
+    return SkillTable(raw_values=raw)
+
+
+def test_improved_training_multiplier_no_title_held():
+    state = _state_with_leader(skills=None)
+    army = _army(1, Quality.GREEN)
+    state.add_army(army)
+
+    assert _improved_training_multiplier(state, army, [army]) == 1.0
+
+
+def test_improved_training_multiplier_matching_type_doubles():
+    state = _state_with_air_force_title()
+    army = ArmyState(1, 1, ArmyType.EAGLE_WING, Quality.GREEN, LOCATION)
+    holder = state.armies[900]
+
+    assert _improved_training_multiplier(state, army, [army, holder]) == 2.0
+
+
+def test_improved_training_multiplier_non_matching_type_gets_one_and_a_half():
+    state = _state_with_air_force_title()
+    army = _army(1, Quality.GREEN)  # BOWMEN -- land, not flying
+    holder = state.armies[900]
+
+    assert _improved_training_multiplier(state, army, [army, holder]) == 1.5
+
+
+def test_improved_training_multiplier_the_title_holder_does_not_boost_itself():
+    state = _state_with_air_force_title()
+    holder = state.armies[900]
+
+    assert _improved_training_multiplier(state, holder, [holder]) == 1.0
+
+
+def test_improved_training_multiplier_holder_outside_the_pool_grants_nothing():
+    state = _state_with_air_force_title()
+    army = ArmyState(1, 1, ArmyType.EAGLE_WING, Quality.GREEN, LOCATION)
+
+    assert _improved_training_multiplier(state, army, [army]) == 1.0  # holder never passed in `pool`
+
+
+def test_improved_training_multiplier_takes_the_best_of_multiple_titles():
+    state = _state_with_leader(skills=None)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    air_force = _titled_army(900, ArmyType.DRAGON_WING)  # non-matching for a land army
+    praetor = _titled_army(901, ArmyType.LEGION)  # matching for a land army
+    state.add_army(air_force)
+    state.add_army(praetor)
+    army = _army(1, Quality.GREEN)  # BOWMEN -- land, matches PRAETOR not AIR_FORCE
+
+    assert _improved_training_multiplier(state, army, [army, air_force, praetor]) == 2.0
+
+
+def test_execute_practice_tactical_the_improved_training_boost_reaches_the_real_roll():
+    # GREEN's own base chance is 0.25 -- 0.3 fails it, but succeeds the
+    # AIR_FORCE-doubled 0.5. Proves the multiplier actually reaches
+    # rng.random(), not just computed and discarded.
+    state = _state_with_leader(skills=_max_druid_skills())
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    holder = ArmyState(900, 1, ArmyType.DRAGON_WING, Quality.ELITE, LOCATION, commanded_by=1)
+    trainee = ArmyState(1, 1, ArmyType.EAGLE_WING, Quality.GREEN, LOCATION, commanded_by=1)
+    state.add_army(holder)  # the ELITE title-holder itself is the "inspiring" higher-tier army
+    state.add_army(trainee)
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.3]))
+
+    assert trained == (1,)
+    assert state.armies[1].quality is Quality.AVERAGE
+
+
+def test_execute_practice_tactical_the_title_holder_gets_no_self_boost():
+    # Both the holder and the sibling are CRACK (rolling for Elite, base
+    # chance 0.002, AIR_FORCE-doubled 0.004); 0.003 sits strictly
+    # between the two. A third, ELITE land army supplies the "inspiring
+    # higher-tier army" both CRACK armies need to be roll-eligible at
+    # all ([6.1]: "need not be of the same type") without itself
+    # contesting the AIR_FORCE title (ineligible type). The title-
+    # holder's own roll must use the UNBOOSTED chance (fail at 0.003),
+    # while the sibling flying army's own roll gets the doubled chance
+    # (succeed at the same 0.003) -- same rng value, opposite outcomes,
+    # isolating the self-exclusion rule from everything else.
+    state = _state_with_leader(skills=_max_druid_skills())
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    holder = ArmyState(900, 1, ArmyType.DRAGON_WING, Quality.CRACK, LOCATION, commanded_by=1)
+    sibling = ArmyState(1, 1, ArmyType.EAGLE_WING, Quality.CRACK, LOCATION, commanded_by=1)
+    inspiration = ArmyState(2, 1, ArmyType.BOWMEN, Quality.ELITE, LOCATION, commanded_by=1)
+    state.add_army(holder)
+    state.add_army(sibling)
+    state.add_army(inspiration)
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.003, 0.003]))
+
+    assert trained == (1,)  # only the sibling trained up
+    assert state.armies[900].quality is Quality.CRACK  # the title-holder itself, unboosted, stayed put
+    assert state.armies[1].quality is Quality.ELITE
 
 
 def test_execute_practice_tactical_group_pools_armies_across_co_practicing_leaders():

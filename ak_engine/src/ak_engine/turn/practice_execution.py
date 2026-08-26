@@ -301,10 +301,13 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+from collections.abc import Callable
+
 from ak_engine.models.advanced_ability import AdvancedAbility
+from ak_engine.models.army_type import OVERFLIGHT_AIR, OVERFLIGHT_SEA, ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.office import Office
 from ak_engine.models.map import HexCoord
@@ -345,6 +348,52 @@ TACTICAL_TRAINING_CHANCE: dict[Quality, float] = {
     Quality.VETERAN: 0.01,
     Quality.CRACK: 0.002,
 }
+
+# Phase 641 -- Royal titles' "Improved Training" bonus (AIR_FORCE/
+# PRAETOR/FLAGSHIP, `models/office.py OFFICE_TITLE_DESCRIPTION`,
+# verbatim: "when = trains other flying units, their chance to improve
+# in quality is doubled, and the chance for non-flying units is
+# increased by half" -- identical text for "land"/"naval (Mermen,
+# Fleet, Whales)"). `OVERFLIGHT_SEA | {FLEET}` is the exact same
+# "naval" category `turn/recruit_execution.py`'s own `is_naval_type`
+# already uses; PRAETOR's own "land" is the complement of both.
+_TRAINING_TITLE_MATCH: dict[Office, Callable[[ArmyType], bool]] = {
+    Office.AIR_FORCE: lambda t: t in OVERFLIGHT_AIR,
+    Office.FLAGSHIP: lambda t: t in OVERFLIGHT_SEA or t is ArmyType.FLEET,
+    Office.PRAETOR: lambda t: t not in OVERFLIGHT_AIR and t not in OVERFLIGHT_SEA and t is not ArmyType.FLEET,
+}
+
+
+def _improved_training_multiplier(state: GameState, army: ArmyState, pool: list[ArmyState]) -> float:
+    """The [6.1] training-chance multiplier for `army`, from whichever of
+    the 3 army-scoped Royal Titles (`turn/office_holder.py resolve_army_
+    office_holder()`, Phase 394/633) currently has an army present in
+    this same training `pool` -- `2.0` if `army`'s own type matches that
+    title's category, `1.5` if not, `1.0` if no qualifying title-holder
+    is present. The titled army never boosts its own roll ("trains
+    *other* ... units"), and a title-holder not part of this pool grants
+    nothing (it isn't training *these* armies). Resolved fresh here
+    (not `state.army_office_holders`, only a tie-break input, not a
+    source of truth -- mirrors `turn/victory_points.py army_office_
+    victory_points()`'s own precedent). Takes the best of all 3 offices
+    when more than one qualifies, not the first match or an additive
+    stack.
+
+    Deferred import (not at module load time) to break a real circular
+    import: `turn/office_holder.py` -> `turn/merit_points.py` ->
+    `turn/discovery_effects.py` -> this module (for `MAX_SKILL_LEVEL`).
+    """
+
+    from ak_engine.turn.office_holder import resolve_army_office_holder
+
+    pool_army_ids = {other.army_id for other in pool}
+    best = 1.0
+    for office, matches in _TRAINING_TITLE_MATCH.items():
+        holder = resolve_army_office_holder(state, office)
+        if holder is None or holder.army_id == army.army_id or holder.army_id not in pool_army_ids:
+            continue
+        best = max(best, 2.0 if matches(army.army_type) else 1.5)
+    return best
 
 
 @dataclass(slots=True)
@@ -758,6 +807,7 @@ def execute_practice_tactical(state: GameState, leader_id: int, rng: random.Rand
         )
         if not has_higher_quality_army:
             continue
+        chance = min(1.0, chance * _improved_training_multiplier(state, army, armies))
         if rng.random() < chance:
             army.quality = Quality(army.quality + 1)
             trained_army_ids.append(army.army_id)
@@ -803,6 +853,7 @@ def execute_practice_tactical_group(
         )
         if not has_higher_quality_army:
             continue
+        chance = min(1.0, chance * _improved_training_multiplier(state, army, pooled_armies))
         if rng.random() < chance:
             army.quality = Quality(army.quality + 1)
             trained_army_ids.add(army.army_id)

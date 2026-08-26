@@ -26621,7 +26621,7 @@ follow-up request after the original 431-435 plan shipped.
   a real location, not impulse 3's blank one). Full suite: 5346 -> 5361
   (net +15).
 
-- **Phase 640 (current)**: DIPLOMACY report -- wires the real `Write_
+- **Phase 640**: DIPLOMACY report -- wires the real `Write_
   List`/`Desc_Align` per-entry enrichment (Emperor/Treasurer tax-base/
   treasury figures, an alignment sentence for a met Heavenly/Undead
   kingdom or one sharing this kingdom's own alignment).
@@ -26676,6 +26676,56 @@ follow-up request after the original 431-435 plan shipped.
   kingdom shows nothing; a shared alignment shows the sentence with no
   "met" prerequisite at all; figures with no alignment sentence when
   neither condition applies. Full suite: 5361 -> 5371 (net +10).
+
+- **Phase 641 (current)**: Royal titles' "Improved Training" bonus
+  (`AIR_FORCE`/`PRAETOR`/`FLAGSHIP`) -- wired into [6.1]'s own army-
+  quality-training roll.
+
+  The survey's own proposed hook (`turn/aftermath.py`, the post-battle
+  quality-change mechanic) turned out to be the wrong mechanic once
+  cross-checked against the perk's own real text ("when [holder]
+  TRAINS other units"). **The user confirmed directly**: this is
+  rulebook [6.1]'s own Practice-Tactical/Naval army-training mechanic,
+  already substantially implemented since Phase 167/263/304 (`turn/
+  practice_execution.py TACTICAL_TRAINING_CHANCE`, `execute_practice_
+  tactical()`/`_group()`). A second, separate, genuine gap was found
+  while re-reading this closely: the rulebook says Tactical *or* Naval
+  Practice both train army quality, but no `execute_practice_naval()`
+  was ever built -- a real, pre-existing, unrelated gap, left open
+  (flagged in the `project_next_phase_survey_2026_08_26` memory) since
+  `execute_practice_tactical()`'s own gating already processes every
+  army type uniformly (no type-based branching in its body), making it
+  the one general-purpose quality-training roll this project has for
+  every army today -- Naval-trained units would reach it too, once a
+  Naval Practice order exists to call it.
+
+  New `_improved_training_multiplier()`: doubles the [6.1] chance for
+  an army whose own type matches the training pool's real title-holder
+  (`turn/office_holder.py resolve_army_office_holder()`, Phase 394/633,
+  resolved fresh, not the sticky commit-cache), 1.5x for a non-matching
+  type, `1.0` with no qualifying holder. The title-holder's own roll
+  never boosts itself ("trains *other* ... units"), and a title-holder
+  not part of *this* training pool grants nothing. Category matching
+  reuses `models/army_type.py OVERFLIGHT_AIR`/`OVERFLIGHT_SEA | {FLEET}`
+  (the exact same "naval" category `turn/recruit_execution.py`'s own
+  `is_naval_type` already uses) -- no new tables invented.
+
+  A real test-fixture pitfall hit and fixed while writing this (the
+  same class of "Druidic-shortfall contamination" Phase 633 already
+  documented): a monstrous Dragon/Eagle Wing army commanded by an
+  ordinary Human leader with no Druidic skill triggers a real [4.32]
+  quality penalty that has nothing to do with Improved Training --
+  worked around by giving the test leader max Druidic skill (end-to-
+  end tests) or leaving the title-holder army uncommanded (direct
+  multiplier tests, which don't need a real commander at all).
+
+  Tests: `tests/test_practice_execution.py` gained 8 -- the multiplier
+  itself (no title, matching x2, non-matching x1.5, self-exclusion,
+  holder-outside-the-pool, the best-of-multiple-titles case); two
+  end-to-end `execute_practice_tactical()` cases proving the boost
+  actually reaches the real roll and that the title-holder's own roll
+  stays unboosted even while a sibling army in the same pool gets the
+  full bonus. Full suite: 5371 -> 5379 (net +8).
 
 ## Setup
 
