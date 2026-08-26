@@ -178,6 +178,16 @@ phase's scope for each:
   trained_army_ids`` still reports only their own armies that trained,
   matching the solo case's own reporting shape -- see that function's
   own docstring for the full design.
+  **Phase 644 -- Naval reaches the identical mechanic**: [6.1]'s own
+  text, quoted above only in part until now, actually reads "può far
+  pratica in Tattica **o Navale** (entrambi i metodi avranno **lo
+  stesso effetto** su tutti i tipi di unità militari)" -- Practicing
+  Naval triggers this exact same army-training roll, not a parallel
+  one, and (like Tactical) no longer raises the leader's own personal
+  Naval skill via the ordinary [3.13] path. ``_ARMY_TRAINING_ABILITIES``
+  below is the shared trigger set both ``execute_practice()``/
+  ``execute_practice_group()`` read; ``execute_practice_tactical()``/
+  ``_group()`` keep their own names unchanged.
 - **Sage / Sageness** ([4.3.1], rulebook's own heading "CONOSCENZA --
   Sageness [SA]"), quoted in full: "Permette la scoperta di nuovi
   strumenti o conoscenze. Quando si fa pratica in questo Talento
@@ -348,6 +358,16 @@ TACTICAL_TRAINING_CHANCE: dict[Quality, float] = {
     Quality.VETERAN: 0.01,
     Quality.CRACK: 0.002,
 }
+
+# Phase 644 -- [6.1]'s own text: "può far pratica in Tattica o Navale
+# (entrambi i metodi avranno lo stesso effetto su tutti i tipi di
+# unità militari)" -- Practicing *either* ability triggers the exact
+# same army-quality-training mechanic above, not two separate ones.
+# Read by both `execute_practice()`/`execute_practice_group()` below;
+# `execute_practice_tactical()`/`_group()` keep their own names (the
+# one existing, already-tested, already-imported-by-name public entry
+# point for this mechanic) even though Naval now reaches them too.
+_ARMY_TRAINING_ABILITIES = frozenset({Ability.TACTICAL, Ability.NAVAL})
 
 # Phase 641 -- Royal titles' "Improved Training" bonus (AIR_FORCE/
 # PRAETOR/FLAGSHIP, `models/office.py OFFICE_TITLE_DESCRIPTION`,
@@ -877,8 +897,9 @@ def execute_practice(
     Any raw out-of-range ability value that failed to decode to a real
     ``Ability`` is not resolved here and returns
     ``not_implemented_for_ability=True`` without mutating ``state``.
-    ``Ability.TACTICAL`` instead routes to ``execute_practice_tactical``
-    -- see module docstring for its own, narrower scope.
+    ``Ability.TACTICAL``/``Ability.NAVAL`` (``_ARMY_TRAINING_ABILITIES``,
+    Phase 644) instead route to ``execute_practice_tactical`` -- see
+    module docstring for its own, narrower scope.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -886,7 +907,7 @@ def execute_practice(
     if not isinstance(ability, Ability):
         return PracticeExecutionResult(ability=ability, not_implemented_for_ability=True)
 
-    if ability is Ability.TACTICAL:
+    if ability in _ARMY_TRAINING_ABILITIES:
         trained_army_ids = execute_practice_tactical(state, leader_id, rng)
         return PracticeExecutionResult(ability=ability, trained_army_ids=trained_army_ids)
 
@@ -898,9 +919,9 @@ def execute_practice(
         # path needs an explicit gate: every other skill-dependent
         # consumer already reads 0 through ``effective_skill_level()``'s
         # own comatose short-circuit -- see LeaderState.is_comatose's
-        # own docstring. Ability.TACTICAL never reaches this branch (it
-        # returns above), and rightly so -- training the leader's own
-        # *armies* doesn't depend on the leader's own ability.
+        # own docstring. Ability.TACTICAL/NAVAL never reach this branch
+        # (they return above), and rightly so -- training the leader's
+        # own *armies* doesn't depend on the leader's own ability.
         return PracticeExecutionResult(ability=ability)
 
     skills = _get_or_create_skills(leader)
@@ -1056,9 +1077,10 @@ def execute_practice_group(
     if not isinstance(ability, Ability):
         return [PracticeExecutionResult(ability=ability, not_implemented_for_ability=True) for _ in leader_ids]
 
-    if ability is Ability.TACTICAL:
+    if ability in _ARMY_TRAINING_ABILITIES:
         # Phase 304: army pooling, via execute_practice_tactical_group() --
-        # see that function's own docstring.
+        # see that function's own docstring. Phase 644: Naval reaches
+        # this same branch too, per [6.1]'s own "same effect" text.
         if len(leader_ids) < 2:
             raise ValueError("execute_practice_group needs at least 2 leaders; use execute_practice for 1")
         trained_by_leader = execute_practice_tactical_group(state, leader_ids, rng)

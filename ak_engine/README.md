@@ -26775,7 +26775,7 @@ follow-up request after the original 431-435 plan shipped.
   sequence for 2+ mercenaries; the province-race fallback; the blank
   (not "Garrison") Leader column. Full suite: 5379 -> 5391 (net +12).
 
-- **Phase 643 (current)**: FINANCES report -- Scientific Treaty
+- **Phase 643**: FINANCES report -- Scientific Treaty
   exchange attribution (`kexch`), the "Received from"/"Sent to" lines
   the Discoveries-of-the-Sages list still lacked.
 
@@ -26822,6 +26822,48 @@ follow-up request after the original 431-435 plan shipped.
   givers join correctly, both lines can appear together for the same
   Discovery, and no exchange record renders neither line. Full suite:
   5391 -> 5399 (net +8).
+
+- **Phase 644 (current)**: Practice Naval now trains armies too, per
+  [6.1]'s own "both methods, same effect" text -- a follow-up flagged
+  during Phase 641.
+
+  Rulebook [6.1]: "può far pratica in Tattica o Navale (entrambi i
+  metodi avranno lo stesso effetto su tutti i tipi di unità militari)"
+  -- Practicing Tactical *or* Naval both trigger the identical army-
+  quality-training mechanic (`turn/practice_execution.py TACTICAL_
+  TRAINING_CHANCE`/`execute_practice_tactical()`/`_group()`, Phase
+  167/263/304). Only the Tactical trigger was ever wired; Naval fell
+  through to the ordinary [3.13] personal-skill-rise roll instead --
+  the same wrong behavior Tactical itself had before Phase 167.
+
+  Tracing the real dispatch chain found a 6th "stale known-gap claim"
+  recurrence: `turn/plan_dispatch.py`'s own docstring said `Ability.
+  TACTICAL` was "recognized but deliberately not resolved... an
+  unbuilt separate mechanic" -- false, and already stale when written
+  (`_dispatch_practice()` already just calls `execute_practice()`,
+  which has special-cased Tactical correctly since Phase 167).
+  `turn/turn_processor.py`'s own equivalent note, by contrast, was
+  already accurate.
+
+  No new mechanic needed -- [6.1]'s own "same effect" text means Naval
+  just needs to reach the *same* `execute_practice_tactical()`/`_group()`
+  functions Tactical already uses. New `_ARMY_TRAINING_ABILITIES =
+  frozenset({Ability.TACTICAL, Ability.NAVAL})` widens both dispatch
+  conditions in `execute_practice()`/`execute_practice_group()`; the
+  Tactical-named functions themselves keep their own names unchanged
+  (the one existing, already-tested, already-imported-by-name public
+  entry point for this mechanic -- renaming for naming symmetry alone
+  wasn't worth touching every caller for no behavior change). A real
+  behavior change, not just an addition: Practicing Naval no longer
+  raises personal Naval skill at all, exactly mirroring Tactical --
+  confirmed no existing test relied on the old behavior.
+
+  Tests: `tests/test_practice_execution.py` gained 3 -- Naval routed
+  through `execute_practice()` trains an army exactly like the
+  Tactical case; personal skill stays completely untouched even with
+  no armies to train; `execute_practice_group()` pools Naval armies
+  across co-practicing leaders the same way Tactical does. Full suite:
+  5399 -> 5402 (net +3).
 
 ## Setup
 

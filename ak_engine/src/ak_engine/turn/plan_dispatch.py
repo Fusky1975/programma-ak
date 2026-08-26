@@ -151,9 +151,16 @@ to dispatch automatically:
   Contingents not being auto-invoked here); see
   ``turn/practice_execution.py``'s module docstring for the full
   citation and the documented, never-overstating direction of this
-  approximation. ``Ability.TACTICAL`` is recognized but deliberately not
-  resolved (it trains armies, not personal skill, an unbuilt separate
-  mechanic); Sage's own skill rise runs normally here, but its
+  approximation. **Phase 644 correction, kept for the record**: an
+  earlier version of this note called ``Ability.TACTICAL`` "recognized
+  but deliberately not resolved... an unbuilt separate mechanic" --
+  stale, and already stale when written: this dispatch site just calls
+  ``execute_practice()`` directly, which has special-cased Tactical
+  (training armies via [6.1], not personal skill) since Phase 167, long
+  before this note's own last edit -- see
+  [[feedback_stale_known_gap_claims]]. As of Phase 644, ``Ability.NAVAL``
+  routes through the identical mechanic too ([6.1]'s own "both methods,
+  same effect" text). Sage's own skill rise runs normally here, but its
   rulebook-additional "device discovery" side roll isn't modeled (no
   item/device data model exists at all).
 - **WAIT**, **NO_ACTION**, and **MOVE_ABORT** dispatch as bare no-ops

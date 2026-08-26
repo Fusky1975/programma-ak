@@ -690,6 +690,55 @@ def test_execute_practice_tactical_group_requires_at_least_two_leaders_via_execu
         execute_practice_group(state, [1], Ability.TACTICAL, rng=ScriptedRandom([]))
 
 
+# -- Phase 644: Practice Naval reaches the identical [6.1] mechanic --
+
+
+def test_execute_practice_dispatches_naval_to_army_training():
+    # Mirrors test_execute_practice_tactical_trains_a_green_army_when_a_
+    # higher_tier_army_is_present, but through the real execute_practice()
+    # dispatch with Ability.NAVAL -- proves the *dispatch* routes Naval
+    # correctly, not just that the Tactical-named function still works.
+    state = _state_with_leader(skills=None)
+    state.add_army(_army(1, Quality.GREEN))
+    state.add_army(_army(2, Quality.VETERAN))
+
+    result = execute_practice(state, leader_id=1, ability=Ability.NAVAL, rng=ScriptedRandom([0.0]))
+
+    assert result.trained_army_ids == (1,)
+    assert state.armies[1].quality is Quality.AVERAGE
+
+
+def test_execute_practice_naval_leaves_personal_skill_completely_untouched():
+    # The real behavior change (Phase 644): before, Practicing Naval
+    # raised the leader's own personal Naval skill via the ordinary
+    # [3.13] path; now, like Tactical, it never does -- even with no
+    # armies at all to train, LeaderState.skills stays exactly as given.
+    state = _state_with_leader(skills=None)
+
+    result = execute_practice(state, leader_id=1, ability=Ability.NAVAL, rng=ScriptedRandom([]))
+
+    assert result.trained_army_ids == ()
+    assert result.skill_rose is False
+    assert result.new_skill is None  # same shape as the Tactical path -- no skill-rise result at all
+    assert state.leaders[1].skills is None  # never even created a fresh SkillTable
+
+
+def test_execute_practice_group_dispatches_naval_to_army_training_pooling():
+    # Mirrors test_execute_practice_tactical_group_pools_armies_across_
+    # co_practicing_leaders, through execute_practice_group() with
+    # Ability.NAVAL this time.
+    state = _state_with_leaders(1, 2)
+    state.add_army(_army(1, Quality.GREEN, commanded_by=1))
+    state.add_army(_army(2, Quality.VETERAN, commanded_by=2))
+
+    results = execute_practice_group(state, [1, 2], Ability.NAVAL, rng=ScriptedRandom([0.0]))
+
+    assert results[0].trained_army_ids == (1,)
+    assert results[1].trained_army_ids == ()
+    assert state.armies[1].quality is Quality.AVERAGE
+    assert state.armies[2].quality is Quality.VETERAN  # untouched, not itself trainable
+
+
 def test_tactical_training_chance_covers_all_five_transitions_per_rules_ak_6_1():
     # Phase 263: the complete RULES.AK [6.1] training-maneuvers table --
     # Elite has no next tier, so it's the only Quality absent here.
