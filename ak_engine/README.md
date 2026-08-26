@@ -27003,7 +27003,7 @@ follow-up request after the original 431-435 plan shipped.
   leave()` rendering the `_ADig` line alone and after an ordinary LEAVE
   sentence. Full suite: 5414 -> 5426 (net +12).
 
-- **Phase 648 (current)**: Eagles/Dragons' own March-immunity carve-out
+- **Phase 648**: Eagles/Dragons' own March-immunity carve-out
   in Multiple Contingents, the 2nd candidate from the fresh survey that
   found Phase 647.
 
@@ -27039,6 +27039,52 @@ follow-up request after the original 431-435 plan shipped.
   distance 2+ (forced to level 0, 20% not 60%); a mixed Dragon-Wing +
   Bowmen party still uses the real March-4 skill (unites normally).
   Full suite: 5426 -> 5433 (net +7).
+
+- **Phase 649 (current)**: BATLDR.X -- a King/Hero personally commanding
+  a battle -- the 3rd candidate from the fresh survey that found Phases
+  647/648, re-scoped once its real trigger was read in full.
+
+  `SAY.PAS:1028-1048` (`_BLeaders`/`_BLList`, read in full for the first
+  time this phase) turned out to describe something simpler than the
+  pre-existing "per-column front-rank position" framing assumed: for
+  each battle side, a real roster of leaders present, split at a cutoff
+  (`cdrdex[fn]`) into those who actually command an army (get the
+  BATLDR sentence) and those merely present leading nothing (`"< was
+  there, leading no armies."`). Not a battle-line-position model change
+  after all -- the "commanding" half is data this project already
+  computes and discards: `turn/battle_orchestrator.py`'s own army-
+  grouping-by-`commanded_by` step (`_select_side_commander()`) already
+  builds the full candidate list before picking just the winning
+  Supreme Commander.
+
+  New `BattleReport.attacker_commanding_leader_ids`/`defender_
+  commanding_leader_ids: list[int]`, computed directly in `fight_
+  battle()` from `attacker_armies`/`defender_armies`' own distinct
+  `commanded_by` values (sorted, deduped) -- independent of `_select_
+  side_commander()`'s own internal candidate list, so no signature
+  change needed there. A united multi-attacker battle (`fight_multi_
+  attacker_battle()` calls `fight_battle()` once per merged group, its
+  own `combined_army_ids` already spanning every party) naturally
+  recovers every commanding leader across the whole side for free.
+  `report/turn_report.py describe_battle()` renders one BATLDR sentence
+  per id (attacker's own roster, then defender's), silently skipping
+  any id that no longer resolves in `state.leaders` -- placed first,
+  before BLUCK, matching `SAY.PAS`'s own real dispatch order.
+
+  **Deliberately still not modeled**: a leader present at a battle but
+  commanding no armies at all (`tentdex[fn] > cdrdex[fn]`) -- this
+  project's battle model has no way to know a leader was physically
+  present without also commanding at least one of the armies actually
+  fighting, for either battle path.
+
+  Tests: `tests/test_battle_orchestrator.py` gained 4 -- `fight_
+  battle()` records both sides' real commanders; excludes unled armies;
+  dedupes/sorts multiple commanders on one side; a united multi-
+  attacker battle recovers commanders from both parties.
+  `tests/test_turn_report.py` gained 2 -- `describe_battle()` renders
+  the BATLDR lines first, attacker roster then defender; a commanding
+  leader no longer in `state.leaders` is silently skipped. Full suite:
+  5433 -> 5439 (net +6).
 
 ## Setup
 

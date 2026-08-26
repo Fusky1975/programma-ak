@@ -275,6 +275,15 @@ class BattleReport:
     province_coord: HexCoord | None = None
     attacker_kingdom_id: int | None = None
     defender_kingdom_id: int | None = None
+    # Phase 649 -- SAY.PAS `_BLList`'s own per-side leader roster (BATLDR.X):
+    # every distinct leader who commands at least one army actually
+    # fighting on that side, sorted by leader_id (the real tent-assignment
+    # order this project can't reconstruct -- see `fight_battle()`'s own
+    # Phase 649 note). Includes the side's own Supreme Commander -- no
+    # separate handling needed, they're just one more commanding leader.
+    # Empty for the instant-conquest shortcut (no real battle fought).
+    attacker_commanding_leader_ids: list[int] = field(default_factory=list)
+    defender_commanding_leader_ids: list[int] = field(default_factory=list)
 
 
 def _build_battle_units(
@@ -1795,6 +1804,28 @@ def fight_battle(
     if not defender_armies:
         raise ValueError("no defending armies at this province to fight")
 
+    # Phase 649: SAY.PAS `_BLeaders`/`_BLList` (BATLDR.X's own real
+    # trigger, `SAY.PAS:1028-1048`) -- for each side, every distinct
+    # leader who commands at least one army in `attacker_armies`/
+    # `defender_armies`. Computed here (not inside `_select_side_
+    # commander()`, which discards every candidate but the winning
+    # Supreme Commander) since both army lists are already resolved.
+    # A united multi-attacker battle (`fight_multi_attacker_battle()`
+    # calls this function once per merged group, its own `combined_
+    # army_ids` already spanning every party) naturally recovers every
+    # commanding leader across the whole side, not just one party's --
+    # no separate wiring needed there. Deliberately NOT modeled: the
+    # real `_BLList`'s other half, a leader present at the battle but
+    # commanding no armies (`tentdex[fn] > cdrdex[fn]`, `"< was there,
+    # leading no armies."`) -- this project's battle model has no way
+    # to know a leader was physically present without also commanding
+    # at least one of the armies actually fighting, for either battle
+    # path. Same honest "sourced, not yet reachable from live game
+    # state" stance the pre-Phase-649 comment already used, narrowed to
+    # the one real remaining gap instead of the whole mechanic.
+    attacker_commanding_leader_ids = sorted({army.commanded_by for army in attacker_armies if army.commanded_by is not None})
+    defender_commanding_leader_ids = sorted({army.commanded_by for army in defender_armies if army.commanded_by is not None})
+
     # Phase 250, Mystic Winds' own Phase 204 addendum: "The spell ends just
     # before the leader gets involved in any military battle between
     # armies." Every real army-vs-army battle in this project funnels
@@ -2002,6 +2033,8 @@ def fight_battle(
         conquered=defender_clean_swept,
         attacker_commander_leader_id=duel.attacker_commander_leader_id,
         defender_commander_leader_id=duel.defender_commander_leader_id,
+        attacker_commanding_leader_ids=attacker_commanding_leader_ids,
+        defender_commanding_leader_ids=defender_commanding_leader_ids,
         duel_loser_side=duel.loser_side,
         province_coord=province_coord,
         attacker_kingdom_id=attacker_kingdom_id,

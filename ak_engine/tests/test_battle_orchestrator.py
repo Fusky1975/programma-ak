@@ -264,6 +264,73 @@ def test_fight_battle_leaves_an_uninvolved_leaders_mystic_winds_untouched():
     assert state.leaders[3].mystic_winds_active is True
 
 
+# -- Phase 649: BattleReport's per-side commanding-leader roster --
+
+
+def test_fight_battle_records_commanding_leaders_on_both_sides():
+    state = build_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Attacker Leader", location=FIELD))
+    state.add_leader(LeaderState(20, kingdom_id=2, name="Defender Leader", location=FIELD))
+    state.armies[101].commanded_by = 10
+    state.armies[201].commanded_by = 20
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert report.attacker_commanding_leader_ids == [10]
+    assert report.defender_commanding_leader_ids == [20]
+
+
+def test_fight_battle_excludes_unled_armies_from_the_commanding_leader_roster():
+    state = build_state()  # neither army has commanded_by set
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert report.attacker_commanding_leader_ids == []
+    assert report.defender_commanding_leader_ids == []
+
+
+def test_fight_battle_dedupes_and_sorts_multiple_commanders_per_side():
+    state = build_state()
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.ELITE, FIELD))
+    state.add_leader(LeaderState(30, kingdom_id=1, name="Later Leader", location=FIELD))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Earlier Leader", location=FIELD))
+    state.armies[101].commanded_by = 30
+    state.armies[102].commanded_by = 10  # a second army under a lower leader_id
+    # A third army, also under leader 30, should not duplicate the entry.
+    state.add_army(ArmyState(103, 1, ArmyType.AXEMEN, Quality.ELITE, FIELD, commanded_by=30))
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101, 102, 103], rng=_generously_padded_rng()
+    )
+
+    assert report.attacker_commanding_leader_ids == [10, 30]  # sorted, deduped
+
+
+def test_fight_multi_attacker_battle_unites_commanders_from_both_parties():
+    # Phase 307/649: a united multi-attacker battle's own combined_army_ids
+    # spans every party, so fight_battle()'s new roster naturally recovers
+    # every commanding leader across the whole side, not just one party's.
+    # Same setup as test_fight_multi_attacker_battle_unites_same_origin_
+    # attackers above, plus real commanded_by/LeaderState data for both.
+    state = build_state()
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Founder", location=FIELD))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="Joiner", location=FIELD))
+    state.armies[101].commanded_by = 10
+    state.armies[102].commanded_by = 20
+    origin = HexCoord(5, 5)
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=origin),
+        MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102], origin_province=origin),
+    ]
+    rng = ScriptedRandom([0.1] + [0.1] * 40, choice_indices=[0] * 40)
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 1
+    assert battles[0].report.attacker_commanding_leader_ids == [10, 20]
+
+
 def test_defender_disbands_when_no_friendly_province_to_retreat_to():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))

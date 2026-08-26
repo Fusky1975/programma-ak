@@ -619,6 +619,63 @@ def test_describe_battle_assembles_clash_winner_and_destroyed_sentences_in_order
     ]
 
 
+def test_describe_battle_renders_batldr_lines_before_everything_else():
+    # Phase 649: attacker commanders first (in the report's own stored
+    # order), then defender commanders -- before BLUCK/clash/winner. An
+    # empty BattleResult (default "tie" winner, no columns) isolates this
+    # from every other describe_battle() sub-renderer.
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Borin", location=HexCoord(0, 0)))
+    report = BattleReport(
+        battle_result=BattleResult(),
+        conquered=False,
+        attacker_commanding_leader_ids=[1],
+        defender_commanding_leader_ids=[2],
+    )
+
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=rng,
+    )
+
+    assert lines == [
+        "Aldric led Aldric's armies into the battle.",
+        "Borin led Borin's armies into the battle.",
+    ]
+
+
+def test_describe_battle_skips_a_commanding_leader_no_longer_in_state():
+    # No source, don't guess -- a leader id with no matching LeaderState
+    # (e.g. died earlier the same turn) is silently omitted.
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    report = BattleReport(
+        battle_result=BattleResult(),
+        conquered=False,
+        attacker_commanding_leader_ids=[1, 999],
+    )
+
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=rng,
+    )
+
+    assert lines == ["Aldric led Aldric's armies into the battle."]
+
+
 def test_describe_battle_threads_is_sea_to_every_sub_renderer():
     # Phase 74: is_sea propagates to both the per-column clash sentence
     # (bucket -1 variant 0, "/S" only) and the winner sentence (DEFWIN

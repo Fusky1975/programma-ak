@@ -2336,17 +2336,31 @@ def describe_battle(
     pure combat calculation with no backing ``ArmyState``) is skipped for
     the per-column clash sentence -- not guessed.
 
+    **Phase 649 -- BATLDR wiring.** `render_battle_leader_intro()`
+    (Phase 593) was sourced, fully render-tested, and never called from
+    anywhere until now. One sentence per commanding leader
+    (``battle_report.attacker_commanding_leader_ids`` then
+    ``defender_commanding_leader_ids``, sorted by ``leader_id`` -- the
+    real per-side "tent" order this project can't reconstruct, an
+    unsourced-but-reasonable ordering choice, same as this module's own
+    tie-break convention elsewhere) -- rendered first, before BLUCK,
+    matching `SAY.PAS`'s own dispatch order (see the Phase 615 note
+    below). A commanding leader who no longer resolves in `state.
+    leaders` (e.g. died earlier the same turn) is silently skipped, the
+    same "no source, don't guess" convention `army_names.get()`
+    lookups elsewhere in this function already use.
+
     **Phase 615 -- BLUCK/CLUCK wiring.** `render_bluck_narration()`/
     `render_cluck_narration()` (Phase 584/605) were sourced, fully
     render-tested, and never called from anywhere until now. `SAY.PAS:
     1028-1071` -- read directly, not assumed -- confirms the real dispatch
-    order this mirrors: `_BLList` (leader roster, BATLDR.X -- a separate,
-    still-unwired candidate, not attempted this phase) is immediately
-    followed by `_BLuck` (the whole-battle event, this function's own new
-    first line), which is itself immediately followed by `_BTac`
-    (tactics narration, not modeled) and then `_CLuck` (the per-column
-    event) -- i.e. BLUCK is real battle-opening narration, not a closing
-    remark, and CLUCK is real per-column color commentary. `phase`
+    order this mirrors: `_BLList` (leader roster, BATLDR.X -- wired
+    Phase 649, see above) is immediately followed by `_BLuck` (the
+    whole-battle event, this function's own new first line), which is
+    itself immediately followed by `_BTac` (tactics narration, not
+    modeled) and then `_CLuck` (the per-column event) -- i.e. BLUCK is
+    real battle-opening narration, not a closing remark, and CLUCK is
+    real per-column color commentary. `phase`
     (`SAY.PAS`'s own `_rphase`) has no source for how a caller not
     already inside a phase-indexed dispatch loop would supply it, so it's
     an optional keyword-only fact (`None` default, matching `turn/
@@ -2359,6 +2373,11 @@ def describe_battle(
 
     army_names = build_battle_army_names(state, battle_report)
     lines: list[str] = []
+
+    for leader_id in (*battle_report.attacker_commanding_leader_ids, *battle_report.defender_commanding_leader_ids):
+        commander_name = _leader_name(state, leader_id)
+        if commander_name is not None:
+            lines.append(render_battle_leader_intro(commander_name, rng, is_sea=is_sea))
 
     luck_leader_ids: tuple[int, int] | None = None
     if phase is not None and battle_report.province_coord is not None:
@@ -4561,19 +4580,18 @@ def render_steal_treasure_inaccessible(character_name: str, victim_name: str, rn
 
 
 # HostAK/TP/PROSE/BATLDR.X -- a King/Hero personally commanding a battle
-# column into the fray (Phase 593). `SAY.PAS:1038 _attl: IF lp <=
-# cdrdex[fn] THEN FD('batldr',S_Batt,2)` -- fires when the column's
-# front-line position (`lp`) falls within the commander-index bound
-# (`cdrdex[fn]`), i.e. when a leader is actually standing at the head of
-# that column. This project's own ``turn/battle_resolution.py
-# BattleColumnResult`` has no per-column "commanding leader" field to
-# drive that condition from, so (same pattern as Phase 590/591/592)
-# this is transcribed and render-tested but not wired into any battle
-# composer -- a model gap, not a missing call site this time, but the
-# same honest "sourced, not yet reachable from live game state" stance.
-# ``<3`` is documented (module docstring's own Phase 131-era note above)
-# as just another person/tense variant of the character reference,
-# substituted with the same literal commander name as ``<``/``<2``.
+# into the fray (Phase 593, wired Phase 649). `SAY.PAS:1028-1048`
+# (`_BLeaders`/`_BLList`, read in full) -- for each side `fn`, a real
+# roster of leaders present (`ldrtent[fn][1..tentdex[fn]]`); positions
+# `1..cdrdex[fn]` actually command armies and get this BATLDR sentence
+# (`IF lp <= cdrdex[fn] THEN FD('batldr',S_Batt,2)`), the rest are
+# present but lead nothing (`"< was there, leading no armies."`, not
+# modeled -- see `turn/battle_orchestrator.py fight_battle()`'s own
+# Phase 649 note for why this project's battle model can't represent a
+# leader present without commanding at least one army). ``<3`` is
+# documented (module docstring's own Phase 131-era note above) as just
+# another person/tense variant of the character reference, substituted
+# with the same literal commander name as ``<``/``<2``.
 _BATLDR_TEMPLATES: list[str] = [
     "<3 led > armies/Snavies {boldly/Rcourageously }into the "
     "battle/Rfray.",
