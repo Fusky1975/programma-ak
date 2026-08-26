@@ -21,9 +21,11 @@ this same phase's own addendum to ``turn/world_events.py record_
 kingdom_contacts()``) since the pre-existing ``kingdoms_met`` set is a
 pure boolean "have we ever met" ratchet with no time dimension.
 
-**Deliberately no narrative rendering** -- same "pure mechanic, no
-report-composition touchpoint" scope Phase 489/490 already established
-for an Office perk with no sourced ``.X2`` template to render into.
+**Phase 640 wires this in**: ``report/turn_report.py describe_
+diplomacy_report()``/``_diplomacy_entry()`` call both functions below
+once per report and render the real ``Write_List``/``Desc_Align``
+enrichment text (``REPORTS.PAS`` lines 128-158) -- this module itself
+stays the pure primitive, no rendering logic added here.
 """
 
 from __future__ import annotations

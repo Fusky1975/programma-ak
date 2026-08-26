@@ -328,6 +328,7 @@ from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
+from ak_engine.turn.tax_base import compute_tax_base
 from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.move_execution import MoveExecutionResult
@@ -5891,7 +5892,10 @@ def test_describe_diplomacy_report_no_other_kingdoms_renders_all_none():
 def test_describe_diplomacy_report_unallied_kingdom_is_neutral():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
-    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    # Phase 640: a shared alignment triggers its own real enrichment
+    # sentence (tested separately below) -- GOOD here keeps this test
+    # about the allied/neutral classification alone.
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.GOOD, HexCoord(1, 1)))
     state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1), is_king=True))
 
     lines = describe_diplomacy_report(state, 1)
@@ -5910,7 +5914,7 @@ def test_describe_diplomacy_report_unallied_kingdom_is_neutral():
 def test_describe_diplomacy_report_allied_kingdom_is_listed_as_allied():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
-    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.GOOD, HexCoord(1, 1)))
     state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1), is_king=True))
     state.allied_kingdoms.add(frozenset({1, 2}))
 
@@ -5942,7 +5946,7 @@ def test_describe_diplomacy_report_war_always_renders_none_at_present():
 def test_describe_diplomacy_report_no_king_recorded_falls_back_to_kingdom_name():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
-    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.GOOD, HexCoord(1, 1)))
 
     lines = describe_diplomacy_report(state, 1)
 
@@ -5952,8 +5956,8 @@ def test_describe_diplomacy_report_no_king_recorded_falls_back_to_kingdom_name()
 def test_describe_diplomacy_report_lists_multiple_kingdoms_sorted_by_id():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
-    state.add_kingdom(KingdomState(2, "Bland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
-    state.add_kingdom(KingdomState(3, "Cland", Race.DWARVEN, Alignment.NEUTRAL, HexCoord(2, 2)))
+    state.add_kingdom(KingdomState(2, "Bland", Race.ELVEN, Alignment.GOOD, HexCoord(1, 1)))
+    state.add_kingdom(KingdomState(3, "Cland", Race.DWARVEN, Alignment.GOOD, HexCoord(2, 2)))
     state.add_leader(LeaderState(20, 2, "Bertha", HexCoord(1, 1), is_king=True))
     state.add_leader(LeaderState(30, 3, "Cyrus", HexCoord(2, 2), is_king=True))
 
@@ -5961,6 +5965,158 @@ def test_describe_diplomacy_report_lists_multiple_kingdoms_sorted_by_id():
 
     neutral_index = lines.index(_DIPLOMACY_NEUTRAL_INTRO)
     assert lines[neutral_index + 1 :] == ["Bertha (#2)", "Cyrus (#3)"]
+
+
+# -- Phase 640: DIPLOMACY's real Write_List/Desc_Align enrichment --
+# tax-base/treasury figures (Emperor/Treasurer, known-for-a-full-turn,
+# bordering) and the alignment sentence (met Heavenly/Undead, or a
+# shared alignment with no "met" prerequisite at all).
+
+
+def _bordering_diplomacy_state() -> GameState:
+    # Kingdom 1 (viewer) at (0,0), Kingdom 2 at (1,0) -- real, adjacent
+    # provinces, since bordering_kingdoms() scans actual province
+    # ownership, not just home_province.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.EVIL, HexCoord(1, 0)))
+    p1 = ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1)
+    p2 = ProvinceState(HexCoord(1, 0), Terrain.PLAINS, Race.ELVEN, owner_kingdom_id=2)
+    p2.tax = 45
+    state.add_province(p1)
+    state.add_province(p2)
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(9, 2, "Bertha", HexCoord(1, 0), is_king=True))
+    state.kingdoms_met.add(frozenset({1, 2}))
+    state.kingdoms_met_since[frozenset({1, 2})] = 0  # turn_number defaults to 1 -> "known for a full turn"
+    return state
+
+
+def test_describe_diplomacy_report_shows_tax_base_for_a_bordering_known_kingdom_when_emperor():
+    state = _bordering_diplomacy_state()
+    state.emperor_kingdom_id = 1
+    expected_tax = compute_tax_base(state, 2)
+    assert expected_tax > 0
+
+    lines = describe_diplomacy_report(state, 1)
+
+    entry = next(line for line in lines if line.startswith("Bertha"))
+    assert f"{expected_tax}g taxbase" in entry
+    assert "in treasury" not in entry  # not Treasurer, no treasury figure
+
+
+def test_describe_diplomacy_report_no_tax_base_without_emperor():
+    state = _bordering_diplomacy_state()
+    # state.emperor_kingdom_id left None -- nobody elected Emperor yet
+
+    lines = describe_diplomacy_report(state, 1)
+
+    entry = next(line for line in lines if line.startswith("Bertha"))
+    assert "taxbase" not in entry
+
+
+def test_describe_diplomacy_report_no_tax_base_when_not_known_for_a_full_turn():
+    state = _bordering_diplomacy_state()
+    state.emperor_kingdom_id = 1
+    state.kingdoms_met_since[frozenset({1, 2})] = 1  # first met THIS turn (turn_number=1) -- not yet a full turn
+
+    lines = describe_diplomacy_report(state, 1)
+
+    entry = next(line for line in lines if line.startswith("Bertha"))
+    assert "taxbase" not in entry
+
+
+def test_describe_diplomacy_report_shows_treasury_when_treasurer_and_both_figures_can_appear_together():
+    state = _bordering_diplomacy_state()
+    state.emperor_kingdom_id = 1
+    state.kingdoms[1].treasury = 999  # Aldric wins Treasurer by having the higher treasury
+    state.kingdoms[2].treasury = 5
+    other_treasury = state.kingdoms[2].treasury
+
+    lines = describe_diplomacy_report(state, 1)
+
+    entry = next(line for line in lines if line.startswith("Bertha"))
+    assert f"{other_treasury}g in treasury" in entry
+    assert "taxbase" in entry  # both figures together
+
+
+def test_describe_diplomacy_report_treasurer_held_by_a_hero_not_the_king_shows_no_treasury():
+    # REPORTS.PAS's own `prevchar[Treasurer] = kng` only matches when the
+    # King HIMSELF holds the office -- a Hero of the SAME kingdom holding
+    # it (a real, rulebook-sanctioned possibility) must not grant the
+    # King this intelligence. `treasurer_merit_points()` is purely
+    # kingdom-based (same value for the King and any Hero of that
+    # kingdom), so Aldric and this Hero tie on points -- the Phase 475
+    # stickiness tie-break, forced here via `state.office_holders`,
+    # deterministically picks the Hero over the King.
+    state = _bordering_diplomacy_state()
+    state.kingdoms[1].treasury = 999  # Testland's own treasury wins the Treasurer contest outright
+    hero = LeaderState(2, 1, "Wandering Hero", HexCoord(0, 0))
+    state.add_leader(hero)
+    state.office_holders[Office.TREASURER] = hero.leader_id
+
+    lines = describe_diplomacy_report(state, 1)
+
+    entry = next(line for line in lines if line.startswith("Bertha"))
+    assert "in treasury" not in entry
+
+
+def test_describe_diplomacy_report_alignment_sentence_for_a_met_heavenly_kingdom():
+    state = _bordering_diplomacy_state()
+    state.kingdoms[2].alignment = Alignment.DIVINE
+
+    lines = describe_diplomacy_report(state, 1)
+
+    entry = next(line for line in lines if line.startswith("Bertha"))
+    assert entry.endswith("is of Divine alignment.")
+
+
+def test_describe_diplomacy_report_alignment_sentence_for_a_met_undead_kingdom():
+    state = _bordering_diplomacy_state()
+    state.kingdoms[2].alignment = Alignment.UNDEAD
+
+    lines = describe_diplomacy_report(state, 1)
+
+    entry = next(line for line in lines if line.startswith("Bertha"))
+    assert entry.endswith("is of Undead alignment.")
+
+
+def test_describe_diplomacy_report_no_alignment_sentence_for_an_unmet_heavenly_kingdom():
+    state = _bordering_diplomacy_state()
+    state.kingdoms[2].alignment = Alignment.DIVINE
+    state.kingdoms_met.discard(frozenset({1, 2}))
+    del state.kingdoms_met_since[frozenset({1, 2})]
+
+    lines = describe_diplomacy_report(state, 1)
+
+    entry = next(line for line in lines if line.startswith("Bertha"))
+    assert "alignment" not in entry
+
+
+def test_describe_diplomacy_report_shared_alignment_shows_sentence_with_no_met_prerequisite():
+    state = _bordering_diplomacy_state()
+    state.kingdoms[2].alignment = Alignment.GOOD  # same as Testland's own -- not Heavenly/Undead
+    state.kingdoms_met.discard(frozenset({1, 2}))
+    del state.kingdoms_met_since[frozenset({1, 2})]  # never met -- shouldn't matter for this branch
+
+    lines = describe_diplomacy_report(state, 1)
+
+    entry = next(line for line in lines if line.startswith("Bertha"))
+    assert entry.endswith("is of Good alignment.")
+
+
+def test_describe_diplomacy_report_figures_without_alignment_sentence_when_conditions_dont_overlap():
+    state = _bordering_diplomacy_state()
+    state.emperor_kingdom_id = 1
+    # Testland=GOOD, Otherland=EVIL (from _bordering_diplomacy_state) --
+    # neither Heavenly/Undead nor shared, so no alignment sentence,
+    # even though the tax-base figure still shows.
+
+    lines = describe_diplomacy_report(state, 1)
+
+    entry = next(line for line in lines if line.startswith("Bertha"))
+    assert "taxbase" in entry
+    assert "alignment" not in entry
 
 
 # -- Phase 219: describe_finances_report() -- the "FINANCES" section --

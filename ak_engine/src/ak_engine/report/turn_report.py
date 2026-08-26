@@ -1253,6 +1253,7 @@ from ak_engine.turn.encounter import CombatRange, FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
+from ak_engine.turn.imperial_intelligence import known_bordering_kingdom_tax_bases, known_bordering_kingdom_treasuries
 from ak_engine.turn.leader_visibility import leader_location_known_to_kingdom
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance_wrapped
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
@@ -2180,7 +2181,7 @@ def describe_aspy(
     -- this module never looks up ``GameState`` itself (see module
     docstring), so the caller resolves ``SpyReport.owner_kingdom_id``/
     ``adjacent_owners`` into names first (e.g. via this module's own
-    ``_diplomacy_entry()``). Always rendered, present or absent, per
+    ``_kingdom_display_name()``). Always rendered, present or absent, per
     ``render_spy_owner()``/``render_spy_adjacent_owners()``'s own
     "empty is a fact" convention.
 
@@ -6448,12 +6449,12 @@ def describe_turn_results(
         elif entry.action is ActionCode.ASPY and isinstance(entry.result, SpyReport):
             province_name = _province_label(state, entry.result.province)
             owner_name = (
-                _diplomacy_entry(state, entry.result.owner_kingdom_id)
+                _kingdom_display_name(state, entry.result.owner_kingdom_id)
                 if entry.result.owner_kingdom_id is not None
                 else None
             )
             adjacent_owner_names = [
-                _diplomacy_entry(state, kid) for kid in entry.result.adjacent_owners.values() if kid is not None
+                _kingdom_display_name(state, kid) for kid in entry.result.adjacent_owners.values() if kid is not None
             ]
             lines.extend(
                 describe_aspy(
@@ -8549,10 +8550,55 @@ _DIPLOMACY_NEUTRAL_INTRO = (
 _DIPLOMACY_NONE_AT_PRESENT = "None at present"
 
 
-def _diplomacy_entry(state: GameState, other_kingdom_id: int) -> str:
+def _kingdom_display_name(state: GameState, other_kingdom_id: int) -> str:
+    """`"<name> (#<kingdom_id>)"`, resolving the kingdom's own King via
+    `_king_leader_id()` (Phase 217) with a `KingdomState.name` fallback
+    -- the bare-name half `_diplomacy_entry()` below extends with the
+    real DIPLOMACY-specific enrichment. Also used wherever else this
+    project needs to name a kingdom by its King (GIR/battle world
+    events), which have no "viewing kingdom" of their own and so can't
+    use `_diplomacy_entry()`'s own enrichment.
+    """
+
     king_id = _king_leader_id(state, other_kingdom_id)
     name = state.leaders[king_id].name if king_id is not None else state.kingdoms[other_kingdom_id].name
     return f"{name} (#{other_kingdom_id})"
+
+
+def _diplomacy_entry(
+    state: GameState,
+    kingdom_id: int,
+    other_kingdom_id: int,
+    known_tax: dict[int, int],
+    known_treasury: dict[int, int],
+) -> str:
+    """One DIPLOMACY entry (Phase 640), extended with `Write_List`'s own
+    real per-entry enrichment (`REPORTS.PAS` lines 128-158): tax-base/
+    treasury figures when the viewing King himself holds Emperor/
+    Treasurer and has known the other kingdom for a full turn
+    (`known_tax`/`known_treasury`, `turn/imperial_intelligence.py`,
+    Phase 491 -- computed once per report, not per-entry), and an
+    alignment sentence for a met Heavenly/Undead kingdom or (with no
+    "met" prerequisite at all) a kingdom sharing this one's own
+    alignment. `Desc_Align`'s own body writes tax/treasury
+    unconditionally on `knowpow`/`knowtreas` regardless of *why* it was
+    called, so these three pieces are independently gated here rather
+    than behind one combined branch.
+    """
+
+    entry = _kingdom_display_name(state, other_kingdom_id)
+    if other_kingdom_id in known_tax:
+        entry += f", {known_tax[other_kingdom_id]}g taxbase"
+    if other_kingdom_id in known_treasury:
+        entry += f", {known_treasury[other_kingdom_id]}g in treasury"
+    other_alignment = state.kingdoms[other_kingdom_id].alignment
+    viewer_alignment = state.kingdoms[kingdom_id].alignment
+    show_alignment = (
+        state.has_met(kingdom_id, other_kingdom_id) and other_alignment in (Alignment.DIVINE, Alignment.UNDEAD)
+    ) or viewer_alignment == other_alignment
+    if show_alignment:
+        entry += f" is of {other_alignment.value} alignment."
+    return entry
 
 
 def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
@@ -8572,14 +8618,22 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
     instead, since this project has no way to distinguish a genuine
     war from ordinary neutrality.
 
-    **What this deliberately does NOT reproduce**: the real
-    `Write_List`'s own optional per-entry enrichment (a known King's
-    tax-base/treasury figure, gated on the *reader* currently holding
-    the Emperor/Treasurer office and having met that King; an
-    alignment note for Heavenly/Undead or same-alignment Kings) needs
-    office-holder tracking (`IMPERIAL OFFICE REPORT`'s own still-open
-    gap) and per-King alignment-visibility state this project doesn't
-    model -- only the bare `<name> (#<kingdom_id>)` entry renders.
+    **The real `Write_List`'s own per-entry enrichment is now modeled
+    in full** (Phase 640): a known King's tax-base/treasury figure
+    (`_diplomacy_entry()` below, `turn/imperial_intelligence.py`'s
+    already-built `known_bordering_kingdom_tax_bases()`/`_treasuries()`
+    -- gated on the *viewer's own King himself* currently holding the
+    Emperor/Treasurer office, per `Write_List`'s own `prevchar[...]=
+    kng` comparison, and having known the other kingdom for a full
+    turn) and the alignment note (a met Heavenly/Undead kingdom, or any
+    kingdom sharing this one's own alignment with no "met" prerequisite
+    at all). An earlier version of this docstring called both blocked
+    on "office-holder tracking" and "per-King alignment-visibility
+    state this project doesn't model" -- stale even when written:
+    `resolve_office_holder()` already existed, and the real alignment
+    gate turned out to need no new concept at all, just `GameState.
+    has_met()` (Phase 408) plus a direct `KingdomState.alignment`
+    comparison (see [[feedback_stale_known_gap_claims]]).
 
     Each entry's own King is resolved via `_king_leader_id()`
     (Phase 217); a kingdom with no `is_king`-flagged leader recorded
@@ -8591,12 +8645,20 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
     allied_ids = [k for k in other_kingdom_ids if state.is_allied(kingdom_id, k)]
     neutral_ids = [k for k in other_kingdom_ids if not state.is_allied(kingdom_id, k)]
 
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    viewer_king_id = _king_leader_id(state, kingdom_id)
+    known_tax: dict[int, int] = {}
+    known_treasury: dict[int, int] = {}
+    if viewer_king_id is not None:
+        known_tax = known_bordering_kingdom_tax_bases(state, bounds, viewer_king_id) or {}
+        known_treasury = known_bordering_kingdom_treasuries(state, bounds, viewer_king_id) or {}
+
     lines = ["DIPLOMACY", _DIPLOMACY_ALLIED_INTRO]
-    lines.extend([_diplomacy_entry(state, k) for k in allied_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
+    lines.extend([_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury) for k in allied_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
     lines.append(_DIPLOMACY_WAR_INTRO)
     lines.append(_DIPLOMACY_NONE_AT_PRESENT)
     lines.append(_DIPLOMACY_NEUTRAL_INTRO)
-    lines.extend([_diplomacy_entry(state, k) for k in neutral_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
+    lines.extend([_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury) for k in neutral_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
 
     return lines
 
@@ -10742,8 +10804,8 @@ def record_battle_world_events(state: GameState, results: list[PhaseDispatchResu
         is_sea = province is not None and province.effective_terrain() == Terrain.SEA
         winner_sentence = render_battle_winner(
             battle_report.battle_result,
-            _diplomacy_entry(state, battle_report.attacker_kingdom_id),
-            _diplomacy_entry(state, battle_report.defender_kingdom_id),
+            _kingdom_display_name(state, battle_report.attacker_kingdom_id),
+            _kingdom_display_name(state, battle_report.defender_kingdom_id),
             _province_label(state, coord),
             rng,
             is_sea=is_sea,
@@ -11313,7 +11375,7 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
         lines.append(_GENERAL_INTELLIGENCE_REPORT_NONE)
         return lines
     for owner in order:
-        lines.append(f"Kingdom of {_diplomacy_entry(state, owner)}:")
+        lines.append(f"Kingdom of {_kingdom_display_name(state, owner)}:")
         lines.extend(groups[owner])
     return lines
 

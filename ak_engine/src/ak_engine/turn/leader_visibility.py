@@ -7,21 +7,22 @@ CHARACTERS report's own "impulse 2" (wandering Heroes/other Kings'
 leaders this kingdom happens to know the location of) and "impulse 3"
 (Priest-office clairvoyance) passes.
 
-**This module is primitives only -- nothing here is wired into any
-report composer yet.** ``report/turn_report.py describe_characters_
-report()`` still only models "impulse 1" (a kingdom's own leaders).
-Wiring impulse 2/3 in needs the separate, much larger ``Was_Clairved``/
-``Desc_Stranger`` prose pipeline (``REPORTS.PAS``, not modeled at all
-here), plus a resolved real value for ``orig_turn`` (see below) -- both
-left for a later phase, matching this project's own "primitive now,
-wiring later" convention (e.g. Feature -> Power, Phase 616 vs. 622/623).
+**Phase 636 correction, kept for the record**: this docstring originally
+said these primitives weren't wired into any report composer yet, and
+that ``orig_turn``'s real mapping was unconfirmed. Both are now closed:
+``report/turn_report.py describe_characters_report()`` wires impulse
+2/3 in full as of Phase 639 (``_impulse2_candidates()``/``_impulse3_
+candidates()``, calling ``leader_location_known_to_kingdom()`` below
+directly), and ``orig_turn = GameState.turn_number`` is confirmed (not
+assumed) by the user's own ``ORIGTURN.md`` disassembly report
+(Desktop/ORIGTURN.md, 2026-08-26) -- see [[project_characters_
+impulse23_phase636]] for the full closure history.
 
-``leader_location_known_to_kingdom()`` takes ``orig_turn`` as an
-explicit caller-supplied parameter rather than resolving it internally,
-because the real Pascal ``Known_Loc`` reads it from a global the
-function itself never derives. Its exact ak_engine mapping (plausibly
-``GameState.turn_number``, but not confirmed against a real sample) is
-deliberately left to whichever future phase does the report wiring.
+``leader_location_known_to_kingdom()`` still takes ``orig_turn`` as an
+explicit caller-supplied parameter rather than resolving it internally
+(the real Pascal ``Known_Loc`` reads it from a global the function
+itself never derives), but every real caller now simply passes `state.
+turn_number`.
 
 Also deliberately out of scope: ``Known_Merc`` (``RUMORS.PAS``), a
 *different* report's own mercenary-army-visibility check that reuses

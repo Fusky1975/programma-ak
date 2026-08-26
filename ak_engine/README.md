@@ -26555,7 +26555,7 @@ follow-up request after the original 431-435 plan shipped.
   identical inputs, both clamp directions, and the `alignment is None`
   guard. Full suite: 5331 -> 5346 (net +15).
 
-- **Phase 639 (current)**: wires impulse 2/3 into `describe_
+- **Phase 639**: wires impulse 2/3 into `describe_
   characters_report()` -- the CHARACTERS report's own real `Rep_
   Leaders` procedure is now modeled in full, closing `project_
   characters_impulse23_phase636` except two deliberately-excluded
@@ -26620,6 +26620,62 @@ follow-up request after the original 431-435 plan shipped.
   anti-duplication case rendering exactly once (under impulse 2, with
   a real location, not impulse 3's blank one). Full suite: 5346 -> 5361
   (net +15).
+
+- **Phase 640 (current)**: DIPLOMACY report -- wires the real `Write_
+  List`/`Desc_Align` per-entry enrichment (Emperor/Treasurer tax-base/
+  treasury figures, an alignment sentence for a met Heavenly/Undead
+  kingdom or one sharing this kingdom's own alignment).
+
+  A fresh codebase survey (an Explore agent, cross-checking every
+  candidate against the "stale known-gap claims" trap) found `describe_
+  diplomacy_report()`'s own docstring still claimed this enrichment
+  "needs office-holder tracking... and per-King alignment-visibility
+  state this project doesn't model" -- both stale. `turn/imperial_
+  intelligence.py` (Phase 491) already built the exact two functions
+  needed (`known_bordering_kingdom_tax_bases()`/`_treasuries()`,
+  gated on `resolve_office_holder()` and `GameState.has_met_for_full_
+  turn()`), just never wired into any report. Re-reading `REPORTS.PAS
+  Write_List`/`Desc_Align` directly (lines 125-170) showed the
+  alignment gate needs no new concept either -- just `GameState.has_
+  met()` (Phase 408, the plain "ever met" ratchet, distinct from the
+  full-turn variant) plus a direct `KingdomState.alignment` comparison.
+
+  `_diplomacy_entry()` gained the three independently-gated pieces
+  `Desc_Align`'s own body writes (tax-base, treasury, alignment
+  sentence -- `Desc_Align`'s own `knowpow`/`knowtreas` writes are
+  unconditional on *why* it was called, so these don't collapse into
+  one combined branch). One real, easy-to-miss detail reproduced for
+  free: the source's own `prevchar[Emperor]=kng`/`prevchar[Treasurer]=
+  kng` comparisons only match when the *King himself* holds the
+  office, not a Hero who happens to hold it -- passing the viewing
+  King's own `leader_id` into the Phase 491 functions naturally
+  returns nothing whenever a different leader holds the office, no
+  extra logic needed.
+
+  **A real reuse bug found while running the non-breaking check**:
+  `_diplomacy_entry()` was already being called from 3 other places in
+  this module (GIR/battle world-events) purely for its bare-name
+  behavior, with no "viewing kingdom" of their own -- adding required
+  enrichment parameters broke all of them. Fixed by extracting the
+  bare-name logic into a new `_kingdom_display_name()`, used by those
+  3 call sites, while `_diplomacy_entry()` itself stays DIPLOMACY-
+  specific. A second, smaller fix: 4 pre-existing DIPLOMACY tests all
+  used `Alignment.NEUTRAL` for every kingdom by convention, which now
+  triggers the real "shared alignment" sentence unconditionally --
+  updated those fixtures to a non-matching alignment so they keep
+  testing what they originally tested (allied/neutral classification,
+  name fallback, sort order), not alignment enrichment.
+
+  Tests: `tests/test_turn_report.py` gained 9 -- tax-base shown only
+  for Emperor + known-for-a-full-turn + bordering, absent without any
+  one of those; treasury likewise for Treasurer, both figures
+  together; the King-only-office-holder restriction (a Hero of the
+  viewer's own kingdom holds Treasurer via a forced Phase 475
+  stickiness tie-break -- no treasury shown); the alignment sentence
+  for a met Heavenly and a met Undead kingdom; an *unmet* Heavenly
+  kingdom shows nothing; a shared alignment shows the sentence with no
+  "met" prerequisite at all; figures with no alignment sentence when
+  neither condition applies. Full suite: 5361 -> 5371 (net +10).
 
 ## Setup
 
