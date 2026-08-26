@@ -52,9 +52,12 @@ unresolved anymore.
 
 **No new ``LeaderState`` is spawned by this module itself** -- see
 ``turn/valhalla_execution.py finalize_gate_angel_visit()`` for the
-actual hero-synthesis consumer, which the caller (a future
-``turn/turn_processor.py`` integration, not yet wired -- see that
-module's own docstring) is responsible for invoking once per turn.
+actual hero-synthesis consumer. **Phase 650 correction, kept for the
+record**: an earlier version of this note called the ``turn_
+processor.py`` integration "a future... not yet wired" -- stale even
+when this correction was written: ``turn_processor.py`` has called
+``finalize_gate_angel_visit()`` once per turn since Phase 199 (see that
+module's own "GATE ANGEL / VALHALLA VISIT" section).
 
 **Phase 551**: a fresh audit found 27 further real heroes in the same
 AKGEN catalog, genuinely present in the game data but missing from

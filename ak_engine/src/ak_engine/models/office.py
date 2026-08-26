@@ -42,12 +42,21 @@ office))``). `ofcval[office]` feeds a separate points-decay formula
 (`ofcpoints[ofc] := ofcval[ofc] * (1.0 - reduct)`) whose own `reduct`
 term isn't traced further here.
 
-**Explicitly out of scope**: the actual points-accumulation formula
-(`Ofc_Pts`) and cross-kingdom ranking (`Rank`) live in the missing main
-program, so nothing in this module can compute which office a real
-`KingdomState` currently holds -- this is a type/threshold catalog
-only, the same category of "real, sourced, but not a complete
-algorithm" as Phase 79's `MONSTER_GUARDED_FEATURE_TYPES`.
+**Explicitly out of scope for this module**: the actual points-
+accumulation formula (`Ofc_Pts`) and cross-kingdom ranking (`Rank`)
+live in the missing main program, so nothing in *this file* computes
+which office a real `KingdomState` currently holds -- it's a
+type/threshold catalog only, the same category of "real, sourced, but
+not a complete algorithm" as Phase 79's `MONSTER_GUARDED_FEATURE_TYPES`.
+**Phase 650 addendum**: at the project level this is closed --
+`turn/office_holder.py` (Phase 230+) independently reimplements the
+real Rank contest (Merit Points per leader, compared against this
+module's own `OFFICE_MIN_POINTS`, ties broken via `turn/merit_
+points.py merit_point_tiebreak_key()`) and resolves who currently
+holds each office. `resolve_office_holder()`/`resolve_all_office_
+holders()` are the real answer to "which office does a Kingdom hold
+right now" -- this module just supplies the threshold/name data those
+functions consume.
 
 **`GANG_TEMPLATE` (Phase 102)**: `HostAK/TP/PROSE/GANG.X2` (header
 `"28 1"`), confirmed real via `SAY.PAS`'s own `Check_BFace` procedure,

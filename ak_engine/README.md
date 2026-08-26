@@ -27040,7 +27040,7 @@ follow-up request after the original 431-435 plan shipped.
   Bowmen party still uses the real March-4 skill (unites normally).
   Full suite: 5426 -> 5433 (net +7).
 
-- **Phase 649 (current)**: BATLDR.X -- a King/Hero personally commanding
+- **Phase 649**: BATLDR.X -- a King/Hero personally commanding
   a battle -- the 3rd candidate from the fresh survey that found Phases
   647/648, re-scoped once its real trigger was read in full.
 
@@ -27085,6 +27085,29 @@ follow-up request after the original 431-435 plan shipped.
   the BATLDR lines first, attacker roster then defender; a commanding
   leader no longer in `state.leaders` is silently skipped. Full suite:
   5433 -> 5439 (net +6).
+
+- **Phase 650 (current)**: 3 stale known-gap-claim docstring
+  corrections flagged during the fresh survey that produced Phases
+  647-649 -- no behavior change, comment-only, same class of closure
+  as Phase 631.
+
+  `models/valhalla.py`: "no new `LeaderState` is spawned by this
+  module itself... the caller (a future `turn/turn_processor.py`
+  integration, not yet wired)" -- stale, `turn_processor.py` has
+  called `finalize_gate_angel_visit()` once per turn since Phase 199.
+  `turn/pursue_execution.py`: framed the persistent, cross-phase Pursue
+  chase the rulebook describes as "a natural follow-up, not attempted
+  this phase" -- stale, `turn_processor.py`'s own "PERSISTENT PURSUE/
+  TRAIL CHASE" mechanism (Phase 70) already re-invokes `advance_pursuit`
+  across phases via `active_pursuits`. `models/office.py`: "nothing in
+  this module can compute which office a real `KingdomState` currently
+  holds" -- true of that one file, but stale at the project level:
+  `turn/office_holder.py` (Phase 230+) independently reimplements the
+  real Rank contest and resolves office holders; addended to point
+  there rather than corrected outright, since the file-scoped claim
+  itself was never wrong.
+
+  Full suite: 5439 (unchanged -- no code behavior touched).
 
 ## Setup
 

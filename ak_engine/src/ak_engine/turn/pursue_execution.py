@@ -1,8 +1,8 @@
 """Executing a Pursue (rulebook [3.16]) order -- Phase 51, extended with a
 real army-vs-army battle in Phase 53, and a standalone multi-phase
 chase-step primitive in Phase 66 (``step_toward_target``/
-``advance_pursuit``, not auto-wired anywhere yet -- see that section
-below).
+``advance_pursuit``, auto-wired across phases since Phase 70 -- see
+that section below).
 
 **[3.16] Pursue, quoted in full** (also quoted in ``turn/
 challenge_pursue_decode.py``'s own docstring):
@@ -19,16 +19,18 @@ challenge_pursue_decode.py``'s own docstring):
     leads an army and the pursued character doesn't, or visa versa, the
     Pursue order is ignored.
 
-**Explicitly single-phase, not the persistent multi-phase chase the
-rulebook describes** ("chase... for the rest of the turn", "if the
-pursuit is resolved before the end of the gameturn"): tracking a Pursue
-order's state *across* phases needs the same cross-phase, cross-leader
-visibility ``turn/turn_processor.py`` (Phase 45) exists to provide, and
-wiring that in is a natural follow-up, not attempted this phase.
-``execute_pursue`` answers only "does the pursuer catch up *this*
-phase, and if so what happens" -- a single Spy Table roll plus (for the
-armyless case) an immediate encounter resolution, not a standing order
-that persists into later phases on its own.
+**``execute_pursue`` itself is single-phase** -- it answers only "does
+the pursuer catch up *this* phase, and if so what happens" (a single
+Spy Table roll plus, for the armyless case, an immediate encounter
+resolution), not a standing order that persists into later phases on
+its own. **Phase 650 correction, kept for the record**: an earlier
+version of this note framed the *persistent*, multi-phase chase the
+rulebook describes ("chase... for the rest of the turn") as "a natural
+follow-up, not attempted this phase" -- stale even when written:
+``turn/turn_processor.py``'s own "PERSISTENT PURSUE/TRAIL CHASE"
+mechanism (Phase 70) already re-invokes ``advance_pursuit`` across
+phases via ``active_pursuits``, exactly the cross-phase wiring this
+paragraph called unattempted.
 
 **Army-vs-army pursuit now fights a real battle** (Phase 53): "the
 pursuing character will attempt to run him down and defeat him in
