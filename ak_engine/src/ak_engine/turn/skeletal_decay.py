@@ -16,11 +16,12 @@ raised -- ever decompose.** An already-risen Skeletal Army (a real,
 live ``ArmyState`` with ``is_skeletal=True``) is alive, not a graveyard
 entry, regardless of whether it currently has a commander -- the
 rulebook's "unità distrutte" (destroyed units) names the dead pool
-specifically, and this project's own pre-existing "leaving/reassigning
-a Skeletal Army makes it dig its own grave" mechanic ([4.2.5]'s own
-next paragraph, still unmodeled -- a *different*, uncommanded-army rule,
-not this one) is the only sourced way a risen Skeletal Army stops
-existing. Decomposition here never touches ``state.armies``.
+specifically, and this project's own "leaving/reassigning a Skeletal
+Army makes it dig its own grave" mechanic ([4.2.5]'s own next
+paragraph, now wired -- ``turn/plan_dispatch.py _dispatch_leave()``,
+Phase 647 -- a *different*, uncommanded-army rule, not this one) is
+the only sourced way a risen Skeletal Army stops existing.
+Decomposition here never touches ``state.armies``.
 
 **"Sia viventi che morte" (both living and dead)**: the 350-unit world
 total is every currently-live army (``len(state.armies)``, which already
