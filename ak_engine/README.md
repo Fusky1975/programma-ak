@@ -26913,7 +26913,7 @@ follow-up request after the original 431-435 plan shipped.
   now either done or genuinely needs a new state concept (`Known_Merc`
   mercenary hire-cost hint).
 
-- **Phase 646 (current)**: CHARACTERS report's mercenary hire-cost
+- **Phase 646**: CHARACTERS report's mercenary hire-cost
   hint (`Desc_Stranger`'s own `IF lstate[ldr]=Mercenary...` block) --
   closes the last item flagged in the 2026-08-26 codebase survey.
 
@@ -26952,6 +26952,56 @@ follow-up request after the original 431-435 plan shipped.
   gets it. Full suite: 5407 -> 5414 (net +7).
 
   This closes the entire 2026-08-26 codebase survey.
+
+- **Phase 647 (current)**: Skeletal Army "digs its own grave" on
+  Leave/reassign, found by a fresh codebase survey after the 2026-08-26
+  one closed out.
+
+  Rulebook [4.2.5], quoted in full: "Se chi lancia l'incantesimo cerca
+  di abbandonare l'Esercito di Scheletri o di affidarlo a un altro
+  personaggio, che non sia un Re Non-Morto, gli scheletri soldati si
+  scaveranno da soli la tomba e riprenderanno il loro sonno
+  interrotto." -- leaving a Skeletal Army uncommanded, or handing it to
+  anyone but an Undead King, destroys it outright (not a demotion to
+  ordinary mercenary status, the way Disband works). `turn/skeletal_
+  decay.py`'s own module docstring already flagged this as "still
+  unmodeled -- a different, uncommanded-army rule."
+
+  Both trigger halves (abandon, reassign-to-non-Undead-King) collapse
+  to one check in `turn/plan_dispatch.py _dispatch_leave()`: new
+  `_is_undead_king(state, leader_id)` -- a King (`is_king=True`) whose
+  own *Kingdom's* `Alignment` is `UNDEAD` (kingdom-alignment-based, the
+  same eligibility gate `turn/merit_points.py _king_of_alignment()`
+  already established for the differently-scoped `Office.UNDEAD_KING`
+  title, reused for consistency rather than re-deriving a possibly-
+  different "personal alignment" reading) -- returns `False` for
+  `leader_id=None` too, so both trigger halves share one branch. A
+  matching army is removed via `GameState.remove_army()` instead of
+  reassigned; `ArmyListExecutionResult` gains `skeletal_army_lost:
+  list[tuple[int, ArmyType]]` (captured before removal, since the
+  army no longer exists in `state.armies` by report time). The real
+  `_ADig` message (`RUMORS.PAS` id 4012, `SAY.PAS`: "= dug graves for
+  themselves, unwilling to serve anyone but their master, unless given
+  to an Undead leader like themselves.") has no surviving `Imp_Code`
+  trigger call in any of the 13 available `.PAS` files -- the same
+  class of gap `_AAPay` had before Phase 645 -- but unlike `_AAPay`
+  there's no ambiguous marker to resolve (just `=`, the army
+  designation), and the rulebook text gives the full trigger condition
+  directly, so this is fully sourced end to end despite the missing
+  trigger call. Whether the lost units re-enter `GameState.battle_
+  graveyard` (available to a future Skeletal Army cast) is genuinely
+  unresolved by this text and deliberately left unmodeled, same "no
+  source, no guess" stance as everywhere else in this project.
+
+  Tests: `tests/test_plan_dispatch.py` gained 9 -- `_is_undead_king()`
+  for `None`/unknown/non-King/non-Undead-kingdom-King/Undead-kingdom-
+  King; `_dispatch_leave()` for abandonment, reassignment to a non-
+  Undead King, reassignment to a real Undead King (survives, command
+  transfers normally), and an ordinary non-skeletal army left
+  uncommanded (non-regression). `tests/test_turn_report.py` gained 3 --
+  `render_skeletal_army_dug_grave()`'s own template text; `describe_
+  leave()` rendering the `_ADig` line alone and after an ordinary LEAVE
+  sentence. Full suite: 5414 -> 5426 (net +12).
 
 ## Setup
 

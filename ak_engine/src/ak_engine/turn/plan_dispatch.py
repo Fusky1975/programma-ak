@@ -361,6 +361,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ak_engine.models.advanced_ability import AdvancedAbility
+from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
@@ -493,6 +495,12 @@ class ArmyListExecutionResult:
     request: ArmyListRequest
     succeeded: list[int] = field(default_factory=list)  # army_ids actually affected
     skipped: list[int] = field(default_factory=list)  # requested but not found/not co-located
+    # Phase 647: Leave-only -- a Skeletal Army left uncommanded or handed
+    # to anyone but an Undead King "digs its own grave" instead of
+    # actually being left/reassigned ([4.2.5]) -- captured as (army_id,
+    # army_type) since the army is removed from `GameState.armies`
+    # before `report/turn_report.py describe_leave()` ever sees it.
+    skeletal_army_lost: list[tuple[int, ArmyType]] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -854,11 +862,49 @@ def _dispatch_trail(
     return result
 
 
+def _is_undead_king(state: GameState, leader_id: int | None) -> bool:
+    """"Re Non-Morto" ([4.2.5]) -- a King whose own Kingdom's `Alignment`
+    is `UNDEAD`. Kingdom-alignment-based, not the King's own personal
+    `LeaderState.alignment` -- the same eligibility gate `turn/merit_
+    points.py _king_of_alignment()` already uses for the (differently-
+    scoped) Office.UNDEAD_KING title, reused here for consistency with
+    this project's own established "Undead King" concept rather than
+    re-deriving a possibly-different reading.
+    """
+
+    if leader_id is None:
+        return False
+    leader = state.leaders.get(leader_id)
+    if leader is None or not leader.is_king or leader.kingdom_id is None:
+        return False
+    return state.kingdoms[leader.kingdom_id].alignment is Alignment.UNDEAD
+
+
 def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListExecutionResult:
     """Phase 420: returns a real ``ArmyListExecutionResult`` instead of the
     bare ``ArmyListRequest`` this used to hand back -- see that type's
     own docstring for why (``describe_turn_results()`` needs to know
     which armies actually left, not just what was requested).
+
+    **Phase 647 -- Skeletal Army "digs its own grave"** ([4.2.5],
+    quoted in full): "Se chi lancia l'incantesimo cerca di abbandonare
+    l'Esercito di Scheletri o di affidarlo a un altro personaggio, che
+    non sia un Re Non-Morto, gli scheletri soldati si scaveranno da
+    soli la tomba e riprenderanno il loro sonno interrotto." Both
+    halves (leaving uncommanded, ``request.target_leader_id is None``,
+    and reassigning to anyone but an Undead King) collapse to one
+    check: ``ArmyState.is_skeletal`` and the new commander isn't an
+    Undead King (``_is_undead_king()`` -- ``None`` fails it too, so
+    "abandon" and "reassign to a non-Undead-King" share the same
+    branch). The army is removed outright (``GameState.remove_army()``)
+    rather than becoming an ordinary mercenary the way Disband does --
+    "riprenderanno il loro sonno interrotto" (resume their interrupted
+    sleep) describes the army ceasing to exist, not changing hands.
+    Whether the underlying units re-enter ``GameState.battle_graveyard``
+    (available to a future Skeletal Army cast) is genuinely unresolved
+    by this text and deliberately not guessed here -- see ``turn/
+    skeletal_decay.py``'s own module docstring for the graveyard's real
+    scope.
     """
 
     request = decode_army_list_phase(phase)
@@ -871,6 +917,10 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
         army = state.armies.get(army_id)
         if army is None:
             result.skipped.append(army_id)
+            continue
+        if army.is_skeletal and not _is_undead_king(state, request.target_leader_id):
+            result.skeletal_army_lost.append((army_id, army.army_type))
+            state.remove_army(army_id)
             continue
         army.commanded_by = request.target_leader_id
         province = state.provinces.get(army.location)

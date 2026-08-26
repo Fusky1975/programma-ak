@@ -5258,6 +5258,30 @@ def render_leave_unit(
     return render(variant, values, rng=rng, is_sea=is_sea)
 
 
+# SAY.PAS _ADig (RUMORS.PAS message id 4012) -- a single hardcoded
+# template, not a PROSE file (Phase 647), matching DISBAND_TEMPLATE's
+# own "no /R, no {}, render() called directly" shape. No real
+# ``Imp_Code(_ADig)`` trigger call survives in any of the 13 available
+# ``.PAS`` files (the same class of gap ``_AAPay`` had before Phase
+# 645), but unlike ``_AAPay`` there's no ambiguous marker to resolve --
+# only ``=`` (the army designation, already unambiguous everywhere
+# else in this project) -- and [4.2.5]'s own rulebook text gives the
+# trigger condition in full, so this is fully sourced end to end. See
+# ``turn/plan_dispatch.py _dispatch_leave()``'s own Phase 647 note for
+# the trigger logic.
+ADIG_TEMPLATE = (
+    "= dug graves for themselves, unwilling to serve anyone but their "
+    "master, unless given to an Undead leader like themselves."
+)
+
+
+def render_skeletal_army_dug_grave(army_type_name: str, rng: random.Random) -> str:
+    """Renders ``_ADig``'s sentence for a Skeletal Army left uncommanded
+    or handed to anyone but an Undead King (Phase 647)."""
+
+    return render(ADIG_TEMPLATE, {"=": army_type_name}, rng=rng)
+
+
 def describe_leave(
     result: ArmyListExecutionResult,
     state: GameState,
@@ -5274,6 +5298,12 @@ def describe_leave(
     None``) resolves via ``_unled_army_commander_name()``, shared with
     ``describe_recruit()`` -- ``_ALeave``'s own ``FD`` call is also at
     ``S_AA`` severity (``SAY.PAS``), so the exact same sourcing applies.
+
+    **Phase 647**: one ``_ADig`` sentence per ``result.skeletal_army_
+    lost`` entry, appended after the ordinary LEAVE.X sentences -- the
+    army no longer exists in ``state.armies`` by the time this runs
+    (removed at dispatch time), so its designation is read from the
+    ``(army_id, army_type)`` pair the result itself carries.
     """
 
     lines: list[str] = []
@@ -5290,6 +5320,8 @@ def describe_leave(
         lines.append(
             render_leave_unit(leader_name, province_name, army_type_name, commander_name, rng, is_sea=is_sea)
         )
+    for _army_id, army_type in result.skeletal_army_lost:
+        lines.append(render_skeletal_army_dug_grave(ARMY_TYPE_DESIGNATION[army_type], rng))
     return lines
 
 

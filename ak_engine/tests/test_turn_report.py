@@ -188,6 +188,7 @@ from ak_engine.report.turn_report import (
     render_disband_unit,
     render_flaming_scimitar_proc,
     render_leave_unit,
+    render_skeletal_army_dug_grave,
     render_march,
     render_pickup_unit,
     render_recruit_unit,
@@ -1407,6 +1408,47 @@ def test_describe_leave_unled_humanoid_uses_garrison_commander():
     lines = describe_leave(result, state, leader_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
 
     assert lines == ["Arthur left Bowmen with the provincial garrison commander in Numenor."]
+
+
+# -- Phase 647: SAY.PAS _ADig -- Skeletal Army "digs its own grave" --
+
+
+def test_render_skeletal_army_dug_grave():
+    rng = ScriptedRandom([], choice_indices=[0])
+    result = render_skeletal_army_dug_grave("Bowmen", rng)
+    assert result == (
+        "Bowmen dug graves for themselves, unwilling to serve anyone but their "
+        "master, unless given to an Undead leader like themselves."
+    )
+
+
+def test_describe_leave_appends_adig_line_for_a_lost_skeletal_army():
+    state = _leave_state()
+    result = ArmyListExecutionResult(request=None, succeeded=[], skeletal_army_lost=[(100, ArmyType.BOWMEN)])
+
+    rng = ScriptedRandom([], choice_indices=[0])
+    lines = describe_leave(result, state, leader_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert lines == [
+        "Bowmen dug graves for themselves, unwilling to serve anyone but their "
+        "master, unless given to an Undead leader like themselves."
+    ]
+
+
+def test_describe_leave_adig_line_follows_ordinary_leave_sentences():
+    state = _leave_state()
+    state.add_leader(LeaderState(2, 1, "Cedric", HexCoord(3, 9)))
+    state.add_army(ArmyState(100, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), commanded_by=2))
+    result = ArmyListExecutionResult(request=None, succeeded=[100], skeletal_army_lost=[(200, ArmyType.AXEMEN)])
+
+    rng = ScriptedRandom([], choice_indices=[0, 0])
+    lines = describe_leave(result, state, leader_name="Arthur", province=state.provinces[HexCoord(3, 9)], rng=rng)
+
+    assert lines == [
+        "Arthur left Bowmen with Cedric in Numenor.",
+        "Axemen dug graves for themselves, unwilling to serve anyone but their "
+        "master, unless given to an Undead leader like themselves.",
+    ]
 
 
 def test_describe_leave_skips_army_not_found():

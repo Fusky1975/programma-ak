@@ -27,6 +27,7 @@ from ak_engine.turn.plan_dispatch import (
     HireExecutionResult,
     NoOpResult,
     UnsupportedActionError,
+    _is_undead_king,
     dispatch_phase,
     run_leader_plan,
 )
@@ -1036,6 +1037,90 @@ def test_dispatch_leave_in_allied_province_transfers_kingdom_ownership():
     dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 
     assert state.armies[army_id].kingdom_id == 2
+
+
+# -- Phase 647: Skeletal Army "digs its own grave" on Leave/reassign --
+
+
+def test_is_undead_king_none_leader_id():
+    state, _ = _state_with_army(HexCoord(3, 9), {})
+    assert _is_undead_king(state, None) is False
+
+
+def test_is_undead_king_unknown_leader_id():
+    state, _ = _state_with_army(HexCoord(3, 9), {})
+    assert _is_undead_king(state, 999) is False
+
+
+def test_is_undead_king_hero_not_a_king():
+    state, _ = _state_with_army(HexCoord(3, 9), {})
+    state.add_leader(LeaderState(2, 1, "Not the King", HexCoord(3, 9)))
+    assert _is_undead_king(state, 2) is False
+
+
+def test_is_undead_king_king_of_non_undead_kingdom():
+    state, _ = _state_with_army(HexCoord(3, 9), {})  # LEADER_ID is King of a Good kingdom
+    assert _is_undead_king(state, LEADER_ID) is False
+
+
+def test_is_undead_king_true_for_king_of_undead_kingdom():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Nekrotia", Race.HUMAN, Alignment.UNDEAD, HexCoord(3, 9)))
+    state.add_leader(LeaderState(1, 1, "Lich King", HexCoord(3, 9), is_king=True))
+    assert _is_undead_king(state, 1) is True
+
+
+def test_dispatch_leave_skeletal_army_abandoned_uncommanded_digs_its_own_grave():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.armies[army_id].is_skeletal = True
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == []
+    assert result.skeletal_army_lost == [(army_id, ArmyType.BOWMEN)]
+    assert army_id not in state.armies
+
+
+def test_dispatch_leave_skeletal_army_handed_to_non_undead_king_digs_its_own_grave():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.armies[army_id].is_skeletal = True
+    state.add_leader(LeaderState(2, 1, "Ordinary Hero", HexCoord(3, 9)))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == []
+    assert result.skeletal_army_lost == [(army_id, ArmyType.BOWMEN)]
+    assert army_id not in state.armies
+
+
+def test_dispatch_leave_skeletal_army_handed_to_undead_king_survives():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.armies[army_id].is_skeletal = True
+    state.add_kingdom(KingdomState(2, "Nekrotia", Race.HUMAN, Alignment.UNDEAD, HexCoord(3, 9)))
+    state.add_leader(LeaderState(2, 2, "Lich King", HexCoord(3, 9), is_king=True))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert result.skeletal_army_lost == []
+    assert state.armies[army_id].commanded_by == 2
+    assert state.armies[army_id].is_skeletal is True
+
+
+def test_dispatch_leave_ordinary_army_unaffected_by_skeletal_rule():
+    # Non-regression: an ordinary (non-skeletal) army left uncommanded
+    # is untouched by the new check.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert result.skeletal_army_lost == []
+    assert state.armies[army_id].commanded_by is None
 
 
 def test_dispatch_pick_up_attaches_colocated_army():
