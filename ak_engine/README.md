@@ -27477,7 +27477,7 @@ follow-up request after the original 431-435 plan shipped.
   in state" skip case). This closes [[project_large_gap_survey_2026_08_27]]'s
   candidate #4 in full.
 
-- **Phase 659 (current)**: Special Encounter Plan (SEP, rulebook
+- **Phase 659**: Special Encounter Plan (SEP, rulebook
   [5.10]) decode -- candidate #1 from [[project_large_gap_survey_2026_08_27]],
   requested directly by the user ("con la decodifica SEP"). The K1
   parser already captured `SP:`'s own raw token stream verbatim
@@ -27572,6 +27572,70 @@ follow-up request after the original 431-435 plan shipped.
   "hand-built, labeled as such" convention Phase 618 used), 1 each in
   `test_search_decode.py`/`test_challenge_pursue_decode.py` (the shared
   extraction itself, and Challenge's own newly-fixed SAY branch).
+
+- **Phase 660 (current)**: 3 of the 24 unwired royal-title `"effect_
+  while_held"` bonuses -- candidate #2 from [[project_large_gap_
+  survey_2026_08_27]] ("9 things in a trenchcoat"). An Explore agent
+  audited every title with real effect text (`models/office.py OFFICE_
+  TITLE_DESCRIPTION`) against the codebase before scoping anything --
+  found 12 titles already wired (Silver Tongue/King of Cowards/Improved
+  Training/Teacher/Assassin/Duellist/Wingman, plus the 11 race-loyalty
+  titles' own fanaticism roll -- though that last group is dormant
+  scaffolding: `fight_battle()`'s own `apply_fanaticism` parameter has
+  zero production callers passing `True`, confirmed by grep, the same
+  class of gap `duel_maneuvers` was for SEP before Phase 659) and 24
+  genuinely unwired, grouped into 9 distinct mechanisms. This phase
+  picks the 3 smallest, lowest-risk, independently-verified fixes;
+  the other 8 mechanism groups are a real, documented, not-yet-started
+  roadmap (see the plan file / [[project_royal_titles_phase630_closed]]).
+
+  **1. The 6 terrain-King exploration doublers** (Ranger of the
+  Plains through Ruler of the Waves -- real text: "can now explore
+  [terrain] provinces at double [their] normal rate"). `turn/
+  exploration.py resolve_explore()` gains `has_terrain_king_title:
+  bool = False`, doubling `exploration_number` before `partial`'s own
+  halving. `turn/move_execution.py record_kingdom_exploration()` --
+  the single choke point all resolve_explore() callers already funnel
+  through, already receiving `state`/`leader_id` since Phase 630's own
+  merit-counter wiring -- resolves the matching title's current holder
+  (new `_TERRAIN_KING_OFFICE: dict[Terrain, Office]`, mirroring the
+  existing `_TERRAIN_KING_FIELD`) and passes the boolean through. No
+  new call-site plumbing needed anywhere.
+
+  **2. PSYCHIC_MAGE's own already-half-built wiring.** `turn/aspy_
+  execution.py execute_aspy()` already had a `caster_holds_psychic_
+  mage_office` parameter (Phase 495, feeding perfect alignment/temper
+  detection for spotted characters -- the real "knows their exact
+  alignment and temper" title text, mapped onto this project's own
+  ASpy/province-intelligence report since there's no standalone Talk-
+  execution engine to hook a literal "when talking" trigger into) --
+  but `turn/plan_dispatch.py _dispatch_aspy()` never resolved the
+  office, leaving it at its own hardcoded `False` default, with an
+  explicit Phase 495 comment marking this "a distinct, still-unwired
+  Office perk, out of scope here." Now resolves `Office.PSYCHIC_MAGE`'s
+  holder and threads the real boolean through -- one real line, plus a
+  comment update. The monster-deal-honesty half of this title's own
+  text stays unwired (no hook exists anywhere for that).
+
+  **3. BATTLE_FOOL's own per-turn Tactics aptitude escalation** (real
+  text: "aptitude in Tactics will increase by 1 every turn, to a
+  maximum of 5"). New `turn/office_holder.py apply_battle_fool_
+  aptitude_escalation()`, a literal sibling of `apply_cravenest_
+  temperament_escalation()` immediately above it -- resolves the
+  title's holder, reads/writes back `LeaderState.skills.pair_for_
+  ability(Ability.TACTICAL)`, no-ops for no holder or `skills=None`.
+  Called once per turn from `turn_processor.py`, right alongside the
+  existing Cravenest call.
+
+  Test count: 5504 -> 5517 (net +13): 3 in `test_exploration.py`
+  (doubling, doubling-before-partial-halving with an odd basic number
+  to make the order observable, default-unchanged), 5 in `test_move_
+  execution.py` (title-holder doubling, non-holder, terrain-specific,
+  no-state/no-leader-id unchanged), 2 in `test_plan_dispatch.py`
+  (perfect temper detection for a real holder, deterministic imperfect
+  estimate without one), 4 in `test_office_holder.py` (mirroring
+  Cravenest's own 4-test shape: raises, caps at 5, no-holder no-op,
+  no-skills no-op).
 
 ## Setup
 

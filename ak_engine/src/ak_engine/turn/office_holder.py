@@ -777,3 +777,21 @@ def apply_cravenest_temperament_escalation(state: GameState) -> None:
     if leader is None or leader.temper is None:
         return
     leader.temper = raise_temper_one_level(leader.temper)
+
+
+def apply_battle_fool_aptitude_escalation(state: GameState) -> None:
+    """`models/office.py OFFICE_TITLE_DESCRIPTION[Office.BATTLE_FOOL]`
+    (Phase 660): "> aptitude in Tactics will increase by 1 every turn
+    (to a maximum of 5.)" -- applied every turn to whoever currently
+    holds the Fool of Battles title, if anyone. Same shape as `apply_
+    cravenest_temperament_escalation()` immediately above.
+    """
+
+    holder = resolve_office_holder(state, Office.BATTLE_FOOL)
+    if holder is None:
+        return
+    leader = state.leaders.get(holder.leader_id)
+    if leader is None or leader.skills is None:
+        return
+    skill, aptitude = leader.skills.pair_for_ability(Ability.TACTICAL)
+    leader.skills.set_pair_for_ability(Ability.TACTICAL, skill, min(5, aptitude + 1))

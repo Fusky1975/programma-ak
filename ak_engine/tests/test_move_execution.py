@@ -234,6 +234,52 @@ def test_record_kingdom_exploration_without_leader_id_credits_no_title_merit():
     assert state.leaders[1].merit_tally.plains_explorations == 0
 
 
+# -- Phase 660: record_kingdom_exploration()'s new terrain-King title
+# doubling (the same titles' own real "effect_while_held" bonus) --------
+
+
+def test_record_kingdom_exploration_doubles_the_rate_for_the_titles_current_holder():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Rangeria", Race.HUMAN, Alignment.NEUTRAL, TARGET))
+    state.add_leader(LeaderState(1, 1, "Ranger", TARGET))
+    state.leaders[1].merit_tally.plains_explorations = 4  # OFFICE_MIN_POINTS[PLAINS_KING]
+    province = ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None)
+
+    result = record_kingdom_exploration(province, kingdom_id=1, explorer_skill=0, partial=False, state=state, leader_id=1)
+
+    # Plains basic=50, skill 0 -> 50 undoubled; 100 with the title.
+    assert result.new_percent == 100
+
+
+def test_record_kingdom_exploration_does_not_double_for_a_non_holder():
+    state = GameState()
+    state.add_leader(LeaderState(1, 1, "Scout", TARGET))  # merit stays 0, below OFFICE_MIN_POINTS
+    province = ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None)
+
+    result = record_kingdom_exploration(province, kingdom_id=1, explorer_skill=0, partial=False, state=state, leader_id=1)
+
+    assert result.new_percent == 50
+
+
+def test_record_kingdom_exploration_title_bonus_is_terrain_specific():
+    # Holds Plains King, but this exploration is in Desert -- no bonus.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Rangeria", Race.HUMAN, Alignment.NEUTRAL, TARGET))
+    state.add_leader(LeaderState(1, 1, "Ranger", TARGET))
+    state.leaders[1].merit_tally.plains_explorations = 4
+    province = ProvinceState(TARGET, Terrain.DESERT, Race.HUMAN, owner_kingdom_id=None)
+
+    result = record_kingdom_exploration(province, kingdom_id=1, explorer_skill=0, partial=False, state=state, leader_id=1)
+
+    assert result.new_percent == 25  # Desert basic=25, undoubled
+
+
+def test_record_kingdom_exploration_without_state_or_leader_id_never_doubles():
+    province = ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None)
+    result = record_kingdom_exploration(province, kingdom_id=1, explorer_skill=0, partial=False)
+    assert result.new_percent == 50
+
+
 def test_execute_move_credits_the_movers_own_terrain_king_title():
     state = base_state()
     state.add_leader(LeaderState(1, 1, "Scout", ORIGIN))

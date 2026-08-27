@@ -280,7 +280,7 @@ from ak_engine.turn.plague_spread import resolve_plague_spread
 from ak_engine.turn.missed_deadline import build_missed_deadline_plan
 from ak_engine.turn.move_execution import MoveExecutionResult, record_kingdom_exploration, reveal_adjacent_provinces
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
-from ak_engine.turn.office_holder import apply_cravenest_temperament_escalation
+from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, apply_cravenest_temperament_escalation
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, dispatch_phase, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import execute_practice_group
@@ -621,6 +621,8 @@ def run_turn(
     # function's own docstring for why this is a confirmed no-op under
     # real generated data.
     apply_cravenest_temperament_escalation(state)
+    # Phase 660: Fool of Battles' own real per-turn Tactics aptitude rise.
+    apply_battle_fool_aptitude_escalation(state)
     # Phase 573: the turn-boundary reset this project never had. Several
     # fields were long documented as "not auto-reset -- the caller's
     # job" (see `_replenish_turn_scoped_state()`'s own docstring for the

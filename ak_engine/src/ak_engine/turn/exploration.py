@@ -131,6 +131,7 @@ def resolve_explore(
     partial: bool = False,
     has_military_maps: bool = False,
     has_difficult_terrain: bool = False,
+    has_terrain_king_title: bool = False,
 ) -> ExploreResult:
     """Apply one Explore action, or a Move's partial-exploration side effect.
 
@@ -144,6 +145,18 @@ def resolve_explore(
     for the real formula each feeds. Both default to ``False`` (the
     pre-507 behavior minus the multiplier-cap fix) for any caller that
     doesn't pass them.
+
+    ``has_terrain_king_title`` (Phase 660): the acting leader currently
+    holds the one royal title matching ``terrain`` (``models/office.py
+    OFFICE_TITLE_DESCRIPTION`` -- e.g. Ranger of the Plains for
+    ``Terrain.PLAINS``, real text "can now explore [terrain] provinces
+    at double [their] normal rate") -- doubles ``exploration_number``
+    before ``partial``'s own halving, so a partial Move exploration
+    still ends up exactly half of whatever the title-holder's own full
+    Explore rate is. Caller-computed (same convention as the other two
+    booleans above) -- this function stays Office-agnostic; see
+    ``turn/move_execution.py record_kingdom_exploration()`` for the
+    real resolution.
     """
 
     max_reachable = EXPLORATION_CAP_WITH_MILITARY_MAPS if has_military_maps else EXPLORATION_CAP
@@ -159,6 +172,8 @@ def resolve_explore(
         basic_exploration_number += DIFFICULT_TERRAIN_BONUS
     multiplier = min(EXPLORER_SKILL_MULTIPLIER_CAP, explorer_skill) + 1
     exploration_number = basic_exploration_number * multiplier
+    if has_terrain_king_title:
+        exploration_number *= 2
     if partial:
         exploration_number //= 2
 

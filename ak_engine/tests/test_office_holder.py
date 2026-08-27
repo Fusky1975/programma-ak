@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState, RaceTitleTally
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
@@ -19,6 +21,7 @@ from ak_engine.turn.office_holder import (
     ALL_OFFICES,
     ARMY_RANKED_OFFICES,
     RANKED_OFFICES,
+    apply_battle_fool_aptitude_escalation,
     apply_cravenest_temperament_escalation,
     commit_army_office_holders,
     commit_office_holders,
@@ -746,3 +749,52 @@ def test_apply_cravenest_temperament_escalation_skips_a_titleholder_with_no_reco
     apply_cravenest_temperament_escalation(state)  # must not raise
 
     assert state.leaders[1].temper is None
+
+
+# -- Phase 660: apply_battle_fool_aptitude_escalation() --------------------
+
+
+def test_apply_battle_fool_aptitude_escalation_raises_a_valid_titleholders_tactics_aptitude():
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    leader.merit_tally.land_battles_lost_points = 2  # -(land+naval) == 2 == OFFICE_MIN_POINTS[BATTLE_FOOL]
+    leader.skills = SkillTable(raw_values=[3, 2] + [0] * 28)  # Tactics (skill=3, aptitude=2)
+    state.add_leader(leader)
+
+    apply_battle_fool_aptitude_escalation(state)
+
+    assert state.leaders[1].skills.pair_for_ability(Ability.TACTICAL) == (3, 3)
+
+
+def test_apply_battle_fool_aptitude_escalation_caps_at_5():
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    leader.merit_tally.land_battles_lost_points = 2
+    leader.skills = SkillTable(raw_values=[3, 5] + [0] * 28)
+    state.add_leader(leader)
+
+    apply_battle_fool_aptitude_escalation(state)
+
+    assert state.leaders[1].skills.pair_for_ability(Ability.TACTICAL) == (3, 5)
+
+
+def test_apply_battle_fool_aptitude_escalation_is_a_noop_with_no_holder():
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    leader.skills = SkillTable(raw_values=[3, 2] + [0] * 28)
+    state.add_leader(leader)  # no merit_tally inflation -- below OFFICE_MIN_POINTS
+
+    apply_battle_fool_aptitude_escalation(state)
+
+    assert state.leaders[1].skills.pair_for_ability(Ability.TACTICAL) == (3, 2)
+
+
+def test_apply_battle_fool_aptitude_escalation_skips_a_titleholder_with_no_recorded_skills():
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    leader.merit_tally.land_battles_lost_points = 2
+    state.add_leader(leader)  # skills stays None
+
+    apply_battle_fool_aptitude_escalation(state)  # must not raise
+
+    assert state.leaders[1].skills is None

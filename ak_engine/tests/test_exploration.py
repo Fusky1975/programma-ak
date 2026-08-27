@@ -117,6 +117,35 @@ def test_current_percent_up_to_200_is_valid_with_military_maps():
     assert result.new_percent == 200
 
 
+# -- Phase 660: terrain-King royal title doubles the exploration rate --
+
+
+def test_terrain_king_title_doubles_the_exploration_number():
+    # Plains: basic=50, skill 0 -> multiplier 1 -> 50 without the title.
+    without = resolve_explore(0, Terrain.PLAINS, explorer_skill=0)
+    with_title = resolve_explore(0, Terrain.PLAINS, explorer_skill=0, has_terrain_king_title=True)
+    assert without.new_percent == 50
+    assert with_title.new_percent == 100
+
+
+def test_terrain_king_title_doubling_applies_before_partial_halving():
+    # Doubled (50 -> 100) then halved for partial (-> 50), not halved
+    # first and then doubled (25 -> 50 would look the same here, so use
+    # a case where the two orders would actually diverge: Jungle basic
+    # is 10, doubling then halving gives 10, halving then doubling also
+    # gives 10 -- pick Desert (basic 25, odd) instead, where integer
+    # floor division makes the order observable.
+    doubled_then_halved = resolve_explore(0, Terrain.DESERT, explorer_skill=0, partial=True, has_terrain_king_title=True)
+    # basic=25, multiplier=1 -> 25; doubled -> 50; //2 (partial) -> 25.
+    assert doubled_then_halved.new_percent == 25
+
+
+def test_terrain_king_title_false_by_default_unchanged():
+    without_arg = resolve_explore(0, Terrain.SEA, explorer_skill=2)
+    explicit_false = resolve_explore(0, Terrain.SEA, explorer_skill=2, has_terrain_king_title=False)
+    assert without_arg.new_percent == explicit_false.new_percent
+
+
 # -- Phase 509: resolve_find_mines --
 
 

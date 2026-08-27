@@ -174,12 +174,14 @@ from ak_engine.models.army_type import SEA_ARMY_TYPES, is_land_army
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.office import Office
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle, mystic_winds_active_for
 from ak_engine.turn.cast_execution import ILLUSORY_FOG_EXTRA_MOVEMENT_COST, is_illusory_fog_affected_air_unit
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.contested_province import is_illegal_move_from_contested
 from ak_engine.turn.exploration import ExploreResult, discover_features, resolve_explore, resolve_find_mines
+from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.movement import (
     NORMAL_MAP_BOUNDS,
     HexOwnershipTier,
@@ -375,6 +377,19 @@ _TERRAIN_KING_FIELD: dict[Terrain, str] = {
     Terrain.SEA: "sea_explorations",
 }
 
+# Phase 660: the same 6 terrain-King titles' own real "effect_while_held"
+# bonus (`models/office.py OFFICE_TITLE_DESCRIPTION`: "can now explore
+# [terrain] provinces at double [their] normal rate") -- same 6-member
+# Terrain set as _TERRAIN_KING_FIELD above.
+_TERRAIN_KING_OFFICE: dict[Terrain, Office] = {
+    Terrain.PLAINS: Office.PLAINS_KING,
+    Terrain.DESERT: Office.DESERT_KING,
+    Terrain.JUNGLE: Office.JUNGLE_KING,
+    Terrain.FOREST: Office.FOREST_KING,
+    Terrain.MTNS: Office.MOUNTAIN_KING,
+    Terrain.SEA: Office.SEA_KING,
+}
+
 
 def record_kingdom_exploration(
     province: ProvinceState,
@@ -434,21 +449,39 @@ def record_kingdom_exploration(
     names no such distinction, so none is invented here. ``None``
     (every pre-Phase-630 caller) leaves this function's prior behavior
     unchanged.
+
+    Phase 660: the same ``state``/``leader_id`` pair also resolves
+    whether the acting leader currently *holds* the matching terrain-
+    King title (`_TERRAIN_KING_OFFICE`) -- if so, ``resolve_explore()``
+    is called with ``has_terrain_king_title=True``, doubling this
+    call's own exploration rate (see that function's own Phase 660
+    docstring). The exact same gate as the merit credit above, so every
+    caller that already passes `state`/`leader_id` for the counter gets
+    this for free, no new plumbing needed.
     """
+
+    terrain = province.effective_terrain()
+    has_terrain_king_title = False
+    if state is not None and leader_id is not None:
+        office = _TERRAIN_KING_OFFICE.get(terrain)
+        if office is not None:
+            holder = resolve_office_holder(state, office)
+            has_terrain_king_title = holder is not None and holder.leader_id == leader_id
 
     prior = province.explored_percent_by_kingdom.get(kingdom_id, 0)
     result = resolve_explore(
         prior,
-        province.effective_terrain(),
+        terrain,
         explorer_skill,
         partial=partial,
         has_military_maps=has_military_maps,
         has_difficult_terrain=has_difficult_terrain,
+        has_terrain_king_title=has_terrain_king_title,
     )
     province.explored_percent_by_kingdom[kingdom_id] = result.new_percent
     if state is not None and leader_id is not None:
         leader = state.leaders.get(leader_id)
-        field = _TERRAIN_KING_FIELD.get(province.effective_terrain())
+        field = _TERRAIN_KING_FIELD.get(terrain)
         if leader is not None and field is not None:
             setattr(leader.merit_tally, field, getattr(leader.merit_tally, field) + 1)
     discovered: list[Feature] = []

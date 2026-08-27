@@ -15,6 +15,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.parser.k1_moves import parse_k1_moves_file
@@ -924,6 +925,46 @@ def test_dispatch_aspy_with_know_alignment_talent_reports_the_true_alignment():
     spotted = result.spotted_characters[0]
     assert spotted.leader_id == 2
     assert spotted.estimated_alignment is Alignment.NEUTRAL
+
+
+def test_dispatch_aspy_psychic_mage_holder_reports_perfect_temper_too():
+    # Phase 660: Office.PSYCHIC_MAGE's own real "knows their exact
+    # alignment and temper" title text -- unlike KNOW_ALIGNMENT_TALENT
+    # (alignment only), this also grants perfect *temper* detection, so
+    # this test checks temper specifically to prove the new wiring
+    # (not just an alignment path already covered by the two tests above).
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.leaders[LEADER_ID].merit_tally.psychic_spell_casts = 20  # OFFICE_MIN_POINTS[PSYCHIC_MAGE]
+    state.add_kingdom(KingdomState(2, "Spied", Race.HUMAN, Alignment.NEUTRAL, HexCoord(3, 9)))
+    spotted_leader = LeaderState(2, kingdom_id=2, name="Spotted", location=HexCoord(3, 9))
+    spotted_leader.temper = Temper.BRAVE
+    state.add_leader(spotted_leader)
+    phase = PlanPhase(label="P0", action=ActionCode.ASPY, obj=304, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, SpyReport)
+    spotted = result.spotted_characters[0]
+    assert spotted.estimated_alignment is Alignment.NEUTRAL
+    assert spotted.estimated_temper is Temper.BRAVE
+
+
+def test_dispatch_aspy_without_psychic_mage_title_estimates_temper_imperfectly():
+    # Deterministic REPORTS.PAS Temper_Est nudge (no RNG): target_id=3,
+    # agent_birth_x=0 (the default), true Temper.BRAVE -> nudged to
+    # Temper.BERSERK, proving the estimate is genuinely imperfect here
+    # (not every target id happens to diverge from its own true value).
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.add_kingdom(KingdomState(2, "Spied", Race.HUMAN, Alignment.NEUTRAL, HexCoord(3, 9)))
+    spotted_leader = LeaderState(3, kingdom_id=2, name="Spotted", location=HexCoord(3, 9))
+    spotted_leader.temper = Temper.BRAVE
+    state.add_leader(spotted_leader)
+    phase = PlanPhase(label="P0", action=ActionCode.ASPY, obj=304, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    spotted = result.spotted_characters[0]
+    assert spotted.estimated_temper is Temper.BERSERK
 
 
 def test_dispatch_defend_is_decode_only():
