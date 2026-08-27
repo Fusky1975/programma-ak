@@ -195,7 +195,7 @@ from ak_engine.turn.discovery_effects import (
     equipped_combat_weapon,
     holds_bow_of_elven_kings,
 )
-from ak_engine.turn.druidic_monster_aid import find_druidic_monster_assistance
+from ak_engine.turn.druidic_monster_aid import DruidicMonsterAssistance, find_druidic_monster_assistance
 from ak_engine.turn.duel import Commander, apply_duel_demoralization, provincial_garrison_commander, select_supreme_commander
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
@@ -284,6 +284,13 @@ class BattleReport:
     # Empty for the instant-conquest shortcut (no real battle fought).
     attacker_commanding_leader_ids: list[int] = field(default_factory=list)
     defender_commanding_leader_ids: list[int] = field(default_factory=list)
+    # Phase 657 -- SAY.PAS `_BMonst`'s own MCOME.X/MFIGHT.X pair: a
+    # Druidic side's own assisting Feature monster(s), keyed by which
+    # battle column each one joined (turn/druidic_monster_aid.py
+    # find_druidic_monster_assistance()). Empty for a non-Druidic battle
+    # or the instant-conquest shortcut (no real battle fought).
+    attacker_monster_assistance: dict[int, DruidicMonsterAssistance] = field(default_factory=dict)
+    defender_monster_assistance: dict[int, DruidicMonsterAssistance] = field(default_factory=dict)
 
 
 def _build_battle_units(
@@ -1997,6 +2004,12 @@ def fight_battle(
     # above already treats a None owner as "nothing to compare against".
     attacker_column_bonus: dict[int, int] | None = None
     defender_column_bonus: dict[int, int] | None = None
+    # Phase 657: the rich per-column assistance (monster/feature_id, not
+    # just the strength number) survives onto BattleReport below so the
+    # report layer can narrate MCOME.X/MFIGHT.X with a real name -- see
+    # turn/druidic_monster_aid.py's own Phase 657 docstring addendum.
+    attacker_monster_assistance: dict[int, DruidicMonsterAssistance] = {}
+    defender_monster_assistance: dict[int, DruidicMonsterAssistance] = {}
     attacker_alignment = state.kingdoms[attacker_kingdom_id].alignment
     defender_alignment = state.kingdoms[defender_kingdom_id].alignment if defender_kingdom_id is not None else None
     if Alignment.DRUID in (attacker_alignment, defender_alignment):
@@ -2004,13 +2017,19 @@ def fight_battle(
             len(attacker_units), len(defender_units), terrain_line_length_cap=terrain_line_length_cap
         )
         if attacker_alignment is Alignment.DRUID and defender_alignment is not None:
-            attacker_column_bonus = find_druidic_monster_assistance(
+            attacker_monster_assistance = find_druidic_monster_assistance(
                 state, province_coord, defender_alignment, line_length, rng
             )
+            attacker_column_bonus = {
+                column: assistance.strength_bonus for column, assistance in attacker_monster_assistance.items()
+            }
         if defender_alignment is Alignment.DRUID:
-            defender_column_bonus = find_druidic_monster_assistance(
+            defender_monster_assistance = find_druidic_monster_assistance(
                 state, province_coord, attacker_alignment, line_length, rng
             )
+            defender_column_bonus = {
+                column: assistance.strength_bonus for column, assistance in defender_monster_assistance.items()
+            }
 
     battle_result = resolve_battle(
         attacker_units,
@@ -2042,6 +2061,8 @@ def fight_battle(
         province_coord=province_coord,
         attacker_kingdom_id=attacker_kingdom_id,
         defender_kingdom_id=defender_kingdom_id,
+        attacker_monster_assistance=attacker_monster_assistance,
+        defender_monster_assistance=defender_monster_assistance,
     )
 
     _record_battle_merit(

@@ -328,6 +328,7 @@ from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
 from ak_engine.turn.encounter import CombatRange, FireArrowShot, MeleeSwing
+from ak_engine.turn.druidic_monster_aid import DruidicMonsterAssistance
 from ak_engine.turn.emperor_election import ElectionCallOutcome, ElectionResult
 from ak_engine.turn.expenses import MaintenanceResult
 from ak_engine.turn.exploration import ExploreResult
@@ -677,6 +678,100 @@ def test_describe_battle_skips_a_commanding_leader_no_longer_in_state():
     )
 
     assert lines == ["Aldric led Aldric's armies into the battle."]
+
+
+def test_describe_battle_renders_monster_assistance_before_everything_else():
+    # Phase 657: MCOME/MFIGHT render right after the BATLDR roster, before
+    # BLUCK and the per-column clash sentences.
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    battle_result = BattleResult(winner="attacker", columns=[column])
+    report = BattleReport(
+        battle_result=battle_result,
+        conquered=True,
+        destroyed_army_ids=[20],
+        attacker_monster_assistance={
+            0: DruidicMonsterAssistance(strength_bonus=21, monster=Monster.GO_DRAGON, feature_id=1)
+        },
+    )
+
+    rng = ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0, 0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=rng,
+    )
+
+    assert lines == [
+        "Gold Dragon, hearing of the peril of the Druidic king, arrived at the battle to fight with 10th Garrison.",
+        "Gold Dragon was of some slight help in the battle.",
+        "10th Garrison fought 20th Legion and advanced at will.",
+        "the forces of Attackia broke through and were victorious.",
+        "Attackia annihilated 20th Legion.",
+    ]
+
+
+def test_describe_battle_renders_defender_side_monster_assistance_too():
+    column = _column(bres=-3, attacker_source_id=10, defender_source_id=20)
+    battle_result = BattleResult(winner="defender", columns=[column])
+    report = BattleReport(
+        battle_result=battle_result,
+        conquered=False,
+        defender_monster_assistance={
+            0: DruidicMonsterAssistance(strength_bonus=21, monster=Monster.GO_DRAGON, feature_id=1)
+        },
+    )
+
+    rng = ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0, 0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=rng,
+    )
+
+    assert lines[0] == "Gold Dragon, hearing of the peril of the Druidic king, arrived at the battle to fight with 20th Legion."
+    assert lines[1] == "Gold Dragon was of some slight help in the battle."
+
+
+def test_describe_battle_skips_monster_assistance_for_a_column_with_no_named_army():
+    # Same "no source_id, don't guess" convention every other sub-renderer
+    # in this function already uses.
+    column = BattleColumnResult(
+        attacker_strength=10.0,
+        defender_strength=10.0,
+        bres=0,
+        attacker_won=False,
+        cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.GARRISON, 10.0, source_id=None)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=2)],
+    )
+    battle_result = BattleResult(winner="tie", columns=[column])
+    report = BattleReport(
+        battle_result=battle_result,
+        conquered=False,
+        attacker_monster_assistance={
+            0: DruidicMonsterAssistance(strength_bonus=21, monster=Monster.GO_DRAGON, feature_id=1)
+        },
+    )
+
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=ScriptedRandom([]),
+    )
+
+    assert lines == []
 
 
 def test_describe_battle_threads_is_sea_to_every_sub_renderer():

@@ -27307,7 +27307,7 @@ follow-up request after the original 431-435 plan shipped.
   makes multiple claims, re-verify *every* claim against the code
   directly, not just the one a survey happened to flag.
 
-- **Phase 656 (current)**: `REPORTS.PAS:1462-1508`'s own "ELECTION
+- **Phase 656**: `REPORTS.PAS:1462-1508`'s own "ELECTION
   REPORT" table -- the very first thing `Pray_Report` ever prints,
   shown only on the turn a vote is actually tallied (real `IF tktax >
   0`). A large-gap survey (this session, after Phase 655) flagged it as
@@ -27373,6 +27373,57 @@ follow-up request after the original 431-435 plan shipped.
 
   Test count: 5455 -> 5462 (net +7). Standing per-phase workflow
   otherwise.
+
+- **Phase 657 (current)**: closes candidate #4's Druidic monster-aid
+  half from [[project_large_gap_survey_2026_08_27]] (the BATLDR
+  uncommanding-leader roster half stays open). `report/turn_report.py`'s
+  own module comment above `_MCOME_TEMPLATES` already documented the
+  real MCOME.X/MFIGHT.X templates (`SAY.PAS:1086-1091 _BMonst`) as
+  "sourced and render-tested, not wired": `turn/druidic_monster_aid.py
+  find_druidic_monster_assistance()` computes exactly which battle
+  column a Feature's own guardian monster assisted and how strong the
+  bonus was, but `turn/battle_orchestrator.py fight_battle()` consumed
+  only the numbers straight into `resolve_battle()`'s own combat math
+  and discarded everything else -- no `BattleReport` field recorded
+  which column got help, or which Feature/monster it came from, so
+  there was no way to narrate it with a real name afterward.
+
+  `find_druidic_monster_assistance()` now returns `{column:
+  DruidicMonsterAssistance}` (a new small frozen dataclass:
+  `strength_bonus`, `monster`, `feature_id`) instead of a bare `{column:
+  int}` -- `strength_bonus` is unchanged in meaning and still feeds
+  `resolve_battle()`'s own numeric-only parameter (extracted by the
+  caller via a dict comprehension); `monster`/`feature_id` are new,
+  carried through purely for report-layer identity. `BattleReport`
+  gains `attacker_monster_assistance`/`defender_monster_assistance:
+  dict[int, DruidicMonsterAssistance]`, set alongside the existing
+  Phase 649 BATLDR roster fields in `fight_battle()`'s own
+  `BattleReport(...)` construction.
+
+  `report/turn_report.py describe_battle()` renders both templates back
+  to back for each entry, resolving the monster's own display name
+  (`MONSTER_NAMES`) and the assisted army's own display name (the
+  battle column's own front-unit `source_id`, via the same `army_names`
+  map `build_battle_army_names()` already builds for BATLDR/the
+  per-column clash sentences) -- a column whose front unit has no real
+  `source_id`/name is silently skipped, the same "no source, don't
+  guess" convention every other sub-renderer in this composer already
+  uses. Rendered right after the BATLDR leader-roster loop, before
+  BLUCK -- no real trigger call for `_BMonst` survives in any available
+  `.PAS` file to confirm its exact position relative to `_BLList`/
+  `_BLuck`/`_CLuck` (the same "missing main program" gap those three's
+  own wiring already documents), so this is a documented, reasonable
+  ordering choice, not a sourced one.
+
+  Test count: 5462 -> 5467 (net +5): 3 in `test_turn_report.py`
+  (`describe_battle()`'s new wiring, both sides, plus the
+  no-real-army-name skip case), 2 in `test_battle_orchestrator.py`
+  (`fight_battle()` end to end -- a real seed, found by search, that
+  both rolls a successful Druidic monster assist and produces the
+  identity-carrying `BattleReport` fields; a non-Druidic battle leaves
+  both fields empty). 3 pre-existing `test_druidic_monster_aid.py`
+  tests updated for the new return shape (no behavior change to the
+  function itself, just its own return type).
 
 ## Setup
 

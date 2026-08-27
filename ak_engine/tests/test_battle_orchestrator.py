@@ -44,6 +44,7 @@ from ak_engine.turn.battle_orchestrator import (
     fight_multi_attacker_battle,
 )
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
+from ak_engine.turn.druidic_monster_aid import DruidicMonsterAssistance
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.duel import Commander, provincial_garrison_commander
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS
@@ -119,6 +120,44 @@ def test_fight_battle_report_carries_the_provinces_own_battle_identity():
     assert report.province_coord == FIELD
     assert report.attacker_kingdom_id == 1
     assert report.defender_kingdom_id == 2
+
+
+# -- Phase 657: BattleReport.attacker_monster_assistance/defender_monster_assistance --
+
+
+def test_fight_battle_records_druidic_monster_assistance_with_identity():
+    # A Gold Dragon-guarded Feature at FIELD, attacker Druidic vs. a
+    # defending Evil kingdom -- the exact same eligibility/probability
+    # shape test_druidic_monster_aid.py's own worked example uses
+    # (feature_id=1, GO_DRAGON, prob 0.75). seed=1 is a real seed (found
+    # by search, same "found by search" precedent this file already
+    # uses elsewhere) that both rolls the monster's own join successful
+    # and lands the attacker an outright win.
+    state = build_state()
+    state.kingdoms[1].alignment = Alignment.DRUID
+    state.kingdoms[2].alignment = Alignment.EVIL
+    state.add_feature(Feature(1, FIELD, FeatureType.CAVE, guardian_monster=Monster.GO_DRAGON))
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=random.Random(1))
+
+    assert report.attacker_monster_assistance == {
+        0: DruidicMonsterAssistance(strength_bonus=21, monster=Monster.GO_DRAGON, feature_id=1)
+    }
+    assert report.defender_monster_assistance == {}
+
+
+def test_fight_battle_leaves_monster_assistance_empty_for_a_non_druidic_battle():
+    # Same Gold Dragon Feature present, but neither side is Druidic --
+    # find_druidic_monster_assistance() is never even called (see fight_
+    # battle()'s own Alignment.DRUID gate), matching this project's
+    # already-established "no eligible side, no roll consumed" stance.
+    state = build_state()  # Attackia is Good, Defendia is Neutral
+    state.add_feature(Feature(1, FIELD, FeatureType.CAVE, guardian_monster=Monster.GO_DRAGON))
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=no_luck_overwhelming_attacker_rng())
+
+    assert report.attacker_monster_assistance == {}
+    assert report.defender_monster_assistance == {}
 
 
 # -- Phase 409: attacker forced-retreat destination + ProvinceState.contested_from_coord --

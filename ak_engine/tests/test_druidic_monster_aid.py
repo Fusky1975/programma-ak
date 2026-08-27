@@ -12,6 +12,7 @@ from ak_engine.models.game_state import GameState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster
 from ak_engine.turn.druidic_monster_aid import (
+    DruidicMonsterAssistance,
     find_druidic_monster_assistance,
     monster_effective_alignment,
     monster_join_probability,
@@ -116,7 +117,8 @@ def test_find_druidic_monster_assistance_grants_a_bonus_on_a_successful_roll():
 
     result = find_druidic_monster_assistance(state, HOME, Alignment.EVIL, line_length=5, rng=rng)
 
-    assert result == {2: 21}  # Gold Dragon's own worked-example bonus
+    # Gold Dragon's own worked-example bonus, plus (Phase 657) its identity.
+    assert result == {2: DruidicMonsterAssistance(strength_bonus=21, monster=Monster.GO_DRAGON, feature_id=1)}
 
 
 def test_find_druidic_monster_assistance_skips_ineligible_monsters():
@@ -183,7 +185,9 @@ def test_find_druidic_monster_assistance_second_monster_on_the_same_column_is_di
 
     result = find_druidic_monster_assistance(state, HOME, Alignment.EVIL, line_length=5, rng=rng)
 
-    assert result == {0: 21}
+    # feature_id=1's own monster claimed column 0 first -- feature_id
+    # confirms it's the *first* feature's monster, not the second's.
+    assert result == {0: DruidicMonsterAssistance(strength_bonus=21, monster=Monster.GO_DRAGON, feature_id=1)}
 
 
 def test_find_druidic_monster_assistance_scans_in_ascending_feature_id_order():
@@ -199,4 +203,6 @@ def test_find_druidic_monster_assistance_scans_in_ascending_feature_id_order():
 
     result = find_druidic_monster_assistance(state, HOME, Alignment.EVIL, line_length=5, rng=rng)
 
-    assert result == {0: 21}  # feature_id=1's own monster claimed column 0 first
+    # feature_id=1's own monster claimed column 0 first, confirmed by its
+    # own feature_id surviving in the result (Phase 657), not feature_id=5's.
+    assert result == {0: DruidicMonsterAssistance(strength_bonus=21, monster=Monster.GO_DRAGON, feature_id=1)}

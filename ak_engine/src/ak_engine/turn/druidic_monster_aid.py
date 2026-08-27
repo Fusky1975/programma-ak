@@ -52,16 +52,31 @@ line_length` is a Pascal-ism, not a game-rule). A column that already
 has an assisting monster from an earlier feature in this same scan
 discards the later monster outright -- no retry, no alternate column,
 exactly as the source describes.
+
+**Phase 657**: `find_druidic_monster_assistance()` now returns
+`DruidicMonsterAssistance` values (still keyed by column) instead of a
+bare `int` -- the strength bonus alone, with no record of which
+monster/Feature earned it. `turn/battle_orchestrator.py fight_battle()`
+consumed the bonus straight into `resolve_battle()`'s own combat math
+and discarded the rest, so there was no way to narrate MCOME.X/
+MFIGHT.X (`report/turn_report.py render_monster_reinforcement_arrives()`/
+`_helped()`, Phase 604 -- sourced and render-tested but never wired,
+see that module's own comment) with a real monster/army name after the
+fact. `strength_bonus` is unchanged in meaning and is what still feeds
+`resolve_battle()`'s own `{column: bonus}` parameter (extracted by the
+caller); `monster`/`feature_id` are new, carried through purely for
+report-layer identity.
 """
 
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.game_state import GameState
 from ak_engine.models.map import HexCoord
-from ak_engine.models.monster import MONSTER_RUNTIME_PROFILE
+from ak_engine.models.monster import MONSTER_RUNTIME_PROFILE, Monster
 
 # The walk's own clamp bound -- Alignment.MECHANICAL (ordinal 8), not
 # Alignment.SPECIAL (ordinal 9). See module docstring.
@@ -106,22 +121,35 @@ def monster_strength_bonus(hit_points: int, melee_damage: int, missile_damage: i
     return (hit_points * (melee_damage + missile_damage)) // 50
 
 
+@dataclass(slots=True, frozen=True)
+class DruidicMonsterAssistance:
+    """One assisting monster's real contribution to a single battle column
+    (Phase 657) -- `strength_bonus` still feeds `resolve_battle()`'s own
+    numeric-only `{column: bonus}` parameter; `monster`/`feature_id` are
+    carried purely for report-layer identity (MCOME.X/MFIGHT.X).
+    """
+
+    strength_bonus: int
+    monster: Monster
+    feature_id: int
+
+
 def find_druidic_monster_assistance(
     state: GameState,
     province_coord: HexCoord,
     enemy_alignment: Alignment,
     line_length: int,
     rng: random.Random,
-) -> dict[int, int]:
+) -> dict[int, DruidicMonsterAssistance]:
     """Scans every unlooted, guardian-bearing Feature at `province_coord` (ascending
     `feature_id` order) for Druidic monster battle assistance against
     `enemy_alignment` -- see module docstring's "Per-province scan"
-    section. Returns `{column: strength_bonus}` for every monster that
-    both rolled successfully and landed on a column no earlier monster
-    in this same scan already claimed.
+    section. Returns `{column: DruidicMonsterAssistance}` for every
+    monster that both rolled successfully and landed on a column no
+    earlier monster in this same scan already claimed.
     """
 
-    assistance: dict[int, int] = {}
+    assistance: dict[int, DruidicMonsterAssistance] = {}
     features = sorted(state.features_at(province_coord), key=lambda feature: feature.feature_id)
 
     for feature in features:
@@ -144,8 +172,11 @@ def find_druidic_monster_assistance(
         if column in assistance:
             continue
 
-        assistance[column] = monster_strength_bonus(
+        strength_bonus = monster_strength_bonus(
             profile.average_hit_points, profile.melee_damage_parameter, profile.missile_damage_parameter
+        )
+        assistance[column] = DruidicMonsterAssistance(
+            strength_bonus=strength_bonus, monster=feature.guardian_monster, feature_id=feature.feature_id
         )
 
     return assistance

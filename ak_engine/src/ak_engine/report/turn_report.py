@@ -2358,6 +2358,14 @@ def describe_battle(
     same "no source, don't guess" convention `army_names.get()`
     lookups elsewhere in this function already use.
 
+    **Phase 657 -- MCOME/MFIGHT wiring.** `render_monster_reinforcement_
+    arrives()`/`_helped()` (Phase 604) were sourced, fully render-tested,
+    and never called from anywhere until now -- see the module-level
+    comment above `_MCOME_TEMPLATES` for the full account. Rendered
+    right after the leader-roster loop above, before BLUCK -- no real
+    trigger call survives to confirm `_BMonst`'s exact real position, so
+    this is a documented, reasonable ordering choice, not a sourced one.
+
     **Phase 615 -- BLUCK/CLUCK wiring.** `render_bluck_narration()`/
     `render_cluck_narration()` (Phase 584/605) were sourced, fully
     render-tested, and never called from anywhere until now. `SAY.PAS:
@@ -2386,6 +2394,35 @@ def describe_battle(
         commander_name = _leader_name(state, leader_id)
         if commander_name is not None:
             lines.append(render_battle_leader_intro(commander_name, rng, is_sea=is_sea))
+
+    # Phase 657 -- MCOME.X/MFIGHT.X (SAY.PAS `_BMonst`): a Druidic side's
+    # own assisting Feature monster(s). No real trigger call survives to
+    # confirm _BMonst's exact position relative to _BLList/_BLuck/_CLuck
+    # (the same "missing main program" gap BATLDR/BLUCK/CLUCK's own
+    # wiring already documents) -- rendered here, right after the leader
+    # roster and before BLUCK, a reasonable, documented ordering choice
+    # (a monster "arriving" reads as another battle-opening introduction,
+    # not a closing remark), not a sourced position. Sorted by column
+    # index for determinism; a column whose front unit has no real
+    # ``source_id``/``army_names`` entry is skipped, the same "no
+    # source, don't guess" convention the per-column clash loop below
+    # already uses.
+    for side_assistance, units_attribute in (
+        (battle_report.attacker_monster_assistance, "attacker_units"),
+        (battle_report.defender_monster_assistance, "defender_units"),
+    ):
+        for column_index in sorted(side_assistance):
+            if column_index >= len(battle_report.battle_result.columns):
+                continue
+            units = getattr(battle_report.battle_result.columns[column_index], units_attribute)
+            if not units or units[0].source_id is None:
+                continue
+            army_name = army_names.get(units[0].source_id)
+            if army_name is None:
+                continue
+            monster_name = MONSTER_NAMES[side_assistance[column_index].monster]
+            lines.append(render_monster_reinforcement_arrives(monster_name, army_name, province_name, rng))
+            lines.append(render_monster_reinforcement_helped(monster_name, army_name, rng))
 
     luck_leader_ids: tuple[int, int] | None = None
     if phase is not None and battle_report.province_coord is not None:
@@ -4630,15 +4667,14 @@ def render_battle_leader_intro(commander_name: str, rng: random.Random, *, is_se
 # true; END` -- the two fire back to back for the same event. `turn/
 # druidic_monster_aid.py find_druidic_monster_assistance()` (Phase 453,
 # wired into `turn/battle_orchestrator.py`'s own battle setup) computes
-# exactly this real game-state fact -- `{column: strength_bonus}`, one
-# entry per monster that rolled successfully and claimed a column -- but
-# it's consumed straight into `resolve_battle()`'s own combat math and
-# never retained anywhere afterward (no ``BattleReport`` field records
-# which column got help, or which ``Feature``/monster it came from), so
-# there's no way to narrate this with real names after the fact without
-# a `battle_orchestrator.py` change of its own. Sourced and
-# render-tested, not wired -- the same model-gap shape as Phase 593's
-# own `BATLDR.X`.
+# exactly this real game-state fact -- one entry per monster that rolled
+# successfully and claimed a column. **Phase 657**: that function's own
+# return value now carries the monster/`feature_id` identity too (not
+# just the strength number), `BattleReport.attacker_monster_assistance`/
+# `defender_monster_assistance` retain it, and `describe_battle()` (see
+# its own Phase 657 note) renders both templates back to back for each
+# entry -- the same model-gap shape Phase 593's own `BATLDR.X` had until
+# Phase 649 wired it.
 _MCOME_TEMPLATES: list[str] = [
     "[, hearing/Rlearning of the peril/Rjust_cause of the Druidic "
     "king/Rmonarch, arrived_at/Rrushed_to the battle{field} to "
