@@ -1856,6 +1856,36 @@ def _alignment_king_office_for(state: GameState, commander_leader: LeaderState |
     return office if holder is not None and holder.leader_id == commander_leader.leader_id else None
 
 
+def _supreme_commander_exploration_override(
+    state: GameState, commander_leader: LeaderState | None, terrain: Terrain
+) -> int | None:
+    """Phase 662: Admiral/Druid King's own shared "always 100% exploration
+    for this side" bonus -- ``models/office.py OFFICE_TITLE_DESCRIPTION``:
+    Admiral -- "in any sea battle where < is the supreme commander,
+    provincial exploration will always be treated as being 100%";
+    Druid King -- the identical clause for "any land battle." Same real
+    land/sea split `_combat_ability_for_terrain()` already uses (Naval vs
+    Tactical) -- Admiral's own text was outside the Phase 660 audit's own
+    scope (it only checked the 39 non-core titles), found while wiring
+    Druid King's half of this exact shared mechanic; shipping both
+    together rather than leaving Admiral's own identical, equally-real
+    clause unwired.
+
+    Returns ``100`` (the real, sourced value -- confirmed against
+    ``turn/strength.py exploration_advantage_multiplier()``'s own real
+    formula, where `100` gives exactly the rulebook's own stated +25%
+    maximum, not a guessed round number) when eligible, else ``None`` (no
+    override -- the caller keeps this side's own real accumulated
+    percentage).
+    """
+
+    if commander_leader is None:
+        return None
+    office = Office.ADMIRAL if terrain is Terrain.SEA else Office.DRUID_KING
+    holder = resolve_office_holder(state, office)
+    return 100 if holder is not None and holder.leader_id == commander_leader.leader_id else None
+
+
 def fight_battle(
     state: GameState,
     attacker_kingdom_id: int,
@@ -2038,6 +2068,16 @@ def fight_battle(
     defender_explored = (
         province.explored_percent_by_kingdom.get(defender_kingdom_id, 0) if defender_kingdom_id is not None else 0
     )
+    # Admiral/Druid King (Phase 662) -- see _supreme_commander_
+    # exploration_override()'s own docstring. Overrides this side's own
+    # real accumulated percentage outright (not additive), matching the
+    # real text's own unconditional "will always be treated as being 100%".
+    attacker_exploration_override = _supreme_commander_exploration_override(state, attacker_commander_leader, terrain)
+    if attacker_exploration_override is not None:
+        attacker_explored = attacker_exploration_override
+    defender_exploration_override = _supreme_commander_exploration_override(state, defender_commander_leader, terrain)
+    if defender_exploration_override is not None:
+        defender_explored = defender_exploration_override
 
     attacker_kingdom_ids = frozenset(army.kingdom_id for army in attacker_armies if army.kingdom_id is not None)
     defender_kingdom_ids = frozenset(army.kingdom_id for army in defender_armies if army.kingdom_id is not None)

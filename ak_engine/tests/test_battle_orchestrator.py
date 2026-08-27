@@ -1532,6 +1532,97 @@ def test_fight_battle_grants_no_alignment_king_bonus_when_neither_side_holds_a_t
     assert all(u.alignment_king_bonus_if_selected is None for u in defender_units)
 
 
+def test_fight_battle_druid_king_supreme_commander_gets_100_percent_exploration_on_land():
+    # Patches _build_battle_units itself (wraps=, still runs for real) so
+    # this only checks what fight_battle() passes it -- avoids any
+    # interference from the separate, unrelated pre-battle Duel roll a
+    # real commanded attacker also triggers (see the Duellist/alignment-
+    # King tests above, which only check "is not None" for the same
+    # reason -- an exact post-duel strength value isn't robust here).
+    state = build_state()  # FIELD is Terrain.PLAINS
+    state.kingdoms[1].alignment = Alignment.DRUID
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
+    leader = LeaderState(501, kingdom_id=1, name="DruidKing", location=FIELD, is_king=True)
+    state.add_leader(leader)
+    state.armies[101].commanded_by = 501
+
+    with patch(
+        "ak_engine.turn.battle_orchestrator._build_battle_units", wraps=_build_battle_units
+    ) as mock_build:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    attacker_call = mock_build.call_args_list[0]
+    assert attacker_call.kwargs["own_explored_percent"] == 100
+
+
+def test_fight_battle_admiral_supreme_commander_gets_100_percent_exploration_at_sea():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(2, 1)))
+    state.add_province(ProvinceState(FIELD, Terrain.SEA, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.ELITE, location=FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.FLEET, Quality.GREEN, location=FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Admiral", location=FIELD, is_king=True)
+    leader.merit_tally.naval_battles_won_points = 5  # clears OFFICE_MIN_POINTS[Office.ADMIRAL] == 1
+    state.add_leader(leader)
+    state.armies[101].commanded_by = 501
+
+    with patch(
+        "ak_engine.turn.battle_orchestrator._build_battle_units", wraps=_build_battle_units
+    ) as mock_build:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    attacker_call = mock_build.call_args_list[0]
+    assert attacker_call.kwargs["own_explored_percent"] == 100
+
+
+def test_fight_battle_druid_king_gets_no_exploration_bonus_at_sea():
+    # The land/sea split is real -- Druid King's own bonus is land-only.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.DRUID, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(2, 1)))
+    state.add_province(ProvinceState(FIELD, Terrain.SEA, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.ELITE, location=FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.FLEET, Quality.GREEN, location=FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="DruidKing", location=FIELD, is_king=True)
+    state.add_leader(leader)
+    state.armies[101].commanded_by = 501
+
+    with patch(
+        "ak_engine.turn.battle_orchestrator._build_battle_units", wraps=_build_battle_units
+    ) as mock_build:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    attacker_call = mock_build.call_args_list[0]
+    assert attacker_call.kwargs["own_explored_percent"] == 0
+
+
+def test_fight_battle_grants_no_exploration_override_for_a_non_titleholder():
+    state = build_state()
+
+    with patch(
+        "ak_engine.turn.battle_orchestrator._build_battle_units", wraps=_build_battle_units
+    ) as mock_build:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    attacker_call = mock_build.call_args_list[0]
+    assert attacker_call.kwargs["own_explored_percent"] == 0
+
+
 def test_fight_battle_grants_both_duellist_and_alignment_king_bonus_to_the_same_leader():
     # A Supreme Commander holding both titles at once gets both real,
     # independent grants -- no source treats them as mutually exclusive.

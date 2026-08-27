@@ -27637,7 +27637,7 @@ follow-up request after the original 431-435 plan shipped.
   Cravenest's own 4-test shape: raises, caps at 5, no-holder no-op,
   no-skills no-op).
 
-- **Phase 661 (current)**: the 7 "supreme commander -> one random
+- **Phase 661**: the 7 "supreme commander -> one random
   front-line unit becomes fanatic" royal titles (Divine/Good/Druid/
   Neutral/Pagan/Evil/Undead King -- Thunderbird/Knights Hospitaller/
   the Druids/berserking freedom fighters/the Pagan Clerics/the Black
@@ -27687,6 +27687,46 @@ follow-up request after the original 431-435 plan shipped.
   title-holder's commanded side, no bonus for an untitled battle, both
   Duellist and an alignment-King title granting independently to the
   same leader).
+
+- **Phase 662 (current)**: Admiral/Druid King's own shared "always 100%
+  exploration for this side" bonus (real text, both offices, identical
+  clause except sea vs. land: "in any [sea/land] battle where < is the
+  supreme commander, provincial exploration will always be treated as
+  being 100%"). Found while scoping the next royal-title mechanism
+  group: Druid King's own version is candidate #2's own mechanism
+  group #3 leftover (the alignment-Kings' second unique perks, from
+  [[project_royal_titles_phase630_closed]]), but re-reading Admiral's
+  own identical clause showed it was *also* unwired -- outside the
+  Phase 660 audit's own scope, which only checked the 39 non-core
+  titles and skipped the 8 core Imperial Offices entirely. Shipped
+  together rather than leaving Admiral's own equally-real, equally-
+  unwired clause behind.
+
+  New `turn/battle_orchestrator.py _supreme_commander_exploration_
+  override()`: the real land/sea split reuses `_combat_ability_for_
+  terrain()`'s own existing `terrain is Terrain.SEA` check (Naval vs
+  Tactical -- Admiral's own naval-combat domain vs. Druid King's own
+  land-based one). Returns `100` when this side's own Supreme Commander
+  currently holds the matching office -- the real, sourced value,
+  confirmed against `turn/strength.py exploration_advantage_
+  multiplier()`'s own formula, where `100` gives exactly the rulebook's
+  own stated +25% maximum. Wired into `fight_battle()`'s own existing
+  `attacker_explored`/`defender_explored` computation (Phase 69) as an
+  outright override (not additive), matching the real text's own
+  unconditional "will always be treated as being 100%" -- reuses
+  `attacker_commander_leader`/`defender_commander_leader`, already
+  resolved for the Mastery/Duellist/alignment-King checks just above it.
+
+  Test count: 5532 -> 5536 (net +4), all in `test_battle_orchestrator.py`:
+  Druid King granted on land, Admiral granted at sea, Druid King *not*
+  granted at sea (the real land/sea split), no override for a non-
+  titleholder -- each checks `_build_battle_units()`'s own real
+  `own_explored_percent` kwarg directly (`unittest.mock.patch(...,
+  wraps=...)`) rather than the resulting battle strength, since a real
+  commanded attacker also triggers the separate, unrelated pre-battle
+  Duel roll (Phase 49) -- the same reason the Duellist/alignment-King
+  tests above only check "is not None" rather than an exact post-duel
+  value.
 
 ## Setup
 
