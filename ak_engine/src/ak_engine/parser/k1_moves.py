@@ -248,8 +248,13 @@ def _parse_segment(
     segment = PlanSegment(plan_start=plan_start, plan_end=plan_end, sp=())
 
     if i < len(tokens) and tokens[i] == "SP:":
-        values, i = consume_ints(tokens, i + 1)
-        segment.sp = tuple(values)
+        # Phase 659: SP:'s own real grammar is always tactic-list-shaped
+        # (no leading "tl" slot the way a Search/Challenge/Pursue phase's
+        # own `extra` has -- see `_consume_search_extra()`'s own Phase
+        # 659 addendum), so it's parsed unconditionally via the shared
+        # walk rather than peeked at like a phase's own action code.
+        sp_values, i = _consume_tactic_list(tokens, token_line, lines, i + 1)
+        segment.sp = tuple(sp_values)
 
     for label_num in range(plan_start, plan_end + 1):
         label = f"P{label_num}"
@@ -258,25 +263,32 @@ def _parse_segment(
             raise K1ParseError(f"{owner_desc}: expected phase {label!r} at this position, got {found}")
 
         # Phase 618: peek (non-destructively) at what would be `action_val`
-        # to see whether this phase is a Search -- if so, its own `extra`
-        # needs the SAY-aware walk below instead of the generic
-        # `consume_ints()` sweep, which would crash the instant it hit a
-        # real SAY tactic's own free text. Every other phase (the
-        # overwhelming majority, and the fallback for anything this peek
-        # can't cleanly resolve) takes the *exact* pre-existing code path,
-        # unchanged -- this is what keeps every real AK3__T*.K1 sample
-        # byte-identical to before this phase.
+        # to see whether this phase needs the SAY-aware walk below
+        # instead of the generic `consume_ints()` sweep, which would
+        # crash the instant it hit a real SAY tactic's own free text.
+        # Every other phase (the overwhelming majority, and the fallback
+        # for anything this peek can't cleanly resolve) takes the *exact*
+        # pre-existing code path, unchanged -- this is what keeps every
+        # real AK3__T*.K1 sample byte-identical to before this phase.
+        # Phase 659: widened from Search alone -- `turn/challenge_pursue_
+        # decode.py`'s own module docstring already confirms Challenge/
+        # Pursue share exactly the same `extra` shape (`tl` + tactic
+        # list), so they need the identical walk, not a separate one.
         phase_start = i + 1
         while phase_start < len(tokens) and tokens[phase_start] == ":":
             phase_start += 1  # consume_ints()'s own "P0 : 12 6 0" colon-skip, replicated for the peek below
-        is_search = False
+        is_tactic_list_action = False
         if phase_start < len(tokens):
             try:
-                is_search = action_from_int(int(tokens[phase_start])) is ActionCode.SEARCH
+                is_tactic_list_action = action_from_int(int(tokens[phase_start])) in (
+                    ActionCode.SEARCH,
+                    ActionCode.CHALLENGE,
+                    ActionCode.PURSUE,
+                )
             except ValueError:
-                is_search = False
+                is_tactic_list_action = False
 
-        if is_search:
+        if is_tactic_list_action:
             action_val = int(tokens[phase_start])
             obj_val = int(tokens[phase_start + 1]) if phase_start + 1 < len(tokens) else 0
             extra_val, i = _consume_search_extra(tokens, token_line, lines, phase_start + 2)
@@ -298,26 +310,21 @@ def _parse_segment(
 def _consume_search_extra(
     tokens: list[str], token_line: list[int], lines: list[str], i: int
 ) -> tuple[list[int | str], int]:
-    """Like ``consume_ints()``, but Search-tactic-aware (Phase 618): walks
-    the phase's own ``Tac_Bytes`` tactic list one ``Maneuver`` ordinal at
-    a time, classifying each the same way ``turn/search_decode.py
-    decode_search_phase()`` does -- ``SAY`` recovers its own free text via
-    ``_recover_say_text()`` below instead of reading a plain int;
-    anything in ``TACTICS_WITH_SUB_OBJECT`` (``CAST``/``USE_MI``/
-    ``GIVE``) reads one more plain int as before; everything else (a bare
-    ``MELEE``/``FLEE``/``SCOUT``/``STEAL``/``SHOOT``, the list's own
-    ``-1`` terminator, or any other raw int) is kept as-is with no
-    special handling -- the same shape ``decode_search_phase()``'s own
-    walk already has, deliberately kept in sync (see that module's own
-    Phase 618 addendum).
+    """Like ``consume_ints()``, but Search/Challenge/Pursue-tactic-aware
+    (Phase 618, widened Phase 659): walks a phase's own ``Tac_Bytes``
+    tactic list -- see ``_consume_tactic_list()`` below for the walk
+    itself.
 
-    ``extra[0]`` (``"tl"``, ``SearchRequest.unconfirmed_extra0`` -- always
-    ``0`` in every real sample, per ``turn/search_decode.py``'s own
-    docstring) is *not* itself a tactic ordinal -- read as one plain int
-    first, unconditionally, exactly like ``consume_ints()`` would, before
-    the maneuver-classified walk begins. Skipping this distinction would
-    misread ``tl``'s own ``0`` as a ``CAST`` ordinal and eat the *real*
-    first tactic's own ordinal as if it were ``CAST``'s sub-object.
+    ``extra[0]`` (``"tl"``, ``SearchRequest.unconfirmed_extra0``/
+    ``ChallengeRequest``/``PursueRequest``'s own field of the same name
+    -- always ``0`` in every real sample, per ``turn/search_decode.py``'s
+    own docstring) is *not* itself a tactic ordinal -- read as one plain
+    int first, unconditionally, exactly like ``consume_ints()`` would,
+    before the maneuver-classified walk begins. Skipping this
+    distinction would misread ``tl``'s own ``0`` as a ``CAST`` ordinal
+    and eat the *real* first tactic's own ordinal as if it were
+    ``CAST``'s sub-object. ``SP:`` (Phase 659) has no such leading slot
+    -- see ``_consume_tactic_list()``, called directly for that case.
     """
 
     values: list[int | str] = []
@@ -328,6 +335,30 @@ def _consume_search_extra(
             raise K1ParseError(f"expected an integer or keyword in a Search phase, got {tokens[i]!r}") from exc
         i += 1
 
+    tactic_values, i = _consume_tactic_list(tokens, token_line, lines, i)
+    values.extend(tactic_values)
+    return values, i
+
+
+def _consume_tactic_list(
+    tokens: list[str], token_line: list[int], lines: list[str], i: int
+) -> tuple[list[int | str], int]:
+    """The shared tactic-list walk itself (Phase 618, extracted as its own
+    function Phase 659 so ``SP:``'s own plan-level list -- which has no
+    leading ``tl`` slot -- can reuse it directly): one ``Maneuver``
+    ordinal at a time, classifying each the same way ``turn/search_
+    decode.py decode_search_phase()``'s own walk does -- ``SAY`` recovers
+    its own free text via ``_recover_say_text()`` below instead of
+    reading a plain int; anything in ``TACTICS_WITH_SUB_OBJECT``
+    (``CAST``/``USE_MI``/``GIVE``) reads one more plain int as before;
+    everything else (a bare ``MELEE``/``FLEE``/``SCOUT``/``STEAL``/
+    ``SHOOT``, the list's own ``-1`` terminator, or any other raw int) is
+    kept as-is with no special handling -- deliberately kept in sync with
+    that module's own walk (see this module's own Phase 618/659
+    addenda).
+    """
+
+    values: list[int | str] = []
     while i < len(tokens):
         token = tokens[i]
         if is_keyword(token):
@@ -335,7 +366,7 @@ def _consume_search_extra(
         try:
             value = int(token)
         except ValueError as exc:
-            raise K1ParseError(f"expected an integer or keyword in a Search tactic list, got {token!r}") from exc
+            raise K1ParseError(f"expected an integer or keyword in a tactic list, got {token!r}") from exc
         values.append(value)
         i += 1
 

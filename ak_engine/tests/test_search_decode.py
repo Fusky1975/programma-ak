@@ -5,9 +5,21 @@ from pathlib import Path
 from ak_engine.models.enums import ActionCode, Maneuver
 from ak_engine.models.plan import PlanPhase
 from ak_engine.parser.k1_moves import parse_k1_moves_file
-from ak_engine.turn.search_decode import SearchTactic, decode_search_phase
+from ak_engine.turn.search_decode import SearchTactic, decode_search_phase, decode_tactic_tokens
 
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
+
+
+def test_decode_tactic_tokens_shared_by_search_challenge_pursue_sep():
+    # Phase 659: the extracted walk itself, exercised directly -- no
+    # leading tl slot here, matching turn/sep_decode.py's own SP: use
+    # (Search/Challenge/Pursue strip their own extra[0] before calling
+    # this, see decode_search_phase()/challenge_pursue_decode.py).
+    assert decode_tactic_tokens([0, 7, 9, -1]) == [
+        SearchTactic(Maneuver.CAST, sub_object=7),
+        SearchTactic(Maneuver.MELEE),
+    ]
+    assert decode_tactic_tokens([]) == []
 
 
 def test_decode_search_phase_reads_feature_id_and_tactics():

@@ -119,6 +119,77 @@ def test_search_phase_say_tactic_never_terminated_raises(tmp_path: Path) -> None
         parse_k1_moves_file(path)
 
 
+# -- Phase 659: SAY in SP:, Challenge, and Pursue tactic lists --
+#
+# Same "no real sample exercises this" situation Phase 618 already
+# documented for Search's own SAY tactic (confirmed by turn/sep_decode.py
+# and turn/challenge_pursue_decode.py's own docstrings) -- hand-built
+# synthetic fixtures, same header shape as above.
+
+
+_SYNTHETIC_SP_SAY_HEADER = """\
+    This moves file contains the moves of your King and his characters.
+ It is read in by the game moderator's computer.  Don't alter anything!
+ If you have any comments, write them at the very bottom of this file.
+
+ Moves for Testia's Kingdom (AK3__T1.K1):
+ M 27 1 0 101 1 15 1
+ 0 2 0 2 0 2 1 3 1 3 0 0 3 5 0 2 0 2 0 2 2 4 0 2 0 2 0 2 1 3 3
+ Testerman
+ Shaman
+ 1 -Testerman
+ AP: 0 4 SP: 4\
+"""
+
+
+def test_sp_tactic_list_say_tactic_recovers_free_text_and_resyncs_to_p0(tmp_path: Path) -> None:
+    # SP: 4 (SAY ordinal) is the last token on its own line, free text on
+    # the next line, blank line, then the list's own -1 terminator
+    # immediately before P0 -- proves the plan-level SP: block (no
+    # leading action code to peek at, unlike a phase body) also gets the
+    # SAY-aware walk now.
+    text = (
+        _SYNTHETIC_SP_SAY_HEADER
+        + "\nRun away!\n\n-1 P0 : 12 6 0 P1 : 12 6 0 \nP2 : 12 6 0 P3 : 12 6 0 P4 : 12 6 0 \n255\n"
+    )
+    path = tmp_path / "synthetic_sp_say.K1"
+    path.write_text(text, encoding="utf-8")
+
+    kingdom = parse_k1_moves_file(path)
+
+    segment = kingdom.leaders[0].plan.segments[0]
+    assert segment.sp == (4, "Run away!", -1)
+    assert segment.phases["P0"].action == ActionCode.PRACTICE  # 12 -- proves resync landed correctly
+
+
+def test_challenge_phase_say_tactic_recovers_free_text(tmp_path: Path) -> None:
+    # P3: Challenge (11) targeting character 5, tactic list SAY "Halt!".
+    text = _SYNTHETIC_HEADER.replace("P3 : 2 1 0 4", "P3 : 11 5 0 4") + "\nHalt!\n\n-1 P4 : 0 104 0 \n255\n"
+    path = tmp_path / "synthetic_challenge_say.K1"
+    path.write_text(text, encoding="utf-8")
+
+    kingdom = parse_k1_moves_file(path)
+
+    p3 = kingdom.leaders[0].plan.segments[0].phases["P3"]
+    assert p3.action == ActionCode.CHALLENGE
+    assert p3.obj == 5
+    assert p3.extra == [0, 4, "Halt!", -1]
+
+
+def test_pursue_phase_say_tactic_recovers_free_text(tmp_path: Path) -> None:
+    # P3: Pursue (16) targeting character 5, tactic list SAY "Stop!".
+    text = _SYNTHETIC_HEADER.replace("P3 : 2 1 0 4", "P3 : 16 5 0 4") + "\nStop!\n\n-1 P4 : 0 104 0 \n255\n"
+    path = tmp_path / "synthetic_pursue_say.K1"
+    path.write_text(text, encoding="utf-8")
+
+    kingdom = parse_k1_moves_file(path)
+
+    p3 = kingdom.leaders[0].plan.segments[0].phases["P3"]
+    assert p3.action == ActionCode.PURSUE
+    assert p3.obj == 5
+    assert p3.extra == [0, 4, "Stop!", -1]
+
+
 def test_ak3_t1_exact_values() -> None:
     kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T1.K1")
 

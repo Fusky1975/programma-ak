@@ -27425,7 +27425,7 @@ follow-up request after the original 431-435 plan shipped.
   tests updated for the new return shape (no behavior change to the
   function itself, just its own return type).
 
-- **Phase 658 (current)**: closes candidate #4's BATLDR-roster half
+- **Phase 658**: closes candidate #4's BATLDR-roster half
   from [[project_large_gap_survey_2026_08_27]], the last piece of that
   candidate. `turn/battle_orchestrator.py fight_battle()`'s own Phase
   649 comment called `SAY.PAS _BLList`'s other half -- a leader present
@@ -27476,6 +27476,102 @@ follow-up request after the original 431-435 plan shipped.
   template, `describe_battle()`'s new per-side ordering, the "no longer
   in state" skip case). This closes [[project_large_gap_survey_2026_08_27]]'s
   candidate #4 in full.
+
+- **Phase 659 (current)**: Special Encounter Plan (SEP, rulebook
+  [5.10]) decode -- candidate #1 from [[project_large_gap_survey_2026_08_27]],
+  requested directly by the user ("con la decodifica SEP"). The K1
+  parser already captured `SP:`'s own raw token stream verbatim
+  (`PlanSegment.sp: tuple[int, ...]`) but never decoded it. Re-
+  investigated directly rather than trusting the survey's own "very
+  large" estimate: `AKGEN_reverse_engineering_report (5).md` section 72
+  confirms `SP:` shares the *exact same* wire format Search/Challenge/
+  Pursue already decode -- verified by hand-decoding all 7 distinct
+  real `SP:` values found across the 20 available real K1 samples, all
+  clean. This phase is decode-only, matching this project's own
+  established "primitives now, wiring later" precedent (Phase 616 vs.
+  622/623) -- the real Duel-trigger rewiring and the passive personal-
+  Encounter default remain a separate, larger, explicitly-deferred
+  roadmap (see the plan file / [[project_large_gap_survey_2026_08_27]]
+  memory).
+
+  **A real, confirmed parser bug fixed along the way**: `_parse_segment
+  ()`'s own `SP:` handling used the generic `consume_ints()`, which
+  would crash on a real `SAY` tactic's own free-text argument -- the
+  identical class of bug Phase 618 already fixed for a Search phase's
+  own `P{label}:` body, just never extended to `SP:` itself, nor to
+  Challenge/Pursue's own phase bodies (`challenge_pursue_decode.py`'s
+  own module docstring already states plainly they "share exactly the
+  same wire format as Search"). The shared tactic-list walk (Phase 618)
+  is now extracted into a public `turn/search_decode.py decode_tactic_
+  tokens()`, reused by `decode_search_phase()` (unchanged behavior),
+  `challenge_pursue_decode.py`'s own decode (which also picks up the
+  SAY branch it was missing -- a real, independent, previously-
+  never-triggered bug fix, confirmed since zero real Challenge/Pursue
+  phases exist in any sample), and the new SEP decoder. `parser/
+  k1_moves.py`'s own `_parse_segment()` widens its Search-only peek to
+  also cover `ActionCode.CHALLENGE`/`PURSUE`, and parses `SP:` itself
+  unconditionally via the shared walk (no leading action code to peek
+  at -- `SP:` is always tactic-list-shaped). Every real sample stays
+  byte-identical (confirmed by running the existing suite unchanged
+  first) -- this only changes behavior for input no real sample has
+  ever exercised, the same precedent Phase 618 itself set.
+  `PlanSegment.sp` widened from `tuple[int, ...]` to `tuple[int | str,
+  ...]`, mirroring `PlanPhase.extra`'s own Phase 618 widening.
+
+  New `turn/sep_decode.py`: `decode_special_encounter_plan()` (the
+  bare tactic-list decode, no leading `tl` slot to strip -- confirmed
+  absent from `SP:`'s own real grammar); `plan_intent()`, a literal
+  port of the fully-recovered `RUMORS.PAS Plan_Intent()` (quoted in
+  full in the module docstring, cited to `AKGEN_reverse_engineering_
+  report (3).md` section 61) -- the real "is this plan aggressive"
+  single-pass classifier. Its own `CUse_MI` exemption reuses `turn/
+  use_mi_execution.py USE_MI_NON_AGGRESSIVE_WANDS` directly (already
+  built, Phase 542, from an independent source pass citing the *same*
+  underlying paragraph) rather than reinventing it -- `plan_intent()`
+  takes an optional `state` to resolve a real `USE_MI` tactic's own
+  item, falling back to the function's own real aggressive default
+  without one. `sep_is_aggressive()`/`sep_accepts_challenge()`
+  implement the real Duel-trigger/accept rules from rulebook [5.10]'s
+  own precise wording -- confirmed, by direct comparison against `Plan_
+  Intent()`'s own single-pass reduction, that challenging needs an
+  *independent* full-list Flee scan (`Plan_Intent()` alone would let a
+  `[Melee, Flee]` plan challenge, since its own scan never reaches the
+  later Flee -- but the rulebook's own "in un punto qualsiasi" wording
+  says it must not), while accepting an incoming challenge matches
+  `Plan_Intent()`'s own reduction directly (refuses only when Flee is
+  literally the plan's own first tactic).
+
+  **Decode and classification only** -- not yet wired into `GameState`
+  or `turn/battle_orchestrator.py fight_battle()`. `_maybe_fight_duel()`
+  still unconditionally resolves a duel whenever both sides have a
+  commander (its own docstring already names the real trigger as
+  "deliberately still not modeled"); its existing `duel_maneuvers`
+  parameter (Phase 273/291/389) has no production caller yet. Real
+  next steps, deliberately not started this phase: per-leader-per-turn
+  SEP storage (every real sample shows exactly one top-level `AP:`/
+  `SP:` block per leader) and rewiring `_maybe_fight_duel()`'s own
+  unconditional-duel default to the real trigger -- flagged as the
+  roadmap's own highest-risk piece, likely to touch a large number of
+  this project's existing scripted-RNG battle tests.
+
+  **Permanently out of scope, no source found**: auto-generation of a
+  default SEP when none is submitted ("il computer ne genererà
+  automaticamente uno secondo le caratteristiche del personaggio") --
+  searched all 18 `.PAS` files and all 5 AKGEN disassembly reports,
+  nothing survives. An empty/absent `SP:` is treated as `plan_intent()`'s
+  own real empty-input fallback (aggressive, per `Plan_Intent`'s own
+  `IF int=CNone THEN int:=CMelee`), not a guessed characteristic-based
+  default.
+
+  Test count: 5475 -> 5504 (net +29): 24 in the new `test_sep_decode.py`
+  (every real `SP:` value hand-decoded and cross-checked, `Plan_Intent`'s
+  every branch including the `USE_MI`/`CAST` exemptions, the `sep_is_
+  aggressive`/`sep_accepts_challenge` worked examples from the module
+  docstring), 3 in `test_k1_moves_parser.py` (synthetic SAY-in-`SP:`/
+  Challenge/Pursue fixtures -- no real sample exercises this, same
+  "hand-built, labeled as such" convention Phase 618 used), 1 each in
+  `test_search_decode.py`/`test_challenge_pursue_decode.py` (the shared
+  extraction itself, and Challenge's own newly-fixed SAY branch).
 
 ## Setup
 

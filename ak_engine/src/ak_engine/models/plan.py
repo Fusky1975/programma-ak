@@ -57,7 +57,11 @@ class PlanSegment:
 
     plan_start: int
     plan_end: int
-    sp: tuple[int, ...]
+    # Phase 659: widened from ``tuple[int, ...]`` -- a real ``SAY``
+    # tactic's own free-text argument is a ``str``, recovered by
+    # ``parser/k1_moves.py``'s own SAY-aware walk, the same widening
+    # ``PlanPhase.extra`` already got in Phase 618.
+    sp: tuple[int | str, ...]
     phases: dict[str, PlanPhase] = field(default_factory=dict)
 
 

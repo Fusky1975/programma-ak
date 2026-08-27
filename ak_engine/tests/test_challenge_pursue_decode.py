@@ -58,6 +58,19 @@ def test_decode_pursue_phase_handles_empty_extra():
     assert request.tactics == []
 
 
+def test_decode_challenge_phase_say_tactic_reads_free_text():
+    # Phase 659: the previously-missing SAY branch (this module's own
+    # decode used to have no special case for it at all, unlike Search's
+    # own walk) -- extra[1:] mirrors decode_search_phase()'s own SAY
+    # shape (the free text already recovered as a real str by the K1
+    # parser, not a plain int).
+    phase = PlanPhase(label="P0", action=ActionCode.CHALLENGE, obj=88, extra=[0, 4, "Halt!", -1])
+
+    request = decode_challenge_phase(phase)
+
+    assert request.tactics == [SearchTactic(Maneuver.SAY, say_text="Halt!")]
+
+
 def test_decode_pursue_phase_targeting_own_character_id_is_not_special_cased():
     # Rulebook [3.16]: targeting yourself becomes a standing "Patrol" --
     # this module deliberately doesn't special-case it, just decodes obj.

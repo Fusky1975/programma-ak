@@ -94,13 +94,15 @@ class SearchRequest:
     tactics: list[SearchTactic] = field(default_factory=list)
 
 
-def decode_search_phase(phase: PlanPhase) -> SearchRequest:
-    """Decode a Search PlanPhase's target feature and Encounter Plan tactics."""
+def decode_tactic_tokens(tokens: list[int | str]) -> list[SearchTactic]:
+    """Decode a raw, ``-1``-terminated tactic-token list (already stripped
+    of any leading ``tl``/``extra0`` slot) into ``SearchTactic``s -- the
+    shared walk Search/Challenge/Pursue's own ``PlanPhase.extra`` and the
+    Special Encounter Plan's own ``PlanSegment.sp`` (``turn/sep_decode.py``,
+    Phase 659) all need identically, extracted here (Phase 659) rather
+    than kept as three separate copies.
+    """
 
-    values = list(phase.extra)
-    extra0 = values[0] if values else 0
-
-    tokens = values[1:]
     if tokens and tokens[-1] == -1:
         tokens = tokens[:-1]
 
@@ -118,5 +120,15 @@ def decode_search_phase(phase: PlanPhase) -> SearchRequest:
             sub_object = tokens[i]
             i += 1
         tactics.append(SearchTactic(maneuver=maneuver, sub_object=sub_object, say_text=say_text))
+
+    return tactics
+
+
+def decode_search_phase(phase: PlanPhase) -> SearchRequest:
+    """Decode a Search PlanPhase's target feature and Encounter Plan tactics."""
+
+    values = list(phase.extra)
+    extra0 = values[0] if values else 0
+    tactics = decode_tactic_tokens(values[1:])
 
     return SearchRequest(feature_id=phase.obj, unconfirmed_extra0=extra0, tactics=tactics)

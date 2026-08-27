@@ -102,11 +102,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ak_engine.models.enums import Maneuver, maneuver_from_int
 from ak_engine.models.plan import PlanPhase
-from ak_engine.turn.search_decode import SearchTactic
-
-_TACTICS_WITH_SUB_OBJECT = frozenset({Maneuver.CAST, Maneuver.USE_MI, Maneuver.GIVE})
+from ak_engine.turn.search_decode import SearchTactic, decode_tactic_tokens
 
 
 @dataclass(slots=True)
@@ -124,25 +121,20 @@ class PursueRequest:
 
 
 def _decode_tactic_list(phase: PlanPhase) -> tuple[int, list[SearchTactic]]:
-    """Shared Search/Challenge/Pursue tactic-list decode (see module docstring)."""
+    """Shared Search/Challenge/Pursue tactic-list decode (see module
+    docstring) -- delegates to ``turn/search_decode.py decode_tactic_
+    tokens()`` (Phase 659) rather than keeping its own separate copy, a
+    copy that had drifted: it never special-cased ``SAY`` the way Search's
+    own walk (Phase 618) does, which would have misread a real ``SAY``
+    tactic's free-text argument as a plain sub-object int. No real
+    Challenge/Pursue sample has ever exercised this (see module
+    docstring's own "zero real phases" note), so this was a latent,
+    never-triggered bug, not a behavior change for any real data.
+    """
 
     values = list(phase.extra)
     extra0 = values[0] if values else 0
-
-    tokens = values[1:]
-    if tokens and tokens[-1] == -1:
-        tokens = tokens[:-1]
-
-    tactics: list[SearchTactic] = []
-    i = 0
-    while i < len(tokens):
-        maneuver = maneuver_from_int(tokens[i])
-        i += 1
-        sub_object = None
-        if maneuver in _TACTICS_WITH_SUB_OBJECT and i < len(tokens):
-            sub_object = tokens[i]
-            i += 1
-        tactics.append(SearchTactic(maneuver=maneuver, sub_object=sub_object))
+    tactics = decode_tactic_tokens(values[1:])
 
     return extra0, tactics
 
