@@ -27728,7 +27728,7 @@ follow-up request after the original 431-435 plan shipped.
   tests above only check "is not None" rather than an exact post-duel
   value.
 
-- **Phase 663 (current)**: Chief of Staff/Neutral King's own recruit-
+- **Phase 663**: Chief of Staff/Neutral King's own recruit-
   cost bonuses -- mechanism group #2 from [[project_royal_titles_
   phase630_closed]]. **A stale claim corrected first**: the Phase 660
   Explore-agent audit's own report said "gold-skim titles" (Evil King's
@@ -27769,6 +27769,64 @@ follow-up request after the original 431-435 plan shipped.
   hire, that it doesn't touch a fresh levy, that the real ally fee
   still stacks on top, and that Alignment alone -- without a real
   qualifying Tax_Base -- doesn't grant the title for free).
+
+- **Phase 664 (current)**: 3 of the remaining alignment-Kings' own
+  second, unique perks (`models/office.py OFFICE_TITLE_DESCRIPTION`),
+  mechanism group #1 from [[project_royal_titles_phase630_closed]] --
+  the last piece of each of these 4 titles' own text, beyond the
+  shared "supreme commander -> fanatic unit" bonus Phase 661 already
+  wired for all 7 alignment-Kings.
+
+  **Undead King** ("when < casts the Skeletal Armies spell, the
+  maximum number of units that can be raised by <2 increases by 1"):
+  `turn/cast_execution.py _execute_skeletal_army()` resolves `Office.
+  UNDEAD_KING`'s current holder and adds 1 to the Necromancy-level cap
+  before capping at the graveyard's own size -- but only when the
+  *caster himself* holds the title ("<" is the caster, not "all your
+  characters" the way Pagan King's own perk below reads), matching
+  Duellist/the alignment-King fanatic bonus's own "supreme commander
+  personally" scoping rather than Chief of Staff's kingdom-wide one.
+
+  **Good King** ("due to their hospitals, the Plague spell has a -15%
+  chance of affecting any unit owned by your Kingdom or in its
+  territory"): `apply_plague_exposure()` (shared by the initial cast
+  and `turn/plague_spread.py`'s own spread mechanic, so both pick this
+  up for free) resolves the current `Office.GOOD_KING` holder's own
+  Kingdom once, then reduces the per-army destroy/downgrade chance by
+  15% (floored at 0) for any army that Kingdom owns *or* that stands
+  in a province that Kingdom owns -- independent of Penicillin's own,
+  separate protection, and independent of alliance (unlike Penicillin's
+  own "ally in your territory" clause, Good King's text states no
+  alliance requirement for the territory half).
+
+  **Pagan King** ("The League will supply all your Pagan characters
+  with charms which will add 10% to their chance to cast a White Magic
+  spell"): a new, title-gated bonus in `_roll_cast_success()`,
+  genuinely independent of the pre-existing alignment-based Pagan
+  Kingdom bonus right above it in the same function (that one is
+  "every spell except White Magic," this one is White-Magic-only and
+  requires the title, not just the alignment) -- the two branches are
+  mutually exclusive on `ability is/is not Ability.WHITE`, so a Pagan
+  Kingdom holding the title never double-counts. Scoped to "all your
+  Pagan characters," not just the titleholder -- any leader of the
+  titleholder's own Kingdom qualifies.
+
+  **Divine King's own remaining perk** ("when monsters venture from
+  their lairs to raid your lands, the Thunderbird will sometimes
+  confront them and put a halt to their raids") stays unwired --
+  confirmed again this phase that no monster-raid mechanic exists
+  anywhere in this project to hook into, the same blocker noted since
+  the Phase 660 audit.
+
+  Test count: 5548 -> 5555 (net +7), all in `test_cast_execution.py`:
+  2 for Undead King (titleholder raises 1 extra, a non-titleholder
+  caster stays at the ordinary cap even though he's the one casting),
+  3 for Good King (protects the titleholder's own army abroad,
+  protects a foreign army standing in the titleholder's own territory,
+  and a direct no-title contrast at the identical roll proving the
+  reduction is real), 2 for Pagan King (the bonus reaches a non-King
+  leader of the titleholder's own Kingdom; it does not reach a
+  different, even if also Pagan-aligned, Kingdom's own caster).
 
 ## Setup
 

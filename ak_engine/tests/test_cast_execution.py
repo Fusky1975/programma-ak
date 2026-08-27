@@ -1914,6 +1914,55 @@ def test_apply_plague_exposure_skips_mercenaries_and_non_humanoid_races():
     assert 2 in state.armies
 
 
+# -- Phase 664: Office.GOOD_KING's own "-15% Plague chance" perk --
+
+
+def _grant_good_king_title(state: GameState) -> None:
+    # OFFICE_MIN_POINTS[Office.GOOD_KING] == 25; kingdom 1 is Alignment.GOOD
+    # by build_state()'s own default. Tax base supplied by a separate
+    # province (ELSEWHERE) so it doesn't interfere with whichever
+    # province the test's own Plague roll targets.
+    state.leaders[CASTER_ID].is_king = True
+    state.add_province(ProvinceState(ELSEWHERE, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
+
+
+def test_apply_plague_exposure_protects_an_army_owned_by_the_good_kings_own_kingdom():
+    state = build_state()
+    _grant_good_king_title(state)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))  # kingdom 1's own army, foreign soil
+    rng = ScriptedRandom([0.10])  # over the reduced 0.05 chance, under the ordinary 0.20 one
+
+    apply_plague_exposure(state, LOCATION, 0.20, rng)
+
+    assert 1 in state.armies  # protected -- survives instead of being destroyed
+    assert state.armies[1].plague_immune is True
+
+
+def test_apply_plague_exposure_protects_a_foreign_army_standing_in_the_good_kings_own_territory():
+    state = build_state()
+    _grant_good_king_title(state)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))  # Good King's own territory
+    state.add_army(ArmyState(1, 2, ArmyType.LEGION, Quality.AVERAGE, LOCATION))  # a foreign, unallied army
+    rng = ScriptedRandom([0.10])  # over the reduced 0.05 chance, under the ordinary 0.20 one
+
+    apply_plague_exposure(state, LOCATION, 0.20, rng)
+
+    assert 1 in state.armies  # protected by territory, regardless of the army's own owner
+    assert state.armies[1].plague_immune is True
+
+
+def test_apply_plague_exposure_no_good_king_title_gets_no_protection_at_the_same_roll():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
+    rng = ScriptedRandom([0.10])  # under the ordinary 0.20 chance -- no title held, no reduction
+
+    apply_plague_exposure(state, LOCATION, 0.20, rng)
+
+    assert 1 not in state.armies  # destroyed -- proves the reduction above is real, not a no-op
+
+
 # ---------------------------------------------------------------------------
 # Bless's corpse-cleanup addendum (Phase 60) -- "NUOVE REGOLE E MODIFICHE"
 # ---------------------------------------------------------------------------
@@ -2025,6 +2074,58 @@ def test_skeletal_army_raises_nothing_when_caster_has_no_recorded_level():
     assert result.applied is True  # the cast itself still "succeeds"...
     assert len(state.armies) == 0  # ...but unknown level -> 0 raised, see module docstring
     assert len(state.battle_graveyard[LOCATION]) == 1  # graveyard untouched
+
+
+# -- Phase 664: Office.UNDEAD_KING's own "+1 max raised" perk --
+
+
+def _grant_undead_king_title(state: GameState) -> None:
+    # OFFICE_MIN_POINTS[Office.UNDEAD_KING] == 25: Undead-alignment King
+    # plus a real Tax_Base of at least that much (Alignment alone isn't
+    # enough -- same "known" gate Phase 663 used for Neutral King).
+    state.kingdoms[1].alignment = Alignment.UNDEAD
+    state.leaders[CASTER_ID].is_king = True
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
+
+
+def test_undead_king_titleholder_raises_one_extra_skeletal_army():
+    state = build_state()
+    _grant_undead_king_title(state)
+    state.battle_graveyard[LOCATION] = [
+        GraveyardEntry(ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2),
+        GraveyardEntry(ArmyType.BOWMEN, Quality.VETERAN, kingdom_id=2),
+        GraveyardEntry(ArmyType.AXEMEN, Quality.GREEN, kingdom_id=2),
+    ]
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)  # unboosted cap 2, titled cap 3
+    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+    rng = ScriptedRandom([0.01, 0.5, 0.5])  # [0] cast success, [1:] Add_Experience gain draws
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert LOCATION not in state.battle_graveyard  # all 3 entries consumed
+    assert len(state.armies) == 3
+
+
+def test_non_titleholder_stays_at_the_ordinary_skeletal_army_cap():
+    state = build_state()
+    _grant_undead_king_title(state)
+    state.add_leader(LeaderState(501, 1, "Someone Else", LOCATION, is_king=True))  # the real King of kingdom 1
+    state.leaders[CASTER_ID].is_king = False  # CASTER_ID is only a Hero here -- doesn't hold the title
+    state.battle_graveyard[LOCATION] = [
+        GraveyardEntry(ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2),
+        GraveyardEntry(ArmyType.BOWMEN, Quality.VETERAN, kingdom_id=2),
+        GraveyardEntry(ArmyType.AXEMEN, Quality.GREEN, kingdom_id=2),
+    ]
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 2)
+    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+    rng = ScriptedRandom([0.01, 0.5, 0.5])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert len(state.battle_graveyard[LOCATION]) == 1  # only the ordinary cap of 2 raised
+    assert len(state.armies) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -2433,6 +2534,52 @@ def test_pagan_kingdom_bonus_does_not_apply_to_white_magic_spells():
     rng = ScriptedRandom([0.35])  # over the un-bonused 30% White Magic chance
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+# -- Phase 664: Office.PAGAN_KING's own "+10% White Magic" perk --
+
+
+def _grant_pagan_king_title(state: GameState) -> None:
+    # OFFICE_MIN_POINTS[Office.PAGAN_KING] == 25. The titleholder is a
+    # separate King (leader 501), not CASTER_ID -- "all your Pagan
+    # characters" get the bonus, not just the titleholder himself,
+    # the opposite scoping from Undead King's Skeletal Army perk above.
+    state.kingdoms[1].alignment = Alignment.PAGAN
+    state.add_leader(LeaderState(501, 1, "Pagan King", LOCATION, is_king=True))
+    state.add_province(ProvinceState(ELSEWHERE, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
+
+
+def test_pagan_king_title_grants_a_10_percent_white_magic_bonus_to_any_kingdom_character():
+    # Level 1 White Magic: 30% base, +10% Pagan King title = 40%. Uses the
+    # same roll (0.35) the "no bonus" test above fails at, proving this
+    # title-gated bonus reaches a leader (CASTER_ID) who isn't himself
+    # the King/titleholder.
+    state = build_state()
+    _grant_pagan_king_title(state)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 1)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
+    rng = ScriptedRandom([0.35, 0.99, 0.5, 0.5])  # [0] over the un-bonused 30%, under the titled 40%; [1] graveyard-cleanup roll (misses); [2:] Add_Experience gain draws
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+
+
+def test_pagan_king_title_bonus_does_not_reach_a_different_kingdoms_caster():
+    state = build_state()
+    _grant_pagan_king_title(state)
+    state.kingdoms[2].alignment = Alignment.PAGAN  # also Pagan-aligned, but not the titleholder's own Kingdom
+    state.add_leader(LeaderState(78, 2, "Foreign Pagan Hero", LOCATION))
+    state.leaders[78].skills = _skills_with(Ability.WHITE, 1)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
+    rng = ScriptedRandom([0.35])  # over the un-bonused 30% -- no reachable bonus for kingdom 2
+
+    result = execute_cast(state, kingdom_id=2, leader_id=78, request=request, rng=rng)
 
     assert result.applied is False
     assert result.reason == "spell failed"

@@ -718,6 +718,23 @@ ACTION_SPELL_CHANCE_CAP = 0.95
 # fuorche' quelli di Magia Bianca."
 PAGAN_MAGE_ORDER_BONUS = 0.10
 
+# Office.PAGAN_KING's own second, unique perk (models/office.py
+# OFFICE_TITLE_DESCRIPTION, Phase 664): "The League will supply all
+# your Pagan characters with charms which will add 10% to their chance
+# to cast a White Magic spell." Genuinely separate from PAGAN_MAGE_
+# ORDER_BONUS above -- that one is alignment-based (any Pagan Kingdom,
+# every school except White) and pre-existing; this one is title-gated
+# (only while a leader of this Kingdom holds PAGAN_KING) and White-
+# Magic-only, the opposite polarity. The two branches are mutually
+# exclusive (``ability is not Ability.WHITE`` vs. ``ability is Ability.
+# WHITE``), so a Pagan Kingdom holding the title never double-counts.
+PAGAN_KING_WHITE_MAGIC_BONUS = 0.10
+
+# Office.GOOD_KING's own second, unique perk: "the Plague spell has a
+# -15% chance of affecting any unit owned by your Kingdom or in its
+# territory." Applied inside ``apply_plague_exposure()``.
+GOOD_KING_PLAGUE_PROTECTION = 0.15
+
 # AKGEN runtime_mechanics.spellcasting.action_slots_per_school (Phase 387):
 # how many real Cast orders a leader may attempt per Ability, per turn,
 # keyed by their own skill level in that Ability -- independent of the
@@ -1092,6 +1109,25 @@ def _caster_kingdom_is_pagan(state: GameState, caster: LeaderState) -> bool:
     return kingdom is not None and kingdom.alignment is Alignment.PAGAN
 
 
+def _caster_kingdom_holds_pagan_king_title(state: GameState, caster: LeaderState) -> bool:
+    """Office.PAGAN_KING's own White-Magic-only perk (Phase 664): "The
+    League will supply all your Pagan characters with charms..." --
+    True whenever the current PAGAN_KING titleholder belongs to the
+    same Kingdom as ``caster`` (any leader of that Kingdom benefits,
+    not just the titleholder himself -- unlike Undead King's Skeletal
+    Army bonus below, which is scoped to the caster being the
+    titleholder specifically).
+    """
+
+    if caster.kingdom_id is None:
+        return False
+    holder = resolve_office_holder(state, Office.PAGAN_KING)
+    if holder is None:
+        return False
+    holder_leader = state.leaders.get(holder.leader_id)
+    return holder_leader is not None and holder_leader.kingdom_id == caster.kingdom_id
+
+
 def action_cast_slots(level: int) -> int:
     """AKGEN's own confirmed ``action_slots_per_school``: 1 slot at
     skill level 1-2, 2 at level 3, 3 at level 4 and up. ``level`` values
@@ -1178,6 +1214,8 @@ def _roll_cast_success(
     chance = ACTION_SPELL_BASE_CHANCE + ACTION_SPELL_CHANCE_PER_LEVEL * level
     if ability is not Ability.WHITE and _caster_kingdom_is_pagan(state, caster):
         chance += PAGAN_MAGE_ORDER_BONUS
+    if ability is Ability.WHITE and _caster_kingdom_holds_pagan_king_title(state, caster):
+        chance += PAGAN_KING_WHITE_MAGIC_BONUS
     chance *= success_chance_multiplier
     chance = min(chance, ACTION_SPELL_CHANCE_CAP)
     if rng.random() < chance:
@@ -2302,6 +2340,16 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
     consulted the army's own kingdom, so an allied army garrisoned in a
     Penicillin-owning kingdom's own territory could be destroyed by the
     ordinary roll instead of only ever risking the flat downgrade.
+
+    **Good King** (Phase 664, ``models/office.py OFFICE_TITLE_
+    DESCRIPTION``): "due to their hospitals, the Plague spell has a
+    -15% chance of affecting any unit owned by your Kingdom or in its
+    territory." A per-army reduction (floored at 0) to the same
+    ``chance`` used by both the fresh-exposure and the already-immune
+    quality-downgrade rolls below -- "your Kingdom" is the current
+    Good King titleholder's own Kingdom; an army is protected if it
+    belongs to that Kingdom, or sits in a province that Kingdom owns,
+    regardless of the army's own owner.
     """
 
     province = state.provinces.get(coord)
@@ -2309,6 +2357,12 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
     province_owner_has_penicillin = (
         province_owner_id is not None and Discovery.PENICILLIN in state.kingdoms[province_owner_id].discoveries
     )
+
+    good_king_holder = resolve_office_holder(state, Office.GOOD_KING)
+    good_king_kingdom_id = None
+    if good_king_holder is not None:
+        good_king_leader = state.leaders.get(good_king_holder.leader_id)
+        good_king_kingdom_id = good_king_leader.kingdom_id if good_king_leader is not None else None
 
     for army in list(state.armies_at(coord)):
         if army.kingdom_id is None:
@@ -2323,11 +2377,16 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
             if rng.random() < PENICILLIN_QUALITY_DOWNGRADE_CHANCE:
                 army.quality = quality_one_level_down(army.quality)
             continue
+        army_chance = chance
+        if good_king_kingdom_id is not None and (
+            army.kingdom_id == good_king_kingdom_id or province_owner_id == good_king_kingdom_id
+        ):
+            army_chance = max(0.0, chance - GOOD_KING_PLAGUE_PROTECTION)
         if army.plague_immune:
-            if rng.random() < chance:
+            if rng.random() < army_chance:
                 army.quality = quality_one_level_down(army.quality)
             continue
-        if rng.random() < chance:
+        if rng.random() < army_chance:
             state.remove_army(army.army_id)
         else:
             army.plague_immune = True
@@ -2491,6 +2550,14 @@ def _execute_skeletal_army(
     (Phase 309) and ``GameState.battle_graveyard``'s own docstring. That
     decay only ever removes graveyard entries (dead, not yet raised);
     it never touches an army this function has already raised.
+
+    Office.UNDEAD_KING's own second, unique perk (Phase 664, ``models/
+    office.py OFFICE_TITLE_DESCRIPTION``): "when < casts the Skeletal
+    Armies spell, the maximum number of units that can be raised by <2
+    increases by 1." Scoped to "<" -- the titleholder personally
+    casting, not every leader of his Kingdom (unlike Pagan King's own
+    White-Magic bonus above) -- so this checks ``leader_id`` against
+    the resolved holder directly, before capping at graveyard size.
     """
 
     caster = state.leaders[leader_id]
@@ -2502,7 +2569,11 @@ def _execute_skeletal_army(
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
-    raised_count = min(_caster_level(state, caster, Ability.NECROMANCY, wand_skill_level), len(graveyard))
+    necromancy_level = _caster_level(state, caster, Ability.NECROMANCY, wand_skill_level)
+    undead_king_holder = resolve_office_holder(state, Office.UNDEAD_KING)
+    if undead_king_holder is not None and undead_king_holder.leader_id == leader_id:
+        necromancy_level += 1
+    raised_count = min(necromancy_level, len(graveyard))
     for _ in range(raised_count):
         entry = graveyard.pop()
         state.add_army(
