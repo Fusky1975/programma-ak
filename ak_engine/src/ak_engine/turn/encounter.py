@@ -942,16 +942,25 @@ last of this module's 16 documented Personal-Combat spells to get real
 dispatch there; every other spell above already had it since Phase
 209-238). Self-only, no target interaction: heals the caster outright
 once the same secret-spell skill-5+ eligibility gate every other secret
-spell already uses is passed and the cast succeeds. Its own halved
-disruption rate (`words_of_healing_disruption_chance()`) stays unused
-by any real caller -- `spell_disruption_chance()` itself is still never
-rolled anywhere in `turn/search_execution.py`'s own tactic walk (see
-that module's own Phase 654 addendum for precisely why: it's that
-module's own whole-duel-call code shape that's structurally
-incompatible, not a missing engine project-wide -- the round-based
-`CombatRange` state machine this needs is real and already live for
-Challenge/Pursue, `challenge_execution.py resolve_challenge_combat()`,
-Phase 292).
+spell already uses is passed and the cast succeeds.
+
+**Phase 655 correction, kept for the record**: this paragraph used to
+also claim `spell_disruption_chance()` itself "is still never rolled
+anywhere in `turn/search_execution.py`'s own tactic walk" -- false,
+and already stale by Phase 654's own edit of it (which only reframed
+the comparison to Challenge/Pursue without re-checking this module's
+own code): `turn/search_execution.py _resolve_melee_range_round()`
+(Phase 293, predating this correction by a wide margin) already rolls
+`resolve_spell_disruption()`/`resolve_spell_disruption_from_missed_
+attack()` bidirectionally every time a `CAST` tactic is reached at
+`CombatRange.MELEE_RANGE`, on either side. **What genuinely is still
+true**: neither of those call sites passes a `chance_per_hit` override,
+so Words of Healing's own halved rate (`words_of_healing_disruption_
+chance()`) is computed but never actually reaches either disruption
+roll -- every spell, Words of Healing included, is disrupted at the
+same default rate there. That narrower gap (a spell-specific override
+never wired into an already-real disruption roll) is what remains
+open, not the disruption mechanic itself.
 
 **Phase 202 addendum -- Gate Demon [GD], tied to Ability.NECROMANCY,
 project-original (user-supplied), the second Necromancy secret spell

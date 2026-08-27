@@ -27241,7 +27241,7 @@ follow-up request after the original 431-435 plan shipped.
   Full suite: 5455 (unchanged -- no code behavior touched). This closes
   the entire third fresh codebase survey (Phases 651-653).
 
-- **Phase 654 (current)**: 4 more stale known-gap-claim docstring
+- **Phase 654**: 4 more stale known-gap-claim docstring
   corrections, from a fourth fresh survey -- no behavior change,
   comment-only.
 
@@ -27271,6 +27271,41 @@ follow-up request after the original 431-435 plan shipped.
   phase.
 
   Full suite: 5455 (unchanged -- no code behavior touched).
+
+- **Phase 655 (current)**: correcting Phase 654's own incomplete fix --
+  the user asked to investigate the "reuse `resolve_challenge_combat()`
+  for Search" idea thoroughly before implementing it, and that
+  investigation found the whole premise was already moot.
+
+  Phase 654 corrected `search_execution.py`/`encounter.py`'s docstring
+  claims about Challenge/Pursue lacking `CAST` support, but only
+  reframed the comparison -- it never re-checked the bullets' own
+  *primary* claim ("spell disruption is still never rolled anywhere in
+  this walk") against this module's own code. It's false: `turn/
+  search_execution.py _resolve_melee_range_round()` (Phase 293) already
+  rolls real spell disruption bidirectionally every time a `CAST`
+  tactic reaches `CombatRange.MELEE_RANGE`, on either side -- and its
+  own docstring says outright that it "generalizes `turn/challenge_
+  execution.py`'s own Phase 292... design to a genuinely bidirectional
+  encounter," i.e. Search's engine came *after*, and *builds on*,
+  Challenge's, both working independently and correctly since long
+  before this session. There is nothing to port in either direction:
+  Search never needed `resolve_challenge_combat()` (which has no
+  monster-target support at all) because it already had its own, more
+  general, bidirectional equivalent.
+
+  The one narrower thing that genuinely is still true: neither
+  disruption call site passes a `chance_per_hit` override, so Words of
+  Healing's own halved disruption rate (`words_of_healing_disruption_
+  chance()`, confirmed by grep to have zero real callers) never
+  actually reaches a real roll -- every spell disrupts at the same
+  default rate. `search_execution.py`'s own "What is still genuinely
+  open" section is rewritten to reflect all of this accurately.
+
+  Full suite: 5455 (unchanged -- no code behavior touched, comment-only
+  again). Lesson for next time: when correcting a stale docstring that
+  makes multiple claims, re-verify *every* claim against the code
+  directly, not just the one a survey happened to flag.
 
 ## Setup
 
