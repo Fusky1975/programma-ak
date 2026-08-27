@@ -644,7 +644,12 @@ MELEE_EVASION_FLEE_CHANCE_BONUS = 0.30
 
 
 def effective_flee_chance(
-    base_chance: float, *, temper: Temper | None, is_invisible: bool, has_melee_evasion: bool = False
+    base_chance: float,
+    *,
+    temper: Temper | None,
+    is_invisible: bool,
+    has_melee_evasion: bool = False,
+    has_air_elemental_familiar: bool = False,
 ) -> float:
     """Phase 286: applies the Weak-Temperament and Invisibility flee bonuses to a base [5.6] chance.
 
@@ -659,14 +664,34 @@ def effective_flee_chance(
     three sources excludes another), same as Invisibility already
     stacks with Weak Temperament. Defaults to ``False`` for every
     pre-Phase-515 caller.
+
+    ``has_air_elemental_familiar`` (Office.ELE_MAGE, Phase 665, ``models/
+    office.py OFFICE_TITLE_DESCRIPTION``): "Whenever < flees combat, the
+    Air Elemental will form a whirlwind and whisk <2 away. Thus, all
+    flee attempts are automatically successful." An unconditional
+    override, not another additive bonus -- checked first and short-
+    circuits the whole formula, since the real text names no partial
+    case. Defaults to ``False`` for every pre-Phase-665 caller.
     """
 
+    if has_air_elemental_familiar:
+        return 1.0
     bonus = WEAK_TEMPER_FLEE_CHANCE_BONUS if temper in WEAK_FLEE_TEMPERS else 0.0
     if is_invisible:
         bonus += INVISIBILITY_FLEE_CHANCE_BONUS
     if has_melee_evasion:
         bonus += MELEE_EVASION_FLEE_CHANCE_BONUS
     return min(1.0, base_chance + bonus)
+
+
+def _has_air_elemental_familiar(state: GameState, leader_id: int) -> bool:
+    """Office.ELE_MAGE's own Air Elemental familiar (Phase 665) -- "<2",
+    the titleholder personally, not his whole Kingdom (unlike Pagan
+    King's own White-Magic perk).
+    """
+
+    holder = resolve_office_holder(state, Office.ELE_MAGE)
+    return holder is not None and holder.leader_id == leader_id
 
 # TREASAB.X2: every one of the 20 wands' own label reads "Cast '<Spell>' at
 # skill-2" -- same real fact as turn/use_mi_execution.py's own USE_MI_WAND_
@@ -699,6 +724,8 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
     archery_skill = effective_skill_level(state, leader, Ability.ARCHERY)
     defender_office = resolve_office_holder(state, Office.DEFENDER)
     damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
+    illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
+    always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
     has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
     effective_race = leader.race
     if effective_race is None and leader.kingdom_id is not None:
@@ -730,6 +757,7 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
         defensive_hit_multiplier=weapon_defensive_hit_multiplier(weapon),
         is_invisible=weapon_grants_auto_invisibility(weapon),
         equipped_weapon=weapon,
+        always_acts_first=always_acts_first,
     )
 
 
@@ -1819,6 +1847,7 @@ def _resolve_search_encounter(
                 flee_chance = effective_flee_chance(
                     FLEE_CHANCE[stats.speed], temper=leader.temper, is_invisible=caster.is_invisible,
                     has_melee_evasion=AdvancedAbility.MELEE_EVASION in leader.advanced_abilities,
+                    has_air_elemental_familiar=_has_air_elemental_familiar(state, leader_id),
                 )
                 if rng.random() < flee_chance:
                     return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
@@ -2426,6 +2455,7 @@ def _resolve_search_encounter(
             flee_chance = effective_flee_chance(
                 FLEE_CHANCE[stats.speed], temper=leader.temper, is_invisible=leader_combatant.is_invisible,
                 has_melee_evasion=AdvancedAbility.MELEE_EVASION in leader.advanced_abilities,
+                has_air_elemental_familiar=_has_air_elemental_familiar(state, leader_id),
             )
             if rng.random() < flee_chance:
                 return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)

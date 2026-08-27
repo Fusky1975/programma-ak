@@ -398,6 +398,8 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
 
     defender_office = resolve_office_holder(state, Office.DEFENDER)
     damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
+    illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
+    always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
     has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
     effective_race = leader.race
     if effective_race is None and leader.kingdom_id is not None:
@@ -432,6 +434,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         defensive_hit_multiplier=weapon_defensive_hit_multiplier(weapon),
         is_invisible=weapon_grants_auto_invisibility(weapon),
         equipped_weapon=weapon,
+        always_acts_first=always_acts_first,
     )
 
 

@@ -271,6 +271,30 @@ def test_acts_first_tied_skill_breaks_randomly():
     assert _acts_first(2, 2, ScriptedRandom([0.9])) is False
 
 
+def test_acts_first_a_always_first_overrides_a_lower_skill():
+    # Phase 665: Office.ILLUS_MAGE -- "always make the first move in
+    # combat, even if opponent has greater skill." No roll is consumed.
+    rng = ScriptedRandom([])
+    assert _acts_first(1, 99, rng, a_always_first=True) is True
+
+
+def test_acts_first_b_always_first_overrides_a_higher_skill():
+    rng = ScriptedRandom([])
+    assert _acts_first(99, 1, rng, b_always_first=True) is False
+
+
+def test_acts_first_both_always_first_falls_back_to_skill_comparison():
+    # Can't realistically happen (a leader holds at most one Office), but
+    # documented as a defensive fallback rather than a guessed winner.
+    rng = ScriptedRandom([])
+    assert _acts_first(3, 1, rng, a_always_first=True, b_always_first=True) is True
+    assert _acts_first(1, 3, rng, a_always_first=True, b_always_first=True) is False
+
+
+def test_acts_first_always_first_flags_default_to_false():
+    assert _acts_first(3, 1, ScriptedRandom([])) is _acts_first(3, 1, ScriptedRandom([]), a_always_first=False, b_always_first=False)
+
+
 def test_resolve_melee_duel_decisive_winner_leaves_the_other_undamaged():
     # A(melee_skill=1) always acts first (no initiative roll needed);
     # scripted so A always hits and B always misses, so B dies without
@@ -360,6 +384,23 @@ def test_resolve_one_melee_round_dead_defender_never_swings_back():
     assert outcome.a_attacked is True
     assert outcome.b_attacked is False
     assert outcome.damage_dealt_to_a == 0
+
+
+def test_resolve_one_melee_round_always_acts_first_overrides_a_real_skill_disadvantage():
+    # Phase 665: B has the LOWER skill but Office.ILLUS_MAGE's own
+    # Chameleon Familiar (Combatant.always_acts_first) still lets B act
+    # first, landing a lethal hit on a 1-hp A -- A must never swing back.
+    a = Combatant("A", melee_skill=99, hit_points=1)
+    b = Combatant("B", melee_skill=0, hit_points=10, always_acts_first=True)
+    rng = ScriptedRandom([0.1, 0.5])  # B's hit-chance roll, then damage roll
+
+    outcome = resolve_one_melee_round(a, b, rng, round_number=1)
+
+    assert outcome.result is not None
+    assert outcome.result.winner == "b"
+    assert outcome.a_attacked is False
+    assert outcome.b_attacked is True
+    assert outcome.damage_dealt_to_b == 0
 
 
 def test_resolve_one_melee_round_regenerates_hp_only_when_nobody_died():

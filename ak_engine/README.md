@@ -27770,7 +27770,7 @@ follow-up request after the original 431-435 plan shipped.
   still stacks on top, and that Alignment alone -- without a real
   qualifying Tax_Base -- doesn't grant the title for free).
 
-- **Phase 664 (current)**: 3 of the remaining alignment-Kings' own
+- **Phase 664**: 3 of the remaining alignment-Kings' own
   second, unique perks (`models/office.py OFFICE_TITLE_DESCRIPTION`),
   mechanism group #1 from [[project_royal_titles_phase630_closed]] --
   the last piece of each of these 4 titles' own text, beyond the
@@ -27827,6 +27827,61 @@ follow-up request after the original 431-435 plan shipped.
   reduction is real), 2 for Pagan King (the bonus reaches a non-King
   leader of the titleholder's own Kingdom; it does not reach a
   different, even if also Pagan-aligned, Kingdom's own caster).
+
+- **Phase 665 (current)**: 2 of the 3 familiar-based titles (`models/
+  office.py OFFICE_TITLE_DESCRIPTION`), mechanism group #2 from
+  [[project_royal_titles_phase630_closed]].
+
+  **Elemental Mage** ("Whenever < flees combat, the Air Elemental will
+  form a whirlwind and whisk <2 away. Thus, all flee attempts are
+  automatically successful"): `turn/search_execution.py effective_flee_
+  chance()` gains a new `has_air_elemental_familiar` keyword -- checked
+  first, short-circuiting the whole formula to `1.0` rather than
+  another additive bonus, since the real text names no partial case.
+  Both of this project's own real Flee-chance call sites (the [5.6]
+  Flee tactic itself, and Augur Combat's own "acts as Flee when cast
+  later" reuse of the identical mechanic) now resolve `Office.ELE_MAGE`
+  fresh and pass the result through.
+
+  **Amazing Houdini** ("The Chameleon can transmit its camouflage
+  ability to <2, which gives <2 the ability to always make the first
+  move in combat, even if opponent has greater skill"): new
+  `Combatant.always_acts_first` field (`turn/encounter.py`), checked
+  by `_acts_first()` -- rulebook [5.0]'s own shared "greater skill
+  goes first, tie is random" initiative roll -- *before* the skill
+  comparison, at all 7 real call sites this project has (Melee,
+  Fire Arrow, Hand of Death/Squeeze, and both stages of Mirror-Image
+  Phantasm/Illusory Hero's own disbelief duels). Set by every real
+  personal-combat `Combatant` builder this project has (`challenge_
+  execution.py`/`patrol_execution.py`/`pursue_execution.py`/`search_
+  execution.py`'s own `_leader_combatant()`, `cast_execution.py
+  _kill_enemy_combatant()`, `battle_orchestrator.py _commander_
+  combatant()`) for the `Office.ILLUS_MAGE` titleholder specifically --
+  never set on a synthetic illusion/monster `Combatant`, so the override
+  only ever wins for the real titleholder, on whichever side of
+  whichever duel he's actually fighting in (including his own illusion
+  construct).
+
+  **Necromancer Mage's own perk** (25% magic resistance in personal
+  combat, plus 1 HP regenerated every 2 rounds) is deliberately left
+  for a later phase: it needs two genuinely new mechanisms this
+  session didn't build -- a "some fraction of incoming spells fail
+  outright" resistance concept distinct from every existing multiplier/
+  reduction field, and a regeneration cadence keyed to round parity
+  (`Combatant.regenerates_hp` is a flat per-round amount, Troll's own
+  established use of it, not a "every 2 rounds" one) -- rather than
+  bolting either onto existing machinery in a way that would misrepresent
+  the real text.
+
+  Test count: 5555 -> 5565 (net +10): 3 in `test_search_execution.py`
+  (`effective_flee_chance()`'s new override on/off, plus an `execute_
+  search()` end-to-end Flee case using the identical roll an existing
+  test already proved fails without the title), 2 in `test_challenge_
+  execution.py` (`_leader_combatant()` sets/doesn't set `always_acts_
+  first`), 5 in `test_encounter.py` (`_acts_first()`'s own new override
+  params, plus a `resolve_one_melee_round()` end-to-end case where the
+  lower-skill side still strikes first and kills the higher-skill side
+  before it can swing back).
 
 ## Setup
 

@@ -2763,6 +2763,19 @@ class Combatant:
     # already performs. ``None`` (every monster combatant, and any
     # leader with nothing equipped) is a no-op.
     equipped_weapon: Treasure | None = None
+    # Office.ELE_MAGE's own personal-combat sibling perk (Phase 665,
+    # ``models/office.py OFFICE_TITLE_DESCRIPTION``): "The Chameleon can
+    # transmit its camouflage ability to <2, which gives <2 the ability
+    # to always make the first move in combat, even if opponent has
+    # greater skill." Set by each consumer's own `_leader_combatant`-
+    # style builder for the ``Office.ILLUS_MAGE`` titleholder specifically
+    # (same per-consumer lookup precedent as `damage_reduction` above) --
+    # never set on a synthetic illusion/monster `Combatant`, so it only
+    # ever wins the `_acts_first()` roll for the real titleholder, on
+    # whichever side of whichever duel he's actually fighting in (a
+    # Mirror-Image/Illusory-Hero construct included). Default `False`
+    # leaves every pre-Phase-665 caller unaffected.
+    always_acts_first: bool = False
 
 
 def effective_melee_skill(combatant: Combatant) -> int:
@@ -3139,13 +3152,29 @@ def roll_fire_arrow_attack(
     return 0
 
 
-def _acts_first(skill_a: int, skill_b: int, rng: random.Random) -> bool:
+def _acts_first(
+    skill_a: int, skill_b: int, rng: random.Random, *, a_always_first: bool = False, b_always_first: bool = False
+) -> bool:
     """Rulebook [5.0]: "The character with the greater skill level relevant to the
     tactic he is using generally goes first in the combat round... If
     the skill is the same, the characters go in random order." Returns
     True if the first combatant (by caller's own ordering) acts first.
+
+    ``a_always_first``/``b_always_first`` (``Combatant.always_acts_
+    first``, Phase 665 -- Office.ILLUS_MAGE's own Chameleon Familiar):
+    checked before the skill comparison, since the real text overrides
+    it outright ("always... even if opponent has greater skill"), not
+    just another tie-break input. Only one side can realistically be
+    ``True`` at a time (a leader holds at most one Office), but if both
+    somehow are, this falls through to the ordinary skill comparison
+    rather than guessing which title wins. Both default to ``False``
+    for every pre-Phase-665 caller.
     """
 
+    if a_always_first and not b_always_first:
+        return True
+    if b_always_first and not a_always_first:
+        return False
     if skill_a > skill_b:
         return True
     if skill_b > skill_a:
@@ -3281,7 +3310,9 @@ def resolve_one_melee_round(
     """
 
     skill_a, skill_b = effective_melee_skill(a), effective_melee_skill(b)
-    first, second = (a, b) if _acts_first(skill_a, skill_b, rng) else (b, a)
+    first, second = (
+        (a, b) if _acts_first(skill_a, skill_b, rng, a_always_first=a.always_acts_first, b_always_first=b.always_acts_first) else (b, a)
+    )
     outcome = MeleeRoundOutcome(result=None)
     swings: list[MeleeSwing] = []
     for attacker, defender in ((first, second), (second, first)):
@@ -3465,7 +3496,9 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
 
     round_number = 0
     for round_number in range(1, total_rounds + 1):
-        order = (a, b) if _acts_first(skill_a, skill_b, rng) else (b, a)
+        order = (
+            (a, b) if _acts_first(skill_a, skill_b, rng, a_always_first=a.always_acts_first, b_always_first=b.always_acts_first) else (b, a)
+        )
         for combatant in order:
             if a.hit_points <= 0 or b.hit_points <= 0:
                 break
@@ -3654,7 +3687,13 @@ def resolve_hand_of_death_channel(
     squeeze_hits: list[int] = []
     round_number = 0
     for round_number in range(1, max_rounds + 1):
-        order = (caster, victim) if _acts_first(caster_skill, victim_skill, rng) else (victim, caster)
+        order = (
+            (caster, victim)
+            if _acts_first(
+                caster_skill, victim_skill, rng, a_always_first=caster.always_acts_first, b_always_first=victim.always_acts_first
+            )
+            else (victim, caster)
+        )
         for actor in order:
             if caster.hit_points <= 0 or victim.hit_points <= 0:
                 continue
@@ -3864,6 +3903,10 @@ def resolve_mirror_image_duel(
         melee_skill=opponent.melee_skill,
         melee_damage_range=opponent.melee_damage_range,
     )
+    # `illusion` is a fresh construct -- never the ILLUS_MAGE titleholder
+    # himself, so `always_acts_first` stays False on it regardless of who
+    # cast Mirror-Image Phantasm; `opponent`'s own field (Phase 665) is
+    # the only one that can realistically be set here.
     base_chance = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[opponent_tier] + opponent_disbelief_bonus
     if opponent_has_detect_illusions:
         base_chance += DETECT_ILLUSIONS_DISBELIEF_BONUS
@@ -3875,7 +3918,13 @@ def resolve_mirror_image_duel(
         if resolve_mirror_image_disbelief(base_chance, skill_level, rng):
             return EncounterCombatResult(winner=None, rounds=total_rounds)
         skill_a, skill_b = effective_melee_skill(illusion), effective_melee_skill(opponent)
-        first, second = (illusion, opponent) if _acts_first(skill_a, skill_b, rng) else (opponent, illusion)
+        first, second = (
+            (illusion, opponent)
+            if _acts_first(
+                skill_a, skill_b, rng, a_always_first=illusion.always_acts_first, b_always_first=opponent.always_acts_first
+            )
+            else (opponent, illusion)
+        )
         for attacker, defender in ((first, second), (second, first)):
             if attacker.hit_points <= 0 or defender.hit_points <= 0:
                 continue
@@ -3898,7 +3947,13 @@ def resolve_mirror_image_duel(
         if resolve_mirror_image_disbelief(master_chance, skill_level, rng):
             return EncounterCombatResult(winner="a", rounds=total_rounds)
         skill_a, skill_b = effective_melee_skill(caster), effective_melee_skill(illusion)
-        first, second = (caster, illusion) if _acts_first(skill_a, skill_b, rng) else (illusion, caster)
+        first, second = (
+            (caster, illusion)
+            if _acts_first(
+                skill_a, skill_b, rng, a_always_first=caster.always_acts_first, b_always_first=illusion.always_acts_first
+            )
+            else (illusion, caster)
+        )
         for attacker, defender in ((first, second), (second, first)):
             if attacker.hit_points <= 0 or defender.hit_points <= 0:
                 continue
@@ -4016,7 +4071,13 @@ def resolve_illusory_hero_duel(
         if resolve_illusory_hero_disbelief(base_chance, skill_level, rng):
             return EncounterCombatResult(winner=None, rounds=total_rounds)
         skill_a, skill_b = effective_melee_skill(illusion), effective_melee_skill(opponent)
-        first, second = (illusion, opponent) if _acts_first(skill_a, skill_b, rng) else (opponent, illusion)
+        first, second = (
+            (illusion, opponent)
+            if _acts_first(
+                skill_a, skill_b, rng, a_always_first=illusion.always_acts_first, b_always_first=opponent.always_acts_first
+            )
+            else (opponent, illusion)
+        )
         for attacker, defender in ((first, second), (second, first)):
             if attacker.hit_points <= 0 or defender.hit_points <= 0:
                 continue
@@ -4042,7 +4103,13 @@ def resolve_illusory_hero_duel(
         if resolve_illusory_hero_disbelief(master_chance, skill_level, rng):
             return EncounterCombatResult(winner="a", rounds=total_rounds)
         skill_a, skill_b = effective_melee_skill(caster), effective_melee_skill(illusion)
-        first, second = (caster, illusion) if _acts_first(skill_a, skill_b, rng) else (illusion, caster)
+        first, second = (
+            (caster, illusion)
+            if _acts_first(
+                skill_a, skill_b, rng, a_always_first=caster.always_acts_first, b_always_first=illusion.always_acts_first
+            )
+            else (illusion, caster)
+        )
         for attacker, defender in ((first, second), (second, first)):
             if attacker.hit_points <= 0 or defender.hit_points <= 0:
                 continue

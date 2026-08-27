@@ -1106,6 +1106,7 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         neutral_bonus = kingdom is not None and kingdom.alignment is Alignment.NEUTRAL
 
     damage_reduction = 0
+    always_acts_first = False
     has_melee_hit_points_ability = False
     offensive_hit_multiplier = 1.0
     melee_damage_dealt_bonus = 0
@@ -1123,6 +1124,8 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         defender_office = resolve_office_holder(state, Office.DEFENDER)
         if defender_office is not None and defender_office.leader_id == leader.leader_id:
             damage_reduction = 1
+        illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
+        always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
         has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
         weapon = equipped_combat_weapon(state, leader.leader_id)
         holds_bow = holds_bow_of_elven_kings(state, leader.leader_id)
@@ -1168,6 +1171,7 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         defensive_hit_multiplier=defensive_hit_multiplier,
         is_invisible=is_invisible,
         equipped_weapon=equipped_weapon,
+        always_acts_first=always_acts_first,
     )
 
 

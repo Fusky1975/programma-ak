@@ -1533,6 +1533,8 @@ def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temp
 
     defender_office = resolve_office_holder(state, Office.DEFENDER)
     damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
+    illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
+    always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
     has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
     effective_race = leader.race
     if effective_race is None and leader.kingdom_id is not None:
@@ -1555,6 +1557,7 @@ def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temp
         has_duellists_medal_ability=AdvancedAbility.MELEE_DUELLISTS_MEDAL in leader.advanced_abilities,
         has_control_temper_ability=AdvancedAbility.MELEE_CONTROL_TEMPER in leader.advanced_abilities,
         archery_free_attack_bonus=archery_free_attack_bonus(leader.advanced_abilities),
+        always_acts_first=always_acts_first,
     )
 
 

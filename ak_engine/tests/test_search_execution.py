@@ -734,6 +734,20 @@ def test_effective_flee_chance_melee_evasion_defaults_to_false():
     )
 
 
+def test_effective_flee_chance_air_elemental_familiar_guarantees_success():
+    # Phase 665: Office.ELE_MAGE -- "all flee attempts are automatically
+    # successful," an unconditional override, not another additive bonus.
+    assert effective_flee_chance(
+        0.20, temper=Temper.BRAVE, is_invisible=False, has_air_elemental_familiar=True
+    ) == 1.0
+
+
+def test_effective_flee_chance_air_elemental_familiar_defaults_to_false():
+    assert effective_flee_chance(0.20, temper=None, is_invisible=False) == effective_flee_chance(
+        0.20, temper=None, is_invisible=False, has_air_elemental_familiar=False
+    )
+
+
 def test_execute_search_flee_tactic_success_ends_search_without_combat():
     # Gryphon is Fast (20% flee chance) -- 0.1 < 0.20 succeeds.
     state = _state_with_leader()
@@ -776,6 +790,25 @@ def test_execute_search_flee_tactic_failure_falls_through_to_melee():
     assert result.accepted is True
     assert result.combat_resolved is True
     assert result.fled is False
+
+
+def test_execute_search_ele_mage_titleholder_flee_always_succeeds():
+    # Phase 665: Office.ELE_MAGE's own Air Elemental familiar -- the same
+    # 0.99 roll that fails the ordinary 20% Gryphon flee chance in the
+    # test above still succeeds outright once the leader holds the title.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.leaders[LEADER_ID].merit_tally.elemental_spell_casts = 20  # meets OFFICE_MIN_POINTS[Office.ELE_MAGE]
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GRYPHON))
+    request = SearchRequest(
+        feature_id=1, unconfirmed_extra0=0, tactics=[SearchTactic(maneuver=Maneuver.FLEE), SearchTactic(maneuver=Maneuver.MELEE)]
+    )
+
+    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.99] * 20))
+
+    assert result.accepted is True
+    assert result.combat_resolved is False
+    assert result.fled is True
 
 
 def test_execute_search_flee_tactic_melee_evasion_widens_the_success_window():
