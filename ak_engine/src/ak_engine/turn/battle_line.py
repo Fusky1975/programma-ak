@@ -107,6 +107,23 @@ class BattleUnit:
     # (column depth 0) exist to draw from -- see that function's own
     # Phase 471 addendum.
     duellist_bonus_if_selected: float | None = None
+    # Phase 661: the 7 alignment-King titles' own shared "supreme
+    # commander -> one random front-line unit becomes fanatic" bonus
+    # (Divine/Good/Druid/Neutral/Pagan/Evil/Undead King -- Thunderbird/
+    # Knights Hospitaller/Druids/berserking freedom fighters/Pagan
+    # Clerics/Black Knights/Circle of Wraiths, `models/office.py
+    # OFFICE_TITLE_DESCRIPTION`). Same exact shape as `duellist_bonus_
+    # if_selected` above -- a separate field (not reused) since a
+    # Supreme Commander could in principle hold both an alignment-King
+    # title and Duellist at once, each independently granting its own
+    # random fanatic unit (no source describes the two stacking rules
+    # as mutually exclusive of each other, only that the *same* grant
+    # never double-applies to the *same* unit -- see `turn/battle_
+    # orchestrator.py _build_battle_units()`'s own Phase 661 addendum).
+    # ``None`` for a unit whose own side isn't eligible this battle, or
+    # (Undead King's own real "non-skeletal unit" restriction) for a
+    # skeletal unit even on an eligible Undead King side.
+    alignment_king_bonus_if_selected: float | None = None
 
 
 Column = list[BattleUnit]

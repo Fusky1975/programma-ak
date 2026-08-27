@@ -7,7 +7,7 @@ import pytest
 from ak_engine.models.army_type import ArmyType
 from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_luck import luck_strength_multiplier
-from ak_engine.turn.battle_resolution import _apply_duellist_bonus, resolve_battle
+from ak_engine.turn.battle_resolution import _apply_alignment_king_bonus, _apply_duellist_bonus, resolve_battle
 from ak_engine.turn.combat import column_bres
 
 from _helpers import ScriptedRandom
@@ -466,6 +466,61 @@ def test_resolve_battle_applies_the_duellist_bonus_to_the_chosen_front_line_colu
     # defender call finds zero eligible columns (every defender unit's
     # own field is None) and never consumes a choice_indices entry, so
     # only one entry is needed for the attacker's own call.
+    rng = ScriptedRandom(_luck_draws(2), choice_indices=[1])
+
+    result = resolve_battle(attacker, defender, rng=rng)
+
+    assert result.columns[0].attacker_strength == 10
+    assert result.columns[1].attacker_strength == 10 + 2.0
+
+
+# -- Phase 661: the 7 alignment-King titles' own shared front-line bonus ----
+
+
+def test_apply_alignment_king_bonus_no_op_when_no_unit_is_eligible():
+    columns = [[BattleUnit(ArmyType.BOWMEN, 10)], [BattleUnit(ArmyType.AXEMEN, 10)]]
+    strengths = [10.0, 10.0]
+    rng = ScriptedRandom([])  # any .choice() call here would raise IndexError
+
+    _apply_alignment_king_bonus(columns, strengths, rng)
+
+    assert strengths == [10.0, 10.0]
+
+
+def test_apply_alignment_king_bonus_adds_the_selected_units_own_delta():
+    columns = [
+        [BattleUnit(ArmyType.BOWMEN, 10, alignment_king_bonus_if_selected=4.0)],
+        [BattleUnit(ArmyType.AXEMEN, 10, alignment_king_bonus_if_selected=7.0)],
+    ]
+    strengths = [10.0, 10.0]
+    rng = ScriptedRandom([], choice_indices=[1])
+
+    _apply_alignment_king_bonus(columns, strengths, rng)
+
+    assert strengths == [10.0, 17.0]
+
+
+def test_apply_alignment_king_bonus_is_independent_of_the_duellist_bonus():
+    # A column eligible for both grants (a Supreme Commander holding both
+    # Duellist and an alignment-King title) gets both, via two genuinely
+    # separate rng.choice() calls -- see BattleUnit.alignment_king_bonus_
+    # if_selected's own docstring for why the two aren't merged.
+    columns = [[BattleUnit(ArmyType.BOWMEN, 10, duellist_bonus_if_selected=3.0, alignment_king_bonus_if_selected=5.0)]]
+    strengths = [10.0]
+    rng = ScriptedRandom([], choice_indices=[0, 0])
+
+    _apply_duellist_bonus(columns, strengths, rng)
+    _apply_alignment_king_bonus(columns, strengths, rng)
+
+    assert strengths == [18.0]
+
+
+def test_resolve_battle_applies_the_alignment_king_bonus_to_the_chosen_front_line_column():
+    attacker = [
+        BattleUnit(ArmyType.BOWMEN, 10, alignment_king_bonus_if_selected=6.0),
+        BattleUnit(ArmyType.AXEMEN, 10, alignment_king_bonus_if_selected=2.0),
+    ]
+    defender = [BattleUnit(ArmyType.PHALANX, 5), BattleUnit(ArmyType.PHALANX, 5)]
     rng = ScriptedRandom(_luck_draws(2), choice_indices=[1])
 
     result = resolve_battle(attacker, defender, rng=rng)

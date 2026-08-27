@@ -315,6 +315,7 @@ def _build_battle_units(
     opponent_kingdom_ids: frozenset[int] = frozenset(),
     is_island: bool = False,
     duellist_side: bool = False,
+    alignment_king_office: Office | None = None,
     explorer_find_water: bool = False,
 ) -> list[BattleUnit]:
     """Build BattleUnits for one side of a battle at ``province_coord``.
@@ -530,6 +531,36 @@ def _build_battle_units(
     structural gap this function's own Phase 390 addendum already flagged
     for exactly this follow-up).
 
+    **The 7 alignment-King titles' own shared fanatic-front-line-unit
+    bonus** (Phase 661, ``alignment_king_office``): Divine/Good/Druid/
+    Neutral/Pagan/Evil/Undead King (`models/office.py OFFICE_TITLE_
+    DESCRIPTION`) all share DUELLIST's own exact real mechanic --
+    "when [holder] is the supreme commander at a battle, one [random]
+    unit in the front line... become[s] fanatical" -- just naming a
+    different in-world group (Thunderbird, Knights Hospitaller, the
+    Druids, berserking freedom fighters, the Pagan Clerics, the Black
+    Knights, the Circle of Wraiths) per title. ``fight_battle()``
+    resolves once, before calling this function for either side, which
+    (if any) of these 7 offices that side's own Supreme Commander
+    currently holds -- these titles are mutually exclusive per leader
+    (``turn/merit_points.py _alignment_king_merit_points()``'s own
+    alignment gate means a leader can only ever qualify for the one
+    office matching their own Kingdom's Alignment), so a single
+    ``Office | None`` is enough, unlike a boolean. When given, every
+    unit built for this side gets its own ``BattleUnit.alignment_king_
+    bonus_if_selected`` set the same way ``duellist_bonus_if_selected``
+    is -- see that field's own docstring in ``turn/battle_line.py`` for
+    why a Supreme Commander holding *both* Duellist and an alignment-
+    King title at once is intentionally allowed to grant two
+    independent bonuses (two separate real in-world groups, no source
+    treats them as one combined grant). **Undead King's own real
+    "non-skeletal unit" restriction**: a skeletal army never gets this
+    bonus even on an eligible Undead King side (stays ``None``) -- the
+    *other* 6 titles have no such restriction, so this is checked here
+    per-``office``, not baked into the shared computation. ``None``
+    (the default) leaves every unit's own field at ``None``, same as
+    ``duellist_side=False``.
+
     **Race-matching legendary leadership item** (Phase 279 originally
     report-only, wired into real combat Phase 285): a *led* army
     (``commanded_by`` is not ``None``) whose commander holds the item
@@ -663,7 +694,11 @@ def _build_battle_units(
             adapt_tactics_to_terrain=adapt_tactics_to_terrain,
         )
         duellist_bonus_if_selected = None
-        if duellist_side:
+        alignment_king_bonus_if_selected = None
+        alignment_king_eligible = alignment_king_office is not None and not (
+            alignment_king_office is Office.UNDEAD_KING and army.is_skeletal
+        )
+        if duellist_side or alignment_king_eligible:
             fanatic_strength = compute_effective_strength(
                 army.army_type,
                 kingdom.race,
@@ -685,7 +720,11 @@ def _build_battle_units(
                 is_island=is_island,
                 adapt_tactics_to_terrain=adapt_tactics_to_terrain,
             )
-            duellist_bonus_if_selected = fanatic_strength - strength
+            bonus = fanatic_strength - strength
+            if duellist_side:
+                duellist_bonus_if_selected = bonus
+            if alignment_king_eligible:
+                alignment_king_bonus_if_selected = bonus
         rear_targeting_blocked = is_overflight_unit(army.army_type) and druidic_shortfall > 0
         units.append(
             BattleUnit(
@@ -696,6 +735,7 @@ def _build_battle_units(
                 led_by_insufficient_druid=druidic_shortfall > 0,
                 is_humanoid_race=kingdom.race in HUMANOID_RACES,
                 duellist_bonus_if_selected=duellist_bonus_if_selected,
+                alignment_king_bonus_if_selected=alignment_king_bonus_if_selected,
             )
         )
     return units
@@ -1777,6 +1817,45 @@ def _apply_monster_summoning_aid(
                 )
 
 
+# Phase 661: the 7 alignment-King titles' own "supreme commander ->
+# fanatic front-line unit" bonus (see _build_battle_units()'s own Phase
+# 661 addendum). `turn/merit_points.py _alignment_king_merit_points()`
+# gates each office to exactly one real Alignment, matching this table.
+_ALIGNMENT_KING_OFFICE: dict[Alignment, Office] = {
+    Alignment.DIVINE: Office.DIVINE_KING,
+    Alignment.GOOD: Office.GOOD_KING,
+    Alignment.DRUID: Office.DRUID_KING,
+    Alignment.NEUTRAL: Office.NEUTRAL_KING,
+    Alignment.PAGAN: Office.PAGAN_KING,
+    Alignment.EVIL: Office.EVIL_KING,
+    Alignment.UNDEAD: Office.UNDEAD_KING,
+}
+
+
+def _alignment_king_office_for(state: GameState, commander_leader: LeaderState | None) -> Office | None:
+    """Which of the 7 alignment-King offices (if any) ``commander_leader``
+    currently holds -- ``None`` for a garrison commander (``leader_id=
+    None``, no ``LeaderState``), a kingdomless leader, or a leader whose
+    own Kingdom's Alignment isn't one of the 7 (e.g. Mechanical/Special)
+    or who simply isn't the current title-holder. One real
+    ``resolve_office_holder()`` call, not a 7-office scan -- since the
+    offices are mutually exclusive per leader (see the module-level
+    ``_ALIGNMENT_KING_OFFICE`` comment), the commander's own Kingdom
+    Alignment already narrows it to at most one office to check.
+    """
+
+    if commander_leader is None or commander_leader.kingdom_id is None:
+        return None
+    kingdom = state.kingdoms.get(commander_leader.kingdom_id)
+    if kingdom is None:
+        return None
+    office = _ALIGNMENT_KING_OFFICE.get(kingdom.alignment)
+    if office is None:
+        return None
+    holder = resolve_office_holder(state, office)
+    return office if holder is not None and holder.leader_id == commander_leader.leader_id else None
+
+
 def fight_battle(
     state: GameState,
     attacker_kingdom_id: int,
@@ -1941,6 +2020,13 @@ def fight_battle(
         and defender_commander.leader_id == duellist_holder_id
     )
 
+    # The 7 alignment-King titles' own shared fanatic-front-line-unit
+    # bonus (Phase 661) -- resolved the same way and at the same point
+    # as Duellist just above, reusing attacker_commander_leader/
+    # defender_commander_leader (already resolved for the Mastery bonus).
+    attacker_alignment_king_office = _alignment_king_office_for(state, attacker_commander_leader)
+    defender_alignment_king_office = _alignment_king_office_for(state, defender_commander_leader)
+
     # Exploration advantage (Phase 69, rulebook [6.3]): each side's own
     # exploration reads province.explored_percent_by_kingdom for its own
     # kingdom_id (the attacker's, and the defending *province's owner*'s
@@ -1974,6 +2060,7 @@ def fight_battle(
         own_explored_percent=attacker_explored,
         opponent_kingdom_ids=defender_kingdom_ids, is_island=is_island,
         duellist_side=attacker_is_duellist_side,
+        alignment_king_office=attacker_alignment_king_office,
         explorer_find_water=attacker_find_water,
     )
     defender_units = _build_battle_units(
@@ -1983,6 +2070,7 @@ def fight_battle(
         own_explored_percent=defender_explored,
         opponent_kingdom_ids=attacker_kingdom_ids, is_island=is_island,
         duellist_side=defender_is_duellist_side,
+        alignment_king_office=defender_alignment_king_office,
         explorer_find_water=defender_find_water,
     )
 

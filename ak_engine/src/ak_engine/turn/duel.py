@@ -67,7 +67,9 @@ def apply_duel_demoralization(units: list[BattleUnit]) -> list[BattleUnit]:
     for the "1 Fanatical Unit" front-line bonus would silently vanish
     whenever its side lost the preliminary duel, since this function
     already rebuilds fresh ``BattleUnit`` instances rather than mutating
-    the originals in place.
+    the originals in place. Phase 661: ``alignment_king_bonus_if_
+    selected`` gets the exact same treatment, for the exact same reason
+    -- the 7 alignment-King titles' own shared version of this bonus.
     """
 
     return [
@@ -79,6 +81,11 @@ def apply_duel_demoralization(units: list[BattleUnit]) -> list[BattleUnit]:
             duellist_bonus_if_selected=(
                 u.duellist_bonus_if_selected * DUEL_DEMORALIZATION_MULTIPLIER
                 if u.duellist_bonus_if_selected is not None
+                else None
+            ),
+            alignment_king_bonus_if_selected=(
+                u.alignment_king_bonus_if_selected * DUEL_DEMORALIZATION_MULTIPLIER
+                if u.alignment_king_bonus_if_selected is not None
                 else None
             ),
         )

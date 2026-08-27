@@ -179,6 +179,31 @@ def _apply_duellist_bonus(columns: list[Column], strengths: list[float], rng: ra
     strengths[chosen] += columns[chosen][0].duellist_bonus_if_selected
 
 
+def _apply_alignment_king_bonus(columns: list[Column], strengths: list[float], rng: random.Random) -> None:
+    """The 7 alignment-King titles' own shared "supreme commander -> one
+    random front-line unit becomes fanatic" bonus (Phase 661) --
+    identical shape to ``_apply_duellist_bonus()`` above, just reading
+    ``BattleUnit.alignment_king_bonus_if_selected`` instead (already
+    ``None`` for a skeletal unit under Undead King -- see ``turn/battle_
+    orchestrator.py _build_battle_units()``'s own Phase 661 addendum, so
+    no extra filtering is needed here). Called as a genuinely separate
+    ``rng.choice()`` from ``_apply_duellist_bonus()`` -- see ``turn/
+    battle_line.py BattleUnit.alignment_king_bonus_if_selected``'s own
+    docstring for why a side eligible for both grants independently
+    rolls each one, rather than merging them into a single selection.
+    """
+
+    eligible_indices = [
+        index
+        for index, column in enumerate(columns)
+        if column and column[0].alignment_king_bonus_if_selected is not None
+    ]
+    if not eligible_indices:
+        return
+    chosen = rng.choice(eligible_indices)
+    strengths[chosen] += columns[chosen][0].alignment_king_bonus_if_selected
+
+
 def resolve_battle(
     attacker_units: list[BattleUnit],
     defender_units: list[BattleUnit],
@@ -318,6 +343,12 @@ def resolve_battle(
     # exists here to draw from.
     _apply_duellist_bonus(attacker_columns, attacker_strengths, rng)
     _apply_duellist_bonus(defender_columns, defender_strengths, rng)
+
+    # The 7 alignment-King titles' own shared fanatic-front-line-unit
+    # bonus (Phase 661) -- same real front-line-only timing as Duellist
+    # just above, a genuinely separate rng.choice() per side.
+    _apply_alignment_king_bonus(attacker_columns, attacker_strengths, rng)
+    _apply_alignment_king_bonus(defender_columns, defender_strengths, rng)
 
     # Real luck (Phase 370): one global draw per side, once per battle.
     g1, g2 = draw_global_luck(rng)

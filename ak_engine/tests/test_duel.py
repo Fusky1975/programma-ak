@@ -62,3 +62,17 @@ def test_apply_duel_demoralization_leaves_an_ineligible_units_field_none():
     units = [BattleUnit(ArmyType.BOWMEN, 10)]  # duellist_bonus_if_selected defaults to None
     demoralized = apply_duel_demoralization(units)
     assert demoralized[0].duellist_bonus_if_selected is None
+
+
+def test_apply_duel_demoralization_carries_the_alignment_king_bonus_through_scaled():
+    # Phase 661: same real fix as duellist_bonus_if_selected above, for
+    # the 7 alignment-King titles' own shared version of this bonus.
+    units = [BattleUnit(ArmyType.BOWMEN, 10, alignment_king_bonus_if_selected=4.0)]
+    demoralized = apply_duel_demoralization(units)
+    assert demoralized[0].alignment_king_bonus_if_selected == pytest.approx(3.0)
+
+
+def test_apply_duel_demoralization_leaves_an_ineligible_units_alignment_king_field_none():
+    units = [BattleUnit(ArmyType.BOWMEN, 10)]
+    demoralized = apply_duel_demoralization(units)
+    assert demoralized[0].alignment_king_bonus_if_selected is None

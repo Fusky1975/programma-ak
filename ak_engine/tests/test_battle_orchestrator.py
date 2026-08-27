@@ -16,6 +16,7 @@ from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
+from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
@@ -1393,6 +1394,164 @@ def test_fight_battle_grants_no_duellist_bonus_when_neither_side_is_commanded_by
     attacker_units, defender_units = mock_resolve.call_args.args[0], mock_resolve.call_args.args[1]
     assert all(u.duellist_bonus_if_selected is None for u in attacker_units)
     assert all(u.duellist_bonus_if_selected is None for u in defender_units)
+
+
+# -- Phase 661: the 7 alignment-King titles' own shared front-line bonus --
+
+
+def test_build_battle_units_alignment_king_office_none_by_default_leaves_the_field_none():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+    rng = ScriptedRandom([])
+
+    units = _build_battle_units([army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng)
+
+    assert units[0].alignment_king_bonus_if_selected is None
+
+
+def test_build_battle_units_alignment_king_office_sets_the_exact_fanatic_delta():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+    rng = ScriptedRandom([])
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng,
+        alignment_king_office=Office.GOOD_KING,
+    )
+
+    baseline = compute_effective_strength(ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    fanatical = compute_effective_strength(
+        ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_fanatical=True
+    )
+    assert units[0].effective_strength == baseline
+    assert units[0].alignment_king_bonus_if_selected == fanatical - baseline
+    assert units[0].alignment_king_bonus_if_selected > 0
+
+
+def test_build_battle_units_alignment_king_office_delta_is_zero_when_already_fanatical():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+    rng = ScriptedRandom([0.1])  # succeeds the 40% Alignment.GOOD roll
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng,
+        apply_fanaticism=True, alignment_king_office=Office.GOOD_KING,
+    )
+
+    fanatical = compute_effective_strength(
+        ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_fanatical=True
+    )
+    assert units[0].effective_strength == fanatical
+    assert units[0].alignment_king_bonus_if_selected == 0.0
+
+
+def test_build_battle_units_undead_king_gives_no_bonus_to_a_skeletal_army():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Undeadia", Race.HUMAN, Alignment.UNDEAD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, is_skeletal=True)
+    state.add_army(army)
+    rng = ScriptedRandom([])
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng,
+        alignment_king_office=Office.UNDEAD_KING,
+    )
+
+    assert units[0].alignment_king_bonus_if_selected is None
+
+
+def test_build_battle_units_undead_king_still_grants_bonus_to_a_non_skeletal_army():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Undeadia", Race.HUMAN, Alignment.UNDEAD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, is_skeletal=False)
+    state.add_army(army)
+    rng = ScriptedRandom([])
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng,
+        alignment_king_office=Office.UNDEAD_KING,
+    )
+
+    assert units[0].alignment_king_bonus_if_selected is not None
+
+
+def test_build_battle_units_other_alignment_king_offices_are_not_restricted_to_non_skeletal():
+    # The "non-skeletal" carve-out is real and Undead-King-specific --
+    # confirm a different office doesn't accidentally inherit it.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Goodia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, is_skeletal=True)
+    state.add_army(army)
+    rng = ScriptedRandom([])
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=rng,
+        alignment_king_office=Office.GOOD_KING,
+    )
+
+    assert units[0].alignment_king_bonus_if_selected is not None
+
+
+def test_fight_battle_wires_alignment_king_office_into_the_titleholders_own_commanded_side():
+    state = build_state()
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
+    leader = LeaderState(501, kingdom_id=1, name="GoodKing", location=FIELD, is_king=True)
+    state.add_leader(leader)
+    state.armies[101].commanded_by = 501
+    battle_result = BattleResult(columns=[], winner="attacker", total_bres=1)
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result) as mock_resolve:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    attacker_units, defender_units = mock_resolve.call_args.args[0], mock_resolve.call_args.args[1]
+    assert all(u.alignment_king_bonus_if_selected is not None for u in attacker_units)
+    assert all(u.alignment_king_bonus_if_selected is None for u in defender_units)
+
+
+def test_fight_battle_grants_no_alignment_king_bonus_when_neither_side_holds_a_title():
+    state = build_state()
+    battle_result = BattleResult(columns=[], winner="attacker", total_bres=1)
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result) as mock_resolve:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    attacker_units, defender_units = mock_resolve.call_args.args[0], mock_resolve.call_args.args[1]
+    assert all(u.alignment_king_bonus_if_selected is None for u in attacker_units)
+    assert all(u.alignment_king_bonus_if_selected is None for u in defender_units)
+
+
+def test_fight_battle_grants_both_duellist_and_alignment_king_bonus_to_the_same_leader():
+    # A Supreme Commander holding both titles at once gets both real,
+    # independent grants -- no source treats them as mutually exclusive.
+    state = build_state()
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
+    leader = LeaderState(501, kingdom_id=1, name="DualTitleHolder", location=FIELD, is_king=True)
+    leader.merit_tally.duel_merit_net = 5  # OFFICE_MIN_POINTS[Office.DUELLIST]
+    state.add_leader(leader)
+    state.armies[101].commanded_by = 501
+    battle_result = BattleResult(columns=[], winner="attacker", total_bres=1)
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_battle", return_value=battle_result) as mock_resolve:
+        fight_battle(
+            state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+            rng=_generously_padded_rng(),
+        )
+
+    attacker_units = mock_resolve.call_args.args[0]
+    assert all(u.duellist_bonus_if_selected is not None for u in attacker_units)
+    assert all(u.alignment_king_bonus_if_selected is not None for u in attacker_units)
 
 
 def _skills_with_druid(level: int) -> SkillTable:

@@ -27573,7 +27573,7 @@ follow-up request after the original 431-435 plan shipped.
   `test_search_decode.py`/`test_challenge_pursue_decode.py` (the shared
   extraction itself, and Challenge's own newly-fixed SAY branch).
 
-- **Phase 660 (current)**: 3 of the 24 unwired royal-title `"effect_
+- **Phase 660**: 3 of the 24 unwired royal-title `"effect_
   while_held"` bonuses -- candidate #2 from [[project_large_gap_
   survey_2026_08_27]] ("9 things in a trenchcoat"). An Explore agent
   audited every title with real effect text (`models/office.py OFFICE_
@@ -27636,6 +27636,57 @@ follow-up request after the original 431-435 plan shipped.
   estimate without one), 4 in `test_office_holder.py` (mirroring
   Cravenest's own 4-test shape: raises, caps at 5, no-holder no-op,
   no-skills no-op).
+
+- **Phase 661 (current)**: the 7 "supreme commander -> one random
+  front-line unit becomes fanatic" royal titles (Divine/Good/Druid/
+  Neutral/Pagan/Evil/Undead King -- Thunderbird/Knights Hospitaller/
+  the Druids/berserking freedom fighters/the Pagan Clerics/the Black
+  Knights/the Circle of Wraiths), mechanism group #3 from
+  [[project_large_gap_survey_2026_08_27]] candidate #2. DUELLIST's own
+  already-built, already-tested mechanic (`battle_resolution.py
+  _apply_duellist_bonus()`, Phase 471) is the exact real template these
+  7 titles share -- generalized, not reinvented.
+
+  `turn/battle_line.py BattleUnit` gains `alignment_king_bonus_if_
+  selected: float | None` (a second, independent field from `duellist_
+  bonus_if_selected` -- a Supreme Commander holding *both* Duellist and
+  an alignment-King title at once is deliberately allowed to grant two
+  separate real in-world blessings, since no source treats them as
+  mutually exclusive; only the *same* grant never double-applies to
+  the *same* unit, which the diff-against-already-fanatical-strength
+  math already gives for free). New `turn/battle_orchestrator.py
+  _ALIGNMENT_KING_OFFICE: dict[Alignment, Office]` and `_alignment_
+  king_office_for()` -- one real `resolve_office_holder()` call per
+  side (not seven), since `turn/merit_points.py
+  _alignment_king_merit_points()`'s own Alignment gate means a leader
+  can only ever qualify for the one office matching their own
+  Kingdom's Alignment, so resolving the commander's own Kingdom
+  Alignment first already narrows it to at most one office to check.
+  `_build_battle_units()` computes the same per-unit fanatic-forced
+  delta as Duellist (shared, computed once when *either* grant
+  applies, to avoid a redundant second `compute_effective_strength()`
+  call) -- **Undead King's own real "non-skeletal unit" restriction**
+  is checked per-office right here (`army.is_skeletal`), the one real
+  difference from the other 6 titles' identical mechanic. New
+  `battle_resolution.py _apply_alignment_king_bonus()`, a literal
+  sibling of `_apply_duellist_bonus()`, called as a genuinely separate
+  `rng.choice()` right alongside it. `turn/duel.py apply_duel_
+  demoralization()` (which rebuilds fresh `BattleUnit`s rather than
+  mutating in place) now carries the new field through too, scaled --
+  the same real fix Phase 471 already made for `duellist_bonus_if_
+  selected`, applied here before it could become a silent, matching gap.
+
+  Test count: 5517 -> 5532 (net +15): 4 in `test_battle_resolution.py`
+  (no-op, applies-the-delta, independent-of-Duellist's-own-separate-
+  roll, `resolve_battle()` end to end), 2 in `test_duel.py`
+  (demoralization carries the field through scaled, leaves an
+  ineligible unit's field `None`), 9 in `test_battle_orchestrator.py`
+  (the exact fanatic delta, zero-when-already-fanatical, Undead King's
+  own skeletal exclusion confirmed real and confirmed *not* shared by
+  a different office, `fight_battle()`'s own real wiring into the
+  title-holder's commanded side, no bonus for an untitled battle, both
+  Duellist and an alignment-King title granting independently to the
+  same leader).
 
 ## Setup
 
