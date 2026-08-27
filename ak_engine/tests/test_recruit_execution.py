@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
@@ -588,4 +590,125 @@ def test_same_leader_can_stack_marshal_and_admiral_bonuses_for_their_own_types()
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
 
     assert len(result.recruited) == 4
+
+
+# -- Chief of Staff's own -1 gold recruit discount (Phase 663) -------------
+
+
+def test_no_chief_of_staff_discount_by_default():
+    state = build_state()
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.HVY_CAVALRY])  # pay 3
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.total_gold_spent == 3
+
+
+def test_chief_of_staff_discounts_every_unit_recruited_by_the_titleholder():
+    state = build_state()
+    state.leaders[LEADER_ID].skills = SkillTable(raw_values=[0] * 30)
+    state.leaders[LEADER_ID].skills.set_pair_for_ability(Ability.TACTICAL, 7, 7)  # OFFICE_MIN_POINTS[CHIEF_OF_STAFF]
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.HVY_CAVALRY])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.total_gold_spent == 2
+
+
+def test_chief_of_staff_discount_makes_garrison_free():
+    state = build_state()
+    state.leaders[LEADER_ID].skills = SkillTable(raw_values=[0] * 30)
+    state.leaders[LEADER_ID].skills.set_pair_for_ability(Ability.TACTICAL, 7, 7)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.GARRISON])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.total_gold_spent == 0
+
+
+def test_chief_of_staff_discount_only_applies_to_the_titleholder_not_a_different_leader():
+    state = build_state()
+    state.add_leader(LeaderState(2, 1, "Other Leader", LOCATION))
+    state.leaders[2].skills = SkillTable(raw_values=[0] * 30)
+    state.leaders[2].skills.set_pair_for_ability(Ability.TACTICAL, 7, 7)  # leader 2 is Chief of Staff
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.HVY_CAVALRY])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.total_gold_spent == 3
+
+
+# -- Neutral King's own "recruit mercenaries for 1 gold" (Phase 663) -------
+
+
+def build_neutral_king_state(*, treasury: int = 100) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0), treasury=treasury))
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    leader = LeaderState(LEADER_ID, 1, "Test Leader", LOCATION, is_king=True)
+    state.add_leader(leader)
+    return state
+
+
+def _grant_neutral_king_title(state: GameState) -> None:
+    # tax=30 gives this King a real Tax_Base >= OFFICE_MIN_POINTS[Office.
+    # NEUTRAL_KING] (25), so resolve_office_holder() actually resolves
+    # him -- a Neutral-aligned Kingdom alone isn't enough on its own.
+    state.provinces[LOCATION].tax = 30
+
+
+def test_no_neutral_king_discount_by_default():
+    # Neutral-aligned, but no real Tax_Base -- doesn't actually hold the
+    # title yet, matching the same "alignment alone isn't enough"
+    # distinction the merit-formula itself makes.
+    state = build_neutral_king_state()
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.total_gold_spent == 2  # ordinary levy price, mercenary or not
+
+
+def test_neutral_king_hires_a_mercenary_for_1_gold():
+    state = build_neutral_king_state()
+    _grant_neutral_king_title(state)
+    state.add_army(ArmyState(999, None, ArmyType.HVY_CAVALRY, Quality.VETERAN, LOCATION))  # pay 3 normally
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.HVY_CAVALRY])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited[0].hired is True
+    assert result.total_gold_spent == 1
+
+
+def test_neutral_king_discount_does_not_apply_to_a_fresh_levy():
+    # Real text names mercenaries specifically -- "maintenance costs
+    # remain normal" implies the discount is about hiring an existing
+    # army, not the whole recruiting-from-the-populace mechanic.
+    state = build_neutral_king_state()
+    _grant_neutral_king_title(state)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.HVY_CAVALRY])  # no mercenary present
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited[0].hired is False
+    assert result.total_gold_spent == 3
+
+
+def test_neutral_king_discount_still_adds_the_ally_fee_in_ally_territory():
+    state = build_neutral_king_state()
+    # A second, Testia-owned province supplies the real Tax_Base (LOCATION
+    # itself gets reassigned to the ally below, so it can't supply it).
+    state.add_province(ProvinceState(HexCoord(9, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(5, 5), treasury=0))
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.provinces[LOCATION].owner_kingdom_id = 2
+    state.treat_permissions.add((2, 1))
+    state.add_army(ArmyState(999, None, ArmyType.HVY_CAVALRY, Quality.VETERAN, LOCATION))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.HVY_CAVALRY])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.total_gold_spent == 2  # 1 gold flat + 1 gold ally fee
     assert result.limit_blocked == []

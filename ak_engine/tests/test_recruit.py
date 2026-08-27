@@ -114,3 +114,40 @@ def test_resolve_recruit_raises_for_incompatible_race():
             ArmyType.DRAGON_WING, Race.HUMAN,
             is_home_province=False, is_native_to_province=True,
         )
+
+
+# -- Phase 663: Chief of Staff's own -1 gold discount --
+
+
+def test_resolve_recruit_chief_of_staff_discount_reduces_native_cost_by_1():
+    result = resolve_recruit(
+        ArmyType.HVY_CAVALRY, Race.HUMAN,
+        is_home_province=False, is_native_to_province=True, chief_of_staff_discount=True,
+    )
+    assert result.gold_per_unit == 2  # base pay 3, minus 1
+
+
+def test_resolve_recruit_chief_of_staff_discount_floors_at_zero_garrison_is_free():
+    result = resolve_recruit(
+        ArmyType.GARRISON, Race.HUMAN,
+        is_home_province=False, is_native_to_province=True, chief_of_staff_discount=True,
+    )
+    assert result.gold_per_unit == 0
+
+
+def test_resolve_recruit_chief_of_staff_discount_taken_before_non_native_doubling():
+    # Real text: "the discount is taken before the recruitment cost is
+    # doubled" -- (3-1)*2 == 4, not (3*2)-1 == 5.
+    result = resolve_recruit(
+        ArmyType.HVY_CAVALRY, Race.HUMAN,
+        is_home_province=False, is_native_to_province=False, chief_of_staff_discount=True,
+    )
+    assert result.gold_per_unit == 4
+
+
+def test_resolve_recruit_chief_of_staff_discount_off_by_default():
+    result = resolve_recruit(
+        ArmyType.HVY_CAVALRY, Race.HUMAN,
+        is_home_province=False, is_native_to_province=True,
+    )
+    assert result.gold_per_unit == 3

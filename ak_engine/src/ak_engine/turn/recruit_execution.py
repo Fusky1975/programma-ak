@@ -241,6 +241,14 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
     leader_is_marshal = marshal_holder is not None and marshal_holder.leader_id == leader_id
     admiral_holder = resolve_office_holder(state, Office.ADMIRAL)
     leader_is_admiral = admiral_holder is not None and admiral_holder.leader_id == leader_id
+    # Phase 663: Chief of Staff's own -1 gold discount (below), and
+    # Neutral King's own separate "recruit mercenaries for 1 gold" flat
+    # override (see the mercenary/fresh-levy branch below -- the real
+    # text names mercenaries specifically, not fresh levies).
+    chief_of_staff_holder = resolve_office_holder(state, Office.CHIEF_OF_STAFF)
+    leader_is_chief_of_staff = chief_of_staff_holder is not None and chief_of_staff_holder.leader_id == leader_id
+    neutral_king_holder = resolve_office_holder(state, Office.NEUTRAL_KING)
+    leader_is_neutral_king = neutral_king_holder is not None and neutral_king_holder.leader_id == leader_id
 
     for army_type in request.army_types:
         if province.recruit_type_1 is not None:
@@ -255,6 +263,7 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
                 is_native_to_province=is_native,
                 in_ally_territory=in_ally_territory,
                 is_former_home_province_now_allied=is_former_home_province_now_allied,
+                chief_of_staff_discount=leader_is_chief_of_staff,
             )
         except IncompatibleRaceError:
             result.incompatible.append(army_type)
@@ -284,7 +293,16 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             result.territory_blocked.append(army_type)
             continue
 
-        unit_cost = resolution.gold_per_unit + resolution.ally_fee_per_unit
+        # Phase 663: Neutral King's own real "recruit mercenaries for
+        # just one gold" flat override -- names mercenaries specifically
+        # ("although maintenance costs remain normal"), so it only
+        # applies to this branch (mercenary is not None), never a fresh
+        # levy from the populace. Overrides gold_per_unit outright (a
+        # flat "one gold", not a further discount stacked on Chief of
+        # Staff's own -1) -- the ally fee (a separate real surcharge for
+        # recruiting in someone else's territory) still applies on top.
+        gold_per_unit = 1 if mercenary is not None and leader_is_neutral_king else resolution.gold_per_unit
+        unit_cost = gold_per_unit + resolution.ally_fee_per_unit
         if kingdom.treasury < unit_cost:
             result.gold_blocked.append(army_type)
             continue

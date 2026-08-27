@@ -109,11 +109,27 @@ def resolve_recruit(
     is_native_to_province: bool,
     in_ally_territory: bool = False,
     is_former_home_province_now_allied: bool = False,
+    chief_of_staff_discount: bool = False,
 ) -> RecruitResolution:
     """Resolve the limit and cost for recruiting one army type in one province.
 
     Raises ``IncompatibleRaceError`` if the province's race can't field
     that army type at all (native or not).
+
+    ``chief_of_staff_discount`` (Phase 663): `models/office.py OFFICE_
+    TITLE_DESCRIPTION[Office.CHIEF_OF_STAFF]`'s own real "effect_while_
+    held" text -- "any unit recruited by <2 will get a discount on
+    weapons and armor, so it will cost one less gold to recruit (but not
+    to maintain.) Garrison units, for example, < can recruit for free.
+    When recruiting a unit type not native to a province, the discount
+    is taken before the recruitment cost is doubled." -- ``-1`` applied
+    to ``base_pay`` (floored at 0, matching the real "free Garrison"
+    example -- Garrison's own real base pay is 1) *before* the native/
+    non-native doubling below, exactly per that last sentence.
+    Caller-resolved (the same "pure function, Office context supplied
+    by the caller" convention `is_native_to_province`/`in_ally_
+    territory` already use) -- see `turn/recruit_execution.py
+    execute_recruit()`.
     """
 
     if not is_army_type_compatible_with_race(army_type, province_race):
@@ -122,6 +138,8 @@ def resolve_recruit(
         )
 
     base_pay = ARMY_TABLE[army_type].pay
+    if chief_of_staff_discount:
+        base_pay = max(0, base_pay - 1)
     return RecruitResolution(
         max_units=recruit_limit(
             army_type,

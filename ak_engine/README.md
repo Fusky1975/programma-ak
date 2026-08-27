@@ -27688,7 +27688,7 @@ follow-up request after the original 431-435 plan shipped.
   Duellist and an alignment-King title granting independently to the
   same leader).
 
-- **Phase 662 (current)**: Admiral/Druid King's own shared "always 100%
+- **Phase 662**: Admiral/Druid King's own shared "always 100%
   exploration for this side" bonus (real text, both offices, identical
   clause except sea vs. land: "in any [sea/land] battle where < is the
   supreme commander, provincial exploration will always be treated as
@@ -27727,6 +27727,48 @@ follow-up request after the original 431-435 plan shipped.
   Duel roll (Phase 49) -- the same reason the Duellist/alignment-King
   tests above only check "is not None" rather than an exact post-duel
   value.
+
+- **Phase 663 (current)**: Chief of Staff/Neutral King's own recruit-
+  cost bonuses -- mechanism group #2 from [[project_royal_titles_
+  phase630_closed]]. **A stale claim corrected first**: the Phase 660
+  Explore-agent audit's own report said "gold-skim titles" (Evil King's
+  5g/turn, Thief Prince's 10g/turn) needed "a new per-turn passive
+  treasury accrual mechanism" -- false, and already false when the
+  audit ran. `turn/tax_base.py OFFICE_GOLD_BONUS`/`compute_office_gold_
+  bonus()` already implement exactly that (both offices, correct
+  amounts), called from `apply_turn_revenue()` (real production
+  dispatch, `turn_processor.py:617`), with its own real "(Including +5
+  Black Knights)"/"(Including +10 Thieves Guild)" FINANCES report note
+  already wired too. The audit's own search terms ("skim... gold")
+  simply didn't match this project's own established "gold bonus"
+  naming -- a pure keyword miss, not a deep-investigation failure, but
+  a real instance of this project's own recurring "stale/incorrect
+  claim" pattern worth recording anyway.
+
+  **What was genuinely still open**: Chief of Staff's own real "-1 gold
+  recruit discount, taken before the non-native cost doubling" (`turn/
+  recruit.py resolve_recruit()` gains `chief_of_staff_discount: bool =
+  False`, floors `base_pay` at 0 before the native/non-native branch --
+  Garrison's own real base pay of 1 becomes free, matching the title's
+  own worked example) and Neutral King's own real "recruit mercenaries
+  for just one gold" (`turn/recruit_execution.py execute_recruit()`
+  overrides `gold_per_unit` to a flat `1` outright -- not stacked with
+  Chief of Staff's own discount -- specifically in the already-existing
+  `mercenary is not None` branch, never a fresh levy, matching the real
+  text's own "although maintenance costs remain normal" framing; the
+  real ally-fee surcharge still applies on top when recruiting in an
+  ally's territory). Both resolved the same `resolve_office_holder()`-
+  per-call convention `WINGMAN`/`MARSHAL`/`ADMIRAL`'s own already-wired
+  recruit bonuses right above them in this same function already use.
+
+  Test count: 5536 -> 5548 (net +12): 4 in `test_recruit.py`
+  (`resolve_recruit()`'s own discount, the Garrison-free floor, taken-
+  before-doubling, off by default), 8 in `test_recruit_execution.py`
+  (Chief of Staff's discount applying to every unit recruited by the
+  title-holder and nobody else; Neutral King's flat 1-gold mercenary
+  hire, that it doesn't touch a fresh levy, that the real ally fee
+  still stacks on top, and that Alignment alone -- without a real
+  qualifying Tax_Base -- doesn't grant the title for free).
 
 ## Setup
 
