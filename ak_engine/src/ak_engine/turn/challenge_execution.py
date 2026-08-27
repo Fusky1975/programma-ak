@@ -320,6 +320,29 @@ _COMBAT_MANEUVERS = frozenset({Maneuver.MELEE, Maneuver.SHOOT})
 ILLUS_HERO_KNOWN_ABILITY_LEVEL = 5
 WORDS_OF_HEALING_KNOWN_ABILITY_LEVEL = 5
 
+# Office.NECRO_MAGE's own Imp familiar (Phase 666, `models/office.py
+# OFFICE_TITLE_DESCRIPTION`): "25% magic resistance, meaning that 25% of
+# the spells cast against <2 will fail."
+NECROMANCER_MAGE_SPELL_RESIST_CHANCE = 0.25
+
+
+def _necromancer_mage_resists_spell(state: GameState, target_leader_id: int, rng: random.Random) -> bool:
+    """Same single checkpoint `holder_is_immune_to_spell()` already
+    established (post-success, pre-effect, excluding `PERSONAL_COMBAT_
+    SPELL_SELF_ONLY` and a `None` target) -- the caller checks the
+    Anti-Magic Amulet first (a static, rng-free fact) and only calls
+    this when it doesn't already explain the miss, so a non-titleholder
+    never consumes a roll (every pre-Phase-666 caller/test unaffected).
+    Duplicated in `turn/search_execution.py`, this project's own
+    established "small per-consumer lookup" convention (see this
+    module's own `_leader_combatant()` docstring).
+    """
+
+    holder = resolve_office_holder(state, Office.NECRO_MAGE)
+    if holder is None or holder.leader_id != target_leader_id:
+        return False
+    return rng.random() < NECROMANCER_MAGE_SPELL_RESIST_CHANCE
+
 
 def has_combat_intent(request: ChallengeRequest) -> bool:
     """Rulebook [3.12]: "If the encounter plan has no combat tactics or personal combat
@@ -400,6 +423,8 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
     damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
     illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
     always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
+    necro_mage_office = resolve_office_holder(state, Office.NECRO_MAGE)
+    is_necro_mage = necro_mage_office is not None and necro_mage_office.leader_id == leader.leader_id
     has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
     effective_race = leader.race
     if effective_race is None and leader.kingdom_id is not None:
@@ -435,6 +460,8 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         is_invisible=weapon_grants_auto_invisibility(weapon),
         equipped_weapon=weapon,
         always_acts_first=always_acts_first,
+        regenerates_hp=(1 if is_necro_mage else 0),
+        regenerates_hp_interval=(2 if is_necro_mage else 1),
     )
 
 
@@ -554,7 +581,9 @@ def _resolve_personal_combat_cast(
     # wearer "from spells" has nothing to negate for a spell that was
     # never cast *at* them in the first place.
     if succeeded and spell not in PERSONAL_COMBAT_SPELL_SELF_ONLY and target_leader is not None:
-        if holder_is_immune_to_spell(state, target_leader.leader_id, spell):
+        if holder_is_immune_to_spell(state, target_leader.leader_id, spell) or _necromancer_mage_resists_spell(
+            state, target_leader.leader_id, rng
+        ):
             return None
 
     if spell is Spell.CONTROL_UNDEAD:

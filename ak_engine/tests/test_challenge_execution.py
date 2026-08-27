@@ -220,6 +220,33 @@ def test_leader_combatant_defaults_always_acts_first_to_false_without_the_office
     assert combatant.always_acts_first is False
 
 
+def test_leader_combatant_reads_the_necro_mage_titles_regeneration():
+    # Phase 666: Office.NECRO_MAGE's own Imp familiar -- "help <2
+    # regenerate 1 hit point per 2 rounds of combat."
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD)
+    leader.merit_tally.necromancy_spell_casts = 20  # meets OFFICE_MIN_POINTS[Office.NECRO_MAGE]
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.regenerates_hp == 1
+    assert combatant.regenerates_hp_interval == 2
+
+
+def test_leader_combatant_no_necro_mage_regeneration_without_the_office():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.regenerates_hp == 0
+    assert combatant.regenerates_hp_interval == 1
+
+
 def test_leader_combatant_reads_the_melee_hit_points_advanced_ability():
     # Phase 516: AdvancedAbility.MELEE_HIT_POINTS.
     state = GameState()
@@ -800,6 +827,73 @@ def test_resolve_personal_combat_cast_hand_of_death_blocked_by_anti_necromancy_a
 
     assert outcome is None
     assert target.hit_points == starting_hit_points
+
+
+def test_resolve_personal_combat_cast_necro_mage_target_resists_the_successful_spell():
+    # Phase 666: Office.NECRO_MAGE's own Imp familiar -- "25% magic
+    # resistance, meaning that 25% of the spells cast against <2 will
+    # fail." No amulet involved -- the resistance roll alone negates it.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ELEMENTAL, 5, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    target_leader.merit_tally.necromancy_spell_casts = 20  # meets OFFICE_MIN_POINTS[Office.NECRO_MAGE]
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    starting_hit_points = target.hit_points
+    tactic = SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)
+    rng = ScriptedRandom([0.1, 0.1])  # [0] cast succeeds, [1] under the 25% resistance chance
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+    )
+
+    assert outcome is None
+    assert target.hit_points == starting_hit_points  # resisted -- no damage at all
+
+
+def test_resolve_personal_combat_cast_necro_mage_target_does_not_always_resist():
+    # Same setup, but the resistance roll misses -- the spell lands normally.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ELEMENTAL, 5, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    target_leader.merit_tally.necromancy_spell_casts = 20
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    starting_hit_points = target.hit_points
+    tactic = SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)
+    rng = ScriptedRandom([0.1, 0.99, 0.5])  # [0] cast succeeds, [1] over the 25% resistance chance, [2] damage roll
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+    )
+
+    assert outcome is None  # Fireball's own effect doesn't end the encounter outright
+    assert target.hit_points < starting_hit_points  # not resisted -- damage landed
+
+
+def test_resolve_personal_combat_cast_no_necro_mage_title_never_consumes_a_resistance_roll():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ELEMENTAL, 5, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)
+    # [0] cast-success roll, [1] Fireball's own damage roll -- no 3rd
+    # value: a non-titleholder never reaches the resistance roll at all,
+    # confirmed by ScriptedRandom raising IndexError if it tried to.
+    rng = ScriptedRandom([0.1, 0.5])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+    )
+
+    assert outcome is None
 
 
 def test_resolve_personal_combat_cast_control_undead_not_blocked_by_anti_necromancy_amulet():

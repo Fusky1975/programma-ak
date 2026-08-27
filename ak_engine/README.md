@@ -27828,7 +27828,7 @@ follow-up request after the original 431-435 plan shipped.
   leader of the titleholder's own Kingdom; it does not reach a
   different, even if also Pagan-aligned, Kingdom's own caster).
 
-- **Phase 665 (current)**: 2 of the 3 familiar-based titles (`models/
+- **Phase 665**: 2 of the 3 familiar-based titles (`models/
   office.py OFFICE_TITLE_DESCRIPTION`), mechanism group #2 from
   [[project_royal_titles_phase630_closed]].
 
@@ -27882,6 +27882,45 @@ follow-up request after the original 431-435 plan shipped.
   params, plus a `resolve_one_melee_round()` end-to-end case where the
   lower-skill side still strikes first and kills the higher-skill side
   before it can swing back).
+
+- **Phase 666 (current)**: the last familiar-based title, closing
+  mechanism group #2 from [[project_royal_titles_phase630_closed]] in
+  full. Necromancer Mage ("The Imp gives <2 25% magic resistance,
+  meaning that 25% of the spells cast against <2 will fail. The Imp
+  will also help <2 regenerate 1 hit point per 2 rounds of combat"),
+  built as two independent pieces:
+
+  1. **Magic resistance**: a new `_necromancer_mage_resists_spell()`
+     helper (duplicated in `challenge_execution.py`/`search_execution.
+     py`, this project's own established per-consumer convention),
+     wired into the exact same single checkpoint Phase 531's Anti-Magic
+     Amulet immunity already established (post-success, pre-effect,
+     excluding `PERSONAL_COMBAT_SPELL_SELF_ONLY` and a non-leader
+     target) -- checked only when the amulet doesn't already explain
+     the miss, so a non-titleholder never consumes an extra roll.
+
+  2. **Regeneration every 2 rounds**: `encounter.py Combatant` gains
+     `regenerates_hp_interval` (default `1`, Troll's own established
+     every-round cadence, so every pre-Phase-666 caller is unaffected);
+     `_apply_end_of_round_regeneration()` now takes `round_number` and
+     only regenerates when `round_number % regenerates_hp_interval ==
+     0` -- wired at all 3 real call sites (Melee, Fire Arrow, Hand of
+     Death/Squeeze), all of which already had `round_number` in scope.
+     Set by all 6 real personal-combat `Combatant` builders this
+     project has, alongside `always_acts_first` from Phase 665.
+
+  This closes mechanism group #2 (familiar-based titles) in full --
+  only Curator remains among the tractable groups, plus Divine King's
+  separately-blocked monster-raid perk and army-title report
+  visibility.
+
+  Test count: 5565 -> 5574 (net +9): 3 in `test_encounter.py`
+  (`regenerates_hp_interval`'s own skip/fire cases plus its default),
+  5 in `test_challenge_execution.py` (`_leader_combatant()` sets the
+  regeneration fields; the resistance roll firing, missing, and never
+  being consumed without the title), 1 in `test_search_execution.py`
+  (the monster-casts-at-leader dispatcher side, mirroring the existing
+  Anti-Magic Amulet test's own exact structure).
 
 ## Setup
 

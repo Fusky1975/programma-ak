@@ -1107,6 +1107,8 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
 
     damage_reduction = 0
     always_acts_first = False
+    regenerates_hp = 0
+    regenerates_hp_interval = 1
     has_melee_hit_points_ability = False
     offensive_hit_multiplier = 1.0
     melee_damage_dealt_bonus = 0
@@ -1126,6 +1128,10 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
             damage_reduction = 1
         illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
         always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
+        necro_mage_office = resolve_office_holder(state, Office.NECRO_MAGE)
+        if necro_mage_office is not None and necro_mage_office.leader_id == leader.leader_id:
+            regenerates_hp = 1
+            regenerates_hp_interval = 2
         has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
         weapon = equipped_combat_weapon(state, leader.leader_id)
         holds_bow = holds_bow_of_elven_kings(state, leader.leader_id)
@@ -1172,6 +1178,8 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         is_invisible=is_invisible,
         equipped_weapon=equipped_weapon,
         always_acts_first=always_acts_first,
+        regenerates_hp=regenerates_hp,
+        regenerates_hp_interval=regenerates_hp_interval,
     )
 
 

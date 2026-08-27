@@ -413,6 +413,32 @@ def test_resolve_one_melee_round_regenerates_hp_only_when_nobody_died():
     assert a.hit_points == 7  # 5 + regenerates_hp, since it survived undamaged
 
 
+def test_resolve_one_melee_round_regenerates_hp_interval_skips_a_non_qualifying_round():
+    # Phase 666: Office.NECRO_MAGE -- "1 hit point per 2 rounds of
+    # combat." Round 1 doesn't qualify (1 % 2 != 0), so no regen yet.
+    a = Combatant("A", melee_skill=1, hit_points=5, regenerates_hp=1, regenerates_hp_interval=2)
+    b = Combatant("B", melee_skill=0, hit_points=10)
+    rng = ScriptedRandom([0.99, 0.99])  # both miss -- nobody dies
+
+    resolve_one_melee_round(a, b, rng, round_number=1)
+
+    assert a.hit_points == 5  # unchanged -- round 1 doesn't qualify
+
+
+def test_resolve_one_melee_round_regenerates_hp_interval_fires_on_a_qualifying_round():
+    a = Combatant("A", melee_skill=1, hit_points=5, regenerates_hp=1, regenerates_hp_interval=2)
+    b = Combatant("B", melee_skill=0, hit_points=10)
+    rng = ScriptedRandom([0.99, 0.99])  # both miss -- nobody dies
+
+    resolve_one_melee_round(a, b, rng, round_number=2)
+
+    assert a.hit_points == 6  # 5 + regenerates_hp -- round 2 qualifies (2 % 2 == 0)
+
+
+def test_combatant_defaults_regenerates_hp_interval_to_every_round():
+    assert Combatant("A").regenerates_hp_interval == 1
+
+
 def test_resolve_melee_duel_matches_looping_resolve_one_melee_round():
     # Same scripted rolls, same seed-free deterministic sequence -- the
     # atomic resolve_melee_duel must be exactly a loop over

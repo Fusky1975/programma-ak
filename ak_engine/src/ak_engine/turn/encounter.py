@@ -2611,12 +2611,22 @@ class Combatant:
     # `models/monster.py MonsterCombatStats.missile_damage` -- see
     # Phase 170 addendum above.
     missile_damage_range: tuple[int, int] = FIRE_ARROW_DAMAGE_RANGE
-    # Hit points regenerated at the end of each round this combatant
-    # survives -- 0 for every existing caller. Troll's own regeneration
-    # rule (Phase 155 addendum above) is the only real, sourced user so
-    # far; `turn/search_execution.py` sets it for a Troll's own
-    # monster combatant.
+    # Hit points regenerated at the end of each qualifying round this
+    # combatant survives -- 0 for every existing caller. Troll's own
+    # regeneration rule (Phase 155 addendum above) is the only real,
+    # sourced user so far; `turn/search_execution.py` sets it for a
+    # Troll's own monster combatant.
     regenerates_hp: int = 0
+    # Which rounds ``regenerates_hp`` actually applies on -- default `1`
+    # (every round, Troll's own established cadence, so every pre-
+    # Phase-666 caller is unaffected). Office.NECRO_MAGE's own Imp
+    # familiar (Phase 666, ``models/office.py OFFICE_TITLE_DESCRIPTION``:
+    # "help <2 regenerate 1 hit point per 2 rounds of combat") sets this
+    # to `2` instead -- `_apply_end_of_round_regeneration()` only fires
+    # when ``round_number % regenerates_hp_interval == 0``, so round 1
+    # is skipped and every even round regenerates, the literal reading
+    # of "per 2 rounds."
+    regenerates_hp_interval: int = 1
     # Phase 209 -- multiplies the chance an *opponent* lands a hit against
     # this combatant, in either Melee or Fire Arrow. Composed
     # multiplicatively when more than one Personal-Combat spell applies
@@ -3338,7 +3348,7 @@ def resolve_one_melee_round(
             outcome.result = EncounterCombatResult(winner=("a" if defender is b else "b"), rounds=round_number)
             outcome.swings = tuple(swings)
             return outcome
-    _apply_end_of_round_regeneration(a, b)
+    _apply_end_of_round_regeneration(a, b, round_number)
     outcome.swings = tuple(swings)
     return outcome
 
@@ -3447,15 +3457,20 @@ def resolve_melee_duel(
     return EncounterCombatResult(winner=None, rounds=max_rounds, melee_swings=tuple(all_swings))
 
 
-def _apply_end_of_round_regeneration(a: Combatant, b: Combatant) -> None:
+def _apply_end_of_round_regeneration(a: Combatant, b: Combatant, round_number: int) -> None:
     """Phase 155 addendum (module docstring): a surviving combatant with
     ``regenerates_hp`` set (Troll's own rule -- 0 for everyone else)
-    heals that much at the end of each combat round, uncapped.
+    heals that much at the end of each qualifying combat round, uncapped.
+
+    Phase 666 -- ``regenerates_hp_interval`` (default `1`, Troll's own
+    established every-round cadence) gates this to rounds where
+    ``round_number % regenerates_hp_interval == 0``, needed by
+    Office.NECRO_MAGE's own "1 hit point per 2 rounds" perk.
     """
 
-    if a.hit_points > 0:
+    if a.hit_points > 0 and round_number % a.regenerates_hp_interval == 0:
         a.hit_points += a.regenerates_hp
-    if b.hit_points > 0:
+    if b.hit_points > 0 and round_number % b.regenerates_hp_interval == 0:
         b.hit_points += b.regenerates_hp
 
 
@@ -3530,7 +3545,7 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
                 a.hit_points -= damage
         if a.hit_points <= 0 or b.hit_points <= 0:
             break
-        _apply_end_of_round_regeneration(a, b)
+        _apply_end_of_round_regeneration(a, b, round_number)
 
     if b.hit_points <= 0:
         return EncounterCombatResult(winner="a", rounds=round_number, shots=tuple(shots))
@@ -3713,7 +3728,7 @@ def resolve_hand_of_death_channel(
                     damage = max(0, raw_damage - caster.damage_reduction)
                     caster.hit_points -= damage
                     return EncounterCombatResult(winner=None, rounds=round_number, squeeze_hits=tuple(squeeze_hits))
-        _apply_end_of_round_regeneration(caster, victim)
+        _apply_end_of_round_regeneration(caster, victim, round_number)
     return EncounterCombatResult(winner=None, rounds=round_number, squeeze_hits=tuple(squeeze_hits))
 
 

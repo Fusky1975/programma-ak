@@ -1707,6 +1707,37 @@ def test_execute_search_monster_cast_fireball_blocked_by_leaders_anti_elemental_
     assert mock_melee.called  # falls through to Melee since the cast had no effect
 
 
+def test_execute_search_monster_cast_fireball_resisted_by_leaders_necro_mage_title():
+    # Phase 666: Office.NECRO_MAGE's own Imp familiar -- "25% magic
+    # resistance." Same dispatcher side as the amulet test above (the
+    # monster is the caster, the leader is the target), no amulet
+    # involved this time.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.leaders[LEADER_ID].merit_tally.necromancy_spell_casts = 20  # meets OFFICE_MIN_POINTS[Office.NECRO_MAGE]
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.roll_fireball_damage") as mock_damage, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        )
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        # Padding: the monster's own hit-points draw runs before the tactic
+        # walk starts, consuming an unknown number of randoms from the
+        # front of the queue -- every value here is 0.1 (well under the
+        # 25% resistance chance), so whichever one lands on that roll
+        # still resists.
+        execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.1] * 20))
+
+    assert not mock_damage.called  # resisted -- damage roll never even attempted
+    assert mock_melee.called  # falls through to Melee since the cast had no effect
+
+
 def test_execute_search_cast_ice_suspend_immune_species_has_no_effect():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPECTRE))
