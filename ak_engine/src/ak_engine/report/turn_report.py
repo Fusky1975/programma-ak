@@ -1249,6 +1249,8 @@ from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.combat import QUALITY_NAME
 from ak_engine.turn.emperor_election import (
     _ORDINARY_ALIGNMENTS,
+    ElectionCallOutcome,
+    ElectionResult,
     alignment_bloc_vote_weights,
     alignment_victory_point_reduction_percent,
     election_threshold_percent,
@@ -10334,6 +10336,115 @@ def _office_candidate_line(state: GameState, office: Office, holder: OfficeHolde
     return f"{prefix}{name} ({holder.merit_points} points, rank {rank}, {riv})"
 
 
+_ELECTION_REPORT_HEADER = "ELECTION REPORT"
+_ELECTION_REPORT_INTRO_TEMPLATE = "A vote was held this turn in game {game_number}.  Here are the results:"
+_ELECTION_REPORT_COLUMN_HEADER_1 = "                   Votes"
+_ELECTION_REPORT_COLUMN_HEADER_2 = "King                Cast  Voted for King   Votes Received"
+
+
+def describe_election_report(
+    state: GameState, election_outcome: "ElectionResult | ElectionCallOutcome | None"
+) -> list[str]:
+    """Renders `REPORTS.PAS:1462-1508`'s own "ELECTION REPORT" table --
+    the very first thing `Pray_Report` ever prints, shown only on the
+    turn a vote is actually tallied (real `IF tktax > 0`). Verbatim
+    source, re-read directly this phase (not just the earlier survey's
+    own fragment):
+
+    ```
+    Expand_Write('ELECTION REPORT    ',kng);
+      WRITELN('   A vote was held this turn in game ',gameno,'.  Here are the results:');
+      WRITELN('                   Votes');
+      WRITELN('King                Cast  Voted for King   Votes Received');
+    FOR k2:=0 TO nkings-1 DO BEGIN
+      WRITE(lname[k2],'':19-Length(lname[k2]));
+      IF kprevgold[k2]=No_King THEN WRITE('   0   No one           ')
+        ELSE WRITE(kpower[k2]:4,'   ',namstr,'':17-Length(namstr));
+      WRITELN(kvotes[k2]:4,' votes (',Trunc(kvotes[k2]/tottax*100.0),'%)');
+     END;
+    WRITELN('Neutral Characters ',tottax-tktax:4,'   No one');
+    ```
+
+    Returns `[]` unless `election_outcome` is a real `ElectionResult`
+    (an `ElectionCallOutcome` means no vote was tallied this turn --
+    the same "was a vote actually held" gate as the real `tktax > 0`
+    check -- there's nothing to show).
+
+    One row per `sorted(state.kingdoms)`: that Kingdom's own King
+    (`_king_leader_id()`, "no King" fallback matching `describe_final_
+    standings_report()`'s own convention -- the real `lname[k2]` is
+    always populated in the source, this project's own data model
+    allows a Kingless Kingdom where it doesn't). Cast/voted-for comes
+    from `election_outcome.ballots` (Phase 656: newly threaded through
+    from `tally_emperor_vote()`, previously discarded after tallying);
+    an abstained King (`ballots.get(kingdom_id) is None`, the real
+    `kprevgold[k2]=No_King`) shows `"0   No one"`. Votes received is
+    `votes_by_candidate.get(kingdom_id, 0)`; the percentage uses real
+    `Trunc()` (confirmed directly against the source above, not a
+    guessed rounding convention) -- `int(votes_received / total_votes_
+    cast * 100)` truncates toward zero exactly like Pascal's own
+    `Trunc()` for these always-non-negative operands. Omitted
+    (`total_votes_cast <= 0`) rather than dividing by zero -- doesn't
+    arise in practice since `tally_emperor_vote()` only reaches its
+    ballot-carrying return paths after its own early `world_total <= 0`
+    guard.
+
+    **One deliberate simplification, documented not guessed**: the
+    real "Neutral Characters `<tottax-tktax>` No one" row (world tax
+    base belonging to no Kingdom at all) is omitted entirely --
+    `total_votes_cast` (`V_world`, `kingdom_election_vote_weight()`
+    summed over `state.kingdoms`) has no concept of tax base *outside*
+    Kingdom control baked in, and this project has no separate
+    "unclaimed province tax base" quantity feeding the election-weight
+    formula. Revisit if a future source clarifies what "Neutral
+    Characters" tax base means in this project's own data model.
+
+    **Explicitly deferred, not attempted this phase**: the two
+    adjacent notices (`REPORTS.PAS:1937-1965`, the caller-percentage
+    and alignment-bloc-trigger notices) stay out of scope -- both need
+    `evaluate_election_call()`'s own internally-computed-and-discarded
+    percentages, and the alignment-bloc one additionally has a genuine,
+    unresolved design question (does the real engine remember the
+    specific triggering alignment across the turn boundary, or
+    recompute it fresh?) with no surviving source either way.
+    """
+
+    if not isinstance(election_outcome, ElectionResult):
+        return []
+
+    lines = [
+        _ELECTION_REPORT_HEADER,
+        _ELECTION_REPORT_INTRO_TEMPLATE.format(game_number=state.game_number),
+        _ELECTION_REPORT_COLUMN_HEADER_1,
+        _ELECTION_REPORT_COLUMN_HEADER_2,
+    ]
+    for row_kingdom_id in sorted(state.kingdoms):
+        king_leader_id = _king_leader_id(state, row_kingdom_id)
+        king_name = state.leaders[king_leader_id].name if king_leader_id is not None else "no King"
+
+        candidate_kingdom_id = election_outcome.ballots.get(row_kingdom_id)
+        if candidate_kingdom_id is None:
+            cast_and_candidate = f"{0:>4}   {'No one':<17}"
+        else:
+            cast = kingdom_election_vote_weight(state, row_kingdom_id)
+            candidate_king_leader_id = _king_leader_id(state, candidate_kingdom_id)
+            candidate_name = (
+                state.leaders[candidate_king_leader_id].name if candidate_king_leader_id is not None else "no King"
+            )
+            cast_and_candidate = f"{cast:>4}   {candidate_name:<17}"
+
+        votes_received = election_outcome.votes_by_candidate.get(row_kingdom_id, 0)
+        if election_outcome.total_votes_cast > 0:
+            percent = int(votes_received / election_outcome.total_votes_cast * 100)
+            votes_text = f"{votes_received:>4} votes ({percent}%)"
+        else:
+            votes_text = f"{votes_received:>4} votes"
+
+        lines.append(f"{king_name:<19}{cast_and_candidate}{votes_text}")
+
+    return lines
+
+
 def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[str]:
     """Assembles the "IMPERIAL OFFICE REPORT" section (Phase 230; full
     rank/percentage/runner-up columns added Phase 440) -- real, sourced
@@ -11838,6 +11949,7 @@ def compose_letter_report(
     *,
     ability_names: dict[Ability, str] | None = None,
     board_width: int | None = None,
+    election_outcome: "ElectionResult | ElectionCallOutcome | None" = None,
 ) -> list[str]:
     """Assembles a single King's own end-of-turn letter report (Phase 215) by
     stitching together this project's already-built section composers, in
@@ -11871,6 +11983,17 @@ def compose_letter_report(
     correctly differed pre/post-election (`describe_imperial_office_
     report()`'s own docstring); only its position was wrong before this
     phase.
+
+    **Phase 656**: a new optional `election_outcome` keyword parameter
+    (default `None`, every pre-existing caller/test unaffected) feeds
+    `describe_election_report()` -- `REPORTS.PAS Pray_Report`'s own
+    ELECTION REPORT table, the real per-voter vote tally, which is the
+    very first thing that same real procedure prints (ahead of even
+    Arcane's Valor/the IMPERIAL OFFICE REPORT framing already built
+    into `imperial_office_lines`). Emitted immediately before whichever
+    of this function's own two `imperial_office_lines` call sites
+    actually fires this turn -- both are the same real procedure call,
+    just repositioned pre/post-election per Phase 561 above.
 
     **All 10 real sections were wired here as of Phase 231** (STATE OF THE
     NATION makes 11, Phase 561) -- ACTION REPORT, LETTER REPORTS, STATE OF
@@ -12162,8 +12285,19 @@ def compose_letter_report(
     # describe_state_of_the_nation_report()'s own module-level comment).
     # Without an Emperor it stays in its usual place after ARMIES,
     # unchanged from before this phase.
+    # Phase 656: ELECTION REPORT is the very first thing the real
+    # Pray_Report procedure ever prints -- ahead of Arcane's Valor and
+    # the IMPERIAL OFFICE REPORT framing this composer already builds
+    # into imperial_office_lines -- so it's emitted immediately before
+    # whichever of this function's own two imperial_office_lines call
+    # sites actually fires this turn (both are the same real procedure
+    # call, just positioned differently pre/post-election per Phase 561).
+    election_report_lines = describe_election_report(state, election_outcome)
+
     imperial_office_lines = describe_imperial_office_report(state, kingdom_id)
     if state.emperor_kingdom_id is not None and imperial_office_lines:
+        if election_report_lines:
+            _emit_section(election_report_lines[0], election_report_lines[1:])
         _emit_section(imperial_office_lines[0], imperial_office_lines[1:])
 
     state_of_the_nation_lines = describe_state_of_the_nation_report()
@@ -12200,6 +12334,8 @@ def compose_letter_report(
     # when there's no Emperor yet -- see the earlier, pre-STATE-OF-THE-
     # NATION call site above for the post-election case.
     if state.emperor_kingdom_id is None and imperial_office_lines:
+        if election_report_lines:
+            _emit_section(election_report_lines[0], election_report_lines[1:])
         _emit_section(imperial_office_lines[0], imperial_office_lines[1:])
 
     adventure_lines = describe_adventure_report(state, kingdom_id, rng)

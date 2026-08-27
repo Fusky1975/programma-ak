@@ -356,6 +356,13 @@ class ElectionResult:
     # Field name kept (not renamed) to avoid a wider ripple; see this
     # module's own Phase 451 docstring note.
     total_votes_cast: int
+    # Phase 656: the exact {voter_kingdom_id: candidate_kingdom_id} map
+    # this result was tallied from -- REPORTS.PAS's own ELECTION REPORT
+    # table (Rep_Prov/Pray_Report, real per-King "Voted for King"
+    # column) needs this, and it used to be discarded after tallying.
+    # Empty for the world_total<=0 early return (no real ballots to
+    # show for a vote that couldn't even be evaluated).
+    ballots: dict[int, int]
 
 
 def tally_emperor_vote(state: GameState, ballots: dict[int, int], current_turn: int) -> ElectionResult:
@@ -369,7 +376,7 @@ def tally_emperor_vote(state: GameState, ballots: dict[int, int], current_turn: 
 
     world_total = sum(kingdom_election_vote_weight(state, kingdom_id) for kingdom_id in state.kingdoms)
     if world_total <= 0:
-        return ElectionResult(None, {}, world_total)
+        return ElectionResult(None, {}, world_total, {})
 
     votes_by_candidate: dict[int, int] = {}
     for voter_kingdom_id in sorted(state.kingdoms):
@@ -379,7 +386,7 @@ def tally_emperor_vote(state: GameState, ballots: dict[int, int], current_turn: 
         weight = kingdom_election_vote_weight(state, voter_kingdom_id)
         votes_by_candidate[candidate_kingdom_id] = votes_by_candidate.get(candidate_kingdom_id, 0) + weight
         if votes_by_candidate[candidate_kingdom_id] * 100 > ELECTION_WIN_THRESHOLD_PERCENT * world_total:
-            return ElectionResult(candidate_kingdom_id, votes_by_candidate, world_total)
+            return ElectionResult(candidate_kingdom_id, votes_by_candidate, world_total, ballots)
 
     threshold_percent = election_threshold_percent(current_turn)
     best_candidate: int | None = None
@@ -393,7 +400,7 @@ def tally_emperor_vote(state: GameState, ballots: dict[int, int], current_turn: 
             best_candidate = candidate_kingdom_id
             best_share = share
 
-    return ElectionResult(best_candidate, votes_by_candidate, world_total)
+    return ElectionResult(best_candidate, votes_by_candidate, world_total, ballots)
 
 
 def resolve_emperor_election(state: GameState, ballots: dict[int, int], vote_turn: int) -> ElectionResult:

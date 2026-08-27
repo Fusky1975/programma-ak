@@ -240,6 +240,7 @@ def test_tally_emperor_vote_clear_majority_wins():
     assert result.elected_emperor_kingdom_id == 1
     assert result.votes_by_candidate == {1: 60}
     assert result.total_votes_cast == 100  # Phase 451: this is V_world, not the sum of tallied ballots
+    assert result.ballots == ballots  # Phase 656: no longer discarded after tallying
 
 
 def test_tally_emperor_vote_weighs_office_and_treasure_holdings_too():
@@ -281,6 +282,7 @@ def test_tally_emperor_vote_no_ballots_elects_nobody():
 
     assert result.elected_emperor_kingdom_id is None
     assert result.total_votes_cast == 0
+    assert result.ballots == {}  # Phase 656: the world_total<=0 early return has no real ballots to show
 
 
 # -- Phase 451: real win condition (world denominator + decaying threshold) --
@@ -334,6 +336,7 @@ def test_tally_emperor_vote_wins_below_50_percent_via_the_decayed_threshold_at_a
 
     assert result_early.elected_emperor_kingdom_id is None  # 30% < 55% at turn 5
     assert result_late.elected_emperor_kingdom_id == 1  # 30% >= 25% at turn 30
+    assert result_late.ballots == ballots  # Phase 656: no longer discarded after tallying
 
 
 def test_tally_emperor_vote_tie_broken_by_ascending_voter_scan_order():

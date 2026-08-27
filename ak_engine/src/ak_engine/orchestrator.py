@@ -236,7 +236,9 @@ def process_turn(
     record_uncontested_conquest_world_events(state, results, rng)
 
     letter_reports = {
-        kingdom_id: compose_letter_report(results, state, kingdom_id, rng, board_width=board_width)
+        kingdom_id: compose_letter_report(
+            results, state, kingdom_id, rng, board_width=board_width, election_outcome=election_outcome
+        )
         for kingdom_id in state.kingdoms
     }
 

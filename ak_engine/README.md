@@ -27272,7 +27272,7 @@ follow-up request after the original 431-435 plan shipped.
 
   Full suite: 5455 (unchanged -- no code behavior touched).
 
-- **Phase 655 (current)**: correcting Phase 654's own incomplete fix --
+- **Phase 655**: correcting Phase 654's own incomplete fix --
   the user asked to investigate the "reuse `resolve_challenge_combat()`
   for Search" idea thoroughly before implementing it, and that
   investigation found the whole premise was already moot.
@@ -27306,6 +27306,73 @@ follow-up request after the original 431-435 plan shipped.
   again). Lesson for next time: when correcting a stale docstring that
   makes multiple claims, re-verify *every* claim against the code
   directly, not just the one a survey happened to flag.
+
+- **Phase 656 (current)**: `REPORTS.PAS:1462-1508`'s own "ELECTION
+  REPORT" table -- the very first thing `Pray_Report` ever prints,
+  shown only on the turn a vote is actually tallied (real `IF tktax >
+  0`). A large-gap survey (this session, after Phase 655) flagged it as
+  a medium-sized candidate; re-reading the real source directly (not
+  just the survey's own fragment) found it smaller than estimated:
+  `turn/emperor_election.py tally_emperor_vote()` already receives the
+  real per-voter `ballots: dict[voter_kingdom_id, candidate_kingdom_id]`
+  mapping as its own parameter and uses it internally, but discarded it
+  after tallying instead of storing it on the returned `ElectionResult`
+  -- the exact "computed then discarded" pattern this project has now
+  found and fixed well over a dozen times. The fix is one new field
+  (`ElectionResult.ballots`), not new cross-turn state machinery.
+
+  `ElectionResult` gains `ballots: dict[int, int]`, set at all 3 of
+  `tally_emperor_vote()`'s own return sites (the `world_total <= 0`
+  early return passes `{}` -- no real ballots to show for a vote that
+  couldn't even be evaluated). `orchestrator.py` now threads
+  `TurnOutcome`'s already-computed `election_outcome` (line ~225, was
+  computed but never passed to `compose_letter_report()`) into that
+  call. `compose_letter_report()` gains a new keyword-only `election_
+  outcome: ElectionResult | ElectionCallOutcome | None = None`
+  parameter (default preserves every existing caller unchanged).
+
+  New `report/turn_report.py describe_election_report()` renders the
+  table: `[]` unless `election_outcome` is a real `ElectionResult` (an
+  `ElectionCallOutcome` means no vote was tallied this turn). One row
+  per `sorted(state.kingdoms)` -- that Kingdom's own King (`_king_
+  leader_id()`, "no King" fallback), its own cast weight (`kingdom_
+  election_vote_weight()`) and who it voted for (from `ballots`, "No
+  one" for an abstainer -- the real `kprevgold[k2]=No_King` case),
+  votes received (`votes_by_candidate`), and a percentage. **The
+  percentage uses real `Trunc()`** (`int(votes_received / total_votes_
+  cast * 100)`), confirmed directly against the actual source line
+  quoted above during this phase -- not the `round()` this phase's own
+  written plan had second-guessed itself into proposing (the plan's own
+  Context section had already correctly transcribed `Trunc()` from the
+  source; its Design section then mistakenly hedged toward `round()`
+  as if unsourced. Re-reading the real file this phase settled it in
+  the source's own favor). Wired into `compose_letter_report()`
+  immediately before whichever of that function's own two `imperial_
+  office_lines` call sites fires this turn (both are the same real
+  `Pray_Report` procedure call, just repositioned pre/post-election per
+  Phase 561) -- matching the real source's own position, the very first
+  content that procedure prints.
+
+  **One deliberate simplification, documented not guessed**: the real
+  "Neutral Characters `<tottax-tktax>` No one" row (world tax base
+  belonging to no Kingdom at all) is omitted entirely -- `total_votes_
+  cast` (`V_world`) has no concept of tax base *outside* Kingdom
+  control, and this project has no separate "unclaimed province tax
+  base" quantity feeding the election-weight formula. Revisit if a
+  future source clarifies what that figure means in this project's own
+  data model.
+
+  **Explicitly deferred, not attempted**: the two adjacent notices
+  (`REPORTS.PAS:1937-1965`, the caller-percentage and alignment-bloc-
+  trigger notices) stay out of scope -- both need `evaluate_election_
+  call()`'s own internally-computed-and-discarded percentages, and the
+  alignment-bloc one additionally has a genuine, unresolved design
+  question (does the real engine remember the specific triggering
+  alignment across the turn boundary, or recompute it fresh?) with no
+  surviving source either way.
+
+  Test count: 5455 -> 5462 (net +7). Standing per-phase workflow
+  otherwise.
 
 ## Setup
 

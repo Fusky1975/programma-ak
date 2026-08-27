@@ -66,6 +66,7 @@ from ak_engine.report.turn_report import (
     compose_letter_report,
     describe_adventure_report,
     describe_alignment_victory_point_reduction,
+    describe_election_report,
     describe_election_status_report,
     describe_final_standings_report,
     describe_map_report,
@@ -327,6 +328,7 @@ from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
 from ak_engine.turn.encounter import CombatRange, FireArrowShot, MeleeSwing
+from ak_engine.turn.emperor_election import ElectionCallOutcome, ElectionResult
 from ak_engine.turn.expenses import MaintenanceResult
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.hex_numbering import encode_hex_number
@@ -8998,6 +9000,116 @@ def test_describe_election_status_report_omits_alignment_line_when_world_total_i
     lines = describe_election_status_report(state, 1)
 
     assert not any("controls" in line for line in lines)
+
+
+# -- Phase 656: describe_election_report() -- ELECTION REPORT --
+
+
+def test_describe_election_report_empty_when_no_outcome():
+    state = _armies_state()
+
+    assert describe_election_report(state, None) == []
+
+
+def test_describe_election_report_empty_for_a_call_outcome_not_a_real_tally():
+    # ElectionCallOutcome means the engine only *evaluated* whether to
+    # hold a vote this turn -- no real tally to show, matching the real
+    # `tktax > 0` gate (no vote was actually tallied).
+    state = _armies_state()
+    outcome = ElectionCallOutcome(
+        world_total=10, immediate_coronation_kingdom_id=None, callers_qualify=False, alignment_trigger=None
+    )
+
+    assert describe_election_report(state, outcome) == []
+
+
+def test_describe_election_report_renders_a_real_vote_with_a_clear_winner():
+    state = _armies_state()
+    state.provinces[HexCoord(0, 0)].tax = 75
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_kingdom(KingdomState(2, "Farland", Race.HUMAN, Alignment.EVIL, HexCoord(1, 1)))
+    state.add_province(
+        ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, name="Farhold", tax=25)
+    )
+    state.add_leader(LeaderState(2, 2, "Vraxis", HexCoord(1, 1), is_king=True))
+    outcome = ElectionResult(
+        elected_emperor_kingdom_id=1,
+        votes_by_candidate={1: 75, 2: 25},
+        total_votes_cast=100,
+        ballots={1: 1, 2: 2},  # each King voted for himself
+    )
+
+    lines = describe_election_report(state, outcome)
+
+    assert lines[0] == "ELECTION REPORT"
+    assert lines[1] == "A vote was held this turn in game 1.  Here are the results:"
+    assert lines[2] == "                   Votes"
+    assert lines[3] == "King                Cast  Voted for King   Votes Received"
+    aldric_row = next(line for line in lines if line.startswith("Aldric"))
+    vraxis_row = next(line for line in lines if line.startswith("Vraxis"))
+    assert "75" in aldric_row and "Aldric" in aldric_row and "75 votes (75%)" in aldric_row
+    assert "25" in vraxis_row and "Vraxis" in vraxis_row and "25 votes (25%)" in vraxis_row
+    assert not any("Neutral Characters" in line for line in lines)
+
+
+def test_describe_election_report_abstaining_king_shows_no_one():
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    outcome = ElectionResult(
+        elected_emperor_kingdom_id=None,
+        votes_by_candidate={},
+        total_votes_cast=50,
+        ballots={},  # Aldric abstained -- no entry for kingdom 1
+    )
+
+    lines = describe_election_report(state, outcome)
+
+    aldric_row = next(line for line in lines if line.startswith("Aldric"))
+    assert "0" in aldric_row and "No one" in aldric_row
+    assert "0 votes (0%)" in aldric_row
+
+
+def test_describe_election_report_percentage_is_truncated_not_rounded():
+    # 2/3 * 100 == 66.67 -- Trunc() (the real, confirmed REPORTS.PAS
+    # formula) gives 66%, round() would give 67%. Proves this composer
+    # follows the real source's own truncation, not a rounding guess.
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    outcome = ElectionResult(
+        elected_emperor_kingdom_id=None,
+        votes_by_candidate={1: 2},
+        total_votes_cast=3,
+        ballots={1: 1},
+    )
+
+    lines = describe_election_report(state, outcome)
+
+    aldric_row = next(line for line in lines if line.startswith("Aldric"))
+    assert "2 votes (66%)" in aldric_row
+
+
+def test_compose_letter_report_includes_election_report_before_imperial_office():
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    outcome = ElectionResult(
+        elected_emperor_kingdom_id=None,
+        votes_by_candidate={1: 10},
+        total_votes_cast=10,
+        ballots={1: 1},
+    )
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]), election_outcome=outcome)
+
+    assert "ELECTION REPORT" in lines
+    assert lines.index("ELECTION REPORT") < lines.index("IMPERIAL OFFICE REPORT")
+
+
+def test_compose_letter_report_omits_election_report_by_default():
+    state = _armies_state()
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    assert "ELECTION REPORT" not in lines
 
 
 def test_compose_letter_report_includes_election_status_section():
