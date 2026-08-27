@@ -394,7 +394,7 @@ from ak_engine.turn.search_decode import decode_search_phase
 from ak_engine.turn.search_execution import SearchExecutionResult, execute_search
 from ak_engine.turn.sense_magic_items import sense_magic_items_in_province
 from ak_engine.turn.trade_decode import decode_trade_phase, rewrite_trade_as_secret_spell_cast
-from ak_engine.turn.trade_execution import TradeExecutionResult, execute_give
+from ak_engine.turn.trade_execution import CuratorResearchResult, TradeExecutionResult, execute_curator_research, execute_give
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, execute_trail
 from ak_engine.turn.use_mi_decode import decode_use_mi_phase
@@ -823,7 +823,7 @@ def _dispatch_pursue(
     return result
 
 
-def _dispatch_trade(phase: PlanPhase, state: GameState, leader_id: int) -> TradeExecutionResult:
+def _dispatch_trade(phase: PlanPhase, state: GameState, leader_id: int) -> TradeExecutionResult | CuratorResearchResult:
     """Phase 133: TRADE now executes for real via ``turn/trade_execution.py
     execute_give()``. As of Phase 140, ``execute_give()`` checks
     ``obj`` against the real ``GameState.items`` registry itself, so
@@ -833,9 +833,29 @@ def _dispatch_trade(phase: PlanPhase, state: GameState, leader_id: int) -> Trade
 
     Phase 214: stamps ``request`` onto the result here, same reasoning
     as ``_dispatch_pursue``'s own Phase 213 note.
+
+    Phase 667: Office.CURATOR's own real perk -- "the character must
+    have an order to give the magic item number to himself." A self-
+    targeted Give (``request.target_leader_id == leader_id``) from the
+    current CURATOR titleholder is rerouted to ``execute_curator_
+    research()`` instead of the ordinary ``execute_give()`` -- checked
+    *after* ``dispatch_phase()``'s own existing secret-spell rewrite
+    (``rewrite_trade_as_secret_spell_cast()``, Phase 397), matching the
+    real ``DEF2.PAS R_HPlan``'s own read-time order (that rewrite is
+    tried first, before this dispatcher is even called). A self-
+    targeted Give from anyone else (or from the titleholder without a
+    real item number decoded) falls through to the ordinary Give path
+    unchanged -- self-Give was already a real, if unusual, case
+    ``execute_give()`` handles on its own before this phase.
     """
 
     request = decode_trade_phase(phase)
+    if request.target_leader_id == leader_id:
+        curator_holder = resolve_office_holder(state, Office.CURATOR)
+        if curator_holder is not None and curator_holder.leader_id == leader_id:
+            research_result = execute_curator_research(state, request.obj)
+            research_result.request = request
+            return research_result
     result = execute_give(state, leader_id, request)
     result.request = request
     return result

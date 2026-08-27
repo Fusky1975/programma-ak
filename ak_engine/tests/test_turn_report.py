@@ -87,6 +87,7 @@ from ak_engine.report.turn_report import (
     describe_cast,
     describe_kill_enemy_berserk_retaliation,
     describe_challenge,
+    describe_curator_research,
     describe_encounter_combat,
     describe_fire,
     describe_give,
@@ -345,7 +346,7 @@ from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.recruit_execution import RecruitedUnit, RecruitExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
-from ak_engine.turn.trade_execution import TradeExecutionResult
+from ak_engine.turn.trade_execution import CuratorResearchResult, TradeExecutionResult
 from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 
@@ -4606,6 +4607,27 @@ def test_describe_give_renders_nothing_for_an_unsourced_failure_reason():
     rng = ScriptedRandom([])
 
     line = describe_give(result, giver_name="Aldric", recipient_name="Borin", gold_requested=100, rng=rng)
+
+    assert line is None
+
+
+# -- describe_curator_research (Phase 667) --
+
+
+def test_describe_curator_research_renders_a_successful_lookup():
+    result = CuratorResearchResult(applied=True, item_id=42, treasure=Treasure.WAND_FIREBALL)
+    rng = ScriptedRandom([])
+
+    line = describe_curator_research(result, researcher_name="Aldric", rng=rng)
+
+    assert line == f"The Guild of Sages researched item number 42 for Aldric: it is a {TREASURE_NAME[Treasure.WAND_FIREBALL]}."
+
+
+def test_describe_curator_research_failed_lookup_renders_nothing():
+    result = CuratorResearchResult(applied=False, item_id=999, reason="no such item number exists in the world")
+    rng = ScriptedRandom([])
+
+    line = describe_curator_research(result, researcher_name="Aldric", rng=rng)
 
     assert line is None
 

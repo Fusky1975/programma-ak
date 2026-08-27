@@ -7,7 +7,13 @@ from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.trade_decode import TradeRequest
-from ak_engine.turn.trade_execution import GOLD_GIVE_MAX_PERCENT, TradeExecutionResult, execute_give, execute_gold_give
+from ak_engine.turn.trade_execution import (
+    GOLD_GIVE_MAX_PERCENT,
+    TradeExecutionResult,
+    execute_curator_research,
+    execute_give,
+    execute_gold_give,
+)
 
 GIVER_KINGDOM = 1
 RECIPIENT_KINGDOM = 2
@@ -252,3 +258,40 @@ def test_execute_give_gold_path_still_enforces_the_10_percent_cap():
 
     assert result.applied is False
     assert "exceeds 10% treasury cap" in result.reason
+
+
+# -- Phase 667: Office.CURATOR's own "research any item number" perk --
+
+
+def test_execute_curator_research_reveals_the_treasure_of_an_owned_item():
+    state = _state()
+    item = state.add_item(Treasure.WAND_FIREBALL, GIVER_LEADER, charges=5)
+
+    result = execute_curator_research(state, item.item_id)
+
+    assert result.applied is True
+    assert result.item_id == item.item_id
+    assert result.treasure is Treasure.WAND_FIREBALL
+
+
+def test_execute_curator_research_reveals_the_treasure_of_an_unowned_item():
+    # "any item number in the world" -- a Feature-guarded item with no
+    # owner still has a real ItemInstance, resolvable the same way.
+    state = _state()
+    item = state.add_item(Treasure.WAND_FIREBALL, None)
+
+    result = execute_curator_research(state, item.item_id)
+
+    assert result.applied is True
+    assert result.treasure is Treasure.WAND_FIREBALL
+
+
+def test_execute_curator_research_fails_for_an_item_number_that_does_not_exist():
+    state = _state()
+
+    result = execute_curator_research(state, 999)
+
+    assert result.applied is False
+    assert result.item_id == 999
+    assert result.treasure is None
+    assert result.reason == "no such item number exists in the world"

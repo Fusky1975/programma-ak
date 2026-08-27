@@ -1289,7 +1289,7 @@ from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.feature_power_execution import FeaturePowerAttemptResult
 from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.tax_base import compute_invention_bonus_percent, compute_tax_base, province_tax_yield
-from ak_engine.turn.trade_execution import TradeExecutionResult
+from ak_engine.turn.trade_execution import CuratorResearchResult, TradeExecutionResult
 from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 from ak_engine.turn.world_events import is_visible_to
@@ -6534,6 +6534,8 @@ def describe_turn_results(
                 gold_requested=request.obj,
                 rng=rng,
             )
+        elif entry.action is ActionCode.TRADE and isinstance(entry.result, CuratorResearchResult):
+            line = describe_curator_research(entry.result, researcher_name=caster_name, rng=rng)
         elif entry.action is ActionCode.PURSUE and isinstance(entry.result, PursueExecutionResult):
             request = entry.result.request
             if request is None:
@@ -8265,6 +8267,39 @@ def describe_give(
         return render_insufficient_gold(giver_name, gold_requested, rng)
 
     return None
+
+
+# Office.CURATOR's own real perk (Phase 667) has no surviving POWMSG/
+# SAY.PAS template anywhere in the available source -- neither AKGEN's
+# disassembly reports nor AKPROSE's catalog transcription name a
+# distinct narrative string for this outcome (only the same title-grant
+# paragraph `OFFICE_TITLE_DESCRIPTION` already quotes). This sentence is
+# **project-original**, clearly labeled as such per this project's own
+# "confirmed-unsourced gap" convention -- replace it if a real source
+# ever surfaces.
+CURATOR_RESEARCH_TEMPLATE = "The Guild of Sages researched item number # for <: it is a \\."
+
+
+def render_curator_research(researcher_name: str, item_number: int, item_name: str, rng: random.Random) -> str:
+    values = {"<": researcher_name, "#": str(item_number), "\\": item_name}
+    return render(CURATOR_RESEARCH_TEMPLATE, values, rng=rng)
+
+
+def describe_curator_research(
+    result: CuratorResearchResult, *, researcher_name: str, rng: random.Random
+) -> str | None:
+    """Assembles the Curator-research narrative from an already-computed
+    ``CuratorResearchResult`` (``turn/trade_execution.py execute_
+    curator_research()``, Phase 667). A failed lookup (``result.reason``
+    -- no ``ItemInstance`` exists for the requested number) has no
+    sourced failure narrative either, so it renders nothing, the same
+    "no template, no invented administrative-error prose" convention
+    ``describe_give()`` above already uses.
+    """
+
+    if not result.applied or result.treasure is None:
+        return None
+    return render_curator_research(researcher_name, result.item_id, TREASURE_NAME[result.treasure], rng)
 
 
 # HostAK/TP/PROSE/FRUMOR.X -- the rumor narrative (Phase 243's own

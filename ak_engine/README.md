@@ -27883,7 +27883,7 @@ follow-up request after the original 431-435 plan shipped.
   lower-skill side still strikes first and kills the higher-skill side
   before it can swing back).
 
-- **Phase 666 (current)**: the last familiar-based title, closing
+- **Phase 666**: the last familiar-based title, closing
   mechanism group #2 from [[project_royal_titles_phase630_closed]] in
   full. Necromancer Mage ("The Imp gives <2 25% magic resistance,
   meaning that 25% of the spells cast against <2 will fail. The Imp
@@ -27921,6 +27921,58 @@ follow-up request after the original 431-435 plan shipped.
   being consumed without the title), 1 in `test_search_execution.py`
   (the monster-casts-at-leader dispatcher side, mirroring the existing
   Anti-Magic Amulet test's own exact structure).
+
+- **Phase 667 (current)**: Curator of Artifacts, the last of the
+  original 9 mechanism groups from [[project_royal_titles_
+  phase630_closed]] -- its merit-counting/resolution (`turn/merit_
+  points.py curator_merit_points()`) was already live since Phase
+  443-447; only the real perk itself ("Ordering to give himself an
+  item number, the titleholder researches that precise magic item and
+  learns its function") was unwired.
+
+  **Directly analogous to an already-sourced, already-wired mechanism**:
+  `turn/plan_dispatch.py`'s own Phase 397 addendum already documents
+  `DEF2.PAS R_HPlan`'s Trade branch reclassifying a self-targeted Give
+  of a secret-spell ordinal into a Cast -- the same "a self-Give is a
+  signal, not a real gift" shape Curator's own text describes for item
+  numbers. `_dispatch_trade()` now checks, *after* that existing
+  rewrite (matching the real read-time order -- the secret-spell check
+  still wins if both conditions somehow overlap), whether the Give is
+  self-targeted and the caster currently holds `Office.CURATOR`; if so,
+  it routes to a new `turn/trade_execution.py execute_curator_
+  research()` instead of the ordinary `execute_give()` -- calling the
+  ordinary path would have misrouted an unowned item number into the
+  gold-Give branch (`obj` reinterpreted as a gold amount, gated on
+  King status).
+
+  `execute_curator_research()` resolves `item_id` against the real,
+  world-wide `GameState.items` registry directly (an unowned, Feature-
+  guarded item still has a real `ItemInstance` there -- "any item
+  number in the world," not just one the researcher personally holds),
+  returning a new `CuratorResearchResult(applied, item_id, treasure,
+  reason)`. No POWMSG/SAY.PAS template survives for the report line
+  (neither AKGEN's disassembly reports nor the AKPROSE catalog name a
+  distinct string beyond the same title-grant paragraph already
+  quoted) -- the new `report/turn_report.py describe_curator_research()`
+  renders a clearly-labeled **project-original** sentence instead,
+  this project's own established "confirmed-unsourced gap" convention;
+  a failed lookup renders nothing, the same "no template, no invented
+  administrative-error prose" stance `describe_give()` already uses.
+
+  This closes mechanism group #4 (Curator) -- all 9 of the original
+  Phase 660 audit's own mechanism groups are now resolved: 8 fully
+  wired, 1 (Divine King's own monster-raid-halt perk) genuinely
+  blocked pending a monster-raid mechanic this project doesn't have.
+  Only army-title report visibility remains open in the whole royal-
+  title system.
+
+  Test count: 5574 -> 5581 (net +7): 3 in `test_trade_execution.py`
+  (`execute_curator_research()` for an owned item, an unowned item,
+  and a nonexistent item number), 2 in `test_plan_dispatch.py`
+  (the CURATOR titleholder's self-Give routes to research; the same
+  shape without the title falls through to the ordinary Give path),
+  2 in `test_turn_report.py` (`describe_curator_research()`'s
+  success/failure rendering).
 
 ## Setup
 

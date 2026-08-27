@@ -41,7 +41,7 @@ from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
-from ak_engine.turn.trade_execution import TradeExecutionResult
+from ak_engine.turn.trade_execution import CuratorResearchResult, TradeExecutionResult
 from ak_engine.turn.trail_execution import TrailExecutionResult
 from ak_engine.turn.use_mi_execution import UseMIExecutionResult
 
@@ -681,6 +681,39 @@ def test_dispatch_trade_self_targeted_ordinary_gold_amount_is_not_rewritten():
     # ordinary (if unusual) self-Give, not a rewrite trigger.
     state, army_id = _state_with_army(HexCoord(3, 9), {}, treasury=1000)
     phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=24, extra=[LEADER_ID, LEADER_ID])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, TradeExecutionResult)
+
+
+def test_dispatch_trade_curator_titleholder_self_give_researches_the_item():
+    # Phase 667: Office.CURATOR -- "the character must have an order to
+    # give the magic item number to himself." obj (200) is well outside
+    # the secret-spell range (25-34), so the Phase 397 rewrite above
+    # doesn't fire -- this reaches _dispatch_trade()'s own new routing.
+    state, army_id = _state_with_army(HexCoord(3, 9), {}, treasury=1000)
+    state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=LEADER_ID)
+    state.add_item(Treasure.BOOK_WHITE, owner_leader_id=LEADER_ID)
+    state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=LEADER_ID)  # meets OFFICE_MIN_POINTS[Office.CURATOR]
+    researched = state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=None)  # unowned -- "any item in the world"
+    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=researched.item_id, extra=[LEADER_ID, LEADER_ID])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, CuratorResearchResult)
+    assert result.applied is True
+    assert result.treasure is Treasure.AMULET_ANTI_ELEMENTAL
+    assert result.request is not None
+    assert result.request.target_leader_id == LEADER_ID
+
+
+def test_dispatch_trade_self_give_without_the_curator_title_is_not_rewritten():
+    # Same self-targeted shape, but the leader doesn't hold the title --
+    # falls through to the ordinary (if unusual) self-Give path.
+    state, army_id = _state_with_army(HexCoord(3, 9), {}, treasury=1000)
+    item = state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=None)
+    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=item.item_id, extra=[LEADER_ID, LEADER_ID])
 
     result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
 

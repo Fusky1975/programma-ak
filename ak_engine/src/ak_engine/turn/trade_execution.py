@@ -65,6 +65,7 @@ from dataclasses import dataclass
 
 from ak_engine.models.game_state import GameState
 from ak_engine.models.item import ItemInstance
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.trade_decode import TradeRequest
 
 # Rulebook [3.18]: "no more than 10% of the size of his treasury."
@@ -196,3 +197,46 @@ def execute_give(
         return TradeExecutionResult(applied=False, reason="recipient has no kingdom")
 
     return execute_gold_give(state, giver_leader_id, recipient.kingdom_id, request.obj)
+
+
+@dataclass(slots=True)
+class CuratorResearchResult:
+    """Office.CURATOR's own real perk (Phase 667, ``models/office.py
+    OFFICE_TITLE_DESCRIPTION``): "The Guild will research any item
+    number in the world for <2, telling all about its magical
+    function." Same ``request`` convention as ``TradeExecutionResult``
+    -- stamped by ``plan_dispatch.py``'s own ``_dispatch_trade()``.
+    """
+
+    applied: bool
+    item_id: int
+    treasure: Treasure | None = None
+    reason: str | None = None
+    request: TradeRequest | None = None
+
+
+def execute_curator_research(state: GameState, item_id: int) -> CuratorResearchResult:
+    """"< can research items only by item number, not by magic item type."
+    ``item_id`` resolves against the real, world-wide ``GameState.items``
+    registry -- an item guarded by a Feature or owned by a foreign
+    Kingdom still has a real ``ItemInstance`` there (``owner_leader_id``
+    is simply ``None`` for the unowned case), matching "any item number
+    in the world," not just an item the researcher personally holds.
+    ``item_id`` with no matching ``ItemInstance`` at all fails outright
+    -- no fallback guess at what an unassigned number might mean.
+
+    Triggered by a self-targeting Give order (the titleholder's own
+    "order to give the magic item number to himself") -- see ``turn/
+    plan_dispatch.py _dispatch_trade()``'s own Phase 667 addendum for
+    why this bypasses ``execute_give()`` entirely rather than layering
+    on top of it: a self-Give naming an item the titleholder doesn't
+    own would otherwise misroute into the gold-Give path (`obj`
+    reinterpreted as a gold amount, gated on the giver/recipient --
+    here, the same person -- being a King), which has nothing to do
+    with what this order actually means for a Curator.
+    """
+
+    item = state.items.get(item_id)
+    if item is None:
+        return CuratorResearchResult(applied=False, item_id=item_id, reason="no such item number exists in the world")
+    return CuratorResearchResult(applied=True, item_id=item_id, treasure=item.treasure)
