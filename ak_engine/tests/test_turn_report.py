@@ -235,6 +235,7 @@ from ak_engine.report.turn_report import (
     render_thief_search_failed,
     render_steal_treasure_inaccessible,
     render_battle_leader_intro,
+    render_battle_leader_no_command,
     render_monster_reinforcement_arrives,
     render_monster_reinforcement_helped,
     render_binoculars_preview,
@@ -678,6 +679,58 @@ def test_describe_battle_skips_a_commanding_leader_no_longer_in_state():
     )
 
     assert lines == ["Aldric led Aldric's armies into the battle."]
+
+
+def test_describe_battle_renders_present_but_not_commanding_leaders():
+    # Phase 658: a present-but-not-commanding leader gets the "was there,
+    # leading no armies" sentence, right after that same side's own
+    # commanders -- attacker side fully (commander then present), then
+    # the defender side fully, matching the real per-side loop order.
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, kingdom_id=1, name="Borin", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(3, kingdom_id=2, name="Vraxis", location=HexCoord(0, 0)))
+    report = BattleReport(
+        battle_result=BattleResult(),
+        conquered=False,
+        attacker_commanding_leader_ids=[1],
+        attacker_present_leader_ids=[2],
+        defender_present_leader_ids=[3],
+    )
+
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=rng,
+    )
+
+    assert lines == [
+        "Aldric led Aldric's armies into the battle.",
+        "Borin was there, leading no armies.",
+        "Vraxis was there, leading no armies.",
+    ]
+
+
+def test_describe_battle_skips_a_present_leader_no_longer_in_state():
+    state = GameState()
+    report = BattleReport(battle_result=BattleResult(), conquered=False, attacker_present_leader_ids=[999])
+
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=ScriptedRandom([]),
+    )
+
+    assert lines == []
 
 
 def test_describe_battle_renders_monster_assistance_before_everything_else():
@@ -2714,6 +2767,15 @@ def test_render_battle_leader_intro_fourth_variant_puts_commander_name_last():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[3])
     result = render_battle_leader_intro("Aldric", rng, is_sea=True)
     assert result == "standing at the ready with Aldric's ships was Aldric."
+
+
+# -- BATLDR.X's own "present, not commanding" branch (Phase 658) --
+
+
+def test_render_battle_leader_no_command():
+    rng = ScriptedRandom([])
+    result = render_battle_leader_no_command("Aldric", rng)
+    assert result == "Aldric was there, leading no armies."
 
 
 # -- MCOME.X/MFIGHT.X (Phase 604) --

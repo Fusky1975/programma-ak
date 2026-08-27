@@ -291,6 +291,13 @@ class BattleReport:
     # or the instant-conquest shortcut (no real battle fought).
     attacker_monster_assistance: dict[int, DruidicMonsterAssistance] = field(default_factory=dict)
     defender_monster_assistance: dict[int, DruidicMonsterAssistance] = field(default_factory=dict)
+    # Phase 658 -- SAY.PAS `_BLList`'s other half: a leader present at
+    # the battle province but commanding none of that side's own
+    # fighting armies (`"< was there, leading no armies."`). Sorted by
+    # leader_id, the same unsourced-but-reasonable tie-break the
+    # commanding roster above already uses.
+    attacker_present_leader_ids: list[int] = field(default_factory=list)
+    defender_present_leader_ids: list[int] = field(default_factory=list)
 
 
 def _build_battle_units(
@@ -1824,17 +1831,46 @@ def fight_battle(
     # calls this function once per merged group, its own `combined_
     # army_ids` already spanning every party) naturally recovers every
     # commanding leader across the whole side, not just one party's --
-    # no separate wiring needed there. Deliberately NOT modeled: the
-    # real `_BLList`'s other half, a leader present at the battle but
-    # commanding no armies (`tentdex[fn] > cdrdex[fn]`, `"< was there,
-    # leading no armies."`) -- this project's battle model has no way
-    # to know a leader was physically present without also commanding
-    # at least one of the armies actually fighting, for either battle
-    # path. Same honest "sourced, not yet reachable from live game
-    # state" stance the pre-Phase-649 comment already used, narrowed to
-    # the one real remaining gap instead of the whole mechanic.
-    attacker_commanding_leader_ids = sorted({army.commanded_by for army in attacker_armies if army.commanded_by is not None})
-    defender_commanding_leader_ids = sorted({army.commanded_by for army in defender_armies if army.commanded_by is not None})
+    # no separate wiring needed there.
+    attacker_commander_ids = {army.commanded_by for army in attacker_armies if army.commanded_by is not None}
+    defender_commander_ids = {army.commanded_by for army in defender_armies if army.commanded_by is not None}
+    attacker_commanding_leader_ids = sorted(attacker_commander_ids)
+    defender_commanding_leader_ids = sorted(defender_commander_ids)
+
+    # Phase 658: the real `_BLList`'s other half -- a leader present at
+    # the battle but commanding no armies (`tentdex[fn] > cdrdex[fn]`,
+    # `"< was there, leading no armies."`). The Phase 649 comment this
+    # replaces called this unrepresentable ("no way to know a leader
+    # was physically present without also commanding at least one of
+    # the armies actually fighting") -- reconsidered: `LeaderState.
+    # location` already tracks a leader's real position independently
+    # of army command, so "present" is answerable directly: any leader
+    # loyal to one of this side's own real Kingdoms (every distinct
+    # `kingdom_id` actually represented in `attacker_armies`/`defender_
+    # armies` -- the same multi-Kingdom-per-side shape `attacker_
+    # commanding_leader_ids` above already tolerates for an allied
+    # attack) whose own `location` is this exact battle province, and
+    # who isn't already one of this side's own commanders. `ldrtent[fn]`'s
+    # own real population logic doesn't survive (same "missing main
+    # program" class of gap as the commanding roster's own tent order),
+    # so which Kingdom(s) count as "this side" is this project's own
+    # reasonable reading, not a literal citation.
+    attacker_side_kingdom_ids = {army.kingdom_id for army in attacker_armies if army.kingdom_id is not None}
+    defender_side_kingdom_ids = {army.kingdom_id for army in defender_armies if army.kingdom_id is not None}
+    attacker_present_leader_ids = sorted(
+        leader.leader_id
+        for leader in state.leaders.values()
+        if leader.location == province_coord
+        and leader.kingdom_id in attacker_side_kingdom_ids
+        and leader.leader_id not in attacker_commander_ids
+    )
+    defender_present_leader_ids = sorted(
+        leader.leader_id
+        for leader in state.leaders.values()
+        if leader.location == province_coord
+        and leader.kingdom_id in defender_side_kingdom_ids
+        and leader.leader_id not in defender_commander_ids
+    )
 
     # Phase 250, Mystic Winds' own Phase 204 addendum: "The spell ends just
     # before the leader gets involved in any military battle between
@@ -2063,6 +2099,8 @@ def fight_battle(
         defender_kingdom_id=defender_kingdom_id,
         attacker_monster_assistance=attacker_monster_assistance,
         defender_monster_assistance=defender_monster_assistance,
+        attacker_present_leader_ids=attacker_present_leader_ids,
+        defender_present_leader_ids=defender_present_leader_ids,
     )
 
     _record_battle_merit(

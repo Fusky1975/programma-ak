@@ -27374,7 +27374,7 @@ follow-up request after the original 431-435 plan shipped.
   Test count: 5455 -> 5462 (net +7). Standing per-phase workflow
   otherwise.
 
-- **Phase 657 (current)**: closes candidate #4's Druidic monster-aid
+- **Phase 657**: closes candidate #4's Druidic monster-aid
   half from [[project_large_gap_survey_2026_08_27]] (the BATLDR
   uncommanding-leader roster half stays open). `report/turn_report.py`'s
   own module comment above `_MCOME_TEMPLATES` already documented the
@@ -27424,6 +27424,58 @@ follow-up request after the original 431-435 plan shipped.
   both fields empty). 3 pre-existing `test_druidic_monster_aid.py`
   tests updated for the new return shape (no behavior change to the
   function itself, just its own return type).
+
+- **Phase 658 (current)**: closes candidate #4's BATLDR-roster half
+  from [[project_large_gap_survey_2026_08_27]], the last piece of that
+  candidate. `turn/battle_orchestrator.py fight_battle()`'s own Phase
+  649 comment called `SAY.PAS _BLList`'s other half -- a leader present
+  at the battle but commanding no armies (`"< was there, leading no
+  armies."`) -- unrepresentable: "this project's battle model has no
+  way to know a leader was physically present without also commanding
+  at least one of the armies actually fighting." Reconsidered: `Leader
+  State.location` already tracks a leader's real position independently
+  of army command, so "present" is directly answerable -- any leader
+  loyal to one of a side's own real Kingdoms (every distinct
+  `kingdom_id` actually represented in that side's fighting armies, the
+  same multi-Kingdom-per-side shape the commanding-leader roster
+  already tolerates for an allied attack) whose own `location` matches
+  the battle province, and who isn't already one of that side's own
+  commanders.
+
+  `BattleReport` gains `attacker_present_leader_ids`/`defender_present_
+  leader_ids`, computed alongside the existing Phase 649 commanding
+  roster. New `report/turn_report.py render_battle_leader_no_command()`
+  renders the real, previously-unported `"< was there, leading no
+  armies."` string (quoted in this project's own comments since Phase
+  649 but never given a render function). `describe_battle()`'s BATLDR
+  loop is restructured into a proper per-side pass (each side's own
+  commanders, then that same side's own present-but-not-commanding
+  leaders, before moving to the other side) -- matches the real
+  `_BLList`'s own `FOR fn:=1 TO 2 DO` order more faithfully than the
+  prior "all attacker commanders, then all defender commanders" shape,
+  with no change in output for every existing caller (both present
+  lists default empty).
+
+  **Deliberately not attempted**: the real `_BLList`'s own third case --
+  a side with *zero* leaders present at all, commanding or not
+  (`tentdex[fn] = 0`), prints `"no generals were present to lead the
+  forces of [."` using `_attl := powner[_px,_py]` (the *province
+  owner's* Kingdom) regardless of which side (`fn`) triggered it --
+  a real, oddly-asymmetric detail (using the province owner even for
+  the attacking side's own empty roster) with no further source to
+  confirm it's intentional rather than a `SAY.PAS`-era quirk. A small,
+  separate, well-scoped follow-up if ever picked up, not guessed at
+  here.
+
+  Test count: 5467 -> 5475 (net +8): 5 in `test_battle_orchestrator.py`
+  (`fight_battle()`'s new roster -- a genuinely idle leader on each
+  side, a commanding leader correctly excluded from the present roster,
+  a leader at a different location excluded, a leader of an uninvolved
+  third Kingdom at the same location excluded, sort order), 3 in
+  `test_turn_report.py` (`render_battle_leader_no_command()`'s own
+  template, `describe_battle()`'s new per-side ordering, the "no longer
+  in state" skip case). This closes [[project_large_gap_survey_2026_08_27]]'s
+  candidate #4 in full.
 
 ## Setup
 

@@ -370,6 +370,65 @@ def test_fight_multi_attacker_battle_unites_commanders_from_both_parties():
     assert battles[0].report.attacker_commanding_leader_ids == [10, 20]
 
 
+# -- Phase 658: BattleReport's per-side present-but-not-commanding roster --
+
+
+def test_fight_battle_records_a_present_leader_who_commands_no_fighting_army():
+    state = build_state()
+    state.add_leader(LeaderState(50, kingdom_id=1, name="Idle Attacker", location=FIELD))
+    state.add_leader(LeaderState(60, kingdom_id=2, name="Idle Defender", location=FIELD))
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert report.attacker_present_leader_ids == [50]
+    assert report.defender_present_leader_ids == [60]
+
+
+def test_fight_battle_excludes_a_commanding_leader_from_the_present_roster():
+    # A leader who does command a fighting army shows up in
+    # attacker_commanding_leader_ids, not attacker_present_leader_ids too.
+    state = build_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Attacker Leader", location=FIELD))
+    state.armies[101].commanded_by = 10
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert report.attacker_commanding_leader_ids == [10]
+    assert report.attacker_present_leader_ids == []
+
+
+def test_fight_battle_excludes_a_leader_at_a_different_location():
+    state = build_state()
+    state.add_leader(LeaderState(50, kingdom_id=1, name="Elsewhere", location=HexCoord(9, 9)))
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert report.attacker_present_leader_ids == []
+
+
+def test_fight_battle_excludes_a_leader_of_an_uninvolved_kingdom_at_the_same_location():
+    # Present at the exact battle province, but loyal to neither the
+    # attacking nor the defending Kingdom's own armies actually fighting.
+    state = build_state()
+    state.add_kingdom(KingdomState(3, "Thirdia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(50, kingdom_id=3, name="Bystander", location=FIELD))
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert report.attacker_present_leader_ids == []
+    assert report.defender_present_leader_ids == []
+
+
+def test_fight_battle_sorts_the_present_roster_by_leader_id():
+    state = build_state()
+    state.add_leader(LeaderState(30, kingdom_id=1, name="Later", location=FIELD))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Earlier", location=FIELD))
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert report.attacker_present_leader_ids == [10, 30]
+
+
 def test_defender_disbands_when_no_friendly_province_to_retreat_to():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))

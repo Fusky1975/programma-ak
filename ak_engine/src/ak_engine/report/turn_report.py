@@ -2358,6 +2358,16 @@ def describe_battle(
     same "no source, don't guess" convention `army_names.get()`
     lookups elsewhere in this function already use.
 
+    **Phase 658 -- BATLDR's other half.** `render_battle_leader_no_
+    command()` renders `_BLList`'s own "present but not commanding"
+    sentence (`battle_report.attacker_present_leader_ids`/`defender_
+    present_leader_ids`, Phase 658) -- see `turn/battle_orchestrator.py
+    fight_battle()`'s own Phase 658 note for how "present" is now
+    resolved via `LeaderState.location`. Each side's own commanding
+    leaders render first, then that same side's present-but-not-
+    commanding leaders, before moving to the other side -- matching the
+    real `_BLList`'s own per-side (`fn`) loop order.
+
     **Phase 657 -- MCOME/MFIGHT wiring.** `render_monster_reinforcement_
     arrives()`/`_helped()` (Phase 604) were sourced, fully render-tested,
     and never called from anywhere until now -- see the module-level
@@ -2390,10 +2400,22 @@ def describe_battle(
     army_names = build_battle_army_names(state, battle_report)
     lines: list[str] = []
 
-    for leader_id in (*battle_report.attacker_commanding_leader_ids, *battle_report.defender_commanding_leader_ids):
-        commander_name = _leader_name(state, leader_id)
-        if commander_name is not None:
-            lines.append(render_battle_leader_intro(commander_name, rng, is_sea=is_sea))
+    # Phase 658: each side's own real roster is commanders first, then
+    # present-but-not-commanding leaders (`_BLList`'s own `lp <= cdrdex
+    # [fn]` split) -- one side fully, then the other, matching the real
+    # `FOR fn:=1 TO 2 DO` outer loop (attacker=fn 1, defender=fn 2).
+    for commanding_ids, present_ids in (
+        (battle_report.attacker_commanding_leader_ids, battle_report.attacker_present_leader_ids),
+        (battle_report.defender_commanding_leader_ids, battle_report.defender_present_leader_ids),
+    ):
+        for leader_id in commanding_ids:
+            commander_name = _leader_name(state, leader_id)
+            if commander_name is not None:
+                lines.append(render_battle_leader_intro(commander_name, rng, is_sea=is_sea))
+        for leader_id in present_ids:
+            leader_name = _leader_name(state, leader_id)
+            if leader_name is not None:
+                lines.append(render_battle_leader_no_command(leader_name, rng))
 
     # Phase 657 -- MCOME.X/MFIGHT.X (SAY.PAS `_BMonst`): a Druidic side's
     # own assisting Feature monster(s). No real trigger call survives to
@@ -4630,13 +4652,12 @@ def render_steal_treasure_inaccessible(character_name: str, victim_name: str, rn
 # roster of leaders present (`ldrtent[fn][1..tentdex[fn]]`); positions
 # `1..cdrdex[fn]` actually command armies and get this BATLDR sentence
 # (`IF lp <= cdrdex[fn] THEN FD('batldr',S_Batt,2)`), the rest are
-# present but lead nothing (`"< was there, leading no armies."`, not
-# modeled -- see `turn/battle_orchestrator.py fight_battle()`'s own
-# Phase 649 note for why this project's battle model can't represent a
-# leader present without commanding at least one army). ``<3`` is
-# documented (module docstring's own Phase 131-era note above) as just
-# another person/tense variant of the character reference, substituted
-# with the same literal commander name as ``<``/``<2``.
+# present but lead nothing (`"< was there, leading no armies."`, Phase
+# 658 -- see `render_battle_leader_no_command()` below and `turn/
+# battle_orchestrator.py fight_battle()`'s own Phase 658 note). ``<3``
+# is documented (module docstring's own Phase 131-era note above) as
+# just another person/tense variant of the character reference,
+# substituted with the same literal commander name as ``<``/``<2``.
 _BATLDR_TEMPLATES: list[str] = [
     "<3 led > armies/Snavies {boldly/Rcourageously }into the "
     "battle/Rfray.",
@@ -4658,6 +4679,22 @@ def render_battle_leader_intro(commander_name: str, rng: random.Random, *, is_se
     variant = pick_variant(_BATLDR_TEMPLATES, rng)
     values = {"<3": commander_name, ">": f"{commander_name}'s"}
     return render(variant, values, rng=rng, is_sea=is_sea)
+
+
+# HostAK/TP/PROSE/BATLDR.X's own other real branch, `"< was there,
+# leading no armies."` (Phase 658) -- a single literal string, no ``/R``
+# alternatives, no ``is_sea`` marker.
+_BATLDR_NO_COMMAND_TEMPLATE = "< was there, leading no armies."
+
+
+def render_battle_leader_no_command(leader_name: str, rng: random.Random) -> str:
+    """Renders BATLDR.X's own "present but not commanding" sentence (Phase
+    658) -- see the module comment above `_BATLDR_TEMPLATES` for the full
+    `_BLList` derivation.
+    """
+
+    values = {"<": leader_name}
+    return render(_BATLDR_NO_COMMAND_TEMPLATE, values, rng=rng)
 
 
 # HostAK/TP/PROSE/MCOME.X, MFIGHT.X -- a Feature's own guardian monster
