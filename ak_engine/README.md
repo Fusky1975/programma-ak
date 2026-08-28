@@ -28019,7 +28019,7 @@ follow-up request after the original 431-435 plan shipped.
   pre-existing exact-line-count tests updated for the report's own new,
   longer real shape (not a regression, an intentional expansion).
 
-- **Phase 669 (current)**: [[project_sep_roadmap]]'s own Phase B --
+- **Phase 669**: [[project_sep_roadmap]]'s own Phase B --
   wires rulebook [5.10]'s real Duel trigger, closing what `turn/battle_
   orchestrator.py _maybe_fight_duel()`'s own docstring previously named
   as this project's top remaining Duel gap: every battle where both
@@ -28090,6 +28090,110 @@ follow-up request after the original 431-435 plan shipped.
   tactic; a Flee-first defender never accepting; both neutral-province
   exception halves, including the Cowardly carve-out; one real `fight_
   battle()`-level end-to-end case).
+
+- **Phase 670 (current)**: monster raids -- rulebook [9.2]'s own
+  "monster devastation" tax reduction -- plus Divine King's own
+  Thunderbird raid-halting perk, the very last genuinely-blocked item
+  in the whole royal-title system. User-supplied `Desktop/THUNDERBIRD.
+  md` (2026-08-28) closes both at once with real, sourced formulas: a
+  full `fstate` guardian-engagement state machine (already modeled
+  verbatim as `models/monster.py MonsterEngagementState`, unused until
+  now), seasonal maturation, the raid-activity check, and the
+  Thunderbird block.
+
+  **Season -> phase mapping, user-confirmed directly**: this project
+  has no `Season`/calendar concept anywhere. The 5 named seasons
+  (Spring/Early Summer/Late Summer/Fall/Early Winter) are simply this
+  project's own existing 5 phases per turn, in order -- "mimics
+  medieval reality: no fighting or moving in Winter." Seasonal
+  maturation therefore needs zero new calendar machinery, just a
+  `phase_index >= 3` check inside `turn/turn_processor.py run_turn()`'s
+  own existing phase loop (Fall=P3, Early Winter=P4).
+
+  New `models/feature.py RaidEvent` (kept in `models/` rather than
+  `turn/` specifically to avoid a circular import with `GameState`) and
+  `Feature.guardian_state: MonsterEngagementState = MERCENARY`,
+  deliberately independent of the pre-existing `Feature.looted` (still
+  the one true "is this guardian dead" bit) -- new `turn/monster_
+  raids.py`: `age_feature_guardian()`/`age_all_feature_guardians()`
+  (the 3% maturation roll, then a "Worldly"/"Animal" alignment
+  threshold roll on a hit -- `models/alignment.py`'s own pre-existing
+  docstring already confirms `ALIGNMENT_ORDINAL[NEUTRAL]==3`/`[PAGAN]
+  ==4` are exactly THUNDERBIRD.md's own two threshold values, no
+  remapping needed -- `Calm -> Mercenary -> Bold`, a `looted` guardian
+  still consumes both rolls but never transitions), `maybe_dissipate_
+  hidden_feature()` (Hide Feature's own genuinely new 10%-per-turn
+  dissipation roll, reusing the pre-existing `magically_hidden` flag
+  whose own "no consumer yet" docstring note was already stale --
+  `turn/exploration.py`/`turn/rumor.py` already read it), and
+  `resolve_province_raids()` (only a `BOLD`, non-looted, non-hidden
+  guardian can raid; a temperament-based activity check -- Cowardly
+  25% / Cautious 50% / Brave 75% / Berserk 100%, via the pre-existing
+  `MONSTER_RUNTIME_PROFILE[monster].temper` -- then the Thunderbird
+  check: 40% chance, blocked only when the province's owning King
+  holds `Office.DIVINE_KING` and no intervention has happened yet this
+  entire turn -- one shared `thunder_used` flag threaded through every
+  province, max 1 per turn across the whole game -- else the real
+  damage formula, `floor(mtbasehp * current_province_income / 70) +
+  1`, subtracted from this turn's own *collected* income only, never
+  the persisted `ProvinceState.tax`/`compute_tax_base()` figure).
+
+  Both binary rolls (the Worldly/Animal threshold pick, the raid-
+  activity check) are expressed as `rng.random()` comparisons rather
+  than `rng.randrange()`, matching this project's own established
+  idiom for a scriptable coin-flip (`turn/encounter.py`/`turn/battle_
+  luck.py`) -- `randrange()` isn't controllable by `tests/_helpers.py
+  ScriptedRandom`, which only overrides `.random()`/`.choice()`.
+
+  `turn/tax_base.py apply_turn_revenue()` (now takes an explicit `rng`
+  parameter) is restructured to iterate each kingdom's own owned
+  provinces directly (sorted by `(x, y)`, matching THUNDERBIRD.md's own
+  "coordinate di mappa" order) through `resolve_province_raids()`
+  instead of calling `compute_tax_base()` in one shot -- `compute_tax_
+  base()`/`province_tax_yield()` themselves are untouched, so every
+  other consumer (FINANCES' own "Expected Revenues" line, the
+  PROVINCES report's Tax column, ASpy's estimate) keeps showing the
+  pre-raid expected figure. New `GameState.turn_raid_events: list[
+  RaidEvent]`, reset and repopulated once per turn by `apply_turn_
+  revenue()`, read directly by `report/turn_report.py describe_
+  finances_report()` -- new `render_monster_raid()`/`render_
+  thunderbird_intervention()` (verbatim `SAY.PAS _LFRaid`/`_LFThun`
+  transcriptions, THUNDERBIRD.md sections 12.1/12.2), rendered right
+  after "Expected Revenues," filtered to this kingdom's own owned
+  provinces.
+
+  **Deliberately out of scope this phase** (user-approved, "solo il
+  nucleo ora"): quest/Fulfill-triggered and intimidating-attack-
+  triggered pacification (THUNDERBIRD.md's other two ways to calm a
+  raider) -- both need hooking into other already-existing subsystems
+  with their own trigger logic, a separate follow-up. Also out of
+  scope: the `Build_Raid_Profile`/`noarmy` eligibility gate (no
+  recoverable algorithm for which monsters it would exclude -- every
+  Bold+active monster is treated as passing it), `Maybe_Repopulate_
+  Dead_Feature` (no precise algorithm given), and seeding *initial*
+  Bold guardians at world generation (every world-generated feature
+  starts at `MERCENARY` and matures naturally via real turns).
+
+  This closes the royal-title system's very last open item -- Divine
+  King's own perk was the sole genuinely-blocked title
+  ([[project_royal_titles_phase630_closed]]: "no monster-raid mechanic
+  exists anywhere in this project") -- and resolves `turn/tax_base.py`'s
+  own standing "no recoverable trigger probability or magnitude"
+  docstring note about [9.2].
+
+  Test count: 5602 -> 5636 (net +34): `test_feature.py` (`guardian_
+  state` defaults to `MERCENARY`, added to an existing test), new
+  `test_monster_raids.py` (25 new cases across maturation, dissipation,
+  and raid resolution, including the Cowardly/Berserk activity-check
+  boundaries and the Thunderbird per-kingdom/per-turn gating),
+  `test_tax_base.py` (3 new: an end-to-end raid reducing a kingdom's
+  credited total while leaving `compute_tax_base()` unaffected, plus
+  the 2 pre-existing `apply_turn_revenue()` tests updated for the new
+  `rng` parameter), `test_turn_processor.py` (2 new: the Fall/Early-
+  Winter-only maturation gate; `apply_turn_revenue()` genuinely
+  consumes `run_turn()`'s own shared `rng`, not a fresh one),
+  `test_turn_report.py` (4 new: the raid/Thunderbird narration renders
+  for this kingdom's own province and is omitted for another's).
 
 ## Setup
 

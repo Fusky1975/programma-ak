@@ -68,12 +68,18 @@ code (~line 2032-2080), the only place any of these arrays are ever
 - ``ftype[fn]``: the feature's own ``feature`` enum value (kind).
 - ``fmonst[fn]``: the guardian's ``monster`` enum value
   (``models/monster.py Monster``).
-- ``fstate[fn]``: only one value is ever referenced in the available
-  source, ``Dead`` -- printed as "sacked & looted" when true, and used
-  to gate whether the guardian's name is shown at all. No other
-  ``fstate`` value is ever referenced anywhere in the archive, so this
-  project models only that one confirmed bit (``looted: bool``) rather
-  than guessing a fuller status enum.
+- ``fstate[fn]``: only one value was referenced in the source available
+  at the time this note was written, ``Dead`` -- printed as "sacked &
+  looted" when true, and used to gate whether the guardian's name is
+  shown at all -- modeled as ``looted: bool``. **Stale as of Phase
+  670**: ``Desktop/THUNDERBIRD.md`` (2026-08-28) recovers the full
+  8-value ``fstate`` enum (Dead/Hired/Mercenary/Zomboid/Bold/Sold/
+  Loser/Calm) and the monster-raid state machine that drives it --
+  already modeled verbatim as ``models/monster.py
+  MonsterEngagementState``. ``Feature.guardian_state`` below tracks it,
+  kept independent of ``looted`` (still the one true "is this guardian
+  dead" bit) rather than folding Dead into the new enum's own live
+  value.
 - ``fdisc^[playking,fn]``: a **per-kingdom** discovery level, ``CASE``
   -dispatched to exactly 3 meaningful values: ``1`` = detected but
   riches unknown (prints "?"), ``2`` = a magic-power hint is known
@@ -137,7 +143,7 @@ from enum import Enum
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord
-from ak_engine.models.monster import Monster
+from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.power import Power
 from ak_engine.models.treasure import Treasure
 
@@ -244,10 +250,13 @@ class Feature:
     # Phase 193: Hide Feature [4.23.3] ("This feature will become magically
     # hidden" -- models/power.py CAST_SPELL_FEATURE_DESCRIPTION corroborates
     # the same wording). No sourced duration exists anywhere (permanent vs.
-    # "for the rest of the turn" vs. some other window is not stated), and
-    # no consuming Explore/Search discovery-roll reads this flag yet -- same
-    # "spell writes real state, nothing reads it yet" situation documented
-    # for several other fields in `models/game_state.py`'s own docstring.
+    # "for the rest of the turn" vs. some other window is not stated). This
+    # note's original "no consumer reads this flag yet" claim is stale --
+    # `turn/exploration.py`/`turn/rumor.py` already read it, and Phase 670
+    # (`Desktop/THUNDERBIRD.md`) reuses it as the monster-raid mechanic's own
+    # "F_Hid gates a raid" gate, plus a genuinely new 10%-per-turn
+    # dissipation roll (`turn/monster_raids.py maybe_dissipate_hidden_
+    # feature()`).
     magically_hidden: bool = False
     # Phase 258: which leader (if any) currently holds a Talk-secured
     # "deal" with this feature's own guardian, pending a later turn's
@@ -299,9 +308,40 @@ class Feature:
     # `None` means never used. Set by `turn/feature_power_execution.py
     # resolve_feature_power_attempt()`.
     power_used_turn: int | None = None
+    # Phase 670: `fstate[fn]`'s real, full guardian-engagement state
+    # (`Desktop/THUNDERBIRD.md`) -- `MERCENARY` ("alive, ordinary
+    # guardian, not yet Bold") is the sensible default every existing
+    # fixture and `worldgen/world_generation.py _create_feature()`
+    # picks up automatically. Deliberately independent of `looted`
+    # (still the one true "is this guardian dead" bit) -- raid/
+    # maturation logic in `turn/monster_raids.py` checks `not looted`
+    # as its own separate precondition rather than folding Dead into
+    # this enum's own live value.
+    guardian_state: MonsterEngagementState = MonsterEngagementState.MERCENARY
 
     def discovery_level(self, kingdom_id: int) -> int:
         return self.discovered_by_kingdom.get(kingdom_id, 0)
+
+
+@dataclass(frozen=True, slots=True)
+class RaidEvent:
+    """A single monster-raid outcome resolved this turn (Phase 670,
+    ``Desktop/THUNDERBIRD.md`` sections 9-12) -- either an ordinary raid
+    (damage subtracted from this turn's collected income only, never the
+    persisted tax base) or a Thunderbird intervention (Divine King's own
+    perk, zero damage, at most one per turn across the whole game).
+    Placed here rather than in ``turn/`` specifically to avoid a circular
+    import: ``GameState`` needs this type on ``turn_raid_events``, and
+    ``turn/monster_raids.py`` needs ``GameState`` types -- the same
+    ``models/`` -> ``turn/`` layering this project already keeps
+    elsewhere.
+    """
+
+    kind: str  # "raid" or "thunderbird"
+    province_coord: HexCoord
+    feature_id: int
+    monster: Monster
+    damage: int
 
 
 # CTBOTH.PAS `mfeat1`/`mfeat2` (``type monfeat = array[monster] of feature``,

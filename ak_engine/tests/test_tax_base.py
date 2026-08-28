@@ -6,8 +6,10 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
+from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
 from ak_engine.turn.tax_base import (
     apply_turn_revenue,
@@ -16,6 +18,7 @@ from ak_engine.turn.tax_base import (
     compute_tax_base,
     province_tax_yield,
 )
+from _helpers import ScriptedRandom
 
 HOME = HexCoord(0, 0)
 
@@ -217,7 +220,7 @@ def test_apply_turn_revenue_credits_tax_base_plus_office_bonus_to_treasury():
     state.add_leader(LeaderState(1, 1, "Vaelgor", HOME, is_king=True))
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
 
-    credited = apply_turn_revenue(state)
+    credited = apply_turn_revenue(state, ScriptedRandom([]))
 
     assert credited == {1: 35, 2: 0}
     assert state.kingdoms[1].treasury == 85
@@ -228,8 +231,67 @@ def test_apply_turn_revenue_credits_each_kingdom_independently():
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=4))
     state.add_province(ProvinceState(HexCoord(0, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, tax=6))
 
-    credited = apply_turn_revenue(state)
+    credited = apply_turn_revenue(state, ScriptedRandom([]))
 
     assert credited == {1: 4, 2: 6}
     assert state.kingdoms[1].treasury == 4
     assert state.kingdoms[2].treasury == 6
+
+
+# -- Phase 670: apply_turn_revenue() now runs each province through
+# turn/monster_raids.py resolve_province_raids() --------------------------
+
+
+def test_apply_turn_revenue_reduces_credit_for_a_raided_province_and_records_the_event():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=700))
+    state.add_feature(
+        Feature(
+            feature_id=1,
+            coord=HOME,
+            kind=FeatureType.DUNGEON,
+            guardian_monster=Monster.GRYPHON,  # Temper.BERSERK -- always active.
+            guardian_state=MonsterEngagementState.BOLD,
+        )
+    )
+
+    # Activity check (Berserk, always active regardless of the draw); no
+    # Thunderbird holder configured, so no second roll is consumed.
+    credited = apply_turn_revenue(state, ScriptedRandom([0.0]))
+
+    assert credited[1] < 700
+    assert len(state.turn_raid_events) == 1
+    assert state.turn_raid_events[0].kind == "raid"
+    assert state.kingdoms[1].treasury == credited[1]
+
+
+def test_apply_turn_revenue_expected_revenues_line_unaffected_by_a_raid():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=700))
+    state.add_feature(
+        Feature(
+            feature_id=1,
+            coord=HOME,
+            kind=FeatureType.DUNGEON,
+            guardian_monster=Monster.GRYPHON,
+            guardian_state=MonsterEngagementState.BOLD,
+        )
+    )
+
+    apply_turn_revenue(state, ScriptedRandom([0.0]))
+
+    # The persisted per-province tax base -- what "Expected Revenues"
+    # renders -- is untouched by the raid; only this turn's own credited
+    # amount (asserted above) is reduced.
+    assert compute_tax_base(state, 1) == 700
+    assert province_tax_yield(state.provinces[HOME]) == 700
+
+
+def test_apply_turn_revenue_resets_turn_raid_events_each_call():
+    state = make_state()
+    state.turn_raid_events = ["stale"]  # type: ignore[list-item]
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=4))
+
+    apply_turn_revenue(state, ScriptedRandom([]))
+
+    assert state.turn_raid_events == []

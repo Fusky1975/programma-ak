@@ -7,10 +7,12 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, ActionCode, Maneuver, Spell
+from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
 from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID
@@ -100,6 +102,77 @@ def test_run_turn_decodes_the_real_sp_block_before_phase_0():
     run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH)
 
     assert state.leaders[10].special_encounter_plan == (SearchTactic(Maneuver.FLEE),)
+
+
+# -- Phase 670: monster-raid guardian maturation only from Fall (P3) onward,
+# and apply_turn_revenue() now runs off the real per-turn rng --------------
+
+
+def _empty_plan_leader(leader_id: int, name: str) -> Leader:
+    return Leader(leader_id, name, ActionPlan(leader_id, [PlanSegment(0, 0, (), {})]))
+
+
+def test_run_turn_ages_feature_guardians_only_from_fall_phase_index_3_onward():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    coord = HexCoord(5, 5)
+    state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_feature(
+        Feature(
+            feature_id=1,
+            coord=coord,
+            kind=FeatureType.DUNGEON,
+            guardian_monster=Monster.CHIMERA,
+            guardian_alignment=Alignment.NEUTRAL,
+            guardian_state=MonsterEngagementState.CALM,
+        )
+    )
+    leader = _empty_plan_leader(10, "A")
+
+    # Exactly 3 draws expected: P3's 3%-hit (0.02) + Worldly-threshold
+    # pick (0.1) transitions Calm -> Mercenary; P4's 3%-miss (0.5)
+    # consumes only one more. If maturation ran during P0/P1/P2 too, this
+    # exact-length script would either desync the CALM->MERCENARY
+    # transition's own timing or raise IndexError on an unexpected extra
+    # draw -- either way the assertion below would fail.
+    rng = ScriptedRandom([0.02, 0.1, 0.5])
+
+    run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=rng)
+
+    assert state.features[1].guardian_state is MonsterEngagementState.MERCENARY
+
+
+def test_run_turn_apply_turn_revenue_consumes_the_real_shared_rng():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    coord = HexCoord(5, 5)
+    state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=700))
+    state.add_feature(
+        Feature(
+            feature_id=1,
+            coord=coord,
+            kind=FeatureType.DUNGEON,
+            # Gr. Dragon: Temper.COWARDLY (25% raid-activity chance) --
+            # avoids interaction with the maturation rolls below (its
+            # own guardian_alignment doesn't matter once already BOLD).
+            guardian_monster=Monster.GR_DRAGON,
+            guardian_state=MonsterEngagementState.BOLD,
+        )
+    )
+    leader = _empty_plan_leader(10, "A")
+
+    # P3/P4 maturation rolls (3%-miss each, no threshold consumed) +
+    # the raid activity check (>= 0.25 -> inactive). If `apply_turn_
+    # revenue()` used its own fresh `random.Random()` instead of this
+    # same shared `rng`, this script would be left with one unconsumed
+    # element at the end.
+    rng = ScriptedRandom([0.5, 0.5, 0.9])
+
+    run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=rng)
+
+    assert rng._randoms == []
+    assert state.turn_raid_events == []
+    assert state.kingdoms[1].treasury == 700
 
 
 def test_run_turn_empty_sp_block_leaves_special_encounter_plan_empty():

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, MONSTER_GUARDED_FEATURE_TYPES, Feature, FeatureType
 from ak_engine.models.map import HexCoord
-from ak_engine.models.monster import Monster
+from ak_engine.models.monster import Monster, MonsterEngagementState
 
 COORD = HexCoord(3, 4)
 
@@ -26,6 +26,7 @@ def test_feature_defaults_to_undiscovered_and_not_looted():
     assert feature.discovered_by_kingdom == {}
     assert feature.discovery_level(kingdom_id=1) == 0
     assert feature.magically_hidden is False
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
 
 
 def test_feature_magically_hidden_flag():

@@ -8919,7 +8919,7 @@ def _discovery_exchange_line(prefix: str, partners: list[int]) -> str:
     return f"({prefix} player(s) {names} by scientific treaty)"
 
 
-def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
+def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Random | None = None) -> list[str]:
     """Assembles the "FINANCES" section (Phase 219) -- a deliberately
     narrow slice of `REPORTS.PAS Rep_Econ`, rendering only the figures
     this project's `GameState` actually has real data for.
@@ -8986,6 +8986,15 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
     sorted the real way via `sorted_kingdom_discoveries()`), falling back
     to `_FINANCES_NONE_AT_PRESENT` only when the kingdom holds none.
 
+    **Phase 670 adds the real monster-raid/Thunderbird-intervention
+    narration** (``turn/monster_raids.py``, ``Desktop/THUNDERBIRD.md``
+    sections 12.1/12.2) -- right after "Expected Revenues" (the real
+    Pascal `_LFRaid`/`_LFThun` events are logically about this same
+    turn's own revenue collection), filtered to `state.turn_raid_
+    events` whose own province this kingdom owns. This also resolves
+    this module's own former "no recoverable trigger probability or
+    magnitude" note in `turn/tax_base.py`'s docstring.
+
     **Phase 643 adds the real Scientific Treaty exchange attribution**:
     up to two extra lines right after a given Discovery's own name/
     effect line -- `"(Received from player(s) #k1[, k2...] by
@@ -9004,6 +9013,7 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
     """
 
     kingdom = state.kingdoms[kingdom_id]
+    rng = rng if rng is not None else random.Random()
 
     lines = [
         "FINANCES",
@@ -9017,6 +9027,17 @@ def describe_finances_report(state: GameState, kingdom_id: int) -> list[str]:
     if thiefprince_holder is not None and state.leaders[thiefprince_holder.leader_id].kingdom_id == kingdom_id:
         lines.append("(Including +10 Thieves Guild)")
     lines.append(f"Expected Revenues: {compute_tax_base(state, kingdom_id):>3}")
+    for raid_event in state.turn_raid_events:
+        province = state.provinces.get(raid_event.province_coord)
+        if province is None or province.owner_kingdom_id != kingdom_id:
+            continue
+        province_name = _province_label(state, raid_event.province_coord)
+        monster_name = MONSTER_NAMES[raid_event.monster]
+        is_sea = province.effective_terrain() is Terrain.SEA
+        if raid_event.kind == "thunderbird":
+            lines.append(render_thunderbird_intervention(province_name, monster_name, rng))
+        else:
+            lines.append(render_monster_raid(province_name, monster_name, raid_event.damage, rng, is_sea=is_sea))
     lines.append(f"Expected Expenses: {compute_expected_expenses(state, kingdom_id):>3}")
     invention_bonus_percent = compute_invention_bonus_percent(kingdom)
     if invention_bonus_percent > 0:
@@ -11884,6 +11905,45 @@ def render_wind_walk_move_world_event(character_name: str, province_name: str, r
     return render(_WIND_WALK_MOVE_TEMPLATE, values, rng=rng)
 
 
+# Phase 670 -- `SAY.PAS` `_LFRaid`/`_LFThun` (`Desktop/THUNDERBIRD.md`
+# sections 12.1/12.2), each combining that event's own two consecutive
+# `Say()` calls into one continuous template string, the same convention
+# `_FLY_MOVE_TEMPLATE`/`_WIND_WALK_MOVE_TEMPLATE` above already use. Both
+# are `S_Admin`-level events -- see `turn/monster_raids.py`'s own module
+# docstring for the full mechanic. `<2` is the monster (not `<`/a leader
+# -- THUNDERBIRD.md itself: "il token @ è la provincia, <2 il mostro e #
+# il danno calcolato"); `>` follows this project's own established
+# convention (`>` = whichever single character `<`/`<2` names, possessive
+# via literal name + "'s", since the full pronoun system stays out of
+# scope) for `_LFThun`'s own "putting a halt to >'s raids" clause.
+_MONSTER_RAID_TEMPLATE = (
+    "@ was raided/Rplundered by <2, who came/Rstormed from out of the dark/Sdeep "
+    "{wilderness/Sseas }and pillaged or destroyed # gold worth of property."
+)
+_THUNDERBIRD_INTERVENTION_TEMPLATE = (
+    "@ was attacked/Rraided by <2, but the Thunderbird stormed_down/Rsuddenly_flashed_in "
+    "from the heavens/Rblue_sky and defeated/Rbested <2 in {personal/Rheated }combat, "
+    "putting_a_halt_to/Rpunishing_<2_for > raids/Rmischief."
+)
+
+
+def render_monster_raid(province_name: str, monster_name: str, damage: int, rng: random.Random, *, is_sea: bool = False) -> str:
+    """Renders `SAY.PAS` `_LFRaid`'s own notice for an ordinary monster
+    raid -- see the module-level comment above for sourcing."""
+
+    values = {"@": province_name, "<2": monster_name, "#": str(damage)}
+    return render(_MONSTER_RAID_TEMPLATE, values, rng=rng, is_sea=is_sea)
+
+
+def render_thunderbird_intervention(province_name: str, monster_name: str, rng: random.Random) -> str:
+    """Renders `SAY.PAS` `_LFThun`'s own notice for Divine King's own
+    Thunderbird intervention -- no damage figure to substitute, since the
+    real Pascal prose never prints one (the raid was blocked)."""
+
+    values = {"@": province_name, "<2": monster_name, ">": f"{monster_name}'s"}
+    return render(_THUNDERBIRD_INTERVENTION_TEMPLATE, values, rng=rng)
+
+
 def record_move_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
     """Populates ``state.world_events`` (Phase 257) from every Move whose
     mover was under Mystic Winds (Phase 634) or whose entire arriving
@@ -12496,7 +12556,7 @@ def compose_letter_report(
     if diplomacy_lines:
         _emit_section(diplomacy_lines[0], diplomacy_lines[1:])
 
-    finances_lines = describe_finances_report(state, kingdom_id)
+    finances_lines = describe_finances_report(state, kingdom_id, rng)
     if finances_lines:
         _emit_section(finances_lines[0], finances_lines[1:])
 

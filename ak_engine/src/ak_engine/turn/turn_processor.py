@@ -288,6 +288,7 @@ from ak_engine.turn.patrol_execution import execute_patrol
 from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue
 from ak_engine.turn.sep_decode import decode_special_encounter_plan
 from ak_engine.turn.skeletal_decay import decompose_graveyard
+from ak_engine.turn.monster_raids import age_all_feature_guardians, maybe_dissipate_hidden_feature
 from ak_engine.turn.tax_base import apply_turn_revenue
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail
@@ -605,6 +606,15 @@ def run_turn(
                         active_move_chases, tl.leader.leader_id, tl.kingdom_id, target, dispatch_results
                     )
 
+        # Phase 670 -- rulebook's own Fall/Early-Winter-only guardian
+        # maturation (THUNDERBIRD.md section 11). Season -> phase mapping
+        # is the user's own direct confirmation: this project's 5 phases
+        # per turn ARE Spring/Early Summer/Late Summer/Fall/Early Winter
+        # in order, so Fall=P3/Early Winter=P4 is exactly `phase_index >=
+        # 3` in this existing loop -- no new calendar concept needed.
+        if phase_index >= 3:
+            age_all_feature_guardians(state, rng)
+
     visitor = finalize_gate_angel_visit(state, rng, board_width=board_width)
     if visitor is not None:
         # Sentinel result, same convention as _dispatch_contested_rebattles:
@@ -632,7 +642,13 @@ def run_turn(
     _revert_analytical_psychology_charms(state)
     _apply_werebeast_transformations(state)
     decompose_graveyard(state)
-    apply_turn_revenue(state)
+    # Phase 670: Hide Feature's own genuinely new 10%-per-turn
+    # dissipation roll (THUNDERBIRD.md section 12.3) -- once per real
+    # turn, not per phase (no phase-specific trigger is named the way
+    # the maturation routine's own "Season" gate has one).
+    for feature in state.features.values():
+        maybe_dissipate_hidden_feature(feature, rng)
+    apply_turn_revenue(state, rng)
     apply_turn_maintenance(state, rng)
     # Phase 468: King of Cowards' own real per-turn temperament rise
     # (AKGEN_reverse_engineering_report (2).md SS18.6) -- see that

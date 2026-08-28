@@ -300,7 +300,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
-from ak_engine.models.feature import Feature
+from ak_engine.models.feature import Feature, RaidEvent
 from ak_engine.models.game_type import GameType
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.kingdom import SkillTable
@@ -1196,6 +1196,14 @@ class GameState:
     # `miscwrit`'s `OR 2`, real `gdday` is calendar data with no fixed
     # "freshly-generated world" constant to source a better default from.
     gdday: int = 1
+    # Phase 670 -- this turn's own resolved monster-raid/Thunderbird
+    # outcomes (`Desktop/THUNDERBIRD.md`), reset and repopulated once per
+    # turn by `turn/tax_base.py apply_turn_revenue()`. Read directly by
+    # `report/turn_report.py describe_finances_report()` -- the same
+    # "per-turn fact lives on `GameState`, no signature threading needed"
+    # convention already used for `LeaderState.mystic_winds_active`/
+    # `ProvinceState.plague_active`.
+    turn_raid_events: list[RaidEvent] = field(default_factory=list)
     kingdoms: dict[int, KingdomState] = field(default_factory=dict)
     provinces: dict[HexCoord, ProvinceState] = field(default_factory=dict)
     armies: dict[int, ArmyState] = field(default_factory=dict)

@@ -78,28 +78,40 @@ own "(Including +5 Black Knights)"/"(Including +10 Thieves Guild)"
 notes already reference, now made true for the first time).
 
 **Deliberately not folded into the credited amount: `Inv_Bonus`
-(`compute_invention_bonus_percent()`) and the two, separately-confirmed
--unsourced adjacent mechanics** (a per-race `Racial_Tax` ability
-declared but never dispatched anywhere in the available `.PAS` files,
-and [9.2]'s own monster-devastation tax reduction, named in the
-rulebook prose with no recoverable trigger probability or magnitude
-anywhere in the source). `Inv_Bonus` is real Pascal (`REPORTS.PAS`:
-`IF Inv_Bonus(kng) > 0 THEN WRITELN(...,Inv_Bonus(kng):3,'%')`), but
-nothing in the available source confirms it modifies the actual gold
-credited rather than being a report-only percentage -- Phase 268's own
-design choice to keep it "additive to (not folded into)
-`compute_tax_base()`'s own return value" for *display* purposes is
-preserved here for the *real credit* too, rather than silently
-broadening its scope to a formula this project can't source. All three
-are confirmed, not merely undiscovered -- see the user's own research
-session for `Racial_Tax` and the monster-devastation reduction.
+(`compute_invention_bonus_percent()`) and a per-race `Racial_Tax`
+ability declared but never dispatched anywhere in the available `.PAS`
+files.** `Inv_Bonus` is real Pascal (`REPORTS.PAS`: `IF Inv_Bonus(kng) >
+0 THEN WRITELN(...,Inv_Bonus(kng):3,'%')`), but nothing in the available
+source confirms it modifies the actual gold credited rather than being a
+report-only percentage -- Phase 268's own design choice to keep it
+"additive to (not folded into) `compute_tax_base()`'s own return value"
+for *display* purposes is preserved here for the *real credit* too,
+rather than silently broadening its scope to a formula this project
+can't source.
+
+**Phase 670 -- [9.2]'s own monster-devastation tax reduction, resolved.**
+This note used to say the mechanic was "named in the rulebook prose with
+no recoverable trigger probability or magnitude anywhere in the source"
+-- ``Desktop/THUNDERBIRD.md`` (user-supplied, 2026-08-28) fully resolves
+it: a real formula, real probabilities, real damage (``turn/monster_
+raids.py``). Unlike `Inv_Bonus`/`Racial_Tax`, this one genuinely does
+reduce the actual gold credited -- but only the turn's own *collected*
+income, never the persisted `ProvinceState.tax`/`compute_tax_base()`
+figure itself (THUNDERBIRD.md's own point 9: "il danno riduce soltanto
+le entrate riscosse in quel turno... non cambia `ptax`") -- so every
+other consumer (FINANCES' own "Expected Revenues" line, the PROVINCES
+report's Tax column, ASpy's estimate) keeps showing the pre-raid
+*expected* figure unchanged.
 """
 
 from __future__ import annotations
 
+import random
+
 from ak_engine.models.discovery import DISCOVERY_REVENUE_BONUS_PERCENT
 from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
 from ak_engine.models.office import Office
+from ak_engine.turn.monster_raids import resolve_province_raids
 
 
 def province_tax_yield(province: ProvinceState) -> int | None:
@@ -189,13 +201,14 @@ def compute_office_gold_bonus(state: GameState, kingdom_id: int) -> int:
     return total
 
 
-def apply_turn_revenue(state: GameState) -> dict[int, int]:
-    """Credits every kingdom's own ``compute_tax_base()`` plus
-    ``compute_office_gold_bonus()`` to its treasury, once per turn -- see
-    module docstring's Phase 412 section for the rulebook citation, why
-    this was a display-only figure through Phase 411, and what's
-    deliberately not folded in (``Inv_Bonus``, ``Racial_Tax``, monster
-    devastation).
+def apply_turn_revenue(state: GameState, rng: random.Random) -> dict[int, int]:
+    """Credits every kingdom's own province-by-province tax yield (each
+    province run through ``turn/monster_raids.py resolve_province_raids()``
+    first, Phase 670) plus ``compute_office_gold_bonus()`` to its treasury,
+    once per turn -- see module docstring's Phase 412 section for the
+    rulebook citation, why this was a display-only figure through Phase
+    411, and what's deliberately not folded in (``Inv_Bonus``,
+    ``Racial_Tax``).
 
     Returns the amount credited per kingdom, keyed by ``kingdom_id`` --
     the same "callers/tests that want to verify a specific credit don't
@@ -208,9 +221,34 @@ def apply_turn_revenue(state: GameState) -> dict[int, int]:
     paga il mantenimento").
     """
 
+    # Deferred import: same circular-import workaround `compute_office_
+    # gold_bonus()` above already needs and documents.
+    from ak_engine.turn.office_holder import resolve_office_holder
+
+    state.turn_raid_events = []
+    divine_archangel_holder = resolve_office_holder(state, Office.DIVINE_KING)
+    divine_archangel_kingdom_id = (
+        state.leaders[divine_archangel_holder.leader_id].kingdom_id if divine_archangel_holder is not None else None
+    )
+    thunder_used = False
+
     credited: dict[int, int] = {}
     for kingdom_id, kingdom in state.kingdoms.items():
-        amount = compute_tax_base(state, kingdom_id) + compute_office_gold_bonus(state, kingdom_id)
+        owned_provinces = sorted(
+            (province for province in state.provinces.values() if province.owner_kingdom_id == kingdom_id),
+            key=lambda province: (province.coord.x, province.coord.y),
+        )
+        amount = 0
+        for province in owned_provinces:
+            income = province_tax_yield(province)
+            if income is None:
+                continue
+            income, thunder_used, events = resolve_province_raids(
+                state, kingdom_id, province, income, divine_archangel_kingdom_id, thunder_used, rng
+            )
+            state.turn_raid_events.extend(events)
+            amount += income
+        amount += compute_office_gold_bonus(state, kingdom_id)
         kingdom.treasury += amount
         credited[kingdom_id] = amount
     return credited

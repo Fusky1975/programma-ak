@@ -9,14 +9,14 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery, describe_discovery_line
-from ak_engine.models.feature import Feature, FeatureType
+from ak_engine.models.feature import Feature, FeatureType, RaidEvent
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.game_type import GameType
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
-from ak_engine.models.monster import Monster
+from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.office import Office
 from ak_engine.models.power import Power
 from ak_engine.models.race import Race
@@ -6885,6 +6885,64 @@ def test_describe_finances_report_shows_both_notes_in_order_when_both_are_earned
     assert lines[3] == "(Including +5 Black Knights)"
     assert lines[4] == "(Including +10 Thieves Guild)"
     assert lines[5] == "Expected Revenues:  30"
+
+
+# -- Phase 670: monster-raid/Thunderbird-intervention narration ----------
+
+
+def _finances_state_with_owned_province() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(5, 5)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Home"))
+    state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.ELVEN, owner_kingdom_id=2, name="Otherhome"))
+    return state
+
+
+def test_describe_finances_report_renders_a_raid_line_for_this_kingdoms_own_province():
+    state = _finances_state_with_owned_province()
+    state.turn_raid_events.append(RaidEvent("raid", HexCoord(0, 0), 1, Monster.GARGOYLE, 4))
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    revenues_index = lines.index("Expected Revenues:   0")
+    expenses_index = lines.index("Expected Expenses:   0")
+    assert revenues_index < expenses_index - 1
+    raid_line = lines[revenues_index + 1]
+    assert "Home" in raid_line
+    assert "Gargoyle" in raid_line
+    assert "4" in raid_line
+
+
+def test_describe_finances_report_renders_a_thunderbird_line_with_no_damage_figure():
+    state = _finances_state_with_owned_province()
+    state.turn_raid_events.append(RaidEvent("thunderbird", HexCoord(0, 0), 1, Monster.GARGOYLE, 0))
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    revenues_index = lines.index("Expected Revenues:   0")
+    thunderbird_line = lines[revenues_index + 1]
+    assert "Home" in thunderbird_line
+    assert "Gargoyle" in thunderbird_line
+    assert "Thunderbird" in thunderbird_line
+
+
+def test_describe_finances_report_omits_another_kingdoms_raid_event():
+    state = _finances_state_with_owned_province()
+    state.turn_raid_events.append(RaidEvent("raid", HexCoord(5, 5), 1, Monster.GARGOYLE, 4))
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    assert not any("Gargoyle" in line for line in lines)
+
+
+def test_describe_finances_report_no_raid_events_leaves_lines_unchanged():
+    state = _finances_state_with_owned_province()
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    assert lines[3] == "Expected Revenues:   0"
+    assert lines[4] == "Expected Expenses:   0"
 
 
 # -- Phase 220: describe_provinces_report() -- the "PROVINCES" section --
