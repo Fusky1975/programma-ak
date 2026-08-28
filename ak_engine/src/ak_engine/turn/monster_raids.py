@@ -54,16 +54,26 @@ province_income / 70) + 1``, subtracted from the turn's calculated
 income ONLY (never the persisted ``ProvinceState.tax``/tax base -- see
 ``turn/tax_base.py``'s own module docstring), guardian stays ``BOLD``.
 
-**Deliberately out of scope this phase** (user-approved, "solo il
-nucleo ora"): quest/Fulfill-triggered and intimidating-attack-triggered
-pacification (THUNDERBIRD.md section 4.2's other two ways to calm a
-raider) -- both need hooking into other already-existing subsystems
-(quest fulfillment, Search/Challenge combat resolution) with their own
-trigger logic, a separate follow-up. Also out of scope: ``Maybe_Repopulate_
-Dead_Feature`` (no precise algorithm given) and seeding *initial* Bold
-guardians at world generation (this document covers per-turn maturation
-only -- every world-generated feature starts at ``MERCENARY`` and matures
-naturally via real turns' own Fall/Early-Winter rolls).
+**Phase 671 closes the other two pacification triggers** section 4.2
+names: ``apply_fulfill_pacification()`` (the exact compiled ``AK.OVR``
+snippet, applied -- per the user's own direct 2026-08-29 choice -- to
+ANY successfully-honored Fulfill deal against a Feature's guardian,
+since this project's own Fulfill mechanic is already deliberately
+abstract about deal content) and ``guardian_intimidated_by_combat_
+damage()`` (project-original, no recoverable trigger algorithm survives
+anywhere in THUNDERBIRD.md for this one -- only the resulting report
+message ids; the user directly specified the formula: a ``Bold``
+guardian that loses more than half its own starting hit points in a
+single Search combat becomes intimidated). Report-layer narration for
+either is deliberately not attempted -- no literal English ``Say()``
+template text survives for `_LPacif`/`_MNoBold`/`_MUnDt`, only message
+ids and Italian paraphrases.
+
+Also out of scope, still: ``Maybe_Repopulate_Dead_Feature`` (no precise
+algorithm given) and seeding *initial* Bold guardians at world
+generation (this document covers per-turn maturation only -- every
+world-generated feature starts at ``MERCENARY`` and matures naturally
+via real turns' own Fall/Early-Winter rolls).
 """
 
 from __future__ import annotations
@@ -192,3 +202,57 @@ def resolve_province_raids(
         events.append(RaidEvent("raid", province.coord, feature.feature_id, feature.guardian_monster, damage))
 
     return income, thunder_used, events
+
+
+def apply_fulfill_pacification(feature: Feature) -> bool:
+    """THUNDERBIRD.md section 4.2's own compiled pacification snippet
+    (``AK.OVR`` raw ``0x1987C-0x19937``): ``IF fstate<>Calm THEN (IF
+    fstate=Bold THEN Mercenary ELSE Calm)``. Per the user's own direct
+    2026-08-29 choice, applied to ANY successfully-honored ``turn/
+    encounter.py resolve_fulfill_honored()`` deal against a Feature's
+    guardian, not gated on the real game's own narrower "was this
+    specifically a stop-raiding promise" negotiation branch (`RUMORS.PAS
+    Check_Raid`'s own 25th Talk-reply, gated on `fstate=Bold`, that this
+    project's `MonsterTalkReply`/`TalkReplyOutcome` enum doesn't model)
+    -- this project's own Fulfill mechanic is already deliberately
+    abstract about deal content (see `turn/encounter.py`'s own module
+    comment above `FULFILL_HELLISH_REFERENCE_ORDINAL`), so this reuses
+    that same simplification rather than inventing new deal-type state.
+
+    Returns ``True`` iff a transition actually happened (``guardian_
+    state`` wasn't already ``CALM``).
+    """
+
+    if feature.guardian_state is MonsterEngagementState.CALM:
+        return False
+    feature.guardian_state = (
+        MonsterEngagementState.MERCENARY
+        if feature.guardian_state is MonsterEngagementState.BOLD
+        else MonsterEngagementState.CALM
+    )
+    return True
+
+
+def guardian_intimidated_by_combat_damage(feature: Feature, starting_hit_points: int, remaining_hit_points: int) -> bool:
+    """Project-original mechanic, no Pascal/disassembly source (confirmed
+    absent -- THUNDERBIRD.md section 4.2 names "an attack that
+    intimidates the monster" as a real pacification trigger but gives no
+    recoverable algorithm for when it fires, only the resulting report
+    message ids `_MNoBold`/`_MUnDt`). **User-specified directly,
+    2026-08-29** (the same "designed collaboratively, clearly labeled"
+    precedent as Beg [BE], Phase 241): a `Bold` guardian that loses more
+    than half its own starting hit points in a single Search combat
+    becomes intimidated, `Bold -> Mercenary`, persistent.
+
+    No-op (returns ``False``) unless ``feature.guardian_state`` is
+    currently ``BOLD`` -- matches THUNDERBIRD.md's own table row for this
+    mechanic exactly (no "else" branch, unlike the Fulfill row above).
+    """
+
+    if feature.guardian_state is not MonsterEngagementState.BOLD:
+        return False
+    hp_lost = starting_hit_points - remaining_hit_points
+    if hp_lost < starting_hit_points // 2 + 1:
+        return False
+    feature.guardian_state = MonsterEngagementState.MERCENARY
+    return True

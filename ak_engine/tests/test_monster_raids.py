@@ -14,6 +14,8 @@ from ak_engine.models.race import Race
 from ak_engine.turn.monster_raids import (
     age_all_feature_guardians,
     age_feature_guardian,
+    apply_fulfill_pacification,
+    guardian_intimidated_by_combat_damage,
     maybe_dissipate_hidden_feature,
     resolve_province_raids,
 )
@@ -286,3 +288,64 @@ def test_resolve_province_raids_damage_stacks_across_two_bold_features():
     # The second feature's damage is computed against the already-reduced income.
     assert events[1].damage <= events[0].damage
     assert income == 700 - events[0].damage - events[1].damage
+
+
+# -- Phase 671: the 2 deferred pacification triggers --------------------
+
+
+def test_apply_fulfill_pacification_bold_becomes_mercenary():
+    feature = _feature(guardian_state=MonsterEngagementState.BOLD)
+    assert apply_fulfill_pacification(feature) is True
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
+
+
+def test_apply_fulfill_pacification_mercenary_becomes_calm():
+    feature = _feature(guardian_state=MonsterEngagementState.MERCENARY)
+    assert apply_fulfill_pacification(feature) is True
+    assert feature.guardian_state is MonsterEngagementState.CALM
+
+
+def test_apply_fulfill_pacification_already_calm_is_a_no_op():
+    feature = _feature(guardian_state=MonsterEngagementState.CALM)
+    assert apply_fulfill_pacification(feature) is False
+    assert feature.guardian_state is MonsterEngagementState.CALM
+
+
+def test_apply_fulfill_pacification_other_states_also_pacify_to_calm():
+    # THUNDERBIRD.md's own compiled snippet: any state other than Calm or
+    # Bold falls into the "ELSE -> Calm" branch too.
+    feature = _feature(guardian_state=MonsterEngagementState.ZOMBOID)
+    assert apply_fulfill_pacification(feature) is True
+    assert feature.guardian_state is MonsterEngagementState.CALM
+
+
+def test_guardian_intimidated_by_combat_damage_non_bold_never_transitions():
+    feature = _feature(guardian_state=MonsterEngagementState.MERCENARY)
+    assert guardian_intimidated_by_combat_damage(feature, 10, 0) is False
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
+
+
+def test_guardian_intimidated_by_combat_damage_exactly_at_threshold_transitions():
+    # 10 starting HP: threshold is 10 // 2 + 1 == 6 lost. Losing exactly
+    # 6 (down to 4 remaining) triggers.
+    feature = _feature(guardian_state=MonsterEngagementState.BOLD)
+    assert guardian_intimidated_by_combat_damage(feature, 10, 4) is True
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
+
+
+def test_guardian_intimidated_by_combat_damage_one_short_of_threshold_does_not_transition():
+    feature = _feature(guardian_state=MonsterEngagementState.BOLD)
+    assert guardian_intimidated_by_combat_damage(feature, 10, 5) is False
+    assert feature.guardian_state is MonsterEngagementState.BOLD
+
+
+def test_guardian_intimidated_by_combat_damage_total_loss_transitions():
+    feature = _feature(guardian_state=MonsterEngagementState.BOLD)
+    assert guardian_intimidated_by_combat_damage(feature, 10, 0) is True
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
+
+
+def test_guardian_intimidated_by_combat_damage_no_damage_at_all_does_not_transition():
+    feature = _feature(guardian_state=MonsterEngagementState.BOLD)
+    assert guardian_intimidated_by_combat_damage(feature, 10, 10) is False
+    assert feature.guardian_state is MonsterEngagementState.BOLD

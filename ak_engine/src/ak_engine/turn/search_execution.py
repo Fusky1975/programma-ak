@@ -585,6 +585,7 @@ from ak_engine.turn.feature_power_execution import (
     parse_sa_argument,
     resolve_feature_power_attempt,
 )
+from ak_engine.turn.monster_raids import apply_fulfill_pacification, guardian_intimidated_by_combat_damage
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 
@@ -1324,6 +1325,12 @@ def _resolve_search_encounter(
             return SearchExecutionResult(accepted=True, combat_resolved=True, winner="leader", feature_looted=True)
         if combat_result.winner == "b":
             _apply_monster_duel_merit(leader, feature.guardian_monster, leader_won=False, leader_combatant=leader_combatant)
+            # Phase 671: the guardian survived this encounter -- check
+            # whether it took enough damage to be intimidated. See
+            # turn/monster_raids.py guardian_intimidated_by_combat_
+            # damage()'s own docstring for the user's own project-
+            # original trigger rule.
+            guardian_intimidated_by_combat_damage(feature, monster_starting_hit_points, monster_combatant.hit_points)
             state.remove_leader(leader_id)
             return SearchExecutionResult(accepted=True, combat_resolved=True, winner="monster", leader_killed=True)
         return None
@@ -1550,6 +1557,7 @@ def _resolve_search_encounter(
         if spell is Spell.CHARM:
             # Confirmed by the user: the *caster* flees, same outcome as a
             # successful Maneuver.FLEE.
+            guardian_intimidated_by_combat_damage(feature, monster_starting_hit_points, monster_combatant.hit_points)
             return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
 
         if spell is Spell.HOLY_SYMBOL:
@@ -1882,6 +1890,7 @@ def _resolve_search_encounter(
                     has_air_elemental_familiar=_has_air_elemental_familiar(state, leader_id),
                 )
                 if rng.random() < flee_chance:
+                    guardian_intimidated_by_combat_damage(feature, monster_starting_hit_points, monster_combatant.hit_points)
                     return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
                 return None
             if leader.temper is None:
@@ -1905,6 +1914,7 @@ def _resolve_search_encounter(
             simulated_result = resolve_melee_duel(simulated_caster, simulated_target, rng)
             would_lose_simulated_combat = simulated_result.winner == "b"
             if resolve_augur_combat(would_lose_simulated_combat, leader.temper, rng):
+                guardian_intimidated_by_combat_damage(feature, monster_starting_hit_points, monster_combatant.hit_points)
                 return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
             return None
 
@@ -2400,6 +2410,7 @@ def _resolve_search_encounter(
         if outcome_category is TalkReplyOutcome.IGNORE:
             return None
         feature.pending_deal_leader_id = leader_id
+        guardian_intimidated_by_combat_damage(feature, monster_starting_hit_points, monster_combatant.hit_points)
         return SearchExecutionResult(
             accepted=True,
             combat_resolved=False,
@@ -2452,6 +2463,11 @@ def _resolve_search_encounter(
             feature.guardian_alignment, leader.alignment, rng, caster_is_silver_tongue=caster_is_silver_tongue
         ):
             leader.merit_tally.monster_hp_neutralized += monster_starting_hit_points
+            # Phase 671: THUNDERBIRD.md section 4.2's own compiled
+            # pacification snippet -- see turn/monster_raids.py apply_
+            # fulfill_pacification()'s own docstring for why this applies
+            # to any honored deal, not a narrower "stop raiding" one.
+            apply_fulfill_pacification(feature)
             return SearchExecutionResult(accepted=True, combat_resolved=False, winner="leader")
         return None  # not honored -- the plan continues to its next tactic
 
@@ -2479,6 +2495,7 @@ def _resolve_search_encounter(
             feature.guardian_monster, MirrorImageIntelligenceTier.ANIMAL
         )
         if resolve_beg_for_mercy(tier, rng):
+            guardian_intimidated_by_combat_damage(feature, monster_starting_hit_points, monster_combatant.hit_points)
             return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
         return None
 
@@ -2490,6 +2507,7 @@ def _resolve_search_encounter(
                 has_air_elemental_familiar=_has_air_elemental_familiar(state, leader_id),
             )
             if rng.random() < flee_chance:
+                guardian_intimidated_by_combat_damage(feature, monster_starting_hit_points, monster_combatant.hit_points)
                 return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True)
             continue
         if tactic.maneuver is Maneuver.CAST:

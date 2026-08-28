@@ -28091,7 +28091,7 @@ follow-up request after the original 431-435 plan shipped.
   exception halves, including the Cowardly carve-out; one real `fight_
   battle()`-level end-to-end case).
 
-- **Phase 670 (current)**: monster raids -- rulebook [9.2]'s own
+- **Phase 670**: monster raids -- rulebook [9.2]'s own
   "monster devastation" tax reduction -- plus Divine King's own
   Thunderbird raid-halting perk, the very last genuinely-blocked item
   in the whole royal-title system. User-supplied `Desktop/THUNDERBIRD.
@@ -28194,6 +28194,73 @@ follow-up request after the original 431-435 plan shipped.
   consumes `run_turn()`'s own shared `rng`, not a fresh one),
   `test_turn_report.py` (4 new: the raid/Thunderbird narration renders
   for this kingdom's own province and is omitted for another's).
+
+- **Phase 671 (current)**: the 2 pacification triggers Phase 670
+  deliberately deferred (THUNDERBIRD.md section 4.2's other two ways to
+  calm a raiding guardian, alongside the Thunderbird block already
+  shipped) -- quest/Fulfill and an intimidating attack.
+
+  **Quest/Fulfill is fully sourced**: THUNDERBIRD.md quotes the exact
+  compiled `AK.OVR` snippet (`IF fstate<>Calm THEN (IF fstate=Bold THEN
+  Mercenary ELSE Calm)`), but the real game only reaches it via a 25th
+  Talk-negotiation branch (`RUMORS.PAS Check_Raid`'s own "stop raiding"
+  offer, gated on `fstate=Bold`) this project's `MonsterTalkReply`/
+  `TalkReplyOutcome` enum (24 real reply ids) doesn't model, and doesn't
+  need to -- this project's own Fulfill (`turn/encounter.py resolve_
+  fulfill_honored()`) is already deliberately abstract about deal
+  content. **User-confirmed directly (2026-08-29)**: apply the
+  pacification transition to ANY successfully-honored Fulfill against a
+  Feature's guardian, needing zero new deal-type state. New `turn/
+  monster_raids.py apply_fulfill_pacification()`, called from `turn/
+  search_execution.py _resolve_fulfill()`'s own success branch.
+
+  **The intimidating-attack trigger has no recoverable algorithm
+  anywhere in THUNDERBIRD.md** -- only the resulting report message ids
+  survive (`_MNoBold`/`_MUnDt`), no formula. **User-specified directly,
+  project-original (2026-08-29, the same "designed collaboratively,
+  clearly labeled" precedent as Beg [BE], Phase 241)**: a `Bold`
+  guardian that loses more than half its own starting hit points in a
+  single Search combat becomes intimidated, `Bold -> Mercenary`,
+  persistent. New `turn/monster_raids.py guardian_intimidated_by_
+  combat_damage()`.
+
+  **Hooking the intimidation check into `search_execution.py _resolve_
+  search_encounter()`** -- a single, un-refactored ~1480-line function
+  with ~25 return sites (Phase 274's own deliberate design, so
+  `execute_search()` can post-process its result without threading a
+  hook through every one) -- traced precisely rather than refactored:
+  nearly every combat-death outcome (either direction) already funnels
+  through the one centralized `_outcome_from()` closure, so patching
+  its own `winner == "b"` branch (guardian survives after killing the
+  leader) covers all of those at once. The only genuinely distinct
+  "guardian survives, encounter ends" sites left are the Talk `DEAL`
+  branch, `_resolve_beg()`'s own success, and 4 literal Flee-success
+  returns (the main tactic-loop Flee check, the Charm spell's own
+  "caster flees," and both Augur Combat branches) -- 7 explicit call-
+  site edits total, matching this file's own existing pattern of
+  calling `_apply_monster_duel_merit()` at multiple explicit sites
+  rather than funneling everything through one wrapper. Not called on
+  `_outcome_from()`'s own `winner == "a"` branch (guardian dies,
+  `feature.looted = True` already makes any state transition moot) or
+  the final "no Melee/Fire Arrow tactic" fallback (guardian never took
+  damage, formula is a guaranteed no-op there).
+
+  **Report-layer narration for either mechanic is deliberately out of
+  scope**: THUNDERBIRD.md gives only message ids (`_LPacif`=3169,
+  `_MNoBold`=3172, `_MUnDt`=3173) and Italian paraphrases, never the
+  literal English `Say()` template text `report/prose.py render()`
+  needs -- unlike `_LFRaid`/`_LFThun` (Phase 670), which had full quoted
+  Pascal strings. No narration is added this phase; the state-mutation
+  mechanic ships on its own, matching how Phase 616 shipped Feature->
+  Power primitives before Phase 622/623 wired report text.
+
+  Test count: 5636 -> 5653 (net +17): `test_monster_raids.py` (9 new:
+  `apply_fulfill_pacification()`'s 4 real transitions, `guardian_
+  intimidated_by_combat_damage()`'s threshold boundary and non-`BOLD`/
+  no-damage no-ops), `test_search_execution.py` (8 new: Fulfill's own
+  pacification wired end-to-end for both real transitions and a
+  not-honored no-op; the intimidation threshold crossed/not-crossed via
+  a losing Melee duel, a successful Beg, and a successful Flee).
 
 ## Setup
 

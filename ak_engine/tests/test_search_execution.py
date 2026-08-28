@@ -14,7 +14,7 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
-from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterSpeed
+from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterEngagementState, MonsterSpeed
 from ak_engine.models.office import Office
 from ak_engine.models.power import Power
 from ak_engine.models.race import Race
@@ -3525,6 +3525,203 @@ def test_execute_search_fulfill_not_honored_falls_through_and_clears_the_deal():
     assert mock_melee.called  # not honored -- no forced combat, just the plan's own next tactic
     assert result.winner == "leader"
     assert feature.pending_deal_leader_id is None  # the attempt still consumes the pending flag
+
+
+# -- Phase 671: quest/Fulfill pacification + intimidating-attack --------
+
+
+def test_execute_search_fulfill_honored_pacifies_a_bold_guardian_to_mercenary():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.CAVE,
+        guardian_monster=Monster.GARGOYLE,
+        pending_deal_leader_id=LEADER_ID,
+        guardian_state=MonsterEngagementState.BOLD,
+    )
+    state.add_feature(feature)
+    request = _fulfill_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
+
+
+def test_execute_search_fulfill_honored_pacifies_a_mercenary_guardian_to_calm():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.CAVE,
+        guardian_monster=Monster.GARGOYLE,
+        pending_deal_leader_id=LEADER_ID,
+        guardian_state=MonsterEngagementState.MERCENARY,
+    )
+    state.add_feature(feature)
+    request = _fulfill_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert feature.guardian_state is MonsterEngagementState.CALM
+
+
+def test_execute_search_fulfill_not_honored_leaves_guardian_state_untouched():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1,
+        coord=LOCATION,
+        kind=FeatureType.CAVE,
+        guardian_monster=Monster.GARGOYLE,
+        pending_deal_leader_id=LEADER_ID,
+        guardian_state=MonsterEngagementState.BOLD,
+    )
+    state.add_feature(feature)
+    request = _fulfill_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_fulfill_honored", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert feature.guardian_state is MonsterEngagementState.BOLD  # not honored -- no pacification applied
+
+
+def _damage_monster_past_threshold_then_monster_wins(leader_combatant, monster_combatant, rng, **_kwargs):
+    # Reduces relative to whatever hit_points the monster actually rolled
+    # this call -- no control over the initial random.randint() draw
+    # needed. The guardian ultimately wins (kills the leader) despite the
+    # heavy damage, proving intimidation is checked regardless of who
+    # wins the fight, not only on a leader win/guardian death.
+    monster_combatant.hit_points -= monster_combatant.hit_points // 2 + 1
+    return EncounterCombatResult(winner="b", rounds=1)
+
+
+def _monster_wins_unharmed(leader_combatant, monster_combatant, rng, **_kwargs):
+    return EncounterCombatResult(winner="b", rounds=1)
+
+
+def test_execute_search_intimidation_guardian_survives_loss_after_crossing_threshold():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE,
+        guardian_state=MonsterEngagementState.BOLD,
+    )
+    state.add_feature(feature)
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", side_effect=_damage_monster_past_threshold_then_monster_wins
+    ):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert result.winner == "monster"
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
+
+
+def test_execute_search_intimidation_not_triggered_below_threshold():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE,
+        guardian_state=MonsterEngagementState.BOLD,
+    )
+    state.add_feature(feature)
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", side_effect=_monster_wins_unharmed
+    ):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert result.winner == "monster"
+    assert feature.guardian_state is MonsterEngagementState.BOLD
+
+
+def _damage_leader_and_monster_fire_arrow_duel(leader_combatant, monster_combatant, rng):
+    leader_combatant.hit_points -= 3
+    monster_combatant.hit_points -= monster_combatant.hit_points // 2 + 1
+    return EncounterCombatResult(winner=None, rounds=1)
+
+
+def test_execute_search_intimidation_beg_success_after_crossing_threshold():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER,
+        guardian_state=MonsterEngagementState.BOLD,
+    )
+    state.add_feature(feature)
+    request = _beg_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", side_effect=_damage_leader_and_monster_fire_arrow_duel
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_beg_for_mercy", return_value=True
+    ):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert result.fled is True
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
+
+
+def test_execute_search_intimidation_beg_success_below_threshold_leaves_guardian_bold():
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER,
+        guardian_state=MonsterEngagementState.BOLD,
+    )
+    state.add_feature(feature)
+    request = _beg_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", side_effect=_damage_leader_fire_arrow_duel
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_beg_for_mercy", return_value=True
+    ):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
+
+    assert result.fled is True
+    # Only the leader took damage in this fixture -- proves the check
+    # doesn't fire unconditionally on any Beg success.
+    assert feature.guardian_state is MonsterEngagementState.BOLD
+
+
+def _damage_monster_fire_arrow_duel(leader_combatant, monster_combatant, rng):
+    monster_combatant.hit_points -= monster_combatant.hit_points // 2 + 1
+    return EncounterCombatResult(winner=None, rounds=1)
+
+
+def test_execute_search_intimidation_flee_success_after_crossing_threshold():
+    # SHOOT (damages the monster past the threshold, nobody dies) then
+    # FLEE -- MELEE alone can't be followed by another tactic here since
+    # a lone/last MELEE resolves atomically via resolve_melee_duel()
+    # (Phase 293's own "is_last_leader_tactic" fast path), never falling
+    # through to a later tactic.
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER,
+        guardian_state=MonsterEngagementState.BOLD,
+    )
+    state.add_feature(feature)
+    request = SearchRequest(
+        feature_id=1, unconfirmed_extra0=0,
+        tactics=[SearchTactic(maneuver=Maneuver.SHOOT), SearchTactic(maneuver=Maneuver.FLEE)],
+    )
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", side_effect=_damage_monster_fire_arrow_duel
+    ), patch(
+        "ak_engine.turn.search_execution.effective_flee_chance", return_value=1.0
+    ):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.0] * 20))
+
+    assert result.fled is True
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
 
 
 # -- Phase 274: Use_MI wired as a real Search Encounter Plan tactic ----
