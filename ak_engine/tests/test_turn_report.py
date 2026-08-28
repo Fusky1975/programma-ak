@@ -160,6 +160,8 @@ from ak_engine.report.turn_report import (
     render_flee_failure,
     render_funeral_pyre,
     render_generic_encounter,
+    render_guardian_intimidated,
+    render_guardian_pacified_by_fulfill,
     render_hire_accepted,
     render_hire_counter_offer,
     render_illegal_move_attempted,
@@ -5250,6 +5252,73 @@ def test_describe_search_inconclusive_combat_renders_only_the_opening_line():
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
 
     assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+# -- Phase 672: report-layer narration for the 2 Phase 671 pacification --
+# -- triggers -- both project-original text, see render_guardian_
+# -- pacified_by_fulfill()/render_guardian_intimidated()'s own docstrings.
+
+
+def test_render_guardian_pacified_by_fulfill():
+    result = render_guardian_pacified_by_fulfill("Gargoyle", ScriptedRandom([0.1, 0.1]))
+    assert result == "Gargoyle has sworn to cease its raids upon these lands."
+
+
+def test_render_guardian_intimidated():
+    result = render_guardian_intimidated("Gargoyle", ScriptedRandom([0.1]))
+    assert result == "Gargoyle has been cowed by the fight and will not raid again for some time."
+
+
+def test_describe_search_renders_fulfill_pacification_line():
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=False, winner="leader", guardian_pacified_by_fulfill=True,
+        guardian_monster=Monster.GARGOYLE,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Gargoyle has sworn to cease its raids upon these lands.",
+    ]
+
+
+def test_describe_search_renders_intimidation_line():
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=True, winner="monster", leader_killed=True, guardian_intimidated=True,
+        guardian_monster=Monster.GARGOYLE,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric was mortally wounded.",
+        "and so it was that Aldric met Aldric's unseemly end.",
+        "Gargoyle has been cowed by the fight and will not raid again for some time.",
+    ]
+
+
+def test_describe_search_neither_pacification_flag_renders_no_extra_line():
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, winner="leader")
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+def test_describe_search_pacification_line_falls_back_to_generic_guardian_name():
+    # No guardian_monster set (e.g. the Talk/Fulfill/Beg/Flee call sites
+    # that don't populate it) -- the existing generic fallback applies.
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, winner="leader", guardian_pacified_by_fulfill=True)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines[-1] == "guardian has sworn to cease its raids upon these lands."
 
 
 # -- Phase 616: describe_feature_power_attempt() (POWMSG.X2) --

@@ -28195,7 +28195,7 @@ follow-up request after the original 431-435 plan shipped.
   `test_turn_report.py` (4 new: the raid/Thunderbird narration renders
   for this kingdom's own province and is omitted for another's).
 
-- **Phase 671 (current)**: the 2 pacification triggers Phase 670
+- **Phase 671**: the 2 pacification triggers Phase 670
   deliberately deferred (THUNDERBIRD.md section 4.2's other two ways to
   calm a raiding guardian, alongside the Thunderbird block already
   shipped) -- quest/Fulfill and an intimidating attack.
@@ -28261,6 +28261,45 @@ follow-up request after the original 431-435 plan shipped.
   pacification wired end-to-end for both real transitions and a
   not-honored no-op; the intimidation threshold crossed/not-crossed via
   a losing Melee duel, a successful Beg, and a successful Flee).
+
+- **Phase 672 (current)**: report-layer narration for the 2 Phase 671
+  pacification triggers, closing THUNDERBIRD.md's own section 4.2 in
+  full -- requested directly by the user after Phase 671 shipped
+  ("crea la narrazione di report che manca").
+
+  THUNDERBIRD.md gives real, identified message ids for both events --
+  `_LPacif` (3169, Fulfill's own pacification) and `_MNoBold`/`_MUnDt`
+  (3172/3173, an intimidated/undeterred outcome pair) -- but only their
+  Italian paraphrase, never the literal English `Say()` template text
+  `report/prose.py render()` needs. New `report/turn_report.py
+  render_guardian_pacified_by_fulfill()`/`render_guardian_intimidated()`,
+  each **clearly labeled project-original** (not a transcription of any
+  recovered string), the same standing convention this project already
+  used for a confirmed-real-but-unquoted event (Curator of Artifacts'
+  own Phase 667 research message). `render_guardian_intimidated()`
+  additionally notes it isn't claiming to be `_MNoBold`/`_MUnDt`'s own
+  real text verbatim, since those ids actually name a different,
+  unimplemented Talk-based mechanic (`RUMORS.PAS Check_Raid`'s own
+  "stop raiding" conversation offer) -- only the *meaning* ("the
+  monster was intimidated") carries over to this project's own
+  project-original intimidating-attack trigger.
+
+  `SearchExecutionResult` gains `guardian_pacified_by_fulfill`/
+  `guardian_intimidated` (both `bool`, default `False`), set at the
+  same 8 call sites Phase 671 already wired (`turn/monster_raids.py
+  apply_fulfill_pacification()`/`guardian_intimidated_by_combat_
+  damage()`'s own real return value, not re-derived). `describe_
+  search()` renders the matching line right after any mortally-wounded/
+  death narration and before Scout's own "always last" outcome --
+  falls back to the generic "guardian" name (an existing, pre-Phase-672
+  convention) whenever the triggering call site doesn't set `result.
+  guardian_monster` (Talk/Fulfill/Beg/Flee never did, even before this
+  phase).
+
+  Test count: 5653 -> 5659 (net +6): 2 direct template-wording checks,
+  4 `describe_search()` end-to-end cases (each line renders in the
+  right position; neither flag renders nothing extra; the generic-name
+  fallback for a call site with no `guardian_monster` set).
 
 ## Setup
 

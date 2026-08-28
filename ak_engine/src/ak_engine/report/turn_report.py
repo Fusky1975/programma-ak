@@ -8679,6 +8679,15 @@ def describe_search(
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
         lines.append(render_character_death(character_name, rng))
 
+    # Phase 672: the guardian's own pacification, if this encounter
+    # triggered one -- see `render_guardian_pacified_by_fulfill()`/
+    # `render_guardian_intimidated()`'s own docstrings for why both are
+    # project-original text, not a transcription.
+    if result.guardian_pacified_by_fulfill:
+        lines.append(render_guardian_pacified_by_fulfill(monster_name, rng))
+    if result.guardian_intimidated:
+        lines.append(render_guardian_intimidated(monster_name, rng))
+
     # Phase 616: Scout's own Feature -> Power [5.8] outcome, narrated last
     # -- matches the rulebook's own "the computer will simply do your
     # Scout tactic after all other encounter tactics are completed"
@@ -11942,6 +11951,43 @@ def render_thunderbird_intervention(province_name: str, monster_name: str, rng: 
 
     values = {"@": province_name, "<2": monster_name, ">": f"{monster_name}'s"}
     return render(_THUNDERBIRD_INTERVENTION_TEMPLATE, values, rng=rng)
+
+
+# Phase 672 -- report-layer narration for the two Search-encounter
+# pacification triggers Phase 671 wired (`SearchExecutionResult.
+# guardian_pacified_by_fulfill`/`.guardian_intimidated`). THUNDERBIRD.md
+# section 4.2 confirms both are real, identified report events --
+# `_LPacif` (id 3169, Fulfill's own pacification) and `_MNoBold`/
+# `_MUnDt` (ids 3172/3173, the intimidated/undeterred outcome pair) --
+# but gives only their Italian paraphrase, never the literal English
+# `Say()` template text `render()` needs. **Both templates below are
+# project-original** (not a transcription of any recovered string),
+# clearly labeled as such per this project's own standing convention
+# for a confirmed-real-but-unquoted event (e.g. Curator of Artifacts'
+# own Phase 667 research message). `+` is `+` (Monster name, PROSE.
+# TXT's own marker) -- no province/character context is threaded in,
+# since both fire from inside a Search encounter where the monster is
+# already the one thing being narrated.
+_FULFILL_PACIFICATION_TEMPLATE = "+ has sworn/Rpledged to cease its raids/Rmarauding upon these lands."
+_GUARDIAN_INTIMIDATED_TEMPLATE = "+ has been cowed/Rintimidated by the fight and will not raid again for some time."
+
+
+def render_guardian_pacified_by_fulfill(monster_name: str, rng: random.Random) -> str:
+    """Project-original narration for a Fulfill deal that also pacified
+    a raiding guardian -- see the module comment above for why this
+    isn't a transcription of the real `_LPacif` (id 3169)."""
+
+    return render(_FULFILL_PACIFICATION_TEMPLATE, {"+": monster_name}, rng=rng)
+
+
+def render_guardian_intimidated(monster_name: str, rng: random.Random) -> str:
+    """Project-original narration for the intimidating-attack
+    pacification trigger (`turn/monster_raids.py guardian_intimidated_
+    by_combat_damage()`) -- see the module comment above for why this
+    isn't a transcription of the real `_MNoBold`/`_MUnDt` (ids 3172/3173,
+    which name a different, unimplemented Talk-based mechanic)."""
+
+    return render(_GUARDIAN_INTIMIDATED_TEMPLATE, {"+": monster_name}, rng=rng)
 
 
 def record_move_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
