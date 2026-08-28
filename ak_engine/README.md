@@ -27974,7 +27974,7 @@ follow-up request after the original 431-435 plan shipped.
   2 in `test_turn_report.py` (`describe_curator_research()`'s
   success/failure rendering).
 
-- **Phase 668 (current)**: army-title report visibility -- the last
+- **Phase 668**: army-title report visibility -- the last
   open item in the whole royal-title system. `AKGEN_reverse_
   engineering_report (2).md` line 1085 confirms Air Force/Praetor/
   Flagship are real rows in the same `IMPERIAL OFFICE REPORT` this
@@ -28018,6 +28018,78 @@ follow-up request after the original 431-435 plan shipped.
   Riv%/runner-up scoped correctly across two Kingdoms) -- plus 3
   pre-existing exact-line-count tests updated for the report's own new,
   longer real shape (not a regression, an intentional expansion).
+
+- **Phase 669 (current)**: [[project_sep_roadmap]]'s own Phase B --
+  wires rulebook [5.10]'s real Duel trigger, closing what `turn/battle_
+  orchestrator.py _maybe_fight_duel()`'s own docstring previously named
+  as this project's top remaining Duel gap: every battle where both
+  sides have a real commander used to resolve a duel *unconditionally*;
+  now it only happens when [5.10]'s own real condition is met.
+
+  **Re-read `Regolamento AK.txt:1818-1832` directly before wiring
+  anything** (not just the earlier session's own paraphrase), which
+  corrected two things:
+  1. **The trigger is genuinely bidirectional**, not attacker-
+     challenges/defender-accepts fixed roles: "Se uno dei due ha un
+     Piano Speciale d'Incontro che contiene un'azione aggressiva e
+     nessun ordine Fuggire, allora quel comandante sfiderà l'altro a
+     duello" -- *either* side's own aggression (`sep_is_aggressive()`,
+     Phase 659) can trigger a challenge the *other* side must then
+     accept (`sep_accepts_challenge()`). `_commander_challenges()` is
+     called once per direction and OR'd together.
+  2. **A second, real exception clause**: "gli Eroi che sono al comando
+     delle province neutrali non sfidano mai a duello e lo accettano
+     sempre a meno che non siano di Temperamento Codardo." **User-
+     confirmed directly**: a real Hero/King (not the garrison `Commander
+     (leader_id=None)` fallback) currently stationed in a province
+     nobody owns (`ProvinceState.owner_kingdom_id is None`) -- new
+     `_commander_governs_neutral_province()` forces "never challenges"
+     unconditionally, and "always accepts" unless `Temper.COWARDLY` (in
+     which case the exception simply doesn't apply, falling through to
+     the leader's own ordinary SEP-based acceptance).
+
+  New `LeaderState.special_encounter_plan: tuple[SearchTactic, ...] =
+  ()` (`models/game_state.py`), populated once per turn by `turn/
+  turn_processor.py run_turn()`'s own new pre-loop pass -- before phase
+  0, since a battle can happen there -- from the real `SP:` block each
+  leader's own move submission carried this turn (`turn/sep_decode.py
+  decode_special_encounter_plan()`, Phase 659, unchanged). A leader not
+  included in a given `run_turn()` call keeps whatever SEP they already
+  had recorded, rather than being reset.
+
+  **Verified genuinely low-risk to the existing suite before writing a
+  single test, then confirmed empirically** (full suite green at 5589,
+  unchanged, before any new test was added): `sep_is_aggressive(())`/
+  `sep_accepts_challenge(())` both resolve `True` (`Plan_Intent`'s own
+  real empty-plan fallback) -- an unset SEP, the default for every
+  existing fixture, reproduces the old always-duel behavior exactly.
+  None of the new gating logic consumes `rng`, so the default path
+  draws the identical RNG sequence as before, byte for byte -- no
+  scripted-`rng` test needed re-sequencing. The new gate is skipped
+  entirely when `state is None`, matching every one of the 13 direct
+  `_maybe_fight_duel()` unit tests that never pass it.
+
+  **Deliberately out of scope, not attempted**: which *tactics* actually
+  play out once a duel is triggered -- `duel_maneuvers` (the attacker's
+  own tactic sequence during a triggered duel's own resolution) is
+  still never threaded from the new, now-real `special_encounter_plan`
+  by any production caller; a triggered duel still resolves via the
+  existing strength-ratio approximation or, opt-in, `use_real_duel_
+  combat`'s always-Melee `resolve_challenge_combat()` call, exactly as
+  before. `[[project_sep_roadmap]]`'s own Phase C (passive personal-
+  Encounter default, "il Piano d'Incontro sarà usato in tutti gli
+  Incontri sollecitati da un altro personaggio o mostro errante" for a
+  non-army-commanding leader) also remains untouched.
+
+  Test count: 5589 -> 5602 (net +13): 1 in `test_game_state.py`
+  (`special_encounter_plan` defaults to `()`), 3 in `test_turn_
+  processor.py` (`run_turn()`'s own new pre-loop decode; an empty `SP:`
+  block; an absent leader's own SEP left untouched), 9 in `test_battle_
+  orchestrator.py` (the bidirectional trigger in both directions; Flee
+  anywhere disqualifying a challenger even when it isn't the first
+  tactic; a Flee-first defender never accepting; both neutral-province
+  exception halves, including the Cowardly carve-out; one real `fight_
+  battle()`-level end-to-end case).
 
 ## Setup
 

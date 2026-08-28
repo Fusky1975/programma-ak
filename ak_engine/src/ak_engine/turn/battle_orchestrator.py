@@ -182,6 +182,7 @@ from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES, Race
+from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import MONSTER_SUMMONING_TREASURE, RACE_LEADERSHIP_TREASURE, Treasure
 from ak_engine.turn.aftermath import FORMATION_DIVISOR, roll_quality_change
 from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability, line_length_for_battle, roll_terrain_line_length_cap
@@ -219,6 +220,7 @@ from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
 from ak_engine.turn.retreat import attacker_retreat_candidates, find_retreat_destination
 from ak_engine.turn.search_decode import SearchTactic
+from ak_engine.turn.sep_decode import sep_accepts_challenge, sep_is_aggressive
 from ak_engine.turn.strength import (
     PHANTASMAL_ARMIES_BONUS_PER_LEVEL,
     compute_druidic_shortfall,
@@ -1183,6 +1185,87 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
     )
 
 
+def _commander_governs_neutral_province(state: GameState, commander: Commander) -> LeaderState | None:
+    """Rulebook [5.10]: "gli Eroi che sono al comando delle province
+    neutrali non sfidano mai a duello e lo accettano sempre a meno che
+    non siano di Temperamento Codardo" -- Phase 669, user-confirmed
+    directly: a real Hero/King (never the garrison ``Commander(leader_
+    id=None)`` fallback -- that one's own "has no abilities" text is a
+    separate [7.1] concept) currently stationed in a province nobody
+    owns. Returns that real ``LeaderState`` when the exception's own
+    precondition holds; ``None`` otherwise (garrison commander,
+    unresolvable leader, or a real owner on the province), meaning the
+    ordinary SEP-based formula governs instead.
+    """
+
+    if commander.leader_id is None:
+        return None
+    leader = state.leaders.get(commander.leader_id)
+    if leader is None:
+        return None
+    province = state.provinces.get(leader.location)
+    if province is None or province.owner_kingdom_id is not None:
+        return None
+    return leader
+
+
+def _side_special_encounter_plan(state: GameState, commander: Commander) -> list[SearchTactic]:
+    """This side's own real, standing Special Encounter Plan (Phase 669,
+    ``LeaderState.special_encounter_plan``) -- ``[]`` for the garrison
+    fallback or an unresolvable leader, the same "no data recorded"
+    empty-plan default ``turn/turn_processor.py run_turn()`` leaves for
+    any leader it never populated this turn (reads as an aggressive
+    Melee-intent SEP via ``sep_is_aggressive()``'s own real ``Plan_
+    Intent`` fallback, matching this project's pre-Phase-669 always-duel
+    default).
+    """
+
+    if commander.leader_id is None:
+        return []
+    leader = state.leaders.get(commander.leader_id)
+    if leader is None:
+        return []
+    return list(leader.special_encounter_plan)
+
+
+def _commander_challenges(
+    state: GameState,
+    challenger: Commander,
+    challenger_sep: list[SearchTactic],
+    target: Commander,
+    target_sep: list[SearchTactic],
+) -> bool:
+    """One direction of rulebook [5.10]'s own bidirectional Duel trigger
+    (Phase 669): "Se uno dei due ha un Piano Speciale d'Incontro che
+    contiene un'azione aggressiva e nessun ordine Fuggire, allora quel
+    comandante sfiderà l'altro a duello... il vostro leader accetterà
+    sempre un'eventuale sfida prima di darsi alla fuga." ``_maybe_
+    fight_duel()`` calls this once per direction and ORs the results,
+    since either side's own aggression can trigger a challenge that the
+    other side must then accept.
+
+    Folds in the neutral-province Hero exception from the same rule
+    text: as `challenger`, such a Hero never challenges (forced
+    ``False``, unconditional -- "non sfidano mai"); as the responding
+    `target`, forces acceptance ``True`` unless ``Temper.COWARDLY``, in
+    which case the exception simply doesn't apply here and the ordinary
+    ``sep_accepts_challenge()`` result governs instead (the rule gives
+    no separate formula for a Cowardly neutral-province Hero).
+    """
+
+    if _commander_governs_neutral_province(state, challenger) is not None:
+        is_aggressive = False
+    else:
+        is_aggressive = sep_is_aggressive(challenger_sep, state)
+    if not is_aggressive:
+        return False
+
+    target_neutral_leader = _commander_governs_neutral_province(state, target)
+    if target_neutral_leader is not None and target_neutral_leader.temper is not Temper.COWARDLY:
+        return True
+    return sep_accepts_challenge(target_sep, state)
+
+
 def _maybe_fight_duel(
     attacker_commander: Commander | None,
     defender_commander: Commander | None,
@@ -1283,25 +1366,51 @@ def _maybe_fight_duel(
     attacker's own side directly and returns immediately, no rng
     consumed (a guaranteed escape, not a roll) and no combat resolved.
 
-    **Deliberately still not modeled, three real, AKGEN-confirmed, but
-    genuinely blocked pieces of this same cluster:**
-    - **The duel's own trigger** ("an aggressive Special Encounter Plan
-      with no Flee issues a challenge") and a **later-than-first Flee's
-      own "attempts combat first" refusal ordering** both need a real,
-      parsed, per-leader *standing* Special Encounter Plan -- this
-      project has no parser/decoder anywhere for one (distinct from the
-      one-off tactics a CHALLENGE/PURSUE order itself carries, the same
-      gap this docstring's own Phase 273 addendum already named).
-      ``duel_maneuvers`` stays an optional caller-supplied stand-in, the
-      Phase 273 pattern.
-    - **The defender's own independent Flee option**: this function's
-      one shared ``duel_maneuvers`` list only ever represents the
-      *attacker's* own tactic sequence (mirroring how ``resolve_
-      challenge_combat`` already treats a Challenge's "caster" walking
-      their own tactics against a passively-defending target) -- there
-      is no second, defender-owned tactics list to check a symmetric
-      Flee against. A genuine structural limitation, not a guess at
-      which side "should" win a tie.
+    **Phase 669 -- the duel's own real trigger is now wired**, closing
+    what this docstring previously named as the top blocker of this
+    cluster. Rulebook [5.10] (``Regolamento AK.txt:1818-1832``): "Se
+    uno dei due ha un Piano Speciale d'Incontro che contiene un'azione
+    aggressiva e nessun ordine Fuggire, allora quel comandante sfiderà
+    l'altro a duello... il vostro leader accetterà sempre un'eventuale
+    sfida prima di darsi alla fuga" -- **genuinely bidirectional**,
+    either side's own aggression can trigger a challenge the other side
+    must then accept, not attacker-challenges/defender-accepts fixed
+    roles. When ``state`` is given, ``_commander_challenges()`` is
+    called once per direction (OR'd together) against each side's own
+    real, per-turn ``LeaderState.special_encounter_plan`` (Phase 669,
+    populated by ``turn/turn_processor.py run_turn()`` before phase 0
+    from the leader's own real ``SP:`` block, decoded via ``turn/
+    sep_decode.py decode_special_encounter_plan()``, Phase 659) --
+    no challenge from either side means **no duel occurs at all**,
+    the same ``_DuelOutcome(None, None, None)`` shape this function
+    already returns for an unled side. An unset SEP (``()``, the
+    default for any leader ``run_turn()`` never populated, or when
+    ``state is None``) reproduces this project's pre-Phase-669
+    always-duel default exactly -- ``sep_is_aggressive(())``/``sep_
+    accepts_challenge(())`` both resolve `True` (`Plan_Intent`'s own
+    real empty-plan fallback), so no existing caller's behavior changed.
+    Also folds in [5.10]'s own further exception, user-confirmed
+    directly: a real Hero/King (not the garrison fallback) currently
+    commanding a province nobody owns never challenges, and always
+    accepts unless Cowardly (``_commander_governs_neutral_province()``).
+
+    **Still genuinely out of scope, not attempted this phase**: which
+    *tactics* actually play out once a duel is triggered. ``duel_
+    maneuvers`` stays exactly what it always was -- an optional,
+    caller-supplied stand-in for the *attacker's* own tactic sequence
+    (mirroring how ``resolve_challenge_combat`` already treats a
+    Challenge's "caster" walking their own tactics against a passively-
+    defending target) -- no production caller threads the new, now-real
+    ``special_encounter_plan`` into it, and there is still no second,
+    defender-owned tactics list for the actual combat resolution to
+    consult (only the *trigger* check above reads both sides' own real
+    SEPs symmetrically). A later-than-first Flee's own "attempts combat
+    first" refusal ordering during a triggered duel's own resolution is
+    the same still-unaddressed limitation. A real, separate, later
+    follow-up, not a guess dressed up as done.
+
+    **Deliberately still not modeled, two further real, AKGEN-confirmed,
+    but genuinely blocked pieces of this same cluster:**
     - **``coward_bluff``** ("entering the duel and temper refusing
       combat, chance 2/3 to avoid the demoralization penalty") needs the
       Temper Table's own flee-probability/refusal-to-Meet mechanic --
@@ -1323,6 +1432,14 @@ def _maybe_fight_duel(
 
     if attacker_commander is None or defender_commander is None:
         return _DuelOutcome(None, None, None)
+
+    if state is not None:
+        attacker_sep = _side_special_encounter_plan(state, attacker_commander)
+        defender_sep = _side_special_encounter_plan(state, defender_commander)
+        attacker_challenges = _commander_challenges(state, attacker_commander, attacker_sep, defender_commander, defender_sep)
+        defender_challenges = _commander_challenges(state, defender_commander, defender_sep, attacker_commander, attacker_sep)
+        if not (attacker_challenges or defender_challenges):
+            return _DuelOutcome(None, None, None)
 
     attacker_commander_units = _units_led_by(attacker_armies, attacker_units, attacker_commander.leader_id)
     defender_commander_units = _units_led_by(defender_armies, defender_units, defender_commander.leader_id)

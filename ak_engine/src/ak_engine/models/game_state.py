@@ -312,6 +312,7 @@ from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.search_decode import SearchTactic
 
 
 @dataclass(slots=True)
@@ -897,6 +898,19 @@ class LeaderState:
     valhalla_active_turn: int | None = None
     valhalla_allowed_phase_count: int | None = None
     valhalla_fixed_item_id: int | None = None
+    # Phase 669 -- rulebook [5.10]: this leader's own real, standing
+    # Special Encounter Plan for the current game turn, decoded from
+    # the real ``SP:`` block their own move submission carried (``turn/
+    # sep_decode.py decode_special_encounter_plan()``, Phase 659).
+    # Populated once per turn, before any phase dispatches, by ``turn/
+    # turn_processor.py run_turn()`` -- see that function's own Phase
+    # 669 addendum. Defaults to ``()`` for any leader with no SP: data
+    # recorded (or never processed by ``run_turn()`` at all) -- the
+    # real, sourced empty-plan fallback (``Plan_Intent``'s own `IF int
+    # = CNone THEN int:= CMelee`), not a placeholder: an empty plan
+    # reads as an aggressive Melee-intent SEP, matching this project's
+    # own pre-Phase-669 always-duel default exactly.
+    special_encounter_plan: tuple[SearchTactic, ...] = ()
 
 
 @dataclass(slots=True)

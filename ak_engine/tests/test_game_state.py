@@ -439,6 +439,14 @@ def test_game_state_game_number_defaults_to_1():
     assert state.game_number == 1
 
 
+def test_leader_state_special_encounter_plan_defaults_to_empty():
+    # Phase 669 -- an unset SEP reads as a real, sourced empty-plan
+    # fallback, not a placeholder (see the field's own docstring).
+    leader = LeaderState(1, 1, "King", HOME)
+
+    assert leader.special_encounter_plan == ()
+
+
 def test_record_world_event_appends_a_world_event():
     state = GameState()
 

@@ -6,7 +6,7 @@ from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ArmyType
 from ak_engine.models.discovery import Discovery
-from ak_engine.models.enums import Ability, ActionCode, Spell
+from ak_engine.models.enums import Ability, ActionCode, Maneuver, Spell
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.leader import Leader
@@ -20,6 +20,7 @@ from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.movement import neighbors as _neighbors
 from ak_engine.turn.plan_dispatch import NoOpResult
+from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.turn_processor import (
     MultiAttackerMoveResult,
     TurnLeader,
@@ -82,6 +83,53 @@ def test_run_turn_dispatches_phase_by_phase_not_leader_by_leader():
         ("P1", 10),
         ("P1", 20),
     ]
+
+
+# -- Phase 669: per-leader Special Encounter Plan, populated before phase 0 --
+
+
+def test_run_turn_decodes_the_real_sp_block_before_phase_0():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=HexCoord(5, 5)))
+    p0 = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    # Real SP: wire format (Phase 659): "10 -1" = [Flee], matching a
+    # real hand-decoded sample from turn/sep_decode.py's own docstring.
+    leader = Leader(10, "A", ActionPlan(10, [PlanSegment(0, 0, (10, -1), {"P0": p0})]))
+
+    run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH)
+
+    assert state.leaders[10].special_encounter_plan == (SearchTactic(Maneuver.FLEE),)
+
+
+def test_run_turn_empty_sp_block_leaves_special_encounter_plan_empty():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=HexCoord(5, 5)))
+    p0 = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    leader = Leader(10, "A", ActionPlan(10, [PlanSegment(0, 0, (), {"P0": p0})]))
+
+    run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH)
+
+    assert state.leaders[10].special_encounter_plan == ()
+
+
+def test_run_turn_leaves_an_absent_leaders_own_special_encounter_plan_untouched():
+    # A leader not included in this call's own turn_leaders (e.g. never
+    # dispatched this turn for whatever reason) keeps whatever real SEP
+    # they already had recorded, rather than being reset to empty.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=HexCoord(5, 5)))
+    absent_leader = LeaderState(20, kingdom_id=1, name="B", location=HexCoord(6, 6))
+    absent_leader.special_encounter_plan = (SearchTactic(Maneuver.MELEE),)
+    state.add_leader(absent_leader)
+    p0 = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    leader = Leader(10, "A", ActionPlan(10, [PlanSegment(0, 0, (), {"P0": p0})]))
+
+    run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH)
+
+    assert state.leaders[20].special_encounter_plan == (SearchTactic(Maneuver.MELEE),)
 
 
 def test_run_turn_single_attacker_lmove_resolves_as_ordinary_solo_battle():

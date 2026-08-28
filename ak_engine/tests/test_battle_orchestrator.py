@@ -2339,6 +2339,203 @@ def test_maybe_fight_duel_skips_when_attacker_is_unled():
     assert defender_units[0].effective_strength == 10.0  # untouched
 
 
+# -- Phase 669: rulebook [5.10]'s own real, bidirectional Duel trigger --
+
+
+def _duel_gate_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Attacker", location=FIELD))
+    state.add_leader(LeaderState(502, kingdom_id=2, name="Defender", location=FIELD))
+    return state
+
+
+def _duel_gate_armies_and_units():
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+    return attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander
+
+
+def test_maybe_fight_duel_no_sep_recorded_still_duels_with_state_given():
+    # An unset SEP (the default for every leader run_turn() never
+    # populated) reproduces the pre-Phase-669 always-duel default even
+    # when `state` is now actually passed.
+    state = _duel_gate_state()
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+    rng = ScriptedRandom([0.01])  # attacker's huge strength edge -> wins the duel
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state,
+    )
+
+    assert outcome.loser_side == "defender"
+
+
+def test_maybe_fight_duel_attacker_aggressive_sep_challenges_and_defender_accepts():
+    state = _duel_gate_state()
+    state.leaders[501].special_encounter_plan = (SearchTactic(Maneuver.MELEE),)
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+    rng = ScriptedRandom([0.01])
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state,
+    )
+
+    assert outcome.loser_side == "defender"
+
+
+def test_maybe_fight_duel_defender_aggressive_sep_challenges_and_attacker_accepts():
+    # The symmetric direction -- either side's own aggression can
+    # trigger the challenge, not just the attacker's.
+    state = _duel_gate_state()
+    state.leaders[502].special_encounter_plan = (SearchTactic(Maneuver.MELEE),)
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+    rng = ScriptedRandom([0.01])
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state,
+    )
+
+    assert outcome.loser_side == "defender"
+
+
+def test_maybe_fight_duel_flee_anywhere_in_attacker_sep_never_challenges():
+    # Rulebook [5.10]: Flee ANYWHERE in the plan disqualifies the
+    # challenger, not just as the first tactic -- Melee still comes
+    # first here, but the Flee later in the list still counts.
+    state = _duel_gate_state()
+    state.leaders[501].special_encounter_plan = (SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.FLEE))
+    state.leaders[502].special_encounter_plan = (SearchTactic(Maneuver.TALK),)  # not aggressive either
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+    rng = ScriptedRandom([])  # no duel -> no roll consumed
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state,
+    )
+
+    assert outcome.loser_side is None
+
+
+def test_maybe_fight_duel_defender_flee_first_never_accepts_the_attackers_challenge():
+    state = _duel_gate_state()
+    state.leaders[502].special_encounter_plan = (SearchTactic(Maneuver.FLEE),)
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+    rng = ScriptedRandom([])  # no duel -> no roll consumed
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state,
+    )
+
+    assert outcome.loser_side is None
+
+
+def test_maybe_fight_duel_neutral_province_hero_never_challenges():
+    # Attacker and defender are deliberately given different own
+    # locations here so the neutral-province override applies to only
+    # one side, isolating the "never challenges" half cleanly.
+    state = _duel_gate_state()
+    state.leaders[501].location = DEFENDER_HOME
+    state.provinces[DEFENDER_HOME].owner_kingdom_id = None  # attacker's own current province is unowned
+    state.leaders[501].special_encounter_plan = (SearchTactic(Maneuver.MELEE),)  # would otherwise be aggressive
+    state.leaders[502].special_encounter_plan = (SearchTactic(Maneuver.TALK),)  # not aggressive either
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+    rng = ScriptedRandom([])
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state,
+    )
+
+    assert outcome.loser_side is None
+
+
+def test_maybe_fight_duel_neutral_province_hero_always_accepts_when_not_cowardly():
+    state = _duel_gate_state()
+    state.leaders[502].location = DEFENDER_HOME
+    state.provinces[DEFENDER_HOME].owner_kingdom_id = None  # defender's own current province is unowned
+    state.leaders[501].special_encounter_plan = (SearchTactic(Maneuver.MELEE),)  # attacker challenges
+    state.leaders[502].special_encounter_plan = (SearchTactic(Maneuver.FLEE),)  # would otherwise never accept
+    state.leaders[502].temper = Temper.BRAVE
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+    rng = ScriptedRandom([0.01])
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state,
+    )
+
+    assert outcome.loser_side == "defender"
+
+
+def test_maybe_fight_duel_neutral_province_hero_cowardly_exception_does_not_apply():
+    # Cowardly -- the neutral-province override doesn't fire, so the
+    # Hero's own real Flee-first SEP governs acceptance instead.
+    state = _duel_gate_state()
+    state.leaders[502].location = DEFENDER_HOME
+    state.provinces[DEFENDER_HOME].owner_kingdom_id = None
+    state.leaders[501].special_encounter_plan = (SearchTactic(Maneuver.MELEE),)
+    state.leaders[502].special_encounter_plan = (SearchTactic(Maneuver.FLEE),)
+    state.leaders[502].temper = Temper.COWARDLY
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+    rng = ScriptedRandom([])  # no duel -> no roll consumed
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state,
+    )
+
+    assert outcome.loser_side is None
+
+
+def test_fight_battle_flee_laced_attacker_sep_avoids_a_duel_a_default_sep_would_trigger():
+    # A real, end-to-end fight_battle() case (not the direct _maybe_
+    # fight_duel() unit tests above) proving the wiring reaches all the
+    # way through from a real LeaderState.special_encounter_plan.
+    state = build_state()
+    attacker_leader = LeaderState(501, kingdom_id=1, name="Attacker", location=FIELD, is_king=True)
+    attacker_leader.special_encounter_plan = (SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.FLEE))
+    state.add_leader(attacker_leader)
+    defender_leader = LeaderState(502, kingdom_id=2, name="Defender", location=FIELD, is_king=True)
+    defender_leader.special_encounter_plan = (SearchTactic(Maneuver.TALK),)
+    state.add_leader(defender_leader)
+    state.armies[101].commanded_by = 501
+    state.armies[201].commanded_by = 502
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng()
+    )
+
+    assert report.duel_loser_side is None
+
+
 # --- Real Melee duel combat (Phase 49, opt-in via use_real_duel_combat) --
 
 

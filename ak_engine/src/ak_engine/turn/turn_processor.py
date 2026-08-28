@@ -286,6 +286,7 @@ from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import execute_practice_group
 from ak_engine.turn.patrol_execution import execute_patrol
 from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue
+from ak_engine.turn.sep_decode import decode_special_encounter_plan
 from ak_engine.turn.skeletal_decay import decompose_graveyard
 from ak_engine.turn.tax_base import apply_turn_revenue
 from ak_engine.turn.trail_decode import decode_trail_phase
@@ -402,6 +403,23 @@ def run_turn(
     # a later phase in their own plan re-issues DEFEND -- persistent
     # across phases, unlike active_defends itself.
     defeated_while_defending: set[int] = set()
+
+    # Phase 669 -- rulebook [5.10]: each leader's own real, standing
+    # Special Encounter Plan, decoded once here (before any phase
+    # dispatches -- a battle can happen in P0 itself) from the real
+    # `SP:` block their own move submission carried this turn (exactly
+    # one top-level segment per leader, confirmed structurally against
+    # every real sample -- `models/plan.py`'s own module docstring).
+    # Feeds `battle_orchestrator.py _maybe_fight_duel()`'s own real
+    # Duel-trigger check. A leader not present in this call's own
+    # `turn_leaders` (or with no segments at all) is left untouched,
+    # keeping whatever `LeaderState.special_encounter_plan` already
+    # holds -- the safe `()` default for anyone never processed here.
+    for tl in turn_leaders:
+        leader_state = state.leaders.get(tl.leader.leader_id)
+        if leader_state is None or not tl.leader.plan.segments:
+            continue
+        leader_state.special_encounter_plan = tuple(decode_special_encounter_plan(tl.leader.plan.segments[0]))
 
     for phase_index, label in enumerate(PHASE_LABELS):
         if phase_index > 0:
