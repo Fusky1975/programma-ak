@@ -672,32 +672,25 @@ def _army_office_tiebreak_key(state: GameState, army: ArmyState) -> tuple[int, i
     return (kingdom.treasury, compute_tax_base(state, army.kingdom_id), -army.army_id)
 
 
-def resolve_army_office_holder(state: GameState, office: Office) -> ArmyOfficeHolder | None:
-    """The army that currently holds one of the 3 army-scoped Royal
-    Titles (Airforce/Praetor/Flagship), and its own "Army_Str" score --
-    or `None` if no army qualifies yet. See module docstring's own Phase
-    394 addendum.
+def _army_ranking_candidates(state: GameState, office: Office) -> list[tuple[int, int | float]]:
+    """(army_id, score) for every real candidate for `office`, mirroring
+    `_ranking_candidates()`'s own role for the 47 leader-scoped offices
+    -- no `OFFICE_MIN_POINTS` gate here either, backing `army_office_
+    rank()`/`army_office_rival_best_points()`/`kingdom_best_army_
+    candidate()`/`kingdom_runner_up_army()` (Phase 668) the same way.
+    `resolve_army_office_holder()` applies the min-points gate and
+    stickiness tiebreak itself, on top of this shared candidate list --
+    extracted from that function's own original inline loop, pure
+    refactor, no behavior change.
 
-    Local import of `turn/army_quality.py` (not a module-level one):
-    that module imports `turn/battle_orchestrator.py` for `druidic_
-    shortfall_for()`, which itself imports this module for `resolve_
-    office_holder()` (Phase 390's title-fanaticism check) -- a
-    module-level import here would close that into a real circular
-    import. Deferring to call time breaks the cycle without changing
-    what either module actually does.
+    Local import of `turn/army_quality.py`, see `resolve_army_office_
+    holder()`'s own docstring for why it can't be module-level.
     """
 
     from ak_engine.turn.army_quality import army_peacetime_strength, compute_army_modified_quality
 
-    if office not in ARMY_RANKED_OFFICES:
-        raise ValueError(f"{office} is not one of the 3 army-scoped Royal Titles this project models")
-
     ability = Ability.NAVAL if office is Office.FLAGSHIP else Ability.TACTICAL
-    min_points = OFFICE_MIN_POINTS[office]
-    previous_holder_id = state.army_office_holders.get(office)
-    best: ArmyOfficeHolder | None = None
-    best_tiebreak: tuple[int, int, int, int] | None = None
-
+    candidates: list[tuple[int, int | float]] = []
     for army_id, army in state.armies.items():
         if army.kingdom_id is None:
             continue
@@ -707,14 +700,99 @@ def resolve_army_office_holder(state: GameState, office: Office) -> ArmyOfficeHo
         score = army_peacetime_strength(state, army, ability)
         if office is Office.PRAETOR:
             score += ARMY_TABLE[army.army_type].speed
+        candidates.append((army_id, score))
+    return candidates
+
+
+def resolve_army_office_holder(state: GameState, office: Office) -> ArmyOfficeHolder | None:
+    """The army that currently holds one of the 3 army-scoped Royal
+    Titles (Airforce/Praetor/Flagship), and its own "Army_Str" score --
+    or `None` if no army qualifies yet. See module docstring's own Phase
+    394 addendum.
+    """
+
+    if office not in ARMY_RANKED_OFFICES:
+        raise ValueError(f"{office} is not one of the 3 army-scoped Royal Titles this project models")
+
+    min_points = OFFICE_MIN_POINTS[office]
+    previous_holder_id = state.army_office_holders.get(office)
+    best: ArmyOfficeHolder | None = None
+    best_tiebreak: tuple[int, int, int, int] | None = None
+
+    for army_id, score in _army_ranking_candidates(state, office):
         if score < min_points:
             continue
+        army = state.armies[army_id]
         stickiness = 1 if army_id == previous_holder_id else 0
         tiebreak = (stickiness, *_army_office_tiebreak_key(state, army))
         if best is None or score > best.merit_points or (score == best.merit_points and tiebreak > best_tiebreak):
             best = ArmyOfficeHolder(army_id, score)
             best_tiebreak = tiebreak
 
+    return best
+
+
+def army_office_rank(state: GameState, office: Office, army_id: int) -> int:
+    """The army-scoped equivalent of `leader_office_rank()`'s real
+    `Rank()`: 1 + how many other real army candidates for `office`
+    strictly outscore this one. Phase 668 -- see `describe_imperial_
+    office_report()`'s own addendum for why this reuses the leader
+    formula's exact shape against the army candidate pool instead.
+    """
+
+    own_points = next(points for aid, points in _army_ranking_candidates(state, office) if aid == army_id)
+    betters = sum(
+        1 for other_id, points in _army_ranking_candidates(state, office) if other_id != army_id and points > own_points
+    )
+    return betters + 1
+
+
+def army_office_rival_best_points(state: GameState, office: Office, kingdom_id: int) -> int | float:
+    """The army-scoped equivalent of `office_rival_best_points()`'s real
+    `ftoppts`: the best score among army candidates whose own Kingdom
+    isn't `kingdom_id`. Phase 668.
+    """
+
+    rival_scores = [
+        points
+        for other_id, points in _army_ranking_candidates(state, office)
+        if state.armies[other_id].kingdom_id != kingdom_id
+    ]
+    return max(rival_scores, default=0)
+
+
+def kingdom_best_army_candidate(state: GameState, office: Office, kingdom_id: int) -> ArmyOfficeHolder | None:
+    """This Kingdom's own top-scoring army candidate for `office`, **not**
+    gated by `OFFICE_MIN_POINTS` -- the army-scoped equivalent of
+    `kingdom_best_candidate()`'s own pre-election "Best Hope" scan.
+    Phase 668.
+    """
+
+    best: ArmyOfficeHolder | None = None
+    for army_id, points in _army_ranking_candidates(state, office):
+        if state.armies[army_id].kingdom_id != kingdom_id:
+            continue
+        if best is None or points > best.merit_points:
+            best = ArmyOfficeHolder(army_id, points)
+    return best
+
+
+def kingdom_runner_up_army(
+    state: GameState, office: Office, kingdom_id: int, exclude_army_id: int
+) -> ArmyOfficeHolder | None:
+    """This Kingdom's own second-best army candidate for `office`,
+    excluding the army already chosen as its top candidate -- the
+    army-scoped equivalent of `kingdom_runner_up()`. Phase 668.
+    """
+
+    best: ArmyOfficeHolder | None = None
+    for army_id, points in _army_ranking_candidates(state, office):
+        if army_id == exclude_army_id:
+            continue
+        if state.armies[army_id].kingdom_id != kingdom_id:
+            continue
+        if best is None or points > best.merit_points:
+            best = ArmyOfficeHolder(army_id, points)
     return best
 
 

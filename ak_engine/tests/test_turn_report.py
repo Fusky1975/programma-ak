@@ -8645,6 +8645,9 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Air Force Commander       None at present",
         "King of Cowards           None at present",
         "Bravest of the Brave      None at present",
+        "Royal Air Force           None at present",
+        "Praetorian Guard          None at present",
+        "Imperial Flag Squadron    None at present",
         "",
         "",
         "ADVENTURE",
@@ -8879,6 +8882,9 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "Air Force Commander       None at present",
         "King of Cowards           None at present",
         "Bravest of the Brave      None at present",
+        "Royal Air Force           None at present",
+        "Praetorian Guard          None at present",
+        "Imperial Flag Squadron    None at present",
         "",
         "",
         "ADVENTURE",
@@ -9333,7 +9339,11 @@ def test_describe_imperial_office_report_none_at_present_for_every_office_with_n
     assert lines.count("Prince of Thieves         None at present") == 1
     assert lines.count("Savior of Humankind       None at present") == 1
     assert lines.count("Dragon Lord               None at present") == 1
-    assert len(lines) == 49  # header + pre-election framing + 47 offices
+    # Phase 668: the 3 army-scoped titles, rendered in their own separate loop.
+    assert lines.count("Royal Air Force           None at present") == 1
+    assert lines.count("Praetorian Guard          None at present") == 1
+    assert lines.count("Imperial Flag Squadron    None at present") == 1
+    assert len(lines) == 52  # header + pre-election framing + 47 leader offices + 3 army offices
 
 
 def test_describe_imperial_office_report_shows_a_real_office_holder():
@@ -9346,6 +9356,42 @@ def test_describe_imperial_office_report_shows_a_real_office_holder():
     lines = describe_imperial_office_report(state, 1)
 
     assert "High Priest Palatine      Aldric (3 points, rank 1, None)" in lines
+
+
+def test_describe_imperial_office_report_shows_a_real_army_office_holder():
+    # Phase 668: the 3 army-scoped titles "evaluate the military unit
+    # directly rather than a leader" -- rendered with a type+province
+    # identity (no real per-army ordinal survives), not a leader name.
+    state = _armies_state()
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HexCoord(0, 0)))
+
+    lines = describe_imperial_office_report(state, 1)
+
+    matching = [line for line in lines if line.startswith("Royal Air Force")]
+    assert len(matching) == 1
+    assert "Dragons army in Capital City" in matching[0]
+    assert "rank 1" in matching[0]
+
+
+def test_describe_imperial_office_report_army_office_riv_percent_and_runner_up():
+    # A second, weaker qualifying army in the same Kingdom becomes the
+    # runner-up line; a rival Kingdom's own army feeds Riv%.
+    state = _armies_state()
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(5, 5)))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.ELVEN, owner_kingdom_id=2, name="Elvenhold"))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HexCoord(0, 0)))  # kingdom 1, home bonus
+    state.add_army(ArmyState(102, 1, ArmyType.DRAGON_WING, Quality.CRACK, HexCoord(1, 1)))  # kingdom 1, no home bonus
+    state.add_army(ArmyState(201, 2, ArmyType.DRAGON_WING, Quality.CRACK, HexCoord(5, 5)))  # rival kingdom, home bonus
+
+    lines = describe_imperial_office_report(state, 1)
+
+    top_index = next(i for i, line in enumerate(lines) if line.startswith("Royal Air Force"))
+    assert "Dragons army in Capital City" in lines[top_index]
+    assert "None" not in lines[top_index]  # a real rival exists (army 201)
+    runner_up_line = lines[top_index + 1]
+    assert "Dragons army" in runner_up_line
+    assert runner_up_line.startswith(" " * 26)  # blank-indented runner-up prefix
 
 
 def test_describe_imperial_office_report_differs_per_kingdom_before_the_emperor_election():

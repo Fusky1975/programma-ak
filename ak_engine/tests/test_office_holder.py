@@ -23,10 +23,14 @@ from ak_engine.turn.office_holder import (
     RANKED_OFFICES,
     apply_battle_fool_aptitude_escalation,
     apply_cravenest_temperament_escalation,
+    army_office_rank,
+    army_office_rival_best_points,
     commit_army_office_holders,
     commit_office_holders,
+    kingdom_best_army_candidate,
     kingdom_best_candidate,
     kingdom_runner_up,
+    kingdom_runner_up_army,
     leader_office_rank,
     office_rival_best_points,
     resolve_all_army_office_holders,
@@ -597,6 +601,79 @@ def test_commit_army_office_holders_leaves_a_now_vacant_office_untouched():
     commit_army_office_holders(state)
 
     assert state.army_office_holders[Office.AIR_FORCE] == 101  # sticky, not cleared
+
+
+# -- Phase 668: army-office ranking primitives (Rank/ftoppts/Best Hope/runner-up) --
+
+
+def _army_ranking_state() -> GameState:
+    # Kingdom 1 (Attackia): army 101 (Elite) is the strongest real
+    # candidate, army 102 (Crack) its own weaker runner-up. Kingdom 2
+    # (Defendia): army 201 (Crack), its own sole candidate. All three
+    # sit away from either Kingdom's own home province -- being at
+    # home bumps quality up a tier (turn/army_quality.py), which would
+    # otherwise erase the Elite/Crack distinction this fixture needs.
+    away1 = HexCoord(5, 5)
+    away2 = HexCoord(6, 6)
+    state = make_state()
+    state.add_province(ProvinceState(away1, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(away2, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, away1))
+    state.add_army(ArmyState(102, 1, ArmyType.DRAGON_WING, Quality.CRACK, away1))
+    state.add_army(ArmyState(201, 2, ArmyType.DRAGON_WING, Quality.CRACK, away2))
+    return state
+
+
+def test_army_office_rank_counts_stronger_real_candidates():
+    state = _army_ranking_state()
+
+    assert army_office_rank(state, Office.AIR_FORCE, 101) == 1  # Elite beats both Crack armies
+    assert army_office_rank(state, Office.AIR_FORCE, 102) == 2  # only 101 outscores it
+    assert army_office_rank(state, Office.AIR_FORCE, 201) == 2  # same real standing as 102
+
+
+def test_army_office_rival_best_points_excludes_same_kingdom():
+    state = _army_ranking_state()
+    kingdom2_best = kingdom_best_army_candidate(state, Office.AIR_FORCE, 2)
+
+    rival_points = army_office_rival_best_points(state, Office.AIR_FORCE, 1)
+
+    assert kingdom2_best is not None
+    assert rival_points == kingdom2_best.merit_points  # kingdom 1's only real rival is army 201
+
+
+def test_army_office_rival_best_points_zero_when_nobody_else_is_a_candidate():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HOME))
+
+    assert army_office_rival_best_points(state, Office.AIR_FORCE, 1) == 0
+
+
+def test_kingdom_best_army_candidate_picks_this_kingdoms_own_top_scorer():
+    state = _army_ranking_state()
+
+    best = kingdom_best_army_candidate(state, Office.AIR_FORCE, 1)
+
+    assert best is not None
+    assert best.army_id == 101
+
+
+def test_kingdom_runner_up_army_picks_the_second_best_excluding_the_top():
+    state = _army_ranking_state()
+
+    runner_up = kingdom_runner_up_army(state, Office.AIR_FORCE, 1, exclude_army_id=101)
+
+    assert runner_up is not None
+    assert runner_up.army_id == 102
+
+
+def test_kingdom_runner_up_army_none_with_only_one_real_candidate():
+    state = _army_ranking_state()
+
+    runner_up = kingdom_runner_up_army(state, Office.AIR_FORCE, 2, exclude_army_id=201)
+
+    assert runner_up is None
 
 
 # -- Phase 438: office ranking primitives (Rank/ftoppts/per-Kingdom Best Hope/runner-up) --

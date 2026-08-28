@@ -1270,11 +1270,18 @@ from ak_engine.turn.expenses import MaintenanceResult, compute_expected_expenses
 from ak_engine.turn.valhalla_execution import VALHALLA_VISITOR_RULES_TEMPLATE
 from ak_engine.turn.office_holder import (
     ALL_OFFICES,
+    ARMY_RANKED_OFFICES,
+    ArmyOfficeHolder,
     OfficeHolder,
+    army_office_rank,
+    army_office_rival_best_points,
+    kingdom_best_army_candidate,
     kingdom_best_candidate,
     kingdom_runner_up,
+    kingdom_runner_up_army,
     leader_office_rank,
     office_rival_best_points,
+    resolve_army_office_holder,
     resolve_office_holder,
 )
 from ak_engine.turn.plan_dispatch import (
@@ -10444,6 +10451,33 @@ def _office_candidate_line(state: GameState, office: Office, holder: OfficeHolde
     return f"{prefix}{name} ({holder.merit_points} points, rank {rank}, {riv})"
 
 
+def _army_office_candidate_line(state: GameState, office: Office, holder: ArmyOfficeHolder, *, prefix: str) -> str:
+    """Phase 668: the army-scoped equivalent of `_office_candidate_line()`,
+    for one of the 3 titles that "evaluate the military unit directly
+    rather than a leader" (`AKGEN_reverse_engineering_report (2).md`
+    line 1085) -- confirmed real, but no exact source survives for how
+    the real `Rep_Office` procedure formats an army-scoped row, so this
+    reuses the leader row's own "name (points, rank, Riv%)" shape
+    against the army candidate pool instead of inventing a new one --
+    the same "narrower than the real procedure, documented why"
+    precedent `describe_imperial_office_report()`'s own docstring
+    already uses for every other display choice in this composer.
+    Since no real per-army ordinal number survives either (`turn/
+    army_naming.py make_army_display_name()`'s own docstring; unused by
+    `describe_armies_report()` for the identical reason), the army's
+    "name" here is its type + current province, matching that same
+    composer's own `province -- designation` identity convention.
+    """
+
+    army = state.armies[holder.army_id]
+    province_name = _province_label(state, army.location)
+    name = f"{ARMY_TYPE_NAME[army.army_type]} army in {province_name}"
+    rank = army_office_rank(state, office, holder.army_id)
+    rival_points = army_office_rival_best_points(state, office, army.kingdom_id)
+    riv = _riv_percent_display(holder.merit_points, rival_points)
+    return f"{prefix}{name} ({holder.merit_points} points, rank {rank}, {riv})"
+
+
 _ELECTION_REPORT_HEADER = "ELECTION REPORT"
 _ELECTION_REPORT_INTRO_TEMPLATE = "A vote was held this turn in game {game_number}.  Here are the results:"
 _ELECTION_REPORT_COLUMN_HEADER_1 = "                   Votes"
@@ -10648,6 +10682,25 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
     data, some inputs still unpopulated" situation every other
     partially-wired section here already documents (e.g.
     `describe_finances_report()`'s own "Expected Expenses" gap).
+
+    **Phase 668 -- the 3 army-scoped titles are now rendered too.**
+    `AKGEN_reverse_engineering_report (2).md` line 1085 confirms Air
+    Force/Praetor/Flagship are real rows in this same report, "evaluat[ing]
+    the military unit directly rather than a leader" -- Phase 394 had
+    only ever built their resolution/tiebreak machinery
+    (`resolve_army_office_holder()`), deliberately kept out of
+    `ALL_OFFICES` since every existing consumer here assumes a real
+    `leader_id`. This composer now runs a second, genuinely separate
+    loop over `ARMY_RANKED_OFFICES` using the Phase 668 army-scoped
+    mirrors of every leader-side ranking primitive (`army_office_rank()`
+    /`army_office_rival_best_points()`/`kingdom_best_army_candidate()`
+    /`kingdom_runner_up_army()`) -- same suppression gate as the 39
+    non-major leader titles (below half the best rival, or below
+    `OFFICE_MIN_POINTS`). No exact source for the real row's own text
+    layout survives, so the army's own "name" is rendered as its type
+    + current province (`_army_office_candidate_line()`'s own docstring
+    has the full reasoning) -- a documented, narrower approximation,
+    not a literal transcription.
     """
 
     lines = [_IMPERIAL_OFFICE_REPORT_HEADER]
@@ -10680,6 +10733,34 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
         runner_up = kingdom_runner_up(state, office, kingdom_id, exclude_leader_id=top.leader_id)
         if runner_up is not None:
             lines.append(_office_candidate_line(state, office, runner_up, prefix=f"{'':26}"))
+
+    # Phase 668: the 3 army-scoped titles (Air Force/Praetor/Flagship) --
+    # "evaluate the military unit directly rather than a leader" (see
+    # this composer's own Phase 394/633 history) -- kept as a genuinely
+    # separate loop rather than folded into ALL_OFFICES above, since
+    # every ranking/candidate primitive above assumes `leader_id`.
+    for office in ARMY_RANKED_OFFICES:
+        office_name = f"{OFFICE_NAME[office]:<26}"
+        army_top = (
+            resolve_army_office_holder(state, office)
+            if election_settled
+            else kingdom_best_army_candidate(state, office, kingdom_id)
+        )
+
+        if army_top is None:
+            lines.append(f"{office_name}{_IMPERIAL_OFFICE_REPORT_NONE}")
+            continue
+
+        army_top_rival_points = army_office_rival_best_points(state, office, state.armies[army_top.army_id].kingdom_id)
+        if army_top.merit_points < army_top_rival_points / 2 or army_top.merit_points < OFFICE_MIN_POINTS[office]:
+            lines.append(f"{office_name}{_IMPERIAL_OFFICE_REPORT_NONE}")
+            continue
+
+        lines.append(_army_office_candidate_line(state, office, army_top, prefix=office_name))
+
+        army_runner_up = kingdom_runner_up_army(state, office, kingdom_id, exclude_army_id=army_top.army_id)
+        if army_runner_up is not None:
+            lines.append(_army_office_candidate_line(state, office, army_runner_up, prefix=f"{'':26}"))
 
     # Phase 543: AKGEN_reverse_engineering_report (4).md SS11.3 --
     # REPORTS.PAS:1510-1517's Arcane's Valor "unification" narrative,

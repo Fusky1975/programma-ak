@@ -27922,7 +27922,7 @@ follow-up request after the original 431-435 plan shipped.
   (the monster-casts-at-leader dispatcher side, mirroring the existing
   Anti-Magic Amulet test's own exact structure).
 
-- **Phase 667 (current)**: Curator of Artifacts, the last of the
+- **Phase 667**: Curator of Artifacts, the last of the
   original 9 mechanism groups from [[project_royal_titles_
   phase630_closed]] -- its merit-counting/resolution (`turn/merit_
   points.py curator_merit_points()`) was already live since Phase
@@ -27973,6 +27973,51 @@ follow-up request after the original 431-435 plan shipped.
   shape without the title falls through to the ordinary Give path),
   2 in `test_turn_report.py` (`describe_curator_research()`'s
   success/failure rendering).
+
+- **Phase 668 (current)**: army-title report visibility -- the last
+  open item in the whole royal-title system. `AKGEN_reverse_
+  engineering_report (2).md` line 1085 confirms Air Force/Praetor/
+  Flagship are real rows in the same `IMPERIAL OFFICE REPORT` this
+  project already renders for the 47 leader-scoped titles, "evaluat[ing]
+  the military unit directly rather than a leader" -- Phase 394/633
+  had only ever built their resolution/tiebreak/Victory-Point machinery,
+  deliberately kept out of `ALL_OFFICES` since every existing report
+  consumer there assumes a real `leader_id`.
+
+  `turn/office_holder.py` gains 4 army-scoped mirrors of the existing
+  leader-side ranking primitives, all built on a new shared `_army_
+  ranking_candidates()` (extracted from `resolve_army_office_holder()`'s
+  own original inline loop, pure refactor, no behavior change):
+  `army_office_rank()`, `army_office_rival_best_points()`, `kingdom_
+  best_army_candidate()`, `kingdom_runner_up_army()` -- each the exact
+  same formula shape as its leader-side counterpart, just scored
+  against the army candidate pool instead.
+
+  `describe_imperial_office_report()` now runs a second, genuinely
+  separate loop over `ARMY_RANKED_OFFICES` after the main 47-office
+  loop, applying the identical suppression gate the 39 non-major
+  leader titles already use (below half the best rival's score, or
+  below `OFFICE_MIN_POINTS`). No exact source survives for the real
+  row's own text layout, so the new `_army_office_candidate_line()`
+  renders the army's "name" as its type + current province (e.g.
+  "Dragons army in Capital City") -- `describe_armies_report()`'s own
+  established `province -- designation` identity convention, since no
+  real per-army ordinal number survives either (`turn/army_naming.py
+  make_army_display_name()`'s own docstring already notes this, and
+  that composer avoids the ordinal for the identical reason).
+
+  This closes the last open item in the royal-title system -- nothing
+  remains except Divine King's own genuinely-blocked monster-raid perk.
+
+  Test count: 5581 -> 5589 (net +8): 6 in `test_office_holder.py`
+  (the 4 new ranking primitives against a fixture with armies
+  deliberately placed away from either Kingdom's own home province,
+  since the home-province quality bonus would otherwise erase the
+  Elite/Crack distinction the test needs), 2 in `test_turn_report.py`
+  (a real army-office holder rendered with its type+province identity;
+  Riv%/runner-up scoped correctly across two Kingdoms) -- plus 3
+  pre-existing exact-line-count tests updated for the report's own new,
+  longer real shape (not a regression, an intentional expansion).
 
 ## Setup
 
