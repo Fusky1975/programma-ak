@@ -108,15 +108,21 @@ from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
-from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.discovery_effects import effective_skill_level, equipped_combat_weapon, holds_bow_of_elven_kings
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     Combatant,
     archery_free_attack_bonus,
+    bow_of_elven_kings_archery_damage_bonus,
+    bow_of_elven_kings_archery_hit_multiplier,
     loot_defeated_leader,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
     resolve_melee_duel,
+    weapon_defensive_hit_multiplier,
+    weapon_grants_auto_invisibility,
+    weapon_melee_damage_bonus,
+    weapon_offensive_hit_multiplier,
 )
 from ak_engine.turn.movement import MapBounds, neighbors
 from ak_engine.turn.office_holder import resolve_office_holder
@@ -197,14 +203,12 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
     ``_leader_combatant`` -- duplicated per this project's own established
     small-per-consumer-lookup precedent (see module docstring).
 
-    **Unlike ``challenge_execution.py``'s own copy, this one never calls
-    ``equipped_combat_weapon()``/``weapon_offensive_hit_multiplier()``/
-    ``weapon_melee_damage_bonus()`` at all** -- a real, separate, pre-
-    existing gap found while wiring Phase 682's Holy Sword vs-Undead
-    bonus: Phase 535's own weapon-bonus wiring never reached Patrol
-    encounters (same gap in ``cast_execution.py``'s Augur-Combat
-    retaliator and ``pursue_execution.py``'s own duplicate). Not fixed
-    here -- flagged for a future, separate phase.
+    **Phase 684 -- now wired with the same weapon/bow bonuses its
+    ``challenge_execution.py`` counterpart already had** (Phase 535/536/
+    682 had never reached Patrol encounters, flagged during Phase 682's
+    own audit; closed here alongside the identical gap in
+    ``cast_execution.py``'s Augur-Combat retaliator and ``pursue_
+    execution.py``'s own duplicate).
     """
 
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)
@@ -226,6 +230,8 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         leader_kingdom = state.kingdoms.get(leader.kingdom_id)
         effective_race = leader_kingdom.race if leader_kingdom is not None else None
     is_humanoid = effective_race in HUMANOID_RACES
+    weapon = equipped_combat_weapon(state, leader.leader_id)
+    holds_bow = holds_bow_of_elven_kings(state, leader.leader_id)
 
     return Combatant(
         name=leader.name,
@@ -235,8 +241,18 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         temper=leader.temper,
         damage_reduction=damage_reduction,
         has_melee_hit_points_ability=has_melee_hit_points_ability,
-        offensive_hit_multiplier=melee_mastery_offensive_hit_multiplier(leader.advanced_abilities),
-        melee_damage_dealt_bonus=melee_mastery_damage_bonus(leader.advanced_abilities),
+        offensive_hit_multiplier=(
+            melee_mastery_offensive_hit_multiplier(leader.advanced_abilities) * weapon_offensive_hit_multiplier(weapon)
+        ),
+        melee_damage_dealt_bonus=(
+            melee_mastery_damage_bonus(leader.advanced_abilities) + weapon_melee_damage_bonus(weapon)
+        ),
+        archery_hit_multiplier=bow_of_elven_kings_archery_hit_multiplier(holds_bow),
+        missile_damage_dealt_bonus=bow_of_elven_kings_archery_damage_bonus(holds_bow),
+        defensive_hit_multiplier=weapon_defensive_hit_multiplier(weapon),
+        is_invisible=weapon_grants_auto_invisibility(weapon),
+        equipped_weapon=weapon,
+        is_undead_or_anti_holy=leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY),
         is_humanoid=is_humanoid,
         has_duellists_medal_ability=AdvancedAbility.MELEE_DUELLISTS_MEDAL in leader.advanced_abilities,
         has_control_temper_ability=AdvancedAbility.MELEE_CONTROL_TEMPER in leader.advanced_abilities,

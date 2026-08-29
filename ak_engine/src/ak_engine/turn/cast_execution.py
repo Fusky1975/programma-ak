@@ -691,16 +691,28 @@ from ak_engine.models.treasure import ENHANCED_CHARM_ELIGIBLE_CATEGORIES, TREASU
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.cast_decode import CHARACTER_TARGET_SPELLS, CastRequest
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.discovery_effects import effective_skill_level, holder_is_immune_to_spell, province_halves_spell_chance
+from ak_engine.turn.discovery_effects import (
+    effective_skill_level,
+    equipped_combat_weapon,
+    holder_is_immune_to_spell,
+    holds_bow_of_elven_kings,
+    province_halves_spell_chance,
+)
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     Combatant,
     MeleeSwing,
     archery_free_attack_bonus,
+    bow_of_elven_kings_archery_damage_bonus,
+    bow_of_elven_kings_archery_hit_multiplier,
     loot_defeated_leader,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
     resolve_melee_duel,
+    weapon_defensive_hit_multiplier,
+    weapon_grants_auto_invisibility,
+    weapon_melee_damage_bonus,
+    weapon_offensive_hit_multiplier,
 )
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.hex_numbering import decode_hex_number
@@ -1524,16 +1536,12 @@ def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temp
     occasion" ([4.25.2]'s own wording), not their own permanently
     recorded one, so the caller decides what to pass.
 
-    **Unlike its ``challenge_execution.py`` counterpart, this builder
-    never calls ``equipped_combat_weapon()``/``weapon_offensive_hit_
-    multiplier()``/``weapon_melee_damage_bonus()`` at all** -- a real,
-    separate, pre-existing gap found while wiring Phase 682's Holy
-    Sword vs-Undead bonus: Phase 535's own weapon-bonus wiring never
-    reached this Augur-Combat retaliator, so it's missing every weapon
-    bonus here (not just Holy Sword's vs-Undead variant), same as
+    **Phase 684 -- now wired with the same weapon/bow bonuses its
+    ``challenge_execution.py`` counterpart already had** (Phase 535/536/
+    682 had never reached this Augur-Combat retaliator, flagged during
+    Phase 682's own audit; closed here alongside the identical gap in
     ``patrol_execution.py``/``pursue_execution.py``'s own duplicate
-    ``_leader_combatant()``. Not fixed here -- flagged for a future,
-    separate phase.
+    ``_leader_combatant()``).
     """
 
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)
@@ -1556,6 +1564,8 @@ def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temp
         leader_kingdom = state.kingdoms.get(leader.kingdom_id)
         effective_race = leader_kingdom.race if leader_kingdom is not None else None
     is_humanoid = effective_race in HUMANOID_RACES
+    weapon = equipped_combat_weapon(state, leader.leader_id)
+    holds_bow = holds_bow_of_elven_kings(state, leader.leader_id)
 
     return Combatant(
         name=leader.name,
@@ -1566,8 +1576,18 @@ def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temp
         temper=temper,
         damage_reduction=damage_reduction,
         has_melee_hit_points_ability=has_melee_hit_points_ability,
-        offensive_hit_multiplier=melee_mastery_offensive_hit_multiplier(leader.advanced_abilities),
-        melee_damage_dealt_bonus=melee_mastery_damage_bonus(leader.advanced_abilities),
+        offensive_hit_multiplier=(
+            melee_mastery_offensive_hit_multiplier(leader.advanced_abilities) * weapon_offensive_hit_multiplier(weapon)
+        ),
+        melee_damage_dealt_bonus=(
+            melee_mastery_damage_bonus(leader.advanced_abilities) + weapon_melee_damage_bonus(weapon)
+        ),
+        archery_hit_multiplier=bow_of_elven_kings_archery_hit_multiplier(holds_bow),
+        missile_damage_dealt_bonus=bow_of_elven_kings_archery_damage_bonus(holds_bow),
+        defensive_hit_multiplier=weapon_defensive_hit_multiplier(weapon),
+        is_invisible=weapon_grants_auto_invisibility(weapon),
+        equipped_weapon=weapon,
+        is_undead_or_anti_holy=leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY),
         is_humanoid=is_humanoid,
         has_duellists_medal_ability=AdvancedAbility.MELEE_DUELLISTS_MEDAL in leader.advanced_abilities,
         has_control_temper_ability=AdvancedAbility.MELEE_CONTROL_TEMPER in leader.advanced_abilities,

@@ -159,6 +159,107 @@ def test_leader_combatant_reads_archery_free_attack_bonus():
     assert combatant.archery_free_attack_bonus == 1
 
 
+def test_leader_combatant_reads_equipped_weapon_hit_and_damage_bonus():
+    # Phase 684: this project's own Phase 535 weapon-bonus wiring never
+    # reached this builder until now.
+    state = _base_state()
+    leader = LeaderState(1, kingdom_id=1, name="Chaser", location=FIELD)
+    state.add_leader(leader)
+    state.add_item(Treasure.WEAPON_3, owner_leader_id=1)  # Flaming Scimitar: +20%/+3
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.offensive_hit_multiplier == pytest.approx(1.20)
+    assert combatant.melee_damage_dealt_bonus == 3
+    assert combatant.equipped_weapon is Treasure.WEAPON_3
+
+
+def test_leader_combatant_composes_weapon_bonus_with_melee_mastery():
+    state = _base_state()
+    leader = LeaderState(
+        1, kingdom_id=1, name="Chaser", location=FIELD, advanced_abilities={AdvancedAbility.MELEE_MASTERY}
+    )
+    state.add_leader(leader)
+    state.add_item(Treasure.WEAPON_3, owner_leader_id=1)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.offensive_hit_multiplier == pytest.approx(1.10 * 1.20)
+    assert combatant.melee_damage_dealt_bonus == 1 + 3
+
+
+def test_leader_combatant_reads_bow_of_the_elven_kings_archery_bonus():
+    state = _base_state()
+    leader = LeaderState(1, kingdom_id=1, name="Chaser", location=FIELD)
+    state.add_leader(leader)
+    state.add_item(Treasure.LEADERSHIP_ELVEN, owner_leader_id=1)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.archery_hit_multiplier == pytest.approx(1.25)
+    assert combatant.missile_damage_dealt_bonus == 2
+
+
+def test_leader_combatant_reads_holy_sword_auto_protection():
+    # Phase 536: AKGEN_reverse_engineering_report (4).md SS7.3.
+    state = _base_state()
+    leader = LeaderState(1, kingdom_id=1, name="Chaser", location=FIELD)
+    state.add_leader(leader)
+    state.add_item(Treasure.WEAPON_1, owner_leader_id=1)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.defensive_hit_multiplier == pytest.approx(0.6)
+    assert combatant.is_invisible is False
+    assert combatant.equipped_weapon is Treasure.WEAPON_1
+
+
+def test_leader_combatant_reads_invisible_sword_auto_invisibility():
+    state = _base_state()
+    leader = LeaderState(1, kingdom_id=1, name="Chaser", location=FIELD)
+    state.add_leader(leader)
+    state.add_item(Treasure.WEAPON_5, owner_leader_id=1)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.is_invisible is True
+    assert combatant.defensive_hit_multiplier == pytest.approx(0.5)
+
+
+def test_leader_combatant_equipped_weapon_field_is_none_with_no_weapon():
+    state = _base_state()
+    leader = LeaderState(1, kingdom_id=1, name="Chaser", location=FIELD)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.equipped_weapon is None
+    assert combatant.offensive_hit_multiplier == 1.0
+    assert combatant.melee_damage_dealt_bonus == 0
+
+
+def test_leader_combatant_reads_undead_alignment_as_undead_or_anti_holy():
+    # Phase 682/684: SS7.1's Holy Sword vs-Undead bonus needs the
+    # combatant's own nature, set independently of any weapon.
+    state = _base_state()
+    leader = LeaderState(1, kingdom_id=1, name="Chaser", location=FIELD, alignment=Alignment.UNDEAD)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.is_undead_or_anti_holy is True
+
+
+def test_leader_combatant_reads_non_undead_alignment_as_not_undead_or_anti_holy():
+    state = _base_state()
+    leader = LeaderState(1, kingdom_id=1, name="Chaser", location=FIELD, alignment=Alignment.GOOD)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.is_undead_or_anti_holy is False
+
+
 # -- not found / army-leading mismatch -----------------------------------
 
 

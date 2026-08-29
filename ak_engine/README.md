@@ -28746,7 +28746,7 @@ follow-up request after the original 431-435 plan shipped.
   Test count: 5711 -> 5726 (net +15). Full suite verified green
   (unchanged, 5711) before writing a single new test.
 
-- **Phase 683 (current)**: comment-only, no behavior change. A seventh
+- **Phase 683**: comment-only, no behavior change. A seventh
   fresh codebase survey (2026-08-30, "prossimo gap") found two more
   stale docstrings, the 22nd/23rd recurrence of this project's own
   "later phase closed it, nobody updated the earlier note" pattern.
@@ -28762,6 +28762,26 @@ follow-up request after the original 431-435 plan shipped.
   `turn/exploration.py` has named itself that flag's own "first real
   consumer" since Phase 193/242, and `turn/monster_raids.py`/`turn/
   rumor.py` also consume it. Test count: 5726 (unchanged).
+
+- **Phase 684 (current)**: closes the sixth survey's own item #3
+  ([[project_sixth_survey_2026_08_29]]) -- Phase 535's weapon bonus
+  (`equipped_combat_weapon()`/`weapon_offensive_hit_multiplier()`/etc.,
+  plus Phase 682's `is_undead_or_anti_holy`) had only ever reached 3 of
+  6 near-identical, independently-duplicated `_leader_combatant()`-
+  style builders (`search_execution.py`, `challenge_execution.py`,
+  `battle_orchestrator.py`). The other 3 -- `turn/cast_execution.py
+  _kill_enemy_combatant()` (Augur Combat's "Kill Enemy" Berserk
+  retaliator), `turn/patrol_execution.py`/`turn/pursue_execution.py`'s
+  own duplicate `_leader_combatant()` -- silently granted zero effect
+  for every weapon (Holy Sword, Shadow Sword, Flaming Scimitar,
+  Psychic Flail, Invisible Sword, the 3 Leadership weapons, the Bow of
+  the Elven Kings) in Augur Combat's simulated retaliation, Patrol
+  encounters, and Pursue's own armyless personal combat. Purely a
+  wiring gap (Phase 535's own formula/table is fully sourced and
+  already implemented elsewhere) -- fixed by copying the identical,
+  already-correct lookups/`Combatant` fields from their own sibling
+  builders. Test count: 5726 -> 5750 (net +24). Full suite verified
+  green (unchanged, 5726) before writing a single new test.
 
 ## Setup
 
