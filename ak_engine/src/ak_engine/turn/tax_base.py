@@ -78,16 +78,37 @@ own "(Including +5 Black Knights)"/"(Including +10 Thieves Guild)"
 notes already reference, now made true for the first time).
 
 **Deliberately not folded into the credited amount: `Inv_Bonus`
-(`compute_invention_bonus_percent()`) and a per-race `Racial_Tax`
-ability declared but never dispatched anywhere in the available `.PAS`
-files.** `Inv_Bonus` is real Pascal (`REPORTS.PAS`: `IF Inv_Bonus(kng) >
-0 THEN WRITELN(...,Inv_Bonus(kng):3,'%')`), but nothing in the available
-source confirms it modifies the actual gold credited rather than being a
-report-only percentage -- Phase 268's own design choice to keep it
-"additive to (not folded into) `compute_tax_base()`'s own return value"
-for *display* purposes is preserved here for the *real credit* too,
-rather than silently broadening its scope to a formula this project
-can't source.
+(`compute_invention_bonus_percent()`).** `Inv_Bonus` is real Pascal
+(`REPORTS.PAS`: `IF Inv_Bonus(kng) > 0 THEN WRITELN(...,Inv_Bonus(kng)
+:3,'%')`), but nothing in the available source confirms it modifies
+the actual gold credited rather than being a report-only percentage --
+Phase 268's own design choice to keep it "additive to (not folded
+into) `compute_tax_base()`'s own return value" for *display* purposes
+is preserved here for the *real credit* too, rather than silently
+broadening its scope to a formula this project can't source.
+
+**`Racial_Tax` -- confirmed NOT a real mechanic, Phase 680,
+`Desktop/RACIALTAX.md` (user-supplied disassembly/source audit,
+2026-08-29).** Earlier phases' own notes here treated `Racial_Tax` as
+"a per-race ability declared but never dispatched" -- i.e. a real,
+sourced-but-unwired mechanic, the same class of gap as `Inv_Bonus`.
+That framing is now confirmed wrong: the name's only appearance in any
+of the 13 surviving `.PAS` files is `CTBOTH.PAS:387`, inside a large
+`{...}` **comment** -- an incomplete, non-compiling design-notes list
+of candidate special-ability names (several entries in the same list
+have no assigned ordinal at all, e.g. `Race_Recruit`). There is no
+compiled `const`/routine anywhere in `AK.EXE`/`AKE.EXE`/`AKGEN.EXE`/
+`AK.OVR`, no GW field, and no report text for it. The real, compiled
+`Tax_Base(kng)` -- disassembled and quoted byte-for-byte in the same
+document across all three executables -- sums `ptax[x,y]` filtered
+only by `powner[x,y]=kng`; it never reads `prace`/`lrace`/any racial
+title. A turn-by-turn cross-check against 11 real `GW3`/`SE3` samples
+(an Elven King with a racially mixed empire, up to ~80% of tax base
+foreign-race by turn 12) confirms `Expected Revenues` always equals
+the unfiltered `ptax` sum, with no racial bonus, penalty, or rounding
+anywhere. `compute_tax_base()`/`province_tax_yield()` above already
+implement exactly this unfiltered sum -- no code change was needed or
+made; this is a closed, confirmed-absent gap, not an open one.
 
 **Phase 670 -- [9.2]'s own monster-devastation tax reduction, resolved.**
 This note used to say the mechanic was "named in the rulebook prose with
@@ -207,8 +228,9 @@ def apply_turn_revenue(state: GameState, rng: random.Random) -> dict[int, int]:
     first, Phase 670) plus ``compute_office_gold_bonus()`` to its treasury,
     once per turn -- see module docstring's Phase 412 section for the
     rulebook citation, why this was a display-only figure through Phase
-    411, and what's deliberately not folded in (``Inv_Bonus``,
-    ``Racial_Tax``).
+    411, and what's deliberately not folded in (``Inv_Bonus`` -- see also
+    the Phase 680 note on ``Racial_Tax``, confirmed never a real mechanic
+    at all).
 
     Returns the amount credited per kingdom, keyed by ``kingdom_id`` --
     the same "callers/tests that want to verify a specific credit don't

@@ -28611,7 +28611,7 @@ follow-up request after the original 431-435 plan shipped.
   (unchanged, 5694) before writing a single new test. This closes the
   entire fifth fresh codebase survey (2026-08-29) in full.
 
-- **Phase 679 (current)**: closes backlog item #1
+- **Phase 679**: closes backlog item #1
   ([[project_genuinely_blocked_backlog_2026_08_29]]) with a user-
   supplied targeted disassembly, `Desktop/NOARMY.md` (2026-08-29), of
   `AK.EXE 35EB:73FC`. The finding upends the premise entirely: the
@@ -28674,6 +28674,30 @@ follow-up request after the original 431-435 plan shipped.
   NOARMY.md's own worked examples (Basilisk/121, Giant Octopus/115,
   Basilisk/112 all gate to `R_WFREE`; Imp/31 and Great White Whale/39
   don't) matched on the very first implementation attempt.
+
+- **Phase 680 (current)**: closes backlog item #2's `Racial_Tax` half
+  -- comment-only, no behavior change. User-supplied
+  `Desktop/RACIALTAX.md` (2026-08-29, a Pascal-source/disassembly
+  audit across `AK.EXE`/`AKE.EXE`/`AKGEN.EXE`/`AK.OVR`) confirms
+  `Racial_Tax` was never a real, shipped mechanic at all: its only
+  appearance in any of the 13 surviving `.PAS` files is `CTBOTH.
+  PAS:387`, inside a large, non-compiling `{...}` comment -- an
+  incomplete design-notes list of candidate special-ability names,
+  several without even an assigned ordinal. No compiled `const`,
+  routine, GW field, or report text for it exists anywhere. The real,
+  compiled `Tax_Base(kng)` (disassembled byte-for-byte in all three
+  executables in the same document) sums `ptax[x,y]` filtered only by
+  `powner[x,y]=kng`, never reading `prace`/`lrace`/any racial title --
+  cross-checked turn-by-turn against 11 real `GW3`/`SE3` samples (an
+  Elven King with up to ~80% foreign-race tax base by turn 12),
+  confirming `Expected Revenues` always equals the unfiltered sum,
+  with no racial bonus, penalty, or rounding. `turn/tax_base.py`
+  already implements exactly this unfiltered sum -- no code change was
+  needed. `turn/tax_base.py`'s own docstring updated to record this as
+  a closed, confirmed-absent gap rather than an open one; `Inv_Bonus`
+  (the other half of backlog item #2) remains genuinely open, still
+  blocked on a missing definition/call site in every available `.PAS`
+  file. Test count: 5711 (unchanged).
 
 ## Setup
 
