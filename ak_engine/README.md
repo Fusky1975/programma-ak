@@ -28675,7 +28675,7 @@ follow-up request after the original 431-435 plan shipped.
   Basilisk/112 all gate to `R_WFREE`; Imp/31 and Great White Whale/39
   don't) matched on the very first implementation attempt.
 
-- **Phase 680 (current)**: closes backlog item #2's `Racial_Tax` half
+- **Phase 680**: closes backlog item #2's `Racial_Tax` half
   -- comment-only, no behavior change. User-supplied
   `Desktop/RACIALTAX.md` (2026-08-29, a Pascal-source/disassembly
   audit across `AK.EXE`/`AKE.EXE`/`AKGEN.EXE`/`AK.OVR`) confirms
@@ -28698,6 +28698,21 @@ follow-up request after the original 431-435 plan shipped.
   (the other half of backlog item #2) remains genuinely open, still
   blocked on a missing definition/call site in every available `.PAS`
   file. Test count: 5711 (unchanged).
+
+- **Phase 681 (current)**: comment-only, no behavior change. Fixes a
+  stale docstring in `turn/sep_decode.py` found during a fresh
+  codebase survey (2026-08-29) -- its own top-of-file note still said
+  "decode and classification only, not yet wired into `GameState`/
+  `fight_battle()`... no production caller passes `duel_maneuvers`
+  yet." That's stale as of this same module's own last touch (Phase
+  674) -- Phase 669 (`_commander_challenges()`) and Phase 675
+  (`_maybe_fight_duel()`'s own real `duel_maneuvers` default) already
+  wired both `sep_is_aggressive()`/`sep_accepts_challenge()` and the
+  SEP-threading this note claimed was still open. Corrected to point
+  at the real, still-accurate remaining gap instead: `use_real_duel_
+  combat` staying `False` for every production caller, already
+  correctly documented in `battle_orchestrator.py` itself. Test count:
+  5711 (unchanged).
 
 ## Setup
 

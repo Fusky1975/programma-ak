@@ -101,19 +101,24 @@ the 5 AKGEN disassembly reports or 18 `.PAS` files (confirmed by grep)
 project; the trigger *formula* is fully sourced, only the exact
 orchestrating call site is lost.
 
-**Decode and classification only, not yet wired into `GameState`/
-`turn/battle_orchestrator.py fight_battle()`** -- matches this
-project's own established "primitives now, wiring later" precedent
-(e.g. Phase 616 vs. 622/623 for Feature -> Power [5.8]; Phase 636 vs.
-639 for the CHARACTERS report's own impulse 2/3). `turn/battle_
-orchestrator.py _maybe_fight_duel()` already has a `duel_maneuvers`
-parameter anticipating this data (Phase 273/291/389) but no production
-caller passes it yet, and `_maybe_fight_duel()` itself still
-unconditionally resolves a duel whenever both sides have a real
-commander -- rewiring that to the real trigger this module now makes
-computable is a separate, larger, deliberately-deferred follow-up (see
-this project's own plan file / `project_large_gap_survey_2026_08_27`
-memory for the roadmap).
+**Stale as of Phase 674 (this module's own last touch), fully wired
+since Phase 669/675 -- corrected here, Phase 681.** This paragraph used
+to say "decode and classification only, not yet wired... no production
+caller passes `duel_maneuvers` yet." That's no longer true: `turn/
+battle_orchestrator.py`'s own `_commander_challenges()` (Phase 669)
+already calls `sep_is_aggressive()`/`sep_accepts_challenge()` below to
+gate whether a Duel triggers at all -- matching the bidirectional
+formula and neutral-province exception this module doesn't itself
+model (that's `battle_orchestrator.py`'s own concern) -- and `_maybe_
+fight_duel()` (Phase 675) now defaults `duel_maneuvers` to the
+attacker's own real `special_encounter_plan` whenever a caller doesn't
+supply one explicitly, threading the defender's SEP into `resolve_
+challenge_combat()` too. The one thing that genuinely does stay
+dormant in every real game today -- correctly still noted in `battle_
+orchestrator.py`'s own docstring, not this one -- is `use_real_duel_
+combat` defaulting `False` for every production caller, a separate,
+deliberately-deferred decision this project has repeatedly declined to
+make unilaterally.
 """
 
 from __future__ import annotations
