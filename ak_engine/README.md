@@ -28445,7 +28445,7 @@ follow-up request after the original 431-435 plan shipped.
   (unchanged, 5675) before writing a single new test, confirming the
   "default `None` preserves every existing caller" claim empirically.
 
-- **Phase 675 (current)**: the SEP roadmap's own last open item --
+- **Phase 675**: the SEP roadmap's own last open item --
   "which tactics play out inside an already-triggered army-commander
   Duel" (distinct from Phase 674's Challenge/Pursue engine and Phase
   669's own Duel-trigger). `turn/battle_orchestrator.py _maybe_fight_
@@ -28489,6 +28489,62 @@ follow-up request after the original 431-435 plan shipped.
   own real leading Cast decides a real-combat duel's outcome for the
   first time. This closes the entire Special Encounter Plan [5.10]
   roadmap -- nothing remains open in it.
+
+- **Phase 676 (current)**: found by a fresh codebase survey (Explore
+  agent) after the SEP roadmap closed in full, user-selected directly
+  ("Office-holder stickiness"). `turn/office_holder.py resolve_office_
+  holder()`'s own real, sourced tie-break (`AKGEN_reverse_engineering_
+  report (2).md` SS14.4: "per i titoli avanzati, il titolare precedente
+  conserva precedenza se è fra i pari" -- for advanced titles, the
+  previous titleholder retains precedence if tied, Phase 475) reads
+  `state.office_holders` as its own first tie-break tier; `resolve_
+  army_office_holder()` has the identical Phase 633 tier for the 3
+  army-scoped titles via `state.army_office_holders`. Both dicts are
+  written only by `commit_office_holders()`/`commit_army_office_
+  holders()` -- confirmed, by grep, to have had **no caller anywhere in
+  production** (only tests, and their own docstrings' description of
+  what a caller *should* do; `turn/assassin_guild.py`'s own module
+  docstring already flagged this precisely). Net effect in every real
+  processed turn: both dicts stayed permanently empty, so the sourced
+  "previous titleholder keeps ties" mechanic was silently inert for
+  every Office.
+
+  `orchestrator.py process_turn()` now calls both commit functions
+  right after the existing `process_election_turn()`/`compose_final_
+  standings_report()` step -- "after effetti e consolidamenti di fine
+  turno but before report generation," the exact once-per-real-turn
+  slot both functions' own docstrings already named as the missing
+  hook (`turn_processor.py run_turn()` runs once per *phase*, never
+  once per real turn, so it was never the right place).
+
+  **Confirmed safe, not just asserted**: traced by hand that committing
+  before `compose_letter_report()` (which runs after, and calls `resolve_
+  office_holder()` fresh for its own rendering) introduces no same-turn
+  discrepancy -- the just-committed winner was already the top candidate
+  under *yesterday's* sticky reference, so marking it sticky moments
+  later can only reinforce that same winner, never flip it; only the
+  *next* real turn's own resolution is materially affected, exactly the
+  intended behavior. Both commit functions consume zero `rng` (no new
+  draws in any scripted-RNG test sequence anywhere); of the two files
+  that call `process_turn()` directly, only `tests/test_orchestrator.py`
+  (8 tests) does, and none of them touched `office_holders`/`army_
+  office_holders` before this phase.
+
+  One real pitfall found and worked around while writing the new tests,
+  not stumbled into: an army-office test fixture with a real, owned
+  province at the army's own location would have triggered rulebook
+  [4.32]'s own Druidic-shortfall penalty against the test's monstrous
+  (Dragon Wing) army type, via the *Kings already present* in `test_
+  orchestrator.py`'s own shared fixture (unlike the isolated `tests/
+  test_office_holder.py` unit tests, which register no province and no
+  King at all) -- the same class of contamination Phase 633/641 already
+  documented; worked around by simply not registering a province at
+  that location (`king_druidic_shortfall_for()`'s own real "no owned
+  province, no penalty" fallback), since this test isn't exercising
+  that mechanic at all.
+
+  Test count: 5692 -> 5694 (net +2). Full suite verified green
+  (unchanged, 5692) before writing a single new test.
 
 ## Setup
 

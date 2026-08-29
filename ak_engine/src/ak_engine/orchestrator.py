@@ -63,6 +63,7 @@ from ak_engine.turn.assassin_guild import resolve_pending_guild_assassination
 from ak_engine.turn.emperor_election import ElectionCallOutcome, ElectionResult, process_election_turn
 from ak_engine.turn.final_standings import FinalStandingsReport, compose_final_standings_report
 from ak_engine.turn.kingdom_bridge import KingdomBridgeReport, sync_leaders_from_kingdom
+from ak_engine.turn.office_holder import commit_army_office_holders, commit_office_holders
 from ak_engine.turn.turn_processor import (
     PhaseDispatchResult,
     TurnLeader,
@@ -144,6 +145,24 @@ def process_turn(
     later turn recomputes it fresh (the real engine's own behavior, not a
     one-time "game over" snapshot).
 
+    **Phase 676**: right after that same election/final-standings step,
+    ``turn/office_holder.py commit_office_holders()``/``commit_army_
+    office_holders()`` settle this turn's own real Office winners into
+    ``state.office_holders``/``state.army_office_holders`` -- the "no
+    natural once-per-turn hook exists" gap both functions' own
+    docstrings named (``turn_processor.py run_turn()`` runs once per
+    *phase*, not once per real turn, so it was never the right place).
+    Confirmed no production caller invoked either function before this
+    phase (``turn/assassin_guild.py``'s own module docstring flagged it
+    directly), leaving the real, sourced "previous titleholder retains
+    ties" tie-break (SS14.4) permanently inert. Placed here, before
+    ``compose_letter_report()`` below, deliberately: this turn's own
+    just-computed winner can only reinforce itself when that report's
+    own fresh ``resolve_office_holder()`` calls read it back moments
+    later (it already won under yesterday's sticky reference, so
+    marking it sticky now cannot un-select it) -- only the *next* real
+    turn's own resolution is materially affected.
+
     **Phase 574**: any Kingdom in ``state.kingdoms`` with no order file in
     ``order_file_paths`` this turn gets the real ``REPORTS.PAS Set_Defend``
     missed-deadline auto-fill (``turn/missed_deadline.py`` via
@@ -224,6 +243,22 @@ def process_turn(
 
     election_outcome = process_election_turn(state, kingdom_headers, state.turn_number)
     final_standings_report = compose_final_standings_report(state)
+
+    # Phase 676: settles this turn's real Office winners into `state.
+    # office_holders`/`state.army_office_holders` for next turn's own
+    # "previous titleholder retains ties" tie-break (`turn/office_
+    # holder.py resolve_office_holder()`/`resolve_army_office_holder()`
+    # SS14.4) -- the "caller's own explicit persist step" both commit
+    # functions' own docstrings describe, with no natural hook anywhere
+    # in `turn_processor.py run_turn()` (which runs once per phase, not
+    # once per real turn). Placed here, before `compose_letter_report()`
+    # below: this turn's own just-computed winner can only reinforce
+    # itself when that report's own fresh `resolve_office_holder()`
+    # calls read it back moments later (it already won under yesterday's
+    # sticky reference, so marking it sticky now cannot un-select it) --
+    # only the *next* real turn's own resolution is materially affected.
+    commit_office_holders(state)
+    commit_army_office_holders(state)
 
     # Phase 608: each recorder is turn-global (see record_battle_world_
     # events()'s own docstring) -- called exactly once here, never once

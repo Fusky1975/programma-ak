@@ -4,14 +4,17 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import ActionCode
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader, SkillTable
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord
+from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
 from ak_engine.orchestrator import process_turn
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.emperor_election import ElectionCallOutcome
 
 from _helpers import ScriptedRandom
@@ -80,6 +83,43 @@ def test_process_turn_syncs_bridges_dispatches_and_narrates():
     assert {r.leader_id for r in outcome.results} == {10, 20}
     assert isinstance(outcome.letter_reports[1], list)
     assert outcome.bridge_reports[1].not_found_leader_ids == []
+
+
+# -- Phase 676: commit_office_holders()/commit_army_office_holders() are
+# now wired into process_turn(), right after the election/final-standings
+# step -- see turn/office_holder.py's own extensively-tested suite for the
+# stickiness tie-break logic itself; these two only prove the real call
+# site actually fires.
+
+
+def test_process_turn_commits_office_holders_for_the_next_turns_tie_break():
+    state = _base_state()
+    state.leaders[10].merit_tally.monster_hp_defeated = 10  # clears Office.DEFENDER's own OFFICE_MIN_POINTS
+    kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
+        process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([], choice_indices=[0]))
+
+    assert state.office_holders[Office.DEFENDER] == 10
+
+
+def test_process_turn_commits_army_office_holders_for_the_next_turns_tie_break():
+    # No province is registered at the army's own location deliberately --
+    # _base_state()'s own Kings (Arthur/Cedric) have no Druidic skill, and
+    # a real province there would trigger rulebook [4.32]'s own Druidic-
+    # shortfall penalty (king_druidic_shortfall_for(), only reachable when
+    # a real, owned province exists) against this monstrous army type,
+    # degrading it below the Crack/Elite eligibility floor -- an unrelated
+    # mechanic this test isn't exercising (the same pitfall Phase 633/641
+    # already documented and hit).
+    state = _base_state()
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.ELITE, HexCoord(0, 0)))
+    kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
+        process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([], choice_indices=[0]))
+
+    assert state.army_office_holders[Office.AIR_FORCE] == 101
 
 
 def test_process_turn_skips_a_leader_with_no_matching_leaderstate():

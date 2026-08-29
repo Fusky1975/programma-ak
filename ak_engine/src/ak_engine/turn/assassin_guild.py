@@ -114,15 +114,18 @@ skips it in the disassembly too) rather than calling `resolve_
 grandfather_of_assassins_attempt()` at all -- a `None`/missing target
 there would otherwise be indistinguishable from "nothing was queued."
 
-**`commit_office_holders()` has no caller anywhere in production**
-(confirmed by search, Phase 614) -- `state.office_holders`'s own
-"current titleholder retains ties" stickiness tier is therefore dead
-code today, for every Office, not just Assassin. `resolve_office_
-holder()` is still called live (correct on its own terms, matches the
+**`commit_office_holders()` is now wired (Phase 676)** -- confirmed to
+have had no caller anywhere in production through Phase 614/675,
+leaving `state.office_holders`'s own "current titleholder retains
+ties" stickiness tier dead code for every Office, not just Assassin.
+`orchestrator.py process_turn()` now calls `commit_office_holders()`/
+`commit_army_office_holders()` once per real turn, right after the
+election/final-standings step -- see that function's own Phase 676
+docstring addendum for the full account. `resolve_office_holder()`
+itself needed no change here (it was already correct, matching the
 disassembly's own live `titchar[Assassin]` read at both interception
-and resolution time), but a turn's tie-break can't actually favor last
-turn's settled titleholder until that separate, pre-existing gap is
-closed -- explicitly out of scope here, not silently worked around.
+and resolution time) -- only the missing once-per-turn commit step was
+the real gap, now closed.
 """
 
 from __future__ import annotations

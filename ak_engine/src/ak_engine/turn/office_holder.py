@@ -518,6 +518,10 @@ def commit_office_holders(state: GameState) -> dict[Office, OfficeHolder | None]
     since `resolve_office_holder(state, Office.EMPEROR)` never reads it
     either -- Emperor's own resolution is a direct `state.emperor_
     kingdom_id` lookup, not a Rank-contest tie-break.
+
+    **Phase 676**: the real call site is `orchestrator.py process_turn()`,
+    right after the election/final-standings step -- see that function's
+    own Phase 676 docstring addendum.
     """
 
     results = resolve_all_office_holders(state)
@@ -813,9 +817,11 @@ def commit_army_office_holders(state: GameState) -> dict[Office, ArmyOfficeHolde
     `army_id` into `state.army_office_holders`. An office with no
     current qualifying candidate is left untouched (its last known
     holder stays sticky, same "stale until overwritten" convention).
-    Not wired into `turn_processor.py` automatically -- `commit_office_
-    holders()` itself has no such hook either, the caller's own
-    explicit step.
+    Not wired into `turn_processor.py` -- neither is `commit_office_
+    holders()` (that module runs once per *phase*, not once per real
+    turn). **Phase 676**: the real call site is `orchestrator.py
+    process_turn()`, right alongside `commit_office_holders()` -- see
+    that function's own Phase 676 docstring addendum.
     """
 
     results = resolve_all_army_office_holders(state)
