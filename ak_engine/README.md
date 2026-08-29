@@ -28301,7 +28301,7 @@ follow-up request after the original 431-435 plan shipped.
   right position; neither flag renders nothing extra; the generic-name
   fallback for a call site with no `guardian_monster` set).
 
-- **Phase 673 (current)**: a second reverse-engineering document,
+- **Phase 673**: a second reverse-engineering document,
   `Desktop\BOLD OK.txt` (2026-08-29, requested directly to check
   whether it "chiarisce le idee" on monster intimidation), supersedes
   Phase 671/672's own project-original formula and narration with the
@@ -28368,6 +28368,82 @@ follow-up request after the original 431-435 plan shipped.
   against BOLD OK.txt's own worked table, `roll_guardian_intimidation()`
   rolling every packet independently even after an earlier one already
   succeeded, `guardian_undeterred()`, and end-to-end `_MUnDt` narration.
+
+- **Phase 674 (current)**: SEP roadmap Phase C -- rulebook [5.10]'s
+  other half, "if the character doesn't command any armies, the
+  Encounter Plan will be used in every Encounter solicited by another
+  character or wandering monster." The leader-vs-leader half only (no
+  roaming-monster spawn/selection mechanic exists anywhere in this
+  project to extend the "wandering monster" half onto). The user
+  explicitly chose the full bidirectional engine over a narrower
+  Flee/accept-only version, mirroring `turn/search_execution.py`'s
+  already-proven monster-plan combat model (Phase 293) rather than
+  giving the target's own plan only a pre-combat veto.
+
+  New `turn/sep_decode.py target_uses_special_encounter_plan(state,
+  target_leader)`: `True` iff the target is a real `LeaderState`
+  commanding no army (`GameState.armies_commanded_by()`), the literal
+  rulebook condition.
+
+  `turn/challenge_execution.py resolve_challenge_combat()` gains an
+  opt-in `target_tactics: list[SearchTactic] | None = None` parameter
+  (default `None` reproduces every existing caller/test byte-for-byte
+  -- confirmed by running the full suite unchanged before writing a
+  single new test). When given, the target's own plan gets a second
+  tactic cursor (`_peek_target_cast()`/`_advance_target_tactic()`/
+  `_target_has_more_casts_pending()`, ported branch-for-branch from
+  `search_execution.py`'s own monster-plan quartet), consulted by a new
+  per-round dispatcher covering all 4 real combinations: the target's
+  own leading Casts resolve before combat starts
+  (`_resolve_target_casts()`); a target Cast mid-Melee-round takes the
+  place of its own reactive swing, itself subject to the caster's own
+  counter-swing and disruption check; a Cast-vs-Cast round resolves
+  both sides' own spells with no swings; and a target with any Cast
+  still pending disables both existing atomic fast paths (the lone/
+  last-Melee shortcut and the exhausted-tactic-list tail), forcing the
+  round-stepped path so a later Cast is never skipped. `execute_
+  challenge()` and `execute_pursue()`'s own armyless-case call site
+  both compute `target_tactics` via the new eligibility check and
+  thread it through.
+
+  **Two real, precedent-driven scope narrowings, found while
+  designing, not guessed**: (1) `Maneuver.FLEE` stays unwired for
+  *either* side in this engine (already a separate, documented gap for
+  the caster's own Flee) -- giving only the target Flee-via-SEP agency
+  here would be a new inconsistency, not parity, so the target's own
+  scope stays Cast-timing agency only, exactly matching what Search's
+  monster-plan engine already grants its own passive side. (2) No new
+  "does the target want to Shoot" gate is needed -- Fire Arrow's own
+  `resolve_fire_arrow_duel()` already resolves a fully bidirectional
+  exchange in one call regardless of either side's plan, unlike
+  Search's monster side, whose *canned* plan might omit Fire Arrow
+  entirely.
+
+  Two real bugs found and fixed while writing the new tests, not
+  assumed away: a `_resolve_melee_round()` draw-vs-continue conflation
+  (a genuine atomic-duel draw and "round undecided, keep walking" both
+  collapsed onto the same `None` return value, causing `resolve_melee_
+  duel()` to be invoked twice in one scripted-draw test) -- fixed by
+  widening the return to `tuple[bool, str | None]` (`encounter_over`,
+  `outcome`); and a stuck-cursor bug where the target's own Melee peek
+  never advanced its own tactic index, risking an infinite loop once a
+  later Cast was queued behind it -- fixed by calling `_advance_target_
+  tactic()` explicitly in that branch, mirroring `search_execution.py`'s
+  own identical, already-commented precedent for its Melee-vs-Melee
+  round.
+
+  `turn/turn_processor.py _dispatch_mutual_encounter()` needed no code
+  change at all -- it already calls `execute_challenge()`/`execute_
+  pursue()` rather than `resolve_challenge_combat()` directly, so the
+  non-initiator's own real plan is picked up automatically; proven end
+  to end (not just by inspection) with a real mutual-Challenge fixture
+  where an otherwise-losing target's own leading Cast (`SP: 0 <spell>
+  -1`, genuinely decoded via the existing per-turn SEP-decode pass)
+  flips the winner.
+
+  Test count: 5675 -> 5689 (net +14). Full suite verified green
+  (unchanged, 5675) before writing a single new test, confirming the
+  "default `None` preserves every existing caller" claim empirically.
 
 ## Setup
 

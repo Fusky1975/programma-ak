@@ -119,7 +119,7 @@ memory for the roadmap).
 from __future__ import annotations
 
 from ak_engine.models.enums import Maneuver, Spell
-from ak_engine.models.game_state import GameState
+from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.plan import PlanSegment
 from ak_engine.turn.search_decode import SearchTactic, decode_tactic_tokens
 from ak_engine.turn.use_mi_execution import USE_MI_NON_AGGRESSIVE_WANDS
@@ -222,3 +222,17 @@ def sep_accepts_challenge(tactics: list[SearchTactic], state: GameState | None =
     """
 
     return plan_intent(tactics, state) is not Maneuver.FLEE
+
+
+def target_uses_special_encounter_plan(state: GameState, target_leader: LeaderState | None) -> bool:
+    """Phase 674 -- rulebook [5.10]'s other half: "Se il personaggio non
+    comanda eserciti, il Piano d'Incontro sarà usato in tutti gli
+    Incontri sollecitati da un altro personaggio o mostro errante." --
+    the literal real condition, using the existing ``GameState.armies_
+    commanded_by()`` primitive already used elsewhere for exactly this
+    "does this leader command any army" check. ``False`` for
+    ``target_leader is None`` (a garrison commander -- no real
+    ``LeaderState``/``special_encounter_plan`` exists for it).
+    """
+
+    return target_leader is not None and not state.armies_commanded_by(target_leader.leader_id)

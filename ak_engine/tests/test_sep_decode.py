@@ -4,16 +4,20 @@ Special Encounter Plan (rulebook [5.10]) decode/Plan_Intent derivation.
 
 from __future__ import annotations
 
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Maneuver, Spell
-from ak_engine.models.game_state import GameState
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState
+from ak_engine.models.map import HexCoord
 from ak_engine.models.plan import PlanSegment
 from ak_engine.models.treasure import Treasure
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.sep_decode import (
     decode_special_encounter_plan,
     plan_intent,
     sep_accepts_challenge,
     sep_is_aggressive,
+    target_uses_special_encounter_plan,
 )
 
 # -- decode_special_encounter_plan() -- against every real SP: value found
@@ -190,3 +194,25 @@ def test_sep_accepts_challenge_false_only_when_flee_is_the_first_tactic():
 
 def test_sep_accepts_challenge_true_for_an_empty_plan():
     assert sep_accepts_challenge([]) is True
+
+
+# -- Phase 674: target_uses_special_encounter_plan() ---------------------
+
+
+def test_target_uses_special_encounter_plan_true_for_an_armyless_leader():
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=HexCoord(0, 0)))
+    assert target_uses_special_encounter_plan(state, state.leaders[1]) is True
+
+
+def test_target_uses_special_encounter_plan_false_for_an_army_commanding_leader():
+    state = GameState()
+    leader = LeaderState(1, kingdom_id=1, name="A", location=HexCoord(0, 0))
+    state.add_leader(leader)
+    state.add_army(ArmyState(101, 1, ArmyType.AXEMEN, Quality.AVERAGE, HexCoord(0, 0), commanded_by=1))
+    assert target_uses_special_encounter_plan(state, leader) is False
+
+
+def test_target_uses_special_encounter_plan_false_for_none():
+    state = GameState()
+    assert target_uses_special_encounter_plan(state, None) is False

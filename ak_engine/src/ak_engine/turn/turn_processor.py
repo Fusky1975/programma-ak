@@ -1236,11 +1236,17 @@ def _dispatch_mutual_encounter(
     real-game resolution.
 
     The initiator's own action type (Challenge or Pursue) governs which
-    resolver actually runs; the other leader's own tactics/Encounter Plan
-    are not modeled separately -- both ``PhaseDispatchResult`` entries
-    share the exact same result object, one per leader so each leader's own
-    dispatch record still reflects that *their* order was the one that
-    produced this outcome.
+    resolver actually runs. **Phase 674 update**: the non-initiator's own
+    ``LeaderState.special_encounter_plan`` IS now consulted -- not by
+    this function directly, but automatically, the same way it already
+    is for any real (non-mutual) solicited target: ``execute_challenge()``/
+    ``execute_pursue()`` (called just below) resolve it themselves
+    whenever the non-initiator commands no armies (rulebook [5.10]'s own
+    "used in every Encounter solicited by another character"), so no
+    change was needed here at all. Both ``PhaseDispatchResult`` entries
+    still share the exact same result object, one per leader so each
+    leader's own dispatch record still reflects that *their* order was
+    the one that produced this outcome.
     """
 
     leader_a_id = entry_a[0].leader.leader_id

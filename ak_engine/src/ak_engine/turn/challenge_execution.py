@@ -311,6 +311,7 @@ from ak_engine.turn.encounter import (
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchTactic
+from ak_engine.turn.sep_decode import target_uses_special_encounter_plan
 
 _COMBAT_MANEUVERS = frozenset({Maneuver.MELEE, Maneuver.SHOOT})
 
@@ -847,9 +848,12 @@ def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, rng: random
     """Psychic Blast's/Ice Suspension's own "bonus attack rounds" -- free,
     unanswered Melee swings, resolved immediately after the CAST tactic
     that granted them (same convention as ``turn/search_execution.py``'s
-    own ``_consume_bonus_attacks()``). The bonus attacker is always the
-    caster and the bonus defender always the target here -- no monster-
-    side branch to thread through, unlike Search's own version.
+    own ``_consume_bonus_attacks()``). ``attacker``/``defender`` are
+    generic, caller-supplied roles (not hardcoded to this module's own
+    outer ``caster``/``target`` convention) -- Phase 674's own ``_
+    resolve_target_cast()`` calls this with the target playing
+    ``attacker`` when *its* own Cast granted the bonus, flipping the
+    ``"a"`` result back to the outer convention itself.
     """
 
     while attacker.bonus_unanswered_attacks > 0:
@@ -1033,6 +1037,8 @@ def resolve_challenge_combat(
     target: Combatant,
     state: GameState,
     rng: random.Random,
+    *,
+    target_tactics: list[SearchTactic] | None = None,
 ) -> ChallengeCombatOutcome:
     """Walks an Encounter Plan's full ``SearchTactic`` list (not just each
     entry's own ``.maneuver``, unlike ``turn/encounter.py resolve_
@@ -1294,10 +1300,30 @@ def resolve_challenge_combat(
     plan isn't attested in any available real data, the same "don't fix
     an unattested shape" discipline this project already applies
     elsewhere (e.g. Search's own confirmed single-FI-order rule).
+
+    **Phase 674 -- `target_tactics` (rulebook [5.10]'s own "used in
+    every Encounter solicited by another character," for a target who
+    commands no armies).** `None` (every pre-Phase-674 caller,
+    including `turn/battle_orchestrator.py`'s own Duel reuse, which
+    deliberately keeps the one-directional behavior this phase doesn't
+    touch -- see `turn/sep_decode.py target_uses_special_encounter_
+    plan()`) reproduces every existing behavior above byte-for-byte.
+    When given, the target gets the exact same kind of mid-fight `CAST`-
+    timing agency `turn/search_execution.py`'s own monster-plan engine
+    already gives a Search guardian (Phase 293) -- a tactic cursor
+    peeked/advanced via `_peek_target_cast()`/`_advance_target_tactic()`
+    below, consulted by the `MELEE` branch (now `_resolve_melee_round()`)
+    and the `CAST` branch. Deliberately NOT given: `Maneuver.FLEE`
+    agency (unwired for *either* side in this module already, a
+    separate, pre-existing gap -- see the STEAL addendum above) and any
+    "does the target want to Shoot" gate (`resolve_fire_arrow_duel()`
+    is already a fully mutual exchange in one call, regardless of
+    either side's own plan).
     """
 
     current_range = CombatRange.SPELL_RANGE
     melee_setup_done = False
+    target_tactic_index = 0
     # Phase 306: carried into every ``ChallengeCombatOutcome`` returned
     # below (not just a terminal STEAL branch) -- see that dataclass's own
     # Phase 306 addendum for why a non-terminal Steal outcome (success/
@@ -1325,6 +1351,140 @@ def resolve_challenge_combat(
             melee_swings=tuple(melee_swings),
         )
 
+    def _peek_target_cast() -> SearchTactic | None:
+        """Phase 674 -- mirrors `turn/search_execution.py _peek_monster_
+        action()` exactly, just walking the target's own real
+        `target_tactics` instead of a monster's canned plan: the next
+        `CAST` tactic from `target_tactic_index` onward, skipping any
+        `SHOOT` entry (Fire Arrow is already resolved bidirectionally in
+        one call whenever the *caster's* own plan orders it -- see the
+        docstring above), or `None` once the target's own plan calls for
+        `MELEE` or has run out.
+        """
+
+        nonlocal target_tactic_index
+        plan = target_tactics or ()
+        while target_tactic_index < len(plan):
+            current = plan[target_tactic_index]
+            if current.maneuver is Maneuver.SHOOT:
+                target_tactic_index += 1
+                continue
+            if current.maneuver is Maneuver.MELEE:
+                return None
+            if current.maneuver is Maneuver.CAST:
+                return current
+            target_tactic_index += 1  # unwired for the target's own side too -- skip defensively
+        return None
+
+    def _advance_target_tactic() -> None:
+        nonlocal target_tactic_index
+        if target_tactics is not None and target_tactic_index < len(target_tactics):
+            target_tactic_index += 1
+
+    def _target_has_more_casts_pending() -> bool:
+        return any(t.maneuver is Maneuver.CAST for t in (target_tactics or ())[target_tactic_index:])
+
+    def _resolve_target_cast(tactic: SearchTactic, *, is_first: bool) -> str | None:
+        """Resolves the target's own queued `CAST`, roles swapped (the
+        target plays `_resolve_personal_combat_cast()`'s own `caster`
+        role here) -- flips the returned `"a"/"b"` back to this
+        function's own outer `"a"=caster,"b"=target` convention.
+        """
+
+        outcome = _resolve_personal_combat_cast(
+            target, target_leader, caster, caster_leader, tactic, state, rng, is_first_tactic=is_first
+        )
+        if outcome == "fled":
+            return "fled"
+        if outcome == "a":
+            return "b"
+        if outcome == "b":
+            return "a"
+        bonus_winner = _consume_bonus_attacks(target, caster, rng)
+        return "b" if bonus_winner == "a" else None
+
+    def _resolve_melee_round(*, is_last_tactic: bool) -> tuple[bool, str | None]:
+        """One round of Melee at `MELEE_RANGE`, consulting the target's
+        own peeked Cast -- mirrors `turn/search_execution.py _resolve_
+        melee_range_round()`'s own Melee-vs-Melee/Melee-vs-Cast
+        branches. Returns `(encounter_over, outcome)`: `outcome` is
+        `"a"`/`"b"`/`"fled"`/`None`; `encounter_over` is `True` whenever
+        nothing more should be walked -- including an atomic duel's own
+        genuine draw (`outcome=None` there still means "no winner," not
+        "round undecided, keep walking," unlike the round-stepped
+        branch's own `None`, so this can't be collapsed into a single
+        sentinel the way a first draft of this function tried).
+        """
+
+        nonlocal melee_setup_done
+        target_cast = _peek_target_cast()
+        if target_cast is None:
+            if is_last_tactic and not _target_has_more_casts_pending():
+                result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
+                melee_swings.extend(result.melee_swings)
+                return True, result.winner
+            if not melee_setup_done:
+                apply_temper_melee_setup(caster, target, rng)
+                melee_setup_done = True
+            round_outcome = resolve_one_melee_round(caster, target, rng)
+            melee_swings.extend(round_outcome.swings)
+            # Phase 674: this Melee "entry" in the target's own plan (if
+            # its current one really is Melee, not just an exhausted/
+            # None plan) has now been "used" for this round -- advance
+            # past it so a later Cast further down its own plan is
+            # eventually reached, mirroring search_execution.py's own
+            # identical `_advance_monster_tactic()` call here exactly
+            # (otherwise the peek would land on this same entry forever).
+            _advance_target_tactic()
+            if round_outcome.result is not None:
+                return True, round_outcome.result.winner
+            return False, None
+        # Phase 674: mirrors search_execution.py's own "Melee vs Cast"
+        # branch -- [5.1]'s own melee-precedence rule still applies, so
+        # the caster's own swing lands on the casting target first.
+        swing_result = resolve_reactive_melee_swing(caster, target, rng)
+        melee_swings.append(MeleeSwing(attacker="a", hit=swing_result.hit, damage=swing_result.damage))
+        if target.hit_points <= 0:
+            return True, "a"
+        disrupted = (
+            resolve_spell_disruption(swing_result.damage, rng)
+            if swing_result.damage > 0
+            else resolve_spell_disruption_from_missed_attack(rng)
+        )
+        is_first_target_tactic = target_tactic_index == 0
+        _advance_target_tactic()
+        if disrupted:
+            return False, None
+        target_outcome = _resolve_target_cast(target_cast, is_first=is_first_target_tactic)
+        if target_outcome is None:
+            return False, None
+        return True, target_outcome
+
+    def _resolve_target_casts() -> str | None:
+        """Mirrors `turn/search_execution.py _resolve_monster_casts()`:
+        burns through the target's own *leading* `CAST` tactics before
+        any real combat phase begins (whatever the caster's own first
+        tactic is), stopping without consuming at the target's own
+        first `MELEE` or once its plan runs out. A no-op, no rng
+        consumed, when `target_tactics` is `None`.
+        """
+
+        while True:
+            tactic = _peek_target_cast()
+            if tactic is None:
+                return None
+            is_first = target_tactic_index == 0
+            _advance_target_tactic()
+            outcome = _resolve_target_cast(tactic, is_first=is_first)
+            if outcome is not None:
+                return outcome
+
+    target_cast_outcome = _resolve_target_casts()
+    if target_cast_outcome == "fled":
+        return _outcome(fled=True)
+    if target_cast_outcome in ("a", "b"):
+        return _outcome(winner=target_cast_outcome)
+
     for index, tactic in enumerate(tactics):
         if tactic.maneuver is Maneuver.SHOOT:
             if current_range is CombatRange.MELEE_RANGE:
@@ -1337,26 +1497,22 @@ def resolve_challenge_combat(
             continue
         if tactic.maneuver is Maneuver.MELEE:
             current_range = _close_to(CombatRange.MELEE_RANGE, current_range)
-            if index == len(tactics) - 1:
-                result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
-                melee_swings.extend(result.melee_swings)
-                return _outcome(winner=result.winner)
-            if not melee_setup_done:
-                apply_temper_melee_setup(caster, target, rng)
-                melee_setup_done = True
-            round_outcome = resolve_one_melee_round(caster, target, rng)
-            melee_swings.extend(round_outcome.swings)
-            if round_outcome.result is not None:
-                return _outcome(winner=round_outcome.result.winner)
+            encounter_over, round_result = _resolve_melee_round(is_last_tactic=(index == len(tactics) - 1))
+            if encounter_over:
+                return _outcome(fled=True) if round_result == "fled" else _outcome(winner=round_result)
             continue
         if tactic.maneuver is Maneuver.CAST:
-            if current_range is CombatRange.MELEE_RANGE:
+            target_cast_at_melee = _peek_target_cast() if current_range is CombatRange.MELEE_RANGE else None
+            if current_range is CombatRange.MELEE_RANGE and target_cast_at_melee is None:
                 # Phase 417: the target's own reactive swing (attacker="b",
                 # since the caster="a" is the one attempting to cast here)
                 # is now logged into melee_swings too, reading .hit/.damage
                 # off resolve_reactive_melee_swing()'s own Phase 416
                 # ReactiveMeleeSwingResult -- disruption itself is
                 # unchanged, still keyed off .damage > 0, not .hit.
+                # Phase 674: only the target's own *reactive* swing here
+                # -- if it has a Cast of its own queued instead, it casts
+                # too (Cast-vs-Cast, below) rather than reactively swinging.
                 swing_result = resolve_reactive_melee_swing(target, caster, rng)
                 damage = swing_result.damage
                 melee_swings.append(MeleeSwing(attacker="b", hit=swing_result.hit, damage=swing_result.damage))
@@ -1379,6 +1535,17 @@ def resolve_challenge_combat(
             bonus_winner = _consume_bonus_attacks(caster, target, rng)
             if bonus_winner is not None:
                 return _outcome(winner=bonus_winner)
+            if target_cast_at_melee is not None:
+                # Phase 674: Cast-vs-Cast -- both sides attempt their own
+                # spell this round, no swings, no disruption (mirrors
+                # search_execution.py's own Cast-vs-Cast branch).
+                is_first_target_tactic = target_tactic_index == 0
+                _advance_target_tactic()
+                target_outcome = _resolve_target_cast(target_cast_at_melee, is_first=is_first_target_tactic)
+                if target_outcome == "fled":
+                    return _outcome(fled=True)
+                if target_outcome in ("a", "b"):
+                    return _outcome(winner=target_outcome)
             continue
         if tactic.maneuver is Maneuver.STEAL:
             steal_outcome = _resolve_steal_tactic(caster_leader, caster, target_leader, state, rng)
@@ -1405,9 +1572,19 @@ def resolve_challenge_combat(
                 continue
             continue  # success / evaded / ransom / unresolved -- plan continues
         # every other tactic is unwired -- skip it and keep walking
-    result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
-    melee_swings.extend(result.melee_swings)
-    return _outcome(winner=result.winner)
+    if not _target_has_more_casts_pending():
+        result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
+        melee_swings.extend(result.melee_swings)
+        return _outcome(winner=result.winner)
+    # Phase 674: the exhausted tactic list still defaults to Melee, but
+    # the target's own remaining Cast(s) must still get their own
+    # agency -- mirrors search_execution.py's own "combat_attempted"
+    # tail loop, round-stepping instead of jumping straight to the
+    # atomic duel.
+    while True:
+        encounter_over, round_result = _resolve_melee_round(is_last_tactic=True)
+        if encounter_over:
+            return _outcome(fled=True) if round_result == "fled" else _outcome(winner=round_result)
 
 
 @dataclass(slots=True)
@@ -1596,8 +1773,19 @@ def execute_challenge(
 
     challenger_combatant = _leader_combatant(challenger, state)
     target_combatant = _leader_combatant(target, state)
+    # Phase 674: rulebook [5.10]'s own "used in every Encounter
+    # solicited by another character" (only when the target commands no
+    # armies -- `target_leads_army` above already gives that answer).
+    target_tactics = list(target.special_encounter_plan) if target_uses_special_encounter_plan(state, target) else None
     combat_result = resolve_challenge_combat(
-        request.tactics, challenger, challenger_combatant, target, target_combatant, state, rng
+        request.tactics,
+        challenger,
+        challenger_combatant,
+        target,
+        target_combatant,
+        state,
+        rng,
+        target_tactics=target_tactics,
     )
 
     if combat_result.fled:

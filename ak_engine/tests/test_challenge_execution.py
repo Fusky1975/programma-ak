@@ -20,6 +20,7 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.challenge_execution import (
+    ChallengeCombatOutcome,
     ChallengeExecutionResult,
     _apply_bravest_talk_inspiration,
     _apply_duel_encounter_merit,
@@ -1706,6 +1707,282 @@ def test_resolve_challenge_combat_non_last_melee_trailing_fallback_does_not_doub
     assert caster.defensive_hit_multiplier == pytest.approx(0.9)
 
 
+# -- Phase 674: the target's own Special Encounter Plan (rulebook [5.10], --
+# -- "used in every Encounter solicited by another character") ------------
+
+
+def test_resolve_challenge_combat_target_tactics_none_never_consults_the_target_plan():
+    # The default -- every pre-Phase-674 caller/test above already
+    # proves this byte-for-byte via the full unmodified suite, but this
+    # pins it directly: an explicit target_tactics=None with a lone
+    # last MELEE still takes the atomic fast path.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel, patch(
+        "ak_engine.turn.challenge_execution.resolve_one_melee_round"
+    ) as mock_round:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]), target_tactics=None
+        )
+
+    assert mock_duel.called
+    assert not mock_round.called
+    assert outcome.winner == "a"
+
+
+def test_resolve_challenge_combat_targets_leading_cast_resolves_before_any_caster_tactic():
+    # Mirrors search_execution.py's own _resolve_monster_casts() burst --
+    # the target's own leading Cast fires before the caster's own first
+    # tactic even runs, regardless of what that tactic is.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE)]
+    target_tactics = [SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)]
+
+    with patch(
+        "ak_engine.turn.challenge_execution._resolve_personal_combat_cast", return_value="a"
+    ) as mock_cast, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        outcome = resolve_challenge_combat(
+            tactics,
+            caster_leader,
+            caster,
+            target_leader,
+            target,
+            state,
+            ScriptedRandom([]),
+            target_tactics=target_tactics,
+        )
+
+    assert mock_cast.called
+    # the target played the "caster" role in that inner call, so its own
+    # "a" (that call's caster wins) flips to this function's own "b".
+    assert outcome.winner == "b"
+    assert not mock_duel.called  # the burst already ended the encounter
+
+
+def test_resolve_challenge_combat_target_leading_cast_that_resolves_nothing_lets_the_caster_proceed():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE)]
+    target_tactics = [SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)]
+
+    with patch(
+        "ak_engine.turn.challenge_execution._resolve_personal_combat_cast", return_value=None
+    ), patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            tactics,
+            caster_leader,
+            caster,
+            target_leader,
+            target,
+            state,
+            ScriptedRandom([]),
+            target_tactics=target_tactics,
+        )
+
+    assert mock_duel.called  # the target's own cast fizzled -- the caster's own Melee still runs
+    assert outcome.winner == "a"
+
+
+def test_resolve_challenge_combat_targets_pending_later_cast_disables_the_atomic_fast_path():
+    # target_tactics' own immediate action is Melee (no leading cast to
+    # burst), but a Cast further down its own plan must still disable
+    # the atomic fast path -- mirrors search_execution.py's own
+    # _monster_has_more_casts_pending() lookahead exactly.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE)]
+    target_tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=False, damage=0),
+    ), patch(
+        "ak_engine.turn.challenge_execution.resolve_spell_disruption_from_missed_attack", return_value=False
+    ), patch(
+        "ak_engine.turn.challenge_execution._resolve_personal_combat_cast", return_value="b"
+    ) as mock_cast:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        outcome = resolve_challenge_combat(
+            tactics,
+            caster_leader,
+            caster,
+            target_leader,
+            target,
+            state,
+            ScriptedRandom([]),
+            target_tactics=target_tactics,
+        )
+
+    assert mock_round.called  # round-stepped, not the atomic duel
+    assert not mock_duel.called
+    assert mock_cast.called  # the target's own later Cast eventually got its turn
+    assert outcome.winner == "a"  # inner "b" (that call's target wins) flips to outer "a"
+
+
+def test_resolve_challenge_combat_melee_vs_target_cast_caster_swing_lands_first():
+    # [5.1]'s own melee-precedence rule: the caster's own swing at the
+    # casting target happens before the target's own cast resolves.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE)]
+    target_tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=True, damage=3),
+    ) as mock_swing, patch(
+        "ak_engine.turn.challenge_execution.resolve_spell_disruption", return_value=False
+    ) as mock_disrupt, patch(
+        "ak_engine.turn.challenge_execution._resolve_personal_combat_cast", return_value=None
+    ) as mock_cast, patch(
+        # the target's own plan is now exhausted after this round, so the
+        # exhausted-tactic-list tail's own atomic fast path re-engages --
+        # a separate, already-tested concern, just given a decisive
+        # winner here so this test can focus on the round just above it.
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        resolve_challenge_combat(
+            tactics,
+            caster_leader,
+            caster,
+            target_leader,
+            target,
+            state,
+            ScriptedRandom([]),
+            target_tactics=target_tactics,
+        )
+
+    assert mock_swing.called  # attacker="a" (the caster) -- not a reactive swing against the caster
+    assert mock_disrupt.called
+    assert mock_cast.called  # not disrupted -- the target's own cast still gets attempted
+
+
+def test_resolve_challenge_combat_melee_vs_target_cast_disrupted_never_attempts_the_cast():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE)]
+    target_tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=True, damage=3),
+    ), patch("ak_engine.turn.challenge_execution.resolve_spell_disruption", return_value=True), patch(
+        "ak_engine.turn.challenge_execution._resolve_personal_combat_cast"
+    ) as mock_cast, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        resolve_challenge_combat(
+            tactics,
+            caster_leader,
+            caster,
+            target_leader,
+            target,
+            state,
+            ScriptedRandom([]),
+            target_tactics=target_tactics,
+        )
+
+    assert not mock_cast.called  # disrupted -- the target's own cast never gets attempted
+
+
+def test_resolve_challenge_combat_targets_leading_cast_can_end_with_the_caster_losing():
+    # The leading-cast burst has no reactive swing of its own (only the
+    # round-stepped Melee-vs-Cast branch does) -- the target's own
+    # leading Cast just resolves directly and can decide the encounter
+    # either way.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE)]
+    target_tactics = [SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)]
+
+    with patch("ak_engine.turn.challenge_execution._resolve_personal_combat_cast", return_value="b") as mock_cast:
+        outcome = resolve_challenge_combat(
+            tactics,
+            caster_leader,
+            caster,
+            target_leader,
+            target,
+            state,
+            ScriptedRandom([]),
+            target_tactics=target_tactics,
+        )
+
+    assert mock_cast.called
+    # that inner call's "b" (its own target=caster wins) flips to this
+    # function's own "a".
+    assert outcome.winner == "a"
+
+
+def test_resolve_challenge_combat_cast_vs_cast_both_sides_attempt_their_own_spell():
+    # Caster orders CAST while the target's own peeked plan also wants
+    # to Cast this round -- both attempt, no swings, no disruption.
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": _skills_with(Ability.WHITE, 5, 9)}
+    )
+    tactics = [
+        SearchTactic(Maneuver.MELEE),  # closes range to MELEE_RANGE first
+        SearchTactic(Maneuver.CAST, Spell.HEAL.value),
+    ]
+    target_tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)]
+
+    caster_cast_calls = []
+    target_cast_calls = []
+
+    def _fake_cast(caster_arg, caster_leader_arg, target_arg, target_leader_arg, tactic, state_arg, rng_arg, *, is_first_tactic):
+        if caster_arg is caster:
+            caster_cast_calls.append(tactic)
+        else:
+            target_cast_calls.append(tactic)
+        return None
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=False, damage=0),
+    ), patch(
+        "ak_engine.turn.challenge_execution.resolve_spell_disruption_from_missed_attack", return_value=False
+    ), patch(
+        "ak_engine.turn.challenge_execution._resolve_personal_combat_cast", side_effect=_fake_cast
+    ) as mock_cast, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        resolve_challenge_combat(
+            tactics,
+            caster_leader,
+            caster,
+            target_leader,
+            target,
+            state,
+            ScriptedRandom([]),
+            target_tactics=target_tactics,
+        )
+
+    assert mock_cast.called
+    assert len(caster_cast_calls) == 1
+    assert len(target_cast_calls) == 1  # the target's own later Cast also got attempted, same round
+
+
+def test_resolve_challenge_combat_target_tactics_with_no_cast_at_all_behaves_like_none():
+    # A real armyless target with an empty/Melee-only SEP is
+    # indistinguishable from target_tactics=None throughout.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel, patch(
+        "ak_engine.turn.challenge_execution.resolve_one_melee_round"
+    ) as mock_round:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]), target_tactics=[]
+        )
+
+    assert mock_duel.called
+    assert not mock_round.called
+    assert outcome.winner == "a"
+
+
 # -- Phase 305: character-vs-character Steal [ST], rulebook [5.5] ------
 
 
@@ -2347,3 +2624,52 @@ def test_resolve_challenge_combat_steal_capture_at_melee_range_then_a_following_
     assert outcome.steal_outcome == "combat"
     assert outcome.steal_capture_range is CombatRange.MELEE_RANGE
     mock_duel.assert_called_once()
+
+
+# -- Phase 674: execute_challenge() threads a real armyless target's own --
+# -- special_encounter_plan into resolve_challenge_combat() ---------------
+
+
+def test_execute_challenge_threads_an_armyless_targets_special_encounter_plan():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    target.special_encounter_plan = (SearchTactic(Maneuver.CAST, Spell.FIREBALL.value),)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    tactics = [SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_challenge_combat") as mock_resolve:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner="a")
+        execute_challenge(state, 1, ChallengeRequest(target_character_id=2, unconfirmed_extra0=0, tactics=tactics))
+
+    assert mock_resolve.called
+    assert mock_resolve.call_args.kwargs["target_tactics"] == list(target.special_encounter_plan)
+
+
+def test_execute_challenge_never_threads_an_army_commanding_targets_plan():
+    # An ordinary (non-King) army-commanding target always refuses the
+    # encounter outright (is_encounter_accepted's own real rule) --
+    # resolve_challenge_combat() is never even reached for that case, so
+    # this uses a King target with mutual_encounter=True (acceptance
+    # independent of army command) to actually exercise the gate.
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD, is_king=True)
+    target.special_encounter_plan = (SearchTactic(Maneuver.CAST, Spell.FIREBALL.value),)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    state.add_army(ArmyState(201, 2, ArmyType.AXEMEN, Quality.AVERAGE, FIELD, commanded_by=2))
+    tactics = [SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_challenge_combat") as mock_resolve:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner="a")
+        execute_challenge(
+            state,
+            1,
+            ChallengeRequest(target_character_id=2, unconfirmed_extra0=0, tactics=tactics),
+            mutual_encounter=True,
+        )
+
+    assert mock_resolve.called
+    assert mock_resolve.call_args.kwargs["target_tactics"] is None

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from unittest.mock import patch
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
@@ -1976,5 +1977,74 @@ def test_run_turn_clears_illusory_fog_active_at_the_end():
     state.provinces[ORIGIN].illusory_fog_active = True
 
     run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+
+# -- Phase 674: _dispatch_mutual_encounter() picks up the non-initiator's
+# own real Special Encounter Plan automatically, via execute_challenge()'s
+# own eligibility check -- no code change was needed in turn_processor.py
+# itself (Design point 6 of the Phase 674 plan); this proves that claim
+# end to end rather than only by inspection.
+
+
+def _leader_with_phase_and_sep(leader_id: int, name: str, label: str, phase: PlanPhase, sp: tuple) -> Leader:
+    return Leader(
+        leader_id=leader_id,
+        name=name,
+        plan=ActionPlan(leader_id=leader_id, segments=[PlanSegment(0, 0, sp, {label: phase})]),
+    )
+
+
+def test_run_turn_mutual_encounter_lets_the_targets_own_special_encounter_plan_decide_the_winner():
+    # Leader 10 (higher Melee skill) challenges leader 20; without any
+    # Special Encounter Plan of its own, leader 20 has no leading Cast
+    # to resolve and the ordinary Melee tactic proceeds -- the higher-
+    # skilled challenger (10) wins, exactly like the pre-existing mutual-
+    # Challenge test above. Giving leader 20 a real, decoded SP: CAST
+    # tactic (SP: 0 <spell> -1) flips the outcome: its own leading cast
+    # (mocked to a decisive "b", target-wins) resolves before the
+    # challenger's Melee tactic is ever reached.
+    state = _base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=_skills_with(Ability.MELEE, 3, 9)))
+    state.add_leader(LeaderState(20, kingdom_id=2, name="B", location=ORIGIN, skills=_skills_with(Ability.MELEE, 0, 9)))
+    challenge_phase_10 = _encounter_phase("P0", ActionCode.CHALLENGE, 20, melee=True)
+    challenge_phase_20 = _encounter_phase("P0", ActionCode.CHALLENGE, 10, melee=True)
+    leaders_no_sep = [
+        _leader_with_phase_and_sep(10, "A", "P0", challenge_phase_10, ()),
+        _leader_with_phase_and_sep(20, "B", "P0", challenge_phase_20, ()),
+    ]
+
+    no_sep_results = run_turn(
+        [TurnLeader(leaders_no_sep[0], 1), TurnLeader(leaders_no_sep[1], 2)],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=ScriptedRandom([0.1, 0.5, 0.9] * 15),
+    )
+
+    by_leader_no_sep = {r.leader_id: r for r in no_sep_results}
+    assert by_leader_no_sep[10].result.winner_leader_id == 10  # higher-skilled challenger wins, no SEP involved
+
+    state2 = _base_state()
+    state2.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=_skills_with(Ability.MELEE, 3, 9)))
+    state2.add_leader(LeaderState(20, kingdom_id=2, name="B", location=ORIGIN, skills=_skills_with(Ability.MELEE, 0, 9)))
+    leaders_with_sep = [
+        _leader_with_phase_and_sep(10, "A", "P0", challenge_phase_10, ()),
+        _leader_with_phase_and_sep(20, "B", "P0", challenge_phase_20, (0, Spell.FIREBALL.value, -1)),
+    ]
+
+    # The inner cast call plays target-as-caster: its own "a" (the inner
+    # caster, i.e. the real target) winning flips to this function's
+    # outer "b" -- see resolve_challenge_combat()'s own _resolve_target_
+    # cast() flip convention (module docstring / Phase 674 addendum).
+    with patch("ak_engine.turn.challenge_execution._resolve_personal_combat_cast", return_value="a"):
+        with_sep_results = run_turn(
+            [TurnLeader(leaders_with_sep[0], 1), TurnLeader(leaders_with_sep[1], 2)],
+            state2,
+            board_width=BOARD_WIDTH,
+            rng=ScriptedRandom([0.1, 0.5, 0.9] * 15),
+        )
+
+    by_leader_with_sep = {r.leader_id: r for r in with_sep_results}
+    assert state2.leaders[20].special_encounter_plan == (SearchTactic(Maneuver.CAST, Spell.FIREBALL.value),)
+    assert by_leader_with_sep[10].result.winner_leader_id == 20  # target's own leading Cast decided it instead
 
     assert state.provinces[ORIGIN].illusory_fog_active is False

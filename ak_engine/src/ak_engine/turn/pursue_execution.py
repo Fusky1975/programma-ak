@@ -195,6 +195,7 @@ from ak_engine.turn.encounter import (
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance, neighbors
 from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.sep_decode import target_uses_special_encounter_plan
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 
 
@@ -379,8 +380,22 @@ def execute_pursue(
 
     pursuer_combatant = _leader_combatant(pursuer, state)
     target_combatant = _leader_combatant(target, state)
+    # Phase 674: this branch is only ever reached after the `if target_
+    # leads_army: return ...` early return above, so the target is
+    # already structurally guaranteed armyless -- `target_uses_special_
+    # encounter_plan()` still used here (rather than assuming it) for
+    # the same real, testable eligibility check `execute_challenge()`
+    # uses, matching rulebook [5.10]'s own literal condition.
+    target_tactics = list(target.special_encounter_plan) if target_uses_special_encounter_plan(state, target) else None
     combat_result = resolve_challenge_combat(
-        request.tactics, pursuer, pursuer_combatant, target, target_combatant, state, rng
+        request.tactics,
+        pursuer,
+        pursuer_combatant,
+        target,
+        target_combatant,
+        state,
+        rng,
+        target_tactics=target_tactics,
     )
 
     if combat_result.fled:

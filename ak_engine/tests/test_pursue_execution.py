@@ -15,6 +15,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
+from ak_engine.turn.challenge_execution import ChallengeCombatOutcome
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.encounter import EncounterCombatResult, MeleeRoundOutcome
@@ -578,3 +579,55 @@ def test_execute_pursue_non_last_melee_applies_temper_setup_exactly_once():
         execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert mock_setup.call_count == 1
+
+
+# -- Phase 674: the armyless case threads the target's own real Special
+# Encounter Plan into resolve_challenge_combat()'s target_tactics --
+
+
+def test_execute_pursue_threads_an_armyless_targets_special_encounter_plan():
+    state = _base_state()
+    pursuer = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    target.special_encounter_plan = (SearchTactic(Maneuver.CAST, Spell.FIREBALL.value),)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    request = _melee_request(2)
+
+    with patch("ak_engine.turn.pursue_execution.resolve_challenge_combat") as mock_resolve:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner="a")
+        execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert mock_resolve.called
+    assert mock_resolve.call_args.kwargs["target_tactics"] == list(target.special_encounter_plan)
+
+
+def test_execute_pursue_never_threads_an_army_commanding_targets_plan():
+    # execute_pursue()'s armyless-case call site is only ever reached
+    # after the "pursuer_leads_army != target_leads_army" mismatch
+    # check already returned early -- so both sides need to command an
+    # army here for the walk to even reach that far, which routes to
+    # the real army-battle branch (_fight_army_pursuit_battle) instead,
+    # never to resolve_challenge_combat() at all -- confirming the
+    # armyless-only scoping is real, not just asserted, is exactly
+    # what this test is for.
+    state = _base_state()
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, name="Field"))
+    pursuer = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    target.special_encounter_plan = (SearchTactic(Maneuver.CAST, Spell.FIREBALL.value),)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    state.add_army(ArmyState(101, 1, ArmyType.AXEMEN, Quality.AVERAGE, FIELD, commanded_by=1))
+    state.add_army(ArmyState(201, 2, ArmyType.AXEMEN, Quality.AVERAGE, FIELD, commanded_by=2))
+    request = _melee_request(2)
+
+    with patch("ak_engine.turn.pursue_execution.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.pursue_execution.fight_battle"
+    ) as mock_fight_battle:
+        mock_fight_battle.return_value = None
+        result = execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert not mock_resolve.called
+    assert result.caught_up is True
+    assert result.combat_occurred is True
