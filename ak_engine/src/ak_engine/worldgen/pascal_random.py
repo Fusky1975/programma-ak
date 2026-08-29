@@ -64,6 +64,20 @@ MODULUS = 2**32
 MULTIPLIER = 134775813
 INCREMENT = 1
 IRAND_RANGE = 32768
+# Phase 679 -- `Desktop/NOARMY.md`'s own targeted disassembly of `AK.EXE`'s
+# resident `IRand` (`35EB:11D4`, a separate executable/address from the
+# `AKGEN.EXE` disassembly `IRAND_RANGE` above is sourced from) confirms a
+# real, genuinely different compiled Real48 constant: 32000, not 32768.
+# Both are correct for their own executable -- not a contradiction to
+# resolve either way, confirmed by checking every `turn/` module's own
+# "IRand" comment first: none of them implement a byte-exact LCG at all
+# (every `turn/` dice roll uses an ordinary `random.Random` reduction
+# matching the Pascal formula's statistical shape, not a literal port) --
+# `turn/monster_raids.py resolve_monster_raid_reply()` is the first `AK.EXE`
+# -side mechanic confirmed to need byte-exact, deterministic-per-entity
+# reproduction, so this is a new, additive constant, not a correction to
+# the existing `AKGEN.EXE`-scoped `IRAND_RANGE` above.
+AK_RUNTIME_IRAND_RANGE = 32000
 
 
 class PascalRandom:
@@ -83,12 +97,17 @@ class PascalRandom:
 
         return self._step() / MODULUS
 
-    def irand(self) -> int:
-        """``IRand``: ``trunc(Random * 32768)``, in ``[0, 32768)``.
+    def irand(self, *, irand_range: int = IRAND_RANGE) -> int:
+        """``IRand``: ``trunc(Random * irand_range)``, in ``[0, irand_range)``.
 
         Callers reduce this further with their own ``mod``/``AND`` mask
         (e.g. ``irand() % 60`` for a 1-in-60 monster draw) -- this
         function does not apply any caller-specific reduction itself.
+        Defaults to ``IRAND_RANGE`` (32768, `AKGEN.EXE`'s own confirmed
+        constant); pass ``irand_range=AK_RUNTIME_IRAND_RANGE`` for an
+        `AK.EXE`-side mechanic instead -- see that constant's own
+        Phase 679 comment above for why the two are genuinely different,
+        not a bug in either.
         """
 
-        return int(self.random() * IRAND_RANGE)
+        return int(self.random() * irand_range)

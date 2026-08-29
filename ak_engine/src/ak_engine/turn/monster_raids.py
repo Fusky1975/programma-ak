@@ -39,12 +39,31 @@ don't support).
 9-10): only a ``BOLD``, non-looted, non-hidden guardian can raid. A
 temperament-based activity check (Cowardly 25% / Cautious 50% / Brave
 75% / Berserk 100%, via ``MONSTER_RUNTIME_PROFILE[monster].temper``) must
-pass first. The ``Build_Raid_Profile``/``noarmy`` eligibility gate named
-in the source has no recoverable algorithm for which monsters it would
-exclude -- **deliberately not modeled**, every Bold+active monster is
-treated as passing it, the same "confirmed real but unrecoverable
-magnitude, treat as inert" precedent this project uses extensively
-elsewhere. Then the Thunderbird check: 40% chance, blocked ONLY IF the
+pass first.
+
+**Phase 679 -- the ``Build_Raid_Profile``/``noarmy`` gate, fully
+resolved by a targeted disassembly (``Desktop/NOARMY.md``, 2026-08-29)
+of `AK.EXE 35EB:73FC`.** The routine is **not** a raid-army-profile
+generator at all -- it's ``Get_Reply``, the same monster-dialogue
+reply selector this project already partially ported as ``turn/
+encounter.py MonsterTalkReply``/``select_monster_talk_reply()`` (Phase
+382). The gate's own "``noarmy``" cancellation is a coincidental
+ordinal collision: ``Ord(reply.RWFree) = Ord(army.noarmy) = 15`` -- the
+raid caller passes ``noleader`` (255, previously misread as ``noarmy``
+in the earlier reconstruction) and only ever checks the first output
+byte against ``15``; the "second output" earlier notes called ``raid_
+quality`` is really ``rep2``, a dialogue/quest-fallback byte the raid's
+own caller never reads. See ``resolve_monster_raid_reply()`` below for
+the real algorithm -- a self-contained, deterministic-per-(monster,
+feature) reply selection, fully independent of the turn's own live
+``rng``. Two real, separate follow-ups this same investigation
+surfaced are deliberately not touched here (see
+``project_genuinely_blocked_backlog_2026_08_29`` memory): a walk-
+termination discrepancy in ``turn/druidic_monster_aid.py monster_
+effective_alignment()``, and further algorithm divergences in the
+still-dormant ``select_monster_talk_reply()``.
+
+Then the Thunderbird check: 40% chance, blocked ONLY IF the
 province's owning King currently holds ``Office.DIVINE_KING`` (Divine
 Archangel) AND no Thunderbird intervention has happened yet this ENTIRE
 turn (one single global flag, max 1 intervention per turn across the
@@ -107,8 +126,24 @@ import random
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.feature import Feature, RaidEvent
 from ak_engine.models.game_state import GameState, ProvinceState
-from ak_engine.models.monster import MONSTER_RUNTIME_PROFILE, MonsterEngagementState
+from ak_engine.models.monster import (
+    MONSTER_INTELLIGENCE_ORDINAL,
+    MONSTER_RUNTIME_PROFILE,
+    Monster,
+    MonsterEngagementState,
+)
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import Treasure
+from ak_engine.turn.druidic_monster_aid import monster_effective_alignment
+from ak_engine.turn.encounter import (
+    MONSTER_TALK_REPLY_FREQUENCY,
+    MONSTER_TALK_REPLY_INTELLIGENCE,
+    MONSTER_TALK_REPLY_INTELLIGENCE_VARIANCE,
+    MONSTER_TALK_REPLY_VIEW,
+    MONSTER_TALK_REPLY_VIEW_VARIANCE,
+    MonsterTalkReply,
+)
+from ak_engine.worldgen.pascal_random import AK_RUNTIME_IRAND_RANGE, PascalRandom
 
 MONSTER_MATURATION_ROLL_CHANCE = 0.03
 # THUNDERBIRD.md section 11: the "Worldly" (Neutral) / "Animal" (Pagan)
@@ -190,6 +225,65 @@ def maybe_dissipate_hidden_feature(feature: Feature, rng: random.Random) -> None
         feature.magically_hidden = False
 
 
+# Phase 679's own real cutoff for "is this a purchasable magic-item
+# treasure, not a gold pile" -- `Treasure.GOLD_HOARD_LARGE == 67`
+# already matches NOARMY.md's own literal `treaslist[fn] >= 67` gate.
+_MIN_GOLD_HOARD_TREASURE_VALUE = Treasure.GOLD_HOARD_LARGE.value
+
+
+def resolve_monster_raid_reply(
+    monster: Monster, feature_id: int, feature_treasure: Treasure | None
+) -> MonsterTalkReply:
+    """``Get_Reply(noleader, 256+feature_id, rep, rep2)`` -- NOARMY.md's own
+    disassembly of `AK.EXE 35EB:73FC`, the real routine behind the raid's
+    own `Build_Raid_Profile`/`noarmy` gate (see module docstring's own
+    Phase 679 addendum for the full story). Pure and fully deterministic
+    per ``(monster, feature_id)`` -- the real routine saves/reseeds/
+    restores the global ``RandSeed`` around its own call rather than
+    consuming the turn's own live stream, so this takes no ``rng``
+    parameter at all.
+
+    Reuses this project's own already-shipped, Phase-382 ``MonsterTalkReply``
+    tables directly -- NOARMY.md's own independently-disassembled
+    per-reply tables match them exactly (spot-checked for ``R_WFREE``).
+    The raid caller only ever checks the returned reply against
+    ``MonsterTalkReply.R_WFREE`` (``Ord(RWFree) == Ord(noarmy) == 15``,
+    the gate's own real ordinal collision) -- the routine's own "second
+    output" (``rep2``, a dialogue/quest-fallback byte) is never read by
+    the raid's own caller and isn't modeled here at all.
+    """
+
+    monster_id = monster.value
+    generator = PascalRandom((monster_id << 8) + feature_id)
+
+    if generator.random() < 0.5 and monster is Monster.SPHINX:
+        return MonsterTalkReply.R_RIDDLE
+
+    profile = MONSTER_RUNTIME_PROFILE[monster]
+    effective_view = monster_effective_alignment(feature_id, monster_id, profile.base_view, profile.view_variation)
+    can_sell = feature_treasure is not None and feature_treasure.value < _MIN_GOLD_HOARD_TREASURE_VALUE
+
+    while True:
+        candidate = MonsterTalkReply(generator.irand(irand_range=AK_RUNTIME_IRAND_RANGE) % 24)
+        frequency_roll = generator.irand(irand_range=AK_RUNTIME_IRAND_RANGE) % 10
+        if frequency_roll >= MONSTER_TALK_REPLY_FREQUENCY[candidate]:
+            continue
+        if candidate is MonsterTalkReply.R_MATE and not profile.can_offer_mate_quest:
+            continue
+        if candidate is MonsterTalkReply.R_SELL and not can_sell:
+            continue
+        view_distance = abs(ALIGNMENT_ORDINAL[effective_view] - ALIGNMENT_ORDINAL[MONSTER_TALK_REPLY_VIEW[candidate]])
+        if view_distance > MONSTER_TALK_REPLY_VIEW_VARIANCE[candidate]:
+            continue
+        intel_distance = abs(
+            MONSTER_INTELLIGENCE_ORDINAL[profile.intelligence]
+            - MONSTER_INTELLIGENCE_ORDINAL[MONSTER_TALK_REPLY_INTELLIGENCE[candidate]]
+        )
+        if intel_distance > MONSTER_TALK_REPLY_INTELLIGENCE_VARIANCE[candidate]:
+            continue
+        return candidate
+
+
 def resolve_province_raids(
     state: GameState,
     kingdom_id: int,
@@ -213,6 +307,13 @@ def resolve_province_raids(
 
         profile = MONSTER_RUNTIME_PROFILE[feature.guardian_monster]
         if rng.random() >= MONSTER_RAID_ACTIVITY_CHANCE[profile.temper]:
+            continue
+
+        # Phase 679: the real Build_Raid_Profile/noarmy gate -- Get_Reply()'s
+        # own deterministic reply for this (monster, feature) pair, consumed
+        # before Thunderbird per NOARMY.md's own confirmed real gate order.
+        reply = resolve_monster_raid_reply(feature.guardian_monster, feature.feature_id, feature.treasure)
+        if reply is MonsterTalkReply.R_WFREE:
             continue
 
         if not thunder_used and divine_archangel_kingdom_id == kingdom_id and rng.random() < THUNDERBIRD_INTERVENTION_CHANCE:

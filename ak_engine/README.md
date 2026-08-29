@@ -28568,7 +28568,7 @@ follow-up request after the original 431-435 plan shipped.
   announcement (a real, sourced, medium-sized report gap) remains open
   on it.
 
-- **Phase 678 (current)**: closes the fifth fresh survey's own last
+- **Phase 678**: closes the fifth fresh survey's own last
   candidate. `turn/valhalla_execution.py VALHALLA_VISIT_ANNOUNCEMENT_
   TEMPLATE` (Phase 585, real text recovered from the AKPROSE corpus:
   "`< was visited by a hero from Valhalla, named =!...`") and `report/
@@ -28610,6 +28610,70 @@ follow-up request after the original 431-435 plan shipped.
   Test count: 5694 -> 5701 (net +7). Full suite verified green
   (unchanged, 5694) before writing a single new test. This closes the
   entire fifth fresh codebase survey (2026-08-29) in full.
+
+- **Phase 679 (current)**: closes backlog item #1
+  ([[project_genuinely_blocked_backlog_2026_08_29]]) with a user-
+  supplied targeted disassembly, `Desktop/NOARMY.md` (2026-08-29), of
+  `AK.EXE 35EB:73FC`. The finding upends the premise entirely: the
+  routine is **not** a raid-army-profile generator at all -- it's
+  `Get_Reply`, the same monster-dialogue reply selector this project
+  already partially ported as `turn/encounter.py MonsterTalkReply`/
+  `select_monster_talk_reply()` (Phase 382, still dormant/unwired into
+  live Talk). The gate's own "`noarmy`" cancellation is a coincidental
+  ordinal collision -- `Ord(reply.RWFree) = Ord(army.noarmy) = 15` --
+  the raid caller passes `noleader` (255, previously misread as
+  `noarmy`) and only ever checks the first output byte against `15`;
+  the "second output" earlier notes called `raid_quality` is really
+  `rep2`, a dialogue/quest-fallback byte the raid's own caller never
+  reads.
+
+  New `turn/monster_raids.py resolve_monster_raid_reply(monster,
+  feature_id, feature_treasure) -> MonsterTalkReply` -- fully
+  deterministic per (monster, feature_id), no `rng` parameter at all,
+  reusing already-shipped primitives directly rather than transcribing
+  fresh tables: `MonsterTalkReply`'s own 6 per-reply dicts (Phase 382,
+  independently cross-checked against NOARMY.md's own disassembled
+  tables for `R_WFREE` and found to match exactly), `turn/druidic_
+  monster_aid.py monster_effective_alignment()` for the real `Agent_
+  Align` view filter, and `Feature.treasure`/`Treasure.GOLD_HOARD_
+  LARGE == 67` for the real `RSell` "purchasable item, not a gold
+  pile" cutoff. Wired into `resolve_province_raids()` right before the
+  Thunderbird check, matching NOARMY.md's own confirmed real gate
+  order.
+
+  **The one genuinely new primitive**: the routine reseeds its own
+  isolated `RandSeed` per call (`(monster_id << 8) + feature_id`) --
+  `worldgen/pascal_random.py PascalRandom` already implements the same
+  Turbo Pascal LCG for `AKGEN.EXE`'s own world generator, but with
+  `IRand = trunc(Random*32768)`; NOARMY.md independently disassembles
+  `AK.EXE`'s own separate resident `IRand` (`35EB:11D4`) and confirms
+  a genuinely different real constant, **32000**. Investigated directly
+  per the user's own explicit request before implementing anything:
+  confirmed these are two correctly-different, independently-sourced
+  constants for two separately-compiled executables (traced each to
+  its own disassembly citation/address), not a bug in either -- no
+  existing code needed correcting. `PascalRandom.irand()` gained an
+  optional `irand_range` keyword (default unchanged, every existing
+  `AKGEN.EXE`-scoped caller unaffected) plus a new `AK_RUNTIME_
+  IRAND_RANGE = 32000` constant for this one new caller.
+
+  **Two further real findings from this same investigation deliberately
+  deferred, not touched here** (tracked as fresh backlog entries): a
+  walk-termination discrepancy between `monster_effective_alignment()`
+  (already shipped, Phase 452/453/657, Druidic monster battle
+  assistance) and NOARMY.md's own newly-disassembled `Agent_Align`
+  walk; and further algorithm divergences in the still-dormant
+  `select_monster_talk_reply()` beyond the IRand-range question (a
+  pre-filter-then-choose shape instead of the real propose-then-check
+  loop, the monster's static `base_view` instead of the per-feature
+  `Agent_Align`-walked effective view, a live non-deterministic `rng`
+  instead of the real per-(monster,feature) reseed).
+
+  Test count: 5701 -> 5711 (net +10). Full suite verified green
+  (unchanged, 5701) before writing a single new test. All 5 of
+  NOARMY.md's own worked examples (Basilisk/121, Giant Octopus/115,
+  Basilisk/112 all gate to `R_WFREE`; Imp/31 and Great White Whale/39
+  don't) matched on the very first implementation attempt.
 
 ## Setup
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ak_engine.worldgen.pascal_random import IRAND_RANGE, MODULUS, MULTIPLIER, PascalRandom
+from ak_engine.worldgen.pascal_random import AK_RUNTIME_IRAND_RANGE, IRAND_RANGE, MODULUS, MULTIPLIER, PascalRandom
 
 
 def test_multiplier_is_the_real_borland_constant_0x8088405():
@@ -64,3 +64,26 @@ def test_each_call_both_advances_and_consumes_the_state():
     state_before = rng.state
     rng.irand()
     assert rng.state != state_before
+
+
+# -- Phase 679: irand()'s own irand_range parameter (AK.EXE's real, separately-
+# confirmed constant, distinct from AKGEN.EXE's IRAND_RANGE above) --
+
+
+def test_irand_default_range_is_unchanged():
+    a = PascalRandom(seed=42)
+    b = PascalRandom(seed=42)
+    assert a.irand() == b.irand(irand_range=IRAND_RANGE)
+
+
+def test_irand_with_ak_runtime_range_stays_within_that_range():
+    rng = PascalRandom(seed=7)
+    for _ in range(5000):
+        value = rng.irand(irand_range=AK_RUNTIME_IRAND_RANGE)
+        assert 0 <= value < AK_RUNTIME_IRAND_RANGE
+
+
+def test_irand_with_ak_runtime_range_differs_from_the_default_range():
+    a = PascalRandom(seed=123)
+    b = PascalRandom(seed=123)
+    assert a.irand() != b.irand(irand_range=AK_RUNTIME_IRAND_RANGE)

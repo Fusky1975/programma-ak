@@ -12,6 +12,8 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import Treasure
+from ak_engine.turn.encounter import MonsterTalkReply
 from ak_engine.turn.monster_raids import (
     age_all_feature_guardians,
     age_feature_guardian,
@@ -19,6 +21,7 @@ from ak_engine.turn.monster_raids import (
     guardian_undeterred,
     intimidation_packet_chance,
     maybe_dissipate_hidden_feature,
+    resolve_monster_raid_reply,
     resolve_province_raids,
     roll_guardian_intimidation,
 )
@@ -421,3 +424,72 @@ def test_guardian_undeterred_no_damage_taken():
 def test_guardian_undeterred_not_bold():
     feature = _feature(guardian_state=MonsterEngagementState.MERCENARY)
     assert guardian_undeterred(feature, took_damage=True) is False
+
+
+# -- Phase 679: resolve_monster_raid_reply() -- NOARMY.md's own 5 real
+# worked examples, fully deterministic (no rng involved at all).
+
+
+def test_resolve_monster_raid_reply_basilisk_feature_121_is_wfree():
+    assert resolve_monster_raid_reply(Monster.BASILISK, 121, Treasure(67)) is MonsterTalkReply.R_WFREE
+
+
+def test_resolve_monster_raid_reply_giant_octopus_feature_115_is_wfree():
+    assert resolve_monster_raid_reply(Monster.GI_OCTOPUS, 115, Treasure(68)) is MonsterTalkReply.R_WFREE
+
+
+def test_resolve_monster_raid_reply_basilisk_feature_112_is_wfree():
+    assert resolve_monster_raid_reply(Monster.BASILISK, 112, Treasure(67)) is MonsterTalkReply.R_WFREE
+
+
+def test_resolve_monster_raid_reply_imp_feature_31_is_circnav_not_wfree():
+    assert resolve_monster_raid_reply(Monster.IMP, 31, Treasure(44)) is MonsterTalkReply.R_CIRCNAV
+
+
+def test_resolve_monster_raid_reply_great_white_whale_feature_39_is_sell_not_wfree():
+    assert resolve_monster_raid_reply(Monster.GW_WHALE, 39, Treasure(48)) is MonsterTalkReply.R_SELL
+
+
+# -- Phase 679: resolve_province_raids()'s own new Build_Raid_Profile/noarmy
+# gate, wired in before the Thunderbird check --
+
+
+def test_resolve_province_raids_wfree_gate_cancels_the_raid_before_thunderbird():
+    state = _state_with_owned_province()
+    province = state.provinces[HOME]
+    state.add_feature(
+        _feature(
+            feature_id=121, guardian_monster=Monster.BASILISK, guardian_state=MonsterEngagementState.BOLD,
+            treasure=Treasure(67),
+        )
+    )
+    # A single scripted value for the (Basilisk, Brave, 75%) activity
+    # check -- if the code tried to consume a further Thunderbird roll
+    # after the new gate, ScriptedRandom would raise on an empty list,
+    # proving the gate short-circuits before Thunderbird is ever reached.
+    income, thunder_used, events = resolve_province_raids(state, 1, province, 700, 1, False, ScriptedRandom([0.0]))
+
+    assert income == 700
+    assert thunder_used is False
+    assert events == []
+    assert state.features[121].guardian_state is MonsterEngagementState.BOLD
+
+
+def test_resolve_province_raids_non_gated_reply_raids_normally():
+    state = _state_with_owned_province()
+    province = state.provinces[HOME]
+    state.add_feature(
+        _feature(
+            feature_id=31, guardian_monster=Monster.IMP, guardian_state=MonsterEngagementState.BOLD,
+            treasure=Treasure(44),
+        )
+    )
+    # Imp is Temper.CAUTIOUS (50% active); divine_archangel_kingdom_id=None
+    # short-circuits the Thunderbird roll, so only the activity check's own
+    # single value is scripted.
+    income, thunder_used, events = resolve_province_raids(state, 1, province, 700, None, False, ScriptedRandom([0.0]))
+
+    assert thunder_used is False
+    assert len(events) == 1
+    assert events[0].kind == "raid"
+    assert income < 700
