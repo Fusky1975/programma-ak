@@ -188,9 +188,11 @@ correcting two Phase 60-era blocker claims above:**
    the resolved coordinate -- a deliberate, unsourced judgment call
    (documented on the function itself), not a guess at a
    disambiguation mechanism this project has no data to build. Sets
-   the new `Feature.magically_hidden` flag; no consuming Explore/Search
-   discovery-roll reads it yet, the same "spell writes real state,
-   nothing reads it yet" situation as `ProvinceState.illusory_terrain`.
+   the new `Feature.magically_hidden` flag. **Stale as of Phase 683 --
+   this used to say "no consuming Explore/Search discovery-roll reads
+   it yet," but `turn/exploration.py` has read it (and names itself
+   "this flag's own first real consumer") since Phase 193/242; `turn/
+   monster_raids.py`/`turn/rumor.py` consume it too.**
 2. **Clairvoyance's blocker is real, but the "`report/prose.py`'s own
    Phase 58 docstring" citation above was never accurate** -- a direct
    read of that docstring confirms the phrase "story event" appears

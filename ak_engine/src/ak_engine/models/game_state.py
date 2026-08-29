@@ -74,23 +74,28 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   boundary -- unlike ``recruited_this_turn``/``ArmyState.movement_
   points`` (which Phase 573's own ``turn/turn_processor.py
   _replenish_turn_scoped_state()`` now resets every ``run_turn()`` call),
-  this field still has no reset call anywhere -- and, as of Phase 59,
-  **not yet read by any consumer** (``turn/movement.py``, ``turn/
-  strength.py``, etc. still use ``ProvinceState.terrain`` directly): the
-  spells write real state, a later phase still needs to make
-  movement/battle honor it, including deciding when it clears.
+  this field still has no reset call anywhere. **Stale as of Phase 683 --
+  as of Phase 59 this had no consumer, but ``ProvinceState.effective_
+  terrain()`` (below) has read it since Phase 225/226, over 166 phases
+  later** (already correctly noted where `MeritTally`'s own analogous
+  fields are discussed, further down in this file -- nobody had gone
+  back to fix the claim at its own original site until now).
 - ``ProvinceState.tax_modifier_percent`` (Bless, Earthquake): a signed
   percent (+60 / -100, matching each spell's exact rulebook number, and
   each spell *sets* rather than adds since both are documented "not
-  cumulative"). **No tax/revenue-collection system exists anywhere in
-  this project yet** (recruit/hire spend from ``KingdomState.treasury``,
-  but nothing computes or credits per-turn tax income), so this field
-  currently has no consumer either -- same "spell writes real state,
-  nothing reads it yet" situation as ``terrain_override``.
+  cumulative"). **Stale as of Phase 683 -- as of Phase 59 no tax/
+  revenue-collection system existed anywhere in this project, so this
+  field had no consumer; ``turn/tax_base.py compute_tax_base()`` has
+  read it since Phase 412/222-224.**
 - ``ProvinceState.illusory_terrain`` (Illusory Terrain): the fake
-  terrain an outside observer would be told the province is. Same "no
-  consumer yet" situation -- no exploration/movement code distinguishes
-  real vs. illusory terrain today.
+  terrain an outside observer would be told the province is. **Stale as
+  of Phase 683 -- as of Phase 59 nothing read this; `report/turn_
+  report.py record_spell_world_events()` has rendered a real world-
+  event narration line from it since Phase 232.** No exploration/
+  movement *mechanic* distinguishes real vs. illusory terrain even
+  today (the real consumer is report-layer narration, not a gameplay
+  effect) -- that narrower gap is still real, just not "no consumer at
+  all" the way this note used to say.
 - ``LeaderState.phantasmal_armies_level`` (Phantasmal Armies): unlike
   the three fields above, this one *is* wired into a real consumer the
   same phase it's added -- see ``turn/strength.py

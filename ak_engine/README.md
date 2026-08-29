@@ -28714,7 +28714,7 @@ follow-up request after the original 431-435 plan shipped.
   correctly documented in `battle_orchestrator.py` itself. Test count:
   5711 (unchanged).
 
-- **Phase 682 (current)**: wires Holy Sword's own "+40%/+5 vs Undead"
+- **Phase 682**: wires Holy Sword's own "+40%/+5 vs Undead"
   combat bonus (`models/treasure.py` SS7.1 row 35), the sixth survey's
   own item #2 -- confirmed real and open, and distinct from Phase
   536's own Holy-Symbol-auto-protection grant (SS7.3 explicitly scopes
@@ -28745,6 +28745,23 @@ follow-up request after the original 431-435 plan shipped.
 
   Test count: 5711 -> 5726 (net +15). Full suite verified green
   (unchanged, 5711) before writing a single new test.
+
+- **Phase 683 (current)**: comment-only, no behavior change. A seventh
+  fresh codebase survey (2026-08-30, "prossimo gap") found two more
+  stale docstrings, the 22nd/23rd recurrence of this project's own
+  "later phase closed it, nobody updated the earlier note" pattern.
+  `models/game_state.py`'s own Phase 59 note on `ProvinceState.
+  terrain_override`/`tax_modifier_percent`/`illusory_terrain` still
+  said all three "had no consumer" -- stale since Phase 225/226 (`
+  effective_terrain()`), Phase 412/222-224 (`compute_tax_base()`), and
+  Phase 232 (`record_spell_world_events()`) respectively; the file's
+  own line 454 already knew `terrain_override` had been wired, but
+  nobody went back to fix the original claim. `turn/cast_execution.py`'s
+  Phase 193 addendum on Hide_Feature's `magically_hidden` flag still
+  said "no consuming Explore/Search discovery-roll reads it yet" --
+  `turn/exploration.py` has named itself that flag's own "first real
+  consumer" since Phase 193/242, and `turn/monster_raids.py`/`turn/
+  rumor.py` also consume it. Test count: 5726 (unchanged).
 
 ## Setup
 
