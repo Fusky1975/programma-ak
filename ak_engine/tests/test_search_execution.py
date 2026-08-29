@@ -3593,18 +3593,15 @@ def test_execute_search_fulfill_not_honored_leaves_guardian_state_untouched():
     assert feature.guardian_state is MonsterEngagementState.BOLD  # not honored -- no pacification applied
 
 
-def _damage_monster_past_threshold_then_monster_wins(leader_combatant, monster_combatant, rng, **_kwargs):
-    # Reduces relative to whatever hit_points the monster actually rolled
-    # this call -- no control over the initial random.randint() draw
-    # needed. The guardian ultimately wins (kills the leader) despite the
-    # heavy damage, proving intimidation is checked regardless of who
-    # wins the fight, not only on a leader win/guardian death.
-    monster_combatant.hit_points -= monster_combatant.hit_points // 2 + 1
-    return EncounterCombatResult(winner="b", rounds=1)
+def _monster_wins_after_melee_damage(damage: int):
+    # Gargoyle: Temper.BERSERK (factor 4-3=1), average_hit_points=15 --
+    # damage=15 makes intimidation certain (p=1.0); damage=1 makes it a
+    # 1/15 (~6.7%) chance, missed by the standard [0.1]*20 script below.
+    def _side_effect(leader_combatant, monster_combatant, rng, **_kwargs):
+        monster_combatant.hit_points -= damage
+        return EncounterCombatResult(winner="b", rounds=1, melee_swings=(MeleeSwing(attacker="a", hit=True, damage=damage),))
 
-
-def _monster_wins_unharmed(leader_combatant, monster_combatant, rng, **_kwargs):
-    return EncounterCombatResult(winner="b", rounds=1)
+    return _side_effect
 
 
 def test_execute_search_intimidation_guardian_survives_loss_after_crossing_threshold():
@@ -3617,15 +3614,17 @@ def test_execute_search_intimidation_guardian_survives_loss_after_crossing_thres
     request = _melee_request(1)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_melee_duel", side_effect=_damage_monster_past_threshold_then_monster_wins
+        "ak_engine.turn.search_execution.resolve_melee_duel", side_effect=_monster_wins_after_melee_damage(15)
     ):
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
 
     assert result.winner == "monster"
     assert feature.guardian_state is MonsterEngagementState.MERCENARY
+    assert result.guardian_intimidated is True
+    assert result.guardian_undeterred is False
 
 
-def test_execute_search_intimidation_not_triggered_below_threshold():
+def test_execute_search_intimidation_not_triggered_below_threshold_renders_undeterred():
     state = _state_with_leader()
     feature = Feature(
         feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE,
@@ -3635,21 +3634,29 @@ def test_execute_search_intimidation_not_triggered_below_threshold():
     request = _melee_request(1)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_melee_duel", side_effect=_monster_wins_unharmed
+        "ak_engine.turn.search_execution.resolve_melee_duel", side_effect=_monster_wins_after_melee_damage(1)
     ):
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
 
     assert result.winner == "monster"
     assert feature.guardian_state is MonsterEngagementState.BOLD
+    assert result.guardian_intimidated is False
+    # Phase 673: the real _MUnDt outcome -- wounded, but the roll missed.
+    assert result.guardian_undeterred is True
 
 
-def _damage_leader_and_monster_fire_arrow_duel(leader_combatant, monster_combatant, rng):
-    leader_combatant.hit_points -= 3
-    monster_combatant.hit_points -= monster_combatant.hit_points // 2 + 1
-    return EncounterCombatResult(winner=None, rounds=1)
+def _damage_leader_and_monster_via_fire_arrow(damage: int):
+    def _side_effect(leader_combatant, monster_combatant, rng, **_kwargs):
+        leader_combatant.hit_points -= 3
+        monster_combatant.hit_points -= damage
+        return EncounterCombatResult(winner=None, rounds=1, shots=(FireArrowShot(shooter="a", hit=True, damage=damage),))
+
+    return _side_effect
 
 
 def test_execute_search_intimidation_beg_success_after_crossing_threshold():
+    # Archer: Temper.BRAVE (factor 4-2=2), average_hit_points=10 --
+    # damage=5 makes intimidation certain (p=1.0).
     state = _state_with_leader()
     feature = Feature(
         feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER,
@@ -3659,7 +3666,7 @@ def test_execute_search_intimidation_beg_success_after_crossing_threshold():
     request = _beg_request(1)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", side_effect=_damage_leader_and_monster_fire_arrow_duel
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", side_effect=_damage_leader_and_monster_via_fire_arrow(5)
     ), patch(
         "ak_engine.turn.search_execution.resolve_beg_for_mercy", return_value=True
     ):
@@ -3667,6 +3674,7 @@ def test_execute_search_intimidation_beg_success_after_crossing_threshold():
 
     assert result.fled is True
     assert feature.guardian_state is MonsterEngagementState.MERCENARY
+    assert result.guardian_intimidated is True
 
 
 def test_execute_search_intimidation_beg_success_below_threshold_leaves_guardian_bold():
@@ -3686,14 +3694,13 @@ def test_execute_search_intimidation_beg_success_below_threshold_leaves_guardian
         result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.1] * 20))
 
     assert result.fled is True
-    # Only the leader took damage in this fixture -- proves the check
-    # doesn't fire unconditionally on any Beg success.
+    # Only the leader took damage in this fixture (no recorded Fire Arrow
+    # shot against the monster at all) -- proves the check doesn't fire
+    # unconditionally on any Beg success, and isn't a _MUnDt case either
+    # since the guardian genuinely took no damage.
     assert feature.guardian_state is MonsterEngagementState.BOLD
-
-
-def _damage_monster_fire_arrow_duel(leader_combatant, monster_combatant, rng):
-    monster_combatant.hit_points -= monster_combatant.hit_points // 2 + 1
-    return EncounterCombatResult(winner=None, rounds=1)
+    assert result.guardian_intimidated is False
+    assert result.guardian_undeterred is False
 
 
 def test_execute_search_intimidation_flee_success_after_crossing_threshold():
@@ -3714,7 +3721,7 @@ def test_execute_search_intimidation_flee_success_after_crossing_threshold():
     )
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", side_effect=_damage_monster_fire_arrow_duel
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", side_effect=_damage_leader_and_monster_via_fire_arrow(5)
     ), patch(
         "ak_engine.turn.search_execution.effective_flee_chance", return_value=1.0
     ):
@@ -3722,6 +3729,7 @@ def test_execute_search_intimidation_flee_success_after_crossing_threshold():
 
     assert result.fled is True
     assert feature.guardian_state is MonsterEngagementState.MERCENARY
+    assert result.guardian_intimidated is True
 
 
 # -- Phase 274: Use_MI wired as a real Search Encounter Plan tactic ----

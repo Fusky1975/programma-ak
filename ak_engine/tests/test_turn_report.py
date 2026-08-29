@@ -104,6 +104,7 @@ from ak_engine.report.turn_report import (
     describe_rumor,
     describe_feature_power_attempt,
     describe_search,
+    _search_province_name,
     describe_steal,
     describe_trail,
     describe_trail_intelligence,
@@ -162,6 +163,7 @@ from ak_engine.report.turn_report import (
     render_generic_encounter,
     render_guardian_intimidated,
     render_guardian_pacified_by_fulfill,
+    render_guardian_undeterred,
     render_hire_accepted,
     render_hire_counter_offer,
     render_illegal_move_attempted,
@@ -347,6 +349,7 @@ from ak_engine.turn.plan_dispatch import ArmyListExecutionResult, FireExecutionR
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.recruit_execution import RecruitedUnit, RecruitExecutionResult
+from ak_engine.turn.search_decode import SearchRequest
 from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.trade_execution import CuratorResearchResult, TradeExecutionResult
 from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult
@@ -5254,19 +5257,25 @@ def test_describe_search_inconclusive_combat_renders_only_the_opening_line():
     assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
 
 
-# -- Phase 672: report-layer narration for the 2 Phase 671 pacification --
-# -- triggers -- both project-original text, see render_guardian_
-# -- pacified_by_fulfill()/render_guardian_intimidated()'s own docstrings.
+# -- Phase 672/673: report-layer narration for the 3 raid-pacification --
+# -- outcomes -- real, sourced SAY.PAS text as of Phase 673 (Desktop/ --
+# -- BOLD OK.txt), see render_guardian_pacified_by_fulfill()/render_ --
+# -- guardian_intimidated()/render_guardian_undeterred()'s own docstrings.
 
 
 def test_render_guardian_pacified_by_fulfill():
-    result = render_guardian_pacified_by_fulfill("Gargoyle", ScriptedRandom([0.1, 0.1]))
-    assert result == "Gargoyle has sworn to cease its raids upon these lands."
+    result = render_guardian_pacified_by_fulfill("Gargoyle", "Tebessa", ScriptedRandom([0.1, 0.1]))
+    assert result == "in Gargoyle's gratitude, Gargoyle swore off any raids in Tebessa."
 
 
 def test_render_guardian_intimidated():
-    result = render_guardian_intimidated("Gargoyle", ScriptedRandom([0.1]))
-    assert result == "Gargoyle has been cowed by the fight and will not raid again for some time."
+    result = render_guardian_intimidated("Gargoyle", "Tebessa", ScriptedRandom([]))
+    assert result == "Gargoyle was intimidated by the encounter, and surely will not be raiding Tebessa again for some time!"
+
+
+def test_render_guardian_undeterred():
+    result = render_guardian_undeterred("Gargoyle", "Tebessa", ScriptedRandom([0.1]))
+    assert result == "In Gargoyle's judgement, Gargoyle was undaunted by the encounter and surely intends to continue plundering Tebessa."
 
 
 def test_describe_search_renders_fulfill_pacification_line():
@@ -5280,7 +5289,7 @@ def test_describe_search_renders_fulfill_pacification_line():
 
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
-        "Gargoyle has sworn to cease its raids upon these lands.",
+        "in Gargoyle's gratitude, Gargoyle swore off any raids in these lands.",
     ]
 
 
@@ -5297,7 +5306,24 @@ def test_describe_search_renders_intimidation_line():
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
         "Aldric was mortally wounded.",
         "and so it was that Aldric met Aldric's unseemly end.",
-        "Gargoyle has been cowed by the fight and will not raid again for some time.",
+        "Gargoyle was intimidated by the encounter, and surely will not be raiding these lands again for some time!",
+    ]
+
+
+def test_describe_search_renders_undeterred_line():
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=True, winner="monster", leader_killed=True, guardian_undeterred=True,
+        guardian_monster=Monster.GARGOYLE,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric was mortally wounded.",
+        "and so it was that Aldric met Aldric's unseemly end.",
+        "In Gargoyle's judgement, Gargoyle was undaunted by the encounter and surely intends to continue plundering these lands.",
     ]
 
 
@@ -5318,7 +5344,23 @@ def test_describe_search_pacification_line_falls_back_to_generic_guardian_name()
 
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
 
-    assert lines[-1] == "guardian has sworn to cease its raids upon these lands."
+    assert lines[-1] == "in guardian's gratitude, guardian swore off any raids in these lands."
+
+
+def test_search_province_name_resolves_the_real_province():
+    state = GameState()
+    coord = HexCoord(1, 1)
+    state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, name="Tebessa"))
+    state.add_feature(Feature(feature_id=1, coord=coord, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+    request = SearchRequest(feature_id=1, unconfirmed_extra0=0, tactics=[])
+    result = SearchExecutionResult(accepted=True, request=request)
+
+    assert _search_province_name(state, result) == "Tebessa"
+
+
+def test_search_province_name_falls_back_when_unresolvable():
+    assert _search_province_name(None, SearchExecutionResult(accepted=True)) == "these lands"
+    assert _search_province_name(GameState(), SearchExecutionResult(accepted=True)) == "these lands"
 
 
 # -- Phase 616: describe_feature_power_attempt() (POWMSG.X2) --

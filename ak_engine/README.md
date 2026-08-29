@@ -28262,7 +28262,7 @@ follow-up request after the original 431-435 plan shipped.
   not-honored no-op; the intimidation threshold crossed/not-crossed via
   a losing Melee duel, a successful Beg, and a successful Flee).
 
-- **Phase 672 (current)**: report-layer narration for the 2 Phase 671
+- **Phase 672**: report-layer narration for the 2 Phase 671
   pacification triggers, closing THUNDERBIRD.md's own section 4.2 in
   full -- requested directly by the user after Phase 671 shipped
   ("crea la narrazione di report che manca").
@@ -28300,6 +28300,74 @@ follow-up request after the original 431-435 plan shipped.
   4 `describe_search()` end-to-end cases (each line renders in the
   right position; neither flag renders nothing extra; the generic-name
   fallback for a call site with no `guardian_monster` set).
+
+- **Phase 673 (current)**: a second reverse-engineering document,
+  `Desktop\BOLD OK.txt` (2026-08-29, requested directly to check
+  whether it "chiarisce le idee" on monster intimidation), supersedes
+  Phase 671/672's own project-original formula and narration with the
+  real, CERTO-level compiled mechanism.
+
+  **The real intimidation trigger is a per-damage-packet, independent
+  roll** (`AK.OVR` raw `0x1651A-0x16607`), not Phase 671's own end-of-
+  combat total-loss approximation: `p(d,t,m) = min(1, d*(4-t)/
+  mtbasehp[m])` for every packet of damage `d` a `Bold` guardian takes,
+  where `t` is its current combat Temper ordinal and `mtbasehp[m]` is
+  the species' own base HP constant (`MONSTER_RUNTIME_PROFILE[monster].
+  average_hit_points`, the same value Phase 670's own raid-damage
+  formula already uses). The first successful packet sets a sticky
+  per-encounter flag, applied to `guardian_state` only at the
+  encounter's own closure. New `turn/monster_raids.py intimidation_
+  packet_chance()`/`roll_guardian_intimidation()`, replacing Phase
+  671's own `guardian_intimidated_by_combat_damage()` entirely.
+
+  **A second real outcome this project never modeled**: `_MUnDt` --
+  "wounded but undeterred" -- fires when the guardian took real damage
+  but no intimidation packet ever succeeded, and it's still `Bold`. No
+  state change. New `turn/monster_raids.py guardian_undeterred()`
+  (pure predicate) and `SearchExecutionResult.guardian_undeterred`.
+
+  **Independent confirmation, not just new claims**: BOLD OK.txt's own
+  seasonal `Bold`-promotion algorithm (its section 6) reconstructs the
+  exact same 3%/Worldly-Animal/`Calm->Mercenary->Bold` mechanism Phase
+  670 already built independently from THUNDERBIRD.md -- real, external
+  confirmation that `age_feature_guardian()` needed no changes at all.
+
+  `turn/search_execution.py _resolve_search_encounter()` gains one new
+  local closure, `_resolve_guardian_pacification()`, replacing all 7 of
+  Phase 671's own call sites at once -- it rolls the real formula
+  against every Melee swing/Fire Arrow shot the leader landed on the
+  monster this encounter (`MeleeSwing`/`FireArrowShot`, Phase 415/175's
+  own already-granular per-hit records, reused directly with zero new
+  tracking), then checks `_MUnDt`'s own precondition if not intimidated.
+  Deliberately still out of scope: threading other damage-dealing
+  spells (Fireball, Ice Suspension, Telekinetic Storm, Holy Symbol,
+  Spiritwrack) into the packet list -- this module's own combat model
+  resolves most of them as outright kill-or-continue, not a discrete
+  non-fatal damage number, and auditing each one individually is a
+  separate, larger follow-up.
+
+  **The literal English `Say()` text for all three of Phase 672's own
+  project-original report lines is also recovered**, wired verbatim:
+  `_MNoBold` ("< was intimidated by the encounter..."), `_MUnDt`
+  ("In > judgement, < was undaunted..."), and `_LPacif` ("in ]
+  gratitude/Rappreciation, [1 swore off any raids..."). Each event's
+  own real `Imp_Code` call passes only ONE entity (the monster/Feature
+  itself), confirmed directly from both documents' own pseudocode --
+  so every person-marker in all three templates (`<`, `>`, `[1`, `]`)
+  resolves to that same single monster, not a second (leader) actor,
+  even though `[`/`]` are this project's own general "second character"
+  convention elsewhere. New `_search_province_name()` resolves the real
+  `@` province name via `result.request.feature_id` -> the Feature ->
+  its province, falling back to "these lands" when unresolvable.
+
+  Test count: 5659 -> 5672 (net +13). Full suite verified green
+  (unchanged, 5659) before touching a single test -- confirming the
+  formula/text genuinely changed rather than assuming it. Existing
+  Phase 671/672 tests were rewritten (not just extended) against the
+  real formula and text; new cases cover `intimidation_packet_chance()`
+  against BOLD OK.txt's own worked table, `roll_guardian_intimidation()`
+  rolling every packet independently even after an earlier one already
+  succeeded, `guardian_undeterred()`, and end-to-end `_MUnDt` narration.
 
 ## Setup
 

@@ -8679,14 +8679,18 @@ def describe_search(
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
         lines.append(render_character_death(character_name, rng))
 
-    # Phase 672: the guardian's own pacification, if this encounter
-    # triggered one -- see `render_guardian_pacified_by_fulfill()`/
-    # `render_guardian_intimidated()`'s own docstrings for why both are
-    # project-original text, not a transcription.
-    if result.guardian_pacified_by_fulfill:
-        lines.append(render_guardian_pacified_by_fulfill(monster_name, rng))
-    if result.guardian_intimidated:
-        lines.append(render_guardian_intimidated(monster_name, rng))
+    # Phase 672/673: the guardian's own pacification, if this encounter
+    # triggered one -- real, sourced `SAY.PAS` text as of Phase 673, see
+    # `render_guardian_pacified_by_fulfill()`/`render_guardian_
+    # intimidated()`/`render_guardian_undeterred()`'s own docstrings.
+    if result.guardian_pacified_by_fulfill or result.guardian_intimidated or result.guardian_undeterred:
+        province_name = _search_province_name(state, result)
+        if result.guardian_pacified_by_fulfill:
+            lines.append(render_guardian_pacified_by_fulfill(monster_name, province_name, rng))
+        if result.guardian_intimidated:
+            lines.append(render_guardian_intimidated(monster_name, province_name, rng))
+        if result.guardian_undeterred:
+            lines.append(render_guardian_undeterred(monster_name, province_name, rng))
 
     # Phase 616: Scout's own Feature -> Power [5.8] outcome, narrated last
     # -- matches the rulebook's own "the computer will simply do your
@@ -11953,41 +11957,71 @@ def render_thunderbird_intervention(province_name: str, monster_name: str, rng: 
     return render(_THUNDERBIRD_INTERVENTION_TEMPLATE, values, rng=rng)
 
 
-# Phase 672 -- report-layer narration for the two Search-encounter
+# Phase 672 built report-layer narration for the two Search-encounter
 # pacification triggers Phase 671 wired (`SearchExecutionResult.
-# guardian_pacified_by_fulfill`/`.guardian_intimidated`). THUNDERBIRD.md
-# section 4.2 confirms both are real, identified report events --
-# `_LPacif` (id 3169, Fulfill's own pacification) and `_MNoBold`/
-# `_MUnDt` (ids 3172/3173, the intimidated/undeterred outcome pair) --
-# but gives only their Italian paraphrase, never the literal English
-# `Say()` template text `render()` needs. **Both templates below are
-# project-original** (not a transcription of any recovered string),
-# clearly labeled as such per this project's own standing convention
-# for a confirmed-real-but-unquoted event (e.g. Curator of Artifacts'
-# own Phase 667 research message). `+` is `+` (Monster name, PROSE.
-# TXT's own marker) -- no province/character context is threaded in,
-# since both fire from inside a Search encounter where the monster is
-# already the one thing being narrated.
-_FULFILL_PACIFICATION_TEMPLATE = "+ has sworn/Rpledged to cease its raids/Rmarauding upon these lands."
-_GUARDIAN_INTIMIDATED_TEMPLATE = "+ has been cowed/Rintimidated by the fight and will not raid again for some time."
+# guardian_pacified_by_fulfill`/`.guardian_intimidated`), project-
+# original at the time since THUNDERBIRD.md gave only message ids
+# (`_LPacif`=3169, `_MNoBold`=3172, `_MUnDt`=3173) and Italian
+# paraphrases. **Phase 673 (`Desktop/BOLD OK.txt`) recovers the literal
+# English `Say()` text for all three**, wired verbatim below, and adds
+# `_MUnDt` itself (the real "wounded but undeterred, stays Bold"
+# outcome this project never modeled). Each event's own real
+# `Imp_Code(..., <one entity>)` call passes only the monster/Feature
+# entity, confirmed directly in both documents' own pseudocode -- so
+# every person-marker in all three templates (`<`, `>`, `[1`, `]`)
+# resolves to that SAME single monster, not a second (leader) actor,
+# even though `[`/`]` are this project's own general "second character"
+# convention elsewhere (`report/turn_report.py`'s two-actor `<`/`[`
+# split, e.g. thief/victim) -- here there is genuinely only one actor
+# to plug in. `@` is the province name, resolved by `_search_province_
+# name()` below since `describe_search()` otherwise only carries the
+# Feature's own name, not its province.
+_FULFILL_PACIFICATION_TEMPLATE = "in ] gratitude/Rappreciation, [1 swore off any raids/Rplundering_expeditions in @."
+_GUARDIAN_INTIMIDATED_TEMPLATE = "< was intimidated by the encounter, and surely will not be raiding @ again for some time!"
+_GUARDIAN_UNDETERRED_TEMPLATE = "In > judgement, < was undaunted by the encounter and surely intends to continue plundering @."
 
 
-def render_guardian_pacified_by_fulfill(monster_name: str, rng: random.Random) -> str:
-    """Project-original narration for a Fulfill deal that also pacified
-    a raiding guardian -- see the module comment above for why this
-    isn't a transcription of the real `_LPacif` (id 3169)."""
+def _search_province_name(state: GameState | None, result: SearchExecutionResult) -> str:
+    """Resolves the province name for the 3 templates above -- ``@`` in
+    every real `Say()` string. Falls back to a generic phrase when
+    ``state``/``result.request``/the Feature/the province/its own name
+    aren't all resolvable (the same graceful-degradation convention
+    ``_province_label()`` uses elsewhere, just without a raw-coordinate
+    fallback since none of those pieces may exist here at all).
+    """
 
-    return render(_FULFILL_PACIFICATION_TEMPLATE, {"+": monster_name}, rng=rng)
+    if state is None or result.request is None:
+        return "these lands"
+    feature = state.features.get(result.request.feature_id)
+    if feature is None:
+        return "these lands"
+    province = state.provinces.get(feature.coord)
+    if province is None or not province.name:
+        return "these lands"
+    return province.name
 
 
-def render_guardian_intimidated(monster_name: str, rng: random.Random) -> str:
-    """Project-original narration for the intimidating-attack
-    pacification trigger (`turn/monster_raids.py guardian_intimidated_
-    by_combat_damage()`) -- see the module comment above for why this
-    isn't a transcription of the real `_MNoBold`/`_MUnDt` (ids 3172/3173,
-    which name a different, unimplemented Talk-based mechanic)."""
+def render_guardian_pacified_by_fulfill(monster_name: str, province_name: str, rng: random.Random) -> str:
+    """`SAY.PAS` `_LPacif`'s own real text (id 3169) -- see the module
+    comment above for why `]`/`[1` both resolve to the monster itself."""
 
-    return render(_GUARDIAN_INTIMIDATED_TEMPLATE, {"+": monster_name}, rng=rng)
+    values = {"[1": monster_name, "]": f"{monster_name}'s", "@": province_name}
+    return render(_FULFILL_PACIFICATION_TEMPLATE, values, rng=rng)
+
+
+def render_guardian_intimidated(monster_name: str, province_name: str, rng: random.Random) -> str:
+    """`SAY.PAS` `_MNoBold`'s own real text (id 3172)."""
+
+    return render(_GUARDIAN_INTIMIDATED_TEMPLATE, {"<": monster_name, "@": province_name}, rng=rng)
+
+
+def render_guardian_undeterred(monster_name: str, province_name: str, rng: random.Random) -> str:
+    """`SAY.PAS` `_MUnDt`'s own real text (id 3173) -- the guardian took
+    real damage this encounter but was never intimidated, and stays
+    `Bold` (see `turn/monster_raids.py guardian_undeterred()`)."""
+
+    values = {"<": monster_name, ">": f"{monster_name}'s", "@": province_name}
+    return render(_GUARDIAN_UNDETERRED_TEMPLATE, values, rng=rng)
 
 
 def record_move_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:

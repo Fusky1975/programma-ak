@@ -54,26 +54,50 @@ province_income / 70) + 1``, subtracted from the turn's calculated
 income ONLY (never the persisted ``ProvinceState.tax``/tax base -- see
 ``turn/tax_base.py``'s own module docstring), guardian stays ``BOLD``.
 
-**Phase 671 closes the other two pacification triggers** section 4.2
+**Phase 671 closed the other two pacification triggers** section 4.2
 names: ``apply_fulfill_pacification()`` (the exact compiled ``AK.OVR``
 snippet, applied -- per the user's own direct 2026-08-29 choice -- to
 ANY successfully-honored Fulfill deal against a Feature's guardian,
 since this project's own Fulfill mechanic is already deliberately
-abstract about deal content) and ``guardian_intimidated_by_combat_
-damage()`` (project-original, no recoverable trigger algorithm survives
-anywhere in THUNDERBIRD.md for this one -- only the resulting report
-message ids; the user directly specified the formula: a ``Bold``
-guardian that loses more than half its own starting hit points in a
-single Search combat becomes intimidated). Report-layer narration for
-either is deliberately not attempted -- no literal English ``Say()``
-template text survives for `_LPacif`/`_MNoBold`/`_MUnDt`, only message
-ids and Italian paraphrases.
+abstract about deal content) and, at the time, a project-original
+guess at the intimidation trigger (no recoverable algorithm survived
+anywhere in THUNDERBIRD.md for it -- only the resulting report message
+ids). Phase 672 added report narration for both, also project-original
+for lack of the literal English ``Say()`` text.
+
+**Phase 673 supersedes the intimidation guess with the real, sourced
+formula.** A second reverse-engineering document, ``Desktop/BOLD
+OK.txt`` (2026-08-29), fully recovers it: intimidation is a
+**per-damage-packet, independent roll** (``AK.OVR`` raw
+``0x1651A-0x16607``), not an end-of-combat total-loss check --
+``p(d,t,m) = min(1, d*(4-t)/mtbasehp[m])`` for each packet of damage
+``d`` a ``Bold`` guardian takes, where ``t`` is its current combat
+Temper ordinal and ``mtbasehp[m]`` is the species' own base HP constant
+(``MONSTER_RUNTIME_PROFILE[monster].average_hit_points``, the same
+value Phase 670's own raid-damage formula already uses). The first
+successful packet sets a sticky per-encounter flag, applied to
+``guardian_state`` only at combat closure -- see ``roll_guardian_
+intimidation()`` below. BOLD OK.txt also recovers a second real
+outcome this project never modeled, ``_MUnDt`` ("wounded but
+undeterred" -- no state change, stays ``Bold``, see ``guardian_
+undeterred()`` below), and the literal English ``Say()`` text for all
+three of Phase 672's own project-original report lines (now wired
+verbatim in ``report/turn_report.py``).
+
+**Independent confirmation, not just new claims**: BOLD OK.txt's own
+seasonal-promotion algorithm (its section 6) reconstructs the exact
+same 3%/Worldly-Animal/``Calm->Mercenary->Bold`` mechanism Phase 670
+already built independently from THUNDERBIRD.md -- real, external
+confirmation that ``age_feature_guardian()`` below needed no changes.
 
 Also out of scope, still: ``Maybe_Repopulate_Dead_Feature`` (no precise
-algorithm given) and seeding *initial* Bold guardians at world
-generation (this document covers per-turn maturation only -- every
-world-generated feature starts at ``MERCENARY`` and matures naturally
-via real turns' own Fall/Early-Winter rolls).
+algorithm given), seeding *initial* Bold guardians at world generation
+(every world-generated feature starts at ``MERCENARY`` and matures
+naturally via real turns' own Fall/Early-Winter rolls), and threading
+damage-dealing spells (Fireball, Ice Suspension, Telekinetic Storm,
+Holy Symbol, Spiritwrack) into the intimidation packet list -- only
+Melee swings and Fire Arrow shots are modeled as packets (see ``turn/
+search_execution.py``'s own Phase 673 addendum for why).
 """
 
 from __future__ import annotations
@@ -233,26 +257,58 @@ def apply_fulfill_pacification(feature: Feature) -> bool:
     return True
 
 
-def guardian_intimidated_by_combat_damage(feature: Feature, starting_hit_points: int, remaining_hit_points: int) -> bool:
-    """Project-original mechanic, no Pascal/disassembly source (confirmed
-    absent -- THUNDERBIRD.md section 4.2 names "an attack that
-    intimidates the monster" as a real pacification trigger but gives no
-    recoverable algorithm for when it fires, only the resulting report
-    message ids `_MNoBold`/`_MUnDt`). **User-specified directly,
-    2026-08-29** (the same "designed collaboratively, clearly labeled"
-    precedent as Beg [BE], Phase 241): a `Bold` guardian that loses more
-    than half its own starting hit points in a single Search combat
-    becomes intimidated, `Bold -> Mercenary`, persistent.
+def intimidation_packet_chance(damage: int, combat_temper: Temper, monster_base_hp: int) -> float:
+    """``BOLD OK.txt`` section 9.5's own exact formula for one damage
+    packet against a ``Bold`` guardian: ``min(1, damage*(4-temper)/
+    mtbasehp)``. ``damage <= 0`` is always `0.0` (a miss/no-op packet
+    can't intimidate). No explicit `Min(1,...)` exists in the compiled
+    binary -- since `Random` is always in `[0,1)`, a ratio `>= 1` is
+    already certain success without one; the `min()` here is purely a
+    defensive clamp for callers, not a behavior difference.
+    """
 
-    No-op (returns ``False``) unless ``feature.guardian_state`` is
-    currently ``BOLD`` -- matches THUNDERBIRD.md's own table row for this
-    mechanic exactly (no "else" branch, unlike the Fulfill row above).
+    if damage <= 0:
+        return 0.0
+    return min(1.0, damage * (4 - combat_temper.value) / monster_base_hp)
+
+
+def roll_guardian_intimidation(
+    feature: Feature, damage_packets: list[int], combat_temper: Temper, rng: random.Random
+) -> bool:
+    """``Check_Monster_Intimidation``'s own real per-encounter rolling
+    (``BOLD OK.txt`` sections 9.1-9.8): every damage packet against a
+    ``Bold`` guardian rolls independently via ``intimidation_packet_
+    chance()``; the first success sets a sticky flag applied to
+    ``guardian_state`` (``Bold -> Mercenary``) only here, at the
+    encounter's own closure -- never mid-fight. Every packet is rolled
+    regardless of whether an earlier one already succeeded (section
+    9.8's own "ogni pacchetto... indipendente," matching real fidelity
+    rather than an early-exit optimization).
+
+    ``False`` immediately, no rolls consumed, unless ``feature.
+    guardian_state`` is currently ``BOLD`` (section 9.2's own real
+    precondition).
     """
 
     if feature.guardian_state is not MonsterEngagementState.BOLD:
         return False
-    hp_lost = starting_hit_points - remaining_hit_points
-    if hp_lost < starting_hit_points // 2 + 1:
-        return False
-    feature.guardian_state = MonsterEngagementState.MERCENARY
-    return True
+    base_hp = MONSTER_RUNTIME_PROFILE[feature.guardian_monster].average_hit_points
+    intimidated = False
+    for damage in damage_packets:
+        chance = intimidation_packet_chance(damage, combat_temper, base_hp)
+        if chance > 0.0 and rng.random() < chance:
+            intimidated = True
+    if intimidated:
+        feature.guardian_state = MonsterEngagementState.MERCENARY
+    return intimidated
+
+
+def guardian_undeterred(feature: Feature, took_damage: bool) -> bool:
+    """``BOLD OK.txt`` section 10.4's own real ``_MUnDt`` precondition:
+    the guardian took real damage this encounter (``took_damage``) but
+    no intimidation packet ever succeeded, and it's still ``Bold``. Pure
+    predicate -- ``_MUnDt`` never writes any state, the guardian simply
+    stays ``Bold`` and can keep raiding.
+    """
+
+    return took_damage and feature.guardian_state is MonsterEngagementState.BOLD

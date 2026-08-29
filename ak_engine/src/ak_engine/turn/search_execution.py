@@ -585,7 +585,7 @@ from ak_engine.turn.feature_power_execution import (
     parse_sa_argument,
     resolve_feature_power_attempt,
 )
-from ak_engine.turn.monster_raids import apply_fulfill_pacification, guardian_intimidated_by_combat_damage
+from ak_engine.turn.monster_raids import apply_fulfill_pacification, guardian_undeterred, roll_guardian_intimidation
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 
@@ -863,6 +863,10 @@ class SearchExecutionResult:
     # caller/test.
     guardian_pacified_by_fulfill: bool = False
     guardian_intimidated: bool = False
+    # Phase 673 (Desktop/BOLD OK.txt): the real "_MUnDt" outcome -- the
+    # guardian took damage this encounter but no intimidation packet
+    # ever succeeded, and it's still Bold. No state change.
+    guardian_undeterred: bool = False
 
 
 def execute_search(
@@ -1332,15 +1336,18 @@ def _resolve_search_encounter(
             return SearchExecutionResult(accepted=True, combat_resolved=True, winner="leader", feature_looted=True)
         if combat_result.winner == "b":
             _apply_monster_duel_merit(leader, feature.guardian_monster, leader_won=False, leader_combatant=leader_combatant)
-            # Phase 671: the guardian survived this encounter -- check
-            # whether it took enough damage to be intimidated. See
-            # turn/monster_raids.py guardian_intimidated_by_combat_
-            # damage()'s own docstring for the user's own project-
-            # original trigger rule.
-            intimidated = guardian_intimidated_by_combat_damage(feature, monster_starting_hit_points, monster_combatant.hit_points)
+            # Phase 671/673: the guardian survived this encounter --
+            # check the real intimidation/undeterred outcome. See
+            # _resolve_guardian_pacification()'s own docstring.
+            intimidated, undeterred = _resolve_guardian_pacification()
             state.remove_leader(leader_id)
             return SearchExecutionResult(
-                accepted=True, combat_resolved=True, winner="monster", leader_killed=True, guardian_intimidated=intimidated
+                accepted=True,
+                combat_resolved=True,
+                winner="monster",
+                leader_killed=True,
+                guardian_intimidated=intimidated,
+                guardian_undeterred=undeterred,
             )
         return None
 
@@ -1566,8 +1573,10 @@ def _resolve_search_encounter(
         if spell is Spell.CHARM:
             # Confirmed by the user: the *caster* flees, same outcome as a
             # successful Maneuver.FLEE.
-            intimidated = guardian_intimidated_by_combat_damage(feature, monster_starting_hit_points, monster_combatant.hit_points)
-            return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated)
+            intimidated, undeterred = _resolve_guardian_pacification()
+            return SearchExecutionResult(
+                accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated, guardian_undeterred=undeterred
+            )
 
         if spell is Spell.HOLY_SYMBOL:
             if target_is_monster:
@@ -1899,11 +1908,13 @@ def _resolve_search_encounter(
                     has_air_elemental_familiar=_has_air_elemental_familiar(state, leader_id),
                 )
                 if rng.random() < flee_chance:
-                    intimidated = guardian_intimidated_by_combat_damage(
-                        feature, monster_starting_hit_points, monster_combatant.hit_points
-                    )
+                    intimidated, undeterred = _resolve_guardian_pacification()
                     return SearchExecutionResult(
-                        accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated
+                        accepted=True,
+                        combat_resolved=False,
+                        fled=True,
+                        guardian_intimidated=intimidated,
+                        guardian_undeterred=undeterred,
                     )
                 return None
             if leader.temper is None:
@@ -1927,10 +1938,10 @@ def _resolve_search_encounter(
             simulated_result = resolve_melee_duel(simulated_caster, simulated_target, rng)
             would_lose_simulated_combat = simulated_result.winner == "b"
             if resolve_augur_combat(would_lose_simulated_combat, leader.temper, rng):
-                intimidated = guardian_intimidated_by_combat_damage(
-                    feature, monster_starting_hit_points, monster_combatant.hit_points
+                intimidated, undeterred = _resolve_guardian_pacification()
+                return SearchExecutionResult(
+                    accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated, guardian_undeterred=undeterred
                 )
-                return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated)
             return None
 
         return None
@@ -2114,6 +2125,30 @@ def _resolve_search_encounter(
     # path (extended once, from the duel's own already-aggregated result),
     # mirroring `fire_arrow_shots`'s own accumulator pattern above.
     melee_swings: list[MeleeSwing] = []
+
+    def _resolve_guardian_pacification() -> tuple[bool, bool]:
+        """Phase 673 (``Desktop/BOLD OK.txt``): called once, whenever this
+        encounter closes with the guardian still alive -- rolls the real
+        per-packet intimidation formula (``turn/monster_raids.py roll_
+        guardian_intimidation()``) against every Melee swing/Fire Arrow
+        shot the leader landed on the monster this encounter, then (if
+        not intimidated) checks the real ``_MUnDt`` "wounded but
+        undeterred" precondition. Returns ``(intimidated, undeterred)``.
+        Deliberately doesn't include spell-based damage (Fireball, Ice
+        Suspension, Telekinetic Storm, Holy Symbol, Spiritwrack) as
+        packets -- those spells resolve as outright kill-or-continue in
+        this module's own combat model, never a discrete non-fatal
+        damage number, so retrofitting them is a separate, larger
+        follow-up, not attempted here.
+        """
+
+        combat_temper = MONSTER_RUNTIME_PROFILE[feature.guardian_monster].temper
+        packets = [swing.damage for swing in melee_swings if swing.attacker == "a"]
+        packets += [shot.damage for shot in fire_arrow_shots if shot.shooter == "a"]
+        if roll_guardian_intimidation(feature, packets, combat_temper, rng):
+            return True, False
+        took_damage = monster_combatant.hit_points != monster_starting_hit_points
+        return False, guardian_undeterred(feature, took_damage)
 
     def _finish_melee_outcome(combat_result: EncounterCombatResult) -> SearchExecutionResult:
         """Wraps ``_outcome_from()`` for a genuinely concluded Melee duel
@@ -2425,12 +2460,13 @@ def _resolve_search_encounter(
         if outcome_category is TalkReplyOutcome.IGNORE:
             return None
         feature.pending_deal_leader_id = leader_id
-        intimidated = guardian_intimidated_by_combat_damage(feature, monster_starting_hit_points, monster_combatant.hit_points)
+        intimidated, undeterred = _resolve_guardian_pacification()
         return SearchExecutionResult(
             accepted=True,
             combat_resolved=False,
             reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
             guardian_intimidated=intimidated,
+            guardian_undeterred=undeterred,
         )
 
     def _resolve_fulfill() -> SearchExecutionResult | None:
@@ -2513,8 +2549,10 @@ def _resolve_search_encounter(
             feature.guardian_monster, MirrorImageIntelligenceTier.ANIMAL
         )
         if resolve_beg_for_mercy(tier, rng):
-            intimidated = guardian_intimidated_by_combat_damage(feature, monster_starting_hit_points, monster_combatant.hit_points)
-            return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated)
+            intimidated, undeterred = _resolve_guardian_pacification()
+            return SearchExecutionResult(
+                accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated, guardian_undeterred=undeterred
+            )
         return None
 
     for tactic_index, tactic in enumerate(request.tactics):
@@ -2525,8 +2563,10 @@ def _resolve_search_encounter(
                 has_air_elemental_familiar=_has_air_elemental_familiar(state, leader_id),
             )
             if rng.random() < flee_chance:
-                intimidated = guardian_intimidated_by_combat_damage(feature, monster_starting_hit_points, monster_combatant.hit_points)
-                return SearchExecutionResult(accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated)
+                intimidated, undeterred = _resolve_guardian_pacification()
+                return SearchExecutionResult(
+                    accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated, guardian_undeterred=undeterred
+                )
             continue
         if tactic.maneuver is Maneuver.CAST:
             if current_range is CombatRange.MELEE_RANGE:

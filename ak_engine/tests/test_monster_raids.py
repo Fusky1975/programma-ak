@@ -11,13 +11,16 @@ from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.turn.monster_raids import (
     age_all_feature_guardians,
     age_feature_guardian,
     apply_fulfill_pacification,
-    guardian_intimidated_by_combat_damage,
+    guardian_undeterred,
+    intimidation_packet_chance,
     maybe_dissipate_hidden_feature,
     resolve_province_raids,
+    roll_guardian_intimidation,
 )
 from _helpers import ScriptedRandom
 
@@ -319,33 +322,102 @@ def test_apply_fulfill_pacification_other_states_also_pacify_to_calm():
     assert feature.guardian_state is MonsterEngagementState.CALM
 
 
-def test_guardian_intimidated_by_combat_damage_non_bold_never_transitions():
+# -- Phase 673 (Desktop/BOLD OK.txt): the real per-packet intimidation --
+# -- formula, superseding Phase 671's own project-original total-loss --
+# -- approximation ------------------------------------------------------
+
+
+def test_intimidation_packet_chance_zero_or_negative_damage_is_zero():
+    assert intimidation_packet_chance(0, Temper.COWARDLY, 10) == 0.0
+    assert intimidation_packet_chance(-1, Temper.BERSERK, 10) == 0.0
+
+
+def test_intimidation_packet_chance_matches_bold_ok_worked_table_mtbasehp_10():
+    # BOLD OK.txt section 9.6's own worked table, 1 point of damage.
+    assert intimidation_packet_chance(1, Temper.COWARDLY, 10) == 0.4
+    assert intimidation_packet_chance(1, Temper.CAUTIOUS, 10) == 0.3
+    assert intimidation_packet_chance(1, Temper.BRAVE, 10) == 0.2
+    assert intimidation_packet_chance(1, Temper.BERSERK, 10) == 0.1
+
+
+def test_intimidation_packet_chance_matches_bold_ok_worked_table_mtbasehp_20():
+    assert intimidation_packet_chance(1, Temper.COWARDLY, 20) == 0.2
+    assert intimidation_packet_chance(1, Temper.CAUTIOUS, 20) == 0.15
+    assert intimidation_packet_chance(1, Temper.BRAVE, 20) == 0.10
+    assert intimidation_packet_chance(1, Temper.BERSERK, 20) == 0.05
+
+
+def test_intimidation_packet_chance_certain_damage_matches_bold_ok_section_9_7():
+    # mtbasehp=10's own d_certo row: Cowardly 3, Cautious 4, Brave 5, Berserk 10.
+    assert intimidation_packet_chance(3, Temper.COWARDLY, 10) == 1.0
+    assert intimidation_packet_chance(2, Temper.COWARDLY, 10) < 1.0
+    assert intimidation_packet_chance(4, Temper.CAUTIOUS, 10) == 1.0
+    assert intimidation_packet_chance(3, Temper.CAUTIOUS, 10) < 1.0
+    assert intimidation_packet_chance(5, Temper.BRAVE, 10) == 1.0
+    assert intimidation_packet_chance(10, Temper.BERSERK, 10) == 1.0
+
+
+def test_intimidation_packet_chance_clamps_above_1():
+    assert intimidation_packet_chance(100, Temper.COWARDLY, 10) == 1.0
+
+
+def test_roll_guardian_intimidation_non_bold_never_rolls():
+    feature = _feature(guardian_state=MonsterEngagementState.MERCENARY, guardian_monster=Monster.CHIMERA)
+    assert roll_guardian_intimidation(feature, [5, 5, 5], Temper.BRAVE, ScriptedRandom([])) is False
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
+
+
+def test_roll_guardian_intimidation_no_packets_never_rolls():
+    feature = _feature(guardian_state=MonsterEngagementState.BOLD, guardian_monster=Monster.CHIMERA)
+    assert roll_guardian_intimidation(feature, [], Temper.BRAVE, ScriptedRandom([])) is False
+    assert feature.guardian_state is MonsterEngagementState.BOLD
+
+
+def test_roll_guardian_intimidation_zero_damage_packet_consumes_no_roll():
+    feature = _feature(guardian_state=MonsterEngagementState.BOLD, guardian_monster=Monster.CHIMERA)
+    assert roll_guardian_intimidation(feature, [0], Temper.BRAVE, ScriptedRandom([])) is False
+    assert feature.guardian_state is MonsterEngagementState.BOLD
+
+
+def test_roll_guardian_intimidation_single_packet_success_transitions_to_mercenary():
+    # Chimera: average_hit_points=25, Temper.BRAVE (factor 4-2=2).
+    # damage=13 -> p = 13*2/25 = 1.04 -> clamped to 1.0, certain success.
+    feature = _feature(guardian_state=MonsterEngagementState.BOLD, guardian_monster=Monster.CHIMERA)
+    assert roll_guardian_intimidation(feature, [13], Temper.BRAVE, ScriptedRandom([0.5])) is True
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
+
+
+def test_roll_guardian_intimidation_single_packet_failure_stays_bold():
+    # damage=1 -> p = 1*2/25 = 0.08 -- a 0.5 roll misses.
+    feature = _feature(guardian_state=MonsterEngagementState.BOLD, guardian_monster=Monster.CHIMERA)
+    assert roll_guardian_intimidation(feature, [1], Temper.BRAVE, ScriptedRandom([0.5])) is False
+    assert feature.guardian_state is MonsterEngagementState.BOLD
+
+
+def test_roll_guardian_intimidation_every_packet_rolls_independently_even_after_success():
+    # First packet succeeds (roll 0.0 < certain chance); a second,
+    # low-damage packet still consumes its own roll (0.9, a miss) --
+    # proving no early exit once intimidated, per BOLD OK.txt section 9.8.
+    feature = _feature(guardian_state=MonsterEngagementState.BOLD, guardian_monster=Monster.CHIMERA)
+    rng = ScriptedRandom([0.0, 0.9])
+    assert roll_guardian_intimidation(feature, [13, 1], Temper.BRAVE, rng) is True
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
+    assert rng._randoms == []  # both packets' own rolls were actually consumed
+
+
+# -- guardian_undeterred() -----------------------------------------------
+
+
+def test_guardian_undeterred_took_damage_and_still_bold():
+    feature = _feature(guardian_state=MonsterEngagementState.BOLD)
+    assert guardian_undeterred(feature, took_damage=True) is True
+
+
+def test_guardian_undeterred_no_damage_taken():
+    feature = _feature(guardian_state=MonsterEngagementState.BOLD)
+    assert guardian_undeterred(feature, took_damage=False) is False
+
+
+def test_guardian_undeterred_not_bold():
     feature = _feature(guardian_state=MonsterEngagementState.MERCENARY)
-    assert guardian_intimidated_by_combat_damage(feature, 10, 0) is False
-    assert feature.guardian_state is MonsterEngagementState.MERCENARY
-
-
-def test_guardian_intimidated_by_combat_damage_exactly_at_threshold_transitions():
-    # 10 starting HP: threshold is 10 // 2 + 1 == 6 lost. Losing exactly
-    # 6 (down to 4 remaining) triggers.
-    feature = _feature(guardian_state=MonsterEngagementState.BOLD)
-    assert guardian_intimidated_by_combat_damage(feature, 10, 4) is True
-    assert feature.guardian_state is MonsterEngagementState.MERCENARY
-
-
-def test_guardian_intimidated_by_combat_damage_one_short_of_threshold_does_not_transition():
-    feature = _feature(guardian_state=MonsterEngagementState.BOLD)
-    assert guardian_intimidated_by_combat_damage(feature, 10, 5) is False
-    assert feature.guardian_state is MonsterEngagementState.BOLD
-
-
-def test_guardian_intimidated_by_combat_damage_total_loss_transitions():
-    feature = _feature(guardian_state=MonsterEngagementState.BOLD)
-    assert guardian_intimidated_by_combat_damage(feature, 10, 0) is True
-    assert feature.guardian_state is MonsterEngagementState.MERCENARY
-
-
-def test_guardian_intimidated_by_combat_damage_no_damage_at_all_does_not_transition():
-    feature = _feature(guardian_state=MonsterEngagementState.BOLD)
-    assert guardian_intimidated_by_combat_damage(feature, 10, 10) is False
-    assert feature.guardian_state is MonsterEngagementState.BOLD
+    assert guardian_undeterred(feature, took_damage=True) is False
