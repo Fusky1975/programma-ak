@@ -1394,20 +1394,32 @@ def _maybe_fight_duel(
     commanding a province nobody owns never challenges, and always
     accepts unless Cowardly (``_commander_governs_neutral_province()``).
 
-    **Still genuinely out of scope, not attempted this phase**: which
-    *tactics* actually play out once a duel is triggered. ``duel_
-    maneuvers`` stays exactly what it always was -- an optional,
-    caller-supplied stand-in for the *attacker's* own tactic sequence
-    (mirroring how ``resolve_challenge_combat`` already treats a
-    Challenge's "caster" walking their own tactics against a passively-
-    defending target) -- no production caller threads the new, now-real
-    ``special_encounter_plan`` into it, and there is still no second,
-    defender-owned tactics list for the actual combat resolution to
-    consult (only the *trigger* check above reads both sides' own real
-    SEPs symmetrically). A later-than-first Flee's own "attempts combat
-    first" refusal ordering during a triggered duel's own resolution is
-    the same still-unaddressed limitation. A real, separate, later
-    follow-up, not a guess dressed up as done.
+    **Phase 675 -- ``duel_maneuvers``-threading, the SEP roadmap's own
+    last open item, now closed.** The *trigger* check above already
+    resolves ``attacker_sep``/``defender_sep`` (each side's own real,
+    per-turn ``special_encounter_plan``) purely to decide whether a
+    duel happens at all; this data is now reused for the resolution
+    too, instead of being thrown away. When the caller doesn't supply
+    ``duel_maneuvers`` explicitly (``None``, still overridable), it
+    defaults to the attacker's own ``attacker_sep`` -- and, when ``use_
+    real_duel_combat`` is on, the defender's own ``defender_sep`` is
+    threaded into ``resolve_challenge_combat()`` as ``target_tactics``,
+    giving the defender the same genuine bidirectional Cast-timing
+    agency Phase 674 already built for Challenge/Pursue (previously
+    the defender was purely passive in a real-combat Duel regardless
+    of its own plan). The Phase 389 Flee-first-tactic branch just above
+    can never newly fire via this default: Phase 669's own trigger
+    predicates (``sep_is_aggressive``/``sep_accepts_challenge``) already
+    exclude a Flee-first SEP from ever reaching a triggered duel in the
+    first place, verified by tracing both predicates directly.
+    **Still genuinely out of scope**: ``use_real_duel_combat`` itself
+    still defaults ``False`` for every production caller in this
+    project (confirmed by grep) -- this is what keeps all of the above
+    dormant in real games today, a separate, larger, already-repeatedly-
+    deferred decision (the same class as ``apply_fanaticism``), not
+    flipped here. A later-than-first Flee's own "attempts combat first"
+    refusal ordering during a triggered duel's own resolution remains
+    the same still-unaddressed limitation it always was.
 
     **Deliberately still not modeled, two further real, AKGEN-confirmed,
     but genuinely blocked pieces of this same cluster:**
@@ -1433,6 +1445,8 @@ def _maybe_fight_duel(
     if attacker_commander is None or defender_commander is None:
         return _DuelOutcome(None, None, None)
 
+    attacker_sep: list[SearchTactic] = []
+    defender_sep: list[SearchTactic] = []
     if state is not None:
         attacker_sep = _side_special_encounter_plan(state, attacker_commander)
         defender_sep = _side_special_encounter_plan(state, defender_commander)
@@ -1443,6 +1457,12 @@ def _maybe_fight_duel(
 
     attacker_commander_units = _units_led_by(attacker_armies, attacker_units, attacker_commander.leader_id)
     defender_commander_units = _units_led_by(defender_armies, defender_units, defender_commander.leader_id)
+
+    # Phase 675: the attacker's own real Special Encounter Plan is now
+    # the default `duel_maneuvers` whenever the caller doesn't supply
+    # one explicitly -- see this function's own Phase 675 addendum.
+    if duel_maneuvers is None and state is not None:
+        duel_maneuvers = attacker_sep
 
     if duel_maneuvers:
         first_tactic = duel_maneuvers[0]
@@ -1464,8 +1484,14 @@ def _maybe_fight_duel(
             state.leaders.get(defender_commander.leader_id) if defender_commander.leader_id is not None else None
         )
         tactics = [tactic if isinstance(tactic, SearchTactic) else SearchTactic(tactic) for tactic in (duel_maneuvers or [])]
+        # Phase 675: the defender's own real Special Encounter Plan is
+        # threaded in as `target_tactics`, giving it the same genuine
+        # bidirectional Cast-timing agency Phase 674 already built for
+        # Challenge/Pursue -- previously the defender was purely
+        # passive in a real-combat Duel, regardless of its own plan.
         combat_result = resolve_challenge_combat(
-            tactics, attacker_leader, attacker_combatant, defender_leader, defender_combatant, state, rng
+            tactics, attacker_leader, attacker_combatant, defender_leader, defender_combatant, state, rng,
+            target_tactics=defender_sep,
         )
         # `combat_result.winner is None` also covers a successful Charm/
         # Augur-Combat flee (`combat_result.fled`) -- see this function's
@@ -2039,8 +2065,11 @@ def fight_battle(
     (Phase 273, default ``None``) optionally supplies the Special
     Encounter Plan tactic order for that real duel, so it can resolve
     Fire Arrow before Melee when the caller has real plan data -- see
-    ``_maybe_fight_duel``'s own Phase 273 note; ``None`` reproduces the
-    prior always-Melee behavior unchanged.
+    ``_maybe_fight_duel``'s own Phase 273 note. Leaving it ``None``
+    (every real caller today) now defaults to the attacker's own real,
+    per-turn ``special_encounter_plan`` when ``state`` has one (Phase
+    675) rather than always resolving Melee-only -- an explicit value
+    still overrides it.
     """
 
     rng = rng if rng is not None else random.Random()

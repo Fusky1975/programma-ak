@@ -3226,6 +3226,102 @@ def test_fight_battle_with_real_duel_combat_reports_a_loser_side():
     assert report.duel_loser_side == "defender"
 
 
+# -- Phase 675: duel_maneuvers/target_tactics default from each side's own
+# real, per-turn special_encounter_plan --
+
+
+def test_maybe_fight_duel_defaults_duel_maneuvers_from_the_attackers_own_real_special_encounter_plan():
+    # Same fixture/reasoning as test_maybe_fight_duel_resolves_fire_arrow_
+    # first_when_duel_maneuvers_given above, but the Fire-Arrow-first
+    # tactic comes from the attacker's own real special_encounter_plan
+    # instead of an explicit duel_maneuvers argument.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, FIELD))
+    attacker_leader = LeaderState(501, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ARCHERY, 10, 9))
+    attacker_leader.special_encounter_plan = (SearchTactic(Maneuver.SHOOT),)
+    state.add_leader(attacker_leader)
+    state.add_leader(
+        LeaderState(502, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 9, 9))
+    )
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+    rng = ScriptedRandom([0.01] * 25)
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state, use_real_duel_combat=True,  # duel_maneuvers omitted -- defaults from the leader's own field
+    )
+
+    assert outcome.loser_side == "defender"
+
+
+def test_maybe_fight_duel_explicit_duel_maneuvers_still_overrides_the_attackers_own_plan():
+    # The attacker's own real plan would read as an immediate, guaranteed
+    # Charm escape (no duel at all, per the existing Charm test above) --
+    # an explicit duel_maneuvers=[Maneuver.SHOOT] must still win instead.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, FIELD))
+    attacker_leader = LeaderState(501, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ARCHERY, 10, 9))
+    attacker_leader.special_encounter_plan = (SearchTactic(Maneuver.CAST, Spell.CHARM.value),)
+    state.add_leader(attacker_leader)
+    state.add_leader(
+        LeaderState(502, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 9, 9))
+    )
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+    rng = ScriptedRandom([0.01] * 25)
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state, use_real_duel_combat=True, duel_maneuvers=[Maneuver.SHOOT],
+    )
+
+    assert outcome.loser_side == "defender"
+
+
+def test_maybe_fight_duel_threads_the_defenders_own_real_plan_as_target_tactics():
+    # The defender's own real, leading Cast now decides a real-combat
+    # duel -- previously the defender was purely passive regardless of
+    # its own plan (resolve_challenge_combat() was never given a
+    # target_tactics argument at all inside _maybe_fight_duel()).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.MELEE, 3, 9)))
+    defender_leader = LeaderState(502, kingdom_id=2, name="B", location=FIELD)
+    defender_leader.special_encounter_plan = (SearchTactic(Maneuver.CAST, Spell.FIREBALL.value),)
+    state.add_leader(defender_leader)
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+
+    # The inner cast call plays target-as-caster: its own "a" (the inner
+    # caster, i.e. the real defender) winning flips to resolve_challenge_
+    # combat()'s outer "b" -- see that function's own _resolve_target_
+    # cast() flip convention (Phase 674 addendum).
+    with patch("ak_engine.turn.challenge_execution._resolve_personal_combat_cast", return_value="a") as mock_cast:
+        outcome = _maybe_fight_duel(
+            attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units,
+            ScriptedRandom([]), state=state, use_real_duel_combat=True,
+        )
+
+    assert mock_cast.called
+    assert outcome.loser_side == "attacker"
+
+
 def test_fight_battle_reports_duel_commanders_and_demoralizes_loser():
     state = build_state()
     state.armies[101].commanded_by = 501

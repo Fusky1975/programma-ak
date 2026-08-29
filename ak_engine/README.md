@@ -28369,7 +28369,7 @@ follow-up request after the original 431-435 plan shipped.
   rolling every packet independently even after an earlier one already
   succeeded, `guardian_undeterred()`, and end-to-end `_MUnDt` narration.
 
-- **Phase 674 (current)**: SEP roadmap Phase C -- rulebook [5.10]'s
+- **Phase 674**: SEP roadmap Phase C -- rulebook [5.10]'s
   other half, "if the character doesn't command any armies, the
   Encounter Plan will be used in every Encounter solicited by another
   character or wandering monster." The leader-vs-leader half only (no
@@ -28444,6 +28444,51 @@ follow-up request after the original 431-435 plan shipped.
   Test count: 5675 -> 5689 (net +14). Full suite verified green
   (unchanged, 5675) before writing a single new test, confirming the
   "default `None` preserves every existing caller" claim empirically.
+
+- **Phase 675 (current)**: the SEP roadmap's own last open item --
+  "which tactics play out inside an already-triggered army-commander
+  Duel" (distinct from Phase 674's Challenge/Pursue engine and Phase
+  669's own Duel-trigger). `turn/battle_orchestrator.py _maybe_fight_
+  duel()`'s Phase 669 trigger check already resolves each side's own
+  real, per-turn `special_encounter_plan` (`attacker_sep`/`defender_
+  sep`) purely to decide *whether* a duel happens, then discarded both
+  -- this phase reuses them for the resolution too, instead of
+  recomputing anything new.
+
+  When a caller doesn't supply `duel_maneuvers` explicitly (`None`,
+  still overridable), it now defaults to the attacker's own real
+  `attacker_sep`. When `use_real_duel_combat` is on, the defender's
+  own real `defender_sep` is threaded into `resolve_challenge_combat()`
+  as `target_tactics` (Phase 674's own parameter) -- previously the
+  defender was purely passive in a real-combat Duel regardless of its
+  own plan, unable to ever Cast.
+
+  **Confirmed genuinely low-risk, not just asserted**: `use_real_duel_
+  combat` still defaults `False` for every production caller in this
+  project (confirmed by grep) -- this phase only changes behavior for
+  a caller who already opts into that dormant path, matching the same
+  "primitive wired, default-flip left as a separate decision" pattern
+  as `apply_fanaticism`. The Phase 389 Flee-first-tactic auto-escape
+  branch (checked before the `use_real_duel_combat` gate) can never
+  newly fire via this new default either: Phase 669's own trigger
+  predicates (`sep_is_aggressive`/`sep_accepts_challenge`) already
+  exclude a Flee-first SEP from ever reaching a triggered duel at all
+  -- verified by tracing both predicates directly, not assumed. Every
+  existing `use_real_duel_combat=True` test's own fixture leaves
+  `special_encounter_plan` at its default `()`, so `_side_special_
+  encounter_plan()` returns `[]` for all of them -- identical, by
+  construction, to the pre-Phase-675 `None`/no-`target_tactics` default
+  (`resolve_challenge_combat()` treats `target_tactics=[]` and `=None`
+  the same via its own `plan = target_tactics or ()`).
+
+  Test count: 5689 -> 5692 (net +3). Full suite verified green
+  (unchanged, 5689) before writing a single new test. New cases: the
+  attacker's own Fire-Arrow-first plan wins a duel with no explicit
+  `duel_maneuvers` given; an explicit `duel_maneuvers` argument still
+  overrides a leader's own (here, Charm-escaping) plan; the defender's
+  own real leading Cast decides a real-combat duel's outcome for the
+  first time. This closes the entire Special Encounter Plan [5.10]
+  roadmap -- nothing remains open in it.
 
 ## Setup
 
