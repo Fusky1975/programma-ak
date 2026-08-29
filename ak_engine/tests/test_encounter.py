@@ -209,7 +209,13 @@ from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster, MonsterIntelligence, SPIRITWRACK_ANIMAL_INTELLIGENCE_MONSTERS
 from ak_engine.models.race import Race
-from ak_engine.models.treasure import Treasure
+from ak_engine.models.treasure import (
+    HOLY_SWORD_DAMAGE_BONUS_VS_UNDEAD,
+    HOLY_SWORD_HIT_BONUS_VS_UNDEAD,
+    WEAPON_DAMAGE_BONUS,
+    WEAPON_HIT_BONUS,
+    Treasure,
+)
 
 from _helpers import ScriptedRandom
 
@@ -3108,6 +3114,114 @@ def test_apply_temper_melee_setup_duellists_medal_applies_symmetrically_when_bot
     assert b.offensive_hit_multiplier == pytest.approx(expected)
     assert a.melee_damage_dealt_bonus == 0
     assert b.melee_damage_dealt_bonus == 0
+
+
+# -- Phase 682: Holy Sword's own vs-Undead combat bonus (SS7.1) --
+
+
+def test_apply_temper_melee_setup_holy_sword_upgrades_hit_and_damage_vs_undead_opponent():
+    a = Combatant(
+        "Holy Knight",
+        hit_points=CHARACTER_HIT_POINTS,
+        equipped_weapon=Treasure.WEAPON_1,
+        offensive_hit_multiplier=1.0 + WEAPON_HIT_BONUS[Treasure.WEAPON_1] / 100,
+        melee_damage_dealt_bonus=WEAPON_DAMAGE_BONUS[Treasure.WEAPON_1],
+    )
+    b = Combatant("Undead Foe", hit_points=CHARACTER_HIT_POINTS, is_undead_or_anti_holy=True)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.offensive_hit_multiplier == pytest.approx(1.0 + HOLY_SWORD_HIT_BONUS_VS_UNDEAD / 100)
+    assert a.melee_damage_dealt_bonus == HOLY_SWORD_DAMAGE_BONUS_VS_UNDEAD
+    assert b.offensive_hit_multiplier == 1.0
+    assert b.melee_damage_dealt_bonus == 0
+
+
+def test_apply_temper_melee_setup_holy_sword_upgrade_survives_composition_with_melee_mastery():
+    # Simulates a builder that already composed Melee Mastery's own
+    # multiplier with the flat Holy Sword bonus at construction time
+    # (Phase 517/535) -- the vs-Undead swap must isolate and replace
+    # only the weapon's own contribution, leaving Mastery's untouched.
+    mastery_multiplier = 1.10
+    a = Combatant(
+        "Holy Knight",
+        hit_points=CHARACTER_HIT_POINTS,
+        equipped_weapon=Treasure.WEAPON_1,
+        offensive_hit_multiplier=mastery_multiplier * (1.0 + WEAPON_HIT_BONUS[Treasure.WEAPON_1] / 100),
+    )
+    b = Combatant("Undead Foe", hit_points=CHARACTER_HIT_POINTS, is_undead_or_anti_holy=True)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.offensive_hit_multiplier == pytest.approx(mastery_multiplier * (1.0 + HOLY_SWORD_HIT_BONUS_VS_UNDEAD / 100))
+
+
+def test_apply_temper_melee_setup_holy_sword_has_no_extra_effect_against_a_living_opponent():
+    a = Combatant(
+        "Holy Knight",
+        hit_points=CHARACTER_HIT_POINTS,
+        equipped_weapon=Treasure.WEAPON_1,
+        offensive_hit_multiplier=1.0 + WEAPON_HIT_BONUS[Treasure.WEAPON_1] / 100,
+        melee_damage_dealt_bonus=WEAPON_DAMAGE_BONUS[Treasure.WEAPON_1],
+    )
+    b = Combatant("Living Foe", hit_points=CHARACTER_HIT_POINTS, is_undead_or_anti_holy=False)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.offensive_hit_multiplier == pytest.approx(1.0 + WEAPON_HIT_BONUS[Treasure.WEAPON_1] / 100)
+    assert a.melee_damage_dealt_bonus == WEAPON_DAMAGE_BONUS[Treasure.WEAPON_1]
+
+
+def test_apply_temper_melee_setup_a_different_weapon_gets_no_undead_upgrade():
+    a = Combatant(
+        "Shadow Knight",
+        hit_points=CHARACTER_HIT_POINTS,
+        equipped_weapon=Treasure.WEAPON_2,
+        offensive_hit_multiplier=1.0 + WEAPON_HIT_BONUS[Treasure.WEAPON_2] / 100,
+        melee_damage_dealt_bonus=WEAPON_DAMAGE_BONUS[Treasure.WEAPON_2],
+    )
+    b = Combatant("Undead Foe", hit_points=CHARACTER_HIT_POINTS, is_undead_or_anti_holy=True)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.offensive_hit_multiplier == pytest.approx(1.0 + WEAPON_HIT_BONUS[Treasure.WEAPON_2] / 100)
+    assert a.melee_damage_dealt_bonus == WEAPON_DAMAGE_BONUS[Treasure.WEAPON_2]
+
+
+def test_apply_temper_melee_setup_no_weapon_gets_no_undead_upgrade():
+    a = Combatant("Bare-Handed", hit_points=CHARACTER_HIT_POINTS)
+    b = Combatant("Undead Foe", hit_points=CHARACTER_HIT_POINTS, is_undead_or_anti_holy=True)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.offensive_hit_multiplier == 1.0
+    assert a.melee_damage_dealt_bonus == 0
+
+
+def test_apply_temper_melee_setup_holy_sword_upgrade_applies_symmetrically_when_both_qualify():
+    a = Combatant(
+        "Holy Knight A",
+        hit_points=CHARACTER_HIT_POINTS,
+        equipped_weapon=Treasure.WEAPON_1,
+        offensive_hit_multiplier=1.0 + WEAPON_HIT_BONUS[Treasure.WEAPON_1] / 100,
+        melee_damage_dealt_bonus=WEAPON_DAMAGE_BONUS[Treasure.WEAPON_1],
+        is_undead_or_anti_holy=True,
+    )
+    b = Combatant(
+        "Holy Knight B",
+        hit_points=CHARACTER_HIT_POINTS,
+        equipped_weapon=Treasure.WEAPON_1,
+        offensive_hit_multiplier=1.0 + WEAPON_HIT_BONUS[Treasure.WEAPON_1] / 100,
+        melee_damage_dealt_bonus=WEAPON_DAMAGE_BONUS[Treasure.WEAPON_1],
+        is_undead_or_anti_holy=True,
+    )
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.offensive_hit_multiplier == pytest.approx(1.0 + HOLY_SWORD_HIT_BONUS_VS_UNDEAD / 100)
+    assert b.offensive_hit_multiplier == pytest.approx(1.0 + HOLY_SWORD_HIT_BONUS_VS_UNDEAD / 100)
+    assert a.melee_damage_dealt_bonus == HOLY_SWORD_DAMAGE_BONUS_VS_UNDEAD
+    assert b.melee_damage_dealt_bonus == HOLY_SWORD_DAMAGE_BONUS_VS_UNDEAD
 
 
 def test_apply_temper_melee_setup_control_temper_adds_bonus_only_to_the_holder():

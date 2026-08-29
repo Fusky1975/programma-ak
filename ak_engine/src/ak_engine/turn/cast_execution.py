@@ -1521,6 +1521,17 @@ def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temp
     Berserk retaliator below fights with a temperament "assumed for the
     occasion" ([4.25.2]'s own wording), not their own permanently
     recorded one, so the caller decides what to pass.
+
+    **Unlike its ``challenge_execution.py`` counterpart, this builder
+    never calls ``equipped_combat_weapon()``/``weapon_offensive_hit_
+    multiplier()``/``weapon_melee_damage_bonus()`` at all** -- a real,
+    separate, pre-existing gap found while wiring Phase 682's Holy
+    Sword vs-Undead bonus: Phase 535's own weapon-bonus wiring never
+    reached this Augur-Combat retaliator, so it's missing every weapon
+    bonus here (not just Holy Sword's vs-Undead variant), same as
+    ``patrol_execution.py``/``pursue_execution.py``'s own duplicate
+    ``_leader_combatant()``. Not fixed here -- flagged for a future,
+    separate phase.
     """
 
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)

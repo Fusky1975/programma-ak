@@ -196,6 +196,15 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
     """Same construction as ``pursue_execution.py``/``challenge_execution.py``'s own
     ``_leader_combatant`` -- duplicated per this project's own established
     small-per-consumer-lookup precedent (see module docstring).
+
+    **Unlike ``challenge_execution.py``'s own copy, this one never calls
+    ``equipped_combat_weapon()``/``weapon_offensive_hit_multiplier()``/
+    ``weapon_melee_damage_bonus()`` at all** -- a real, separate, pre-
+    existing gap found while wiring Phase 682's Holy Sword vs-Undead
+    bonus: Phase 535's own weapon-bonus wiring never reached Patrol
+    encounters (same gap in ``cast_execution.py``'s Augur-Combat
+    retaliator and ``pursue_execution.py``'s own duplicate). Not fixed
+    here -- flagged for a future, separate phase.
     """
 
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)

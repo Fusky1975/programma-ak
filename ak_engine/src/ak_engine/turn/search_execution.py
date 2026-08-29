@@ -788,6 +788,7 @@ def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
         always_acts_first=always_acts_first,
         regenerates_hp=(1 if is_necro_mage else 0),
         regenerates_hp_interval=(2 if is_necro_mage else 1),
+        is_undead_or_anti_holy=leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY),
     )
 
 
@@ -1238,6 +1239,7 @@ def _resolve_search_encounter(
         archery_skill=stats.missile_skill,
         missile_damage_range=stats.missile_damage if stats.missile_damage is not None else FIRE_ARROW_DAMAGE_RANGE,
         regenerates_hp=TROLL_REGENERATION_PER_COMBAT_ROUND if feature.guardian_monster is Monster.TROLL else 0,
+        is_undead_or_anti_holy=feature.guardian_monster in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS),
     )
 
     # Phase 617: this Feature's own passive battle field, if any --
@@ -1852,6 +1854,7 @@ def _resolve_search_encounter(
                 missile_damage_range=demon_stats.missile_damage
                 if demon_stats.missile_damage is not None
                 else FIRE_ARROW_DAMAGE_RANGE,
+                is_undead_or_anti_holy=demon_species in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS),
             )
             # "The Demon fights in place of the spellcaster" -- Melee
             # only, the same "mixed tactics/range transitions aren't

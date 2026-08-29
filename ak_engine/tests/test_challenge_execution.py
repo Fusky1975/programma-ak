@@ -335,6 +335,30 @@ def test_leader_combatant_reads_bow_of_the_elven_kings_archery_bonus():
     assert combatant.melee_damage_dealt_bonus == 0
 
 
+def test_leader_combatant_reads_undead_alignment_as_undead_or_anti_holy():
+    # Phase 682: SS7.1's Holy Sword vs-Undead bonus needs the combatant's
+    # own nature, set independently of any weapon.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD, alignment=Alignment.ANTI_HOLY)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.is_undead_or_anti_holy is True
+
+
+def test_leader_combatant_reads_non_undead_alignment_as_not_undead_or_anti_holy():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, FIELD))
+    leader = LeaderState(501, kingdom_id=1, name="Hero", location=FIELD, alignment=Alignment.GOOD)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.is_undead_or_anti_holy is False
+
+
 def test_leader_combatant_reads_holy_sword_auto_protection():
     # Phase 536: AKGEN_reverse_engineering_report (4).md SS7.3 -- Holy
     # Sword grants an automatic, damage-free level-4 Holy Symbol
@@ -1346,6 +1370,9 @@ def test_execute_challenge_cast_gate_demon_summons_and_the_demon_wins():
     assert result.winner_leader_id == 1
     demon_combatant = mock_melee.call_args[0][0]
     assert demon_combatant.name  # a real, named monster Combatant was summoned
+    # Phase 682: Succubus is in HAND_OF_DEATH_ANTI_HOLY_MONSTERS -- the
+    # summoned demon should carry the flag Holy Sword's vs-Undead bonus needs.
+    assert demon_combatant.is_undead_or_anti_holy is True
 
 
 def test_execute_challenge_cast_psychic_blast_bonus_attacks_can_finish_the_target():

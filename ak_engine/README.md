@@ -28699,7 +28699,7 @@ follow-up request after the original 431-435 plan shipped.
   blocked on a missing definition/call site in every available `.PAS`
   file. Test count: 5711 (unchanged).
 
-- **Phase 681 (current)**: comment-only, no behavior change. Fixes a
+- **Phase 681**: comment-only, no behavior change. Fixes a
   stale docstring in `turn/sep_decode.py` found during a fresh
   codebase survey (2026-08-29) -- its own top-of-file note still said
   "decode and classification only, not yet wired into `GameState`/
@@ -28713,6 +28713,38 @@ follow-up request after the original 431-435 plan shipped.
   combat` staying `False` for every production caller, already
   correctly documented in `battle_orchestrator.py` itself. Test count:
   5711 (unchanged).
+
+- **Phase 682 (current)**: wires Holy Sword's own "+40%/+5 vs Undead"
+  combat bonus (`models/treasure.py` SS7.1 row 35), the sixth survey's
+  own item #2 -- confirmed real and open, and distinct from Phase
+  536's own Holy-Symbol-auto-protection grant (SS7.3 explicitly scopes
+  that one to "automatic and without [bonus] damage," excluding this
+  vs-Undead variant). New `turn/encounter.py Combatant.is_undead_or_
+  anti_holy` records each combatant's own nature (a leader's alignment
+  or a monster's species -- no opponent needed at construction time);
+  `apply_temper_melee_setup()` -- the shared, once-both-sides-are-known
+  setup step (Phase 284/518) -- swaps a Holy-Sword-wielder's already-
+  baked flat bonus for this vs-Undead one when the opponent's flag is
+  set, dividing out the old multiplicative factor before multiplying
+  in the new one (a naive `*=` would double-count the already-included
+  +20%, giving 1.44 instead of the correct 1.40). Wired at the 6 real
+  call sites that already apply Phase 535's flat weapon bonus: `turn/
+  search_execution.py`'s leader/monster/Gate-Demon builders, `turn/
+  challenge_execution.py`'s leader/Gate-Demon builders, and `turn/
+  battle_orchestrator.py`'s Duel-combatant builder.
+
+  **A separate, larger, pre-existing gap found and flagged, not
+  fixed here**: `turn/cast_execution.py`'s Augur-Combat retaliator
+  builder and `turn/patrol_execution.py`/`turn/pursue_execution.py`'s
+  own duplicate `_leader_combatant()` builders never call `equipped_
+  combat_weapon()`/Phase 535's weapon-bonus functions at all -- every
+  weapon bonus (not just Holy Sword's vs-Undead variant) is silently
+  missing from Augur Combat's simulated retaliation, Patrol encounters,
+  and Pursue's own armyless personal combat. Documented at each site;
+  recorded as a fresh, unattempted survey item.
+
+  Test count: 5711 -> 5726 (net +15). Full suite verified green
+  (unchanged, 5711) before writing a single new test.
 
 ## Setup
 

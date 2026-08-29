@@ -240,7 +240,14 @@ from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
-from ak_engine.models.monster import MONSTER_COMBAT_STATS, MONSTER_NAMES, MonsterSpeed, roll_gate_demon_type
+from ak_engine.models.monster import (
+    HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
+    MONSTER_COMBAT_STATS,
+    MONSTER_NAMES,
+    SPIRITWRACK_UNDEAD_MONSTERS,
+    MonsterSpeed,
+    roll_gate_demon_type,
+)
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.models.temper import raise_temper_one_level
@@ -466,6 +473,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         always_acts_first=always_acts_first,
         regenerates_hp=(1 if is_necro_mage else 0),
         regenerates_hp_interval=(2 if is_necro_mage else 1),
+        is_undead_or_anti_holy=leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY),
     )
 
 
@@ -815,6 +823,7 @@ def _resolve_personal_combat_cast(
             melee_damage_range=demon_stats.melee_damage,
             archery_skill=demon_stats.missile_skill,
             missile_damage_range=demon_stats.missile_damage if demon_stats.missile_damage is not None else FIRE_ARROW_DAMAGE_RANGE,
+            is_undead_or_anti_holy=demon_species in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS),
         )
         duel_result = resolve_melee_duel(demon, target, rng)
         if duel_result.winner == "a":

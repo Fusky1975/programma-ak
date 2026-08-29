@@ -1541,6 +1541,8 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import (
     BOW_OF_ELVEN_KINGS_ARCHERY_DAMAGE_BONUS,
     BOW_OF_ELVEN_KINGS_ARCHERY_HIT_BONUS,
+    HOLY_SWORD_DAMAGE_BONUS_VS_UNDEAD,
+    HOLY_SWORD_HIT_BONUS_VS_UNDEAD,
     WEAPON_DAMAGE_BONUS,
     WEAPON_HIT_BONUS,
     Treasure,
@@ -2773,6 +2775,18 @@ class Combatant:
     # already performs. ``None`` (every monster combatant, and any
     # leader with nothing equipped) is a no-op.
     equipped_weapon: Treasure | None = None
+    # Phase 682 -- this combatant's own nature: `True` iff its own
+    # alignment (a leader) or species (a monster) is Undead/Anti-Holy.
+    # Read from the *opponent's* own side by `apply_temper_melee_
+    # setup()`'s own Holy Sword check (same "read from the opponent's
+    # own side" precedent `is_humanoid` above already established for
+    # Duellist's Medal, Phase 518) -- a combatant never needs to know
+    # its own opponent to set this about itself. Set by each consumer's
+    # own builder from `leader.alignment in (Alignment.UNDEAD, Alignment.
+    # ANTI_HOLY)` or `monster_species in (HAND_OF_DEATH_ANTI_HOLY_
+    # MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS)`. Default `False` leaves
+    # every pre-Phase-682 caller unaffected.
+    is_undead_or_anti_holy: bool = False
     # Office.ELE_MAGE's own personal-combat sibling perk (Phase 665,
     # ``models/office.py OFFICE_TITLE_DESCRIPTION``): "The Chameleon can
     # transmit its camouflage ability to <2, which gives <2 the ability
@@ -3095,9 +3109,30 @@ def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random)
     "no source, no guess" policy it stays undone -- this closes out the
     Melee category's own six Advanced Abilities with five fully wired
     and this one partially wired plus its ambiguous residual documented.
+
+    Phase 682: Holy Sword's own vs-Undead combat bonus (``models/
+    treasure.py`` SS7.1: "+20%; +40% vs Undead" / "+3; +5 vs Undead").
+    The flat, non-Undead values are already baked into a Holy-Sword-
+    wielding combatant's own ``offensive_hit_multiplier``/``melee_
+    damage_dealt_bonus`` at builder time (Phase 535) -- composed there
+    with e.g. Melee Mastery, since neither builder knows the opponent
+    yet. Here, once both combatants ARE known, that already-baked
+    weapon-only contribution is *swapped* for the vs-Undead one rather
+    than stacked on top of it: the damage side is a simple additive
+    delta (bonuses compose additively), but the hit-chance side must
+    divide out the old multiplicative factor before multiplying in the
+    new one, or the already-included +20% would be double-counted
+    (1.2 * 1.2 = 1.44, not the correct 1.4) -- dividing first isolates
+    exactly the weapon's own contribution regardless of what else
+    (Melee Mastery) is already composed into the same multiplier.
     """
 
     for combatant, opponent in ((a, b), (b, a)):
+        if combatant.equipped_weapon is Treasure.WEAPON_1 and opponent.is_undead_or_anti_holy:
+            base_hit_multiplier = 1.0 + WEAPON_HIT_BONUS[Treasure.WEAPON_1] / 100
+            undead_hit_multiplier = 1.0 + HOLY_SWORD_HIT_BONUS_VS_UNDEAD / 100
+            combatant.offensive_hit_multiplier = combatant.offensive_hit_multiplier / base_hit_multiplier * undead_hit_multiplier
+            combatant.melee_damage_dealt_bonus += HOLY_SWORD_DAMAGE_BONUS_VS_UNDEAD - WEAPON_DAMAGE_BONUS[Treasure.WEAPON_1]
         if combatant.has_duellists_medal_ability and opponent.is_humanoid:
             combatant.offensive_hit_multiplier *= 1.0 + MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS
             combatant.melee_damage_dealt_bonus += MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS

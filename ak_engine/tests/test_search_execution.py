@@ -197,6 +197,30 @@ def test_leader_combatant_reads_bow_of_the_elven_kings_archery_bonus():
     assert combatant.melee_damage_dealt_bonus == 0
 
 
+def test_leader_combatant_reads_undead_alignment_as_undead_or_anti_holy():
+    # Phase 682: SS7.1's Holy Sword vs-Undead bonus needs the combatant's
+    # own nature, set independently of any weapon.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION, alignment=Alignment.UNDEAD)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(state, leader)
+
+    assert combatant.is_undead_or_anti_holy is True
+
+
+def test_leader_combatant_reads_non_undead_alignment_as_not_undead_or_anti_holy():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    leader = LeaderState(LEADER_ID, 1, "Searcher", LOCATION, alignment=Alignment.GOOD)
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(state, leader)
+
+    assert combatant.is_undead_or_anti_holy is False
+
+
 def test_leader_combatant_reads_holy_sword_auto_protection():
     # Phase 536: AKGEN_reverse_engineering_report (4).md SS7.3.
     state = GameState()
@@ -646,6 +670,34 @@ def test_execute_search_non_troll_guardian_has_no_regeneration():
 
     monster_combatant = mock_resolve.call_args[0][1]
     assert monster_combatant.regenerates_hp == 0
+
+
+# -- Phase 682: is_undead_or_anti_holy on the monster combatant (Holy Sword vs-Undead) --
+
+
+def test_execute_search_sets_undead_flag_on_an_undead_species_guardian():
+    state = _state_with_leader()
+    # Vampire is in SPIRITWRACK_UNDEAD_MONSTERS (already relied on elsewhere in this file).
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.VAMPIRE))
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    monster_combatant = mock_resolve.call_args[0][1]
+    assert monster_combatant.is_undead_or_anti_holy is True
+
+
+def test_execute_search_non_undead_guardian_has_no_undead_flag():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    monster_combatant = mock_resolve.call_args[0][1]
+    assert monster_combatant.is_undead_or_anti_holy is False
 
 
 # -- Phase 169: Flee (rulebook [5.6]) --

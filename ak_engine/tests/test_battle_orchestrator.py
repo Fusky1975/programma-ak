@@ -2687,6 +2687,39 @@ def test_commander_combatant_garrison_commander_has_no_weapon_bonus():
     assert combatant.archery_hit_multiplier == 1.0
 
 
+def test_commander_combatant_reads_undead_alignment_as_undead_or_anti_holy():
+    # Phase 682: SS7.1's Holy Sword vs-Undead bonus needs the combatant's
+    # own nature, set independently of any weapon.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Commander", location=FIELD, alignment=Alignment.UNDEAD))
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.is_undead_or_anti_holy is True
+
+
+def test_commander_combatant_reads_non_undead_alignment_as_not_undead_or_anti_holy():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Braveland", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Commander", location=FIELD, alignment=Alignment.GOOD))
+    commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.is_undead_or_anti_holy is False
+
+
+def test_commander_combatant_garrison_commander_is_not_undead_or_anti_holy():
+    state = GameState()
+    commander = provincial_garrison_commander(contingent_size=3)
+
+    combatant = _commander_combatant(commander, state)
+
+    assert combatant.is_undead_or_anti_holy is False
+
+
 def test_commander_combatant_reads_holy_sword_auto_protection():
     # Phase 536: AKGEN_reverse_engineering_report (4).md SS7.3.
     state = GameState()

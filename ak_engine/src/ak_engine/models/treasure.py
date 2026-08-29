@@ -482,13 +482,15 @@ WEAPON_DAMAGE_BONUS: dict[Treasure, int] = {
     Treasure.LEADERSHIP_ORCISH: 2,  # Scimitar of Orc Mastery
 }
 # Holy Sword's own vs-Undead variant (SS7.1 row 35: "+20%; +40% vs Undead"
-# / "+3; +5 vs Undead") -- deliberately not auto-applied by ``WEAPON_HIT_
-# BONUS``/``WEAPON_DAMAGE_BONUS`` above: ``Combatant`` has no target-
-# alignment field for a builder to gate this on (the 3 builders this
-# phase touches only ever see the *opposing* Combatant, never its source
-# LeaderState/ArmyState), so there's no consumer to wire it into yet --
-# same "document the real, sourced gap rather than force a guess" pattern
-# already used for Phase 532's Illusory Terrain/Hide Feature carve-outs.
+# / "+3; +5 vs Undead"). Phase 682 -- now wired: ``turn/encounter.py
+# Combatant.is_undead_or_anti_holy`` records each combatant's own nature
+# (set by each builder from its own leader's alignment or monster's own
+# species, no opponent needed at construction time), and ``apply_temper_
+# melee_setup()`` -- the shared, once-both-sides-are-known setup step --
+# swaps a Holy-Sword-wielder's already-baked flat bonus for this vs-Undead
+# one when the opponent's flag is set. Not auto-applied at the builder's
+# own construction time (before this phase's own fix, the blocker was
+# real: a builder only ever sees its own side, never the opponent).
 HOLY_SWORD_HIT_BONUS_VS_UNDEAD = 40
 HOLY_SWORD_DAMAGE_BONUS_VS_UNDEAD = 5
 

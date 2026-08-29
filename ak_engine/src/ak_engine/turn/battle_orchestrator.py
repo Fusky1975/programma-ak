@@ -1156,8 +1156,10 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         has_duellists_medal_ability = AdvancedAbility.MELEE_DUELLISTS_MEDAL in leader.advanced_abilities
         has_control_temper_ability = AdvancedAbility.MELEE_CONTROL_TEMPER in leader.advanced_abilities
         archery_bonus = archery_free_attack_bonus(leader.advanced_abilities)
+        is_undead_or_anti_holy = leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY)
     else:
         archery_bonus = 0
+        is_undead_or_anti_holy = False
 
     return Combatant(
         name=f"leader {commander.leader_id}",
@@ -1182,6 +1184,7 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
         always_acts_first=always_acts_first,
         regenerates_hp=regenerates_hp,
         regenerates_hp_interval=regenerates_hp_interval,
+        is_undead_or_anti_holy=is_undead_or_anti_holy,
     )
 
 
