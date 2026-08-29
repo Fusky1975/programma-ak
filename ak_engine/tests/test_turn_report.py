@@ -11,6 +11,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery, describe_discovery_line
 from ak_engine.models.feature import Feature, FeatureType, RaidEvent
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.models.game_type import GameType
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.kingdom import SkillTable
@@ -230,6 +231,8 @@ from ak_engine.report.turn_report import (
     render_talk_rebuffed,
     render_talk_learned_hire_price,
     render_valhalla_visitor_rules,
+    render_valhalla_visit_announcement,
+    describe_valhalla_visit_announcement,
     render_practice_vain,
     describe_desertions,
     render_mercenary_army_wanders_away,
@@ -3386,6 +3389,93 @@ def test_render_valhalla_visitor_rules_resolves_possessive_marker():
         "You can do anything you want with the magic item Aldric came "
         "with, but the item will leave at the end of Aldric's stay with you."
     )
+
+
+# -- Phase 678: Valhalla visit announcement --
+
+
+def test_render_valhalla_visit_announcement_substitutes_king_and_hero():
+    rng = ScriptedRandom([])
+    line = render_valhalla_visit_announcement("Aldric", "Quintilian", rng)
+    assert line == (
+        'Aldric was visited by a hero from Valhalla, named Quintilian!The characteristics '
+        'for this great King from Game # are given in your "CHARACTERS" report.'
+    )
+
+
+def test_render_valhalla_visit_announcement_leaves_the_game_number_marker_literal():
+    rng = ScriptedRandom([])
+    line = render_valhalla_visit_announcement("Aldric", "Quintilian", rng)
+    assert "Game #" in line
+
+
+def _gate_angel_visit_sentinel(visitor: LeaderState) -> PhaseDispatchResult:
+    return PhaseDispatchResult(
+        leader_id=visitor.leader_id, segment_index=-1, phase_label="gate-angel-visit", action=None,
+        result=visitor, error=None,
+    )
+
+
+def test_describe_valhalla_visit_announcement_renders_announcement_and_rules():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    visitor = LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Quintilian", HexCoord(0, 0))
+    state.add_leader(visitor)
+    results = [_gate_angel_visit_sentinel(visitor)]
+
+    lines = describe_valhalla_visit_announcement(results, state, 1, ScriptedRandom([]))
+
+    assert lines[0] == render_valhalla_visit_announcement("Aldric", "Quintilian", ScriptedRandom([]))
+    assert lines[1:] == render_valhalla_visitor_rules("Quintilian", ScriptedRandom([]))
+
+
+def test_describe_valhalla_visit_announcement_ignores_a_different_kingdoms_visitor():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.HUMAN, Alignment.GOOD, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    visitor = LeaderState(VALHALLA_VISITOR_LEADER_ID, 2, "Quintilian", HexCoord(1, 1))
+    state.add_leader(visitor)
+    results = [_gate_angel_visit_sentinel(visitor)]
+
+    assert describe_valhalla_visit_announcement(results, state, 1, ScriptedRandom([])) == []
+
+
+def test_describe_valhalla_visit_announcement_returns_empty_with_no_sentinel():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+
+    assert describe_valhalla_visit_announcement([], state, 1, ScriptedRandom([])) == []
+
+
+def test_describe_valhalla_visit_announcement_returns_empty_with_no_living_king():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    visitor = LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Quintilian", HexCoord(0, 0))
+    state.add_leader(visitor)
+    results = [_gate_angel_visit_sentinel(visitor)]
+
+    assert describe_valhalla_visit_announcement(results, state, 1, ScriptedRandom([])) == []
+
+
+def test_compose_letter_report_includes_valhalla_visit_announcement_in_action_report():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.HUMAN, Alignment.GOOD, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True))
+    visitor = LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Quintilian", HexCoord(0, 0))
+    state.add_leader(visitor)
+    results = [_gate_angel_visit_sentinel(visitor)]
+
+    lines_for_kingdom_1 = compose_letter_report(results, state, 1, ScriptedRandom([]))
+    lines_for_kingdom_2 = compose_letter_report(results, state, 2, ScriptedRandom([]))
+
+    assert "ACTION REPORT" in lines_for_kingdom_1
+    assert render_valhalla_visit_announcement("Aldric", "Quintilian", ScriptedRandom([])) in lines_for_kingdom_1
+    assert not any("Valhalla" in line for line in lines_for_kingdom_2)
 
 
 def test_describe_challenge_delegates_to_describe_encounter_combat():

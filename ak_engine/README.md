@@ -28546,7 +28546,7 @@ follow-up request after the original 431-435 plan shipped.
   Test count: 5692 -> 5694 (net +2). Full suite verified green
   (unchanged, 5692) before writing a single new test.
 
-- **Phase 677 (current)**: not part of the original phased roadmap
+- **Phase 677**: not part of the original phased roadmap
   above -- comment-only, no behavior change. Fixes the 4 "stale known-
   gap claim" docstrings flagged during the fifth fresh survey (the same
   session as Phase 676): `turn/merit_points.py`'s own claim that AIR_
@@ -28567,6 +28567,49 @@ follow-up request after the original 431-435 plan shipped.
   fresh codebase survey (2026-08-29) -- only the Valhalla visit
   announcement (a real, sourced, medium-sized report gap) remains open
   on it.
+
+- **Phase 678 (current)**: closes the fifth fresh survey's own last
+  candidate. `turn/valhalla_execution.py VALHALLA_VISIT_ANNOUNCEMENT_
+  TEMPLATE` (Phase 585, real text recovered from the AKPROSE corpus:
+  "`< was visited by a hero from Valhalla, named =!...`") and `report/
+  turn_report.py render_valhalla_visitor_rules()` (Phase 606, the
+  VALINT.X2 rulebook explanation, meant to accompany it) both had zero
+  consumers anywhere in the report layer, confirmed by grep. The
+  trigger data was already flowing through the turn pipeline unused:
+  `turn/turn_processor.py run_turn()` already appends a real `"gate-
+  angel-visit"` sentinel `PhaseDispatchResult` (`result` = the freshly-
+  spawned visitor's own `LeaderState`) whenever `finalize_gate_angel_
+  visit()` spawns one.
+
+  New `render_valhalla_visit_announcement()` renders the template (the
+  historical-game-number `#` marker is deliberately left out of its own
+  `values` dict -- `report/prose.py render()`'s own contract leaves any
+  unmapped marker untouched in the output, matching the source
+  constant's own documented "kept literal, unresolved" stance). New
+  `describe_valhalla_visit_announcement()` scans `results` for the real
+  sentinel and, when it belongs to the Kingdom being rendered and a
+  living King is on record to name in the sentence, returns the
+  announcement followed by `render_valhalla_visitor_rules()`'s own
+  lines.
+
+  **A real routing trap found and avoided, not stumbled into**: the
+  obvious first idea -- add a branch inside `describe_turn_results()`
+  itself -- was traced through and rejected before writing any code.
+  That sentinel's own `leader_id` is the *visitor's*, not the King's;
+  since the visitor is a real, freshly-registered `LeaderState` under
+  the winning Kingdom, `describe_letter_reports()`'s own `other_leader_
+  ids` loop already includes it, so a branch inside `describe_turn_
+  results()` would have routed the announcement into the *visiting
+  hero's own* LETTER REPORTS entry -- backwards from the rulebook's own
+  King-addressed framing. `compose_letter_report()` instead calls the
+  new composer directly, from its own already-available, unfiltered
+  `results` parameter, and folds it into the existing ACTION REPORT
+  section (no separate section header survives in any confirmed real
+  source for this specific text).
+
+  Test count: 5694 -> 5701 (net +7). Full suite verified green
+  (unchanged, 5694) before writing a single new test. This closes the
+  entire fifth fresh codebase survey (2026-08-29) in full.
 
 ## Setup
 

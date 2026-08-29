@@ -1267,7 +1267,7 @@ from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance_w
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 from ak_engine.turn.discovery_effects import effective_skill_level, emperor_holds_arcanes_valor_unification
 from ak_engine.turn.expenses import MaintenanceResult, compute_expected_expenses, leader_pay
-from ak_engine.turn.valhalla_execution import VALHALLA_VISITOR_RULES_TEMPLATE
+from ak_engine.turn.valhalla_execution import VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE, VALHALLA_VISITOR_RULES_TEMPLATE
 from ak_engine.turn.office_holder import (
     ALL_OFFICES,
     ARMY_RANKED_OFFICES,
@@ -4531,6 +4531,55 @@ def render_valhalla_visitor_rules(visitor_name: str, rng: random.Random) -> list
 
     values = {"[": visitor_name, "[1": visitor_name, "]": f"{visitor_name}'s"}
     return [render(line, values, rng=rng) for line in VALHALLA_VISITOR_RULES_TEMPLATE]
+
+
+def render_valhalla_visit_announcement(king_name: str, hero_name: str, rng: random.Random) -> str:
+    """Renders ``turn/valhalla_execution.py VALHALLA_VISIT_ANNOUNCEMENT_
+    TEMPLATE`` (Phase 585) -- the real ``GOOD.X2``/``EVIL.X2`` template
+    sentence announcing a new Valhalla visitor to the King they spawned
+    beside. `#` (the historical game number, see that constant's own
+    docstring for why this project has no such concept) is deliberately
+    left out of ``values`` -- ``render()``'s own contract leaves any
+    unmapped marker untouched in the output, matching that module's own
+    documented "kept as the literal, unresolved `#` marker" stance.
+    """
+
+    values = {"<": king_name, "=": hero_name}
+    return render(VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE, values, rng=rng)
+
+
+def describe_valhalla_visit_announcement(
+    results: list[PhaseDispatchResult], state: GameState, kingdom_id: int, rng: random.Random
+) -> list[str]:
+    """Phase 678: narrates this Kingdom's own new Valhalla visitor, if
+    ``turn/turn_processor.py run_turn()`` spawned one this turn.
+
+    Scans ``results`` for the real ``"gate-angel-visit"`` sentinel
+    ``PhaseDispatchResult`` that function appends (``result`` is the
+    freshly-spawned visitor's own real ``LeaderState``) -- at most one
+    real match per turn, since only one Kingdom can win Gate Angel's own
+    contention per turn. Returns ``[]`` when no such sentinel exists at
+    all, when it belongs to a *different* Kingdom, or when this Kingdom
+    has no living King on record to name in the sentence (can't narrate
+    "X was visited" with no X) -- otherwise the real announcement
+    sentence followed by ``render_valhalla_visitor_rules()``'s own real
+    VALINT.X2 explanation lines, both folded into the caller's own
+    ACTION REPORT rather than a new, unconfirmed section (see `compose_
+    letter_report()`'s own Phase 678 addendum for why).
+    """
+
+    for entry in results:
+        if entry.phase_label != "gate-angel-visit" or not isinstance(entry.result, LeaderState):
+            continue
+        visitor = entry.result
+        if visitor.kingdom_id != kingdom_id:
+            continue
+        king_leader_id = _king_leader_id(state, kingdom_id)
+        king = state.leaders.get(king_leader_id) if king_leader_id is not None else None
+        if king is None:
+            return []
+        return [render_valhalla_visit_announcement(king.name, visitor.name, rng), *render_valhalla_visitor_rules(visitor.name, rng)]
+    return []
 
 
 # HostAK/TP/PROSE/THATT.X, THFAIL.X -- the opening/failure bookends of
@@ -12503,6 +12552,17 @@ def compose_letter_report(
     own header is added here, since `describe_turn_results()` returns
     bare narrative lines with none.
 
+    **Phase 678**: a real Valhalla visit this turn (`describe_valhalla_
+    visit_announcement()`) is folded into this same ACTION REPORT
+    section, appended after `describe_turn_results()`'s own lines --
+    the sentinel `PhaseDispatchResult` `run_turn()` appends for it is
+    keyed by the *visitor's* own `leader_id`, not the King's, so it
+    would otherwise route into the visitor's own LETTER REPORTS entry
+    (backwards from the rulebook's own King-addressed announcement
+    text) if handled inside `describe_turn_results()` instead. No
+    separate section header survives in any confirmed real source for
+    this specific text -- see that composer's own docstring.
+
     **LETTER REPORTS** wraps `describe_letter_reports()` (Phase 217) as-is
     -- it already returns its own `"LETTER REPORTS"` header, so no header
     is added here. Reuses the same `kingdom_results` (every leader in the
@@ -12599,6 +12659,17 @@ def compose_letter_report(
     king_leader_id = _king_leader_id(state, kingdom_id)
     king_results = [entry for entry in kingdom_results if entry.leader_id == king_leader_id]
     action_lines = describe_turn_results(king_results, state, rng, ability_names=ability_names, board_width=board_width)
+    # Phase 678: the "gate-angel-visit" sentinel's own leader_id is the
+    # visitor's, not the King's -- it would otherwise route into the
+    # visitor's own LETTER REPORTS entry (backwards from the rulebook's
+    # own King-addressed framing) if handled inside describe_turn_
+    # results() instead, so it's folded into this King-scoped section
+    # directly, from the full, unfiltered `results` this function
+    # already received. No separate section header exists for this in
+    # any confirmed real source -- see describe_valhalla_visit_
+    # announcement()'s own docstring for why this is a documented,
+    # reasonable placement choice, not a guess.
+    action_lines = action_lines + describe_valhalla_visit_announcement(results, state, kingdom_id, rng)
     _emit_section("ACTION REPORT", action_lines)
 
     letter_lines = describe_letter_reports(
