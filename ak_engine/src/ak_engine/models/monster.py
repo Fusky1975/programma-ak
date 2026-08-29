@@ -371,9 +371,9 @@ one-to-one. `Monster.NOMONSTER` (ordinal 60, the real "no monster"
 sentinel this module's own docstring already discusses above) has no
 real entry in the file -- mapped to the empty string, the same
 "sentinel gets a blank, not omitted" convention `models/office.py
-OFFICE_PERK_DESCRIPTION` already established. No report/encounter
-composer calls this yet -- sourced data with no consumer wired, not a
-functional claim about exactly when the real game shows it.
+OFFICE_PERK_DESCRIPTION` already established. **Consumed since Phase
+613** by `report/turn_report.py render_monster_description()`, wired
+into that composer's own feature-discovery narration.
 """
 
 from __future__ import annotations

@@ -74,15 +74,18 @@ doesn't generalize to every Encounter. A decisive loser is removed from
 ``state`` via ``GameState.remove_leader()``, the same mechanism Cast's
 own Kill_Enemy execution already uses (Phase 29).
 
-**Not wired into ``plan_dispatch.py``'s CHALLENGE dispatch**, which
-stays decode-only exactly as it was -- the same "built but not
-auto-invoked" precedent as ``fight_multi_attacker_battle`` (Phase 28)
-and ``execute_practice_group`` (Phase 46), both because
-``mutual_encounter`` can't be determined from a single-leader dispatch
-and because real combat's variable rng consumption would perturb this
-project's existing scripted-``rng`` test sequences if wired in as the
-unconditional default (the same reasoning behind Duel's own opt-in
-flag, Phase 49).
+**Wired into ``plan_dispatch.py``'s CHALLENGE dispatch since Phase 54**
+(this paragraph's own earlier "stays decode-only" claim predates that
+wiring, stale since): ``_dispatch_challenge()`` calls ``execute_
+challenge()`` directly for every real CHALLENGE phase. ``mutual_
+encounter`` still defaults to ``False`` at that single-leader dispatch
+layer (a single leader's own dispatch has no visibility into whether
+the target also ordered a Challenge back this same phase) -- Phase 56
+closes that separately, one level up: ``turn/turn_processor.py
+_dispatch_mutual_encounter()`` detects a real same-phase reciprocal
+Challenge/Pursue pair before either leader is dispatched individually,
+and resolves the pair as one shared encounter with ``mutual_encounter=
+True``.
 
 **Phase 290 addendum -- Personal-Combat spells wired in, generalized for
 a leader-vs-leader Encounter.** ``turn/search_execution.py``'s own

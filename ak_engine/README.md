@@ -28490,7 +28490,7 @@ follow-up request after the original 431-435 plan shipped.
   first time. This closes the entire Special Encounter Plan [5.10]
   roadmap -- nothing remains open in it.
 
-- **Phase 676 (current)**: found by a fresh codebase survey (Explore
+- **Phase 676**: found by a fresh codebase survey (Explore
   agent) after the SEP roadmap closed in full, user-selected directly
   ("Office-holder stickiness"). `turn/office_holder.py resolve_office_
   holder()`'s own real, sourced tie-break (`AKGEN_reverse_engineering_
@@ -28545,6 +28545,28 @@ follow-up request after the original 431-435 plan shipped.
 
   Test count: 5692 -> 5694 (net +2). Full suite verified green
   (unchanged, 5692) before writing a single new test.
+
+- **Phase 677 (current)**: not part of the original phased roadmap
+  above -- comment-only, no behavior change. Fixes the 4 "stale known-
+  gap claim" docstrings flagged during the fifth fresh survey (the same
+  session as Phase 676): `turn/merit_points.py`'s own claim that AIR_
+  FORCE/PRAETOR/FLAGSHIP (the 3 army-scoped royal titles) were "left
+  for a future phase," actually closed by Phase 394/633
+  (`resolve_army_office_holder()`/Victory Points/sticky tie-break);
+  `turn/plan_dispatch.py`'s own module docstring and `_dispatch_
+  challenge()`'s own docstring, both claiming mutual Challenge/Pursue
+  detection was "a declared, natural follow-up, not attempted," stale
+  since Phase 56's own `turn_processor.py _dispatch_mutual_encounter()`;
+  `turn/challenge_execution.py`'s own claim that CHALLENGE "stays
+  decode-only," stale since Phase 54's own `plan_dispatch.py
+  _dispatch_challenge()` wiring; `models/monster.py`'s own claim that
+  `MONSTER_DESCRIPTION` has "no consumer wired," stale since Phase 613's
+  own `report/turn_report.py render_monster_description()`. Each claim
+  verified directly against the current code (not just trusted) before
+  correcting. Full suite unchanged (5694). This closes the entire fifth
+  fresh codebase survey (2026-08-29) -- only the Valhalla visit
+  announcement (a real, sourced, medium-sized report gap) remains open
+  on it.
 
 ## Setup
 

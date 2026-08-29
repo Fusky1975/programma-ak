@@ -247,10 +247,14 @@ to dispatch automatically:
   dispatch layer** -- detecting a real mutual Challenge/Pursue pair
   (both leaders targeting each other the same phase) needs the same
   cross-leader, same-phase visibility Multiple Contingents and
-  Practice's own multi-character coordination needed
-  (``turn/turn_processor.py``, Phases 45/46); wiring that detection in
-  here is a declared, natural follow-up, not attempted this phase. Zero
-  real phases exist for either action in the 10 sample files.
+  Practice's own multi-character coordination needed. **``turn/turn_
+  processor.py``'s own ``_dispatch_mutual_encounter()`` (Phase 56)
+  wires that detection**, one level up from this single-leader dispatch
+  layer: it scans each phase's own entries for a same-phase reciprocal
+  CHALLENGE/PURSUE pair before this module ever dispatches either
+  leader individually, and resolves the pair as one shared encounter
+  with ``mutual_encounter=True``. Zero real phases exist for either
+  action in the 10 sample files.
 - **ASPY** now executes (decoded Phase 26, executed Phase 62):
   ``turn/aspy_defend_decode.py`` decodes it to a raw ``target_province``
   int -- a bare triple in ``DEF2.PAS`` (no dedicated ``CASE`` branch), but
@@ -784,10 +788,11 @@ def _dispatch_challenge(
     """``mutual_encounter`` defaults to ``False`` here -- a single-leader dispatch has
     no visibility into whether the target King also ordered a Challenge
     back this same phase (see ``turn/challenge_execution.py``'s own
-    docstring). Detecting real mutual Challenge/Pursue pairs would need
-    the same cross-leader, same-phase visibility Multiple Contingents and
-    Practice's own multi-character coordination needed -- a declared
-    follow-up for ``turn/turn_processor.py``, not attempted here.
+    docstring). ``turn/turn_processor.py _dispatch_mutual_encounter()``
+    (Phase 56) detects a real same-phase reciprocal Challenge/Pursue
+    pair one level up, before either leader reaches this dispatcher
+    individually, and resolves the pair as one shared encounter with
+    ``mutual_encounter=True`` instead.
 
     Phase 417: stamps the decoded ``request`` onto the returned result
     here, at the dispatcher, the same "one real call site, don't touch

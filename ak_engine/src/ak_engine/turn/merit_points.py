@@ -331,22 +331,26 @@ docstring below for the writer.
 names 23 more Imperial Offices (`models/office.py Office`) this project
 had never modeled at all: 2 blank sentinels (`NO_OFFICE`=8, `NO_TITLE`
 =51, no formula needed) and 21 real titles. Three of those 21 --
-`AIR_FORCE`, `PRAETOR`, `FLAGSHIP` -- are **deliberately not attempted
-here**: they're ARMY-scoped, not leader-scoped (`"eligible": "army:
-quality Crack or Elite..."`), and their shared `score_formula` term
-("current Army_Str(...)") needs the effective-strength calculator
-outside an actual battle context; `turn/strength.py
+`AIR_FORCE`, `PRAETOR`, `FLAGSHIP` -- are ARMY-scoped, not leader-scoped
+(`"eligible": "army: quality Crack or Elite..."`), and don't fit
+`OfficeHolder`'s `leader_id`-only shape at all -- **this Phase 379 note
+originally left them for a future phase**, since their shared `score_
+formula` term ("current Army_Str(...)") needs the effective-strength
+calculator outside an actual battle context, and `turn/strength.py
 compute_effective_strength()` requires terrain/is_defender/other
-battle-only parameters this project has no confirmed value for at rest,
-so reproducing "Army_Str" here would mean guessing which subset applies
--- against this project's own standing rule. They also don't fit
-`OfficeHolder`'s `leader_id`-only shape at all, a structural gap, not
-just a missing formula; left for a future phase that can address both
-honestly. The other 18 -- all leader-scoped, all `Tit_Pts(leader,
-title)`-shaped cumulative counters or a live skill/holding count -- are
-implemented below, each reading one of 16 new `MeritTally` fields
-(`models/game_state.py`, Phase 379) or, for `BATTLE_FOOL`/`CURATOR`,
-composed from data that already exists:
+battle-only parameters with no confirmed at-rest value. **Phase 394
+resolves this in full** (`turn/office_holder.py ArmyOfficeHolder`,
+`resolve_army_office_holder()`, `ARMY_RANKED_OFFICES`) via a dedicated,
+parallel structure rather than forcing these three into `OfficeHolder`'s
+own `leader_id`-only shape -- `turn/army_quality.py army_peacetime_
+strength()` answers the "which battle-only parameters have a coherent
+at-rest value" question this note raised, and Victory Point awarding
+plus the sticky tie-break both followed in Phase 633. The other 18 --
+all leader-scoped, all `Tit_Pts(leader, title)`-shaped cumulative
+counters or a live skill/holding count -- are implemented below, each
+reading one of 16 new `MeritTally` fields (`models/game_state.py`,
+Phase 379) or, for `BATTLE_FOOL`/`CURATOR`, composed from data that
+already exists:
 
 - **4 magic-school titles** (`ELE_MAGE`/`ILLUS_MAGE`/`NECRO_MAGE`/
   `PSYCHIC_MAGE`, ids 16/21/28/46): `Tit_Pts`, "+1 cumulative point when
