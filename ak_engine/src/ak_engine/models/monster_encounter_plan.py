@@ -46,15 +46,14 @@ Mirror_Image, Ice_Suspend, Fireball, Spiritwrack, Control_Undead`) or to
 really are the personal-combat spell set the rulebook restricts
 Encounter Plans to, not a mistranscription.
 
-**Deliberately not wired to any combat effect this phase, by the user's
-own explicit direction**: none of those 11 spells has any implemented
-personal-combat mechanic anywhere in this project (`cast_execution.py`
-only implements leader/army-targeted effects for a disjoint spell set).
-A `Maneuver.CAST` entry rolled from a monster's own plan is therefore
-inert data here -- present for a future phase that defines what each
-spell actually does in personal combat, and skipped by `turn/
-search_execution.py`'s tactic walk exactly the same way a player's own
-unwired `CAST` tactic already is (Phase 132's own "not wired" list).
+**Stale as of Phase 685 -- this used to say a `Maneuver.CAST` entry
+rolled from a monster's own plan was "inert data," deliberately not
+wired to any combat effect.** That was true as of Phase 178, but
+`turn/search_execution.py _resolve_monster_casts()` (Phase 238/293)
+has since walked a guardian's own `monster_plan` and dispatched every
+real `CAST` tactic through the same personal-combat spell dispatcher a
+player's own `CAST` tactic uses (`caster_is_leader=False`) -- nobody
+came back to correct this module's own note when that landed.
 
 **What Phase 178 does wire into `turn/search_execution.py`**, since it
 needs no new spell-effect engine: a monster's own rolled plan is

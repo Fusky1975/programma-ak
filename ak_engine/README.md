@@ -28763,7 +28763,7 @@ follow-up request after the original 431-435 plan shipped.
   consumer" since Phase 193/242, and `turn/monster_raids.py`/`turn/
   rumor.py` also consume it. Test count: 5726 (unchanged).
 
-- **Phase 684 (current)**: closes the sixth survey's own item #3
+- **Phase 684**: closes the sixth survey's own item #3
   ([[project_sixth_survey_2026_08_29]]) -- Phase 535's weapon bonus
   (`equipped_combat_weapon()`/`weapon_offensive_hit_multiplier()`/etc.,
   plus Phase 682's `is_undead_or_anti_holy`) had only ever reached 3 of
@@ -28782,6 +28782,18 @@ follow-up request after the original 431-435 plan shipped.
   already-correct lookups/`Combatant` fields from their own sibling
   builders. Test count: 5726 -> 5750 (net +24). Full suite verified
   green (unchanged, 5726) before writing a single new test.
+
+- **Phase 685 (current)**: comment-only, no behavior change. An eighth
+  fresh codebase survey (2026-08-30, "prossimo gap") found `models/
+  monster_encounter_plan.py`'s own Phase 178 docstring still claiming a
+  guardian monster's own `Maneuver.CAST` tactic is "inert data,"
+  deliberately unwired to any combat effect -- stale since Phase
+  238/293: `turn/search_execution.py _resolve_monster_casts()` walks a
+  guardian's own `monster_plan` and dispatches every real `CAST` tactic
+  through the same personal-combat spell engine a player's own `CAST`
+  tactic uses. The 24th recurrence of this project's own "later phase
+  closed it, nobody updated the earlier note" pattern. Test count: 5750
+  (unchanged).
 
 ## Setup
 
