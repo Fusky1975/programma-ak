@@ -1517,6 +1517,28 @@ Melee/Spell Range) or something else the existing model doesn't already
 allow is genuinely ambiguous without the real Pascal source for that
 specific interaction -- left undone rather than guessed, same "no
 source, no guess" boundary as Melee Control Temper's own residual.
+
+**Phase 700 addendum -- `LONG_RANGE_ARCHERY` resolved.** Re-reading
+`turn/challenge_execution.py resolve_challenge_combat()`'s own `SHOOT`
+branch precisely (not just by inference) confirmed the ambiguity above:
+that branch unconditionally closes to Bow Range before firing, so the
+ability's own text only describes a real behavior change if it lets
+the archer skip that step and fire from Spell Range itself, at half
+accuracy. The user directly confirmed the one remaining open question
+(what the target does in return): the exchange is one-sided -- the
+target gets no return fire (no Archery is possible at Spell Range
+without the ability) and no melee counter (too far away), only a Cast
+counter, which this project's shared function already resolves
+independently and upfront regardless of range. `resolve_fire_arrow_
+duel()`'s new `long_range_archer` parameter (below) implements exactly
+this. `SHORT_RANGE_ARCHERY` (fire at Melee Range) is a genuinely
+separate question -- a target at Melee Range stands right next to the
+archer, so whether they get a reactive Melee counter (this project's
+own Cast-at-Melee-Range branch already grants one in an analogous
+situation) needs its own confirmation, not an assumption piggy-backed
+onto this one -- still deliberately unaddressed. `turn/search_
+execution.py`'s own separate, duplicated `CombatRange`/`SHOOT` state
+machine (leader-vs-monster Search combat) is likewise still untouched.
 """
 
 from __future__ import annotations
@@ -1608,6 +1630,11 @@ MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS = 1
 # exclusive in practice and all grant the same flat bonus -- unlike Melee
 # Mastery/True Mastery, there's no per-tier magnitude to distinguish.
 ARCHERY_FREE_ATTACK_BONUS = 1
+
+# Phase 700: AdvancedAbility.LONG_RANGE_ARCHERY -- "the Archer may now
+# use the Fire tactic at Spell Range, with half the normal chance to
+# hit the target."
+LONG_RANGE_ARCHERY_HIT_MULTIPLIER = 0.5
 
 # [5.2] Fire Arrow: 30% + 10%/Archery level, 1-6 damage.
 FIRE_ARROW_BASE_HIT_CHANCE = 0.30
@@ -3509,7 +3536,9 @@ def _apply_end_of_round_regeneration(a: Combatant, b: Combatant, round_number: i
         b.hit_points += b.regenerates_hp
 
 
-def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> EncounterCombatResult:
+def resolve_fire_arrow_duel(
+    a: Combatant, b: Combatant, rng: random.Random, *, long_range_archer: str | None = None
+) -> EncounterCombatResult:
     """Rulebook [5.2]: each combatant fires up to ``fire_arrow_free_attacks(archery_skill)``
     shots, interleaved round-by-round by initiative (higher Archery
     skill first, tie random -- see ``_acts_first``). Stops once one
@@ -3535,11 +3564,27 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
     Phase 520: each side's own shot count also adds ``archery_free_
     attack_bonus`` (AdvancedAbility.ARCHERY_FREE_ATTACK/_MASTERY/_TRUE_
     MASTERY, default 0) -- see module docstring's own Phase 520 addendum.
+
+    Phase 700 (``AdvancedAbility.LONG_RANGE_ARCHERY``): ``long_range_
+    archer`` (default ``None``, every pre-Phase-700 caller unaffected)
+    names whichever side is firing from Spell Range under this ability
+    -- the *other* side's own shot count is forced to ``0`` (no Archery
+    is possible at Spell Range without the ability, so it never fires
+    back at all -- confirmed one-sided, see ``turn/challenge_
+    execution.py``'s own Phase 700 addendum), and the named side's own
+    hit chance gains an extra ``LONG_RANGE_ARCHERY_HIT_MULTIPLIER``
+    factor ("half the normal chance to hit").
     """
 
     skill_a, skill_b = effective_archery_skill(a), effective_archery_skill(b)
     shots_a = fire_arrow_free_attacks(skill_a) + a.archery_free_attack_bonus
     shots_b = fire_arrow_free_attacks(skill_b) + b.archery_free_attack_bonus
+    if long_range_archer == "a":
+        shots_b = 0
+    elif long_range_archer == "b":
+        shots_a = 0
+    long_range_multiplier_a = LONG_RANGE_ARCHERY_HIT_MULTIPLIER if long_range_archer == "a" else 1.0
+    long_range_multiplier_b = LONG_RANGE_ARCHERY_HIT_MULTIPLIER if long_range_archer == "b" else 1.0
     used_a = used_b = 0
     total_rounds = max(shots_a, shots_b)
     shots: list[FireArrowShot] = []
@@ -3560,7 +3605,7 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
                     skill_a,
                     rng,
                     damage_range=a.missile_damage_range,
-                    hit_chance_multiplier=a.archery_hit_multiplier * b.defensive_hit_multiplier,
+                    hit_chance_multiplier=a.archery_hit_multiplier * b.defensive_hit_multiplier * long_range_multiplier_a,
                 )
                 damage = _fire_arrow_landed_damage(raw_damage, a, b)
                 shots.append(FireArrowShot(shooter="a", hit=raw_damage > 0, damage=damage))
@@ -3573,7 +3618,7 @@ def resolve_fire_arrow_duel(a: Combatant, b: Combatant, rng: random.Random) -> E
                     skill_b,
                     rng,
                     damage_range=b.missile_damage_range,
-                    hit_chance_multiplier=b.archery_hit_multiplier * a.defensive_hit_multiplier,
+                    hit_chance_multiplier=b.archery_hit_multiplier * a.defensive_hit_multiplier * long_range_multiplier_b,
                 )
                 damage = _fire_arrow_landed_damage(raw_damage, b, a)
                 shots.append(FireArrowShot(shooter="b", hit=raw_damage > 0, damage=damage))

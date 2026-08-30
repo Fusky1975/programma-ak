@@ -520,6 +520,60 @@ def test_resolve_fire_arrow_duel_archery_free_attack_bonus_grants_an_extra_shot(
     assert result.shots[0].shooter == "b"
 
 
+# -- Phase 700: AdvancedAbility.LONG_RANGE_ARCHERY --
+
+
+def test_resolve_fire_arrow_duel_long_range_archer_forces_one_sided_shots():
+    # B has real Archery skill (would normally fire back once) --
+    # long_range_archer="a" forces B's own shots to zero regardless.
+    a = Combatant("A", archery_skill=2, hit_points=10)
+    b = Combatant("B", archery_skill=1, hit_points=10)
+    rng = ScriptedRandom([0.99, 0.99])  # A's own 2 shots, both miss
+
+    result = resolve_fire_arrow_duel(a, b, rng, long_range_archer="a")
+
+    assert result.rounds == 2
+    assert len(result.shots) == 2
+    assert all(shot.shooter == "a" for shot in result.shots)
+
+
+def test_resolve_fire_arrow_duel_long_range_archer_b_variant():
+    a = Combatant("A", archery_skill=1, hit_points=10)
+    b = Combatant("B", archery_skill=2, hit_points=10)
+    rng = ScriptedRandom([0.99, 0.99])
+
+    result = resolve_fire_arrow_duel(a, b, rng, long_range_archer="b")
+
+    assert len(result.shots) == 2
+    assert all(shot.shooter == "b" for shot in result.shots)
+
+
+def test_resolve_fire_arrow_duel_long_range_archer_halves_the_hit_chance():
+    # skill=1 -> base hit chance 40% (single free attack); halved to
+    # 20% under long_range_archer. A roll of 0.30 hits at 40% but
+    # misses at 20%.
+    a = Combatant("A", archery_skill=1, hit_points=10)
+    b = Combatant("B", archery_skill=0, hit_points=10)
+    rng = ScriptedRandom([0.30])
+
+    result = resolve_fire_arrow_duel(a, b, rng, long_range_archer="a")
+
+    assert result.shots[0].hit is False
+
+
+def test_resolve_fire_arrow_duel_without_the_flag_the_same_roll_hits():
+    # Non-regression control for the test above -- proves the halving
+    # is real, not just "any roll misses" by coincidence. A hit also
+    # consumes a second roll for the 1-6 damage magnitude.
+    a = Combatant("A", archery_skill=1, hit_points=10)
+    b = Combatant("B", archery_skill=0, hit_points=10)
+    rng = ScriptedRandom([0.30, 0.5])
+
+    result = resolve_fire_arrow_duel(a, b, rng)
+
+    assert result.shots[0].hit is True
+
+
 # -- Phase 175: per-shot Fire Arrow log --
 
 

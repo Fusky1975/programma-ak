@@ -901,3 +901,28 @@ def test_execute_pursue_spy_assassinate_accepts_a_king_target():
 
     assert result.caught_up is True
     assert result.combat_occurred is True
+
+
+# -- Phase 700: AdvancedAbility.LONG_RANGE_ARCHERY (via the shared function) --
+
+
+def test_execute_pursue_long_range_archery_reaches_through_the_shared_function():
+    # Proves execute_pursue()'s armyless case reuses turn/challenge_
+    # execution.py resolve_challenge_combat() unchanged -- the new
+    # Phase 700 branch reaches through with zero pursue-side wiring.
+    state = _base_state()
+    pursuer = LeaderState(
+        1, kingdom_id=1, name="Archer", location=FIELD, advanced_abilities={AdvancedAbility.LONG_RANGE_ARCHERY}
+    )
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    request = PursueRequest(target_character_id=2, unconfirmed_extra0=0, tactics=[SearchTactic(Maneuver.SHOOT)])
+
+    with patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_resolve, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    mock_resolve.assert_called_once_with(ANY, ANY, ANY, long_range_archer="a")

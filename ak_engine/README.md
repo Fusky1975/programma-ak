@@ -29136,7 +29136,7 @@ follow-up request after the original 431-435 plan shipped.
   a single new test; every new test passed on the first run. This
   closes the entire fourteenth survey.
 
-- **Phase 699 (current)**: a fifteenth fresh codebase survey
+- **Phase 699**: a fifteenth fresh codebase survey
   (2026-08-30, "continua", after the user chose to keep surveying over
   pivoting to the GM/player interface) picks `AdvancedAbility.SUPER_
   SAGE_I` through `V` (identical real text across all 5 mutually-
@@ -29158,6 +29158,38 @@ follow-up request after the original 431-435 plan shipped.
   (net +7). Full suite verified green (unchanged, 5855) before writing
   a single new test; every new test passed on the first run. Archery
   range and Spy Expanded Spying remain open for a future phase.
+
+- **Phase 700 (current)**: `AdvancedAbility.LONG_RANGE_ARCHERY`,
+  resolving a "genuinely ambiguous" flag carried across three prior
+  survey rounds since Phase 520: "the Archer may now use the Fire
+  tactic at Spell Range, with half the normal chance to hit the
+  target." Re-reading `turn/challenge_execution.py resolve_challenge_
+  combat()`'s own `SHOOT` branch precisely (not by inference) showed
+  it unconditionally closes to Bow Range before every shot -- the
+  ability's own text only makes sense as unlocking firing *from* Spell
+  Range itself, at half accuracy, instead of that automatic close-in.
+  The user resolved the one remaining open design question directly:
+  the exchange is one-sided (the target gets no return fire -- no
+  Archery is possible at Spell Range without the ability -- and no
+  melee counter, too far away; only a Cast counter, already resolved
+  independently and upfront by this same function regardless of
+  range). `turn/encounter.py resolve_fire_arrow_duel()` gains a new
+  `long_range_archer` parameter (default `None`, every existing caller
+  unaffected) that forces the other side's shot count to zero and
+  applies a flat `LONG_RANGE_ARCHERY_HIT_MULTIPLIER = 0.5` to the
+  named side's own hit chance. Deliberately still open, each flagged
+  rather than silently dropped: `AdvancedAbility.SHORT_RANGE_ARCHERY`
+  (fire at Melee Range) is a genuinely separate question the user's own
+  answer doesn't cover (a target there stands right next to the
+  archer, so whether they get a reactive Melee counter needs its own
+  confirmation); `turn/search_execution.py`'s own separate, duplicated
+  `CombatRange`/`SHOOT` state machine (leader-vs-monster Search combat)
+  is untouched. Test count: 5862 -> 5870 (net +8). Full suite verified
+  green (unchanged, 5862) before writing a single new test; every new
+  test passed after accounting for this shared function's own existing
+  "exhausted tactic list defaults to Melee" tail fallback needing a
+  mocked `resolve_melee_duel()` alongside the mocked `resolve_fire_
+  arrow_duel()` in three of the new tests.
 
 ## Setup
 

@@ -2926,3 +2926,70 @@ def test_execute_challenge_spy_assassinate_accepts_a_king_target_non_mutually():
 
     assert result.accepted is True
     assert result.combat_occurred is True
+
+
+# -- Phase 700: AdvancedAbility.LONG_RANGE_ARCHERY -----------------------
+
+
+def test_resolve_challenge_combat_long_range_archery_fires_from_spell_range():
+    state = _base_state()
+    caster_leader = LeaderState(
+        1, kingdom_id=1, name="Archer", location=FIELD, advanced_abilities={AdvancedAbility.LONG_RANGE_ARCHERY}
+    )
+    target_leader = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_resolve, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(
+            [SearchTactic(Maneuver.SHOOT)], caster_leader, caster, target_leader, target, state, ScriptedRandom([])
+        )
+
+    mock_resolve.assert_called_once_with(caster, target, ANY, long_range_archer="a")
+
+
+def test_resolve_challenge_combat_without_the_ability_closes_to_bow_range():
+    # Non-regression: the ordinary close-to-Bow-Range behavior is
+    # unchanged for a caster who doesn't hold the ability.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="Archer", location=FIELD)
+    target_leader = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_resolve, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(
+            [SearchTactic(Maneuver.SHOOT)], caster_leader, caster, target_leader, target, state, ScriptedRandom([])
+        )
+
+    mock_resolve.assert_called_once_with(caster, target, ANY)
+
+
+def test_resolve_challenge_combat_no_caster_leader_closes_to_bow_range():
+    # Phase 291's own garrison/Duel-reuse case: no real LeaderState, so
+    # no Advanced Ability to check -- falls back to ordinary behavior.
+    state = _base_state()
+    target_leader = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(target_leader)
+    caster = Combatant(name="Garrison", hit_points=CHARACTER_HIT_POINTS)
+    target = _leader_combatant(target_leader, state)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_resolve, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(
+            [SearchTactic(Maneuver.SHOOT)], None, caster, target_leader, target, state, ScriptedRandom([])
+        )
+
+    mock_resolve.assert_called_once_with(caster, target, ANY)

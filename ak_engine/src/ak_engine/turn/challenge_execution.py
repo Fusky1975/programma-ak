@@ -243,6 +243,16 @@ in alignment to the Spy's alignment. Not usable on Kings." Wired the
 same way, at the same two ``has_talk_tactic`` call sites, as
 ``_apply_bravest_talk_inspiration()`` right below the Phase 103 note
 above -- see ``_apply_spy_brainwash_alignment_shift()``'s own docstring.
+
+**Phase 700 -- `AdvancedAbility.LONG_RANGE_ARCHERY`.** Resolves a
+"genuinely ambiguous" flag from Phase 520/later surveys: ``resolve_
+challenge_combat()``'s own ``SHOOT`` branch now lets a caster holding
+this ability fire from Spell Range itself (half accuracy, one-sided --
+see ``turn/encounter.py resolve_fire_arrow_duel()``'s own Phase 700
+addendum) instead of the ordinary unconditional close-to-Bow-Range.
+``SHORT_RANGE_ARCHERY`` (fire at Melee Range) and ``turn/search_
+execution.py``'s own separate, duplicated ``CombatRange`` engine are
+both deliberately still untouched -- see that same addendum.
 """
 
 from __future__ import annotations
@@ -1533,8 +1543,23 @@ def resolve_challenge_combat(
         if tactic.maneuver is Maneuver.SHOOT:
             if current_range is CombatRange.MELEE_RANGE:
                 continue  # [5.0]: only spells or Melee are usable in the melee zone
-            current_range = _close_to(CombatRange.BOW_RANGE, current_range)
-            result = resolve_fire_arrow_duel(caster, target, rng)
+            # Phase 700: AdvancedAbility.LONG_RANGE_ARCHERY -- "may now
+            # use the Fire tactic at Spell Range, with half the normal
+            # chance to hit" -- fires from Spell Range itself instead of
+            # the ordinary unconditional close-to-Bow-Range below. See
+            # turn/encounter.py's own Phase 700 addendum for why this is
+            # one-sided (the target gets no return fire and no melee
+            # counter -- too far away -- only a Cast counter, already
+            # resolved independently above via _resolve_target_casts()).
+            if (
+                current_range is CombatRange.SPELL_RANGE
+                and caster_leader is not None
+                and AdvancedAbility.LONG_RANGE_ARCHERY in caster_leader.advanced_abilities
+            ):
+                result = resolve_fire_arrow_duel(caster, target, rng, long_range_archer="a")
+            else:
+                current_range = _close_to(CombatRange.BOW_RANGE, current_range)
+                result = resolve_fire_arrow_duel(caster, target, rng)
             fire_arrow_shots.extend(result.shots)
             if result.winner is not None:
                 return _outcome(winner=result.winner)
