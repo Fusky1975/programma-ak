@@ -29113,7 +29113,7 @@ follow-up request after the original 431-435 plan shipped.
   passed on the first run. Spy Assassinate remains open for a future
   phase.
 
-- **Phase 698 (current)**: picks `AdvancedAbility.SPY_ASSASSINATE`,
+- **Phase 698**: picks `AdvancedAbility.SPY_ASSASSINATE`,
   closing [[project_fourteenth_survey_2026_08_30]] in full: "The spy
   can encounter kings and army leaders even if he has an attacking
   encounter plan. Also, King characters can now encounter other
@@ -29135,6 +29135,29 @@ follow-up request after the original 431-435 plan shipped.
   (net +6). Full suite verified green (unchanged, 5849) before writing
   a single new test; every new test passed on the first run. This
   closes the entire fourteenth survey.
+
+- **Phase 699 (current)**: a fifteenth fresh codebase survey
+  (2026-08-30, "continua", after the user chose to keep surveying over
+  pivoting to the GM/player interface) picks `AdvancedAbility.SUPER_
+  SAGE_I` through `V` (identical real text across all 5 mutually-
+  exclusive tiers): "The Sage gains an additional plus 5 when
+  researching inventions if he is at his University... The university
+  is in the starting province of the hero or king. So the province
+  where it was at Turn 0." This corrects a stale "blocked" verdict from
+  two earlier surveys ("needs a new `LeaderState` starting/birth-
+  province field that doesn't exist") -- `LeaderState.birth_x`/`birth_y`
+  (Phase 505) already IS that field, already consumed by `turn/hire_
+  pay.py required_pay()` via the exact `HexCoord(leader.birth_x,
+  leader.birth_y)` lookup this ability needs. `turn/practice_execution.py
+  _roll_sage_device_discovery()` gains a flat `SUPER_SAGE_UNIVERSITY_
+  BONUS = 0.05` added to the existing per-level chance when the
+  practicing Sage holds any `SUPER_SAGE_ABILITIES` tier and is
+  physically at their own birth province -- entirely self-contained
+  inside the existing function using data already on `LeaderState`, no
+  new state or caller-side plumbing at all. Test count: 5855 -> 5862
+  (net +7). Full suite verified green (unchanged, 5855) before writing
+  a single new test; every new test passed on the first run. Archery
+  range and Spy Expanded Spying remain open for a future phase.
 
 ## Setup
 

@@ -23,6 +23,8 @@ from ak_engine.turn.practice_execution import (
     PRACTICE_CREDIT_SOLO_GAIN,
     PRACTICE_CREDIT_TIED_GAIN,
     SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL,
+    SUPER_SAGE_ABILITIES,
+    SUPER_SAGE_UNIVERSITY_BONUS,
     TACTICAL_TRAINING_CHANCE,
     PracticeExecutionResult,
     _improved_training_multiplier,
@@ -30,6 +32,7 @@ from ak_engine.turn.practice_execution import (
     _maybe_make_gems,
     _maybe_raid_as_bandit,
     _maybe_receive_society_maps,
+    _roll_sage_device_discovery,
     _select_discovery_to_grant,
     _teacher_aptitude_bonus,
     execute_practice,
@@ -1220,6 +1223,113 @@ def test_execute_practice_non_sage_ability_never_sets_device_discovered():
     result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
 
     assert result.device_discovered is False
+
+
+# -- Phase 699: AdvancedAbility.SUPER_SAGE_I-V's own University bonus ----
+
+
+def test_super_sage_university_bonus_is_5_percent():
+    assert SUPER_SAGE_UNIVERSITY_BONUS == 0.05
+
+
+def _leader_at_university(*, holds_ability: bool = True, at_home: bool = True, birth_recorded: bool = True) -> LeaderState:
+    # kingdom_id=None throughout: these tests are only about the boolean
+    # discovery-roll outcome, not the separate real-Discovery-granting
+    # side effect (which needs its own scripted rng.choice()/diffusion
+    # roll -- already covered by the pre-existing Phase 171/266 tests).
+    leader = LeaderState(
+        1,
+        kingdom_id=None,
+        name="Sage",
+        location=LOCATION if at_home else HexCoord(9, 9),
+        skills=_skills_with(Ability.SAGE, skill=0, aptitude=9),
+    )
+    if birth_recorded:
+        leader.birth_x, leader.birth_y = LOCATION.x, LOCATION.y
+    if holds_ability:
+        leader.advanced_abilities.add(AdvancedAbility.SUPER_SAGE_I)
+    return leader
+
+
+def test_roll_sage_device_discovery_grants_the_flat_bonus_at_the_university():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = _leader_at_university()
+    state.add_leader(leader)
+
+    # skill=0 -> base chance 0%; the flat +5% bonus is the only thing
+    # that can make 0.04 succeed.
+    discovered, _ = _roll_sage_device_discovery(state, leader, current_skill=0, rng=ScriptedRandom([0.04]))
+
+    assert discovered is True
+
+
+def test_roll_sage_device_discovery_no_bonus_without_the_advanced_ability():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = _leader_at_university(holds_ability=False)
+    state.add_leader(leader)
+
+    discovered, _ = _roll_sage_device_discovery(state, leader, current_skill=0, rng=ScriptedRandom([0.04]))
+
+    assert discovered is False
+
+
+def test_roll_sage_device_discovery_no_bonus_away_from_the_university():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = _leader_at_university(at_home=False)
+    state.add_leader(leader)
+
+    discovered, _ = _roll_sage_device_discovery(state, leader, current_skill=0, rng=ScriptedRandom([0.04]))
+
+    assert discovered is False
+
+
+def test_roll_sage_device_discovery_no_bonus_when_birth_province_unrecorded():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = _leader_at_university(birth_recorded=False)
+    state.add_leader(leader)
+
+    discovered, _ = _roll_sage_device_discovery(state, leader, current_skill=0, rng=ScriptedRandom([0.04]))
+
+    assert discovered is False
+
+
+def test_roll_sage_device_discovery_bonus_stacks_with_the_per_level_chance():
+    # skill=4 -> base 20%; +5% bonus -> 25% total. 0.24 succeeds only
+    # with the bonus (would fail against the bare 20% base).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = _leader_at_university()
+    leader.skills = _skills_with(Ability.SAGE, skill=4, aptitude=9)
+    state.add_leader(leader)
+
+    discovered, _ = _roll_sage_device_discovery(state, leader, current_skill=4, rng=ScriptedRandom([0.24]))
+
+    assert discovered is True
+
+
+def test_execute_practice_super_sage_bonus_reaches_end_to_end():
+    # A kingdomless leader (no Discovery to grant to) keeps this an
+    # isolated test of the bonus reaching device_discovered, without
+    # needing to also script _select_discovery_to_grant()'s own rolls.
+    state = GameState()
+    leader = LeaderState(
+        1, kingdom_id=None, name="Sage", location=LOCATION, skills=_skills_with(Ability.SAGE, skill=0, aptitude=9)
+    )
+    leader.birth_x, leader.birth_y = LOCATION.x, LOCATION.y
+    leader.advanced_abilities.add(AdvancedAbility.SUPER_SAGE_III)
+    state.add_leader(leader)
+
+    # First roll (0.99) is the aptitude gate (always succeeds
+    # unconstrained); second (0.04) is the device-discovery roll,
+    # succeeding only via the +5% University bonus at skill 0.
+    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([0.99, 0.04]))
+
+    assert result.device_discovered is True
+    assert result.discovery_granted is None  # no kingdom to grant to
 
 
 # -- Phase 266: Sage device-discovery acquisition (granting a real Discovery) --

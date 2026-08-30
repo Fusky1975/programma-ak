@@ -312,6 +312,14 @@ docstring. Fires only from ``execute_practice()`` (solo), never
 ``execute_practice_group()``, since "no other character is practicing
 with him" is exactly what this project's own existing solo/group
 dispatch split (``turn/turn_processor.py``) already tells apart.
+
+**Phase 699 (`AdvancedAbility.SUPER_SAGE_I`-`V`)**: a flat +5
+percentage-point bonus to ``_roll_sage_device_discovery()``'s own
+per-level chance when the practicing Sage is physically at their own
+real birth province (``LeaderState.birth_x``/``birth_y``, Phase 505) --
+see that function's own Phase 699 addendum. Corrects an earlier
+survey's own "needs a new LeaderState field" verdict: the birth
+coordinate already existed, just never connected to this ability.
 """
 
 from __future__ import annotations
@@ -356,6 +364,24 @@ PRACTICE_CREDIT_RISE_THRESHOLD = 100
 # Rulebook [4.3.1] Sageness: "un 5% di probabilita per livello di
 # inventare o scoprire qualcosa di utile" -- see module docstring.
 SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL = 0.05
+
+# Phase 699: `AdvancedAbility.SUPER_SAGE_I`-`V`'s own real, identical
+# text (`models/advanced_ability.py`): "an additional plus 5 when
+# researching inventions if he is at his University... the starting
+# province of the hero or king." A leader only ever holds one Advanced
+# Ability per category (Phase 128), so holding any one of the 5
+# mutually-exclusive tiers grants the identical flat bonus -- there is
+# no magnitude difference between tiers to model.
+SUPER_SAGE_UNIVERSITY_BONUS = 0.05
+SUPER_SAGE_ABILITIES = frozenset(
+    {
+        AdvancedAbility.SUPER_SAGE_I,
+        AdvancedAbility.SUPER_SAGE_II,
+        AdvancedAbility.SUPER_SAGE_III,
+        AdvancedAbility.SUPER_SAGE_IV,
+        AdvancedAbility.SUPER_SAGE_V,
+    }
+)
 
 # RULES.AK [6.1] "Types of Armies", quoted in full in the module
 # docstring's Phase 263 note: the complete training-maneuvers table for
@@ -918,9 +944,26 @@ def _roll_sage_device_discovery(
     co-practicer gets their own independent roll off their own
     pre-attempt level, exactly as if practicing alone. See module
     docstring's own Phase 396 addendum.
+
+    Phase 699: `SUPER_SAGE_UNIVERSITY_BONUS` (+0.05, "all percentage
+    bonuses are cumulative") is added flat when the leader currently
+    holds any `SUPER_SAGE_ABILITIES` tier and is physically at their
+    own real birth province (`LeaderState.birth_x`/`birth_y`, Phase
+    505 -- "the starting province of the hero or king... at Turn 0"),
+    the same `HexCoord(leader.birth_x, leader.birth_y)` lookup shape
+    `turn/hire_pay.py required_pay()` already established. No new
+    state or caller-side plumbing needed -- both the ability and the
+    birth coordinate already live on `leader` itself.
     """
 
-    device_discovered = rng.random() < current_skill * SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL
+    at_university = (
+        bool(leader.advanced_abilities & SUPER_SAGE_ABILITIES)
+        and leader.birth_x is not None
+        and leader.birth_y is not None
+        and leader.location == HexCoord(leader.birth_x, leader.birth_y)
+    )
+    university_bonus = SUPER_SAGE_UNIVERSITY_BONUS if at_university else 0.0
+    device_discovered = rng.random() < current_skill * SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL + university_bonus
     discovery_granted: Discovery | None = None
     if device_discovered and leader.kingdom_id is not None:
         kingdom = state.kingdoms.get(leader.kingdom_id)
