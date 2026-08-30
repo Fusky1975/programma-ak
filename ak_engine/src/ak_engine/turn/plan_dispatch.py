@@ -749,12 +749,17 @@ def _dispatch_aspy(
     caster_has_detect_align = leader is not None and AdvancedAbility.KNOW_ALIGNMENT_TALENT in leader.advanced_abilities
     psychic_mage_holder = resolve_office_holder(state, Office.PSYCHIC_MAGE)
     caster_holds_psychic_mage_office = psychic_mage_holder is not None and psychic_mage_holder.leader_id == leader_id
+    # Phase 694: same real-possession pattern, for Druidic Animal Spies.
+    caster_has_druidic_animal_spies = (
+        leader is not None and AdvancedAbility.DRUIDIC_ANIMAL_SPIES in leader.advanced_abilities
+    )
     return execute_aspy(
         state,
         leader_id,
         request,
         caster_has_detect_align=caster_has_detect_align,
         caster_holds_psychic_mage_office=caster_holds_psychic_mage_office,
+        caster_has_druidic_animal_spies=caster_has_druidic_animal_spies,
         rng=rng,
     )
 

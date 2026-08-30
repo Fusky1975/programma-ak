@@ -161,6 +161,20 @@ right before that report is built. **Not wired here**: Trail
 own action executor with its own real "qualifying" moment to identify
 first, left for its own future phase rather than assumed identical to
 ASpy's own always-fires shape.
+
+**Phase 694 -- Druidic Animal Spies.** ``models/advanced_ability.py
+ADVANCED_ABILITY_DESCRIPTION[DRUIDIC_ANIMAL_SPIES]``: "When the Druid
+issues a Spy order (SP), animals will scout adjacent provinces, then
+come back and squeak their little reports... However, only military
+forces are reported." ``SpyReport.adjacent_military_forces`` reuses
+the same ``neighbors()``/``_army_display_name()`` primitives already
+built for ``adjacent_owners``/``garrison_army_names`` above, applied
+one hex further out -- every army at each real adjacent province
+(commanded or not; the sourced text draws no such distinction the way
+``garrison_army_names`` does for the caster's own province), gated on
+the new ``caster_has_druidic_animal_spies`` flag (empty dict without
+it, the same "caller-computed boolean" convention already used for
+``caster_holds_psychic_mage_office``/``caster_has_detect_align``).
 """
 
 from __future__ import annotations
@@ -275,6 +289,14 @@ class SpyReport:
     # is returned. Empty whenever nothing was obtained (including every
     # pre-Phase-267 caller). See module docstring.
     discoveries_obtained: tuple[Discovery, ...] = ()
+    # Phase 694: `AdvancedAbility.DRUIDIC_ANIMAL_SPIES`'s own real
+    # description -- "animals will scout adjacent provinces... only
+    # military forces are reported." Real army display names for every
+    # army sitting in each adjacent province with real data (whether
+    # commanded or not -- the sourced text draws no such distinction,
+    # unlike `garrison_army_names` above). Empty dict for any caster who
+    # doesn't hold the Advanced Ability.
+    adjacent_military_forces: dict[HexCoord, tuple[str, ...]] = field(default_factory=dict)
 
 
 def execute_aspy(
@@ -286,6 +308,7 @@ def execute_aspy(
     board_height: int = NORMAL_MAP_BOUNDS[1],
     caster_holds_psychic_mage_office: bool = False,
     caster_has_detect_align: bool = False,
+    caster_has_druidic_animal_spies: bool = False,
     rng: random.Random | None = None,
 ) -> SpyReport | None:
     """Builds the intelligence report for the caster's own current province.
@@ -299,6 +322,9 @@ def execute_aspy(
     ``estimate_temper()`` for the ``spotted_characters`` list -- see the
     module docstring's "Spotted characters (Phase 139)" section for why
     these are two separate flags, not one.
+
+    ``caster_has_druidic_animal_spies`` (Phase 694) populates ``SpyReport.
+    adjacent_military_forces`` -- see that field's own docstring.
     """
 
     del request  # see module docstring
@@ -310,10 +336,15 @@ def execute_aspy(
 
     bounds = MapBounds(board_width, board_height)
     adjacent_owners: dict[HexCoord, int | None] = {}
+    adjacent_military_forces: dict[HexCoord, tuple[str, ...]] = {}
     for neighbor_coord in neighbors(leader.location, bounds):
         neighbor_province = state.provinces.get(neighbor_coord)
         if neighbor_province is not None:
             adjacent_owners[neighbor_coord] = neighbor_province.owner_kingdom_id
+            if caster_has_druidic_animal_spies:
+                adjacent_military_forces[neighbor_coord] = tuple(
+                    _army_display_name(state, army) for army in state.armies_at(neighbor_coord)
+                )
 
     recruitable = [
         army_type for army_type in ArmyType if is_army_type_compatible_with_race(army_type, province.race)
@@ -396,4 +427,5 @@ def execute_aspy(
         garrison_army_names=garrison_army_names,
         tax_estimate=tax_estimate,
         discoveries_obtained=discoveries_obtained,
+        adjacent_military_forces=adjacent_military_forces,
     )

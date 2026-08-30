@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
@@ -448,3 +449,64 @@ def test_execute_aspy_reports_no_discoveries_when_target_kingdom_has_none():
     report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.5, 0.5]))
 
     assert report.discoveries_obtained == ()
+
+
+# -- Phase 694: Druidic Animal Spies -----------------------------------
+
+
+def test_execute_aspy_adjacent_military_forces_empty_without_the_ability():
+    state = _state()
+    neighbor = HexCoord(4, 9)  # adjacent to (3, 9) on the odd-r grid
+    state.add_province(ProvinceState(neighbor, Terrain.FOREST, Race.ELVEN, owner_kingdom_id=2))
+    state.add_army(ArmyState(1, 2, ArmyType.AXEMEN, Quality.AVERAGE, neighbor))
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.adjacent_military_forces == {}
+
+
+def test_execute_aspy_reports_adjacent_military_forces_with_the_ability():
+    state = _state()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.DRUIDIC_ANIMAL_SPIES)
+    neighbor = HexCoord(4, 9)
+    state.add_province(ProvinceState(neighbor, Terrain.FOREST, Race.ELVEN, owner_kingdom_id=2))
+    state.add_army(ArmyState(1, 2, ArmyType.AXEMEN, Quality.AVERAGE, neighbor))
+
+    report = execute_aspy(state, LEADER_ID, _request(), caster_has_druidic_animal_spies=True)
+
+    expected = make_army_name(1, ArmyType.AXEMEN, Race.HUMAN)  # kingdom 2 is never registered -- Race.HUMAN fallback
+    assert report.adjacent_military_forces == {neighbor: (expected,)}
+
+
+def test_execute_aspy_adjacent_military_forces_include_commanded_armies_too():
+    # Unlike garrison_army_names (unled only, at the caster's own
+    # province), the sourced text draws no such distinction for adjacent
+    # provinces -- a commanded army is reported too.
+    state = _state()
+    neighbor = HexCoord(4, 9)
+    state.add_province(ProvinceState(neighbor, Terrain.FOREST, Race.ELVEN, owner_kingdom_id=2))
+    state.add_leader(LeaderState(2, 2, "Foreign Commander", neighbor))
+    state.add_army(ArmyState(1, 2, ArmyType.AXEMEN, Quality.AVERAGE, neighbor, commanded_by=2))
+
+    report = execute_aspy(state, LEADER_ID, _request(), caster_has_druidic_animal_spies=True)
+
+    expected = make_army_name(1, ArmyType.AXEMEN, Race.HUMAN)
+    assert report.adjacent_military_forces == {neighbor: (expected,)}
+
+
+def test_execute_aspy_adjacent_military_forces_empty_tuple_for_a_forceless_neighbor():
+    state = _state()
+    neighbor = HexCoord(4, 9)
+    state.add_province(ProvinceState(neighbor, Terrain.FOREST, Race.ELVEN, owner_kingdom_id=2))
+
+    report = execute_aspy(state, LEADER_ID, _request(), caster_has_druidic_animal_spies=True)
+
+    assert report.adjacent_military_forces == {neighbor: ()}
+
+
+def test_execute_aspy_adjacent_military_forces_omits_unknown_neighboring_hexes():
+    state = _state()
+
+    report = execute_aspy(state, LEADER_ID, _request(), caster_has_druidic_animal_spies=True)
+
+    assert report.adjacent_military_forces == {}

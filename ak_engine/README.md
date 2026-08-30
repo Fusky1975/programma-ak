@@ -28985,7 +28985,7 @@ follow-up request after the original 431-435 plan shipped.
   that needed a second `0.5` value for `add_experience()`'s own
   triangular-distribution draw. This closes the entire twelfth survey.
 
-- **Phase 693 (current)**: a thirteenth fresh codebase survey
+- **Phase 693**: a thirteenth fresh codebase survey
   (2026-08-30, "continua", widened into the Archery/Druidism/Spy/Super
   Sage `AdvancedAbility` categories the eleventh/twelfth surveys
   flagged as unmined) picks `AdvancedAbility.MARCH_THROUGH_FLOODS`:
@@ -29022,6 +29022,27 @@ follow-up request after the original 431-435 plan shipped.
   concrete candidates from this survey (Archery's Short/Long Range
   members, Druidic Animal Spies, Spy Super Sleuth) remain open for a
   future phase.
+
+- **Phase 694 (current)**: picks `AdvancedAbility.DRUIDIC_ANIMAL_SPIES`
+  from the thirteenth survey's own remaining candidates: "The Druid is
+  able to befriend the small animals and birds, who willingly serve as
+  spies. When the Druid issues a Spy order (SP), animals will scout
+  adjacent provinces, then come back and squeak their little reports...
+  However, only military forces are reported." New `SpyReport.
+  adjacent_military_forces: dict[HexCoord, tuple[str, ...]]` reuses
+  `turn/aspy_execution.py`'s own already-built `neighbors()`/
+  `_army_display_name()` primitives (already computing `adjacent_
+  owners`/`garrison_army_names` for the caster's own province), applied
+  one hex further out -- every army at each real adjacent province,
+  commanded or not (the sourced text draws no such distinction the way
+  `garrison_army_names` does), gated on a new `caster_has_druidic_
+  animal_spies` flag wired the same "caller-computed boolean" way as
+  the existing `caster_holds_psychic_mage_office`/`caster_has_detect_
+  align` flags. Test count: 5817 -> 5823 (net +6). Full suite verified
+  green (unchanged, 5817) before writing a single new test; every new
+  test passed on the first run. Two more real candidates (Archery's
+  Short/Long Range members, Spy Super Sleuth) remain open for a future
+  phase.
 
 ## Setup
 

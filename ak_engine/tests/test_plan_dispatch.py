@@ -1018,6 +1018,24 @@ def test_dispatch_aspy_without_psychic_mage_title_estimates_temper_imperfectly()
     assert spotted.estimated_temper is Temper.BERSERK
 
 
+def test_dispatch_aspy_wires_druidic_animal_spies_from_the_leaders_own_advanced_ability():
+    # Phase 694: dispatch_phase() derives caster_has_druidic_animal_spies
+    # the same real-possession pattern as KNOW_ALIGNMENT_TALENT/PSYCHIC_
+    # MAGE above -- an adjacent province's own military forces are only
+    # reported when the caster holds the Advanced Ability.
+    origin = HexCoord(3, 9)
+    neighbor = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {neighbor: Terrain.FOREST})
+    state.add_army(ArmyState(99, 2, ArmyType.AXEMEN, Quality.AVERAGE, neighbor))
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.DRUIDIC_ANIMAL_SPIES)
+    phase = PlanPhase(label="P0", action=ActionCode.ASPY, obj=304, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert neighbor in result.adjacent_military_forces
+    assert len(result.adjacent_military_forces[neighbor]) == 1
+
+
 def test_dispatch_defend_is_decode_only():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P0", action=ActionCode.DEFEND, obj=304, extra=[0])
