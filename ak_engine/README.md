@@ -28826,7 +28826,7 @@ follow-up request after the original 431-435 plan shipped.
   own `ScriptedRandom` queues extended to account for the new RNG draws
   (confirmed by running, not assumed).
 
-- **Phase 687 (current)**: comment-only, no behavior change. A ninth
+- **Phase 687**: comment-only, no behavior change. A ninth
   fresh codebase survey (2026-08-30, "prossimo gap") found `turn/
   emperor_election.py`'s own Phase 464 note still claiming the `V`
   vote command's `ballots` assembly was "still not wired... this
@@ -28837,6 +28837,37 @@ follow-up request after the original 431-435 plan shipped.
   process_turn()`. The 25th recurrence of this project's own "later
   phase closed it, nobody updated the earlier note" pattern. Test
   count: 5770 (unchanged).
+
+- **Phase 688 (current)**: closes the ninth survey's own item #2 --
+  Scout's "two orders = consent" gate now actually reaches the
+  Feature->Power cost system. `PROSE/PCOND.X2` (user-supplied, quoted 3
+  times verbatim, once per condition except the cost) confirms "to
+  accept these terms, a character must give two Scout orders when
+  Searching this feature" for exactly the 3 conditions that cost the
+  character something -- `PayUp`/`DrainSkill`/`DrainCourage`. `turn/
+  search_execution.py _apply_scout()` already counted the real Scout
+  tactics given (`scout_orders_given`) and called `resolve_feature_
+  power_attempt()` a few lines later, but never passed the count
+  through -- `turn/feature_power_execution.py _apply_condition_gate()`
+  applied these 3 costs (treasury debit / skill drain / temper drain)
+  unconditionally, with no consent check at all. Fixed by threading
+  `scout_orders_given` through both real call sites to a new check in
+  `_apply_condition_gate()`, checked *first* (a precondition for being
+  offered the terms at all, not a tiebreaker among the other refusal
+  reasons) -- refuses with `"needs two Scout orders to accept these
+  terms"` below the threshold. Also corrected a second, adjacent stale
+  claim in the same docstring ("no Feature is ever assigned a Power,"
+  stale since Phase 616-623). A dedicated Explore-agent audit of every
+  real call site found exactly 9 existing tests needing an update (7
+  needed a 2nd Scout order or `scout_orders_given=2` to keep passing
+  for the right reason; 2 more surfaced during implementation the same
+  way), plus one pre-existing test tightened (it never checked
+  `.applied`, so it would have kept passing green even once the new
+  gate silently degraded it) and one pre-existing gap closed in passing
+  (`PowerCondition.DRAIN_SKILL` had zero dedicated tests anywhere).
+  Test count: 5770 -> 5776 (net +6). Full suite verified green
+  (unchanged, 5770) before touching a single test -- confirming the
+  predicted breakage by running, not assuming.
 
 ## Setup
 

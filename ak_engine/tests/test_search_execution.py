@@ -4150,7 +4150,12 @@ def test_execute_search_scout_full_discovery_applies_a_tractable_feature_power()
     state.add_feature(
         Feature(feature_id=5, coord=LOCATION, kind=FeatureType.TEMPLE, guardian_monster=Monster.GARGOYLE)
     )
-    request = _scout_request(5, Maneuver.MELEE, Maneuver.SCOUT)
+    # Phase 688: 2 Scout orders are the real PCOND.X2 consent signal for
+    # this power's own DRAIN_COURAGE condition -- without them, the real
+    # gate now refuses the attempt outright (a coverage gap this test
+    # used to have: it never checked `.applied`, so it kept passing green
+    # even when the underlying effect silently stopped firing).
+    request = _scout_request(5, Maneuver.MELEE, Maneuver.SCOUT, Maneuver.SCOUT)
 
     with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
@@ -4159,6 +4164,11 @@ def test_execute_search_scout_full_discovery_applies_a_tractable_feature_power()
     assert state.features[5].discovery_level(1) == 3
     assert result.feature_power_outcome is not None
     assert result.feature_power_outcome.power is Power.UP_SKILL
+    # UP_SKILL's own roll is genuinely probabilistic (skill=0, aptitude=0
+    # here -> 50/50) -- this only proves the real Scout-consent gate was
+    # satisfied (2 Scout orders given), not a specific roll outcome.
+    assert result.feature_power_outcome.reason != "needs two Scout orders to accept these terms"
+    assert state.leaders[LEADER_ID].temper is Temper.CAUTIOUS  # DRAIN_COURAGE's own real cost, BRAVE -1 step
 
 
 def test_execute_search_scout_full_discovery_leaves_a_powerless_feature_unapplied():
@@ -4214,7 +4224,9 @@ def test_execute_search_scout_cast_spell_success_casts_flood_on_the_provinces_ow
     state.add_feature(
         Feature(feature_id=7, coord=LOCATION, kind=FeatureType.TOMB, guardian_monster=Monster.GARGOYLE)
     )
-    request = _scout_request(7, Maneuver.MELEE, Maneuver.SCOUT)
+    # Phase 688: 2 Scout orders are the real PCOND.X2 consent signal for
+    # this power's own PAY_UP condition.
+    request = _scout_request(7, Maneuver.MELEE, Maneuver.SCOUT, Maneuver.SCOUT)
 
     with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
@@ -4244,7 +4256,9 @@ def test_execute_search_scout_cast_spell_success_casts_oratory_on_the_scouting_l
     state.add_feature(
         Feature(feature_id=13, coord=LOCATION, kind=FeatureType.PYRAMID, guardian_monster=Monster.GARGOYLE)
     )
-    request = _scout_request(13, Maneuver.MELEE, Maneuver.SCOUT)
+    # Phase 688: 2 Scout orders are the real PCOND.X2 consent signal for
+    # this power's own PAY_UP condition.
+    request = _scout_request(13, Maneuver.MELEE, Maneuver.SCOUT, Maneuver.SCOUT)
 
     with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
@@ -4295,7 +4309,9 @@ def test_execute_search_scout_map_prov_reveals_unknown_provinces():
     state.add_feature(
         Feature(feature_id=171, coord=LOCATION, kind=FeatureType.PYRAMID, guardian_monster=Monster.GARGOYLE)
     )
-    request = _scout_request(171, Maneuver.MELEE, Maneuver.SCOUT)
+    # Phase 688: 2 Scout orders are the real PCOND.X2 consent signal for
+    # this power's own PAY_UP condition.
+    request = _scout_request(171, Maneuver.MELEE, Maneuver.SCOUT, Maneuver.SCOUT)
 
     with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)

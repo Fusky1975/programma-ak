@@ -127,7 +127,7 @@ def test_resolve_feature_power_attempt_pay_up_debits_treasury():
     feature = _feature(7, 1703, FeatureType.PYRAMID)
     event = derive_feature_event(feature)
     assert event.condition is PowerCondition.PAY_UP and event.cost == 10
-    resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+    resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=2)
     assert state.kingdoms[1].treasury == 90
 
 
@@ -137,7 +137,7 @@ def test_resolve_feature_power_attempt_pay_up_refuses_on_insufficient_gold():
     state.kingdoms[1].treasury = 5
     feature = _feature(7, 1703, FeatureType.PYRAMID)
     event = derive_feature_event(feature)
-    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=2)
     assert result.applied is False
     assert result.reason == "insufficient gold"
     assert state.kingdoms[1].treasury == 5
@@ -148,7 +148,7 @@ def test_resolve_feature_power_attempt_drain_courage_steps_temper_down():
     feature = _feature(5, 301, FeatureType.TEMPLE)
     event = derive_feature_event(feature)
     assert event.condition is PowerCondition.DRAIN_COURAGE
-    resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+    resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=2)
     assert state.leaders[LEADER_ID].temper is Temper.CAUTIOUS
 
 
@@ -156,9 +156,106 @@ def test_resolve_feature_power_attempt_drain_courage_refuses_a_coward():
     state = _state_with_leader(temper=Temper.COWARDLY)
     feature = _feature(5, 301, FeatureType.TEMPLE)
     event = derive_feature_event(feature)
-    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=2)
     assert result.applied is False
     assert result.reason == "a Coward may not use this feature"
+
+
+# -- Phase 688: the two-Scout-orders consent gate (PCOND.X2) --
+
+
+def test_apply_condition_gate_pay_up_refuses_without_two_scout_orders():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.kingdoms[1].treasury = 100
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    event = FeaturePowerEvent(
+        power=Power.NEW_TEMP, magic_feature=MagicFeature.LAMP, condition=PowerCondition.PAY_UP, cost=10
+    )
+    for scout_orders_given in (0, 1):
+        result = resolve_feature_power_attempt(
+            state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=scout_orders_given
+        )
+        assert result.applied is False
+        assert result.reason == "needs two Scout orders to accept these terms"
+    assert state.kingdoms[1].treasury == 100  # refused -- no partial cost applied
+
+
+def test_apply_condition_gate_drain_courage_refuses_without_two_scout_orders():
+    state = _state_with_leader(temper=Temper.BRAVE)
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    event = FeaturePowerEvent(
+        power=Power.NEW_TEMP, magic_feature=MagicFeature.LAMP, condition=PowerCondition.DRAIN_COURAGE, cost=0
+    )
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=1)
+    assert result.applied is False
+    assert result.reason == "needs two Scout orders to accept these terms"
+    assert state.leaders[LEADER_ID].temper is Temper.BRAVE  # refused -- no partial cost applied
+
+
+def test_apply_condition_gate_drain_skill_refuses_without_two_scout_orders():
+    state = _state_with_leader(skills=_skilled_leader(Ability.MELEE, 3, 9).skills)
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    event = FeaturePowerEvent(
+        power=Power.UP_SKILL,
+        magic_feature=MagicFeature.LAMP,
+        ability_parameter=Ability.MELEE,
+        condition=PowerCondition.DRAIN_SKILL,
+        cost=1,
+    )
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=0)
+    assert result.applied is False
+    assert result.reason == "needs two Scout orders to accept these terms"
+    skill, _aptitude = state.leaders[LEADER_ID].skills.pair_for_ability(Ability.MELEE)
+    assert skill == 3  # refused -- no partial drain applied
+
+
+def test_apply_condition_gate_drain_skill_succeeds_with_two_scout_orders():
+    # Phase 688: DRAIN_SKILL had zero dedicated tests anywhere before this
+    # phase -- the one branch in _apply_condition_gate() with real
+    # internal looping/rng logic (skill-candidate selection). Uses
+    # NEW_SEX (unrelated to skills) so the drain itself isn't confounded
+    # by UP_SKILL's own separate, possibly-skill-increasing effect.
+    state = _state_with_leader(skills=_skilled_leader(Ability.MELEE, 3, 9).skills, sex=Sex.MALE)
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    event = FeaturePowerEvent(
+        power=Power.NEW_SEX, magic_feature=MagicFeature.LAMP, condition=PowerCondition.DRAIN_SKILL, cost=1
+    )
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=2)
+    assert result.reason != "needs two Scout orders to accept these terms"
+    assert result.reason != "insufficient skill levels"
+    assert result.applied is True
+    skill, _aptitude = state.leaders[LEADER_ID].skills.pair_for_ability(Ability.MELEE)
+    assert skill == 2  # the only ability with any skill to drain
+
+
+def test_apply_condition_gate_pay_up_succeeds_with_more_than_two_scout_orders():
+    # Proves ">= 2", not "== 2".
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.kingdoms[1].treasury = 100
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    event = FeaturePowerEvent(
+        power=Power.NEW_TEMP, magic_feature=MagicFeature.LAMP, condition=PowerCondition.PAY_UP, cost=10
+    )
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=3)
+    assert result.reason != "needs two Scout orders to accept these terms"
+    assert state.kingdoms[1].treasury == 90
+
+
+def test_apply_condition_gate_scout_orders_never_affect_unrelated_conditions():
+    # NEED_KING/SAME_ALIGN/G_TURN/PC_NONE are untouched by this gate --
+    # only PAY_UP/DRAIN_SKILL/DRAIN_COURAGE need consent.
+    state = _state_with_leader(alignment=Alignment.GOOD, is_king=True)
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    for condition, kwargs in (
+        (PowerCondition.NEED_KING, {}),
+        (PowerCondition.SAME_ALIGN, {"required_alignment": Alignment.GOOD}),
+        (PowerCondition.PC_NONE, {}),
+    ):
+        event = FeaturePowerEvent(power=Power.NEW_TEMP, magic_feature=MagicFeature.LAMP, condition=condition, **kwargs)
+        result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=0)
+        assert result.reason != "needs two Scout orders to accept these terms"
 
 
 def test_resolve_feature_power_attempt_same_align_gates_on_alignment():
@@ -214,7 +311,7 @@ def test_up_skill_succeeds_and_increments_when_roll_favors_it():
     event = derive_feature_event(feature)
     assert event.power is Power.UP_SKILL
     assert event.ability_parameter is Ability.MELEE
-    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=2)
     assert result.applied is True
     skill, _aptitude = state.leaders[LEADER_ID].skills.pair_for_ability(ability)
     assert skill == 1
@@ -227,7 +324,7 @@ def test_up_skill_at_limit_is_a_real_no_op():
     state.add_leader(_skilled_leader(ability, skill=4, aptitude=4, temper=Temper.BRAVE))
     feature = _feature(5, 301, FeatureType.TEMPLE)
     event = derive_feature_event(feature)
-    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=2)
     assert result.applied is True
     assert result.at_limit is True
     skill, _aptitude = state.leaders[LEADER_ID].skills.pair_for_ability(ability)

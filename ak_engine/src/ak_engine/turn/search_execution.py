@@ -346,14 +346,13 @@ mechanic" is now corrected below.
   partial branch (Steal's/Flee's own named chance) reaches level 2 ("a
   magic-power hint is known," per that field's own docstring) --
   matching "told... it is there, but not find out what it does"
-  literally. Never lowers an already-higher level. **What Scout would
-  actually reveal (the Special's own real content) is not modeled at
-  all**: no ``Feature`` in this project is ever assigned a ``Power``/
-  ``PowerCondition`` (``models/power.py``'s own vocabulary is never
-  wired to a real instance, and ``turn/world_generation.py`` never
-  assigns one) -- confirmed directly with the user (project author),
-  who chose this narrower scope explicitly rather than first building
-  that missing link.
+  literally. Never lowers an already-higher level. **Stale as of Phase
+  688 -- this used to say "no `Feature` in this project is ever
+  assigned a `Power`/`PowerCondition`," confirmed with the user as a
+  deliberate narrower scope.** Phases 616-623 closed that gap in full:
+  every real `Feature` now resolves a real `Power`/`PowerCondition` via
+  `turn/feature_power_execution.py derive_feature_event()`, called
+  right below for a full discovery.
 
   **Two Scout orders, sourced from ``PROSE/PCOND.X2`` (user-supplied,
   project-original)**: the game's own PowerCondition-rejection prose
@@ -363,12 +362,12 @@ mechanic" is now corrected below.
   terms, a character must give two Scout orders when Searching this
   feature" (quoted three times, once per condition, verbatim except for
   the specific cost named). ``SearchExecutionResult.scout_orders_given``
-  records the real count (>=2 meaning "consent given") -- a confirmed,
-  sourced fact with nothing to consume it yet, the same "confirmed
-  mechanic, no consumer yet" scoping this module already uses elsewhere
-  (e.g. Invisibility's own Steal bonus, module docstring's Phase 186
-  note) -- since no ``Feature`` ever carries a ``Power``/
-  ``PowerCondition`` to actually consent to in the first place.
+  records the real count (>=2 meaning "consent given"). **Stale as of
+  Phase 688 -- this used to say "nothing to consume it yet."** Both
+  real call sites below now pass it through as `resolve_feature_power_
+  attempt()`'s own `scout_orders_given` keyword, and `turn/feature_
+  power_execution.py _apply_condition_gate()` refuses a `PayUp`/
+  `DrainSkill`/`DrainCourage` attempt outright below that threshold.
 
 **Phase 289 addendum -- Words of Healing wired, completing the
 Personal-Combat spell engine's own spell coverage; spell disruption's
@@ -837,9 +836,9 @@ class SearchExecutionResult:
     request: SearchRequest | None = None
     # Phase 274: how many Scout tactics the plan actually listed -- set by
     # `_apply_scout()` regardless of whether Scout itself found anything.
-    # >=2 is PCOND.X2's own confirmed "consent given" signal for a Power
-    # condition this project has nothing yet to apply it to -- see
-    # `_apply_scout()`'s own docstring.
+    # >=2 is PCOND.X2's own confirmed "consent given" signal for a
+    # PayUp/DrainSkill/DrainCourage Power condition -- wired into that
+    # real gate since Phase 688, see `_apply_scout()`'s own docstring.
     scout_orders_given: int = 0
     # Phase 544: a Talk tactic's own Druid DR gate failed against a
     # guardian too unintelligent to be silently ignored (``mintel <
@@ -1099,7 +1098,9 @@ def _apply_scout(
             # Phase 622: CHANCE always resolves once `state` is given
             # (`GameState.gdday` always has a real value, even if a
             # placeholder default), so it needs no such fallback.
-            result.feature_power_outcome = resolve_feature_power_attempt(state, leader_id, feature, event, rng)
+            result.feature_power_outcome = resolve_feature_power_attempt(
+                state, leader_id, feature, event, rng, scout_orders_given=scout_count
+            )
         elif event.power in SA_ARGUMENT_POWERS:
             # Phase 619: the 5 Oracles/Recharge/Grant Wish/Gamble need
             # the Encounter Plan's own SAY tactic argument -- "just
@@ -1113,7 +1114,7 @@ def _apply_scout(
             say_tactic = next((t for t in request.tactics if t.maneuver is Maneuver.SAY), None)
             sa_argument = parse_sa_argument(say_tactic.say_text) if say_tactic is not None and say_tactic.say_text else None
             result.feature_power_outcome = resolve_feature_power_attempt(
-                state, leader_id, feature, event, rng, sa_argument=sa_argument
+                state, leader_id, feature, event, rng, sa_argument=sa_argument, scout_orders_given=scout_count
             )
 
 

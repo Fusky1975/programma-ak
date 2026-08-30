@@ -144,6 +144,16 @@ provinces) and its condition/cost gate was already fully wired since
 Phase 616 (`POWER_CONDITION_PAIRS[Power.MAP_PROV] = (PAY_UP,
 SAME_ALIGN, 10)`) -- only the effect itself was missing. Every real
 `Power` is now wired.
+
+**Phase 688 -- the two-Scout-orders consent gate.** `PROSE/PCOND.X2`
+(user-supplied, quoted 3 times verbatim, once per condition except for
+the specific cost named) confirms "to accept these terms, a character
+must give two Scout orders when Searching this feature" for exactly
+the 3 conditions that cost the character something -- `PAY_UP`,
+`DRAIN_SKILL`, `DRAIN_COURAGE`. `_apply_condition_gate()` now checks
+this first, before any of those 3 conditions' own cost-specific
+checks -- `turn/search_execution.py`'s own docstring used to say this
+had "nothing to consume it yet"; it does now.
 """
 
 from __future__ import annotations
@@ -419,13 +429,31 @@ class FeaturePowerAttemptResult:
     cast_spell: Spell | None = None
 
 
+_SCOUT_CONSENT_CONDITIONS = (PowerCondition.PAY_UP, PowerCondition.DRAIN_SKILL, PowerCondition.DRAIN_COURAGE)
+
+
 def _apply_condition_gate(
-    state: GameState, leader_id: int, feature: Feature, event: FeaturePowerEvent, rng: random.Random
+    state: GameState,
+    leader_id: int,
+    feature: Feature,
+    event: FeaturePowerEvent,
+    rng: random.Random,
+    *,
+    scout_orders_given: int = 0,
 ) -> str | None:
     """Checks/applies `event.condition` -- returns a real refusal reason
     string, or `None` if the attempt may proceed. Mutates `state`
     (treasury debit, skill drain, temper drain) only on a real accepted
     cost; a refusal never partially applies a cost.
+
+    `scout_orders_given` (Phase 688, default 0 -- fail-closed for a
+    caller that forgets to pass it) is `turn/search_execution.py
+    _apply_scout()`'s own real Scout-tactic count -- PCOND.X2's own "to
+    accept these terms, a character must give two Scout orders when
+    Searching this feature" is checked first, before any of `PAY_UP`/
+    `DRAIN_SKILL`/`DRAIN_COURAGE`'s own cost-specific checks below,
+    since it's a precondition for being offered the terms at all, not a
+    tiebreaker among other refusal reasons.
     """
 
     leader = state.leaders[leader_id]
@@ -436,6 +464,8 @@ def _apply_condition_gate(
         return "wrong alignment"
     if event.condition is PowerCondition.G_TURN and feature.power_used_turn == state.turn_number:
         return "already used this gameturn"
+    if event.condition in _SCOUT_CONSENT_CONDITIONS and scout_orders_given < 2:
+        return "needs two Scout orders to accept these terms"
 
     if event.condition is PowerCondition.PAY_UP:
         kingdom = state.kingdoms.get(leader.kingdom_id) if leader.kingdom_id is not None else None
@@ -473,6 +503,7 @@ def resolve_feature_power_attempt(
     rng: random.Random,
     *,
     sa_argument: int | None = None,
+    scout_orders_given: int = 0,
 ) -> FeaturePowerAttemptResult:
     """Applies `event`'s own real effect for `leader_id`, gating on
     `event.condition` first (`_apply_condition_gate()`). Only the 9
@@ -485,7 +516,10 @@ def resolve_feature_power_attempt(
     Encounter Plan's own `SAY` tactic argument, already recovered and
     parsed by the caller (`parse_sa_argument()`) -- `None` for every
     `TRACTABLE_POWERS` caller (unused) and for a `SA_ARGUMENT_POWERS`
-    call where no `SAY` tactic was given at all.
+    call where no `SAY` tactic was given at all. `scout_orders_given`
+    (Phase 688) is `_apply_scout()`'s own real Scout-tactic count for
+    this attempt -- see `_apply_condition_gate()`'s own Phase 688
+    addendum for what it gates.
 
     Thin wrapper around `_resolve_feature_power_attempt_effect()`: stamps
     `event.magic_feature` onto every real outcome (POWMSG.X2's own
@@ -494,7 +528,9 @@ def resolve_feature_power_attempt(
     returns having to repeat it.
     """
 
-    result = _resolve_feature_power_attempt_effect(state, leader_id, feature, event, rng, sa_argument)
+    result = _resolve_feature_power_attempt_effect(
+        state, leader_id, feature, event, rng, sa_argument, scout_orders_given=scout_orders_given
+    )
     return replace(result, magic_feature=event.magic_feature)
 
 
@@ -505,6 +541,8 @@ def _resolve_feature_power_attempt_effect(
     event: FeaturePowerEvent,
     rng: random.Random,
     sa_argument: int | None,
+    *,
+    scout_orders_given: int = 0,
 ) -> FeaturePowerAttemptResult:
     power = event.power
     if power in TERRAIN_SPELL_POWERS:
@@ -516,7 +554,7 @@ def _resolve_feature_power_attempt_effect(
     elif power not in TRACTABLE_POWERS and power not in SA_ARGUMENT_POWERS:
         return FeaturePowerAttemptResult(power=power, applied=False, reason="power not yet wired")
 
-    refusal = _apply_condition_gate(state, leader_id, feature, event, rng)
+    refusal = _apply_condition_gate(state, leader_id, feature, event, rng, scout_orders_given=scout_orders_given)
     if refusal is not None:
         return FeaturePowerAttemptResult(power=power, applied=False, reason=refusal)
 
