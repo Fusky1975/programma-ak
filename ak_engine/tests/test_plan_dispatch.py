@@ -277,6 +277,24 @@ def test_dispatch_lmove_wires_march_cavalry_from_the_leaders_own_advanced_abilit
     assert state.armies[army_id].march_bonus_applied_this_turn is True
 
 
+def test_dispatch_lmove_wires_march_through_floods_from_the_leaders_own_advanced_ability():
+    # Phase 693: dispatch_phase() derives has_march_through_floods the
+    # same real-possession pattern as the other March members -- a land
+    # army entering a Flood-affected province pays the extra movement
+    # point deduction.
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    state.provinces[target].owner_kingdom_id = 1  # no conquest -- base cost stays 1
+    state.provinces[target].terrain_override = Terrain.SEA
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.MARCH_THROUGH_FLOODS)
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert state.armies[army_id].movement_points == 3  # 5 - base(1) - flood(1)
+
+
 def test_dispatch_lmove_wires_naval_skill_level_from_the_leaders_own_naval_ability():
     # Phase 523: dispatch_phase() derives naval_skill_level from the
     # leader's own real effective_skill_level(Ability.NAVAL) -- a Fleet

@@ -28907,7 +28907,7 @@ follow-up request after the original 431-435 plan shipped.
   Full suite verified green (unchanged, 5776) before writing a single
   new test; every new test passed on the first run.
 
-- **Phase 691 (current)**: a twelfth fresh codebase survey (2026-08-30,
+- **Phase 691**: a twelfth fresh codebase survey (2026-08-30,
   "continua", widened past the magic-college `AdvancedAbility` table
   into the other 10 skill categories) found `ArmyType.DINOSAURS`
   existed as a bare enum member with zero stats -- deliberately, since
@@ -28949,7 +28949,7 @@ follow-up request after the original 431-435 plan shipped.
   assertion line and one pre-existing test's own now-stale "Dinosaurs
   have no rulebook mechanics" claim.
 
-- **Phase 692 (current)**: closes [[project_twelfth_survey_2026_08_30]]'s
+- **Phase 692**: closes [[project_twelfth_survey_2026_08_30]]'s
   second item -- `AdvancedAbility.THIEF_BANDITRY`/`THIEF_PIRACY`, real,
   fully-sourced descriptions with zero implementation anywhere in `turn/`.
   BANDITRY: "Whenever he practices thievery (the '(PR) TH' action) in
@@ -28984,6 +28984,44 @@ follow-up request after the original 431-435 plan shipped.
   new test; every new test passed after fixing one scripted-RNG test
   that needed a second `0.5` value for `add_experience()`'s own
   triangular-distribution draw. This closes the entire twelfth survey.
+
+- **Phase 693 (current)**: a thirteenth fresh codebase survey
+  (2026-08-30, "continua", widened into the Archery/Druidism/Spy/Super
+  Sage `AdvancedAbility` categories the eleventh/twelfth surveys
+  flagged as unmined) picks `AdvancedAbility.MARCH_THROUGH_FLOODS`:
+  "By using pontoon bridges, ferries and so forth, it becomes possible
+  for armies to enter or leave any province affected by the Flood
+  spell. One movement point is deducted from all units which have to
+  use this ability, after they have moved." `turn/move_execution.py`'s
+  own Phase 521 addendum had called this "deliberately not addressed...
+  needs a persistent per-province 'currently flooded' flag this
+  project's own `_execute_flood()` never sets" -- a stale claim,
+  verified directly: `_execute_flood()` (`turn/cast_execution.py`) sets
+  `ProvinceState.terrain_override = Terrain.SEA`, and `effective_
+  terrain()` has read that field since Phase 225/226, over 166 phases
+  before Phase 521 wrote the "doesn't exist" note. New `is_flooded_
+  province()` reads that same override unambiguously (Part Sea sets
+  the opposite direction, `terrain_override = Terrain.PLAINS`, and
+  Flood only ever targets a non-Sea terrain to begin with). Since this
+  project has no general terrain-movement-legality gate anywhere (no
+  code blocks a land army from entering a Sea-terrain province, flooded
+  or naturally Sea, at all), the ability's own "becomes possible to
+  enter/leave" framing is read the same way Phase 651 (Illusory Fog)
+  already read an analogous "must expend 1 additional movement point"
+  clause: a movement-point surcharge for land armies making such a
+  move, not an invented blocking mechanic for a restriction this
+  project doesn't otherwise model. Wired via the exact same "caller-
+  computed boolean" pattern the other March members already use
+  (`turn/plan_dispatch.py` resolves `has_march_through_floods` from the
+  leader's own `advanced_abilities`, threaded into `execute_move()`).
+  Test count: 5809 -> 5817 (net +8). Full suite verified green
+  (unchanged, 5809) before writing a single new test; every new test
+  passed after fixing one test's own province-ownership setup (an
+  unowned target province triggered an unrelated conquest surcharge,
+  confounding the exact movement-point assertion). Three more real,
+  concrete candidates from this survey (Archery's Short/Long Range
+  members, Druidic Animal Spies, Spy Super Sleuth) remain open for a
+  future phase.
 
 ## Setup
 

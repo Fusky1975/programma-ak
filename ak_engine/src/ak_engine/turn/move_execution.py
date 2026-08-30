@@ -234,6 +234,26 @@ def march_movement_point_bonus(
     return 0
 
 
+# Phase 693: AdvancedAbility.MARCH_THROUGH_FLOODS's own real text --
+# "One movement point is deducted from all units which have to use
+# this ability, after they have moved." See module docstring's own
+# Phase 693 addendum for the full reasoning.
+MARCH_THROUGH_FLOODS_EXTRA_MOVEMENT_COST = 1
+
+
+def is_flooded_province(province: ProvinceState) -> bool:
+    """True when ``province``'s own current terrain was overridden to Sea by
+    Flood (``turn/cast_execution.py _execute_flood()``), not because it's
+    naturally Sea terrain. Unambiguous: Part Sea sets the opposite
+    direction (``terrain_override = Terrain.PLAINS``), and ``_execute_
+    flood()`` only ever succeeds starting from a non-Sea terrain
+    (``_FLOOD_ELIGIBLE_TERRAIN``), so a real Sea-terrain province is
+    never itself the target of a Flood cast.
+    """
+
+    return province.terrain_override is Terrain.SEA
+
+
 def naval_movement_point_bonus(naval_skill_level: int) -> int:
     """AKGEN_reverse_engineering_report (3).md SS99 (`AKE.EXE:0x21F6A-
     0x22080 MovementBonus`): for Whale League/Fleet/Mermen (`models/
@@ -533,6 +553,7 @@ def execute_move(
     has_march_cavalry_mastery: bool = False,
     has_march_infantry: bool = False,
     has_march_infantry_mastery: bool = False,
+    has_march_through_floods: bool = False,
     naval_skill_level: int = 0,
     has_naval_hug_coastline: bool = False,
 ) -> MoveExecutionResult:
@@ -571,14 +592,29 @@ def execute_move(
     narrowed the wording to exclude them -- **corrected in Phase 523**,
     see that addendum below.
 
-    Deliberately **not** addressed this phase: `AdvancedAbility.MARCH_
-    THROUGH_FLOODS` (needs a persistent per-province "currently
-    flooded" flag this project's own `_execute_flood()` never sets --
-    it only ever applies a one-time movement deduction to armies
-    present at cast time, nothing a later Move order could consult).
-    Left undone and documented here rather than guessed, the same "no
-    source, no guess" boundary Melee Control Temper's and Archery's own
-    residuals (Phases 519-520) already used. Naval's own movement-point
+    **Phase 693 -- `AdvancedAbility.MARCH_THROUGH_FLOODS`, closing the
+    stale blocker directly above (kept for history, corrected here).**
+    That note claimed this project's own `_execute_flood()` "never
+    sets" a persistent per-province "currently flooded" flag -- stale
+    since Phase 225/226, over 166 phases before this note was written:
+    `_execute_flood()` (`turn/cast_execution.py`) sets `ProvinceState.
+    terrain_override = Terrain.SEA`, and `effective_terrain()` has read
+    it ever since. That override is unambiguously Flood's own signal --
+    Part Sea sets the opposite direction (`terrain_override = Terrain.
+    PLAINS`), and every real Flood target starts from `_FLOOD_ELIGIBLE_
+    TERRAIN` (never a province already Sea) -- see `is_flooded_
+    province()` below. The sourced text itself -- "it becomes possible
+    for armies to enter or leave any province affected by the Flood
+    spell. One movement point is deducted from all units which have to
+    use this ability, after they have moved" -- is read the same way
+    Phase 651 (Illusory Fog's own "must expend 1 additional movement
+    point when entering or leaving it") already read an analogous
+    clause: this project has no general terrain-movement-legality gate
+    anywhere (no code blocks a land army from entering a Sea-terrain
+    province, flooded or naturally Sea, at all), so "becomes possible"
+    is modeled as a movement-point surcharge for land armies making
+    such a move, not as an invented blocking mechanic for a restriction
+    this project doesn't otherwise model. Naval's own movement-point
     bonus is closed in Phase 523, and both remaining Naval members
     (`NAVAL_LONG_DEFEND`, `NAVAL_HUG_COASTLINE`) are closed in Phase
     524 -- see the addenda below.
@@ -844,6 +880,15 @@ def execute_move(
         target_province.illusory_fog_active
     )
 
+    # Phase 693: AdvancedAbility.MARCH_THROUGH_FLOODS -- see module
+    # docstring's own Phase 693 addendum. Gated on the acting leader's
+    # own Advanced Ability, applied to every land army in the moving
+    # party (this project has no per-army-type gate for it, unlike
+    # Illusory Fog's own air-unit-only scope above).
+    flood_affected_move = has_march_through_floods and (
+        (origin_province is not None and is_flooded_province(origin_province)) or is_flooded_province(target_province)
+    )
+
     for army_id in army_ids:
         army = state.armies.get(army_id)
         if army is None:
@@ -867,6 +912,8 @@ def execute_move(
         army.movement_points -= cost
         if fog_affected_move and is_illusory_fog_affected_air_unit(army.army_type, mystic_winds_active_for(army, state)):
             army.movement_points -= ILLUSORY_FOG_EXTRA_MOVEMENT_COST
+        if flood_affected_move and is_land_army(army.army_type):
+            army.movement_points -= MARCH_THROUGH_FLOODS_EXTRA_MOVEMENT_COST
         if moved and army.location == current:
             army.location = actual_target
 

@@ -585,6 +585,8 @@ def dispatch_phase(
     has_march_infantry_mastery = (
         leader is not None and AdvancedAbility.MARCH_INFANTRY_MASTERY in leader.advanced_abilities
     )
+    # Phase 693: same real-possession pattern, for March Through Floods.
+    has_march_through_floods = leader is not None and AdvancedAbility.MARCH_THROUGH_FLOODS in leader.advanced_abilities
 
     # Phase 523: the leader's own real effective Naval skill level, not an
     # AdvancedAbility flag -- see move_execution.py's own Phase 523
@@ -611,6 +613,7 @@ def dispatch_phase(
             has_march_cavalry_mastery=has_march_cavalry_mastery,
             has_march_infantry=has_march_infantry,
             has_march_infantry_mastery=has_march_infantry_mastery,
+            has_march_through_floods=has_march_through_floods,
             naval_skill_level=naval_skill_level,
             has_naval_hug_coastline=has_naval_hug_coastline,
         )

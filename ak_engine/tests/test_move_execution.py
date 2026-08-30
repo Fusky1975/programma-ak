@@ -15,6 +15,7 @@ from ak_engine.turn.move_execution import (
     MARCH_ABILITY_BONUS,
     MARCH_MASTERY_ABILITY_BONUS,
     execute_move,
+    is_flooded_province,
     march_movement_point_bonus,
     naval_movement_point_bonus,
     record_kingdom_exploration,
@@ -924,6 +925,89 @@ def test_execute_move_no_illusory_fog_surcharge_when_neither_province_is_fogged(
     state.armies[101] = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, ORIGIN, movement_points=3)
 
     execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert state.armies[101].movement_points == 2
+
+
+# -- Phase 693: AdvancedAbility.MARCH_THROUGH_FLOODS --
+
+
+def test_is_flooded_province_true_only_for_a_flood_terrain_override():
+    flooded = ProvinceState(ORIGIN, Terrain.PLAINS, Race.HUMAN, terrain_override=Terrain.SEA)
+    assert is_flooded_province(flooded) is True
+
+    naturally_sea = ProvinceState(ORIGIN, Terrain.SEA, Race.HUMAN)
+    assert is_flooded_province(naturally_sea) is False
+
+    part_sea_reverted = ProvinceState(ORIGIN, Terrain.SEA, Race.HUMAN, terrain_override=Terrain.PLAINS)
+    assert is_flooded_province(part_sea_reverted) is False
+
+    untouched = ProvinceState(ORIGIN, Terrain.PLAINS, Race.HUMAN)
+    assert is_flooded_province(untouched) is False
+
+
+def test_execute_move_deducts_march_through_floods_surcharge_for_land_unit_entering_flooded_province():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1  # no battle/conquest -- base cost stays 1
+    state.provinces[TARGET].terrain_override = Terrain.SEA
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_through_floods=True)
+
+    assert state.armies[101].movement_points == 1  # 3 - base(1) - flood(1)
+
+
+def test_execute_move_deducts_march_through_floods_surcharge_for_land_unit_leaving_flooded_province():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.provinces[ORIGIN].terrain_override = Terrain.SEA  # flooded at the origin, not the destination
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_through_floods=True)
+
+    assert state.armies[101].movement_points == 1
+
+
+def test_execute_move_no_march_through_floods_surcharge_without_the_ability():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.provinces[TARGET].terrain_override = Terrain.SEA
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert state.armies[101].movement_points == 2  # 3 - base(1) only
+
+
+def test_execute_move_no_march_through_floods_surcharge_for_a_sea_going_army():
+    # The ability's own scope is land armies "entering or leaving" a
+    # flooded province -- a naturally sea-going type has no reason to
+    # need pontoon bridges/ferries at all.
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.provinces[TARGET].terrain_override = Terrain.SEA
+    state.armies[101] = ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_through_floods=True)
+
+    assert state.armies[101].movement_points == 2
+
+
+def test_execute_move_no_march_through_floods_surcharge_when_neither_province_is_flooded():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_through_floods=True)
+
+    assert state.armies[101].movement_points == 2
+
+
+def test_execute_move_no_march_through_floods_surcharge_for_a_naturally_sea_province():
+    # A province that's naturally Sea (no Flood ever cast on it) doesn't
+    # trigger the surcharge even with the ability -- is_flooded_province()
+    # is False for it, matching this ability's own real "affected by the
+    # Flood spell" scope, not "any Sea terrain."
+    state = base_state()
+    state.provinces[TARGET] = ProvinceState(TARGET, Terrain.SEA, Race.HUMAN, owner_kingdom_id=1)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_through_floods=True)
 
     assert state.armies[101].movement_points == 2
 
