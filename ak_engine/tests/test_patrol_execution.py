@@ -639,3 +639,23 @@ def test_execute_patrol_all_miss_credits_nothing():
         )
 
     mock_add_experience.assert_not_called()
+
+
+def test_execute_patrol_spy_assassinate_accepts_a_king_intruder():
+    # Phase 698: a King target would normally be refused outright here
+    # (patrol's own call site hardcodes mutual_encounter=False) -- the
+    # ability bypasses that unconditionally.
+    state = _base_state()
+    state.add_leader(
+        LeaderState(1, kingdom_id=1, name="Patroller", location=HOME, advanced_abilities={AdvancedAbility.SPY_ASSASSINATE})
+    )
+    state.add_leader(LeaderState(2, kingdom_id=2, name="King", location=HOME, is_king=True))
+
+    with patch("ak_engine.turn.patrol_execution.resolve_melee_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        result = execute_patrol(
+            state, 1, _melee_request(2), ScriptedRandom([]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
+        )
+
+    assert result.intercepted is True
+    assert result.combat_occurred is True

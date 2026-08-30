@@ -316,6 +316,7 @@ def execute_patrol(
         challenger_is_king=patroller.is_king,
         mutual_encounter=False,
         rng=rng,
+        has_spy_assassinate=AdvancedAbility.SPY_ASSASSINATE in patroller.advanced_abilities,
     )
     if not accepted:
         return PatrolExecutionResult(intercepted=True, target_leader_id=target.leader_id, reason="encounter refused")

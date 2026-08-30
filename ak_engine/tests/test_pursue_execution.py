@@ -880,3 +880,24 @@ def test_advance_pursuit_forwards_has_spy_super_sleuth():
 
     assert result.caught_up is True
     assert result.guessed_distance is not None
+
+
+# -- Phase 698: AdvancedAbility.SPY_ASSASSINATE --------------------------
+
+
+def test_execute_pursue_spy_assassinate_accepts_a_king_target():
+    # A King target would normally require mutual_encounter=True here --
+    # the ability bypasses that unconditionally.
+    state = _base_state()
+    pursuer = LeaderState(1, kingdom_id=1, name="Spy", location=FIELD, advanced_abilities={AdvancedAbility.SPY_ASSASSINATE})
+    target = LeaderState(2, kingdom_id=2, name="King", location=FIELD, is_king=True)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    request = _melee_request(2)
+
+    with patch("ak_engine.turn.pursue_execution.resolve_challenge_combat") as mock_resolve:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner=None)
+        result = execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert result.caught_up is True
+    assert result.combat_occurred is True

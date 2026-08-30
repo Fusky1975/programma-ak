@@ -161,6 +161,33 @@ def test_armyless_hero_vs_hero_challenger_always_accepts_without_consuming_rng()
     assert accepted is True
 
 
+# -- Phase 698: AdvancedAbility.SPY_ASSASSINATE's own unconditional bypass --
+
+
+def test_spy_assassinate_accepts_a_king_target_even_when_not_mutual():
+    accepted = is_encounter_accepted(
+        target_is_king=True, target_leads_army=False, challenger_is_king=False, mutual_encounter=False,
+        rng=ScriptedRandom([]), has_spy_assassinate=True,
+    )
+    assert accepted is True
+
+
+def test_spy_assassinate_accepts_an_army_leading_target():
+    accepted = is_encounter_accepted(
+        target_is_king=False, target_leads_army=True, challenger_is_king=False, mutual_encounter=False,
+        rng=ScriptedRandom([]), has_spy_assassinate=True,
+    )
+    assert accepted is True
+
+
+def test_spy_assassinate_king_challenger_is_never_evaded_and_consumes_no_rng():
+    accepted = is_encounter_accepted(
+        target_is_king=False, target_leads_army=False, challenger_is_king=True, mutual_encounter=False,
+        rng=ScriptedRandom([]), has_spy_assassinate=True,  # any .random() call here would raise IndexError
+    )
+    assert accepted is True
+
+
 def test_leader_combatant_reads_real_temper():
     # Phase 284: the Temper Table's own melee mechanics need each
     # combatant's real Temper threaded through.
@@ -2879,3 +2906,23 @@ def test_execute_challenge_never_threads_an_army_commanding_targets_plan():
 
     assert mock_resolve.called
     assert mock_resolve.call_args.kwargs["target_tactics"] is None
+
+
+def test_execute_challenge_spy_assassinate_accepts_a_king_target_non_mutually():
+    # Phase 698: a King target would normally require mutual_encounter=
+    # True to be accepted at all -- the ability bypasses that
+    # unconditionally, even for a non-mutual encounter.
+    state = _base_state()
+    challenger = LeaderState(
+        1, kingdom_id=1, name="Spy", location=FIELD, advanced_abilities={AdvancedAbility.SPY_ASSASSINATE}
+    )
+    target = LeaderState(2, kingdom_id=2, name="King", location=FIELD, is_king=True)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_challenge_combat") as mock_resolve:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner=None)
+        result = execute_challenge(state, 1, _melee_request(2), rng=ScriptedRandom([]))
+
+    assert result.accepted is True
+    assert result.combat_occurred is True

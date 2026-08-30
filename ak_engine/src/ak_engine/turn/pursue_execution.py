@@ -423,6 +423,7 @@ def execute_pursue(
         challenger_is_king=pursuer.is_king,
         mutual_encounter=mutual_encounter,
         rng=rng,
+        has_spy_assassinate=AdvancedAbility.SPY_ASSASSINATE in pursuer.advanced_abilities,
     )
     if not accepted:
         return PursueExecutionResult(caught_up=True, reason="encounter refused", guessed_distance=guessed_distance)

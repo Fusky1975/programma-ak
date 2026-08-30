@@ -29096,7 +29096,7 @@ follow-up request after the original 431-435 plan shipped.
   (unchanged, 5835) before writing a single new test; the demoralization
   bug was caught by the end-to-end test failing, not by inspection.
 
-- **Phase 697 (current)**: picks `AdvancedAbility.SPY_BRAINWASH` from
+- **Phase 697**: picks `AdvancedAbility.SPY_BRAINWASH` from
   [[project_fourteenth_survey_2026_08_30]]'s own remaining candidates:
   "When the spy uses the Talk tactic on any hero, that character will
   move one step closer in alignment to the Spy's alignment. Not usable
@@ -29112,6 +29112,29 @@ follow-up request after the original 431-435 plan shipped.
   (unchanged, 5842) before writing a single new test; every new test
   passed on the first run. Spy Assassinate remains open for a future
   phase.
+
+- **Phase 698 (current)**: picks `AdvancedAbility.SPY_ASSASSINATE`,
+  closing [[project_fourteenth_survey_2026_08_30]] in full: "The spy
+  can encounter kings and army leaders even if he has an attacking
+  encounter plan. Also, King characters can now encounter other
+  characters freely, without being avoided half the time." `turn/
+  challenge_execution.py is_encounter_accepted()` -- the shared
+  King/Hero acceptance decision tree used by CHALLENGE, Patrol, and
+  Pursue's own armyless case alike -- gains a `has_spy_assassinate`
+  flag read as one unified override: whoever holds the ability (a Spy
+  targeting a King/army-leader, or a King challenger who'd otherwise be
+  evaded half the time) always gets an accepted encounter, unconditionally
+  bypassing every restriction below. The "attacking encounter plan"
+  clause is read as descriptive context for why the override matters
+  (this function has no separate "was the plan aggressive" input to
+  begin with), not a fourth, narrower condition -- both named benefits
+  unify cleanly into one early return. Threaded through all 3 real call
+  sites (`turn/challenge_execution.py`, `turn/patrol_execution.py`,
+  `turn/pursue_execution.py`), each resolving the flag from its own
+  acting leader's `advanced_abilities`. Test count: 5849 -> 5855
+  (net +6). Full suite verified green (unchanged, 5849) before writing
+  a single new test; every new test passed on the first run. This
+  closes the entire fourteenth survey.
 
 ## Setup
 

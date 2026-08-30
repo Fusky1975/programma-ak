@@ -416,11 +416,28 @@ def is_encounter_accepted(
     challenger_is_king: bool,
     mutual_encounter: bool,
     rng: random.Random,
+    has_spy_assassinate: bool = False,
 ) -> bool:
     """Rulebook [3.12]'s King/Hero acceptance decision tree -- see module docstring
     for the full quoted text this implements branch-for-branch.
+
+    Phase 698 -- `AdvancedAbility.SPY_ASSASSINATE`'s own real
+    description: "The spy can encounter kings and army leaders even if
+    he has an attacking encounter plan. Also, King characters can now
+    encounter other characters freely, without being avoided half the
+    time." Read as one unified override -- whoever holds this ability
+    (a Spy targeting a King/army-leader, or a King challenger who'd
+    otherwise be evaded half the time) always gets an accepted
+    encounter, bypassing every restriction below unconditionally. The
+    "attacking encounter plan" clause is descriptive context for why
+    this override matters (this function's own `target_leads_army`
+    check has no separate "was the plan aggressive" input to begin
+    with), not a fourth, narrower condition -- the two named benefits
+    unify cleanly into one early return.
     """
 
+    if has_spy_assassinate:
+        return True
     if target_is_king:
         return mutual_encounter
     if target_leads_army:
@@ -1821,6 +1838,7 @@ def execute_challenge(
         challenger_is_king=challenger.is_king,
         mutual_encounter=mutual_encounter,
         rng=rng,
+        has_spy_assassinate=AdvancedAbility.SPY_ASSASSINATE in challenger.advanced_abilities,
     )
     if not accepted:
         _apply_duel_encounter_merit(
