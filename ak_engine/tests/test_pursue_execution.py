@@ -797,3 +797,86 @@ def test_execute_pursue_never_threads_an_army_commanding_targets_plan():
     assert not mock_resolve.called
     assert result.caught_up is True
     assert result.combat_occurred is True
+
+
+# -- Phase 695: AdvancedAbility.SPY_SUPER_SLEUTH --------------------------
+
+
+def test_execute_pursue_spy_super_sleuth_bypasses_the_catch_up_roll():
+    # Same setup as test_execute_pursue_fails_to_catch_up_when_roll_is_
+    # too_high (distant, different Kingdom -- a near-certain-fail roll)
+    # -- succeeds anyway with the ability, since the roll is never made.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FAR_AWAY))
+
+    result = execute_pursue(
+        state,
+        1,
+        _peaceful_request(2),
+        rng=ScriptedRandom([0.5, 0.5], choice_indices=[1]),  # (-1,0,1)[1] == 0 offset
+        has_spy_super_sleuth=True,
+    )
+
+    assert result.caught_up is True
+    assert result.guessed_distance == hex_distance(FIELD, FAR_AWAY)
+
+
+def test_execute_pursue_spy_super_sleuth_guessed_distance_can_be_off_by_one():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=HexCoord(3, 1)))  # distance 2
+
+    result = execute_pursue(
+        state,
+        1,
+        _peaceful_request(2),
+        rng=ScriptedRandom([0.5, 0.5], choice_indices=[2]),  # (-1,0,1)[2] == +1 offset
+        has_spy_super_sleuth=True,
+    )
+
+    assert result.guessed_distance == 3
+
+
+def test_execute_pursue_spy_super_sleuth_guessed_distance_floored_at_zero():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))  # distance 0
+
+    result = execute_pursue(
+        state,
+        1,
+        _peaceful_request(2),
+        rng=ScriptedRandom([0.5, 0.5], choice_indices=[0]),  # (-1,0,1)[0] == -1 offset
+        has_spy_super_sleuth=True,
+    )
+
+    assert result.guessed_distance == 0
+
+
+def test_execute_pursue_guessed_distance_is_none_without_the_ability():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+
+    result = execute_pursue(state, 1, _peaceful_request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert result.caught_up is True
+    assert result.guessed_distance is None
+
+
+def test_advance_pursuit_forwards_has_spy_super_sleuth():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FAR_AWAY))
+
+    result = advance_pursuit(
+        state,
+        1,
+        _peaceful_request(2),
+        rng=ScriptedRandom([0.5, 0.5], choice_indices=[1]),
+        has_spy_super_sleuth=True,
+    )
+
+    assert result.caught_up is True
+    assert result.guessed_distance is not None

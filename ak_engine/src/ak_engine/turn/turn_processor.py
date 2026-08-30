@@ -252,6 +252,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.army_type import ARMY_TABLE, ArmyType
 from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
@@ -1007,12 +1008,17 @@ def _continue_active_pursuits(
     action_this_phase_by_leader = action_this_phase_by_leader or {}
     results: list[PhaseDispatchResult] = []
     for leader_id, active in list(active_pursuits.items()):
+        # Phase 695: same real-possession pattern as every other
+        # AdvancedAbility-derived dispatch flag in this function -- see
+        # its own module docstring note above.
+        leader = state.leaders.get(leader_id)
+        has_spy_super_sleuth = leader is not None and AdvancedAbility.SPY_SUPER_SLEUTH in leader.advanced_abilities
         if active.kind == "pursue":
-            result = advance_pursuit(state, leader_id, active.request, rng)
+            result = advance_pursuit(state, leader_id, active.request, rng, has_spy_super_sleuth=has_spy_super_sleuth)
             action = ActionCode.PURSUE
             still_chasing = not result.caught_up and result.reason == _PURSUE_STILL_CHASING_REASON
         else:
-            result = advance_trail(state, leader_id, active.request, rng)
+            result = advance_trail(state, leader_id, active.request, rng, has_spy_super_sleuth=has_spy_super_sleuth)
             action = ActionCode.TRAIL
             still_chasing = not result.spied_on and result.reason == _TRAIL_STILL_CHASING_REASON
             if result.spied_on:

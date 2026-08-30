@@ -318,6 +318,12 @@ class PursueExecutionResult:
     # Outcome`.
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
     melee_swings: tuple[MeleeSwing, ...] = ()
+    # Phase 695: `AdvancedAbility.SPY_SUPER_SLEUTH`'s own real text --
+    # "the Spy can also guess how far away the target is (the guess may
+    # be off by one province)." Set only when the pursuer holds the
+    # Advanced Ability and the catch-up (automatic, per that same text)
+    # succeeds -- see `execute_pursue()`'s own Phase 695 addendum.
+    guessed_distance: int | None = None
 
 
 def _fight_army_pursuit_battle(
@@ -354,12 +360,26 @@ def execute_pursue(
     rng: random.Random | None = None,
     *,
     mutual_encounter: bool = False,
+    has_spy_super_sleuth: bool = False,
 ) -> PursueExecutionResult:
     """Resolve one phase of a Pursue order: [3.16]'s army-leading-match check, a Spy
     Table catch-up roll, and either a real army battle or (armyless case
     only) an immediate Encounter resolution. See module docstring for the
     remaining multi-phase-chase gap and ``mutual_encounter``'s
     caller-supplied-only status.
+
+    **Phase 695 -- `AdvancedAbility.SPY_SUPER_SLEUTH`**: "When the Spy
+    uses the Trail or Pursue actions, success is automatic, and the Spy
+    can also guess how far away the target is (the guess may be off by
+    one province)." ``has_spy_super_sleuth`` bypasses the catch-up roll
+    entirely (the Spy Table's own chance is never even consulted, let
+    alone rolled against) and sets ``PursueExecutionResult.guessed_
+    distance`` to the real distance perturbed by a documented, literal
+    reading of "off by one" -- a uniformly random ``-1``/``0``/``+1``
+    offset (mirrors ``turn/spy_table.py estimate_reported_value()``'s
+    own "uniform, symmetric" documented-choice convention for an
+    analogous unsourced-but-bounded margin of error), floored at 0
+    (a negative distance has no meaning).
     """
 
     rng = rng if rng is not None else random.Random()
@@ -382,16 +402,20 @@ def execute_pursue(
         distance_provinces=distance,
         same_kingdom=same_kingdom,
     )
-    if rng.random() >= chance:
+    if not has_spy_super_sleuth and rng.random() >= chance:
         return PursueExecutionResult(caught_up=False, reason="did not catch up this phase")
+
+    guessed_distance = max(0, distance + rng.choice((-1, 0, 1))) if has_spy_super_sleuth else None
 
     add_experience(pursuer, Ability.SPY, 10, rng)
 
     if target_leads_army:  # pursuer_leads_army matches, per the check above
-        return _fight_army_pursuit_battle(state, pursuer, target, rng)
+        result = _fight_army_pursuit_battle(state, pursuer, target, rng)
+        result.guessed_distance = guessed_distance
+        return result
 
     if not has_combat_intent(request):
-        return PursueExecutionResult(caught_up=True, combat_occurred=False)
+        return PursueExecutionResult(caught_up=True, combat_occurred=False, guessed_distance=guessed_distance)
 
     accepted = is_encounter_accepted(
         target_is_king=target.is_king,
@@ -401,7 +425,7 @@ def execute_pursue(
         rng=rng,
     )
     if not accepted:
-        return PursueExecutionResult(caught_up=True, reason="encounter refused")
+        return PursueExecutionResult(caught_up=True, reason="encounter refused", guessed_distance=guessed_distance)
 
     pursuer_combatant = _leader_combatant(pursuer, state)
     target_combatant = _leader_combatant(target, state)
@@ -445,6 +469,7 @@ def execute_pursue(
             steal_capture_range=combat_result.steal_capture_range,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
+            guessed_distance=guessed_distance,
         )
     if combat_result.winner is None:
         return PursueExecutionResult(
@@ -454,6 +479,7 @@ def execute_pursue(
             steal_capture_range=combat_result.steal_capture_range,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
+            guessed_distance=guessed_distance,
         )
 
     winner_id, loser_id = (
@@ -475,6 +501,7 @@ def execute_pursue(
         steal_capture_range=combat_result.steal_capture_range,
         fire_arrow_shots=combat_result.fire_arrow_shots,
         melee_swings=combat_result.melee_swings,
+        guessed_distance=guessed_distance,
     )
 
 
@@ -505,6 +532,7 @@ def advance_pursuit(
     rng: random.Random | None = None,
     *,
     mutual_encounter: bool = False,
+    has_spy_super_sleuth: bool = False,
     board_width: int = NORMAL_MAP_BOUNDS[0],
     board_height: int = NORMAL_MAP_BOUNDS[1],
 ) -> PursueExecutionResult:
@@ -534,4 +562,6 @@ def advance_pursuit(
         for army in state.armies_commanded_by(pursuer_leader_id):
             army.location = new_location
 
-    return execute_pursue(state, pursuer_leader_id, request, rng, mutual_encounter=mutual_encounter)
+    return execute_pursue(
+        state, pursuer_leader_id, request, rng, mutual_encounter=mutual_encounter, has_spy_super_sleuth=has_spy_super_sleuth
+    )

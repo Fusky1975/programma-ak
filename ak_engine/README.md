@@ -29023,7 +29023,7 @@ follow-up request after the original 431-435 plan shipped.
   members, Druidic Animal Spies, Spy Super Sleuth) remain open for a
   future phase.
 
-- **Phase 694 (current)**: picks `AdvancedAbility.DRUIDIC_ANIMAL_SPIES`
+- **Phase 694**: picks `AdvancedAbility.DRUIDIC_ANIMAL_SPIES`
   from the thirteenth survey's own remaining candidates: "The Druid is
   able to befriend the small animals and birds, who willingly serve as
   spies. When the Druid issues a Spy order (SP), animals will scout
@@ -29043,6 +29043,29 @@ follow-up request after the original 431-435 plan shipped.
   test passed on the first run. Two more real candidates (Archery's
   Short/Long Range members, Spy Super Sleuth) remain open for a future
   phase.
+
+- **Phase 695 (current)**: picks `AdvancedAbility.SPY_SUPER_SLEUTH`,
+  the last concrete candidate from the thirteenth survey (Archery's
+  Short/Long Range members stay deferred, still genuinely ambiguous):
+  "When the Spy uses the Trail or Pursue actions, success is automatic,
+  and the Spy can also guess how far away the target is (the guess may
+  be off by one province)." `turn/pursue_execution.py execute_pursue()`/
+  `turn/trail_execution.py execute_trail()` both gain a `has_spy_super_
+  sleuth` flag that bypasses their own Spy Table catch-up roll entirely
+  (the chance is never even consulted) and sets a new `guessed_distance`
+  field on their own result types to the real hex distance perturbed by
+  a documented, literal reading of "off by one" -- a uniformly random
+  -1/0/+1 offset (mirrors `turn/spy_table.py estimate_reported_value()`'s
+  own "uniform, symmetric" documented-choice convention), floored at 0.
+  Threaded through both continuation entry points (`advance_pursuit()`/
+  `advance_trail()`) and both real dispatch sites (`turn/plan_dispatch.py`
+  and `turn/turn_processor.py`'s own persistent multi-phase chase
+  continuation), via the same "caller-computed boolean, re-derived
+  fresh from the leader's own `advanced_abilities`" pattern already
+  used throughout this project. Test count: 5823 -> 5835 (net +12).
+  Full suite verified green (unchanged, 5823) before writing a single
+  new test; every new test passed on the first run. This closes the
+  entire thirteenth survey.
 
 ## Setup
 

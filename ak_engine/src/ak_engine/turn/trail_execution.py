@@ -239,10 +239,19 @@ class TrailExecutionResult:
     # themselves, or simply idle), the same "no data" convention every
     # other field here already uses.
     actions: ActionCode | None = None
+    # Phase 695: `AdvancedAbility.SPY_SUPER_SLEUTH`'s own real text --
+    # see `execute_trail()`'s own Phase 695 addendum. Same shape as
+    # `turn/pursue_execution.py PursueExecutionResult.guessed_distance`.
+    guessed_distance: int | None = None
 
 
 def execute_trail(
-    state: GameState, trailer_leader_id: int, request: TrailRequest, rng: random.Random | None = None
+    state: GameState,
+    trailer_leader_id: int,
+    request: TrailRequest,
+    rng: random.Random | None = None,
+    *,
+    has_spy_super_sleuth: bool = False,
 ) -> TrailExecutionResult:
     """Resolve one phase of a Trail order: [3.17]'s no-army restriction, then a Spy
     Table catch-up roll. On success, populates the ``temper``/
@@ -251,6 +260,11 @@ def execute_trail(
     function can source directly. ``actions`` is left ``None`` here --
     see module docstring's Phase 252 note for why only
     ``turn/turn_processor.py run_turn()`` can populate it.
+
+    **Phase 695 -- `AdvancedAbility.SPY_SUPER_SLEUTH`**: identical
+    mechanic and reasoning as `turn/pursue_execution.py execute_pursue()`'s
+    own Phase 695 addendum -- automatic success, plus a guessed distance
+    perturbed by a uniformly random -1/0/+1 offset, floored at 0.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -274,8 +288,10 @@ def execute_trail(
         distance_provinces=distance,
         same_kingdom=same_kingdom,
     )
-    if rng.random() >= chance:
+    if not has_spy_super_sleuth and rng.random() >= chance:
         return TrailExecutionResult(spied_on=False, reason="did not find the target this phase")
+
+    guessed_distance = max(0, distance + rng.choice((-1, 0, 1))) if has_spy_super_sleuth else None
 
     add_experience(trailer, Ability.SPY, 10, rng)
 
@@ -292,6 +308,7 @@ def execute_trail(
         treasures_owned=tuple(state.items_held_by(target.leader_id)),
         armies_led=tuple(target_armies),
         king_intelligence=king_intelligence,
+        guessed_distance=guessed_distance,
     )
 
 
@@ -315,6 +332,7 @@ def advance_trail(
     request: TrailRequest,
     rng: random.Random | None = None,
     *,
+    has_spy_super_sleuth: bool = False,
     board_width: int = NORMAL_MAP_BOUNDS[0],
     board_height: int = NORMAL_MAP_BOUNDS[1],
 ) -> TrailExecutionResult:
@@ -336,4 +354,4 @@ def advance_trail(
     bounds = MapBounds(board_width, board_height)
     trailer.location = step_toward_target(trailer.location, target.location, bounds)
 
-    return execute_trail(state, trailer_leader_id, request, rng)
+    return execute_trail(state, trailer_leader_id, request, rng, has_spy_super_sleuth=has_spy_super_sleuth)

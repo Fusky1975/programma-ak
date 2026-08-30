@@ -925,6 +925,27 @@ def test_dispatch_pursue_stamps_the_request_onto_the_result():
     assert result.request.target_character_id == 88
 
 
+def test_dispatch_pursue_wires_spy_super_sleuth_from_the_leaders_own_advanced_ability():
+    # Phase 695: dispatch_phase() derives has_spy_super_sleuth the same
+    # real-possession pattern as every other AdvancedAbility flag -- a
+    # far-away, different-Kingdom target (a near-certain-fail catch-up
+    # roll) still catches up unconditionally with the ability. Both
+    # sides armyless -- [3.16]'s own "leads an army" match requirement
+    # would otherwise reject the order via a different, unrelated path.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(3, 9)))
+    state.add_kingdom(KingdomState(2, "Fleeland", Race.HUMAN, Alignment.GOOD, HexCoord(20, 9)))
+    state.add_leader(LeaderState(LEADER_ID, 1, "Test Leader", HexCoord(3, 9)))
+    state.add_leader(LeaderState(88, kingdom_id=2, name="Target", location=HexCoord(20, 9)))
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.SPY_SUPER_SLEUTH)
+    phase = PlanPhase(label="P0", action=ActionCode.PURSUE, obj=88, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.caught_up is True
+    assert result.guessed_distance is not None
+
+
 def test_dispatch_aspy_executes_and_reports_the_casters_own_province():
     # Phase 62: ASPY now dispatches to execute_aspy, not just
     # decode_aspy_phase -- the report is always for the caster's own
@@ -1068,6 +1089,24 @@ def test_dispatch_trail_stamps_the_request_onto_the_result():
 
     assert result.request is not None
     assert result.request.target_character_id == 88
+
+
+def test_dispatch_trail_wires_spy_super_sleuth_from_the_leaders_own_advanced_ability():
+    # [3.17]'s own no-army restriction means the trailer can't be the
+    # shared army-commanding leader _state_with_army() builds -- a
+    # fresh, armyless leader is needed here instead.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(3, 9)))
+    state.add_kingdom(KingdomState(2, "Fleeland", Race.HUMAN, Alignment.GOOD, HexCoord(20, 9)))
+    state.add_leader(LeaderState(LEADER_ID, 1, "Test Leader", HexCoord(3, 9)))
+    state.add_leader(LeaderState(88, kingdom_id=2, name="Target", location=HexCoord(20, 9)))
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.SPY_SUPER_SLEUTH)
+    phase = PlanPhase(label="P0", action=ActionCode.TRAIL, obj=88, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.spied_on is True
+    assert result.guessed_distance is not None
 
 
 def test_dispatch_succ_trail_is_deliberately_unsupported():

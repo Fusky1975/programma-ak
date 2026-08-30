@@ -815,6 +815,17 @@ def _dispatch_challenge(
     return result
 
 
+def _has_spy_super_sleuth(state: GameState, leader_id: int) -> bool:
+    """Phase 695: same real-possession pattern as `has_march_cavalry`
+    et al. -- `AdvancedAbility.SPY_SUPER_SLEUTH` gates the acting
+    leader's own Trail/Pursue catch-up roll, resolved fresh at each of
+    the two real dispatch sites below.
+    """
+
+    leader = state.leaders.get(leader_id)
+    return leader is not None and AdvancedAbility.SPY_SUPER_SLEUTH in leader.advanced_abilities
+
+
 def _dispatch_pursue(
     phase: PlanPhase, state: GameState, leader_id: int, rng: random.Random | None
 ) -> PursueExecutionResult:
@@ -831,7 +842,7 @@ def _dispatch_pursue(
     """
 
     request = decode_pursue_phase(phase)
-    result = execute_pursue(state, leader_id, request, rng)
+    result = execute_pursue(state, leader_id, request, rng, has_spy_super_sleuth=_has_spy_super_sleuth(state, leader_id))
     result.request = request
     return result
 
@@ -900,7 +911,7 @@ def _dispatch_trail(
     """
 
     request = decode_trail_phase(phase)
-    result = execute_trail(state, leader_id, request, rng)
+    result = execute_trail(state, leader_id, request, rng, has_spy_super_sleuth=_has_spy_super_sleuth(state, leader_id))
     result.request = request
     return result
 
