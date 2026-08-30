@@ -28,6 +28,7 @@ from ak_engine.turn.practice_execution import (
     _improved_training_multiplier,
     _maybe_grant_advanced_ability,
     _maybe_make_gems,
+    _maybe_raid_as_bandit,
     _maybe_receive_society_maps,
     _select_discovery_to_grant,
     _teacher_aptitude_bonus,
@@ -1914,3 +1915,144 @@ def test_execute_practice_group_comatose_leader_never_reaches_the_grant_helper()
 
     assert results[0].advanced_ability_granted is None
     assert state.leaders[1].advanced_abilities == set()
+
+
+# -- Phase 692: Thief Banditry/Piracy -----------------------------------
+
+BANDITRY_LOCATION = HexCoord(4, 4)
+
+
+def _state_for_banditry(
+    *,
+    abilities: set[AdvancedAbility] = frozenset(),
+    terrain: Terrain = Terrain.PLAINS,
+    owner_kingdom_id: int | None = 2,
+    tax: int | None = 100,
+    victim_treasury: int = 100,
+    thief_kingdom_id: int | None = 1,
+) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Thiefia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0), treasury=0))
+    state.add_kingdom(KingdomState(2, "Victimia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 1), treasury=victim_treasury))
+    state.add_province(ProvinceState(BANDITRY_LOCATION, terrain, Race.HUMAN, owner_kingdom_id=owner_kingdom_id, tax=tax))
+    leader = LeaderState(1, kingdom_id=thief_kingdom_id, name="Thief", location=BANDITRY_LOCATION)
+    leader.advanced_abilities |= set(abilities)
+    state.add_leader(leader)
+    return state
+
+
+def test_maybe_raid_as_bandit_returns_nothing_for_a_non_thief_ability():
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_BANDITRY})
+    amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.MELEE, random.Random(0))
+    assert amount == 0
+
+
+def test_maybe_raid_as_bandit_returns_nothing_without_either_advanced_ability():
+    state = _state_for_banditry(abilities=set())
+    amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
+    assert amount == 0
+    assert state.kingdoms[2].treasury == 100
+
+
+def test_maybe_raid_as_bandit_returns_nothing_in_the_thiefs_own_kingdoms_province():
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_BANDITRY}, owner_kingdom_id=1)
+    amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
+    assert amount == 0
+
+
+def test_maybe_raid_as_bandit_returns_nothing_in_a_neutral_unowned_province():
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_BANDITRY}, owner_kingdom_id=None)
+    amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
+    assert amount == 0
+
+
+def test_maybe_raid_as_bandit_loots_fifteen_percent_of_tax_base_on_land():
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_BANDITRY}, terrain=Terrain.PLAINS, tax=100)
+    amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
+    assert amount == 15
+    assert state.kingdoms[2].treasury == 100 - 15
+    assert state.kingdoms[1].treasury == 15
+
+
+def test_maybe_raid_as_piracy_loots_fifty_percent_of_tax_value_at_sea():
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_PIRACY}, terrain=Terrain.SEA, tax=100)
+    amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
+    assert amount == 50
+    assert state.kingdoms[2].treasury == 100 - 50
+
+
+def test_banditry_only_leader_loots_nothing_at_sea():
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_BANDITRY}, terrain=Terrain.SEA, tax=100)
+    amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
+    assert amount == 0
+
+
+def test_piracy_only_leader_loots_nothing_on_land():
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_PIRACY}, terrain=Terrain.PLAINS, tax=100)
+    amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
+    assert amount == 0
+
+
+def test_piracy_loots_the_one_gold_floor_in_a_zero_tax_sea_province():
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_PIRACY}, terrain=Terrain.SEA, tax=0)
+    amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
+    assert amount == 1
+
+
+def test_banditry_loots_nothing_in_a_zero_tax_land_province():
+    # No floor for Banditry -- only Piracy's own text mentions one.
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_BANDITRY}, terrain=Terrain.PLAINS, tax=0)
+    amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
+    assert amount == 0
+
+
+def test_loot_is_capped_at_the_victims_own_treasury():
+    state = _state_for_banditry(
+        abilities={AdvancedAbility.THIEF_BANDITRY}, terrain=Terrain.PLAINS, tax=100, victim_treasury=5
+    )
+    amount = _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, random.Random(0))
+    assert amount == 5
+    assert state.kingdoms[2].treasury == 0
+
+
+def test_maybe_raid_as_bandit_credits_spy_experience_on_a_real_loot():
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_BANDITRY}, terrain=Terrain.PLAINS, tax=100)
+    _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, ScriptedRandom([0.5, 0.5]))
+    assert state.leaders[1].experience_credit == 10  # round(10*(1+0.5-0.5))
+
+
+def test_maybe_raid_as_bandit_credits_no_experience_on_a_zero_loot_attempt():
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_BANDITRY}, terrain=Terrain.PLAINS, tax=0)
+    _maybe_raid_as_bandit(state, state.leaders[1], Ability.THIEF, ScriptedRandom([0.5]))
+    assert state.leaders[1].experience_credit == 0
+
+
+def test_execute_practice_threads_gold_looted_as_bandit_through_the_result():
+    state = _state_for_banditry(abilities={AdvancedAbility.THIEF_BANDITRY}, terrain=Terrain.PLAINS, tax=100)
+
+    result = execute_practice(state, leader_id=1, ability=Ability.THIEF, rng=random.Random(0))
+
+    assert result.gold_looted_as_bandit == 15
+    assert state.kingdoms[1].treasury == 15
+    assert state.kingdoms[2].treasury == 100 - 15
+
+
+def test_execute_practice_group_never_raids_as_bandit():
+    # "no other character is practicing with him" -- the group path is
+    # exactly the case where another character IS practicing with him,
+    # so the solo-only gate must never fire there.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Thiefia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0), treasury=0))
+    state.add_kingdom(KingdomState(2, "Victimia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 1), treasury=100))
+    state.add_province(ProvinceState(BANDITRY_LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, tax=100))
+    leader1 = LeaderState(1, kingdom_id=1, name="Thief1", location=BANDITRY_LOCATION)
+    leader1.advanced_abilities.add(AdvancedAbility.THIEF_BANDITRY)
+    leader2 = LeaderState(2, kingdom_id=1, name="Thief2", location=BANDITRY_LOCATION)
+    state.add_leader(leader1)
+    state.add_leader(leader2)
+
+    results = execute_practice_group(state, [1, 2], Ability.THIEF, rng=random.Random(0))
+
+    assert results[0].gold_looted_as_bandit == 0
+    assert results[1].gold_looted_as_bandit == 0
+    assert state.kingdoms[2].treasury == 100

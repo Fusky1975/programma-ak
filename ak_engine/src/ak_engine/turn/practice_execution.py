@@ -304,6 +304,14 @@ explicit "the natural aptitude byte is never permanently incremented");
 practice()``) and the unreachable ``resolve_practice_pair()`` are
 untouched -- solo practice has no co-practicer at all, so the
 titleholder-presence condition can never fire there.
+
+**Phase 692 (Thief Banditry/Piracy)**: two more magic-college-style
+Advanced Abilities with a real, sourced per-Practice-attempt side
+effect wired via ``_maybe_raid_as_bandit()`` -- see that function's own
+docstring. Fires only from ``execute_practice()`` (solo), never
+``execute_practice_group()``, since "no other character is practicing
+with him" is exactly what this project's own existing solo/group
+dispatch split (``turn/turn_processor.py``) already tells apart.
 """
 
 from __future__ import annotations
@@ -320,9 +328,10 @@ from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.office import Office
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.exploration import SOCIETY_MAPS_PRACTICE_COUNT_RANGE, receive_society_maps
+from ak_engine.turn.tax_base import province_tax_yield
 from ak_engine.worldgen.explorer_ability_level_schedule import build_explorer_ability_level_schedule
 from ak_engine.worldgen.special_ability_level_schedule import MAGIC_COLLEGES, build_magic_ability_level_schedule
 
@@ -648,6 +657,13 @@ class PracticeExecutionResult:
     # docstring. 0 for every ability other than ELEMENTAL, and for an
     # ELEMENTAL practicer who doesn't already own the Advanced Ability.
     gems_gold_gained: int = 0
+    # Phase 692: Thief Banditry/Piracy's own "rake in about 15%/50% of
+    # the province's tax base for each phase he acts as a bandit/pirate"
+    # trigger -- see _maybe_raid_as_bandit()'s own docstring. 0 for
+    # every ability other than THIEF, and whenever the conditions
+    # (foreign province, matching Advanced Ability, real loot) don't
+    # all hold.
+    gold_looted_as_bandit: int = 0
 
 
 def _get_or_create_skills(leader: LeaderState) -> SkillTable:
@@ -760,6 +776,91 @@ def _maybe_make_gems(state: GameState, leader: LeaderState, ability: Ability, rn
     amount = rng.randint(*MAKE_GEMS_GOLD_RANGE)
     state.kingdoms[leader.kingdom_id].treasury += amount
     return amount
+
+
+# Phase 692: Thief Banditry/Piracy (``models/advanced_ability.py
+# ADVANCED_ABILITY_DESCRIPTION[THIEF_BANDITRY]``/``[THIEF_PIRACY]``):
+# "rake in about 15% of the province's tax base for each phase he acts
+# as a bandit" (land) / "snare about 50% of the province's tax value
+# for each phase he acts as a pirate" (sea). PIRACY's own "will still
+# often loot 1 gold from the treasury of the province owner" in a
+# zero-taxation province is treated as unconditional (no formula/chance
+# given -- the same "no formula, take the plain reading" convention
+# used elsewhere, e.g. turn/skeletal_decay.py) and applies only to
+# PIRACY -- BANDITRY's own paragraph never mentions a floor.
+BANDITRY_TAX_PERCENT = 0.15
+PIRACY_TAX_PERCENT = 0.50
+PIRACY_ZERO_TAX_GOLD_FLOOR = 1
+
+
+def _maybe_raid_as_bandit(state: GameState, leader: LeaderState, ability: Ability, rng: random.Random) -> int:
+    """Thief Banditry/Piracy (Advanced Ability, Phase 692): "Whenever he
+    practices thievery (the '(PR) TH' action) in another king's land
+    province, and no other character is practicing with him, he will
+    ravage the countryside as a bandit, robbing and looting the
+    population... This action also counts as a normal 'Spy' action in
+    all respects." Piracy is the identical mechanic for "another king's
+    sea province."
+
+    Same shape as ``_maybe_make_gems()`` above -- fires once per solo
+    Practice attempt on the Thief ability specifically, unconditional
+    on whether the skill roll itself succeeds. Called only from
+    ``execute_practice()`` (never ``execute_practice_group()``), which
+    reuses ``turn/turn_processor.py``'s own existing co-location-based
+    solo/group split as this project's already-established, "conservative
+    solo-only approximation" (see ``turn/practice_execution.py``'s own
+    module docstring) for "no other character is practicing with him".
+
+    Re-reading the source text precisely, both paragraphs describe
+    looting directly from "the treasury of the province owner" -- an
+    immediate Kingdom-to-Kingdom treasury transfer at Practice-time,
+    the identical shape already shipped for Make Gems Talent above, not
+    a turn-scoped accumulator bridging into ``turn/tax_base.py
+    apply_turn_revenue()``'s own once-per-turn credit pass.
+
+    Deliberately narrow reading of "counts as a normal Spy action in
+    all respects": credits ``Ability.SPY`` experience on a real loot
+    (the fourth member of the real ``Add_Experience`` Spy/Trail/Pursue
+    trigger set, ``AKGEN_reverse_engineering_report (2).md`` SS3.4;
+    Trail/Pursue are already wired identically) -- does NOT generate a
+    full ``SpyReport`` (``turn/aspy_execution.py execute_aspy()``'s own
+    much larger scope), a deliberate, documented scope boundary, not a
+    silently-dropped feature.
+
+    Looted amount is capped at the victim kingdom's own current
+    treasury (never driven negative), the same guard every comparable
+    gold-transfer mechanic in this project already applies (e.g.
+    ``turn/trade_execution.py``'s own giver/recipient transfer).
+    Returns the real amount looted (``0`` when nothing qualifies).
+    """
+
+    if ability is not Ability.THIEF or leader.kingdom_id is None:
+        return 0
+
+    province = state.provinces.get(leader.location)
+    if province is None or province.owner_kingdom_id is None or province.owner_kingdom_id == leader.kingdom_id:
+        return 0
+
+    is_sea = province.effective_terrain() is Terrain.SEA
+    if is_sea and AdvancedAbility.THIEF_PIRACY not in leader.advanced_abilities:
+        return 0
+    if not is_sea and AdvancedAbility.THIEF_BANDITRY not in leader.advanced_abilities:
+        return 0
+
+    base = province_tax_yield(province) or 0
+    amount = round(base * (PIRACY_TAX_PERCENT if is_sea else BANDITRY_TAX_PERCENT))
+    if is_sea and amount == 0:
+        amount = PIRACY_ZERO_TAX_GOLD_FLOOR
+
+    victim_kingdom = state.kingdoms[province.owner_kingdom_id]
+    looted = min(amount, victim_kingdom.treasury)
+    victim_kingdom.treasury -= looted
+    state.kingdoms[leader.kingdom_id].treasury += looted
+    if looted > 0:
+        from ak_engine.turn.experience import add_experience
+
+        add_experience(leader, Ability.SPY, 10, rng)
+    return looted
 
 
 DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE = 0.05
@@ -982,6 +1083,7 @@ def execute_practice(
     advanced_ability_granted = _maybe_grant_advanced_ability(state, leader, ability, outcome.skill_rose, outcome.new_skill)
     society_maps_revealed = _maybe_receive_society_maps(state, leader, ability, rng)
     gems_gold_gained = _maybe_make_gems(state, leader, ability, rng)
+    gold_looted_as_bandit = _maybe_raid_as_bandit(state, leader, ability, rng)
 
     device_discovered = False
     discovery_granted: Discovery | None = None
@@ -1003,6 +1105,7 @@ def execute_practice(
         advanced_ability_granted=advanced_ability_granted,
         society_maps_revealed=society_maps_revealed,
         gems_gold_gained=gems_gold_gained,
+        gold_looted_as_bandit=gold_looted_as_bandit,
     )
 
 

@@ -28949,6 +28949,42 @@ follow-up request after the original 431-435 plan shipped.
   assertion line and one pre-existing test's own now-stale "Dinosaurs
   have no rulebook mechanics" claim.
 
+- **Phase 692 (current)**: closes [[project_twelfth_survey_2026_08_30]]'s
+  second item -- `AdvancedAbility.THIEF_BANDITRY`/`THIEF_PIRACY`, real,
+  fully-sourced descriptions with zero implementation anywhere in `turn/`.
+  BANDITRY: "Whenever he practices thievery (the '(PR) TH' action) in
+  another king's land province, and no other character is practicing
+  with him, he will ravage the countryside as a bandit... rake in about
+  15% of the province's tax base for each phase he acts as a bandit...
+  This action also counts as a normal 'Spy' action in all respects."
+  PIRACY: the identical mechanic for "another king's sea province," 50%
+  of tax value, plus "In zero-taxation provinces, the Thief will still
+  often loot 1 gold from the treasury of the province owner." A real
+  apparent structural blocker (Practice dispatches per phase, up to 5x/
+  turn; `turn/tax_base.py apply_turn_revenue()` credits tax only once
+  per turn) was resolved by re-reading the source text precisely rather
+  than inventing a turn-scoped accumulator: both paragraphs describe
+  looting directly from "the treasury of the province owner," meaning
+  this is an immediate Kingdom-to-Kingdom treasury transfer at
+  Practice-time -- the identical shape already shipped for Make Gems
+  Talent (Phase 690). New `turn/practice_execution.py _maybe_raid_as_
+  bandit()`, called only from `execute_practice()` (solo), never
+  `execute_practice_group()`, reusing this project's own existing
+  co-location-based solo/group dispatch split as the real "no other
+  character is practicing with him" gate. Credits `Ability.SPY`
+  experience (not `Ability.THIEF`, already fully accounted for by
+  Practice's own credit mechanism) on a real loot -- a documented,
+  deliberately narrow reading of "counts as a normal Spy action in all
+  respects" that stops short of generating a full `SpyReport`
+  (`turn/aspy_execution.py execute_aspy()`'s own much larger scope), a
+  real, separate, unattempted follow-up. Looted amount is capped at the
+  victim kingdom's own current treasury, matching every other gold-
+  transfer mechanic in this project. Test count: 5794 -> 5809 (net +15).
+  Full suite verified green (unchanged, 5794) before writing a single
+  new test; every new test passed after fixing one scripted-RNG test
+  that needed a second `0.5` value for `add_experience()`'s own
+  triangular-distribution draw. This closes the entire twelfth survey.
+
 ## Setup
 
 ```

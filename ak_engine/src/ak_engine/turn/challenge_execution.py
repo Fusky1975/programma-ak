@@ -228,6 +228,14 @@ of a summary description, not a literal quote of the compiled call site
 (the same category of judgment call this project's own "eligibility
 lives in the formula, not the loop" and similar unsourced-but-documented
 choices already fall into elsewhere).
+
+**Phase 692 addendum**: Banditry/Piracy's own real gold-looting effect
+(``turn/practice_execution.py _maybe_raid_as_bandit()``) is now wired,
+but it credits ``Ability.SPY`` experience (Banditry/Piracy's own real
+text: "This action also counts as a normal 'Spy' action in all
+respects"), not ``Ability.THIEF`` -- a separate counter from the one
+this addendum's own "don't double-credit THIEF" reasoning above is
+about, so there is no conflict between the two.
 """
 
 from __future__ import annotations
