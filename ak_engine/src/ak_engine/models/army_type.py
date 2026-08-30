@@ -59,6 +59,20 @@ This closes a gap ``worldgen/initial_armies.py``'s own docstring
 previously flagged by name ("Vampires are named in the source's own
 list too, but this project's `ArmyType` enum has no Vampire-native
 entry") -- see that module's own updated docstring.
+
+**Phase 691**: a completely separate, independent source --
+``AdvancedAbility.DRUIDIC_DINOSAURS``'s own real description
+(``models/advanced_ability.py``) -- resolves Dinosaurs directly:
+"Race: Saurian," a full Speed/Pay/Terrain/Nemesis stat row (now in
+``ARMY_TABLE``/``NEMESIS`` above), and a variable Strength (5-10, see
+``turn/strength.py roll_dinosaurs_strength()``, the same "excluded
+from ``BASE_STRENGTH``, rolled per-battle" treatment Elephants already
+gets). Dinosaurs are **still not** added to ``MONSTROUS_ARMY_RACE`` --
+that dict's own real semantic is "native to a race's own home
+province, and excluded from every humanoid province" (Dragons/Eagles/
+etc.), whereas Dinosaurs are Elven-*trained* ("trainable only by
+skilled Elven riders"), a ``turn/recruit.py``-level gate checked
+directly against ``Race.ELVEN``, not this dict.
 """
 
 from __future__ import annotations
@@ -129,6 +143,10 @@ ARMY_TABLE: dict[ArmyType, ArmyTypeStats] = {
     ArmyType.ENTS: ArmyTypeStats(1, 3, (Terrain.FOREST, Terrain.JUNGLE), (Terrain.SEA, Terrain.DESERT)),
     ArmyType.TROLLS: ArmyTypeStats(2, 3, (Terrain.MTNS,), (Terrain.SEA,)),
     ArmyType.WEREBEASTS: ArmyTypeStats(3, 3, (Terrain.FOREST, Terrain.MTNS), (Terrain.SEA,)),
+    # Phase 691: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real
+    # description (`models/advanced_ability.py`) -- "Speed: 3; Pay: 3;
+    # Home Terrain: None; Adverse Terrain: Sea."
+    ArmyType.DINOSAURS: ArmyTypeStats(3, 3, (), (Terrain.SEA,)),
 }
 
 # Army types tied to one specific non-humanoid race (rulebook [3.4] example:
@@ -175,8 +193,12 @@ GARRISON_ATTACK_STRENGTH = 1
 # Rulebook [6.3] "Nemesis" column: each key is 2/3 strength when fighting
 # any type in its value set. "Beasts" (the rulebook doesn't define it
 # elsewhere) is interpreted here as {Elephants, Camel Corps}, the table's
-# two mounted "beast" types -- not a literal quote.
-_BEASTS = frozenset({ArmyType.ELEPHANTS, ArmyType.CAMEL_CORPS})
+# two mounted "beast" types -- not a literal quote. Phase 691:
+# `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real description
+# independently confirms this reading directly -- "They qualify as
+# 'Beasts', the nemesis to mounted units" -- so Dinosaurs join the set
+# too, on real source confirmation rather than name-symmetry guesswork.
+_BEASTS = frozenset({ArmyType.ELEPHANTS, ArmyType.CAMEL_CORPS, ArmyType.DINOSAURS})
 
 NEMESIS: dict[ArmyType, frozenset[ArmyType]] = {
     ArmyType.PHALANX: frozenset({ArmyType.LEGION}),
@@ -184,6 +206,9 @@ NEMESIS: dict[ArmyType, frozenset[ArmyType]] = {
     ArmyType.LT_CAVALRY: frozenset({ArmyType.CHARIOTS}) | _BEASTS,
     ArmyType.HVY_CAVALRY: frozenset({ArmyType.CHARIOTS}) | _BEASTS,
     ArmyType.CHARIOTS: _BEASTS,
+    # Phase 691: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real
+    # description -- "Nemesis: Phalanx".
+    ArmyType.DINOSAURS: frozenset({ArmyType.PHALANX}),
     ArmyType.WARG_RIDERS: frozenset({ArmyType.EAGLE_WING}),
     ArmyType.DRAGON_WING: frozenset({ArmyType.BOWMEN}),
     ArmyType.EAGLE_WING: frozenset({ArmyType.BOWMEN}),

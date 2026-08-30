@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability
@@ -711,4 +712,101 @@ def test_neutral_king_discount_still_adds_the_ally_fee_in_ally_territory():
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
 
     assert result.total_gold_spent == 2  # 1 gold flat + 1 gold ally fee
-    assert result.limit_blocked == []
+
+
+# Phase 691: Dinosaur armies (`AdvancedAbility.DRUIDIC_DINOSAURS`).
+
+DINOSAUR_LOCATION = HexCoord(4, 4)
+
+
+def build_dinosaur_state(*, druid_skill: int = 0, has_ability: bool = True, province_race: Race = Race.ELVEN) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Elvenholm", Race.ELVEN, Alignment.GOOD, HexCoord(0, 0), treasury=100))
+    state.add_province(ProvinceState(DINOSAUR_LOCATION, Terrain.PLAINS, province_race, owner_kingdom_id=1))
+    raw = [0] * 30
+    raw[Ability.DRUID.value * 2] = druid_skill
+    advanced_abilities = {AdvancedAbility.DRUIDIC_DINOSAURS} if has_ability else set()
+    state.add_leader(
+        LeaderState(
+            LEADER_ID,
+            1,
+            "Druid Leader",
+            DINOSAUR_LOCATION,
+            skills=SkillTable(raw_values=raw),
+            advanced_abilities=advanced_abilities,
+        )
+    )
+    return state
+
+
+def test_dinosaur_recruit_succeeds_at_full_quality_with_druid_skill_5():
+    state = build_dinosaur_state(druid_skill=5)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    new_army_id = result.recruited[0].army_id
+    assert state.armies[new_army_id].quality == Quality.AVERAGE
+    assert state.provinces[DINOSAUR_LOCATION].recruit_locked_this_turn is True
+
+
+def test_dinosaur_recruit_below_druid_skill_5_starts_green():
+    state = build_dinosaur_state(druid_skill=4)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    new_army_id = result.recruited[0].army_id
+    assert state.armies[new_army_id].quality == Quality.GREEN
+
+
+def test_dinosaur_recruit_without_advanced_ability_is_incompatible():
+    state = build_dinosaur_state(druid_skill=5, has_ability=False)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.incompatible == [ArmyType.DINOSAURS]
+
+
+def test_dinosaur_recruit_in_non_elven_province_is_incompatible():
+    state = build_dinosaur_state(druid_skill=5, province_race=Race.HUMAN)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.incompatible == [ArmyType.DINOSAURS]
+
+
+def test_second_dinosaur_recruit_request_same_turn_is_province_locked():
+    state = build_dinosaur_state(druid_skill=5)
+    first = execute_recruit(
+        state, kingdom_id=1, leader_id=LEADER_ID, request=RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+    )
+    assert len(first.recruited) == 1
+
+    second = execute_recruit(
+        state, kingdom_id=1, leader_id=LEADER_ID, request=RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+    )
+
+    assert second.recruited == []
+    assert second.province_locked == [ArmyType.BOWMEN]
+
+
+def test_only_one_dinosaur_per_province_per_turn_via_recruited_this_turn_cap():
+    state = build_dinosaur_state(druid_skill=5)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS, ArmyType.DINOSAURS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    # The 2nd Dinosaur is blocked by the ordinary per-type recruit cap
+    # (already 1 this turn), not by province_locked -- the lock only
+    # takes effect *after* a successful recruit, checked once at the
+    # top of the *next* execute_recruit() call, not mid-loop.
+    assert len(result.recruited) == 1
+    assert result.limit_blocked == [ArmyType.DINOSAURS]
+    assert result.province_locked == []

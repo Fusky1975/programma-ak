@@ -112,11 +112,10 @@ def test_monstrous_army_race_gains_only_vampires_not_dinosaurs():
     assert ArmyType.DINOSAURS not in MONSTROUS_ARMY_RACE
 
 
-def test_the_nine_new_army_types_have_no_rulebook_mechanics():
+def test_the_eight_remaining_new_army_types_have_no_rulebook_mechanics():
     from ak_engine.models.army_type import ARMY_TABLE, BASE_STRENGTH, NEMESIS
 
     for army_type in (
-        ArmyType.DINOSAURS,
         ArmyType.VAMPIRES,
         ArmyType.MARAUDERS,
         ArmyType.SHAMANS,
@@ -129,3 +128,17 @@ def test_the_nine_new_army_types_have_no_rulebook_mechanics():
         assert army_type not in ARMY_TABLE
         assert army_type not in BASE_STRENGTH
         assert army_type not in NEMESIS
+
+
+def test_dinosaurs_have_phase_691_rulebook_mechanics_but_no_base_strength():
+    # Phase 691: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real
+    # description resolves ARMY_TABLE/NEMESIS, but Strength stays
+    # variable (5-10, rolled per-battle), same as Elephants.
+    from ak_engine.models.army_type import ARMY_TABLE, BASE_STRENGTH, NEMESIS, ArmyTypeStats
+    from ak_engine.models.map import Terrain
+
+    assert ArmyType.DINOSAURS in ARMY_TABLE
+    assert ARMY_TABLE[ArmyType.DINOSAURS] == ArmyTypeStats(3, 3, (), (Terrain.SEA,))
+    assert NEMESIS[ArmyType.DINOSAURS] == frozenset({ArmyType.PHALANX})
+    assert ArmyType.DINOSAURS not in BASE_STRENGTH
+    assert ArmyType.DINOSAURS not in MONSTROUS_ARMY_RACE

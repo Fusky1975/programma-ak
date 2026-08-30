@@ -10,6 +10,7 @@ from ak_engine.models.map import Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.strength import (
+    DINOSAURS_STRENGTH_RANGE,
     DRUID_TABLE,
     ELEPHANTS_STRENGTH_RANGE,
     FANATICISM_CHANCE,
@@ -19,6 +20,7 @@ from ak_engine.turn.strength import (
     exploration_advantage_multiplier,
     modified_quality,
     phantasmal_armies_multiplier,
+    roll_dinosaurs_strength,
     roll_elephants_strength,
     roll_fanaticism,
 )
@@ -81,6 +83,13 @@ def test_roll_elephants_strength_within_range():
     for _ in range(200):
         value = roll_elephants_strength(rng)
         assert ELEPHANTS_STRENGTH_RANGE[0] <= value <= ELEPHANTS_STRENGTH_RANGE[1]
+
+
+def test_roll_dinosaurs_strength_within_range():
+    rng = random.Random(0)
+    for _ in range(200):
+        value = roll_dinosaurs_strength(rng)
+        assert DINOSAURS_STRENGTH_RANGE[0] <= value <= DINOSAURS_STRENGTH_RANGE[1]
 
 
 def test_modified_quality_stacks_and_clamps():

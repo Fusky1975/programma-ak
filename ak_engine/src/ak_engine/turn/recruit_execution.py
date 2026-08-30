@@ -151,19 +151,52 @@ rulebook never forbids it -- "uno stesso personaggio puo aggiudicarsene
 piu di una," rulebook [10.1]) gets each qualifying type's own bonus
 independently; the three domains are mutually exclusive, so no army
 type can ever double-count towards more than one Office's own bonus.
+
+**Dinosaur armies (Phase 691, `AdvancedAbility.DRUIDIC_DINOSAURS`)**:
+a real Advanced Ability precondition beyond the Race.ELVEN race gate
+(``turn/recruit.py is_army_type_compatible_with_race()``) -- checked
+right after the existing ``IncompatibleRaceError`` catch, since the
+ability is a separate, independent requirement, not encoded in the
+race check itself. A fresh levy's quality is ``Quality.AVERAGE`` (the
+usual baseline) only when the acting leader's own Druid skill is
+``>= DINOSAUR_FULL_QUALITY_DRUID_SKILL`` (5, "For full quality, Druid
+level 5 is required"); below that, a documented interpretation steps
+it down to ``Quality.GREEN`` instead -- see that constant's own
+docstring. A successful Dinosaur recruit also sets ``ProvinceState.
+recruit_locked_this_turn = True`` ("no further units may be recruited
+in the province that turn"), checked as an early whole-order block
+(``RecruitExecutionResult.province_locked``) right after the existing
+Treat-permission check. "Only in place of elven EL, LC or HC" is read
+as descriptive context for why this only applies in Elven provinces,
+not a literal cross-type slot-consumption formula -- no source gives a
+mechanism for how recruiting a Dinosaur would decrement a *different*
+army type's own ``recruited_this_turn`` counter, so none is invented.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.army_type import OVERFLIGHT_AIR, OVERFLIGHT_SEA, ArmyType
+from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.office import Office
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.recruit import IncompatibleRaceError, is_army_type_compatible_with_race, resolve_recruit
 from ak_engine.turn.recruit_decode import RecruitRequest
+
+# Phase 691: Druid skill required for full Dinosaur quality
+# (`AdvancedAbility.DRUIDIC_DINOSAURS`'s own real description --
+# "For full quality, Druid level 5 is required"). Below this, a
+# documented interpretation steps the fresh levy's quality down one
+# tier (`Quality.GREEN` instead of the universal `Quality.AVERAGE`
+# baseline), mirroring this project's own "shortfall steps quality
+# down by tiers" convention without reusing `compute_druidic_
+# shortfall()`'s own differently-scoped kingdom-race check.
+DINOSAUR_FULL_QUALITY_DRUID_SKILL = 5
 
 
 @dataclass(slots=True)
@@ -189,6 +222,12 @@ class RecruitExecutionResult:
     incompatible: list[ArmyType] = field(default_factory=list)
     treat_blocked: list[ArmyType] = field(default_factory=list)
     territory_blocked: list[ArmyType] = field(default_factory=list)
+    # Phase 691: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own "no further
+    # units may be recruited in the province that turn" -- a whole-order
+    # block distinct from `limit_blocked` (a per-type cap), triggered by
+    # `ProvinceState.recruit_locked_this_turn` from an earlier successful
+    # Dinosaur recruit this same turn.
+    province_locked: list[ArmyType] = field(default_factory=list)
     total_gold_spent: int = 0
 
 
@@ -235,6 +274,10 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         result.treat_blocked.extend(request.army_types)
         return result
 
+    if province.recruit_locked_this_turn:
+        result.province_locked.extend(request.army_types)
+        return result
+
     wingman_holder = resolve_office_holder(state, Office.WINGMAN)
     leader_is_wingman = wingman_holder is not None and wingman_holder.leader_id == leader_id
     marshal_holder = resolve_office_holder(state, Office.MARSHAL)
@@ -266,6 +309,15 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
                 chief_of_staff_discount=leader_is_chief_of_staff,
             )
         except IncompatibleRaceError:
+            result.incompatible.append(army_type)
+            continue
+
+        # Phase 691: the race gate (Race.ELVEN, checked above via
+        # is_army_type_compatible_with_race()) is necessary but not
+        # sufficient -- `AdvancedAbility.DRUIDIC_DINOSAURS` is a real,
+        # separate precondition ("The Druid can now recruit Dinosaur
+        # armies").
+        if army_type is ArmyType.DINOSAURS and AdvancedAbility.DRUIDIC_DINOSAURS not in leader.advanced_abilities:
             result.incompatible.append(army_type)
             continue
 
@@ -318,12 +370,16 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             hired = True
         else:
             army_id = state.new_army_id()
+            if army_type is ArmyType.DINOSAURS and effective_skill_level(state, leader, Ability.DRUID) < DINOSAUR_FULL_QUALITY_DRUID_SKILL:
+                fresh_levy_quality = Quality.GREEN
+            else:
+                fresh_levy_quality = Quality.AVERAGE
             state.add_army(
                 ArmyState(
                     army_id=army_id,
                     kingdom_id=kingdom_id,
                     army_type=army_type,
-                    quality=Quality.AVERAGE,
+                    quality=fresh_levy_quality,
                     location=location,
                     commanded_by=commanded_by,
                     movement_points=0,
@@ -331,6 +387,8 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             )
             hired = False
         province.recruited_this_turn[army_type] = already_this_turn + 1
+        if army_type is ArmyType.DINOSAURS:
+            province.recruit_locked_this_turn = True
 
         result.recruited.append(
             RecruitedUnit(

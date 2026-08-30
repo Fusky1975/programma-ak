@@ -944,6 +944,13 @@ class ProvinceState:
     # replenishment (`turn/turn_processor.py _replenish_turn_scoped_
     # state()`, Phase 573).
     recruited_this_turn: dict[ArmyType, int] = field(default_factory=dict)
+    # Phase 691: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real
+    # description -- "no further units may be recruited in the province
+    # that turn" after a successful Dinosaur recruit. A hard lockout
+    # regardless of ArmyType, distinct from `recruited_this_turn`'s own
+    # per-type counter. Cleared at the same turn-boundary sweep as
+    # `recruited_this_turn` above.
+    recruit_locked_this_turn: bool = False
     # Part Sea / Flood Province (Phase 59) -- see module docstring.
     terrain_override: Terrain | None = None
     # Bless / Earthquake (Phase 59) -- see module docstring.

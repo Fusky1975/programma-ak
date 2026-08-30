@@ -98,6 +98,12 @@ from ak_engine.turn.combat import DEFENDER_BONUS, NEMESIS_PENALTY, Quality
 # uniformly, a documented choice.
 ELEPHANTS_STRENGTH_RANGE = (2, 5)
 
+# Phase 691: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real description
+# (`models/advanced_ability.py`) -- "Strength: Unpredictable (5 to 10)."
+# Same "excluded from BASE_STRENGTH, rolled per-battle" treatment as
+# Elephants above.
+DINOSAURS_STRENGTH_RANGE = (5, 10)
+
 # Rulebook: "An army fighting for a Divine kingdom has a 50% chance of
 # becoming fanatical... Good kingdom... 40%... Evil kingdom... 25%." Every
 # other alignment has no stated chance (treated as 0, not guessed higher).
@@ -201,6 +207,10 @@ DRUID_TABLE: dict[Race, int] = {
 
 def roll_elephants_strength(rng: random.Random) -> int:
     return rng.randint(*ELEPHANTS_STRENGTH_RANGE)
+
+
+def roll_dinosaurs_strength(rng: random.Random) -> int:
+    return rng.randint(*DINOSAURS_STRENGTH_RANGE)
 
 
 def compute_druidic_shortfall(leader_race: Race | None, army_race: Race, leader_druidic_skill: int) -> int:

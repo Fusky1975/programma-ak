@@ -70,7 +70,19 @@ class RecruitResolution:
     is_double_cost: bool
 
 
+# Phase 691: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real description
+# -- "trainable only by skilled Elven riders" -- gates Dinosaurs on
+# `Race.ELVEN` specifically, not `MONSTROUS_ARMY_RACE` (that dict's own
+# real semantic is "native to and exclusive to one non-humanoid race's
+# own province"; Dinosaurs are Elven-*trained*, a skill/ability gate
+# checked separately in `turn/recruit_execution.py`, not a province-
+# nativity gate).
+_ELVEN_ONLY_ARMY_TYPES = frozenset({ArmyType.DINOSAURS})
+
+
 def is_army_type_compatible_with_race(army_type: ArmyType, province_race: Race) -> bool:
+    if army_type in _ELVEN_ONLY_ARMY_TYPES:
+        return province_race is Race.ELVEN
     monstrous_race = MONSTROUS_ARMY_RACE.get(army_type)
     if monstrous_race is not None:
         return province_race == monstrous_race

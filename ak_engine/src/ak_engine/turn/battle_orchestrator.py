@@ -226,6 +226,7 @@ from ak_engine.turn.strength import (
     PHANTASMAL_ARMIES_BONUS_PER_LEVEL,
     compute_druidic_shortfall,
     compute_effective_strength,
+    roll_dinosaurs_strength,
     roll_elephants_strength,
     roll_fanaticism,
     roll_title_fanaticism,
@@ -634,7 +635,12 @@ def _build_battle_units(
     for army in armies:
         kingdom = state.kingdoms[army.kingdom_id]
         is_home = province_coord == kingdom.home_province
-        override = roll_elephants_strength(rng) if army.army_type is ArmyType.ELEPHANTS else None
+        if army.army_type is ArmyType.ELEPHANTS:
+            override = roll_elephants_strength(rng)
+        elif army.army_type is ArmyType.DINOSAURS:
+            override = roll_dinosaurs_strength(rng)
+        else:
+            override = None
         # Short-circuited: roll_fanaticism (and its rng.random() call) never
         # runs at all when apply_fanaticism is False -- see docstring.
         is_fanatical = apply_fanaticism and roll_fanaticism(kingdom.alignment, rng)

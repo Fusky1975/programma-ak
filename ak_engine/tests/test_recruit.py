@@ -28,6 +28,15 @@ def test_monstrous_army_type_only_compatible_with_its_own_race():
     assert not is_army_type_compatible_with_race(ArmyType.DRAGON_WING, Race.EAGLES)
 
 
+def test_dinosaurs_only_compatible_with_elven_race():
+    # Phase 691: `AdvancedAbility.DRUIDIC_DINOSAURS` -- "trainable only
+    # by skilled Elven riders" -- narrower than the generic humanoid
+    # fallback (Human/Dwarven/Orcish are humanoid too, but not eligible).
+    assert is_army_type_compatible_with_race(ArmyType.DINOSAURS, Race.ELVEN)
+    for race in (Race.HUMAN, Race.DWARVEN, Race.ORCISH, Race.DRAGONS, Race.EAGLES):
+        assert not is_army_type_compatible_with_race(ArmyType.DINOSAURS, race)
+
+
 def test_recruit_limit_is_normally_one():
     assert recruit_limit(ArmyType.BOWMEN, is_home_province=False, province_race=Race.HUMAN) == 1
 

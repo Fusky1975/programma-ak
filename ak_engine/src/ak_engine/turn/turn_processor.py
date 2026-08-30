@@ -730,6 +730,11 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
     - ``ProvinceState.recruited_this_turn`` -> ``{}`` -- otherwise a
       province that ever hit its per-type recruit limit once (rulebook
       [3.4]) could never recruit that type again, ever.
+    - ``ProvinceState.recruit_locked_this_turn`` -> ``False`` (Phase 691)
+      -- a province that ever hosted a successful Dinosaur recruit
+      (``AdvancedAbility.DRUIDIC_DINOSAURS``'s own "no further units may
+      be recruited in the province that turn") could otherwise never
+      recruit anything there again, ever.
     - ``GameState.action_casts_used`` -> ``{}`` (Phase 575) -- otherwise a
       (leader, Ability) pair that ever exhausted its own per-turn
       Action-Cast slots (``turn/cast_execution.py action_cast_slots()``)
@@ -765,6 +770,7 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         army.unhireable_this_turn = False
     for province in state.provinces.values():
         province.recruited_this_turn = {}
+        province.recruit_locked_this_turn = False
         province.illusory_fog_active = False
     for leader in state.leaders.values():
         leader.oratory_boosted_this_turn = False

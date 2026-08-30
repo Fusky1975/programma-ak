@@ -28883,7 +28883,7 @@ follow-up request after the original 431-435 plan shipped.
   "later phase closed it, nobody updated the earlier note" pattern.
   Test count: 5776 (unchanged).
 
-- **Phase 690 (current)**: an eleventh fresh codebase survey (2026-08-30,
+- **Phase 690**: an eleventh fresh codebase survey (2026-08-30,
   "continua"), widened toward tractable wiring gaps after the tenth
   survey's own thin stale-docstring yield, found and wires 2 real,
   sourced magic-college `AdvancedAbility` entries that are genuinely
@@ -28906,6 +28906,48 @@ follow-up request after the original 431-435 plan shipped.
   restriction for anyone to bypass. Test count: 5776 -> 5785 (net +9).
   Full suite verified green (unchanged, 5776) before writing a single
   new test; every new test passed on the first run.
+
+- **Phase 691 (current)**: a twelfth fresh codebase survey (2026-08-30,
+  "continua", widened past the magic-college `AdvancedAbility` table
+  into the other 10 skill categories) found `ArmyType.DINOSAURS`
+  existed as a bare enum member with zero stats -- deliberately, since
+  the one prior source for monstrous-race gating (`special_races`'
+  8-item list) excludes Dinosaurs and this project correctly declined
+  to guess. `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real description
+  is a separate, independent source that resolves this in full: "The
+  Druid can now recruit Dinosaur armies... trainable only by skilled
+  Elven riders... Strength: Unpredictable (5 to 10); Speed: 3; Pay: 3;
+  Home Terrain: None; Adverse Terrain: Sea; Nemesis: Phalanx; Race:
+  Saurian. For full quality, Druid level 5 is required. They qualify as
+  'Beasts', the nemesis to mounted units... Only one can be recruited
+  per province per turn, only in place of elven EL, LC or HC, and no
+  further units may be recruited in the province that turn." Wired
+  end to end: `models/army_type.py` gains a real `ARMY_TABLE`/`NEMESIS`
+  entry and joins `_BEASTS` (independently confirming this project's
+  own prior unsourced "Beasts = Elephants/Camel Corps" reading); `turn/
+  strength.py roll_dinosaurs_strength()` mirrors Elephants' own
+  variable-strength precedent; `turn/recruit.py` gains a new
+  Race.ELVEN-only gate (not `MONSTROUS_ARMY_RACE`, whose real semantic
+  -- province-nativity exclusivity -- doesn't match an Elven-*trained*
+  army type); `models/game_state.py` gains a new `ProvinceState.
+  recruit_locked_this_turn` field for the literal "no further units may
+  be recruited in the province that turn" lockout (no existing
+  primitive covered a hard, cross-type lockout); `turn/recruit_
+  execution.py` checks the Advanced Ability as a real precondition
+  beyond the race gate, sets the new lock after a successful Dinosaur
+  recruit, and gives a fresh levy `Quality.AVERAGE` at Druid skill >= 5
+  or a documented `Quality.GREEN` below that (mirrors this project's
+  own "shortfall steps quality down by tiers" convention without reusing
+  `compute_druidic_shortfall()`'s differently-scoped kingdom-race check).
+  "In place of elven EL, LC or HC" is read as descriptive context for
+  why this only applies in Elven provinces, not a literal cross-type
+  slot-consumption formula -- no source gives a mechanism for how
+  recruiting a Dinosaur would decrement a *different* army type's own
+  counter, so none is invented. Test count: 5785 -> 5794 (net +9).
+  Full suite verified green (unchanged, 5785) before writing a single
+  new test; every new test passed after fixing one duplicated stray
+  assertion line and one pre-existing test's own now-stale "Dinosaurs
+  have no rulebook mechanics" claim.
 
 ## Setup
 
