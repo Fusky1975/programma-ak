@@ -940,6 +940,17 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
     by this text and deliberately not guessed here -- see ``turn/
     skeletal_decay.py``'s own module docstring for the graveyard's real
     scope.
+
+    **Phase 690 -- `AdvancedAbility.ENHANCED_SKELETAL_UNITS`'s own
+    exemption**: "The necromancer may now Leave skeletal armies to
+    another character or the garrison commander, even if there is no
+    Undead leader to control the armies" -- the *acting* leader (the
+    one issuing this Leave order) holding this ability bypasses the
+    grave-digging check entirely, checked alongside the existing
+    Undead-King check below. The sourced text's own "may also Pick Up
+    skeletal armies freely" half needs no code change at all --
+    ``_dispatch_pick_up()`` already has no skeletal-specific
+    restriction for anyone to bypass.
     """
 
     request = decode_army_list_phase(phase)
@@ -953,7 +964,11 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
         if army is None:
             result.skipped.append(army_id)
             continue
-        if army.is_skeletal and not _is_undead_king(state, request.target_leader_id):
+        if (
+            army.is_skeletal
+            and not _is_undead_king(state, request.target_leader_id)
+            and AdvancedAbility.ENHANCED_SKELETAL_UNITS not in state.leaders[leader_id].advanced_abilities
+        ):
             result.skeletal_army_lost.append((army_id, army.army_type))
             state.remove_army(army_id)
             continue

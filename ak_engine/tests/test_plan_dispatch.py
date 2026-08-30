@@ -1197,6 +1197,37 @@ def test_dispatch_leave_ordinary_army_unaffected_by_skeletal_rule():
     assert state.armies[army_id].commanded_by is None
 
 
+# -- Phase 690: AdvancedAbility.ENHANCED_SKELETAL_UNITS's own exemption --
+
+
+def test_dispatch_leave_skeletal_army_abandoned_uncommanded_survives_with_enhanced_skeletal_units():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.armies[army_id].is_skeletal = True
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_SKELETAL_UNITS)
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert result.skeletal_army_lost == []
+    assert state.armies[army_id].commanded_by is None
+    assert state.armies[army_id].is_skeletal is True
+
+
+def test_dispatch_leave_skeletal_army_handed_to_non_undead_king_survives_with_enhanced_skeletal_units():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.armies[army_id].is_skeletal = True
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_SKELETAL_UNITS)
+    state.add_leader(LeaderState(2, 1, "Ordinary Hero", HexCoord(3, 9)))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert result.skeletal_army_lost == []
+    assert state.armies[army_id].commanded_by == 2
+
+
 def test_dispatch_pick_up_attaches_colocated_army():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})

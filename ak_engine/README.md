@@ -28869,7 +28869,7 @@ follow-up request after the original 431-435 plan shipped.
   (unchanged, 5770) before touching a single test -- confirming the
   predicted breakage by running, not assuming.
 
-- **Phase 689 (current)**: comment-only, no behavior change. A tenth
+- **Phase 689**: comment-only, no behavior change. A tenth
   fresh codebase survey (2026-08-30, "continua") found `turn/valhalla_
   execution.py`'s own Phase 546 note still listing 4 items as "not yet
   enforced" (phase capping, spell immunity, the fixed-item Give block,
@@ -28882,6 +28882,30 @@ follow-up request after the original 431-435 plan shipped.
   correct this paragraph. The 26th recurrence of this project's own
   "later phase closed it, nobody updated the earlier note" pattern.
   Test count: 5776 (unchanged).
+
+- **Phase 690 (current)**: an eleventh fresh codebase survey (2026-08-30,
+  "continua"), widened toward tractable wiring gaps after the tenth
+  survey's own thin stale-docstring yield, found and wires 2 real,
+  sourced magic-college `AdvancedAbility` entries that are genuinely
+  grantable via this project's own already-wired `spabord` schedule but
+  had zero implementing code anywhere in `turn/`. `AdvancedAbility.
+  MAKE_GEMS_TALENT` ("each time the mage practices elemental ability
+  (PR EL), he makes gems... worth between 1-3 gold per practice
+  session") is wired via a new `turn/practice_execution.py _maybe_make_
+  gems()`, an almost exact mirror of the existing `_maybe_receive_
+  society_maps()` (Society Maps/Explorer, Phase 510) -- fires once per
+  Practice attempt, unconditional on the skill roll, at both real entry
+  points (`execute_practice()`/`execute_practice_group()`).
+  `AdvancedAbility.ENHANCED_SKELETAL_UNITS` ("the necromancer may now
+  Leave skeletal armies to another character or the garrison commander,
+  even if there is no Undead leader to control the armies... may also
+  Pick Up skeletal armies freely") now exempts the acting leader from
+  Phase 647's own "digs its own grave" rule in `turn/plan_dispatch.py
+  _dispatch_leave()` -- one added conjunct; the Pick Up half needed no
+  change since `_dispatch_pick_up()` already has no skeletal-specific
+  restriction for anyone to bypass. Test count: 5776 -> 5785 (net +9).
+  Full suite verified green (unchanged, 5776) before writing a single
+  new test; every new test passed on the first run.
 
 ## Setup
 

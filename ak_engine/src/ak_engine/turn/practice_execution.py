@@ -643,6 +643,11 @@ class PracticeExecutionResult:
     # Empty for every ability other than EXPLORER, and for an EXPLORER
     # practicer who doesn't already own the Advanced Ability.
     society_maps_revealed: tuple[HexCoord, ...] = ()
+    # Phase 690: Make Gems Talent's own "each time he practices
+    # elemental ability" trigger -- see _maybe_make_gems()'s own
+    # docstring. 0 for every ability other than ELEMENTAL, and for an
+    # ELEMENTAL practicer who doesn't already own the Advanced Ability.
+    gems_gold_gained: int = 0
 
 
 def _get_or_create_skills(leader: LeaderState) -> SkillTable:
@@ -724,6 +729,37 @@ def _maybe_receive_society_maps(
 
     count = rng.randint(*SOCIETY_MAPS_PRACTICE_COUNT_RANGE)
     return tuple(receive_society_maps(state, leader.kingdom_id, count, rng))
+
+
+# Phase 690: Make Gems Talent (``models/advanced_ability.py ADVANCED_
+# ABILITY_DESCRIPTION[MAKE_GEMS_TALENT]``): "worth between 1-3 gold per
+# practice session."
+MAKE_GEMS_GOLD_RANGE = (1, 3)
+
+
+def _maybe_make_gems(state: GameState, leader: LeaderState, ability: Ability, rng: random.Random) -> int:
+    """Make Gems Talent (Advanced Ability, Phase 690): "each time the mage
+    practices elemental ability (PR EL), he makes gems as a natural
+    byproduct of his researches, worth between 1-3 gold per practice
+    session."
+
+    Same shape as ``_maybe_receive_society_maps()`` above: fires once per
+    Practice attempt on the Elemental ability specifically, unconditional
+    on whether the skill roll itself succeeds (the rulebook text ties this
+    to *practicing*, not *improving*), for a practicer who already owns
+    the Advanced Ability and belongs to a real kingdom (no "byproduct of
+    his researches" treasury to credit otherwise). Returns the real gold
+    amount credited, or ``0`` when none of those conditions hold.
+    """
+
+    if ability is not Ability.ELEMENTAL or AdvancedAbility.MAKE_GEMS_TALENT not in leader.advanced_abilities:
+        return 0
+    if leader.kingdom_id is None:
+        return 0
+
+    amount = rng.randint(*MAKE_GEMS_GOLD_RANGE)
+    state.kingdoms[leader.kingdom_id].treasury += amount
+    return amount
 
 
 DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE = 0.05
@@ -945,6 +981,7 @@ def execute_practice(
 
     advanced_ability_granted = _maybe_grant_advanced_ability(state, leader, ability, outcome.skill_rose, outcome.new_skill)
     society_maps_revealed = _maybe_receive_society_maps(state, leader, ability, rng)
+    gems_gold_gained = _maybe_make_gems(state, leader, ability, rng)
 
     device_discovered = False
     discovery_granted: Discovery | None = None
@@ -965,6 +1002,7 @@ def execute_practice(
         discovery_granted=discovery_granted,
         advanced_ability_granted=advanced_ability_granted,
         society_maps_revealed=society_maps_revealed,
+        gems_gold_gained=gems_gold_gained,
     )
 
 
@@ -1131,6 +1169,7 @@ def execute_practice_group(
 
         advanced_ability_granted = _maybe_grant_advanced_ability(state, leader, ability, outcome.skill_rose, outcome.new_skill)
         society_maps_revealed = _maybe_receive_society_maps(state, leader, ability, rng)
+        gems_gold_gained = _maybe_make_gems(state, leader, ability, rng)
 
         if outcome.skill_rose:
             # Phase 446: Teacher merit -- +1 to the selected teacher per
@@ -1160,6 +1199,7 @@ def execute_practice_group(
                 discovery_granted=discovery_granted,
                 advanced_ability_granted=advanced_ability_granted,
                 society_maps_revealed=society_maps_revealed,
+                gems_gold_gained=gems_gold_gained,
             )
         )
     return results

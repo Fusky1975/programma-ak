@@ -27,6 +27,7 @@ from ak_engine.turn.practice_execution import (
     PracticeExecutionResult,
     _improved_training_multiplier,
     _maybe_grant_advanced_ability,
+    _maybe_make_gems,
     _maybe_receive_society_maps,
     _select_discovery_to_grant,
     _teacher_aptitude_bonus,
@@ -1731,6 +1732,87 @@ def test_execute_practice_group_reveals_society_maps_for_each_qualifying_partici
 
     assert 1 <= len(results[0].society_maps_revealed) <= 3
     assert results[1].society_maps_revealed == ()
+
+
+# -- Phase 690: Make Gems Talent ---------------------------------------
+
+
+def _state_with_leader_and_kingdom(*, has_make_gems: bool, kingdom_id: int | None = 1) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION, treasury=100))
+    leader = LeaderState(1, kingdom_id=kingdom_id, name="L1", location=LOCATION)
+    if has_make_gems:
+        leader.advanced_abilities.add(AdvancedAbility.MAKE_GEMS_TALENT)
+    state.add_leader(leader)
+    return state
+
+
+def test_maybe_make_gems_returns_nothing_for_a_non_elemental_ability():
+    state = _state_with_leader_and_kingdom(has_make_gems=True)
+    amount = _maybe_make_gems(state, state.leaders[1], Ability.WHITE, random.Random(0))
+    assert amount == 0
+    assert state.kingdoms[1].treasury == 100
+
+
+def test_maybe_make_gems_returns_nothing_without_the_advanced_ability():
+    state = _state_with_leader_and_kingdom(has_make_gems=False)
+    amount = _maybe_make_gems(state, state.leaders[1], Ability.ELEMENTAL, random.Random(0))
+    assert amount == 0
+    assert state.kingdoms[1].treasury == 100
+
+
+def test_maybe_make_gems_returns_nothing_for_a_kingdom_less_hero():
+    state = _state_with_leader_and_kingdom(has_make_gems=True, kingdom_id=None)
+    amount = _maybe_make_gems(state, state.leaders[1], Ability.ELEMENTAL, random.Random(0))
+    assert amount == 0
+
+
+def test_maybe_make_gems_grants_one_to_three_gold_and_credits_the_treasury():
+    state = _state_with_leader_and_kingdom(has_make_gems=True)
+    amount = _maybe_make_gems(state, state.leaders[1], Ability.ELEMENTAL, random.Random(0))
+    assert 1 <= amount <= 3
+    assert state.kingdoms[1].treasury == 100 + amount
+
+
+def test_execute_practice_gains_gems_when_the_skill_rises():
+    # skill=4, aptitude=9 -> deficit 0, gate guaranteed; credit=95 means
+    # the +5 solo gain crosses the 100 threshold, an immediate rise.
+    state = _state_with_leader_and_kingdom(has_make_gems=True)
+    state.leaders[1].skills = _skills_with(Ability.ELEMENTAL, skill=4, aptitude=9)
+    state.leaders[1].experience_credit = 95
+
+    result = execute_practice(state, leader_id=1, ability=Ability.ELEMENTAL, rng=random.Random(0))
+
+    assert result.skill_rose is True
+    assert 1 <= result.gems_gold_gained <= 3
+
+
+def test_execute_practice_gains_gems_when_the_skill_does_not_rise():
+    # skill=0, aptitude=0, credit=0 -> nowhere near the rise threshold in
+    # a single call -- gems still fire, proving independence from
+    # skill_rose either way.
+    state = _state_with_leader_and_kingdom(has_make_gems=True)
+    state.leaders[1].skills = None
+
+    result = execute_practice(state, leader_id=1, ability=Ability.ELEMENTAL, rng=random.Random(0))
+
+    assert result.skill_rose is False
+    assert 1 <= result.gems_gold_gained <= 3
+
+
+def test_execute_practice_group_gains_gems_for_each_qualifying_participant():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION, treasury=100))
+    leader1 = LeaderState(1, kingdom_id=1, name="L1", location=LOCATION)
+    leader1.advanced_abilities.add(AdvancedAbility.MAKE_GEMS_TALENT)
+    leader2 = LeaderState(2, kingdom_id=1, name="L2", location=LOCATION)
+    state.add_leader(leader1)
+    state.add_leader(leader2)
+
+    results = execute_practice_group(state, [1, 2], Ability.ELEMENTAL, rng=random.Random(0))
+
+    assert 1 <= results[0].gems_gold_gained <= 3
+    assert results[1].gems_gold_gained == 0
 
 
 def test_execute_practice_grants_advanced_ability_on_a_magic_college_skill_rise():
