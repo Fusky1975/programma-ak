@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 
@@ -45,10 +45,11 @@ from ak_engine.turn.battle_orchestrator import (
     fight_multi_attacker_battle,
 )
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
+from ak_engine.turn.challenge_execution import ChallengeCombatOutcome
 from ak_engine.turn.druidic_monster_aid import DruidicMonsterAssistance
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.duel import Commander, provincial_garrison_commander
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, MeleeSwing
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.strength import compute_effective_strength
@@ -2987,6 +2988,96 @@ def test_maybe_fight_duel_real_combat_works_with_a_garrison_commander_defender()
     assert defender_units[0].effective_strength == 10.0 * 0.75
 
 
+# -- Phase 686: Melee/Archery combat-experience wiring (dormant today --
+# use_real_duel_combat defaults False for every production caller) --
+
+
+def _duel_setup():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="A", location=FIELD))
+    state.add_leader(LeaderState(502, kingdom_id=2, name="B", location=FIELD))
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+    return state, attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander
+
+
+def test_maybe_fight_duel_landed_melee_hit_credits_the_attacker():
+    state, aa, da, au, du, ac, dc = _duel_setup()
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.battle_orchestrator.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner="a", melee_swings=(MeleeSwing(attacker="a", hit=True, damage=3),)
+        )
+        _maybe_fight_duel(ac, dc, aa, da, au, du, ScriptedRandom([]), state=state, use_real_duel_combat=True)
+
+    mock_add_experience.assert_any_call(state.leaders[501], Ability.MELEE, 10, ANY)
+
+
+def test_maybe_fight_duel_landed_melee_hit_credits_the_defender_independently():
+    state, aa, da, au, du, ac, dc = _duel_setup()
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.battle_orchestrator.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner="b", melee_swings=(MeleeSwing(attacker="b", hit=True, damage=3),)
+        )
+        _maybe_fight_duel(ac, dc, aa, da, au, du, ScriptedRandom([]), state=state, use_real_duel_combat=True)
+
+    mock_add_experience.assert_any_call(state.leaders[502], Ability.MELEE, 10, ANY)
+    for call in mock_add_experience.call_args_list:
+        assert call.args[0] is not state.leaders[501]
+
+
+def test_maybe_fight_duel_all_miss_credits_nothing():
+    state, aa, da, au, du, ac, dc = _duel_setup()
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.battle_orchestrator.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner=None)
+        _maybe_fight_duel(ac, dc, aa, da, au, du, ScriptedRandom([]), state=state, use_real_duel_combat=True)
+
+    mock_add_experience.assert_not_called()
+
+
+def test_maybe_fight_duel_garrison_commander_side_is_never_credited():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_leader(LeaderState(501, kingdom_id=1, name="A", location=FIELD))
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD)]  # unled
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = provincial_garrison_commander(contingent_size=1)
+
+    with patch("ak_engine.turn.battle_orchestrator.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.battle_orchestrator.add_experience"
+    ) as mock_add_experience:
+        # Both sides "land a hit" -- only the real leader (attacker) should
+        # ever be credited; the garrison commander has no LeaderState.
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner="a",
+            melee_swings=(MeleeSwing(attacker="a", hit=True, damage=3), MeleeSwing(attacker="b", hit=True, damage=1)),
+        )
+        _maybe_fight_duel(
+            attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units,
+            ScriptedRandom([]), state=state, use_real_duel_combat=True,
+        )
+
+    mock_add_experience.assert_any_call(state.leaders[501], Ability.MELEE, 10, ANY)
+    assert mock_add_experience.call_count == 1
+
+
 def test_maybe_fight_duel_real_combat_requires_state_or_falls_back_to_approximation():
     # use_real_duel_combat=True without a state given can't build
     # Combatants -- falls back to the strength-ratio approximation
@@ -3246,8 +3337,11 @@ def test_fight_battle_with_real_duel_combat_reports_a_loser_side():
     # luck/win rolls afterward. Then the usual no-luck-overwhelming
     # sequence. Phase 296: extra leading 0.9 in the second group accounts
     # for the new terrain-line-length-cap roll (consumed right after the
-    # duel, before the 3 luck rolls).
-    rng = ScriptedRandom([0.1, 0.5, 0.9, 0.1, 0.5] + [0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # duel, before the 3 luck rolls). Phase 686: 2 more values right
+    # after the duel account for `add_experience()`'s own triangular
+    # draw -- A landed at least one hit, so A's own Melee experience
+    # credit fires once (B never lands a hit, so no credit/draw for B).
+    rng = ScriptedRandom([0.1, 0.5, 0.9, 0.1, 0.5] + [0.5, 0.5] + [0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
 
     report = fight_battle(
         state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng,

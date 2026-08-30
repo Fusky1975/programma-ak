@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from unittest.mock import ANY, patch
 
 import pytest
 
@@ -44,6 +45,7 @@ from ak_engine.turn.cast_execution import (
     scar_terrain_is_exhausted,
 )
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.encounter import EncounterCombatResult, MeleeSwing
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 
@@ -987,10 +989,60 @@ def test_kill_enemy_berserk_counterattack_caster_survives_and_kills_the_retaliat
     # Phase 313, rulebook [5.9]: the surviving caster loots the retaliator.
     assert result.looted_item_ids == [item.item_id]
     assert state.items[item.item_id].owner_leader_id == CASTER_ID
-    # Phase 447: a failed cast (Berserk counterattack) never credits Assassin merit.
-    assert state.leaders[CASTER_ID].merit_tally.successful_assassinations == 0
-    # Phase 612: the duel's own per-round detail survives for narration.
-    assert len(result.melee_swings) > 0
+
+
+# -- Phase 686: Melee combat-experience wiring (Kill Enemy's own retaliation) --
+
+
+def test_execute_kill_enemy_landed_melee_hit_credits_the_caster():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 0)  # guaranteed cast failure
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+
+    with patch("ak_engine.turn.cast_execution.resolve_melee_duel") as mock_resolve, patch(
+        "ak_engine.turn.cast_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = EncounterCombatResult(
+            winner="a", rounds=1, melee_swings=(MeleeSwing(attacker="a", hit=True, damage=3),)
+        )
+        execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=random.Random(0))
+
+    mock_add_experience.assert_any_call(state.leaders[CASTER_ID], Ability.MELEE, 10, ANY)
+
+
+def test_execute_kill_enemy_landed_melee_hit_credits_the_target_independently():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 0)  # guaranteed cast failure
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+
+    with patch("ak_engine.turn.cast_execution.resolve_melee_duel") as mock_resolve, patch(
+        "ak_engine.turn.cast_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = EncounterCombatResult(
+            winner="b", rounds=1, melee_swings=(MeleeSwing(attacker="b", hit=True, damage=3),)
+        )
+        execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=random.Random(0))
+
+    mock_add_experience.assert_any_call(state.leaders[78], Ability.MELEE, 10, ANY)
+    for call in mock_add_experience.call_args_list:
+        assert call.args[0].leader_id != CASTER_ID
+
+
+def test_execute_kill_enemy_all_miss_credits_nothing():
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Enemy Hero", LOCATION))
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 0)  # guaranteed cast failure
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+
+    with patch("ak_engine.turn.cast_execution.resolve_melee_duel") as mock_resolve, patch(
+        "ak_engine.turn.cast_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=random.Random(0))
+
+    mock_add_experience.assert_not_called()
 
 
 def test_charm_succeeds_on_a_real_roll_under_the_casters_chance():

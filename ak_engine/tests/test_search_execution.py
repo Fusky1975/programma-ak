@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 
@@ -672,6 +672,55 @@ def test_execute_search_non_troll_guardian_has_no_regeneration():
     assert monster_combatant.regenerates_hp == 0
 
 
+# -- Phase 686: Melee/Archery combat-experience wiring --
+
+
+def test_execute_search_landed_melee_hit_credits_the_leaders_melee_experience():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve, patch(
+        "ak_engine.turn.search_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = EncounterCombatResult(
+            winner="a", rounds=1, melee_swings=(MeleeSwing(attacker="a", hit=True, damage=3),)
+        )
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    mock_add_experience.assert_any_call(state.leaders[LEADER_ID], Ability.MELEE, 10, ANY)
+
+
+def test_execute_search_all_miss_melee_credits_nothing():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_resolve, patch(
+        "ak_engine.turn.search_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = EncounterCombatResult(
+            winner="b", rounds=1, melee_swings=(MeleeSwing(attacker="a", hit=False, damage=0),)
+        )
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    mock_add_experience.assert_not_called()
+
+
+def test_execute_search_landed_fire_arrow_shot_credits_the_leaders_archery_experience():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+    request = _shoot_request(1, Maneuver.SHOOT)
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_resolve, patch(
+        "ak_engine.turn.search_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = EncounterCombatResult(
+            winner="a", rounds=1, shots=(FireArrowShot(shooter="a", hit=True, damage=4),)
+        )
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    mock_add_experience.assert_any_call(state.leaders[LEADER_ID], Ability.ARCHERY, 10, ANY)
+
+
 # -- Phase 682: is_undead_or_anti_holy on the monster combatant (Holy Sword vs-Undead) --
 
 
@@ -1229,7 +1278,10 @@ def test_execute_search_melee_round_stepping_accumulates_swings_across_rounds():
                 swings=(MeleeSwing(attacker="a", hit=True, damage=3),),
             ),
         ]
-        result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.5]))
+        # Phase 686: 2 extra scripted values beyond the original single
+        # 0.5 -- the leader's own landed swing now also fires
+        # add_experience()'s own triangular draw.
+        result = execute_search(state, LEADER_ID, _melee_request(1), ScriptedRandom([0.5, 0.5, 0.5]))
 
     assert result.melee_swings == (
         MeleeSwing(attacker="a", hit=False, damage=0),
@@ -4485,7 +4537,10 @@ def test_execute_search_guardians_own_cast_disrupted_by_a_landed_swing_never_att
             MeleeRoundOutcome(result=None),
             MeleeRoundOutcome(result=EncounterCombatResult(winner="a", rounds=2)),
         ]
-        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+        # Phase 686: 2 extra scripted values beyond the original single
+        # 0.5 -- the leader's own landed reactive swing (mocked hit=True
+        # above) now also fires add_experience()'s own triangular draw.
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.5, 0.5]))
 
     assert mock_swing.called
     assert mock_disrupt.called

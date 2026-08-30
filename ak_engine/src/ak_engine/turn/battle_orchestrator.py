@@ -211,6 +211,7 @@ from ak_engine.turn.encounter import (
     weapon_melee_damage_bonus,
     weapon_offensive_hit_multiplier,
 )
+from ak_engine.turn.experience import add_experience
 from ak_engine.turn.initiative import character_initiative
 from ak_engine.turn.merit_points import battle_quality_points
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
@@ -1496,6 +1497,25 @@ def _maybe_fight_duel(
             tactics, attacker_leader, attacker_combatant, defender_leader, defender_combatant, state, rng,
             target_tactics=defender_sep,
         )
+        # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's own
+        # Melee/Archery rows -- "evento di mischia/duello qualificante"/
+        # "evento di tiro riuscito" -- a landed hit, credited once per
+        # encounter per side, independent of who wins. Dormant today
+        # (this whole block only runs when a production caller opts into
+        # `use_real_duel_combat=True`, which none do -- see this
+        # function's own Phase 675 addendum), wired anyway for when it's
+        # eventually flipped on. The garrison-commander fallback (`None`
+        # leader) has no LeaderState to credit and is skipped.
+        if attacker_leader is not None:
+            if any(s.hit for s in combat_result.melee_swings if s.attacker == "a"):
+                add_experience(attacker_leader, Ability.MELEE, 10, rng)
+            if any(s.hit for s in combat_result.fire_arrow_shots if s.shooter == "a"):
+                add_experience(attacker_leader, Ability.ARCHERY, 10, rng)
+        if defender_leader is not None:
+            if any(s.hit for s in combat_result.melee_swings if s.attacker == "b"):
+                add_experience(defender_leader, Ability.MELEE, 10, rng)
+            if any(s.hit for s in combat_result.fire_arrow_shots if s.shooter == "b"):
+                add_experience(defender_leader, Ability.ARCHERY, 10, rng)
         # `combat_result.winner is None` also covers a successful Charm/
         # Augur-Combat flee (`combat_result.fled`) -- see this function's
         # own Phase 291 addendum for why that's read as "no duel

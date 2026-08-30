@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 
@@ -41,7 +41,9 @@ from ak_engine.turn.encounter import (
     Combatant,
     CombatRange,
     EncounterCombatResult,
+    FireArrowShot,
     MeleeRoundOutcome,
+    MeleeSwing,
     ReactiveMeleeSwingResult,
 )
 from ak_engine.turn.search_decode import SearchTactic
@@ -2672,6 +2674,88 @@ def test_execute_challenge_threads_an_armyless_targets_special_encounter_plan():
 
     assert mock_resolve.called
     assert mock_resolve.call_args.kwargs["target_tactics"] == list(target.special_encounter_plan)
+
+
+# -- Phase 686: Melee/Archery combat-experience wiring --
+
+
+def test_execute_challenge_landed_melee_hit_credits_the_challenger():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    tactics = [SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.challenge_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner="a", melee_swings=(MeleeSwing(attacker="a", hit=True, damage=3),)
+        )
+        execute_challenge(state, 1, ChallengeRequest(target_character_id=2, unconfirmed_extra0=0, tactics=tactics))
+
+    mock_add_experience.assert_any_call(challenger, Ability.MELEE, 10, ANY)
+
+
+def test_execute_challenge_landed_melee_hit_credits_the_target_independently():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    tactics = [SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.challenge_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner="b", melee_swings=(MeleeSwing(attacker="b", hit=True, damage=3),)
+        )
+        execute_challenge(state, 1, ChallengeRequest(target_character_id=2, unconfirmed_extra0=0, tactics=tactics))
+
+    mock_add_experience.assert_any_call(target, Ability.MELEE, 10, ANY)
+    for call in mock_add_experience.call_args_list:
+        assert call.args[0] is not challenger
+
+
+def test_execute_challenge_landed_fire_arrow_shot_credits_the_challenger():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    tactics = [SearchTactic(Maneuver.SHOOT)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.challenge_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner="a", fire_arrow_shots=(FireArrowShot(shooter="a", hit=True, damage=4),)
+        )
+        execute_challenge(state, 1, ChallengeRequest(target_character_id=2, unconfirmed_extra0=0, tactics=tactics))
+
+    mock_add_experience.assert_any_call(challenger, Ability.ARCHERY, 10, ANY)
+
+
+def test_execute_challenge_all_miss_credits_nothing():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    tactics = [SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.challenge_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner=None,
+            melee_swings=(MeleeSwing(attacker="a", hit=False, damage=0), MeleeSwing(attacker="b", hit=False, damage=0)),
+        )
+        execute_challenge(state, 1, ChallengeRequest(target_character_id=2, unconfirmed_extra0=0, tactics=tactics))
+
+    mock_add_experience.assert_not_called()
 
 
 def test_execute_challenge_never_threads_an_army_commanding_targets_plan():

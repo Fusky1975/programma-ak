@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 
@@ -18,7 +18,7 @@ from ak_engine.models.treasure import Treasure
 from ak_engine.turn.challenge_execution import ChallengeCombatOutcome
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.encounter import EncounterCombatResult, MeleeRoundOutcome
+from ak_engine.turn.encounter import EncounterCombatResult, MeleeRoundOutcome, MeleeSwing
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
 from ak_engine.turn.pursue_execution import (
     PursueExecutionResult,
@@ -701,6 +701,71 @@ def test_execute_pursue_threads_an_armyless_targets_special_encounter_plan():
 
     assert mock_resolve.called
     assert mock_resolve.call_args.kwargs["target_tactics"] == list(target.special_encounter_plan)
+
+
+# -- Phase 686: Melee/Archery combat-experience wiring --
+
+
+def test_execute_pursue_landed_melee_hit_credits_the_pursuer():
+    state = _base_state()
+    pursuer = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    request = _melee_request(2)
+
+    with patch("ak_engine.turn.pursue_execution.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.pursue_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner="a", melee_swings=(MeleeSwing(attacker="a", hit=True, damage=3),)
+        )
+        execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    mock_add_experience.assert_any_call(pursuer, Ability.MELEE, 10, ANY)
+
+
+def test_execute_pursue_landed_melee_hit_credits_the_target_independently():
+    state = _base_state()
+    pursuer = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    request = _melee_request(2)
+
+    with patch("ak_engine.turn.pursue_execution.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.pursue_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner="b", melee_swings=(MeleeSwing(attacker="b", hit=True, damage=3),)
+        )
+        execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    mock_add_experience.assert_any_call(target, Ability.MELEE, 10, ANY)
+    # Phase 461's own SPY credit (unconditional, unrelated to combat) still
+    # fires for `pursuer` here -- only Melee/Archery credit is under test.
+    combat_ability_calls = [c for c in mock_add_experience.call_args_list if c.args[1] in (Ability.MELEE, Ability.ARCHERY)]
+    assert all(call.args[0] is not pursuer for call in combat_ability_calls)
+
+
+def test_execute_pursue_all_miss_credits_nothing():
+    state = _base_state()
+    pursuer = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    request = _melee_request(2)
+
+    with patch("ak_engine.turn.pursue_execution.resolve_challenge_combat") as mock_resolve, patch(
+        "ak_engine.turn.pursue_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner=None)
+        execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    # Phase 461's own SPY credit (unconditional, unrelated to combat) may
+    # still fire here -- only Melee/Archery credit is under test.
+    combat_ability_calls = [c for c in mock_add_experience.call_args_list if c.args[1] in (Ability.MELEE, Ability.ARCHERY)]
+    assert combat_ability_calls == []
 
 
 def test_execute_pursue_never_threads_an_army_commanding_targets_plan():

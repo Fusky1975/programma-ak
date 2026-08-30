@@ -124,6 +124,7 @@ from ak_engine.turn.encounter import (
     weapon_melee_damage_bonus,
     weapon_offensive_hit_multiplier,
 )
+from ak_engine.turn.experience import add_experience
 from ak_engine.turn.movement import MapBounds, neighbors
 from ak_engine.turn.office_holder import resolve_office_holder
 
@@ -322,6 +323,15 @@ def execute_patrol(
     patroller_combatant = _leader_combatant(patroller, state)
     target_combatant = _leader_combatant(target, state)
     combat_result = resolve_melee_duel(patroller_combatant, target_combatant, rng)
+
+    # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's own
+    # Melee row -- "evento di mischia/duello qualificante" -- a landed
+    # hit, credited once per encounter per side, independent of who
+    # ultimately wins. Patrol has no Fire Arrow at all.
+    if any(s.hit for s in combat_result.melee_swings if s.attacker == "a"):
+        add_experience(patroller, Ability.MELEE, 10, rng)
+    if any(s.hit for s in combat_result.melee_swings if s.attacker == "b"):
+        add_experience(target, Ability.MELEE, 10, rng)
 
     if combat_result.winner is None:
         return PatrolExecutionResult(intercepted=True, target_leader_id=target.leader_id, combat_occurred=True)

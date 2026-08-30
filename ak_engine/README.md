@@ -28783,7 +28783,7 @@ follow-up request after the original 431-435 plan shipped.
   builders. Test count: 5726 -> 5750 (net +24). Full suite verified
   green (unchanged, 5726) before writing a single new test.
 
-- **Phase 685 (current)**: comment-only, no behavior change. An eighth
+- **Phase 685**: comment-only, no behavior change. An eighth
   fresh codebase survey (2026-08-30, "prossimo gap") found `models/
   monster_encounter_plan.py`'s own Phase 178 docstring still claiming a
   guardian monster's own `Maneuver.CAST` tactic is "inert data,"
@@ -28794,6 +28794,37 @@ follow-up request after the original 431-435 plan shipped.
   tactic uses. The 24th recurrence of this project's own "later phase
   closed it, nobody updated the earlier note" pattern. Test count: 5750
   (unchanged).
+
+- **Phase 686 (current)**: wires `turn/experience.py add_experience()`
+  into Melee and Archery combat -- the eighth survey's own item #2.
+  `AKGEN_reverse_engineering_report (2).md` SS3.3 gives both a clean,
+  unambiguous base value of `10` for "evento di mischia/duello
+  qualificante"/"evento di tiro riuscito" (a qualifying melee event / a
+  successful shot) -- unlike the 5 still-unwired categories (Tactical,
+  March, Naval, Explorer, Sage), all marked "variabile"/"contestuale"
+  and left genuinely open. The qualifying event is a landed hit,
+  credited once per encounter per side, independent of who ultimately
+  wins -- the same class of documented interpretation this project's
+  own Thief wiring (Phase 457) already used. Wired at 6 real call sites
+  (found by grepping every caller of `turn/encounter.py`'s shared
+  `resolve_melee_duel()`/`resolve_fire_arrow_duel()` primitives, not
+  just the modules a first pass assumed): `turn/search_execution.py
+  execute_search()`, `turn/challenge_execution.py execute_challenge()`,
+  `turn/pursue_execution.py execute_pursue()`, `turn/patrol_
+  execution.py execute_patrol()`, `turn/cast_execution.py
+  _execute_kill_enemy()` (Kill Enemy's own Berserk retaliation duel --
+  found via a broader grep, not one of the originally-scoped modules),
+  and `turn/battle_orchestrator.py _maybe_fight_duel()` (dormant today,
+  `use_real_duel_combat` defaults `False` for every production caller,
+  wired anyway for when it's flipped on, matching Phase 675's own
+  precedent for that same dormant path). Synthetic combatants (Gate
+  Demon fights, Augur Combat's own simulated clones) and `_consume_
+  bonus_attacks()`'s extra swings (no `MeleeSwing` record created) are
+  explicitly excluded, documented not silently dropped. Test count:
+  5750 -> 5770 (net +20). Full suite verified green (unchanged, 5750)
+  before writing a single new test -- 3 pre-existing tests needed their
+  own `ScriptedRandom` queues extended to account for the new RNG draws
+  (confirmed by running, not assumed).
 
 ## Setup
 

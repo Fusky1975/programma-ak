@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import ANY, patch
+
 import pytest
 
 from ak_engine.models.advanced_ability import AdvancedAbility
@@ -14,6 +16,7 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.encounter import EncounterCombatResult, MeleeSwing
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.movement import neighbors as _neighbors
 from ak_engine.turn.patrol_execution import _leader_combatant, execute_patrol, find_patrol_target
@@ -573,3 +576,66 @@ def test_execute_patrol_melee_request_loots_the_decisive_losers_items():
     assert result.loser_killed is True
     assert result.looted_item_ids == [item.item_id]
     assert state.items[item.item_id].owner_leader_id == 1
+
+
+# -- Phase 686: Melee combat-experience wiring (Patrol has no Fire Arrow) --
+
+
+def test_execute_patrol_landed_melee_hit_credits_the_patroller():
+    state = _base_state()
+    patroller = LeaderState(1, kingdom_id=1, name="Patroller", location=HOME)
+    target = LeaderState(2, kingdom_id=2, name="Intruder", location=HOME)
+    state.add_leader(patroller)
+    state.add_leader(target)
+
+    with patch("ak_engine.turn.patrol_execution.resolve_melee_duel") as mock_resolve, patch(
+        "ak_engine.turn.patrol_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = EncounterCombatResult(
+            winner="a", rounds=1, melee_swings=(MeleeSwing(attacker="a", hit=True, damage=3),)
+        )
+        execute_patrol(
+            state, 1, _melee_request(2), ScriptedRandom([0.5]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
+        )
+
+    mock_add_experience.assert_any_call(patroller, Ability.MELEE, 10, ANY)
+
+
+def test_execute_patrol_landed_melee_hit_credits_the_target_independently():
+    state = _base_state()
+    patroller = LeaderState(1, kingdom_id=1, name="Patroller", location=HOME)
+    target = LeaderState(2, kingdom_id=2, name="Intruder", location=HOME)
+    state.add_leader(patroller)
+    state.add_leader(target)
+
+    with patch("ak_engine.turn.patrol_execution.resolve_melee_duel") as mock_resolve, patch(
+        "ak_engine.turn.patrol_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = EncounterCombatResult(
+            winner="b", rounds=1, melee_swings=(MeleeSwing(attacker="b", hit=True, damage=3),)
+        )
+        execute_patrol(
+            state, 1, _melee_request(2), ScriptedRandom([0.5]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
+        )
+
+    mock_add_experience.assert_any_call(target, Ability.MELEE, 10, ANY)
+    for call in mock_add_experience.call_args_list:
+        assert call.args[0] is not patroller
+
+
+def test_execute_patrol_all_miss_credits_nothing():
+    state = _base_state()
+    patroller = LeaderState(1, kingdom_id=1, name="Patroller", location=HOME)
+    target = LeaderState(2, kingdom_id=2, name="Intruder", location=HOME)
+    state.add_leader(patroller)
+    state.add_leader(target)
+
+    with patch("ak_engine.turn.patrol_execution.resolve_melee_duel") as mock_resolve, patch(
+        "ak_engine.turn.patrol_execution.add_experience"
+    ) as mock_add_experience:
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_patrol(
+            state, 1, _melee_request(2), ScriptedRandom([0.5]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
+        )
+
+    mock_add_experience.assert_not_called()

@@ -1699,6 +1699,14 @@ def _execute_kill_enemy(
         caster_combatant = _kill_enemy_combatant(state, caster, temper=caster.temper)
         target_combatant = _kill_enemy_combatant(state, target, temper=Temper.BERSERK)
         combat_result = resolve_melee_duel(caster_combatant, target_combatant, rng)
+        # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's own
+        # Melee row -- "evento di mischia/duello qualificante" -- a
+        # landed hit, credited once per encounter per side, independent
+        # of who ultimately wins this Berserk retaliation.
+        if any(s.hit for s in combat_result.melee_swings if s.attacker == "a"):
+            add_experience(caster, Ability.MELEE, 10, rng)
+        if any(s.hit for s in combat_result.melee_swings if s.attacker == "b"):
+            add_experience(target, Ability.MELEE, 10, rng)
         if combat_result.winner == "a":  # caster survived the Berserk retaliation
             state.remove_leader(request.target)
             looted_items = loot_defeated_leader(state, winner_id=leader_id, loser_id=request.target)

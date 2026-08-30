@@ -897,6 +897,15 @@ def execute_search(
         )
     result = _resolve_search_encounter(state, leader_id, request, rng)
     if result.accepted:
+        if leader is not None:
+            # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's
+            # own Melee/Archery rows -- "evento di mischia/duello
+            # qualificante"/"evento di tiro riuscito" -- a landed hit,
+            # credited once per encounter, independent of who wins.
+            if any(s.hit for s in result.melee_swings if s.attacker == "a"):
+                add_experience(leader, Ability.MELEE, 10, rng)
+            if any(s.hit for s in result.fire_arrow_shots if s.shooter == "a"):
+                add_experience(leader, Ability.ARCHERY, 10, rng)
         _apply_scout(state, leader_id, request, result, rng)
         _apply_talk_language_failure(state, leader_id, request, result)
     return result

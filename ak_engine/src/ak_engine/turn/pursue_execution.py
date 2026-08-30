@@ -423,6 +423,19 @@ def execute_pursue(
         target_tactics=target_tactics,
     )
 
+    # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's own
+    # Melee/Archery rows -- "evento di mischia/duello qualificante"/
+    # "evento di tiro riuscito" -- a landed hit, credited once per
+    # encounter per side, independent of who ultimately wins.
+    if any(s.hit for s in combat_result.melee_swings if s.attacker == "a"):
+        add_experience(pursuer, Ability.MELEE, 10, rng)
+    if any(s.hit for s in combat_result.melee_swings if s.attacker == "b"):
+        add_experience(target, Ability.MELEE, 10, rng)
+    if any(s.hit for s in combat_result.fire_arrow_shots if s.shooter == "a"):
+        add_experience(pursuer, Ability.ARCHERY, 10, rng)
+    if any(s.hit for s in combat_result.fire_arrow_shots if s.shooter == "b"):
+        add_experience(target, Ability.ARCHERY, 10, rng)
+
     if combat_result.fled:
         return PursueExecutionResult(
             caught_up=True,

@@ -67,16 +67,17 @@ execution.py``'s own Phase 456 test suite already proves this end to
 end for two Practice-only abilities; this module's own contribution is
 the *other* real source of credit into that same shared counter.
 
-**Deliberately out of scope this phase**: wiring ``add_experience()``
-into the roughly 11 real call sites SS3.3/SS3.4 name (Tactical/March/
-Naval/Archery/Melee/the five spell schools/Druid/Thief/Explorer/Spy/
-Sage) -- a separate, considerably larger follow-up, the same "core
-formula first, wiring later" split this project already used for
-Discovery selection (Phase 448 core, Phase 448 itself already wired
-into the one call site it had) and Druidic monster battle assistance
-(Phase 452 core formulas, Phase 453 wiring into ``fight_battle()``).
-This phase only builds the one pure function plus its own worked-
-example verification against the source's own formula.
+**Stale as of Phase 686 -- wiring status of the ~11 real call sites
+SS3.3/SS3.4 name.** This used to frame wiring as entirely "a separate,
+considerably larger follow-up." Since then: Spy (Phase 458/461), Thief
+(Phase 457), Druid, and all 5 spell schools (Phase 460, ``turn/cast_
+execution.py _award_cast_experience()``) were wired; Phase 686 adds
+Melee and Archery (both sourced with a clean, unambiguous base of 10 --
+see that phase's own README entry for the 6 real call sites). Tactical,
+March, Naval, Explorer, and Sage remain genuinely unwired -- SS3.3's
+own table marks all 5 "variabile"/"contestuale," not a clean fixed
+value the way Melee/Archery/Thief/the spell schools have, so they stay
+a real, separate, still-open item.
 
 **Also deliberately out of scope**: any Royal-Heir/comatose eligibility
 gating -- ``turn/practice_execution.py execute_practice()`` applies
