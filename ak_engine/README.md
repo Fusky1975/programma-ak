@@ -28795,7 +28795,7 @@ follow-up request after the original 431-435 plan shipped.
   closed it, nobody updated the earlier note" pattern. Test count: 5750
   (unchanged).
 
-- **Phase 686 (current)**: wires `turn/experience.py add_experience()`
+- **Phase 686**: wires `turn/experience.py add_experience()`
   into Melee and Archery combat -- the eighth survey's own item #2.
   `AKGEN_reverse_engineering_report (2).md` SS3.3 gives both a clean,
   unambiguous base value of `10` for "evento di mischia/duello
@@ -28825,6 +28825,18 @@ follow-up request after the original 431-435 plan shipped.
   before writing a single new test -- 3 pre-existing tests needed their
   own `ScriptedRandom` queues extended to account for the new RNG draws
   (confirmed by running, not assumed).
+
+- **Phase 687 (current)**: comment-only, no behavior change. A ninth
+  fresh codebase survey (2026-08-30, "prossimo gap") found `turn/
+  emperor_election.py`'s own Phase 464 note still claiming the `V`
+  vote command's `ballots` assembly was "still not wired... this
+  project doesn't track [a world-level `req_vote` state] anywhere" --
+  stale since Phase 466: `GameState.election_pending_turn` is exactly
+  that state, and `process_election_turn()` already assembles real
+  ballots from it, called live every turn from `orchestrator.py
+  process_turn()`. The 25th recurrence of this project's own "later
+  phase closed it, nobody updated the earlier note" pattern. Test
+  count: 5770 (unchanged).
 
 ## Setup
 
