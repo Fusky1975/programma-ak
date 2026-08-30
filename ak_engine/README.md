@@ -28838,7 +28838,7 @@ follow-up request after the original 431-435 plan shipped.
   phase closed it, nobody updated the earlier note" pattern. Test
   count: 5770 (unchanged).
 
-- **Phase 688 (current)**: closes the ninth survey's own item #2 --
+- **Phase 688**: closes the ninth survey's own item #2 --
   Scout's "two orders = consent" gate now actually reaches the
   Feature->Power cost system. `PROSE/PCOND.X2` (user-supplied, quoted 3
   times verbatim, once per condition except the cost) confirms "to
@@ -28868,6 +28868,20 @@ follow-up request after the original 431-435 plan shipped.
   Test count: 5770 -> 5776 (net +6). Full suite verified green
   (unchanged, 5770) before touching a single test -- confirming the
   predicted breakage by running, not assuming.
+
+- **Phase 689 (current)**: comment-only, no behavior change. A tenth
+  fresh codebase survey (2026-08-30, "continua") found `turn/valhalla_
+  execution.py`'s own Phase 546 note still listing 4 items as "not yet
+  enforced" (phase capping, spell immunity, the fixed-item Give block,
+  and departure/army-hand-off/loot-routing) -- stale since the very
+  next phase: Phase 547 built the first 3 (`turn/plan_dispatch.py`'s
+  `valhalla_cap_active`, `turn/cast_execution.py`'s spell-immunity
+  gate, `turn/trade_execution.py`'s Give block) and Phase 548 built the
+  4th (`process_valhalla_departure()`/`_reassign_visitor_armies()`,
+  wired live into `turn/turn_processor.py`), but nobody went back to
+  correct this paragraph. The 26th recurrence of this project's own
+  "later phase closed it, nobody updated the earlier note" pattern.
+  Test count: 5776 (unchanged).
 
 ## Setup
 

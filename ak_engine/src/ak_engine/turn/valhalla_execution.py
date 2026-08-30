@@ -55,19 +55,26 @@ prior "not modeled" list -- the escalating per-visit phase allowance
 and the fixed item's own tracked ``item_id`` are now recorded at spawn
 time (``LeaderState.valhalla_active_turn``/``valhalla_allowed_phase_
 count``/``valhalla_fixed_item_id`` -- see ``models/valhalla.py
-_valhalla_stay_phase_count()`` for the escalating table itself). **Not
-yet enforced** (Phase 547/548's own scope): ``turn/plan_dispatch.py``
-doesn't cap phases at dispatch yet, ``turn/cast_execution.py`` doesn't
-grant spell-immunity except Resurrection yet, ``turn/trade_execution.py``
-doesn't block Give on the fixed item yet, and no departure/army-hand-
-off/loot-routing processing runs at all yet -- this leader is still
-dispatched exactly like any other for now. **Turn-deadline voiding
-stays confirmed out of scope entirely**: this codebase has no in-engine
-"did this Kingdom miss the deadline" detector at all (``turn/missed_
-deadline.py``'s own module docstring -- it's an external, caller-level
-fact nothing in ``GameState`` tracks), so there's no hook to attach
-this rule to without inventing an external contract this project
-doesn't otherwise have.
+_valhalla_stay_phase_count()`` for the escalating table itself).
+**Stale as of Phase 689 -- this used to list all of the below as "not
+yet enforced," but Phase 547/548 closed every one of them the very
+next phase, and nobody came back to correct this paragraph:**
+``turn/plan_dispatch.py`` caps phases at dispatch (`valhalla_cap_
+active`/`valhalla_allowed_phase_count`, including the "only one
+Practice phase" rule); ``turn/cast_execution.py`` grants spell-immunity
+except Resurrection to the active visitor; ``turn/trade_execution.py``
+blocks Give specifically on ``valhalla_fixed_item_id``; and this same
+module's own ``process_valhalla_departure()``/``_reassign_visitor_
+armies()`` (below) fully handle army hand-off (King -> co-located
+leader -> adjacent garrison -> disband) and item/loot routing, wired
+live into ``turn/turn_processor.py`` alongside ``finalize_gate_angel_
+visit()``. **Turn-deadline voiding stays confirmed out of scope
+entirely**: this codebase has no in-engine "did this Kingdom miss the
+deadline" detector at all (``turn/missed_deadline.py``'s own module
+docstring -- it's an external, caller-level fact nothing in
+``GameState`` tracks), so there's no hook to attach this rule to
+without inventing an external contract this project doesn't otherwise
+have.
 
 **`VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE` (Phase 585)**: this project
 never had the real narration text for a Valhalla visit at all --
