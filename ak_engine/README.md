@@ -29159,7 +29159,7 @@ follow-up request after the original 431-435 plan shipped.
   a single new test; every new test passed on the first run. Archery
   range and Spy Expanded Spying remain open for a future phase.
 
-- **Phase 700 (current)**: `AdvancedAbility.LONG_RANGE_ARCHERY`,
+- **Phase 700**: `AdvancedAbility.LONG_RANGE_ARCHERY`,
   resolving a "genuinely ambiguous" flag carried across three prior
   survey rounds since Phase 520: "the Archer may now use the Fire
   tactic at Spell Range, with half the normal chance to hit the
@@ -29190,6 +29190,30 @@ follow-up request after the original 431-435 plan shipped.
   "exhausted tactic list defaults to Melee" tail fallback needing a
   mocked `resolve_melee_duel()` alongside the mocked `resolve_fire_
   arrow_duel()` in three of the new tests.
+
+- **Phase 701 (current)**: `AdvancedAbility.SHORT_RANGE_ARCHERY`,
+  closing the category's last open question: "the Archer may now use
+  the Fire tactic at Melee Range, with the normal chance to hit." The
+  user resolved the design question directly, choosing a reactive
+  Melee counter-swing over no counter at all: unlike Long Range
+  Archery's fully one-sided exchange, a target at Melee Range stands
+  right next to the archer, so it gets a free reactive Melee swing
+  against the archer first (mirroring this same function's own
+  existing Cast-at-Melee-Range reactive-swing branch) before the
+  archer's own shot resolves one-sided, at normal (not halved) accuracy
+  -- matching this ability's own text exactly, since it never mentions
+  a reduced chance the way Long Range Archery does. `turn/encounter.py
+  resolve_fire_arrow_duel()` gains a new `short_range_archer` parameter
+  (default `None`, every existing caller unaffected), sharing the same
+  one-sidedness mechanism as `long_range_archer` but applying no hit-
+  chance multiplier. `turn/challenge_execution.py resolve_challenge_
+  combat()`'s own `[5.0]` Melee-Range block for `Maneuver.SHOOT` now
+  checks for the ability before falling back to its existing outright
+  block. `turn/search_execution.py`'s own separate, duplicated
+  `CombatRange`/`SHOOT` state machine (leader-vs-monster Search combat)
+  remains untouched, same as Phase 700. Test count: 5870 -> 5877 (net
+  +7). Full suite verified green (unchanged, 5870) before writing a
+  single new test; every new test passed on the first run.
 
 ## Setup
 

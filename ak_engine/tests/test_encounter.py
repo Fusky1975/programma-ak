@@ -574,6 +574,48 @@ def test_resolve_fire_arrow_duel_without_the_flag_the_same_roll_hits():
     assert result.shots[0].hit is True
 
 
+# -- Phase 701: AdvancedAbility.SHORT_RANGE_ARCHERY --
+
+
+def test_resolve_fire_arrow_duel_short_range_archer_forces_one_sided_shots():
+    # B has real Archery skill (would normally fire back once) --
+    # short_range_archer="a" forces B's own shots to zero regardless,
+    # same one-sidedness as long_range_archer.
+    a = Combatant("A", archery_skill=2, hit_points=10)
+    b = Combatant("B", archery_skill=1, hit_points=10)
+    rng = ScriptedRandom([0.99, 0.99])  # A's own 2 shots, both miss
+
+    result = resolve_fire_arrow_duel(a, b, rng, short_range_archer="a")
+
+    assert result.rounds == 2
+    assert len(result.shots) == 2
+    assert all(shot.shooter == "a" for shot in result.shots)
+
+
+def test_resolve_fire_arrow_duel_short_range_archer_b_variant():
+    a = Combatant("A", archery_skill=1, hit_points=10)
+    b = Combatant("B", archery_skill=2, hit_points=10)
+    rng = ScriptedRandom([0.99, 0.99])
+
+    result = resolve_fire_arrow_duel(a, b, rng, short_range_archer="b")
+
+    assert len(result.shots) == 2
+    assert all(shot.shooter == "b" for shot in result.shots)
+
+
+def test_resolve_fire_arrow_duel_short_range_archer_does_not_halve_the_hit_chance():
+    # Unlike long_range_archer, Short Range Archery fires "with the
+    # normal chance to hit" -- the same roll that hits at full chance
+    # must still hit here (no multiplier applied).
+    a = Combatant("A", archery_skill=1, hit_points=10)
+    b = Combatant("B", archery_skill=0, hit_points=10)
+    rng = ScriptedRandom([0.30, 0.5])
+
+    result = resolve_fire_arrow_duel(a, b, rng, short_range_archer="a")
+
+    assert result.shots[0].hit is True
+
+
 # -- Phase 175: per-shot Fire Arrow log --
 
 

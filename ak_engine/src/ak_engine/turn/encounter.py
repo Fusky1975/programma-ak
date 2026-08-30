@@ -1531,14 +1531,24 @@ without the ability) and no melee counter (too far away), only a Cast
 counter, which this project's shared function already resolves
 independently and upfront regardless of range. `resolve_fire_arrow_
 duel()`'s new `long_range_archer` parameter (below) implements exactly
-this. `SHORT_RANGE_ARCHERY` (fire at Melee Range) is a genuinely
-separate question -- a target at Melee Range stands right next to the
-archer, so whether they get a reactive Melee counter (this project's
-own Cast-at-Melee-Range branch already grants one in an analogous
-situation) needs its own confirmation, not an assumption piggy-backed
-onto this one -- still deliberately unaddressed. `turn/search_
-execution.py`'s own separate, duplicated `CombatRange`/`SHOOT` state
-machine (leader-vs-monster Search combat) is likewise still untouched.
+this.
+
+**Phase 701 addendum -- `SHORT_RANGE_ARCHERY` resolved.** The user
+directly confirmed the open question above: a target at Melee Range
+does get a reactive Melee counter-swing against the archer (mirroring
+this project's own existing Cast-at-Melee-Range reactive-swing
+pattern), then the archer's own shot resolves one-sided (the target
+gets no return fire in kind) at the *normal* chance to hit, per this
+ability's own text ("with the normal chance to hit," no halving the way
+Long Range Archery has). `resolve_fire_arrow_duel()`'s new `short_
+range_archer` parameter (below) implements the one-sided-shots half;
+the reactive Melee swing itself is resolved by the caller, in `turn/
+challenge_execution.py`'s own `SHOOT` branch, before this function is
+ever called.
+
+`turn/search_execution.py`'s own separate, duplicated `CombatRange`/
+`SHOOT` state machine (leader-vs-monster Search combat) is likewise
+still untouched by both phases.
 """
 
 from __future__ import annotations
@@ -3537,7 +3547,12 @@ def _apply_end_of_round_regeneration(a: Combatant, b: Combatant, round_number: i
 
 
 def resolve_fire_arrow_duel(
-    a: Combatant, b: Combatant, rng: random.Random, *, long_range_archer: str | None = None
+    a: Combatant,
+    b: Combatant,
+    rng: random.Random,
+    *,
+    long_range_archer: str | None = None,
+    short_range_archer: str | None = None,
 ) -> EncounterCombatResult:
     """Rulebook [5.2]: each combatant fires up to ``fire_arrow_free_attacks(archery_skill)``
     shots, interleaved round-by-round by initiative (higher Archery
@@ -3574,14 +3589,24 @@ def resolve_fire_arrow_duel(
     execution.py``'s own Phase 700 addendum), and the named side's own
     hit chance gains an extra ``LONG_RANGE_ARCHERY_HIT_MULTIPLIER``
     factor ("half the normal chance to hit").
+
+    Phase 701 (``AdvancedAbility.SHORT_RANGE_ARCHERY``): ``short_range_
+    archer`` (default ``None``) works exactly like ``long_range_archer``
+    for shot-count one-sidedness -- the other side never fires back --
+    but applies no hit-chance multiplier at all, matching this ability's
+    own real text ("with the normal chance to hit"), unlike Long Range
+    Archery's own halved chance. The two parameters are mutually
+    exclusive in practice (a single Fire tactic is only ever resolved
+    from one range at a time) but are independent flags here so neither
+    accidentally implies the other's own multiplier.
     """
 
     skill_a, skill_b = effective_archery_skill(a), effective_archery_skill(b)
     shots_a = fire_arrow_free_attacks(skill_a) + a.archery_free_attack_bonus
     shots_b = fire_arrow_free_attacks(skill_b) + b.archery_free_attack_bonus
-    if long_range_archer == "a":
+    if long_range_archer == "a" or short_range_archer == "a":
         shots_b = 0
-    elif long_range_archer == "b":
+    elif long_range_archer == "b" or short_range_archer == "b":
         shots_a = 0
     long_range_multiplier_a = LONG_RANGE_ARCHERY_HIT_MULTIPLIER if long_range_archer == "a" else 1.0
     long_range_multiplier_b = LONG_RANGE_ARCHERY_HIT_MULTIPLIER if long_range_archer == "b" else 1.0

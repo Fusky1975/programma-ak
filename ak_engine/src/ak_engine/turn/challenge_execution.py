@@ -1542,6 +1542,25 @@ def resolve_challenge_combat(
     for index, tactic in enumerate(tactics):
         if tactic.maneuver is Maneuver.SHOOT:
             if current_range is CombatRange.MELEE_RANGE:
+                # Phase 701: AdvancedAbility.SHORT_RANGE_ARCHERY -- "may
+                # now use the Fire tactic at Melee Range, with the
+                # normal chance to hit." Unlike Long Range Archery, the
+                # target stands right next to the archer, so -- mirroring
+                # this same function's own existing Cast-at-Melee-Range
+                # reactive-swing branch just below -- they get a free
+                # reactive Melee swing against the archer first (the
+                # user's own confirmed design choice, extending that
+                # established pattern to this ability).
+                if caster_leader is not None and AdvancedAbility.SHORT_RANGE_ARCHERY in caster_leader.advanced_abilities:
+                    swing_result = resolve_reactive_melee_swing(target, caster, rng)
+                    melee_swings.append(MeleeSwing(attacker="b", hit=swing_result.hit, damage=swing_result.damage))
+                    if caster.hit_points <= 0:
+                        return _outcome(winner="b")
+                    result = resolve_fire_arrow_duel(caster, target, rng, short_range_archer="a")
+                    fire_arrow_shots.extend(result.shots)
+                    if result.winner is not None:
+                        return _outcome(winner=result.winner)
+                    continue
                 continue  # [5.0]: only spells or Melee are usable in the melee zone
             # Phase 700: AdvancedAbility.LONG_RANGE_ARCHERY -- "may now
             # use the Fire tactic at Spell Range, with half the normal

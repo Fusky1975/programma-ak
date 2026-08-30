@@ -2993,3 +2993,71 @@ def test_resolve_challenge_combat_no_caster_leader_closes_to_bow_range():
         )
 
     mock_resolve.assert_called_once_with(caster, target, ANY)
+
+
+# -- Phase 701: AdvancedAbility.SHORT_RANGE_ARCHERY ----------------------
+
+
+def test_resolve_challenge_combat_short_range_archery_fires_with_a_reactive_swing_first():
+    # Range closes to MELEE_RANGE via the leading Melee tactic (mocked to
+    # a no-decision round); the ability then lets the second, SHOOT
+    # tactic fire anyway -- the target gets a free reactive Melee swing
+    # against the archer first (mirroring the Cast-at-Melee-Range
+    # pattern), then a one-sided shot with no return fire.
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"advanced_abilities": {AdvancedAbility.SHORT_RANGE_ARCHERY}}
+    )
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.SHOOT)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=True, damage=2),
+    ) as mock_swing, patch(
+        "ak_engine.turn.challenge_execution.resolve_fire_arrow_duel"
+    ) as mock_shoot, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_shoot.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    mock_swing.assert_called_once_with(target, caster, ANY)
+    mock_shoot.assert_called_once_with(caster, target, ANY, short_range_archer="a")
+
+
+def test_resolve_challenge_combat_short_range_archery_ends_early_if_the_swing_kills_the_archer():
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"advanced_abilities": {AdvancedAbility.SHORT_RANGE_ARCHERY}}
+    )
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.SHOOT)]
+
+    def _lethal_swing(attacker, defender, rng):
+        defender.hit_points = 0
+        return ReactiveMeleeSwingResult(hit=True, damage=defender.hit_points)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing", side_effect=_lethal_swing
+    ), patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_shoot:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert outcome.winner == "b"
+    assert not mock_shoot.called  # the archer died to the counter-swing before ever firing
+
+
+def test_resolve_challenge_combat_without_short_range_archery_still_blocks_shoot_at_melee_range():
+    # Non-regression: [5.0]'s own existing block stays in force for a
+    # caster who doesn't hold the ability.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.SHOOT)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_fire_arrow_duel"
+    ) as mock_shoot, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert not mock_shoot.called
+    assert mock_duel.called  # falls through to the atomic fallback afterward

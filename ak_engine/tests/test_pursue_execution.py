@@ -18,7 +18,7 @@ from ak_engine.models.treasure import Treasure
 from ak_engine.turn.challenge_execution import ChallengeCombatOutcome
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.encounter import EncounterCombatResult, MeleeRoundOutcome, MeleeSwing
+from ak_engine.turn.encounter import EncounterCombatResult, MeleeRoundOutcome, MeleeSwing, ReactiveMeleeSwingResult
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
 from ak_engine.turn.pursue_execution import (
     PursueExecutionResult,
@@ -926,3 +926,34 @@ def test_execute_pursue_long_range_archery_reaches_through_the_shared_function()
         execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     mock_resolve.assert_called_once_with(ANY, ANY, ANY, long_range_archer="a")
+
+
+# -- Phase 701: AdvancedAbility.SHORT_RANGE_ARCHERY (via the shared function) --
+
+
+def test_execute_pursue_short_range_archery_reaches_through_the_shared_function():
+    # Proves execute_pursue()'s armyless case reuses turn/challenge_
+    # execution.py resolve_challenge_combat() unchanged -- the new
+    # Phase 701 branch reaches through with zero pursue-side wiring.
+    state = _base_state()
+    pursuer = LeaderState(
+        1, kingdom_id=1, name="Archer", location=FIELD, advanced_abilities={AdvancedAbility.SHORT_RANGE_ARCHERY}
+    )
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    request = PursueRequest(
+        target_character_id=2, unconfirmed_extra0=0, tactics=[SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.SHOOT)]
+    )
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=False, damage=0),
+    ), patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_resolve, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    mock_resolve.assert_called_once_with(ANY, ANY, ANY, short_range_archer="a")
