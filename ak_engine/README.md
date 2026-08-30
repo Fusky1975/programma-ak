@@ -29067,7 +29067,7 @@ follow-up request after the original 431-435 plan shipped.
   new test; every new test passed on the first run. This closes the
   entire thirteenth survey.
 
-- **Phase 696 (current)**: a fourteenth fresh codebase survey
+- **Phase 696**: a fourteenth fresh codebase survey
   (2026-08-30, "continua") reads the whole memory archive first (a
   refinement to the survey technique, given how large that archive has
   grown), then picks `AdvancedAbility.DRUIDIC_HORSE_CONTROL`: "The
@@ -29095,6 +29095,23 @@ follow-up request after the original 431-435 plan shipped.
   field. Test count: 5835 -> 5842 (net +7). Full suite verified green
   (unchanged, 5835) before writing a single new test; the demoralization
   bug was caught by the end-to-end test failing, not by inspection.
+
+- **Phase 697 (current)**: picks `AdvancedAbility.SPY_BRAINWASH` from
+  [[project_fourteenth_survey_2026_08_30]]'s own remaining candidates:
+  "When the spy uses the Talk tactic on any hero, that character will
+  move one step closer in alignment to the Spy's alignment. Not usable
+  on Kings." New `turn/challenge_execution.py _apply_spy_brainwash_
+  alignment_shift()`, wired at the exact same two `has_talk_tactic`
+  call sites as the existing Bravest-of-the-Brave Talk hook
+  (`_apply_bravest_talk_inspiration()`, Phase 469) -- same shape,
+  unconditional once triggered, "Hero" read literally (`not target.
+  is_king`). "One step" moves `models/alignment.py ALIGNMENT_ORDINAL`'s
+  own real Pascal `outlook` ordinal sequence by exactly 1 toward the
+  Spy's own ordinal -- the sourced magnitude, not an interpretation.
+  Test count: 5842 -> 5849 (net +7). Full suite verified green
+  (unchanged, 5842) before writing a single new test; every new test
+  passed on the first run. Spy Assassinate remains open for a future
+  phase.
 
 ## Setup
 

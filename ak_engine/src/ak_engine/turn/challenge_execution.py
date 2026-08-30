@@ -236,6 +236,13 @@ text: "This action also counts as a normal 'Spy' action in all
 respects"), not ``Ability.THIEF`` -- a separate counter from the one
 this addendum's own "don't double-credit THIEF" reasoning above is
 about, so there is no conflict between the two.
+
+**Phase 697 -- `AdvancedAbility.SPY_BRAINWASH`.** "When the spy uses
+the Talk tactic on any hero, that character will move one step closer
+in alignment to the Spy's alignment. Not usable on Kings." Wired the
+same way, at the same two ``has_talk_tactic`` call sites, as
+``_apply_bravest_talk_inspiration()`` right below the Phase 103 note
+above -- see ``_apply_spy_brainwash_alignment_shift()``'s own docstring.
 """
 
 from __future__ import annotations
@@ -244,7 +251,7 @@ import random
 from dataclasses import dataclass, field, replace
 
 from ak_engine.models.advanced_ability import AdvancedAbility
-from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
+from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
@@ -1681,6 +1688,38 @@ def _apply_bravest_talk_inspiration(state: GameState, challenger: LeaderState, t
     target.temper = raise_temper_one_level(target.temper)
 
 
+def _apply_spy_brainwash_alignment_shift(challenger: LeaderState, target: LeaderState) -> None:
+    """`AdvancedAbility.SPY_BRAINWASH`'s own real description
+    (`models/advanced_ability.py`): "When the spy uses the Talk tactic
+    on any hero, that character will move one step closer in alignment
+    to the Spy's alignment. Not usable on Kings."
+
+    Same shape as `_apply_bravest_talk_inspiration()` right above --
+    unconditional (no roll) once the trigger fires, "Hero" read literally
+    (`not target.is_king`), scoped to leader-vs-leader CHALLENGE only,
+    firing at most once per `execute_challenge()` call regardless of how
+    many TALK tactics the plan queues (same `Maneuver.TALK` *presence*
+    check both callers below already share with the Bravest hook).
+
+    A no-op when either side's own `alignment` isn't recorded (nothing
+    to move from or toward), or when they're already aligned the same
+    way. "One step" is `models/alignment.py ALIGNMENT_ORDINAL`'s own
+    real Pascal `outlook` ordinal sequence, moved toward the Spy's own
+    ordinal by exactly 1 -- the sourced magnitude, not an interpretation.
+    """
+
+    if AdvancedAbility.SPY_BRAINWASH not in challenger.advanced_abilities:
+        return
+    if target.is_king or target.alignment is None or challenger.alignment is None:
+        return
+    target_ordinal = ALIGNMENT_ORDINAL[target.alignment]
+    challenger_ordinal = ALIGNMENT_ORDINAL[challenger.alignment]
+    if target_ordinal == challenger_ordinal:
+        return
+    step = 1 if challenger_ordinal > target_ordinal else -1
+    target.alignment = ALIGNMENT_BY_ORDINAL[target_ordinal + step]
+
+
 def _apply_duel_encounter_merit(
     challenger: LeaderState,
     target: LeaderState,
@@ -1772,6 +1811,7 @@ def execute_challenge(
     if not has_combat_intent(request):
         if has_talk_tactic:
             _apply_bravest_talk_inspiration(state, challenger, target)
+            _apply_spy_brainwash_alignment_shift(challenger, target)
         return ChallengeExecutionResult(accepted=True, combat_occurred=False)
 
     target_leads_army = bool(state.armies_commanded_by(target.leader_id))
@@ -1790,6 +1830,7 @@ def execute_challenge(
 
     if has_talk_tactic:
         _apply_bravest_talk_inspiration(state, challenger, target)
+        _apply_spy_brainwash_alignment_shift(challenger, target)
 
     challenger_combatant = _leader_combatant(challenger, state)
     target_combatant = _leader_combatant(target, state)

@@ -24,6 +24,7 @@ from ak_engine.turn.challenge_execution import (
     ChallengeExecutionResult,
     _apply_bravest_talk_inspiration,
     _apply_duel_encounter_merit,
+    _apply_spy_brainwash_alignment_shift,
     _apply_successful_theft,
     _close_to,
     _leader_combatant,
@@ -2327,6 +2328,100 @@ def test_apply_bravest_talk_inspiration_no_op_when_target_has_no_recorded_temper
     _apply_bravest_talk_inspiration(state, challenger, target)
 
     assert target.temper is None
+
+
+# -- Phase 697: Spy Brainwash's own Talk-triggered alignment shift ------
+
+
+def test_apply_spy_brainwash_moves_target_one_step_toward_the_spys_alignment():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Spy", location=FIELD, alignment=Alignment.EVIL)
+    challenger.advanced_abilities.add(AdvancedAbility.SPY_BRAINWASH)
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, alignment=Alignment.NEUTRAL)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_spy_brainwash_alignment_shift(challenger, target)
+
+    assert target.alignment is Alignment.PAGAN  # one ordinal step from Neutral toward Evil
+
+
+def test_apply_spy_brainwash_moves_the_other_direction_too():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Spy", location=FIELD, alignment=Alignment.DIVINE)
+    challenger.advanced_abilities.add(AdvancedAbility.SPY_BRAINWASH)
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, alignment=Alignment.NEUTRAL)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_spy_brainwash_alignment_shift(challenger, target)
+
+    assert target.alignment is Alignment.DRUID  # one ordinal step from Neutral toward Divine
+
+
+def test_apply_spy_brainwash_no_op_once_already_aligned():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Spy", location=FIELD, alignment=Alignment.NEUTRAL)
+    challenger.advanced_abilities.add(AdvancedAbility.SPY_BRAINWASH)
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, alignment=Alignment.NEUTRAL)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_spy_brainwash_alignment_shift(challenger, target)
+
+    assert target.alignment is Alignment.NEUTRAL
+
+
+def test_apply_spy_brainwash_does_not_shift_a_king():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Spy", location=FIELD, alignment=Alignment.EVIL)
+    challenger.advanced_abilities.add(AdvancedAbility.SPY_BRAINWASH)
+    target = LeaderState(2, kingdom_id=2, name="King", location=FIELD, is_king=True, alignment=Alignment.NEUTRAL)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_spy_brainwash_alignment_shift(challenger, target)
+
+    assert target.alignment is Alignment.NEUTRAL
+
+
+def test_apply_spy_brainwash_no_op_without_the_advanced_ability():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Spy", location=FIELD, alignment=Alignment.EVIL)
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, alignment=Alignment.NEUTRAL)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_spy_brainwash_alignment_shift(challenger, target)
+
+    assert target.alignment is Alignment.NEUTRAL
+
+
+def test_apply_spy_brainwash_no_op_when_either_alignment_is_unrecorded():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Spy", location=FIELD)  # alignment=None
+    challenger.advanced_abilities.add(AdvancedAbility.SPY_BRAINWASH)
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, alignment=Alignment.NEUTRAL)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    _apply_spy_brainwash_alignment_shift(challenger, target)
+
+    assert target.alignment is Alignment.NEUTRAL
+
+
+def test_execute_challenge_peaceful_talk_plan_shifts_the_targets_alignment():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Spy", location=FIELD, alignment=Alignment.EVIL)
+    challenger.advanced_abilities.add(AdvancedAbility.SPY_BRAINWASH)
+    target = LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, alignment=Alignment.NEUTRAL)
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    result = execute_challenge(state, 1, _peaceful_request(2), rng=ScriptedRandom([]))
+
+    assert result == ChallengeExecutionResult(accepted=True, combat_occurred=False)
+    assert state.leaders[2].alignment is Alignment.PAGAN
 
 
 def _talk_then_melee_request(target_id: int) -> ChallengeRequest:
