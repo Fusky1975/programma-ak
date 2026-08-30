@@ -1085,6 +1085,32 @@ def test_fight_battle_adapt_tactics_to_terrain_softens_the_adverse_terrain_penal
     )
 
 
+def test_fight_battle_druidic_horse_control_exempts_led_cavalry_from_beasts_nemesis():
+    # Phase 696: Light Cavalry's own NEMESIS entry includes Elephants
+    # (a Beast) -- a commander holding Druidic Horse Control exempts
+    # their own directly-led cavalry from that specific nemesis penalty.
+    def make_state():
+        state = GameState()
+        state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+        state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+        state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+        state.add_leader(LeaderState(1, kingdom_id=1, name="Druid", location=FIELD))
+        state.add_army(ArmyState(101, 1, ArmyType.LT_CAVALRY, Quality.AVERAGE, location=FIELD, commanded_by=1))
+        state.add_army(ArmyState(201, 2, ArmyType.ELEPHANTS, Quality.AVERAGE, location=FIELD, commanded_by=None))
+        return state
+
+    without_ability = make_state()
+    report_without = fight_battle(without_ability, 1, FIELD, [101], rng=random.Random(0))
+
+    with_ability = make_state()
+    with_ability.leaders[1].advanced_abilities.add(AdvancedAbility.DRUIDIC_HORSE_CONTROL)
+    report_with = fight_battle(with_ability, 1, FIELD, [101], rng=random.Random(0))
+
+    assert report_with.battle_result.columns[0].attacker_strength == pytest.approx(
+        report_without.battle_result.columns[0].attacker_strength / (2 / 3)
+    )
+
+
 def test_fight_battle_passes_combined_arms_only_for_the_side_whose_commander_holds_it():
     # Phase 513: the actual strength-boost mechanics are covered directly
     # in test_battle_resolution.py; here it's enough to prove fight_battle

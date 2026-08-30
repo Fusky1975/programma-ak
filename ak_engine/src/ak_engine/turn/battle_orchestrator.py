@@ -681,6 +681,17 @@ def _build_battle_units(
                 commanding_leader is not None
                 and AdvancedAbility.ADAPT_TACTICS_TO_TERRAIN in commanding_leader.advanced_abilities
             )
+        # Phase 696: AdvancedAbility.DRUIDIC_HORSE_CONTROL -- "cavalry
+        # units directly led by the Druid" -- scoped to Light/Heavy
+        # Cavalry, mirroring adapt_tactics_to_terrain's own "commanding
+        # leader holds this Advanced Ability" resolution just above.
+        has_druidic_horse_control = False
+        if army.army_type in (ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY) and army.commanded_by is not None:
+            commanding_leader = state.leaders.get(army.commanded_by)
+            has_druidic_horse_control = (
+                commanding_leader is not None
+                and AdvancedAbility.DRUIDIC_HORSE_CONTROL in commanding_leader.advanced_abilities
+            )
         strength = compute_effective_strength(
             army.army_type,
             kingdom.race,
@@ -745,6 +756,7 @@ def _build_battle_units(
                 is_humanoid_race=kingdom.race in HUMANOID_RACES,
                 duellist_bonus_if_selected=duellist_bonus_if_selected,
                 alignment_king_bonus_if_selected=alignment_king_bonus_if_selected,
+                has_druidic_horse_control=has_druidic_horse_control,
             )
         )
     return units

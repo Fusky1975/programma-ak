@@ -24,11 +24,18 @@ from ak_engine.turn.battle_line import (
 from _helpers import ScriptedRandom
 
 
-def unit(army_type: ArmyType, strength: float, *, druidic_rear_targeting_blocked: bool = False) -> BattleUnit:
+def unit(
+    army_type: ArmyType,
+    strength: float,
+    *,
+    druidic_rear_targeting_blocked: bool = False,
+    has_druidic_horse_control: bool = False,
+) -> BattleUnit:
     return BattleUnit(
         army_type=army_type,
         effective_strength=strength,
         druidic_rear_targeting_blocked=druidic_rear_targeting_blocked,
+        has_druidic_horse_control=has_druidic_horse_control,
     )
 
 
@@ -270,6 +277,49 @@ def test_apply_nemesis_penalties_no_effect_for_unrelated_types():
 
     assert attacker_columns[0][0].effective_strength == 10
     assert defender_columns[0][0].effective_strength == 10
+
+
+# -- Phase 696: AdvancedAbility.DRUIDIC_HORSE_CONTROL --------------------
+
+
+def test_apply_nemesis_penalties_horse_control_exempts_cavalry_from_beasts():
+    attacker_columns = [[unit(ArmyType.LT_CAVALRY, 9, has_druidic_horse_control=True)]]
+    defender_columns = [[unit(ArmyType.ELEPHANTS, 9)]]  # a real Beast
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
+
+    assert attacker_columns[0][0].effective_strength == 9  # no penalty
+
+
+def test_apply_nemesis_penalties_horse_control_does_not_exempt_chariots():
+    # Chariots stays a real nemesis for cavalry regardless of the
+    # ability -- the sourced text names "Beasts" specifically.
+    attacker_columns = [[unit(ArmyType.LT_CAVALRY, 9, has_druidic_horse_control=True)]]
+    defender_columns = [[unit(ArmyType.CHARIOTS, 9)]]
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
+
+    assert attacker_columns[0][0].effective_strength == pytest.approx(9 * 2 / 3)
+
+
+def test_apply_nemesis_penalties_heavy_cavalry_horse_control_also_exempted():
+    attacker_columns = [[unit(ArmyType.HVY_CAVALRY, 9, has_druidic_horse_control=True)]]
+    defender_columns = [[unit(ArmyType.DINOSAURS, 9)]]  # also a Beast (Phase 691)
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
+
+    assert attacker_columns[0][0].effective_strength == 9
+
+
+def test_apply_nemesis_penalties_beasts_penalty_still_applies_without_horse_control():
+    # Non-regression: an otherwise-identical cavalry unit without the
+    # ability still takes the ordinary Beasts penalty.
+    attacker_columns = [[unit(ArmyType.LT_CAVALRY, 9)]]
+    defender_columns = [[unit(ArmyType.ELEPHANTS, 9)]]
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
+
+    assert attacker_columns[0][0].effective_strength == pytest.approx(9 * 2 / 3)
 
 
 def test_apply_nemesis_penalties_preserves_the_druidic_rear_targeting_blocked_flag():

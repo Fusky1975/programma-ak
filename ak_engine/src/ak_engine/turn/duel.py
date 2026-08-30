@@ -70,6 +70,10 @@ def apply_duel_demoralization(units: list[BattleUnit]) -> list[BattleUnit]:
     the originals in place. Phase 661: ``alignment_king_bonus_if_
     selected`` gets the exact same treatment, for the exact same reason
     -- the 7 alignment-King titles' own shared version of this bonus.
+    Phase 696: ``has_druidic_horse_control`` (a plain boolean, no scaling
+    needed) gets the same treatment -- without it, a demoralized cavalry
+    unit would silently lose its own Beasts-nemesis exemption for the
+    rest of the battle whenever its side lost the preliminary duel.
     """
 
     return [
@@ -88,6 +92,7 @@ def apply_duel_demoralization(units: list[BattleUnit]) -> list[BattleUnit]:
                 if u.alignment_king_bonus_if_selected is not None
                 else None
             ),
+            has_druidic_horse_control=u.has_druidic_horse_control,
         )
         for u in units
     ]

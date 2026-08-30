@@ -55,7 +55,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from ak_engine.models.army_type import ArmyType, is_overflight_unit, overflight_group
+from ak_engine.models.army_type import BEASTS, ArmyType, is_overflight_unit, overflight_group
 from ak_engine.models.map import TERRAIN_LINE_LENGTH_RANGE, Terrain
 from ak_engine.turn.combat import apply_nemesis_penalty, line_contribution, win_probability
 
@@ -124,6 +124,17 @@ class BattleUnit:
     # (Undead King's own real "non-skeletal unit" restriction) for a
     # skeletal unit even on an eligible Undead King side.
     alignment_king_bonus_if_selected: float | None = None
+    # Phase 696: `AdvancedAbility.DRUIDIC_HORSE_CONTROL`'s own real text
+    # -- "cavalry units directly led by the Druid no longer have the
+    # 'Beasts' nemesis listed in the Army Type Table." Set only for a
+    # Light/Heavy Cavalry unit whose commanding leader holds the
+    # Advanced Ability (`turn/battle_orchestrator.py _build_battle_
+    # units()`); always ``False`` for every other unit, matching
+    # `druidic_rear_targeting_blocked`'s own "irrelevant to them"
+    # convention. Consulted by `apply_nemesis_penalties()` below to
+    # exempt specifically the `models/army_type.py BEASTS` nemesis --
+    # Chariots stays a real nemesis for cavalry regardless.
+    has_druidic_horse_control: bool = False
 
 
 Column = list[BattleUnit]
@@ -261,6 +272,16 @@ def apply_nemesis_penalties(
     Requires ``attacker_columns``/``defender_columns`` to be paired
     index-for-index (as ``resolve_battle`` produces); callers with a
     different pairing scheme need a different function.
+
+    **Phase 696 -- `AdvancedAbility.DRUIDIC_HORSE_CONTROL`**: "cavalry
+    units directly led by the Druid no longer have the 'Beasts' nemesis
+    listed in the Army Type Table." A unit flagged ``BattleUnit.has_
+    druidic_horse_control`` (set only for Light/Heavy Cavalry whose
+    commanding leader holds the ability, `turn/battle_orchestrator.py
+    _build_battle_units()`) skips the nemesis check entirely when the
+    chosen inflictor's own type is in `models/army_type.py BEASTS` --
+    Chariots stays a real nemesis for cavalry regardless, since the
+    sourced text names "Beasts" specifically, not every nemesis.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -291,6 +312,10 @@ def _apply_nemesis_to_column(own_column: Column, opposing_column: Column, rng: r
         if not candidates:
             continue
         inflictor = candidates[0] if len(candidates) == 1 else rng.choice(candidates)
+        # Phase 696: AdvancedAbility.DRUIDIC_HORSE_CONTROL -- exempted
+        # specifically from the Beasts nemesis (Chariots stays real).
+        if unit.has_druidic_horse_control and inflictor.army_type in BEASTS:
+            continue
         adjusted_strength = apply_nemesis_penalty(unit.effective_strength, unit.army_type, inflictor.army_type)
         if adjusted_strength != unit.effective_strength:
             own_column[index] = BattleUnit(

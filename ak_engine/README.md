@@ -29044,7 +29044,7 @@ follow-up request after the original 431-435 plan shipped.
   Short/Long Range members, Spy Super Sleuth) remain open for a future
   phase.
 
-- **Phase 695 (current)**: picks `AdvancedAbility.SPY_SUPER_SLEUTH`,
+- **Phase 695**: picks `AdvancedAbility.SPY_SUPER_SLEUTH`,
   the last concrete candidate from the thirteenth survey (Archery's
   Short/Long Range members stay deferred, still genuinely ambiguous):
   "When the Spy uses the Trail or Pursue actions, success is automatic,
@@ -29066,6 +29066,35 @@ follow-up request after the original 431-435 plan shipped.
   Full suite verified green (unchanged, 5823) before writing a single
   new test; every new test passed on the first run. This closes the
   entire thirteenth survey.
+
+- **Phase 696 (current)**: a fourteenth fresh codebase survey
+  (2026-08-30, "continua") reads the whole memory archive first (a
+  refinement to the survey technique, given how large that archive has
+  grown), then picks `AdvancedAbility.DRUIDIC_HORSE_CONTROL`: "The
+  Druid is able to calm horses who are threatened in battle by the
+  various beasts that frighten them. As a result, cavalry units
+  directly led by the Druid no longer have the 'Beasts' nemesis listed
+  in the Army Type Table." `models/army_type.py`'s own `NEMESIS[LT_
+  CAVALRY]`/`[HVY_CAVALRY]` include both Chariots and `BEASTS`
+  (Elephants/Camel Corps/Dinosaurs) -- the exemption is specifically
+  against `BEASTS` (made public this phase, was `_BEASTS`); Chariots
+  stays a real nemesis for cavalry regardless. New `BattleUnit.has_
+  druidic_horse_control` (set only for Light/Heavy Cavalry whose
+  commanding leader holds the ability, `turn/battle_orchestrator.py
+  _build_battle_units()`, mirroring the existing `adapt_tactics_to_
+  terrain` resolution pattern exactly) is consulted by `turn/battle_
+  line.py _apply_nemesis_to_column()` to skip the nemesis check
+  entirely when the chosen inflictor is a Beast. **A real, pre-existing
+  bug was found and fixed while writing the end-to-end test**: `turn/
+  duel.py apply_duel_demoralization()` rebuilds fresh `BattleUnit`
+  instances for the preliminary-duel loser's side and wasn't carrying
+  the new field through -- the exact same class of bug Phase 471/661
+  already had to fix twice for `duellist_bonus_if_selected`/
+  `alignment_king_bonus_if_selected`, and that function's own docstring
+  already flagged as needing "proactive" attention for any future
+  field. Test count: 5835 -> 5842 (net +7). Full suite verified green
+  (unchanged, 5835) before writing a single new test; the demoralization
+  bug was caught by the end-to-end test failing, not by inspection.
 
 ## Setup
 

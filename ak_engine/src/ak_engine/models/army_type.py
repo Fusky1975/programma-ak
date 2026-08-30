@@ -198,14 +198,20 @@ GARRISON_ATTACK_STRENGTH = 1
 # independently confirms this reading directly -- "They qualify as
 # 'Beasts', the nemesis to mounted units" -- so Dinosaurs join the set
 # too, on real source confirmation rather than name-symmetry guesswork.
-_BEASTS = frozenset({ArmyType.ELEPHANTS, ArmyType.CAMEL_CORPS, ArmyType.DINOSAURS})
+# Phase 696: made public (was `_BEASTS`) -- `AdvancedAbility.DRUIDIC_
+# HORSE_CONTROL`'s own real text ("cavalry units directly led by the
+# Druid no longer have the 'Beasts' nemesis") needs `turn/battle_
+# line.py`'s nemesis-application code to check specifically against
+# this set, not just "is this a nemesis at all" (Chariots stays a real
+# nemesis for cavalry regardless of the ability).
+BEASTS = frozenset({ArmyType.ELEPHANTS, ArmyType.CAMEL_CORPS, ArmyType.DINOSAURS})
 
 NEMESIS: dict[ArmyType, frozenset[ArmyType]] = {
     ArmyType.PHALANX: frozenset({ArmyType.LEGION}),
     ArmyType.LEGION: frozenset({ArmyType.HVY_CAVALRY}),
-    ArmyType.LT_CAVALRY: frozenset({ArmyType.CHARIOTS}) | _BEASTS,
-    ArmyType.HVY_CAVALRY: frozenset({ArmyType.CHARIOTS}) | _BEASTS,
-    ArmyType.CHARIOTS: _BEASTS,
+    ArmyType.LT_CAVALRY: frozenset({ArmyType.CHARIOTS}) | BEASTS,
+    ArmyType.HVY_CAVALRY: frozenset({ArmyType.CHARIOTS}) | BEASTS,
+    ArmyType.CHARIOTS: BEASTS,
     # Phase 691: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real
     # description -- "Nemesis: Phalanx".
     ArmyType.DINOSAURS: frozenset({ArmyType.PHALANX}),

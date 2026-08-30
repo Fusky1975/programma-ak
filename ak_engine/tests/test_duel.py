@@ -76,3 +76,21 @@ def test_apply_duel_demoralization_leaves_an_ineligible_units_alignment_king_fie
     units = [BattleUnit(ArmyType.BOWMEN, 10)]
     demoralized = apply_duel_demoralization(units)
     assert demoralized[0].alignment_king_bonus_if_selected is None
+
+
+def test_apply_duel_demoralization_carries_the_druidic_horse_control_flag_through():
+    # Phase 696: same real fix as duellist_bonus_if_selected/alignment_
+    # king_bonus_if_selected above -- a demoralized cavalry unit must not
+    # silently lose its own Beasts-nemesis exemption. Found via a real
+    # end-to-end test that failed after this exact reconstruction site
+    # dropped the flag, exactly the class of bug Phase 661's own docstring
+    # already warned this function needs "proactive" attention for.
+    units = [BattleUnit(ArmyType.LT_CAVALRY, 10, has_druidic_horse_control=True)]
+    demoralized = apply_duel_demoralization(units)
+    assert demoralized[0].has_druidic_horse_control is True
+
+
+def test_apply_duel_demoralization_leaves_an_ineligible_units_horse_control_flag_false():
+    units = [BattleUnit(ArmyType.LT_CAVALRY, 10)]
+    demoralized = apply_duel_demoralization(units)
+    assert demoralized[0].has_druidic_horse_control is False
