@@ -10,8 +10,10 @@ from ak_engine.turn.movement import (
     HexOwnershipTier,
     MapBounds,
     NonAdjacentMoveError,
+    direction_between,
     hex_distance,
     is_adjacent,
+    neighbor_in_direction,
     neighbors,
     resolve_move,
     step_toward_non_adjacent_target,
@@ -45,6 +47,37 @@ def test_is_adjacent_matches_neighbors():
     for neighbor in neighbors(origin, BOUNDS):
         assert is_adjacent(origin, neighbor, BOUNDS)
     assert not is_adjacent(origin, HexCoord(20, 10), BOUNDS)
+
+
+# -- Phase 704: neighbor_in_direction()/direction_between() --
+
+
+def test_neighbor_in_direction_matches_neighbors_for_every_direction():
+    origin = HexCoord(5, 5)
+    real_neighbors = set(neighbors(origin, BOUNDS))
+    found = {neighbor_in_direction(origin, direction, BOUNDS) for direction in Direction}
+    assert found == real_neighbors
+
+
+def test_neighbor_in_direction_returns_none_off_the_map():
+    origin = HexCoord(0, 0)
+    for direction in Direction:
+        candidate = neighbor_in_direction(origin, direction, BOUNDS)
+        assert candidate is None or BOUNDS.contains(candidate)
+    # At least one direction from a corner must fall outside bounds.
+    assert any(neighbor_in_direction(origin, d, BOUNDS) is None for d in Direction)
+
+
+def test_direction_between_resolves_every_real_neighbor():
+    origin = HexCoord(5, 5)
+    for direction in Direction:
+        neighbor = neighbor_in_direction(origin, direction, BOUNDS)
+        assert neighbor is not None
+        assert direction_between(origin, neighbor) is direction
+
+
+def test_direction_between_returns_none_for_a_non_adjacent_pair():
+    assert direction_between(HexCoord(5, 5), HexCoord(20, 10)) is None
 
 
 def test_resolve_move_to_adjacent_hex():

@@ -679,7 +679,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
-from ak_engine.models.army_type import OVERFLIGHT_AIR, ArmyType
+from ak_engine.models.army_type import OVERFLIGHT_AIR, OVERFLIGHT_SEA, SEA_ARMY_TYPES, ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import FeatureType
@@ -717,7 +717,7 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.hex_numbering import decode_hex_number
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, is_adjacent
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, Direction, MapBounds, direction_between, is_adjacent, neighbor_in_direction
 from ak_engine.turn.office_holder import resolve_all_office_holders, resolve_office_holder
 
 ACTION_SPELL_BASE_CHANCE = 0.15
@@ -834,6 +834,12 @@ TORNADO_DESTROY_CHANCE_PER_LEVEL = 0.10
 # [4.22.1]: "+60% for one turn" (Bless) / [4.24.3]: zeroes revenue (Earthquake).
 BLESS_TAX_BONUS_PERCENT = 60
 EARTHQUAKE_TAX_MODIFIER_PERCENT = -100
+
+# Phase 704 (AdvancedAbility.ENHANCED_EARTHQUAKE, the Tidal Wave): "a
+# 5% chance per level of the spellcaster of being destroyed... but
+# weakening by 5% upon entering each new province."
+TIDAL_WAVE_CHANCE_PER_LEVEL = 0.05
+TIDAL_WAVE_CHANCE_DECAY_PER_PROVINCE = 0.05
 
 # Discovery.txt (Phase 270, anti-spell ward Discoveries -- see module
 # docstring's own Phase 270 addendum): each of these replaces the base
@@ -2070,6 +2076,72 @@ def _execute_tornado(
     )
 
 
+def _apply_tidal_wave_step(state: GameState, coord: HexCoord, chance: float, *, land: bool, rng: random.Random) -> None:
+    """One province's own worth of Tidal Wave destruction (Phase 704).
+    At a Sea province (``land=False``): "every military unit... has a
+    5% chance per level... of being destroyed (except for Whales and
+    Sea Folk, who just dive under the wave)" -- every army except
+    ``OVERFLIGHT_SEA`` (Whales/Mermen) is eligible. At the one land
+    province the wave finally reaches (``land=True``): "effective
+    against Fleets, Sea Folk and Whales (only)... as they are washed
+    ashore" -- only ``SEA_ARMY_TYPES`` (Fleet/Mermen/Whales) is
+    eligible there, the exact opposite exemption. ``chance`` already
+    floored at 0.0 by the caller; a zero chance still visits the
+    province (see ``_propagate_tidal_wave()``'s own docstring for why)
+    but never actually destroys anything.
+    """
+
+    eligible_types = SEA_ARMY_TYPES if land else None
+    for army in list(state.armies_at(coord)):
+        if land:
+            if army.army_type not in eligible_types:
+                continue
+        elif army.army_type in OVERFLIGHT_SEA:
+            continue
+        if chance > 0 and rng.random() < chance:
+            state.remove_army(army.army_id)
+
+
+def _propagate_tidal_wave(
+    state: GameState, coord: HexCoord, direction: Direction, chance: float, bounds: MapBounds, rng: random.Random
+) -> None:
+    """The Tidal Wave's own real path (Phase 704): starting at the
+    already-validated Sea target, steps one hex at a time in a single
+    fixed ``direction``, applying ``_apply_tidal_wave_step()`` at every
+    Sea province it passes through and decaying ``chance`` by
+    ``TIDAL_WAVE_CHANCE_DECAY_PER_PROVINCE`` (floored at 0) each time it
+    moves on. Ends the instant it reaches a land province (one final,
+    differently-scoped step there) or runs off the known map -- a
+    missing ``ProvinceState`` or an out-of-``bounds`` neighbor both mean
+    "hits the Ice Cap," the real world's own northern edge (``report/
+    ascii_map.py``'s own Phase 577 addendum: ``y == 1`` is as far as
+    this project's coordinate system ever goes) or simply nothing
+    further this project's data can represent -- no separate check is
+    needed for either, they're the same structural dead end.
+
+    **User-confirmed (Phase 704): the wave keeps moving through Sea
+    provinces even once ``chance`` has decayed to 0%**, until it
+    genuinely reaches land or the map's edge -- "when it finally hits a
+    land province, it will end there" describes a real, definite
+    arrival point regardless of how weak the wave has become by then,
+    not an early fizzle-out the source never actually describes.
+    """
+
+    while True:
+        province = state.provinces.get(coord)
+        if province is None:
+            return
+        if province.effective_terrain() is not Terrain.SEA:
+            _apply_tidal_wave_step(state, coord, chance, land=True, rng=rng)
+            return
+        _apply_tidal_wave_step(state, coord, chance, land=False, rng=rng)
+        next_coord = neighbor_in_direction(coord, direction, bounds)
+        if next_coord is None:
+            return
+        coord = next_coord
+        chance = max(0.0, chance - TIDAL_WAVE_CHANCE_DECAY_PER_PROVINCE)
+
+
 def _execute_earthquake(
     state: GameState,
     leader_id: int,
@@ -2089,13 +2161,32 @@ def _execute_earthquake(
     entirely with ``ProvinceState.earthquake_flat_reduction`` (see
     ``turn/tax_base.py province_tax_yield()``), rather than stacking
     both.
+
+    **Phase 704 -- `AdvancedAbility.ENHANCED_EARTHQUAKE`, the Tidal
+    Wave**: a Sea target is refused (unchanged reason/message) unless
+    the caster holds this ability -- casting Earthquake on Sea *at
+    all* is the capability this ability grants, not an unmodeled edge
+    case of the base spell. On a successful cast against a Sea target,
+    no tax effect applies (Sea provinces have no land-style tax base
+    this spell's own [4.24.3] clause addresses) -- instead, the wave
+    propagates via ``_propagate_tidal_wave()``, starting one full
+    ``TIDAL_WAVE_CHANCE_PER_LEVEL * level`` chance at the target itself
+    and decaying from there. Direction is "the opposite direction from
+    the spellcaster," read literally as continuing straight out along
+    the real hex line from the caster's own position through the
+    target -- ``direction_between(caster.location, coord)``. **User-
+    confirmed same-hex fallback**: when the caster is literally
+    co-located with the Sea target (e.g. on a Fleet), there is no real
+    "away from the caster" vector to compute at all -- a uniformly
+    random ``Direction`` is picked instead, a documented, reasonable
+    choice for a case the source text doesn't cover.
     """
 
     caster = state.leaders[leader_id]
     _coord, province = _resolve_province_target(state, caster, request.target, board_width)
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
-    if province.effective_terrain() is Terrain.SEA:
+    if province.effective_terrain() is Terrain.SEA and AdvancedAbility.ENHANCED_EARTHQUAKE not in caster.advanced_abilities:
         return CastExecutionResult(request, applied=False, reason="target province is not land")
 
     earthquake_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.ELEMENTAL) else 1.0
@@ -2104,6 +2195,15 @@ def _execute_earthquake(
     )
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
+
+    if province.effective_terrain() is Terrain.SEA:
+        direction = direction_between(caster.location, _coord)
+        if direction is None:
+            direction = rng.choice(list(Direction))
+        level = _caster_level(state, caster, Ability.ELEMENTAL, wand_skill_level)
+        bounds = MapBounds(board_width, NORMAL_MAP_BOUNDS[1])
+        _propagate_tidal_wave(state, _coord, direction, TIDAL_WAVE_CHANCE_PER_LEVEL * level, bounds, rng)
+        return CastExecutionResult(request, applied=True)
 
     owner_kingdom_id = province.owner_kingdom_id
     if owner_kingdom_id is not None and Discovery.REINFORCED_CONCRETE in state.kingdoms[owner_kingdom_id].discoveries:

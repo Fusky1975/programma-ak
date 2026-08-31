@@ -50,7 +50,7 @@ from ak_engine.turn.cast_execution import (
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.encounter import EncounterCombatResult, MeleeSwing
 from ak_engine.turn.hex_numbering import encode_hex_number
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, direction_between, neighbor_in_direction, neighbors
 
 from _helpers import ScriptedRandom
 
@@ -58,6 +58,7 @@ LOCATION = HexCoord(3, 9)
 ELSEWHERE = HexCoord(9, 9)
 CASTER_ID = 1
 BOARD_WIDTH = NORMAL_MAP_BOUNDS[0]
+BOUNDS = MapBounds(*NORMAL_MAP_BOUNDS)
 
 
 def _skills_with(ability: Ability, level: int) -> SkillTable:
@@ -1614,6 +1615,157 @@ def test_earthquake_fails_on_a_province_flooded_to_sea_via_override():
 
     assert result.applied is False
     assert result.reason == "target province is not land"
+
+
+# -- Phase 704: AdvancedAbility.ENHANCED_EARTHQUAKE, the Tidal Wave --
+
+
+class _SpyRandom(ScriptedRandom):
+    """Counts .choice() calls, on top of ScriptedRandom's own script --
+    used only by the same-hex fallback test below.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.choice_calls = 0
+
+    def choice(self, seq):
+        self.choice_calls += 1
+        return super().choice(seq)
+
+
+def test_earthquake_tidal_wave_destroys_an_eligible_army_at_the_target():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 1)
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_EARTHQUAKE)
+    target_coord = neighbors(LOCATION, BOUNDS)[0]
+    state.add_province(ProvinceState(target_coord, Terrain.SEA, Race.HUMAN))
+    state.add_army(ArmyState(501, 2, ArmyType.LEGION, Quality.AVERAGE, target_coord))
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(target_coord))
+    # [0] under the 30% (15%+15%*1) cast-success chance; [1] under the
+    # tidal wave's own 5%*1=5% destroy chance at the target itself;
+    # [2:] execute_cast()'s own generic Add_Experience gain draws.
+    rng = ScriptedRandom([0.1, 0.03, 0.5, 0.5])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert 501 not in state.armies
+
+
+def test_earthquake_tidal_wave_exempts_whales_and_mermen_at_sea():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 1)
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_EARTHQUAKE)
+    target_coord = neighbors(LOCATION, BOUNDS)[0]
+    state.add_province(ProvinceState(target_coord, Terrain.SEA, Race.HUMAN))
+    state.add_army(ArmyState(501, 2, ArmyType.WHALES, Quality.AVERAGE, target_coord))
+    state.add_army(ArmyState(502, 2, ArmyType.MERMEN, Quality.AVERAGE, target_coord))
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(target_coord))
+    rng = ScriptedRandom([0.1, 0.5, 0.5])  # [0] cast-success roll -- Whales/Mermen are never even rolled against; [1:] Add_Experience
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert 501 in state.armies
+    assert 502 in state.armies
+
+
+def test_earthquake_tidal_wave_decays_chance_at_the_next_sea_province():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 2)
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_EARTHQUAKE)
+    target_coord = neighbors(LOCATION, BOUNDS)[0]
+    direction = direction_between(LOCATION, target_coord)
+    second_coord = neighbor_in_direction(target_coord, direction, BOUNDS)
+    assert second_coord is not None
+    state.add_province(ProvinceState(target_coord, Terrain.SEA, Race.HUMAN))
+    state.add_province(ProvinceState(second_coord, Terrain.SEA, Race.HUMAN))
+    state.add_army(ArmyState(501, 2, ArmyType.LEGION, Quality.AVERAGE, target_coord))
+    state.add_army(ArmyState(502, 2, ArmyType.LEGION, Quality.AVERAGE, second_coord))
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(target_coord))
+    # Level 2: base chance 10% at the target, decays to 5% at the next
+    # Sea province. [0] cast-success roll; [1] 0.08 clears the
+    # target's own 10% chance (destroys); [2] 0.08 at the second
+    # province's own decayed 5% -- misses, proving the decay is real,
+    # not a coincidence of one shared roll; [3:] Add_Experience.
+    rng = ScriptedRandom([0.1, 0.08, 0.08, 0.5, 0.5])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert 501 not in state.armies  # destroyed at the target's own 10%
+    assert 502 in state.armies  # survives -- only ever sees the decayed 5%
+
+
+def test_earthquake_tidal_wave_only_hits_sea_army_types_on_the_final_land_province():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_EARTHQUAKE)
+    target_coord = neighbors(LOCATION, BOUNDS)[0]
+    direction = direction_between(LOCATION, target_coord)
+    land_coord = neighbor_in_direction(target_coord, direction, BOUNDS)
+    assert land_coord is not None
+    state.add_province(ProvinceState(target_coord, Terrain.SEA, Race.HUMAN))
+    state.add_province(ProvinceState(land_coord, Terrain.PLAINS, Race.HUMAN))
+    state.add_army(ArmyState(501, 2, ArmyType.FLEET, Quality.AVERAGE, land_coord))
+    state.add_army(ArmyState(502, 2, ArmyType.LEGION, Quality.AVERAGE, land_coord))
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(target_coord))
+    # No army sits at the target itself, so no roll is consumed there.
+    # [0] cast-success roll; [1] the Fleet's own 15% (20% - one 5%
+    # decay) destroy roll at land -- if propagation didn't stop right
+    # there, this would demand another scripted value and raise
+    # IndexError instead of finishing cleanly; [2:] Add_Experience.
+    rng = ScriptedRandom([0.1, 0.1, 0.5, 0.5])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert 501 not in state.armies  # Fleet washed ashore and destroyed
+    assert 502 in state.armies  # Legion untouched -- not a sea-army type
+
+
+def test_earthquake_tidal_wave_still_reaches_land_after_chance_decays_to_zero():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 1)
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_EARTHQUAKE)
+    target_coord = neighbors(LOCATION, BOUNDS)[0]
+    direction = direction_between(LOCATION, target_coord)
+    second_coord = neighbor_in_direction(target_coord, direction, BOUNDS)
+    land_coord = neighbor_in_direction(second_coord, direction, BOUNDS) if second_coord is not None else None
+    assert second_coord is not None and land_coord is not None
+    state.add_province(ProvinceState(target_coord, Terrain.SEA, Race.HUMAN))
+    state.add_province(ProvinceState(second_coord, Terrain.SEA, Race.HUMAN))
+    state.add_province(ProvinceState(land_coord, Terrain.PLAINS, Race.HUMAN))
+    state.add_army(ArmyState(501, 2, ArmyType.FLEET, Quality.AVERAGE, land_coord))
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(target_coord))
+    # Level 1: chance is 5% at the target, decays to 0% at the second
+    # Sea province and stays floored at 0% at land -- no destroy roll
+    # is ever consumed (chance > 0 short-circuits it); only the
+    # cast-success roll and Add_Experience's own trailing pair.
+    rng = ScriptedRandom([0.1, 0.5, 0.5])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert 501 in state.armies  # reached, but 0% chance -- survives, proving the wave didn't just stop early
+
+
+def test_earthquake_tidal_wave_same_hex_picks_a_random_direction():
+    # User-confirmed fallback: caster and target coincide (e.g. a
+    # caster aboard a Fleet), so there's no real "away from the
+    # caster" vector -- a uniformly random Direction is picked instead.
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 1)
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_EARTHQUAKE)
+    state.add_province(ProvinceState(LOCATION, Terrain.SEA, Race.HUMAN))
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(LOCATION))
+    rng = _SpyRandom([0.1, 0.5, 0.5], choice_indices=[2])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert rng.choice_calls == 1
 
 
 # ---------------------------------------------------------------------------

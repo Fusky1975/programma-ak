@@ -163,6 +163,38 @@ def is_adjacent(a: HexCoord, b: HexCoord, bounds: MapBounds) -> bool:
     return b in neighbors(a, bounds)
 
 
+def neighbor_in_direction(coord: HexCoord, direction: Direction, bounds: MapBounds) -> HexCoord | None:
+    """The one real neighbor of ``coord`` lying in ``direction``, or
+    ``None`` if that hex would fall outside ``bounds`` -- Phase 704
+    (``AdvancedAbility.ENHANCED_EARTHQUAKE``'s own Tidal Wave, "moving
+    generally in the opposite direction from the spellcaster"), the
+    first real consumer of a single-direction lookup rather than
+    ``neighbors()``'s own "all 6 at once."
+    """
+
+    offsets = _EVEN_ROW_OFFSETS if coord.y % 2 else _ODD_ROW_OFFSETS
+    dx, dy = offsets[direction.value]
+    candidate = HexCoord(coord.x + dx, coord.y + dy)
+    return candidate if bounds.contains(candidate) else None
+
+
+def direction_between(a: HexCoord, b: HexCoord) -> Direction | None:
+    """Which ``Direction`` value's own offset (from ``a``'s own row-
+    parity table) produces ``b``, or ``None`` if ``b`` isn't one of
+    ``a``'s 6 real neighbors -- the inverse of ``neighbor_in_
+    direction()``. Phase 704's own "direction from the caster to the
+    Sea target" lookup, before the Tidal Wave continues stepping
+    further in that same fixed direction.
+    """
+
+    offsets = _EVEN_ROW_OFFSETS if a.y % 2 else _ODD_ROW_OFFSETS
+    delta = (b.x - a.x, b.y - a.y)
+    for direction, offset in zip(Direction, offsets):
+        if offset == delta:
+            return direction
+    return None
+
+
 def _to_cube(coord: HexCoord) -> tuple[int, int, int]:
     """Converts this module's offset coordinates to cube coordinates.
 

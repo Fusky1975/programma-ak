@@ -29253,7 +29253,7 @@ follow-up request after the original 431-435 plan shipped.
   (net +18). Full suite verified green (unchanged, 5877) before writing
   a single new test; every new test passed on the first run.
 
-- **Phase 703 (current)**: the 5 "_PLACES" Advanced Abilities
+- **Phase 703**: the 5 "_PLACES" Advanced Abilities
   (`HOLY_PLACES`/`DARK_PLACES`/`ELEMENTAL_PLACES`/`PSYCHIC_PLACES`/
   `ILLUSORY_PLACES`) -- identically worded per magic school, e.g.
   `HOLY_PLACES`: "At any Monastery, Altar or Great Hall, the success
@@ -29284,6 +29284,44 @@ follow-up request after the original 431-435 plan shipped.
   real implementation bug caught before it shipped: `Feature`'s own
   field is `kind`, not `feature_type` -- fixed immediately, before any
   test was written against it.
+
+- **Phase 704 (current)**: `AdvancedAbility.ENHANCED_EARTHQUAKE`, the
+  Tidal Wave -- "when an Earthquake is cast on a Sea province... every
+  military unit... has a 5% chance per level of the spellcaster of
+  being destroyed (except for Whales and Sea Folk)... the tidal wave
+  will continue on, moving generally in the opposite direction from
+  the spellcaster... weakening by 5% upon entering each new province...
+  when it finally hits a land province, it will end there, but will be
+  effective against Fleets, Sea Folk and Whales (only)... If the wave
+  hits the Ice Cap, it simply ends there." `_execute_earthquake()`
+  previously rejected Sea targets outright -- this ability is the real
+  capability gate that lets a caster target Sea at all, not an
+  unmodeled edge case of the base spell. Every named piece reuses
+  existing project data rather than inventing new tables: "Whales and
+  Sea Folk" is `models/army_type.py OVERFLIGHT_SEA` exactly; "Fleets,
+  Sea Folk and Whales (only)" is the identical `SEA_ARMY_TYPES`; "Ice
+  Cap" needs no new check at all -- a propagation step running off the
+  map or onto a coordinate with no `ProvinceState` already means
+  nothing further to hit, the same structural dead end the rulebook's
+  own flavor text describes. Two new small `turn/movement.py` helpers,
+  `neighbor_in_direction()`/`direction_between()`, drive the wave's own
+  straight-line stepping via the existing `Direction`/offset tables
+  (Phase 89); `turn/cast_execution.py` gains `_apply_tidal_wave_step()`
+  (one shared per-province destroy roll for both the Sea and land
+  phases) and `_propagate_tidal_wave()` (the stepping loop). Two
+  design decisions confirmed directly with the user: a same-hex
+  fallback (caster co-located with the Sea target, e.g. aboard a
+  Fleet, so there's no real "away from the caster" vector) picks a
+  uniformly random `Direction`; and the wave keeps physically moving
+  through Sea provinces even after its own destroy chance has decayed
+  to 0%, until it genuinely reaches land or the map's edge, matching
+  "when it finally hits a land province, it will end there"'s own
+  definite-arrival framing. New report-layer narration is deliberately
+  out of scope (no source text found beyond the already-wired, terrain-
+  agnostic "@ was devastated by an earthquake!" bystander notice, which
+  needs no change). Test count: 5913 -> 5923 (net +10). Full suite
+  verified green (unchanged, 5913) before writing a single new test;
+  every new test passed on the first run.
 
 ## Setup
 
