@@ -2363,8 +2363,23 @@ DAMP_MAGIC_CAST_CHANCE_MULTIPLIER = 0.5
 WARP_SPACE_ARCHERY_HIT_CHANCE_MULTIPLIER = 0.25
 WARP_SPACE_MELEE_HIT_CHANCE_MULTIPLIER = 0.5
 
+# Phase 703: the 5 "_PLACES" Advanced Abilities (HOLY/DARK/ELEMENTAL/
+# PSYCHIC/ILLUSORY_PLACES) -- each identically worded, e.g. HOLY_PLACES
+# (`models/advanced_ability.py`): "At any Monastery, Altar or Great
+# Hall, the success chance to cast a White Magic spell is increased by
+# 20%... For Search Feature actions, the 20% bonus is applied when
+# that type of feature is searched." A separate, same-valued constant
+# from `turn/cast_execution.py`'s own `PLACES_BONUS_PERCENT` (Action-
+# Cast's own consumer), matching this project's own established
+# per-module citation convention (`PAGAN_MAGE_ORDER_BONUS`/`PERSONAL_
+# COMBAT_PAGAN_MAGE_ORDER_BONUS` are likewise two separate 0.10
+# constants, one per system).
+PERSONAL_COMBAT_PLACES_BONUS_PERCENT = 0.20
 
-def personal_combat_spell_cast_chance(skill_level: int, *, caster_is_pagan: bool = False, damp_magic: bool = False) -> float:
+
+def personal_combat_spell_cast_chance(
+    skill_level: int, *, caster_is_pagan: bool = False, damp_magic: bool = False, places_bonus: bool = False
+) -> float:
     """"Gli Incantesimi di Combattimento Individuale hanno una
     probabilità di riuscita del 30% più 15% per livello," capped at
     ``PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP`` -- **100%, corrected at
@@ -2382,11 +2397,22 @@ def personal_combat_spell_cast_chance(skill_level: int, *, caster_is_pagan: bool
     and the cap, matching this project's own ``_roll_cast_success()``
     (``turn/cast_execution.py``) precedent for a late-applied
     probability multiplier.
+
+    Phase 703: ``places_bonus`` (default ``False``, every pre-Phase-703
+    caller unaffected) adds ``PERSONAL_COMBAT_PLACES_BONUS_PERCENT`` in
+    the same additive block as the Pagan bonus, before the cap -- the
+    caller (``turn/search_execution.py``'s own Cast-tactic resolver)
+    has already confirmed the caster holds the matching ``_PLACES``
+    Advanced Ability and the Feature currently being searched is one of
+    that ability's own 3 named types; this function itself has no
+    Feature concept to check.
     """
 
     chance = PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE + PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL * skill_level
     if caster_is_pagan:
         chance += PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS
+    if places_bonus:
+        chance += PERSONAL_COMBAT_PLACES_BONUS_PERCENT
     chance = min(chance, PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP)
     if damp_magic:
         chance *= DAMP_MAGIC_CAST_CHANCE_MULTIPLIER
@@ -2394,7 +2420,7 @@ def personal_combat_spell_cast_chance(skill_level: int, *, caster_is_pagan: bool
 
 
 def resolve_personal_combat_spell_cast(
-    skill_level: int, rng: random.Random, *, caster_is_pagan: bool = False, damp_magic: bool = False
+    skill_level: int, rng: random.Random, *, caster_is_pagan: bool = False, damp_magic: bool = False, places_bonus: bool = False
 ) -> bool:
     """Rolls whether a Personal-Combat spell attempt succeeds, using
     ``personal_combat_spell_cast_chance()``'s own formula. Governs all
@@ -2403,7 +2429,9 @@ def resolve_personal_combat_spell_cast(
     to invent, now supplied generically rather than per-spell.
     """
 
-    return rng.random() < personal_combat_spell_cast_chance(skill_level, caster_is_pagan=caster_is_pagan, damp_magic=damp_magic)
+    return rng.random() < personal_combat_spell_cast_chance(
+        skill_level, caster_is_pagan=caster_is_pagan, damp_magic=damp_magic, places_bonus=places_bonus
+    )
 
 
 # Phase 209 -- the Spell -> Ability mapping for the ten Personal-Combat-only

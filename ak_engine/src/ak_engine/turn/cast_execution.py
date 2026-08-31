@@ -682,6 +682,7 @@ from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, 
 from ak_engine.models.army_type import OVERFLIGHT_AIR, ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.feature import FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
@@ -744,6 +745,46 @@ PAGAN_MAGE_ORDER_BONUS = 0.10
 # WHITE``), so a Pagan Kingdom holding the title never double-counts.
 PAGAN_KING_WHITE_MAGIC_BONUS = 0.10
 
+# Phase 703: the 5 "_PLACES" Advanced Abilities (`models/advanced_
+# ability.py` -- HOLY/DARK/ELEMENTAL/PSYCHIC/ILLUSORY_PLACES), each
+# identically worded, e.g. HOLY_PLACES: "At any Monastery, Altar or
+# Great Hall, the success chance to cast a White Magic spell is
+# increased by 20%... For Action spells, the bonus is applied if that
+# feature type is in the same province as the character, and is not
+# occupied by a monster." A separate, same-valued constant from `turn/
+# encounter.py`'s own `PERSONAL_COMBAT_PLACES_BONUS_PERCENT` (Search
+# Feature's own consumer, a different formula entirely) -- matching
+# this project's own established per-module citation convention
+# (`PAGAN_MAGE_ORDER_BONUS`/`PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS`
+# are likewise two separate 0.10 constants, one per system).
+PLACES_BONUS_PERCENT = 0.20
+
+# Each _PLACES ability's own real spell-school scope -- there is no
+# White/Necromancy/Elemental/Psychic/Illusion member missing and no
+# ability covers more than one school (confirmed by reading all 5
+# descriptions directly, not inferred).
+PLACES_ABILITY_FOR_ABILITY: dict[Ability, AdvancedAbility] = {
+    Ability.WHITE: AdvancedAbility.HOLY_PLACES,
+    Ability.NECROMANCY: AdvancedAbility.DARK_PLACES,
+    Ability.ELEMENTAL: AdvancedAbility.ELEMENTAL_PLACES,
+    Ability.PSYCHIC: AdvancedAbility.PSYCHIC_PLACES,
+    Ability.ILLUSION: AdvancedAbility.ILLUSORY_PLACES,
+}
+
+# Each _PLACES ability's own 3 named Feature types, verbatim from its
+# own description text (`models/feature.py FeatureType`'s own real
+# members -- no missing-concept blocker, every named Feature already
+# exists in this project).
+PLACES_FEATURE_TYPES: dict[AdvancedAbility, frozenset[FeatureType]] = {
+    AdvancedAbility.HOLY_PLACES: frozenset({FeatureType.MONASTERY, FeatureType.ALTAR, FeatureType.GREAT_HALL}),
+    AdvancedAbility.DARK_PLACES: frozenset({FeatureType.TOMB, FeatureType.CRYPT, FeatureType.CATACOMBS}),
+    AdvancedAbility.ELEMENTAL_PLACES: frozenset(
+        {FeatureType.SACRED_ROCK, FeatureType.MOUNT_PEAK, FeatureType.AS_MONUMENT}
+    ),
+    AdvancedAbility.PSYCHIC_PLACES: frozenset({FeatureType.TOWER, FeatureType.TEMPLE, FeatureType.LOST_TEMPLE}),
+    AdvancedAbility.ILLUSORY_PLACES: frozenset({FeatureType.MAG_POOL, FeatureType.MAZE, FeatureType.LABYRINTH}),
+}
+
 # Office.GOOD_KING's own second, unique perk: "the Plague spell has a
 # -15% chance of affecting any unit owned by your Kingdom or in its
 # territory." Applied inside ``apply_plague_exposure()``.
@@ -760,26 +801,27 @@ ACTION_CAST_SLOTS_LEVEL_1_TO_2 = 1
 ACTION_CAST_SLOTS_LEVEL_3 = 2
 ACTION_CAST_SLOTS_LEVEL_4_PLUS = 3
 
-# The same AKGEN source also confirms 4 more real spellcasting rules,
-# deliberately NOT wired here (Phase 387) -- each needs real plumbing
-# this project doesn't have yet, not just a formula:
+# The same AKGEN source also confirmed 4 more real spellcasting rules,
+# originally left deliberately NOT wired here (Phase 387):
 # - `combat_slots_per_school` (1 slot at level 1, 2 at level 2+, per
-#   encounter): `turn/encounter.py resolve_personal_combat_spell_cast()`
-#   is a single, stateless roll with no per-encounter, per-(leader,
-#   Ability) call counter threaded through its own callers (`turn/
-#   search_execution.py`, `turn/challenge_execution.py`) to gate against.
-# - `places_of_power_bonus_percentage_points` (+20% to the roll): no
-#   code anywhere checks whether a caster's own current location is a
-#   Place of Power -- `models/power.py`'s own vocabulary exists, but
-#   there's no live "this province/feature currently grants this real
-#   bonus" state to consult.
+#   encounter): STILL genuinely unwired -- `turn/encounter.py resolve_
+#   personal_combat_spell_cast()` is a single, stateless roll with no
+#   per-encounter, per-(leader, Ability) call counter threaded through
+#   its own callers (`turn/search_execution.py`, `turn/challenge_
+#   execution.py`) to gate against. A real, separate follow-up.
 # - `damp_magic` (halves the roll) / `damp_college` (blocks a specific
-#   Ability's combat spells entirely inside that feature): same gap --
-#   `Power.DAMP_MAGIC`/`Power.DAMP_COLLEGE` exist as pure vocabulary
-#   (Phase 95), but no ProvinceState/Feature field records "this power
-#   is the one currently active here" the way a live game would need.
-# All 4 are real, confirmed rules -- left for a real follow-up phase
-# that builds the underlying state each one actually needs.
+#   Ability's combat spells entirely inside that feature): DONE (Phase
+#   617) -- `Power.DAMP_MAGIC`/`Power.DAMP_COLLEGE` are both live,
+#   consulted via `search_execution.py`'s own `feature_power_event`
+#   (`derive_feature_event()`) at the real Cast-tactic call sites.
+# - `places_of_power_bonus_percentage_points` (+20% to the roll): DONE
+#   (Phase 703) -- the 5 `_PLACES` Advanced Abilities (`HOLY_PLACES`
+#   et al., `models/advanced_ability.py`) turned out to be the real,
+#   sourced mechanism this note's own "no code checks" gap was
+#   describing. `_caster_holds_places_bonus()` below (Action-Cast) and
+#   `turn/search_execution.py`'s own Cast-tactic resolver (Search
+#   Feature) both wire it now -- see `PLACES_BONUS_PERCENT`'s own
+#   citation just below.
 
 # Regolamento AK.txt [4.25.3]: "10% di probabilita' di essere distrutte, piu'
 # un 10% per livello dell'autore dell'incantesimo" (Plague).
@@ -1142,6 +1184,33 @@ def _caster_kingdom_holds_pagan_king_title(state: GameState, caster: LeaderState
     return holder_leader is not None and holder_leader.kingdom_id == caster.kingdom_id
 
 
+def _caster_holds_places_bonus(state: GameState, caster: LeaderState, ability: Ability) -> bool:
+    """Action-Cast half of the 5 "_PLACES" Advanced Abilities (Phase
+    703): the caster's own current province must hold a matching,
+    unoccupied Feature -- "the bonus is applied if that feature type
+    is in the same province as the character, and is not occupied by a
+    monster." Unoccupied is read as ``guardian_monster is None or the
+    guardian has already been looted`` (a dead guardian's own species
+    stays recorded on ``Feature.guardian_monster``, only ``looted``
+    flips -- see that field's own docstring).
+
+    Distinct from ``turn/search_execution.py``'s own Cast-tactic half
+    ("For Search Feature actions, the 20% bonus is applied when that
+    type of feature is searched"), which has no occupancy condition at
+    all -- Searching is, by definition, targeting that exact Feature,
+    guarded or not.
+    """
+
+    places_ability = PLACES_ABILITY_FOR_ABILITY.get(ability)
+    if places_ability is None or places_ability not in caster.advanced_abilities:
+        return False
+    matching_types = PLACES_FEATURE_TYPES[places_ability]
+    return any(
+        feature.kind in matching_types and (feature.guardian_monster is None or feature.looted)
+        for feature in state.features_at(caster.location)
+    )
+
+
 def action_cast_slots(level: int) -> int:
     """AKGEN's own confirmed ``action_slots_per_school``: 1 slot at
     skill level 1-2, 2 at level 3, 3 at level 4 and up. ``level`` values
@@ -1210,6 +1279,13 @@ def _roll_cast_success(
     universal ceiling regardless of any spell-specific modifier, rather
     than letting a halved-then-uncapped value exceed what a normal cast
     could ever reach.
+
+    Phase 703: the 5 "_PLACES" Advanced Abilities add a further
+    ``PLACES_BONUS_PERCENT`` (+20%) when the caster holds the matching
+    ability and stands in a province with an unoccupied, matching
+    Feature -- see ``_caster_holds_places_bonus()``'s own docstring for
+    the full reasoning, added in the same block as the two Pagan
+    bonuses, before ``success_chance_multiplier``/the cap.
     """
 
     if wand_skill_level is not None:
@@ -1230,6 +1306,8 @@ def _roll_cast_success(
         chance += PAGAN_MAGE_ORDER_BONUS
     if ability is Ability.WHITE and _caster_kingdom_holds_pagan_king_title(state, caster):
         chance += PAGAN_KING_WHITE_MAGIC_BONUS
+    if _caster_holds_places_bonus(state, caster, ability):
+        chance += PLACES_BONUS_PERCENT
     chance *= success_chance_multiplier
     chance = min(chance, ACTION_SPELL_CHANCE_CAP)
     if rng.random() < chance:

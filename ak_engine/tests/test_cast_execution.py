@@ -14,6 +14,7 @@ from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, GraveyardEntry, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import Monster
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
@@ -27,11 +28,13 @@ from ak_engine.turn.cast_execution import (
     MYSTIC_WINDS_MOVEMENT_POINTS,
     MYSTIC_WINDS_MOVES_AS_AIR_UNIT,
     MYSTIC_WINDS_USES_MOVEMENT_POINTS_NORMALLY,
+    PLACES_BONUS_PERCENT,
     SCAR_TERRAIN_LAND_COLLAPSE_RACES,
     SCAR_TERRAIN_TAX_REDUCTION,
     UNDEAD_CONVERSION_STEP_BUDGET_NUMERATOR,
     LocateObjectResult,
     _apply_undead_king_alignment_conversion,
+    _caster_holds_places_bonus,
     _kill_enemy_combatant,
     _total_usable_skill,
     action_cast_slots,
@@ -2718,6 +2721,98 @@ def test_pagan_king_title_bonus_does_not_reach_a_different_kingdoms_caster():
     rng = ScriptedRandom([0.35])  # over the un-bonused 30% -- no reachable bonus for kingdom 2
 
     result = execute_cast(state, kingdom_id=2, leader_id=78, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "spell failed"
+
+
+# -- Phase 703: the 5 "_PLACES" Advanced Abilities, Action-Cast half --
+
+
+def test_places_bonus_constant():
+    assert PLACES_BONUS_PERCENT == 0.20
+
+
+def test_caster_holds_places_bonus_requires_the_ability():
+    state = build_state()
+    state.add_feature(Feature(1, LOCATION, FeatureType.ALTAR))
+    assert _caster_holds_places_bonus(state, state.leaders[CASTER_ID], Ability.WHITE) is False
+
+
+def test_caster_holds_places_bonus_at_a_matching_unoccupied_feature():
+    state = build_state()
+    state.add_feature(Feature(1, LOCATION, FeatureType.ALTAR))
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.HOLY_PLACES)
+    assert _caster_holds_places_bonus(state, state.leaders[CASTER_ID], Ability.WHITE) is True
+
+
+def test_caster_holds_places_bonus_requires_a_matching_feature_type():
+    state = build_state()
+    state.add_feature(Feature(1, LOCATION, FeatureType.TOWER))  # a Psychic Places type, not Holy
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.HOLY_PLACES)
+    assert _caster_holds_places_bonus(state, state.leaders[CASTER_ID], Ability.WHITE) is False
+
+
+def test_caster_holds_places_bonus_requires_the_ability_matching_the_spells_own_school():
+    state = build_state()
+    state.add_feature(Feature(1, LOCATION, FeatureType.ALTAR))
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.HOLY_PLACES)
+    assert _caster_holds_places_bonus(state, state.leaders[CASTER_ID], Ability.NECROMANCY) is False
+
+
+def test_caster_holds_places_bonus_an_occupied_feature_grants_no_bonus():
+    state = build_state()
+    state.add_feature(Feature(1, LOCATION, FeatureType.ALTAR, guardian_monster=Monster.ROC))
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.HOLY_PLACES)
+    assert _caster_holds_places_bonus(state, state.leaders[CASTER_ID], Ability.WHITE) is False
+
+
+def test_caster_holds_places_bonus_a_looted_guardian_still_counts_as_unoccupied():
+    state = build_state()
+    state.add_feature(Feature(1, LOCATION, FeatureType.ALTAR, guardian_monster=Monster.ROC, looted=True))
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.HOLY_PLACES)
+    assert _caster_holds_places_bonus(state, state.leaders[CASTER_ID], Ability.WHITE) is True
+
+
+def test_caster_holds_places_bonus_a_feature_in_a_different_province_does_not_count():
+    state = build_state()
+    state.add_feature(Feature(1, ELSEWHERE, FeatureType.ALTAR))
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.HOLY_PLACES)
+    assert _caster_holds_places_bonus(state, state.leaders[CASTER_ID], Ability.WHITE) is False
+
+
+def test_holy_places_bonus_reaches_execute_cast():
+    # Level 1 White Magic: 30% base, +20% Places bonus = 50%. Bless
+    # (not Kill_Enemy) -- Kill_Enemy's own [4.25.2] halving triggers on
+    # *any* Feature present at the caster's own province, an unrelated
+    # confound this scenario's own Feature would otherwise trip.
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 1)
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.HOLY_PLACES)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.add_feature(Feature(1, LOCATION, FeatureType.ALTAR))
+    request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
+    # [0] over the un-bonused 30%, under the bonused 50%; [1] graveyard-
+    # cleanup roll (misses); [2:] Add_Experience gain draws.
+    rng = ScriptedRandom([0.45, 0.99, 0.5, 0.5])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+
+
+def test_holy_places_bonus_absent_leaves_the_same_roll_failing():
+    # Non-regression control: the Feature is present, but the caster
+    # doesn't hold HOLY_PLACES -- proves the bonus is real, not a
+    # coincidence of the scripted roll.
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 1)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.add_feature(Feature(1, LOCATION, FeatureType.ALTAR))
+    request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
+    rng = ScriptedRandom([0.45])  # over the un-bonused 30% -- fails without the ability
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
     assert result.applied is False
     assert result.reason == "spell failed"

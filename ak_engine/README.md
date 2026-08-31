@@ -29215,7 +29215,7 @@ follow-up request after the original 431-435 plan shipped.
   +7). Full suite verified green (unchanged, 5870) before writing a
   single new test; every new test passed on the first run.
 
-- **Phase 702 (current)**: `AdvancedAbility.THIEF_TREASURY_RAIDS`,
+- **Phase 702**: `AdvancedAbility.THIEF_TREASURY_RAIDS`,
   closing backlog item #11 -- [5.5]'s own "if the victim is a King,
   there's a possibility of stealing gold from him (depends on how much
   he has in the treasury)" clause had a real mechanic but no magnitude
@@ -29252,6 +29252,38 @@ follow-up request after the original 431-435 plan shipped.
   shared `resolve_challenge_combat()` core. Test count: 5877 -> 5895
   (net +18). Full suite verified green (unchanged, 5877) before writing
   a single new test; every new test passed on the first run.
+
+- **Phase 703 (current)**: the 5 "_PLACES" Advanced Abilities
+  (`HOLY_PLACES`/`DARK_PLACES`/`ELEMENTAL_PLACES`/`PSYCHIC_PLACES`/
+  `ILLUSORY_PLACES`) -- identically worded per magic school, e.g.
+  `HOLY_PLACES`: "At any Monastery, Altar or Great Hall, the success
+  chance to cast a White Magic spell is increased by 20%. For Search
+  Feature actions, the 20% bonus is applied when that type of feature
+  is searched. For Action spells, the bonus is applied if that feature
+  type is in the same province as the character, and is not occupied
+  by a monster." Two genuinely different formulas, two genuinely
+  different wiring points, sharing one `PLACES_ABILITY_FOR_ABILITY`/
+  `PLACES_FEATURE_TYPES` table pair (`turn/cast_execution.py`): the
+  Action-Cast half (`_roll_cast_success()`, new `_caster_holds_places_
+  bonus()`, +20% additive alongside the two Pagan bonuses) requires the
+  matching Feature to be *unoccupied* ("not occupied by a monster,"
+  read as `guardian_monster is None or looted` -- a dead guardian's own
+  species stays recorded, only `looted` flips); the Search Feature half
+  (`turn/search_execution.py`'s own Cast-tactic resolver, `turn/
+  encounter.py resolve_personal_combat_spell_cast()`'s new `places_
+  bonus` parameter) has no occupancy condition at all -- Searching a
+  Feature already means targeting that exact one, guarded or not.
+  Corrects a stale docstring: `cast_execution.py`'s own Phase 387 note
+  had flagged `places_of_power_bonus_percentage_points` as one of "4
+  more real spellcasting rules deliberately NOT wired" -- 2 of those 4
+  (`damp_magic`/`damp_college`) turned out already done since Phase
+  617, never updated; only `combat_slots_per_school` (a per-encounter
+  cast-count limiter) remains genuinely open. Test count: 5895 -> 5913
+  (net +18). Full suite verified green (unchanged, 5895) before writing
+  a single new test; every new test passed on the first run, after one
+  real implementation bug caught before it shipped: `Feature`'s own
+  field is `kind`, not `feature_type` -- fixed immediately, before any
+  test was written against it.
 
 ## Setup
 

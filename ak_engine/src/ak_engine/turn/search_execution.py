@@ -494,6 +494,7 @@ from ak_engine.models.power import Power
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.models.temper import Temper
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
+from ak_engine.turn.cast_execution import PLACES_ABILITY_FOR_ABILITY, PLACES_FEATURE_TYPES
 from ak_engine.turn.discovery_effects import (
     arcane_valor_hit_points_bonus,
     effective_skill_level,
@@ -1545,7 +1546,24 @@ def _resolve_search_encounter(
             succeeded = True  # [3.11]/[5.1]: "a spell cast from a magic item is automatically successful"
         else:
             damp_magic = feature_power_event.power is Power.DAMP_MAGIC
-            succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan, damp_magic=damp_magic)
+            # Phase 703: "For Search Feature actions, the 20% bonus is
+            # applied when that type of feature is searched" -- unlike
+            # `cast_execution.py`'s own Action-Cast half, there's no
+            # "not occupied by a monster" clause here: Searching a
+            # Feature already means targeting that exact one, guarded
+            # or not. A monster caster can't hold an Advanced Ability,
+            # so `caster_is_leader` gates this the same way `caster_is_
+            # pagan` above already does.
+            places_ability = PLACES_ABILITY_FOR_ABILITY.get(ability)
+            places_bonus = (
+                caster_is_leader
+                and places_ability is not None
+                and places_ability in leader.advanced_abilities
+                and feature.kind in PLACES_FEATURE_TYPES[places_ability]
+            )
+            succeeded = resolve_personal_combat_spell_cast(
+                level, rng, caster_is_pagan=caster_is_pagan, damp_magic=damp_magic, places_bonus=places_bonus
+            )
 
         # Phase 531: AKGEN_reverse_engineering_report (4).md SS8 -- only
         # reachable here when the *leader* is the one being cast at (a

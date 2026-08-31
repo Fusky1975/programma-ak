@@ -4425,6 +4425,61 @@ def test_execute_search_damp_magic_halves_the_cast_success_chance():
     assert mock_cast_roll.call_args.kwargs["damp_magic"] is True
 
 
+# -- Phase 703: the 5 "_PLACES" Advanced Abilities, Search Feature half --
+
+
+def test_execute_search_holy_places_bonus_reaches_the_cast_roll():
+    leader = _skilled_leader(Ability.WHITE, 5, advanced_abilities={AdvancedAbility.HOLY_PLACES})
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.ALTAR, guardian_monster=Monster.GARGOYLE))
+    request = _cast_request(1, Spell.HOLY_SYMBOL, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast_roll, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    mock_cast_roll.assert_called_once()
+    assert mock_cast_roll.call_args.kwargs["places_bonus"] is True
+
+
+def test_execute_search_holy_places_bonus_requires_the_ability():
+    leader = _skilled_leader(Ability.WHITE, 5)  # no advanced ability
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.ALTAR, guardian_monster=Monster.GARGOYLE))
+    request = _cast_request(1, Spell.HOLY_SYMBOL, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast_roll, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    mock_cast_roll.assert_called_once()
+    assert mock_cast_roll.call_args.kwargs["places_bonus"] is False
+
+
+def test_execute_search_holy_places_bonus_requires_a_matching_feature_type():
+    leader = _skilled_leader(Ability.WHITE, 5, advanced_abilities={AdvancedAbility.HOLY_PLACES})
+    state = GameState()
+    state.add_leader(leader)
+    # A real Feature, but not one of Holy Places' own 3 named types.
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _cast_request(1, Spell.HOLY_SYMBOL, Maneuver.MELEE)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast_roll, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    mock_cast_roll.assert_called_once()
+    assert mock_cast_roll.call_args.kwargs["places_bonus"] is False
+
+
 # -- Phase 619: the 8 SA-argument powers -- _apply_scout() finds and
 # parses a real SAY tactic's own argument end to end.
 

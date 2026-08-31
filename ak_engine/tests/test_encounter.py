@@ -44,6 +44,7 @@ from ak_engine.turn.encounter import (
     MIRROR_IMAGE_MASTER_DISBELIEF_BASE_CHANCE,
     MIRROR_IMAGE_MASTER_DISBELIEF_BONUS,
     PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS,
+    PERSONAL_COMBAT_PLACES_BONUS_PERCENT,
     PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE,
     PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP,
     PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL,
@@ -1562,6 +1563,34 @@ def test_damp_magic_and_warp_space_constants():
     assert DAMP_MAGIC_CAST_CHANCE_MULTIPLIER == 0.5
     assert WARP_SPACE_ARCHERY_HIT_CHANCE_MULTIPLIER == 0.25
     assert WARP_SPACE_MELEE_HIT_CHANCE_MULTIPLIER == 0.5
+
+
+# -- Phase 703: the 5 "_PLACES" Advanced Abilities --
+
+
+def test_personal_combat_places_bonus_constant():
+    assert PERSONAL_COMBAT_PLACES_BONUS_PERCENT == 0.20
+
+
+def test_personal_combat_spell_cast_chance_places_bonus_adds_20_percent():
+    assert personal_combat_spell_cast_chance(1, places_bonus=True) == pytest.approx(0.65)  # 0.45 + 0.20
+
+
+def test_personal_combat_spell_cast_chance_places_bonus_stacks_with_pagan_before_the_cap():
+    # Level 2, Pagan + Places: 30% + 30% + 10% + 20% = 90%.
+    assert personal_combat_spell_cast_chance(2, caster_is_pagan=True, places_bonus=True) == pytest.approx(0.90)
+
+
+def test_personal_combat_spell_cast_chance_places_bonus_applies_before_the_cap():
+    # Level 5, Pagan + Places: 30% + 75% + 10% + 20% = 135%, clamped to 100%.
+    assert personal_combat_spell_cast_chance(5, caster_is_pagan=True, places_bonus=True) == pytest.approx(1.00)
+
+
+def test_resolve_personal_combat_spell_cast_places_bonus_succeeds_a_roll_the_unbonused_chance_would_fail():
+    # Level 1: 45% undamped, 65% with the Places bonus -- 0.5 clears the
+    # boosted threshold but would have failed unboosted.
+    rng = ScriptedRandom([0.5])
+    assert resolve_personal_combat_spell_cast(1, rng, places_bonus=True) is True
 
 
 # -- Phase 200: Words of Healing [WH] --
