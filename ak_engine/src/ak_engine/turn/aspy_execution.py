@@ -297,6 +297,14 @@ class SpyReport:
     # unlike `garrison_army_names` above). Empty dict for any caster who
     # doesn't hold the Advanced Ability.
     adjacent_military_forces: dict[HexCoord, tuple[str, ...]] = field(default_factory=dict)
+    # Phase 705: `AdvancedAbility.SPY_EXPANDED_SPYING`'s own "gains
+    # information on what features are known to the owning kingdom" --
+    # maps `Feature.feature_id` to whatever discovery level (1-3) *this
+    # province's own owner* has recorded, for every Feature here the
+    # owner knows about at all (level > 0). Empty for a caster who
+    # doesn't hold the ability, an unowned province, or a province with
+    # no Features the owner has discovered.
+    features_known_to_owner: dict[int, int] = field(default_factory=dict)
 
 
 def execute_aspy(
@@ -309,6 +317,7 @@ def execute_aspy(
     caster_holds_psychic_mage_office: bool = False,
     caster_has_detect_align: bool = False,
     caster_has_druidic_animal_spies: bool = False,
+    caster_has_spy_expanded_spying: bool = False,
     rng: random.Random | None = None,
 ) -> SpyReport | None:
     """Builds the intelligence report for the caster's own current province.
@@ -325,6 +334,14 @@ def execute_aspy(
 
     ``caster_has_druidic_animal_spies`` (Phase 694) populates ``SpyReport.
     adjacent_military_forces`` -- see that field's own docstring.
+
+    ``caster_has_spy_expanded_spying`` (Phase 705, ``AdvancedAbility.
+    SPY_EXPANDED_SPYING``) populates ``SpyReport.features_known_to_
+    owner`` -- see that field's own docstring. The ability's own second
+    clause ("with the Trail action, estimates are gained for skills,
+    and for offices held") is unrelated to this function -- see
+    ``turn/trail_execution.py execute_trail()``'s own Phase 705
+    addendum.
     """
 
     del request  # see module docstring
@@ -417,6 +434,13 @@ def execute_aspy(
     # qualificante" (qualifying informational event) that row names.
     add_experience(leader, Ability.SPY, 10, rng)
 
+    features_known_to_owner: dict[int, int] = {}
+    if caster_has_spy_expanded_spying and province.owner_kingdom_id is not None:
+        for feature in state.features_at(leader.location):
+            level = feature.discovered_by_kingdom.get(province.owner_kingdom_id, 0)
+            if level > 0:
+                features_known_to_owner[feature.feature_id] = level
+
     return SpyReport(
         province=leader.location,
         owner_kingdom_id=province.owner_kingdom_id,
@@ -428,4 +452,5 @@ def execute_aspy(
         tax_estimate=tax_estimate,
         discoveries_obtained=discoveries_obtained,
         adjacent_military_forces=adjacent_military_forces,
+        features_known_to_owner=features_known_to_owner,
     )

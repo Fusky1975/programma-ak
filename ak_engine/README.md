@@ -29285,7 +29285,7 @@ follow-up request after the original 431-435 plan shipped.
   field is `kind`, not `feature_type` -- fixed immediately, before any
   test was written against it.
 
-- **Phase 704 (current)**: `AdvancedAbility.ENHANCED_EARTHQUAKE`, the
+- **Phase 704**: `AdvancedAbility.ENHANCED_EARTHQUAKE`, the
   Tidal Wave -- "when an Earthquake is cast on a Sea province... every
   military unit... has a 5% chance per level of the spellcaster of
   being destroyed (except for Whales and Sea Folk)... the tidal wave
@@ -29322,6 +29322,33 @@ follow-up request after the original 431-435 plan shipped.
   needs no change). Test count: 5913 -> 5923 (net +10). Full suite
   verified green (unchanged, 5913) before writing a single new test;
   every new test passed on the first run.
+
+- **Phase 705 (current)**: `AdvancedAbility.SPY_EXPANDED_SPYING` --
+  "When using the Spy Province action, the Spy gains information on
+  what features are known to the owning kingdom. With the Trail
+  action, estimates are gained for skills, and for offices held." Two
+  of the three clauses reuse infrastructure the eleventh through
+  sixteenth surveys' own picks already built: the Spy Province half
+  (`turn/aspy_execution.py execute_aspy()`, new `SpyReport.features_
+  known_to_owner: dict[int, int]`) reports whatever real discovery
+  level (1-3) *the province's own owner Kingdom* has recorded per
+  `Feature.discovered_by_kingdom` -- deliberately the owner's own
+  level, not the caster's -- for every Feature there the owner has
+  discovered at all, mirroring `caster_has_druidic_animal_spies`'s own
+  Phase 694 shape exactly. The offices-held half (`turn/trail_
+  execution.py execute_trail()`/`advance_trail()`, new `TrailExecution
+  Result.offices_held: tuple[Office, ...]`) resolves fresh via `turn/
+  office_holder.py resolve_all_office_holders()`, filtered to whichever
+  real (leader-scoped) Offices the target currently holds -- read as an
+  exact fact, not a perturbed Spy Table estimate, since office-holding
+  has no real magnitude to add a margin of error to. The third clause
+  (skill estimates) stays genuinely unmodeled: no `Skill_Est` routine
+  survives anywhere in the source (unlike `Align_Est`/`Temper_Est`),
+  so inventing one would be a guess, not a recovery -- flagged
+  explicitly in both functions' own docstrings, not silently dropped.
+  Test count: 5923 -> 5934 (net +11). Full suite verified green
+  (unchanged, 5923) before writing a single new test; every new test
+  passed on the first run.
 
 ## Setup
 

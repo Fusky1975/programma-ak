@@ -6,6 +6,7 @@ from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
+from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
@@ -510,3 +511,54 @@ def test_execute_aspy_adjacent_military_forces_omits_unknown_neighboring_hexes()
     report = execute_aspy(state, LEADER_ID, _request(), caster_has_druidic_animal_spies=True)
 
     assert report.adjacent_military_forces == {}
+
+
+# -- Phase 705: AdvancedAbility.SPY_EXPANDED_SPYING, Spy Province half --
+
+
+def test_execute_aspy_features_known_to_owner_empty_without_the_ability():
+    state = _state()
+    state.add_feature(Feature(1, HOME, FeatureType.TOWER, discovered_by_kingdom={1: 3}))
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    assert report.features_known_to_owner == {}
+
+
+def test_execute_aspy_reports_features_known_to_the_provinces_own_owner():
+    state = _state(owner_kingdom_id=2)
+    state.add_feature(Feature(1, HOME, FeatureType.TOWER, discovered_by_kingdom={2: 3}))
+
+    report = execute_aspy(state, LEADER_ID, _request(), caster_has_spy_expanded_spying=True)
+
+    assert report.features_known_to_owner == {1: 3}
+
+
+def test_execute_aspy_features_known_to_owner_uses_the_owners_own_level_not_the_casters():
+    # The caster's own kingdom (1) knows this feature fully, but the
+    # province's own owner (2) has only detected it -- the report must
+    # reflect what the *owner* knows, not what the caster's kingdom does.
+    state = _state(owner_kingdom_id=2)
+    state.add_feature(Feature(1, HOME, FeatureType.TOWER, discovered_by_kingdom={1: 3, 2: 1}))
+
+    report = execute_aspy(state, LEADER_ID, _request(), caster_has_spy_expanded_spying=True)
+
+    assert report.features_known_to_owner == {1: 1}
+
+
+def test_execute_aspy_features_known_to_owner_omits_undiscovered_features():
+    state = _state(owner_kingdom_id=2)
+    state.add_feature(Feature(1, HOME, FeatureType.TOWER))  # discovered_by_kingdom defaults to {}
+
+    report = execute_aspy(state, LEADER_ID, _request(), caster_has_spy_expanded_spying=True)
+
+    assert report.features_known_to_owner == {}
+
+
+def test_execute_aspy_features_known_to_owner_empty_for_an_unowned_province():
+    state = _state(owner_kingdom_id=None)
+    state.add_feature(Feature(1, HOME, FeatureType.TOWER, discovered_by_kingdom={1: 3}))
+
+    report = execute_aspy(state, LEADER_ID, _request(), caster_has_spy_expanded_spying=True)
+
+    assert report.features_known_to_owner == {}

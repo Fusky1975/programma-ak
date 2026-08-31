@@ -753,6 +753,10 @@ def _dispatch_aspy(
     caster_has_druidic_animal_spies = (
         leader is not None and AdvancedAbility.DRUIDIC_ANIMAL_SPIES in leader.advanced_abilities
     )
+    # Phase 705: same real-possession pattern, for Spy Expanded Spying.
+    caster_has_spy_expanded_spying = (
+        leader is not None and AdvancedAbility.SPY_EXPANDED_SPYING in leader.advanced_abilities
+    )
     return execute_aspy(
         state,
         leader_id,
@@ -760,6 +764,7 @@ def _dispatch_aspy(
         caster_has_detect_align=caster_has_detect_align,
         caster_holds_psychic_mage_office=caster_holds_psychic_mage_office,
         caster_has_druidic_animal_spies=caster_has_druidic_animal_spies,
+        caster_has_spy_expanded_spying=caster_has_spy_expanded_spying,
         rng=rng,
     )
 
@@ -824,6 +829,18 @@ def _has_spy_super_sleuth(state: GameState, leader_id: int) -> bool:
 
     leader = state.leaders.get(leader_id)
     return leader is not None and AdvancedAbility.SPY_SUPER_SLEUTH in leader.advanced_abilities
+
+
+def _has_spy_expanded_spying(state: GameState, leader_id: int) -> bool:
+    """Phase 705: same real-possession pattern as `_has_spy_super_sleuth`
+    -- `AdvancedAbility.SPY_EXPANDED_SPYING` gates `_dispatch_trail()`'s
+    own offices-held intelligence, resolved fresh at each real dispatch
+    site (Trail's own initial dispatch here, plus `turn_processor.py`'s
+    own persistent chase continuation loop).
+    """
+
+    leader = state.leaders.get(leader_id)
+    return leader is not None and AdvancedAbility.SPY_EXPANDED_SPYING in leader.advanced_abilities
 
 
 def _dispatch_pursue(
@@ -911,7 +928,14 @@ def _dispatch_trail(
     """
 
     request = decode_trail_phase(phase)
-    result = execute_trail(state, leader_id, request, rng, has_spy_super_sleuth=_has_spy_super_sleuth(state, leader_id))
+    result = execute_trail(
+        state,
+        leader_id,
+        request,
+        rng,
+        has_spy_super_sleuth=_has_spy_super_sleuth(state, leader_id),
+        caster_has_spy_expanded_spying=_has_spy_expanded_spying(state, leader_id),
+    )
     result.request = request
     return result
 

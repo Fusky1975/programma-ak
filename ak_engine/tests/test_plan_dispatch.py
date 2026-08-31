@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
+from unittest.mock import patch
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
@@ -13,6 +14,7 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
+from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
@@ -22,6 +24,7 @@ from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.turn.army_list_decode import ArmyListRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.move_execution import MoveExecutionResult
+from ak_engine.turn.office_holder import OfficeHolder
 from ak_engine.turn.plan_dispatch import (
     ArmyListExecutionResult,
     FireExecutionResult,
@@ -1057,6 +1060,22 @@ def test_dispatch_aspy_wires_druidic_animal_spies_from_the_leaders_own_advanced_
     assert len(result.adjacent_military_forces[neighbor]) == 1
 
 
+def test_dispatch_aspy_wires_spy_expanded_spying_from_the_leaders_own_advanced_ability():
+    # Phase 705: dispatch_phase() derives caster_has_spy_expanded_spying
+    # the same real-possession pattern as Druidic Animal Spies above --
+    # a Feature's own discovery level, as known to the province's real
+    # owner, is only reported when the caster holds the Advanced Ability.
+    origin = HexCoord(3, 9)
+    state, army_id = _state_with_army(origin, {})  # origin's own owner_kingdom_id is 1
+    state.add_feature(Feature(1, origin, FeatureType.TOWER, discovered_by_kingdom={1: 3}))
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.SPY_EXPANDED_SPYING)
+    phase = PlanPhase(label="P0", action=ActionCode.ASPY, obj=304, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.features_known_to_owner == {1: 3}
+
+
 def test_dispatch_defend_is_decode_only():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P0", action=ActionCode.DEFEND, obj=304, extra=[0])
@@ -1107,6 +1126,29 @@ def test_dispatch_trail_wires_spy_super_sleuth_from_the_leaders_own_advanced_abi
 
     assert result.spied_on is True
     assert result.guessed_distance is not None
+
+
+def test_dispatch_trail_wires_spy_expanded_spying_from_the_leaders_own_advanced_ability():
+    # [3.17]'s own no-army restriction means the trailer can't be the
+    # shared army-commanding leader _state_with_army() builds -- a
+    # fresh, armyless leader is needed here instead, same as the Spy
+    # Super Sleuth dispatch test above.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(3, 9)))
+    state.add_kingdom(KingdomState(2, "Fleeland", Race.HUMAN, Alignment.GOOD, HexCoord(3, 9)))
+    state.add_leader(LeaderState(LEADER_ID, 1, "Test Leader", HexCoord(3, 9)))
+    state.add_leader(LeaderState(88, kingdom_id=2, name="Target", location=HexCoord(3, 9)))
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.SPY_EXPANDED_SPYING)
+    phase = PlanPhase(label="P0", action=ActionCode.TRAIL, obj=88, extra=[0])
+
+    with patch(
+        "ak_engine.turn.trail_execution.resolve_all_office_holders",
+        return_value={Office.CHANCELLOR: OfficeHolder(leader_id=88, merit_points=10)},
+    ):
+        result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.spied_on is True
+    assert result.offices_held == (Office.CHANCELLOR,)
 
 
 def test_dispatch_succ_trail_is_deliberately_unsupported():

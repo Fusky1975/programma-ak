@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
+from ak_engine.turn.office_holder import OfficeHolder
 from ak_engine.turn.trail_decode import TrailRequest
 from ak_engine.turn.trail_execution import KingIntelligence, TrailExecutionResult, advance_trail, execute_trail
 
@@ -399,3 +403,70 @@ def test_advance_trail_forwards_has_spy_super_sleuth():
 
     assert result.spied_on is True
     assert result.guessed_distance is not None
+
+
+# -- Phase 705: AdvancedAbility.SPY_EXPANDED_SPYING, Trail half --
+
+
+def test_execute_trail_offices_held_empty_without_the_ability():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+
+    with patch(
+        "ak_engine.turn.trail_execution.resolve_all_office_holders",
+        return_value={Office.CHANCELLOR: OfficeHolder(leader_id=2, merit_points=10)},
+    ):
+        result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert result.spied_on is True
+    assert result.offices_held == ()
+
+
+def test_execute_trail_offices_held_reaches_the_result_with_the_ability():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+
+    with patch(
+        "ak_engine.turn.trail_execution.resolve_all_office_holders",
+        return_value={Office.CHANCELLOR: OfficeHolder(leader_id=2, merit_points=10), Office.MARSHAL: None},
+    ):
+        result = execute_trail(
+            state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]), caster_has_spy_expanded_spying=True
+        )
+
+    assert result.offices_held == (Office.CHANCELLOR,)
+
+
+def test_execute_trail_offices_held_omits_offices_the_target_does_not_hold():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+    state.add_leader(LeaderState(3, kingdom_id=1, name="Someone Else", location=FIELD))
+
+    with patch(
+        "ak_engine.turn.trail_execution.resolve_all_office_holders",
+        return_value={Office.CHANCELLOR: OfficeHolder(leader_id=3, merit_points=10)},
+    ):
+        result = execute_trail(
+            state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]), caster_has_spy_expanded_spying=True
+        )
+
+    assert result.offices_held == ()
+
+
+def test_advance_trail_forwards_caster_has_spy_expanded_spying():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+
+    with patch(
+        "ak_engine.turn.trail_execution.resolve_all_office_holders",
+        return_value={Office.CHANCELLOR: OfficeHolder(leader_id=2, merit_points=10)},
+    ):
+        result = advance_trail(
+            state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]), caster_has_spy_expanded_spying=True
+        )
+
+    assert result.offices_held == (Office.CHANCELLOR,)

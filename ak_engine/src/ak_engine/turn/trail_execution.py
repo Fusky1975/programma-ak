@@ -181,11 +181,13 @@ from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.map import HexCoord
+from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
+from ak_engine.turn.office_holder import resolve_all_office_holders
 from ak_engine.turn.pursue_execution import step_toward_target
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 from ak_engine.turn.trail_decode import TrailRequest
@@ -243,6 +245,12 @@ class TrailExecutionResult:
     # see `execute_trail()`'s own Phase 695 addendum. Same shape as
     # `turn/pursue_execution.py PursueExecutionResult.guessed_distance`.
     guessed_distance: int | None = None
+    # Phase 705: `AdvancedAbility.SPY_EXPANDED_SPYING`'s own "estimates
+    # are gained for... offices held" -- see `execute_trail()`'s own
+    # Phase 705 addendum. Every real (leader-scoped) Office the target
+    # currently holds; empty for a caster who doesn't hold the ability,
+    # or for a target who holds none.
+    offices_held: tuple[Office, ...] = ()
 
 
 def execute_trail(
@@ -252,6 +260,7 @@ def execute_trail(
     rng: random.Random | None = None,
     *,
     has_spy_super_sleuth: bool = False,
+    caster_has_spy_expanded_spying: bool = False,
 ) -> TrailExecutionResult:
     """Resolve one phase of a Trail order: [3.17]'s no-army restriction, then a Spy
     Table catch-up roll. On success, populates the ``temper``/
@@ -265,6 +274,17 @@ def execute_trail(
     mechanic and reasoning as `turn/pursue_execution.py execute_pursue()`'s
     own Phase 695 addendum -- automatic success, plus a guessed distance
     perturbed by a uniformly random -1/0/+1 offset, floored at 0.
+
+    **Phase 705 -- `AdvancedAbility.SPY_EXPANDED_SPYING`**: "with the
+    Trail action, estimates are gained for skills, and for offices
+    held." Only the offices-held half is modeled -- ``offices_held``,
+    every real (leader-scoped) ``Office`` the target currently holds,
+    resolved fresh via ``resolve_all_office_holders()`` rather than
+    perturbed like a real Spy Table estimate (office-holding is a
+    binary GameState fact, not a magnitude with a margin of error).
+    The skill-estimate half stays genuinely unmodeled: no ``Skill_Est``
+    routine survives anywhere in the source (unlike ``Align_Est``/
+    ``Temper_Est``), so inventing one would be a guess, not a recovery.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -299,6 +319,15 @@ def execute_trail(
     king_intelligence = (
         _build_king_intelligence(state, target.kingdom_id) if target.is_king and target.kingdom_id is not None else None
     )
+    offices_held = (
+        tuple(
+            office
+            for office, holder in resolve_all_office_holders(state).items()
+            if holder is not None and holder.leader_id == target.leader_id
+        )
+        if caster_has_spy_expanded_spying
+        else ()
+    )
 
     return TrailExecutionResult(
         spied_on=True,
@@ -309,6 +338,7 @@ def execute_trail(
         armies_led=tuple(target_armies),
         king_intelligence=king_intelligence,
         guessed_distance=guessed_distance,
+        offices_held=offices_held,
     )
 
 
@@ -333,6 +363,7 @@ def advance_trail(
     rng: random.Random | None = None,
     *,
     has_spy_super_sleuth: bool = False,
+    caster_has_spy_expanded_spying: bool = False,
     board_width: int = NORMAL_MAP_BOUNDS[0],
     board_height: int = NORMAL_MAP_BOUNDS[1],
 ) -> TrailExecutionResult:
@@ -354,4 +385,11 @@ def advance_trail(
     bounds = MapBounds(board_width, board_height)
     trailer.location = step_toward_target(trailer.location, target.location, bounds)
 
-    return execute_trail(state, trailer_leader_id, request, rng, has_spy_super_sleuth=has_spy_super_sleuth)
+    return execute_trail(
+        state,
+        trailer_leader_id,
+        request,
+        rng,
+        has_spy_super_sleuth=has_spy_super_sleuth,
+        caster_has_spy_expanded_spying=caster_has_spy_expanded_spying,
+    )

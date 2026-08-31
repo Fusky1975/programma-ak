@@ -1026,7 +1026,18 @@ def _continue_active_pursuits(
             action = ActionCode.PURSUE
             still_chasing = not result.caught_up and result.reason == _PURSUE_STILL_CHASING_REASON
         else:
-            result = advance_trail(state, leader_id, active.request, rng, has_spy_super_sleuth=has_spy_super_sleuth)
+            # Phase 705: same real-possession pattern, for Spy Expanded Spying.
+            caster_has_spy_expanded_spying = (
+                leader is not None and AdvancedAbility.SPY_EXPANDED_SPYING in leader.advanced_abilities
+            )
+            result = advance_trail(
+                state,
+                leader_id,
+                active.request,
+                rng,
+                has_spy_super_sleuth=has_spy_super_sleuth,
+                caster_has_spy_expanded_spying=caster_has_spy_expanded_spying,
+            )
             action = ActionCode.TRAIL
             still_chasing = not result.spied_on and result.reason == _TRAIL_STILL_CHASING_REASON
             if result.spied_on:
