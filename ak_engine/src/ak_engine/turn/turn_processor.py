@@ -755,6 +755,12 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
       every other "not auto-cleared -- caller's job" field this project's
       own comments still flagged after Phase 573/575, the same way
       ``action_casts_used`` itself was found.
+    - ``KingdomState.treasury_raid_attempts_this_turn`` -> ``0`` (Phase
+      702) -- ``AdvancedAbility.THIEF_TREASURY_RAIDS``'s own "the guard
+      is doubled for that kingdom against further attempts in the same
+      turn" deterrent would otherwise keep escalating forever, halving
+      every future Treasury Raid attempt against that kingdom for the
+      rest of the game instead of just for the turn it was raided.
 
     ``GameState.gate_angel_candidates_this_turn`` is deliberately NOT
     touched here despite its own name -- it's already self-resetting,
@@ -775,6 +781,8 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         province.illusory_fog_active = False
     for leader in state.leaders.values():
         leader.oratory_boosted_this_turn = False
+    for kingdom in state.kingdoms.values():
+        kingdom.treasury_raid_attempts_this_turn = 0
     state.action_casts_used = {}
 
 

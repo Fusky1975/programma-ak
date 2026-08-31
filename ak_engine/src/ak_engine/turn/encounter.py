@@ -4293,10 +4293,19 @@ def steal_success_chance(
     is_invisible: bool = False,
     has_enhanced_invisibility: bool = False,
     target_leads_army_or_is_king: bool = False,
+    treasury_raid_guard_multiplier: int = 1,
 ) -> float:
     """The thief's own real chance of a successful Steal attempt -- see
     module docstring's own Phase 506 addendum for the full formula and
     its source.
+
+    Phase 702 (``AdvancedAbility.THIEF_TREASURY_RAIDS``): "the guard is
+    doubled for that kingdom against further attempts in the same
+    turn and so further attempts in the same turn are halved in
+    probability" -- ``treasury_raid_guard_multiplier`` (default ``1``,
+    every pre-Phase-702 caller unaffected) is the caller-computed
+    ``2 ** attempts_already_made_this_turn`` factor, stacking on top of
+    the existing King/army-leader halving rather than replacing it.
     """
 
     raw = 15 * (
@@ -4305,7 +4314,7 @@ def steal_success_chance(
         + int(has_thief_mastery)
         + int(is_invisible) * (1 + int(has_enhanced_invisibility))
     )
-    divisor = 1 + int(target_leads_army_or_is_king)
+    divisor = (1 + int(target_leads_army_or_is_king)) * treasury_raid_guard_multiplier
     return min(STEAL_SUCCESS_MAX_CHANCE, (raw // divisor) / 100)
 
 
@@ -4317,6 +4326,7 @@ def resolve_steal_attempt(
     is_invisible: bool = False,
     has_enhanced_invisibility: bool = False,
     target_leads_army_or_is_king: bool = False,
+    treasury_raid_guard_multiplier: int = 1,
 ) -> bool:
     return rng.random() < steal_success_chance(
         level,
@@ -4324,7 +4334,21 @@ def resolve_steal_attempt(
         is_invisible=is_invisible,
         has_enhanced_invisibility=has_enhanced_invisibility,
         target_leads_army_or_is_king=target_leads_army_or_is_king,
+        treasury_raid_guard_multiplier=treasury_raid_guard_multiplier,
     )
+
+
+def treasury_raid_amount(treasury: int, rng: random.Random) -> int:
+    """``AdvancedAbility.THIEF_TREASURY_RAIDS``: "the thief gets away
+    with up to half of the treasury" -- no exact formula survives, so
+    (per the user's own confirmed choice, Phase 702) this reads "up to
+    half" as a uniform random fraction between 0% and 50% of the
+    target kingdom's current treasury, the same "up to N" resolution
+    convention already used for ``Power.MAP_PROV``'s own ``3 + IRand %
+    3`` reveal count (Phase 623).
+    """
+
+    return round(treasury * rng.random() * 0.5)
 
 
 # The real evasion-after-failure formula, from AK.OVR:0x1AC3C-0x1AC88:

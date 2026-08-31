@@ -957,3 +957,29 @@ def test_execute_pursue_short_range_archery_reaches_through_the_shared_function(
         execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     mock_resolve.assert_called_once_with(ANY, ANY, ANY, short_range_archer="a")
+
+
+# -- Phase 702: AdvancedAbility.THIEF_TREASURY_RAIDS (via the shared function) --
+
+
+def test_execute_pursue_treasury_raid_gold_reaches_through_the_shared_function():
+    # Proves execute_pursue()'s armyless case reuses turn/challenge_
+    # execution.py resolve_challenge_combat()'s new gold_raided field
+    # unchanged -- Pursue's own separate co-location/acceptance logic
+    # is deliberately out of scope for Phase 702 (the ability's own
+    # text names "Encounter," rulebook [3.12], not Pursue), so this
+    # uses mutual_encounter=True to get past the ordinary King-refusal
+    # gate, the same way the real game would for a mutual pair.
+    state = _base_state()
+    pursuer = LeaderState(
+        1, kingdom_id=1, name="Thief", location=FIELD, advanced_abilities={AdvancedAbility.THIEF_TREASURY_RAIDS}
+    )
+    target = LeaderState(2, kingdom_id=2, name="King", location=FIELD, is_king=True)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+
+    with patch("ak_engine.turn.pursue_execution.resolve_challenge_combat") as mock_resolve:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner=None, gold_raided=250)
+        result = execute_pursue(state, 1, _melee_request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]), mutual_encounter=True)
+
+    assert result.gold_raided == 250

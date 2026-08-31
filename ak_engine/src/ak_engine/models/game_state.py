@@ -335,6 +335,16 @@ class KingdomState:
     # `turn/practice_execution.py`'s own module docstring (Phase 266) for
     # how a Discovery gets added here.
     discoveries: set[Discovery] = field(default_factory=set)
+    # Phase 702 (AdvancedAbility.THIEF_TREASURY_RAIDS): "the guard is
+    # doubled for that kingdom against further attempts in the same
+    # turn" -- a per-turn counter of how many Treasury Raid attempts
+    # (successful or not) have already targeted this kingdom this turn,
+    # consulted by `turn/challenge_execution.py _resolve_steal_tactic()`
+    # to compute a cumulative `2 ** attempts` guard multiplier. Reset to
+    # 0 by `turn/turn_processor.py _replenish_turn_scoped_state()`
+    # (Phase 573), the same turn-boundary sweep every other "not auto-
+    # reset -- the caller's job" field in this project uses.
+    treasury_raid_attempts_this_turn: int = 0
 
 
 @dataclass(slots=True)

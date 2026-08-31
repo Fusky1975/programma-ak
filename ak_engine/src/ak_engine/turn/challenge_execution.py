@@ -341,6 +341,7 @@ from ak_engine.turn.encounter import (
     roll_telekinetic_storm_victim_damage,
     spiritwrack_melee_damage_reduction,
     steal_ransom_amount,
+    treasury_raid_amount,
     words_of_healing_heal,
 )
 from ak_engine.turn.experience import add_experience
@@ -427,6 +428,7 @@ def is_encounter_accepted(
     mutual_encounter: bool,
     rng: random.Random,
     has_spy_assassinate: bool = False,
+    is_treasury_raid_attempt: bool = False,
 ) -> bool:
     """Rulebook [3.12]'s King/Hero acceptance decision tree -- see module docstring
     for the full quoted text this implements branch-for-branch.
@@ -444,9 +446,21 @@ def is_encounter_accepted(
     check has no separate "was the plan aggressive" input to begin
     with), not a fourth, narrower condition -- the two named benefits
     unify cleanly into one early return.
+
+    Phase 702 -- `AdvancedAbility.THIEF_TREASURY_RAIDS`'s own real
+    description: "The Raid Treasury ability is activated by giving an
+    order to Encounter that king number." Without a bypass, an ordinary
+    one-sided Challenge against a King is refused unless `mutual_
+    encounter` (rare) -- contradicting that plain framing. User-
+    confirmed directly: `is_treasury_raid_attempt` (computed by the
+    caller from the challenger's own real eligibility, not just from
+    holding the ability -- see `execute_challenge()`'s own Phase 702
+    addendum) is a second, independent unconditional-accept condition,
+    the same shape as `has_spy_assassinate` -- holding both abilities
+    at once is not a conflict, exactly like Phase 698's own precedent.
     """
 
-    if has_spy_assassinate:
+    if has_spy_assassinate or is_treasury_raid_attempt:
         return True
     if target_is_king:
         return mutual_encounter
@@ -930,8 +944,16 @@ def _apply_successful_theft(state: GameState, thief: LeaderState, victim: Leader
     order, each independently rolled against a threshold that starts at
     75% and is halved (integer right-shift) after every item *actually
     transferred* -- a hidden item does not itself halve the threshold,
-    only a successful transfer does. Gold theft stays unmodeled (see
-    module docstring's own Phase 305 addendum).
+    only a successful transfer does. Gold theft stays unmodeled for an
+    ordinary thief (see module docstring's own Phase 305 addendum) --
+    [5.5]'s own "depends on how much he has in the treasury" clause
+    never got a magnitude. **Phase 702**: `AdvancedAbility.THIEF_
+    TREASURY_RAIDS`'s own text finally supplies one ("up to half of the
+    treasury"), but only for a holder targeting a foreign King --
+    `_resolve_steal_tactic()` below redirects that specific success case
+    to `_apply_treasury_raid()` instead of calling this function at all
+    (see that function's own docstring for why gold and items are
+    alternatives, not cumulative, per [5.5]'s own "oro o... oggetti").
 
     **Phase 442**: also credits ``MeritTally.successful_thefts`` -- the
     other of the real compiled formula's own "two separate success paths
@@ -972,28 +994,57 @@ def _apply_successful_theft(state: GameState, thief: LeaderState, victim: Leader
     add_experience(thief, Ability.THIEF, 15, rng)
 
 
+def _apply_treasury_raid(state: GameState, thief: LeaderState, king: LeaderState, rng: random.Random) -> int:
+    """``AdvancedAbility.THIEF_TREASURY_RAIDS``' own real effect (Phase
+    702) -- a successful Steal against a foreign King's treasury
+    *replaces* ``_apply_successful_theft()``'s own item transfer above,
+    rather than adding to it: [5.5]'s own Italian text already frames
+    "oro o uno o piu' oggetti magici" (gold OR one or more magic items)
+    as alternatives, and only this ability's own text supplies a real
+    magnitude for the gold half.
+
+    Same merit/XP crediting as ``_apply_successful_theft()`` (the Steal
+    attempt itself succeeded either way), but raids ``turn/encounter.py
+    treasury_raid_amount()``'s own "up to half" cut of the King's
+    kingdom treasury instead of scanning for items. Returns the amount
+    raided.
+    """
+
+    thief.merit_tally.successful_thefts += 1
+    kingdom = state.kingdoms[king.kingdom_id]
+    amount = treasury_raid_amount(kingdom.treasury, rng)
+    kingdom.treasury -= amount
+    if thief.kingdom_id is not None:
+        state.kingdoms[thief.kingdom_id].treasury += amount
+    add_experience(thief, Ability.THIEF, 15, rng)
+    return amount
+
+
 def _resolve_steal_tactic(
     caster_leader: LeaderState | None,
     caster: Combatant,
     target_leader: LeaderState | None,
     state: GameState,
     rng: random.Random,
-) -> str:
+) -> tuple[str, int]:
     """Steal [ST], rulebook [5.5] -- Phase 305, superseded by Phase 506
     with the real disassembly-sourced success/evasion formulas (see
     ``turn/encounter.py``'s own Phase 506 addendum) and a ransom-formula
     fix. See module docstring's own Phase 305 addendum for the full
     quoted rulebook text and the reasoning behind every branch below.
 
-    Returns ``"success"`` (theft applied, plan continues), ``"evaded"``
-    (failed but not caught, plan continues), ``"executed"`` (thief
-    killed outright, no combat), ``"ransom"`` (King-thief captured by a
-    King or an army-commanding Hero, nobody dies -- Phase 526 extended
-    this beyond King-vs-King specifically, see module docstring's own
-    Phase 526 addendum), ``"combat"`` (caller must resolve a forced
-    personal-combat encounter at a freshly-rolled range), or
-    ``"unresolved"`` (a garrison commander with no ``LeaderState``,
-    below -- the one remaining case no sourced branch covers).
+    Returns a ``(outcome, gold_raided)`` pair. ``outcome`` is
+    ``"success"`` (theft applied, plan continues), ``"evaded"`` (failed
+    but not caught, plan continues), ``"executed"`` (thief killed
+    outright, no combat), ``"ransom"`` (King-thief captured by a King or
+    an army-commanding Hero, nobody dies -- Phase 526 extended this
+    beyond King-vs-King specifically, see module docstring's own Phase
+    526 addendum), ``"combat"`` (caller must resolve a forced personal-
+    combat encounter at a freshly-rolled range), or ``"unresolved"`` (a
+    garrison commander with no ``LeaderState``, below -- the one
+    remaining case no sourced branch covers). ``gold_raided`` (Phase
+    702) is non-zero only for a successful ``AdvancedAbility.THIEF_
+    TREASURY_RAIDS`` raid against a foreign King -- see below.
 
     A garrison commander (``caster_leader``/``target_leader`` is
     ``None``, Phase 291's own Duel reuse) can neither attempt nor be a
@@ -1002,13 +1053,32 @@ def _resolve_steal_tactic(
     """
 
     if caster_leader is None or target_leader is None:
-        return "unresolved"
+        return "unresolved", 0
 
     level = effective_skill_level(state, caster_leader, Ability.THIEF)
     target_leads_army = bool(state.armies_commanded_by(target_leader.leader_id))
     target_leads_army_or_is_king = target_leader.is_king or target_leads_army
     has_thief_mastery = bool(caster_leader.advanced_abilities & STEAL_THIEF_MASTERY_ABILITIES)
     has_enhanced_invisibility = AdvancedAbility.ENHANCED_INVISIBILITY in caster_leader.advanced_abilities
+    # Phase 702: AdvancedAbility.THIEF_TREASURY_RAIDS -- "targets the
+    # treasury of a foreign king." The guard-doubling deterrent ("in
+    # either case, the guard is doubled... against further attempts in
+    # the same turn") fires on every real Treasury Raid attempt,
+    # success or failure alike, so it's computed and the counter
+    # incremented before the roll, not just on a successful raid.
+    is_treasury_raid = (
+        AdvancedAbility.THIEF_TREASURY_RAIDS in caster_leader.advanced_abilities
+        and target_leader.is_king
+        and target_leader.kingdom_id is not None
+        and caster_leader.kingdom_id is not None
+        and target_leader.kingdom_id != caster_leader.kingdom_id
+    )
+    treasury_raid_guard_multiplier = 1
+    if is_treasury_raid:
+        victim_kingdom = state.kingdoms.get(target_leader.kingdom_id)
+        if victim_kingdom is not None:
+            treasury_raid_guard_multiplier = 2**victim_kingdom.treasury_raid_attempts_this_turn
+            victim_kingdom.treasury_raid_attempts_this_turn += 1
     if resolve_steal_attempt(
         level,
         rng,
@@ -1016,16 +1086,19 @@ def _resolve_steal_tactic(
         is_invisible=caster.is_invisible,
         has_enhanced_invisibility=has_enhanced_invisibility,
         target_leads_army_or_is_king=target_leads_army_or_is_king,
+        treasury_raid_guard_multiplier=treasury_raid_guard_multiplier,
     ):
+        if is_treasury_raid:
+            return "success", _apply_treasury_raid(state, caster_leader, target_leader, rng)
         _apply_successful_theft(state, caster_leader, target_leader, rng)
-        return "success"
+        return "success", 0
     if resolve_steal_evasion(level, rng):
-        return "evaded"
+        return "evaded", 0
 
     if not target_leads_army_or_is_king:
-        return "combat"
+        return "combat", 0
     if not caster_leader.is_king:
-        return "executed"
+        return "executed", 0
     # Phase 526: AKGEN_reverse_engineering_report (3).md SS42's own capture
     # table/pseudocode pays ransom to "LKing(victim)" whenever the victim
     # is king_or_army_leader -- no separate branch for a King thief caught
@@ -1033,13 +1106,13 @@ def _resolve_steal_tactic(
     # docstring's own Phase 526 addendum for the full sourcing.
     thief_kingdom = state.kingdoms.get(caster_leader.kingdom_id) if caster_leader.kingdom_id is not None else None
     if thief_kingdom is None or thief_kingdom.treasury <= 0:
-        return "executed"
+        return "executed", 0
     ransom = steal_ransom_amount(thief_kingdom.treasury)
     thief_kingdom.treasury -= ransom
     victim_kingdom = state.kingdoms.get(target_leader.kingdom_id) if target_leader.kingdom_id is not None else None
     if victim_kingdom is not None:
         victim_kingdom.treasury += ransom
-    return "ransom"
+    return "ransom", 0
 
 
 @dataclass(slots=True)
@@ -1057,6 +1130,11 @@ class ChallengeCombatOutcome:
     # the capture-combat happened at, needed to pick the right `SNEAKUP_
     # RANGE_*` clause.
     steal_capture_range: CombatRange | None = None
+    # Phase 702: non-zero only for a successful AdvancedAbility.THIEF_
+    # TREASURY_RAIDS raid against a foreign King -- see `_apply_
+    # treasury_raid()`'s own docstring for why this replaces, not adds
+    # to, an ordinary item theft.
+    gold_raided: int = 0
     # Phase 417: per-shot/per-swing combat detail, mirroring `turn/
     # search_execution.py SearchExecutionResult`'s own `fire_arrow_shots`/
     # `melee_swings` fields (Phase 175/415/416) -- accumulated across
@@ -1339,21 +1417,22 @@ def resolve_challenge_combat(
     the old atomic path with a following tactic, so this is a correction
     caught before it shipped a wrong default, not a regression fix.
 
-    **A Steal-only plan (no Melee/Fire-Arrow/decodable-Cast alongside it)
-    never reaches this function at all**, a narrower, separate,
-    consciously-not-fixed gap: ``execute_challenge()``'s own ``not has_
-    combat_intent(request)`` short-circuit (Phase 50) returns before ever
-    calling this function, since [3.12]'s own text deliberately excludes
-    Steal from "combat intent" (only Steal's own success *chance* is
-    affected by whether the encounter also has combat intent, per that
-    same [3.12] clause already flagged above as unaddressed -- Steal's
-    ability to fire *at all* isn't gated on it). Both of [11.3]'s own
-    worked examples always pair ``ST`` with a real combat tactic (``CA-
-    FI``/``ME`` or ``CA-IN``/``ME``), which already sets ``has_combat_
-    intent`` `True` and reaches this function correctly -- a Steal-only
-    plan isn't attested in any available real data, the same "don't fix
-    an unattested shape" discipline this project already applies
-    elsewhere (e.g. Search's own confirmed single-FI-order rule).
+    **Phase 702 addendum -- a Steal-only plan now reaches this function.**
+    Previously (Phase 305/306): ``execute_challenge()``'s own ``not has_
+    combat_intent(request)`` short-circuit (Phase 50) returned before
+    ever calling this function for a plan with no Melee/Fire-Arrow/
+    decodable-Cast tactic alongside ``STEAL``, since [3.12]'s own text
+    deliberately excludes Steal from "combat intent" -- a real, then-
+    consciously-not-fixed gap, since no available real data attested a
+    Steal-only plan (both of [11.3]'s own worked examples always pair
+    ``ST`` with a real combat tactic). ``AdvancedAbility.THIEF_TREASURY_
+    RAIDS``'s own text ("Of course, there must be a ST-eal tactic in the
+    encounter plan" -- no mention of also needing a combat tactic) made
+    this gap concretely block the ability's own most natural plan shape,
+    so the user confirmed fixing it directly: ``execute_challenge()``'s
+    guard now also passes through whenever the plan contains ``STEAL``,
+    regardless of whether it's a treasury raid -- a small, generally-
+    scoped fix, not narrowly gated to this one ability.
 
     **Phase 674 -- `target_tactics` (rulebook [5.10]'s own "used in
     every Encounter solicited by another character," for a target who
@@ -1385,6 +1464,9 @@ def resolve_challenge_combat(
     # when a later tactic decides the encounter's actual winner.
     steal_outcome: str | None = None
     steal_capture_range: CombatRange | None = None
+    # Phase 702: non-zero only for a successful Treasury Raid -- see
+    # `ChallengeCombatOutcome.gold_raided`'s own Phase 702 addendum.
+    gold_raided: int = 0
     # Phase 417: accumulated across every real combat call site below,
     # regardless of whether that particular call ended the encounter --
     # mirrors `turn/search_execution.py`'s own `fire_arrow_shots`/
@@ -1401,6 +1483,7 @@ def resolve_challenge_combat(
             fled=fled,
             steal_outcome=steal_outcome,
             steal_capture_range=steal_capture_range,
+            gold_raided=gold_raided,
             fire_arrow_shots=tuple(fire_arrow_shots),
             melee_swings=tuple(melee_swings),
         )
@@ -1636,7 +1719,7 @@ def resolve_challenge_combat(
                     return _outcome(winner=target_outcome)
             continue
         if tactic.maneuver is Maneuver.STEAL:
-            steal_outcome = _resolve_steal_tactic(caster_leader, caster, target_leader, state, rng)
+            steal_outcome, gold_raided = _resolve_steal_tactic(caster_leader, caster, target_leader, state, rng)
             if steal_outcome == "executed":
                 return _outcome(winner="b")
             if steal_outcome == "combat":
@@ -1693,6 +1776,10 @@ class ChallengeExecutionResult:
     # encounter's overall winner (if any) was decided by a later tactic.
     steal_outcome: str | None = None
     steal_capture_range: CombatRange | None = None
+    # Phase 702: copied straight from `ChallengeCombatOutcome` -- non-
+    # zero only for a successful `AdvancedAbility.THIEF_TREASURY_RAIDS`
+    # raid against a foreign King.
+    gold_raided: int = 0
     # Phase 313: item ids transferred from the loser to the winner via
     # `turn/encounter.py loot_defeated_leader()` -- [5.9]'s "looting a
     # vanquished foe's treasure, magic items changing hands". Empty (not
@@ -1856,6 +1943,21 @@ def execute_challenge(
     and combat is intended) a real Melee duel. See module docstring for
     ``mutual_encounter``'s caller-supplied-only status and why a
     decisive loser is removed from ``state`` (unlike Duel's own rule).
+
+    Phase 702 -- ``AdvancedAbility.THIEF_TREASURY_RAIDS``: "the thief
+    must be in either the hex where the king is located, or his home
+    province, if he still owns it... Of course, there must be a ST-eal
+    tactic in the encounter plan." A treasury-raid-eligible challenger
+    (holds the ability, targeting a foreign King, plan contains
+    ``STEAL``) may satisfy co-location by standing in the target
+    King's own Kingdom's home province instead of the King's literal
+    current hex, but only while that Kingdom still owns it -- both
+    conditions the ability's own text states explicitly. See ``turn/
+    challenge_execution.py``'s own module docstring for why this also
+    widens the ``has_combat_intent`` gate below (a Steal-only plan
+    otherwise never reaches ``resolve_challenge_combat()`` at all) and
+    why it bypasses ``is_encounter_accepted()``'s own King-refusal via
+    a new, dedicated parameter there.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -1864,12 +1966,30 @@ def execute_challenge(
     target = state.leaders.get(request.target_character_id)
     if challenger is None or target is None:
         return ChallengeExecutionResult(accepted=False, reason="challenger or target not found")
-    if challenger.location != target.location:
+
+    has_steal_tactic = any(tactic.maneuver is Maneuver.STEAL for tactic in request.tactics)
+    is_treasury_raid_attempt = (
+        has_steal_tactic
+        and target.is_king
+        and target.kingdom_id is not None
+        and challenger.kingdom_id is not None
+        and challenger.kingdom_id != target.kingdom_id
+        and AdvancedAbility.THIEF_TREASURY_RAIDS in challenger.advanced_abilities
+    )
+
+    co_located = challenger.location == target.location
+    remote_treasury_raid = False
+    if is_treasury_raid_attempt and not co_located:
+        victim_kingdom = state.kingdoms.get(target.kingdom_id)
+        if victim_kingdom is not None and challenger.location == victim_kingdom.home_province:
+            home_province = state.provinces.get(victim_kingdom.home_province)
+            remote_treasury_raid = home_province is not None and home_province.owner_kingdom_id == target.kingdom_id
+    if not co_located and not remote_treasury_raid:
         return ChallengeExecutionResult(accepted=False, reason="not co-located")
 
     has_talk_tactic = any(tactic.maneuver is Maneuver.TALK for tactic in request.tactics)
 
-    if not has_combat_intent(request):
+    if not has_combat_intent(request) and not has_steal_tactic:
         if has_talk_tactic:
             _apply_bravest_talk_inspiration(state, challenger, target)
             _apply_spy_brainwash_alignment_shift(challenger, target)
@@ -1883,6 +2003,7 @@ def execute_challenge(
         mutual_encounter=mutual_encounter,
         rng=rng,
         has_spy_assassinate=AdvancedAbility.SPY_ASSASSINATE in challenger.advanced_abilities,
+        is_treasury_raid_attempt=is_treasury_raid_attempt,
     )
     if not accepted:
         _apply_duel_encounter_merit(
@@ -1931,6 +2052,7 @@ def execute_challenge(
             fled=True,
             steal_outcome=combat_result.steal_outcome,
             steal_capture_range=combat_result.steal_capture_range,
+            gold_raided=combat_result.gold_raided,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
         )
@@ -1940,6 +2062,7 @@ def execute_challenge(
             combat_occurred=True,
             steal_outcome=combat_result.steal_outcome,
             steal_capture_range=combat_result.steal_capture_range,
+            gold_raided=combat_result.gold_raided,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
         )
@@ -1970,6 +2093,7 @@ def execute_challenge(
         looted_item_ids=[item.item_id for item in looted_items],
         steal_outcome=combat_result.steal_outcome,
         steal_capture_range=combat_result.steal_capture_range,
+        gold_raided=combat_result.gold_raided,
         fire_arrow_shots=combat_result.fire_arrow_shots,
         melee_swings=combat_result.melee_swings,
     )

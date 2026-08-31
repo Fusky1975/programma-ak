@@ -29191,7 +29191,7 @@ follow-up request after the original 431-435 plan shipped.
   mocked `resolve_melee_duel()` alongside the mocked `resolve_fire_
   arrow_duel()` in three of the new tests.
 
-- **Phase 701 (current)**: `AdvancedAbility.SHORT_RANGE_ARCHERY`,
+- **Phase 701**: `AdvancedAbility.SHORT_RANGE_ARCHERY`,
   closing the category's last open question: "the Archer may now use
   the Fire tactic at Melee Range, with the normal chance to hit." The
   user resolved the design question directly, choosing a reactive
@@ -29214,6 +29214,44 @@ follow-up request after the original 431-435 plan shipped.
   remains untouched, same as Phase 700. Test count: 5870 -> 5877 (net
   +7). Full suite verified green (unchanged, 5870) before writing a
   single new test; every new test passed on the first run.
+
+- **Phase 702 (current)**: `AdvancedAbility.THIEF_TREASURY_RAIDS`,
+  closing backlog item #11 -- [5.5]'s own "if the victim is a King,
+  there's a possibility of stealing gold from him (depends on how much
+  he has in the treasury)" clause had a real mechanic but no magnitude
+  anywhere, until this ability's own text supplied "the thief gets away
+  with up to half of the treasury." A successful Steal against a
+  foreign King now redirects to a gold raid instead of item theft (per
+  [5.5]'s own "oro o... oggetti" -- gold OR items, not both). Two real,
+  user-confirmed design decisions round this out: (1) the thief may
+  satisfy co-location by standing in the target King's own still-owned
+  home province instead of the King's literal hex ("even if the thief
+  is in the king's home province while the king is elsewhere"); (2)
+  `execute_challenge()`'s own King-refusal gate is bypassed for a real
+  Treasury Raid attempt, mirroring `SPY_ASSASSINATE`'s own unconditional-
+  accept precedent (Phase 698) -- without it, an ordinary one-sided
+  Challenge against a King is refused unless `mutual_encounter=True`
+  (rare), contradicting the ability's own "activated by giving an order
+  to Encounter that king number" framing. A real, previously-documented
+  "consciously-not-fixed" gap (Phase 305/306) blocked the most natural
+  plan shape and got fixed alongside it, generally, not just for this
+  ability: a Steal-only plan (no Melee/Shoot/Cast) used to bypass
+  `resolve_challenge_combat()` entirely, silently never firing Steal at
+  all -- confirmed safe by direct trace (every existing `combat_
+  occurred=False` test uses a Talk-only plan, never Steal). Two
+  interpretation choices for the ability's own unsourced magnitudes,
+  both user-confirmed: "up to half" is a uniform random fraction between
+  0% and 50% of the treasury (`turn/encounter.py treasury_raid_amount()`);
+  "the guard is doubled... against further attempts" cumulatively
+  doubles per attempt this turn (`KingdomState.treasury_raid_attempts_
+  this_turn`, a `2 ** attempts` multiplier stacking on top of the
+  existing King-target halving). Pursue's own separate co-location/
+  acceptance logic is deliberately untouched (the ability's own text
+  names "Encounter," [3.12] Challenge specifically) -- `gold_raided`
+  still reaches through Pursue's armyless case "for free" via the
+  shared `resolve_challenge_combat()` core. Test count: 5877 -> 5895
+  (net +18). Full suite verified green (unchanged, 5877) before writing
+  a single new test; every new test passed on the first run.
 
 ## Setup
 

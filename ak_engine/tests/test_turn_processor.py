@@ -1893,6 +1893,15 @@ def test_replenish_turn_scoped_state_clears_recruited_this_turn():
     assert state.provinces[ORIGIN].recruited_this_turn == {}
 
 
+def test_replenish_turn_scoped_state_clears_treasury_raid_attempts_this_turn():
+    state = _base_state()
+    state.kingdoms[2].treasury_raid_attempts_this_turn = 3
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.kingdoms[2].treasury_raid_attempts_this_turn == 0
+
+
 def test_replenish_turn_scoped_state_clears_unhireable_this_turn():
     state = _base_state()
     army = ArmyState(101, None, ArmyType.LEGION, Quality.AVERAGE, ORIGIN, unhireable_this_turn=True)

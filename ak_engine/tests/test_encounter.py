@@ -152,6 +152,7 @@ from ak_engine.turn.encounter import (
     steal_monster_item_transfer_chance,
     steal_ransom_amount,
     steal_success_chance,
+    treasury_raid_amount,
     TALK_ATTACK_CHANCE,
     TALK_DRUIDIC_ATTACK_CHANCE,
     TALK_IGNORE_CHANCE,
@@ -2348,6 +2349,36 @@ def test_resolve_steal_attempt_uses_the_success_chance():
     # level 1 -> 30% chance: 0.29 succeeds, 0.31 fails.
     assert resolve_steal_attempt(1, rng) is True
     assert resolve_steal_attempt(1, rng) is False
+
+
+# -- Phase 702: AdvancedAbility.THIEF_TREASURY_RAIDS --
+
+
+def test_steal_success_chance_treasury_raid_guard_multiplier_stacks_on_the_king_halving():
+    # level 4, H=1: raw = 75. Default multiplier=1 -> divisor 2 -> 0.37
+    # (the existing King halving alone, non-regression). multiplier=2 ->
+    # divisor 4 -> 75 // 4 = 18 -> 0.18. multiplier=4 -> divisor 8 ->
+    # 75 // 8 = 9 -> 0.09.
+    assert steal_success_chance(4, target_leads_army_or_is_king=True) == pytest.approx(0.37)
+    assert steal_success_chance(
+        4, target_leads_army_or_is_king=True, treasury_raid_guard_multiplier=2
+    ) == pytest.approx(0.18)
+    assert steal_success_chance(
+        4, target_leads_army_or_is_king=True, treasury_raid_guard_multiplier=4
+    ) == pytest.approx(0.09)
+
+
+def test_resolve_steal_attempt_treasury_raid_guard_multiplier_default_reproduces_existing_behavior():
+    rng = ScriptedRandom([0.29, 0.31])
+    assert resolve_steal_attempt(1, rng) is True
+    assert resolve_steal_attempt(1, rng) is False
+
+
+def test_treasury_raid_amount_stays_within_up_to_half():
+    rng = ScriptedRandom([0.0, 0.5, 0.999])
+    assert treasury_raid_amount(1000, rng) == 0
+    assert treasury_raid_amount(1000, rng) == 250
+    assert treasury_raid_amount(1000, rng) == round(1000 * 0.999 * 0.5)
 
 
 def test_steal_evasion_chance_base_and_per_level():
