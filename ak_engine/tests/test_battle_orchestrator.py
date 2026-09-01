@@ -1062,6 +1062,27 @@ def test_fight_battle_tactical_mastery_boosts_attacker_strength_past_the_level_c
     )
 
 
+def test_fight_battle_stores_real_tactical_ability_on_the_report():
+    # Phase 712: `report/turn_report.py render_tactical_comparison()`'s
+    # own real input, previously computed locally and discarded.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    commander = LeaderState(1, kingdom_id=1, name="General", location=FIELD)
+    raw = [0] * 30
+    raw[Ability.TACTICAL.value * 2] = 4
+    commander.skills = SkillTable(raw)
+    state.add_leader(commander)
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD, commanded_by=1))
+    state.add_army(ArmyState(201, 2, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD))
+
+    report = fight_battle(state, 1, FIELD, [101], rng=random.Random(0))
+
+    assert report.attacker_tactical_ability == 4
+    assert report.defender_tactical_ability == 0  # unled defender -- garrison fallback
+
+
 def test_fight_battle_adapt_tactics_to_terrain_softens_the_adverse_terrain_penalty():
     # Phase 513: Phalanx (base 3, adverse Sea) normally halves to 1.5;
     # a commander holding Adapt Tactics to Terrain reduces that to 75%

@@ -309,6 +309,14 @@ class BattleReport:
     # Keyed by `army_id`, only ever populated for ids also present in
     # `retreated_army_ids`.
     retreat_destination_coord: dict[int, HexCoord] = field(default_factory=dict)
+    # Phase 712 -- SAY.PAS `_BTac`'s own real input (TACTICS.X2,
+    # `report/turn_report.py render_tactical_comparison()`, already
+    # sourced and render-tested since Phase 109 but never carried onto
+    # this report). Already computed locally in `fight_battle()` as
+    # `attacker_ability_level`/`defender_ability_level` for its own
+    # `resolve_battle()` call -- stored here rather than re-derived.
+    attacker_tactical_ability: int = 0
+    defender_tactical_ability: int = 0
 
 
 def _build_battle_units(
@@ -2432,6 +2440,8 @@ def fight_battle(
         province_coord=province_coord,
         attacker_kingdom_id=attacker_kingdom_id,
         defender_kingdom_id=defender_kingdom_id,
+        attacker_tactical_ability=attacker_ability_level,
+        defender_tactical_ability=defender_ability_level,
         attacker_monster_assistance=attacker_monster_assistance,
         defender_monster_assistance=defender_monster_assistance,
         attacker_present_leader_ids=attacker_present_leader_ids,

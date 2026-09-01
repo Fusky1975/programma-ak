@@ -29499,7 +29499,7 @@ follow-up request after the original 431-435 plan shipped.
   combat-strength purposes (the illusion's only real consumer today is
   report-layer narration). Full suite unchanged (6025).
 
-- **Phase 711 (current)**: wires `describe_battle()` (leader roster,
+- **Phase 711**: wires `describe_battle()` (leader roster,
   monster assistance, luck lines, per-column clashes, destroyed/
   pursuit/retreat, quality changes) into the real letter-report
   pipeline for the first time -- it had been fully built and tested
@@ -29532,6 +29532,26 @@ follow-up request after the original 431-435 plan shipped.
   predicted) after finding `build_battle_army_names()`'s own docstring
   claim about `retreated_army_ids` needed a fixture with a real battle
   column, not just the id list alone.
+
+- **Phase 712 (current)**: wires `render_tactical_comparison()`
+  (TACTICS.X2, `SAY.PAS _BTac`, sourced and render-tested since Phase
+  109) into `describe_battle()` -- the last item from the eighteenth
+  fresh codebase survey, picked directly by the user right after Phase
+  711 finally put `describe_battle()` into production. New `BattleReport.
+  attacker_tactical_ability`/`defender_tactical_ability` fields,
+  populated in `fight_battle()` from the same `attacker_ability_level`/
+  `defender_ability_level` locals it already computes for its own
+  `resolve_battle()` call (previously discarded right after). Rendered
+  immediately after the BLUCK sentence, under the identical gate BLUCK/
+  CLUCK already use -- `_BTac` sits in the exact same real dispatch
+  block (`SAY.PAS:1028-1071`, already cited by the existing BLUCK/CLUCK
+  wiring), so no separate, unsourced gating rule was invented for it.
+  Fixed 3 pre-existing `describe_battle()` tests whose exact-output
+  assertions needed a new line inserted (a real behavior change, not a
+  regression) -- each one verified empirically (a live Python call) to
+  get the exact rendered text right rather than predicted. Test count:
+  6030 -> 6032 (net +2). Full suite verified green (unchanged, 6030)
+  before touching any test.
 
 ## Setup
 

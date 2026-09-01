@@ -2331,11 +2331,12 @@ def describe_battle(
     """Assembles the full battle-outcome narrative from an already-computed
     ``BattleReport`` (``turn/battle_orchestrator.py fight_battle()``), in
     the same order the original dispatch table produces them: the
-    whole-battle BLUCK luck sentence (Phase 615), per-column clashes each
-    followed by that column's own CLUCK luck sentence (Phase 615) when
-    eligible, the winner sentence, destroyed armies, pursuit kills,
-    retreats, then (Phase 610) each surviving army's DECQ.X/INCQ.X
-    quality-change sentence, via ``describe_quality_changes()``.
+    whole-battle BLUCK luck sentence (Phase 615), the TACTICS.X2
+    comparison sentence (Phase 712), per-column clashes each followed by
+    that column's own CLUCK luck sentence (Phase 615) when eligible, the
+    winner sentence, destroyed armies, pursuit kills, retreats, then
+    (Phase 610) each surviving army's DECQ.X/INCQ.X quality-change
+    sentence, via ``describe_quality_changes()``.
 
     ``army_names`` (Phase 236) is synthesized internally via
     ``build_battle_army_names(state, battle_report)`` -- see that
@@ -2391,10 +2392,10 @@ def describe_battle(
     order this mirrors: `_BLList` (leader roster, BATLDR.X -- wired
     Phase 649, see above) is immediately followed by `_BLuck` (the
     whole-battle event, this function's own new first line), which is
-    itself immediately followed by `_BTac` (tactics narration, not
-    modeled) and then `_CLuck` (the per-column event) -- i.e. BLUCK is
-    real battle-opening narration, not a closing remark, and CLUCK is
-    real per-column color commentary. `phase`
+    itself immediately followed by `_BTac` (tactics narration -- wired
+    Phase 712, see below) and then `_CLuck` (the per-column event) --
+    i.e. BLUCK is real battle-opening narration, not a closing remark,
+    and CLUCK is real per-column color commentary. `phase`
     (`SAY.PAS`'s own `_rphase`) has no source for how a caller not
     already inside a phase-indexed dispatch loop would supply it, so it's
     an optional keyword-only fact (`None` default, matching `turn/
@@ -2403,6 +2404,17 @@ def describe_battle(
     `phase` is unset, or when `battle_report.province_coord` is unset, or
     when neither a real commander nor a real King resolves for either
     side (`_bluck_cluck_leader_id()` above).
+
+    **Phase 712 -- TACTICS.X2 wiring.** `render_tactical_comparison()`
+    (Phase 109) was sourced, fully render-tested, and never called from
+    anywhere until now. `battle_report.attacker_tactical_ability`/
+    `defender_tactical_ability` (new fields, `turn/battle_orchestrator.py
+    fight_battle()`'s own already-computed `attacker_ability_level`/
+    `defender_ability_level`, previously discarded after feeding `resolve_
+    battle()`) supply its real input. Gated on the identical `luck_
+    leader_ids is not None` condition BLUCK/CLUCK already use -- `_BTac`
+    sits in the exact same real dispatch block, immediately after `_BLuck`
+    (see above), so no separate, unsourced gating rule is invented for it.
     """
 
     army_names = build_battle_army_names(state, battle_report)
@@ -2476,6 +2488,20 @@ def describe_battle(
                 attacker_leader_id=luck_leader_ids[0],
                 defender_leader_id=luck_leader_ids[1],
                 phase=phase,
+            )
+        )
+        # Phase 712 -- `_BTac` (TACTICS.X2), immediately after `_BLuck` in
+        # the real dispatch (SAY.PAS:1028-1071, already cited above) --
+        # same gate as BLUCK/CLUCK, since it sits in the identical
+        # dispatch block.
+        lines.append(
+            render_tactical_comparison(
+                attacker_name,
+                defender_name,
+                battle_report.attacker_tactical_ability,
+                battle_report.defender_tactical_ability,
+                rng,
+                is_sea=is_sea,
             )
         )
 

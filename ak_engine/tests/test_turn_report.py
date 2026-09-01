@@ -944,7 +944,7 @@ def test_describe_battle_prepends_bluck_and_interleaves_cluck_when_phase_is_supp
         attacker_commander_leader_id=100,
         defender_commander_leader_id=200,
     )
-    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0])
+    rng = ScriptedRandom([0.1] * 60, choice_indices=[0, 0, 0, 0, 0])
 
     lines = describe_battle(
         report,
@@ -959,6 +959,9 @@ def test_describe_battle_prepends_bluck_and_interleaves_cluck_when_phase_is_supp
 
     assert lines == [
         "no luck of great significance altered the battle.",
+        # Phase 712: TACTICS.X2, right after BLUCK -- both tactical
+        # abilities default to 0 here, bucket 5 (even).
+        "as the battle developed, the tactical wit of Defendia and Attackia seemed evenly matched.",
         "10th Garrison fought 20th Legion and advanced at will.",
         "10th Garrison expected to have the upper hand because they had constructed prepared "
         "defenses, but were suprised to discover that their opponents had done the same.",
@@ -998,6 +1001,41 @@ def test_describe_battle_skips_bluck_and_cluck_when_phase_is_not_supplied():
     ]
 
 
+def test_describe_battle_tactics_reflects_a_real_asymmetric_ability_gap():
+    # Phase 712: attacker_tactical_ability=7 vs. defender_tactical_
+    # ability=2 -> bucket 9 (max(1, min(9, 5 + (7-2)))), the "total
+    # attacker advantage" end of the scale -- proving the real field
+    # values reach the render, not just the 0-vs-0 default bucket 5
+    # every other describe_battle() test here happens to exercise.
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    battle_result = BattleResult(winner="attacker", columns=[column], bluck_index=9)
+    report = BattleReport(
+        battle_result=battle_result,
+        conquered=True,
+        province_coord=HexCoord(3, 5),
+        attacker_kingdom_id=1,
+        defender_kingdom_id=2,
+        attacker_commander_leader_id=100,
+        defender_commander_leader_id=200,
+        attacker_tactical_ability=7,
+        defender_tactical_ability=2,
+    )
+    rng = ScriptedRandom([0.1] * 60, choice_indices=[0, 0, 0, 0, 0])
+
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=rng,
+        phase=0,
+    )
+
+    assert "tactical supremacy was guaranteed by Attackia's unmatched tactical mind." in lines
+
+
 def test_describe_battle_falls_back_to_each_sides_own_king_when_unled():
     # SAY.PAS:1043's own "_attl:= powner[_px,_py]" fallback -- no
     # commander_leader_id on either side, but a real King exists for
@@ -1012,7 +1050,7 @@ def test_describe_battle_falls_back_to_each_sides_own_king_when_unled():
     report = BattleReport(
         battle_result=battle_result, conquered=True, province_coord=HexCoord(3, 5), attacker_kingdom_id=1, defender_kingdom_id=2
     )
-    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0])
+    rng = ScriptedRandom([0.1] * 60, choice_indices=[0, 0, 0, 0, 0])
 
     lines = describe_battle(
         report,
@@ -1027,6 +1065,8 @@ def test_describe_battle_falls_back_to_each_sides_own_king_when_unled():
 
     assert lines == [
         "no luck of great significance seemed to affect the overall battle before it commenced.",
+        # Phase 712: TACTICS.X2, right after BLUCK.
+        "as the battle developed, the tactical wit of Defendia and Attackia seemed evenly matched.",
         "10th Garrison fought 20th Legion and advanced at will.",
         "the contest was a slugfest decided by the courage of the men in hand-to-hand combat.",
         "the forces of Attackia broke through and were victorious.",
@@ -1076,7 +1116,7 @@ def test_describe_battle_bluck_appears_without_cluck_for_an_ineligible_column():
         attacker_commander_leader_id=100,
         defender_commander_leader_id=200,
     )
-    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0])
+    rng = ScriptedRandom([0.1] * 60, choice_indices=[0, 0, 0, 0])
 
     lines = describe_battle(
         report,
@@ -1091,6 +1131,8 @@ def test_describe_battle_bluck_appears_without_cluck_for_an_ineligible_column():
 
     assert lines == [
         "no luck of great significance altered the battle.",
+        # Phase 712: TACTICS.X2, right after BLUCK.
+        "as the battle developed, the tactical wit of Defendia and Attackia seemed evenly matched.",
         "10th Garrison fought 20th Legion and advanced at will.",
         "the forces of Attackia broke through and were victorious.",
     ]
