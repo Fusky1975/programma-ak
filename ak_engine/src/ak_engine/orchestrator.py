@@ -53,6 +53,7 @@ from ak_engine.models.kingdom import KingdomMoveHeader
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.report.turn_report import (
     compose_letter_report,
+    record_battle_narratives,
     record_battle_world_events,
     record_move_world_events,
     record_plague_spread_world_events,
@@ -265,6 +266,10 @@ def process_turn(
     # per Kingdom, or GENERAL INTELLIGENCE REPORT would show every event
     # duplicated once per Kingdom in the loop below.
     record_battle_world_events(state, results, rng)
+    # Phase 711 -- same once-per-turn requirement as its sibling above;
+    # populates the two involved Kingdoms' own ACTION REPORT narrative
+    # (state.battle_narratives_by_kingdom), not GENERAL INTELLIGENCE.
+    record_battle_narratives(state, results, rng)
     record_spell_world_events(state, results, rng, board_width=board_width)
     record_plague_spread_world_events(state, results, rng)
     record_move_world_events(state, results, rng)

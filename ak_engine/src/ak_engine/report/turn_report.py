@@ -11773,17 +11773,19 @@ def record_battle_world_events(state: GameState, results: list[PhaseDispatchResu
 
     **Only the battle-winner sentence is recorded, not the fuller
     per-column clash narrative** ``describe_battle()`` can also render.
-    This is a deliberate, narrower slice, not an oversight: the real
-    fixture text's own richest example (`SE3__T2.K2` line 506, "Circe
-    (#8)... invaded Big Sky... Big Sky was overrun by Circe (#8)'s men
-    in a hard-fought campaign") is exactly this outer summary sentence
-    (`render_battle_winner()`'s own template), built from King/province
-    names alone. The per-column clash sentences additionally need
-    per-army display names -- as of Phase 236, `describe_battle()`
-    synthesizes those itself (`build_battle_army_names()`, via
-    `models/army_naming.py make_army_name()`), so this dispatch's own
-    remaining gap is purely the missing `BattleReport` (see the note
-    above this one).
+    This is a deliberate scope split with its own sibling, not an
+    oversight: the real fixture text's own richest example (`SE3__T2.K2`
+    line 506, "Circe (#8)... invaded Big Sky... Big Sky was overrun by
+    Circe (#8)'s men in a hard-fought campaign") is exactly this outer
+    summary sentence (`render_battle_winner()`'s own template), built
+    from King/province names alone -- a real, sourced, turn-global
+    broadcast every Kingdom sees via GENERAL INTELLIGENCE REPORT.
+    **Phase 711**: the fuller per-column narrative is now handled by
+    the separate `record_battle_narratives()` (right below), which
+    populates `state.battle_narratives_by_kingdom` for the two Kingdoms
+    actually involved, read from their own ACTION REPORT -- both
+    mechanisms coexist deliberately, one broadcast-and-thin, one
+    personal-and-detailed.
 
     A battle with no ``BattleReport.defender_kingdom_id`` (an unowned
     province defended by some kingdom's stray garrison -- a real
@@ -11815,6 +11817,63 @@ def record_battle_world_events(state: GameState, results: list[PhaseDispatchResu
         if winner_sentence is not None:
             prefix = _season_phrase_for_phase_label(phase_label)
             state.record_world_event(coord, [prefix + winner_sentence])
+
+
+def record_battle_narratives(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
+    """Phase 711 -- populates ``state.battle_narratives_by_kingdom`` with
+    ``describe_battle()``'s own full narrative (leader roster, monster
+    assistance, luck lines, per-column clashes, destroyed/pursuit/
+    retreat, quality changes) for every real battle found in ``results``,
+    reusing `_battle_reports_from_results()` (built for, and already
+    used by, `record_battle_world_events()` right above).
+
+    **Must be called exactly once per turn, before any
+    ``compose_letter_report()`` call for that turn** -- same requirement
+    as `record_battle_world_events()`, for the same reason (this stores
+    a real per-turn fact on `state`, not something recomputed per King).
+
+    **Both Kingdoms actually involved in the battle receive the
+    identical narrative** (user-confirmed directly): the turn's own
+    ``results`` list is fundamentally keyed by the *acting* leader, so
+    only the attacking side could naturally reach this through
+    `describe_turn_results()`'s own per-entry walk -- the defending
+    Kingdom, whose army was simply standing there when attacked, would
+    otherwise get nothing beyond the existing one-line world-broadcast
+    summary. This function reads once per turn, before any per-King
+    composition, so it can stash the same rendered lines onto both
+    sides' own `state.battle_narratives_by_kingdom` entries.
+
+    Skipped for a battle missing `province_coord`/either kingdom id --
+    same guard as `record_battle_world_events()`, and for the same
+    reason (no real "Kingdom of X" owner to attribute the narrative to
+    on the missing side).
+    """
+
+    for phase_label, battle_report in _battle_reports_from_results(results):
+        coord = battle_report.province_coord
+        if coord is None or battle_report.attacker_kingdom_id is None or battle_report.defender_kingdom_id is None:
+            continue
+        province = state.provinces.get(coord)
+        is_sea = province is not None and province.effective_terrain() == Terrain.SEA
+        phase = int(phase_label[1:]) if phase_label.startswith("P") and phase_label[1:].isdigit() else None
+        destination_names = {
+            army_id: _province_label(state, dest_coord) for army_id, dest_coord in battle_report.retreat_destination_coord.items()
+        }
+        lines = describe_battle(
+            battle_report,
+            attacker_name=_kingdom_display_name(state, battle_report.attacker_kingdom_id),
+            defender_name=_kingdom_display_name(state, battle_report.defender_kingdom_id),
+            province_name=_province_label(state, coord),
+            state=state,
+            destination_names=destination_names,
+            rng=rng,
+            is_sea=is_sea,
+            phase=phase,
+        )
+        if not lines:
+            continue
+        state.battle_narratives_by_kingdom.setdefault(battle_report.attacker_kingdom_id, []).extend(lines)
+        state.battle_narratives_by_kingdom.setdefault(battle_report.defender_kingdom_id, []).extend(lines)
 
 
 # HostAK/TP/SAY.PAS `_SPlague`/`_PPlague` (Phase 232) -- the province-
@@ -12839,6 +12898,15 @@ def compose_letter_report(
     # announcement()'s own docstring for why this is a documented,
     # reasonable placement choice, not a guess.
     action_lines = action_lines + describe_valhalla_visit_announcement(results, state, kingdom_id, rng)
+    # Phase 711 -- record_battle_narratives()'s own real, sourced per-
+    # battle narrative, already fully rendered at record time (no read-
+    # time composition needed, unlike the Valhalla announcement above --
+    # a direct dict read is enough). Both Kingdoms actually involved in
+    # a battle carry the identical lines here, folded into the same
+    # ACTION REPORT section, mirroring the Valhalla precedent's own
+    # placement reasoning: no separate section header exists for this
+    # in any confirmed real source.
+    action_lines = action_lines + state.battle_narratives_by_kingdom.get(kingdom_id, [])
     _emit_section("ACTION REPORT", action_lines)
 
     letter_lines = describe_letter_reports(

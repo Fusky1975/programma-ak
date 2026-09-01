@@ -107,6 +107,9 @@ def test_overwhelming_attacker_conquers_and_defender_retreats():
     assert state.provinces[FIELD].contested_by_kingdom_id is None
     assert 201 in report.retreated_army_ids
     assert state.armies[201].location == DEFENDER_HOME
+    # Phase 711: the real destination the army actually moved to is now
+    # kept on the report itself, not just applied to the army and discarded.
+    assert report.retreat_destination_coord[201] == DEFENDER_HOME
     assert 101 in state.armies  # attacker survives
 
 

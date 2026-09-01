@@ -302,6 +302,13 @@ class BattleReport:
     # commanding roster above already uses.
     attacker_present_leader_ids: list[int] = field(default_factory=list)
     defender_present_leader_ids: list[int] = field(default_factory=list)
+    # Phase 711 -- `report/turn_report.py describe_battle()`'s own
+    # `destination_names` parameter needs each retreating army's real
+    # destination province -- `_retreat_or_disband()` already computes
+    # it (to actually move the army) but used to discard it right after.
+    # Keyed by `army_id`, only ever populated for ids also present in
+    # `retreated_army_ids`.
+    retreat_destination_coord: dict[int, HexCoord] = field(default_factory=dict)
 
 
 def _build_battle_units(
@@ -915,6 +922,7 @@ def _retreat_or_disband(
         )
         report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
         report.retreated_army_ids.append(army.army_id)
+        report.retreat_destination_coord[army.army_id] = destination
         return
 
     if army.quality in (Quality.GREEN, Quality.DEPLETED):

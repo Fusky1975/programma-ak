@@ -1351,6 +1351,17 @@ class GameState:
     # ``compose_letter_report()`` call for that turn -- every King's own
     # report reads the same shared list, filtered by ``is_visible_to()``.
     world_events: list[WorldEvent] = field(default_factory=list)
+    # Phase 711 -- the ACTION REPORT's own richer, per-Kingdom battle
+    # narrative (`report/turn_report.py describe_battle()`, wired via
+    # the new `record_battle_narratives()`), keyed by `kingdom_id`.
+    # Distinct from `world_events` above: this is real, sourced detail
+    # (leader roster, per-column clashes, retreats, ...) visible only to
+    # the two Kingdoms actually involved in each battle, not a turn-
+    # global broadcast -- both mechanisms coexist, populated from the
+    # same underlying `BattleReport`s. Same "accumulates for the turn,
+    # no explicit reset, no multi-turn game loop exists yet for it to
+    # matter" convention as `world_events`/`rumors`/`turn_raid_events`.
+    battle_narratives_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
     # Phase 408 -- mirrors `RUMORS.PAS`/`REPORTS.PAS`'s own `kkmet` bitmask
     # (`Check_KKSugg`, `REPORTS.PAS` ~173-202): once two kingdoms' own
     # territories have ever bordered each other, `frozenset({a, b})` is

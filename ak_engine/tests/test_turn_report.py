@@ -116,6 +116,7 @@ from ak_engine.report.turn_report import (
     describe_use_mi,
     parse_template_choices,
     pick_variant,
+    record_battle_narratives,
     record_battle_world_events,
     record_move_world_events,
     record_plague_spread_world_events,
@@ -3671,6 +3672,41 @@ def test_compose_letter_report_includes_valhalla_visit_announcement_in_action_re
     assert "ACTION REPORT" in lines_for_kingdom_1
     assert render_valhalla_visit_announcement("Aldric", "Quintilian", ScriptedRandom([])) in lines_for_kingdom_1
     assert not any("Valhalla" in line for line in lines_for_kingdom_2)
+
+
+def test_compose_letter_report_includes_battle_narrative_for_both_involved_kingdoms():
+    # Phase 711: state.battle_narratives_by_kingdom is set up directly
+    # here (bypassing record_battle_narratives()'s own rendering, tested
+    # separately) to isolate compose_letter_report()'s own reading/
+    # folding behavior from describe_battle()'s own RNG consumption.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True))
+    state.battle_narratives_by_kingdom[1] = ["Attackia's men overran Defendia's own garrison."]
+    state.battle_narratives_by_kingdom[2] = ["Attackia's men overran Defendia's own garrison."]
+
+    lines_for_kingdom_1 = compose_letter_report([], state, 1, ScriptedRandom([]))
+    lines_for_kingdom_2 = compose_letter_report([], state, 2, ScriptedRandom([]))
+
+    assert "ACTION REPORT" in lines_for_kingdom_1
+    assert "Attackia's men overran Defendia's own garrison." in lines_for_kingdom_1
+    assert "ACTION REPORT" in lines_for_kingdom_2
+    assert "Attackia's men overran Defendia's own garrison." in lines_for_kingdom_2
+
+
+def test_compose_letter_report_omits_battle_narrative_for_an_uninvolved_kingdom():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(3, "Watchia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(2, 2)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(3, 3, "Cedric", HexCoord(2, 2), is_king=True))
+    state.battle_narratives_by_kingdom[1] = ["Attackia's men overran Defendia's own garrison."]
+
+    lines_for_kingdom_3 = compose_letter_report([], state, 3, ScriptedRandom([]))
+
+    assert not any("overran" in line for line in lines_for_kingdom_3)
 
 
 def test_describe_challenge_delegates_to_describe_encounter_combat():
@@ -10747,6 +10783,82 @@ def test_record_battle_world_events_prefixes_the_season_for_a_real_phase_label()
     record_battle_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
 
     assert state.world_events[0].lines == ["In late summer, the forces of Attackia (#1) broke through and were victorious."]
+
+
+# -- Phase 711: record_battle_narratives --------------------------------------
+
+
+def test_record_battle_narratives_populates_both_kingdoms_with_identical_content():
+    state, battle_coord, _watcher_coord = _gir_state()
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    battle_result = BattleResult(winner="attacker", columns=[column])
+    report = BattleReport(
+        battle_result=battle_result,
+        conquered=True,
+        destroyed_army_ids=[20],
+        province_coord=battle_coord,
+        attacker_kingdom_id=1,
+        defender_kingdom_id=2,
+    )
+    results = [
+        PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)
+    ]
+    rng = ScriptedRandom([0.1, 0.1, 0.1, 0.1, 0.1], choice_indices=[0, 0, 0])
+
+    record_battle_narratives(state, results, rng)
+
+    assert state.battle_narratives_by_kingdom[1] == state.battle_narratives_by_kingdom[2]
+    assert state.battle_narratives_by_kingdom[1] != []
+    assert any("Attackia" in line for line in state.battle_narratives_by_kingdom[1])
+
+
+def test_record_battle_narratives_skips_a_report_missing_a_kingdom_id():
+    state, battle_coord, _watcher_coord = _gir_state()
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker"),
+        conquered=True,
+        province_coord=battle_coord,
+        attacker_kingdom_id=1,
+        defender_kingdom_id=None,
+    )
+    results = [
+        PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)
+    ]
+
+    record_battle_narratives(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+
+    assert state.battle_narratives_by_kingdom == {}
+
+
+def test_record_battle_narratives_resolves_real_retreat_destination_names():
+    state, battle_coord, watcher_coord = _gir_state()
+    state.add_army(ArmyState(201, kingdom_id=2, army_type=ArmyType.LEGION, quality=Quality.AVERAGE, location=watcher_coord))
+    column = BattleColumnResult(
+        attacker_strength=10.0,
+        defender_strength=10.0,
+        bres=1,
+        attacker_won=True,
+        cluck_index=20,
+        attacker_units=[BattleUnit(ArmyType.GARRISON, 10.0, source_id=101)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=201)],
+    )
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker", columns=[column]),
+        conquered=False,
+        retreated_army_ids=[201],
+        retreat_destination_coord={201: watcher_coord},
+        province_coord=battle_coord,
+        attacker_kingdom_id=1,
+        defender_kingdom_id=2,
+    )
+    results = [
+        PhaseDispatchResult(leader_id=0, segment_index=-1, phase_label="forced-rebattle", action=None, result=report, error=None)
+    ]
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0] * 10)
+
+    record_battle_narratives(state, results, rng)
+
+    assert any("retreated" in line for line in state.battle_narratives_by_kingdom[1])
 
 
 def test_render_fly_move_world_event_renders_the_lfly_template():

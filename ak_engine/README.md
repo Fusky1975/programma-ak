@@ -29485,7 +29485,7 @@ follow-up request after the original 431-435 plan shipped.
   the prose-template mini-language's exact resolution semantics. This
   closes the entire Random Encounters roadmap.
 
-- **Phase 710 (current)**: comment-only, no behavior change. Fixes the
+- **Phase 710**: comment-only, no behavior change. Fixes the
   last open item from the seventeenth fresh codebase survey: `turn/
   strength.py`'s own module docstring still claimed Illusory Terrain's
   blended-strength averaging was unbuilt because "no spellcasting
@@ -29498,6 +29498,40 @@ follow-up request after the original 431-435 plan shipped.
   movement mechanic distinguishes real vs. illusory terrain for
   combat-strength purposes (the illusion's only real consumer today is
   report-layer narration). Full suite unchanged (6025).
+
+- **Phase 711 (current)**: wires `describe_battle()` (leader roster,
+  monster assistance, luck lines, per-column clashes, destroyed/
+  pursuit/retreat, quality changes) into the real letter-report
+  pipeline for the first time -- it had been fully built and tested
+  since much earlier phases but never called from production. Picked
+  from the eighteenth fresh codebase survey. A direct investigation
+  found this more tractable than the survey's own initial "large, own
+  roadmap" estimate: army naming (the survey's own flagged concern)
+  turned out to already be fully solved (`build_battle_army_names()`,
+  wired since Phase 236), and the one genuinely missing piece --
+  retreat destination names -- needed only one new `BattleReport` field
+  (`retreat_destination_coord`), populated at the exact point `fight_
+  battle()` already computes the value and previously discarded it.
+  **User-confirmed directly**: both Kingdoms actually involved in a
+  battle (not just the acting side) receive the identical, full
+  narrative in their own ACTION REPORT -- the turn's own `results` list
+  is keyed by the acting leader alone, so this needed a genuinely
+  different, turn-global threading mechanism (new `record_battle_
+  narratives()`, mirroring `record_battle_world_events()`'s own "called
+  once per turn" shape, populating a new `GameState.battle_narratives_
+  by_kingdom` dict read directly by `compose_letter_report()`) rather
+  than an extension of the existing per-entry `describe_turn_results()`
+  walk. The existing one-line world-broadcast summary (`record_battle_
+  world_events()`) is untouched -- both mechanisms coexist by design,
+  one thin-and-broadcast, one rich-and-personal. Test count: 6025 ->
+  6030 (net +5, plus one existing `test_battle_orchestrator.py` test
+  extended in place). Full suite verified green (unchanged, 6025)
+  before writing a single new test; every new test passed on the first
+  run, with one real assertion built empirically (a live Python call
+  verifying the exact retreat-line/army-naming interaction, not
+  predicted) after finding `build_battle_army_names()`'s own docstring
+  claim about `retreated_army_ids` needed a fixture with a real battle
+  column, not just the id list alone.
 
 ## Setup
 
