@@ -29323,7 +29323,7 @@ follow-up request after the original 431-435 plan shipped.
   verified green (unchanged, 5913) before writing a single new test;
   every new test passed on the first run.
 
-- **Phase 705 (current)**: `AdvancedAbility.SPY_EXPANDED_SPYING` --
+- **Phase 705**: `AdvancedAbility.SPY_EXPANDED_SPYING` --
   "When using the Spy Province action, the Spy gains information on
   what features are known to the owning kingdom. With the Trail
   action, estimates are gained for skills, and for offices held." Two
@@ -29349,6 +29349,37 @@ follow-up request after the original 431-435 plan shipped.
   Test count: 5923 -> 5934 (net +11). Full suite verified green
   (unchanged, 5923) before writing a single new test; every new test
   passed on the first run.
+
+- **Phase 706 (current)**: `AdvancedAbility.SENSE_DANGER_TALENT` --
+  "The Psychic is able to sense the approach of dangerous enemies and
+  can avoid unwanted encounters, both random ones and with unfriendly
+  characters. Encounters with unfriendly characters can be avoided 50%
+  of the time. It is used only when the Flee tactic is the first one in
+  the special encounter plan." Only the "unfriendly characters" half is
+  modeled -- this project has no random-encounter-generation mechanism
+  at all (confirmed by the SEP roadmap's own earlier investigation), so
+  the "random encounters" half stays honestly unmodeled, flagged rather
+  than silently dropped. New `turn/challenge_execution.py target_
+  evades_via_sense_danger(state, target, challenger)` pre-combines
+  ability possession, `not state.is_allied(...)` ("unfriendly"), and
+  the target's own real Special Encounter Plan leading with `Maneuver.
+  FLEE` (reusing `sep_decode.py sep_accepts_challenge()`, Phase 669,
+  inverted -- already exactly this condition; `target_uses_special_
+  encounter_plan()`, Phase 674, gates whether an army-commanding
+  target's SEP is even in play at all, same as every other SEP
+  consumer). `is_encounter_accepted()` gains `has_sense_danger_
+  evasion`, checked only right before the function's own final,
+  unconditional "Heroes who don't lead armies can always be
+  Encountered" fallback -- deliberately scoped narrower than every
+  other branch above it (King target, army-leader target, King
+  challenger), since [3.12]'s own text carves no exception into any of
+  those more specific rules. Wired into all 3 real call sites
+  (`execute_challenge()`, `execute_pursue()`'s armyless case, `execute_
+  patrol()`) via the new pre-combined predicate, since the ability's
+  own text names "encounters" generically rather than scoping to one
+  order type. Test count: 5934 -> 5948 (net +14). Full suite verified
+  green (unchanged, 5934) before writing a single new test; every new
+  test passed on the first run.
 
 ## Setup
 

@@ -347,7 +347,7 @@ from ak_engine.turn.encounter import (
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchTactic
-from ak_engine.turn.sep_decode import target_uses_special_encounter_plan
+from ak_engine.turn.sep_decode import sep_accepts_challenge, target_uses_special_encounter_plan
 
 _COMBAT_MANEUVERS = frozenset({Maneuver.MELEE, Maneuver.SHOOT})
 
@@ -420,6 +420,40 @@ def has_combat_intent(request: ChallengeRequest) -> bool:
     return False
 
 
+def target_evades_via_sense_danger(state: GameState, target: LeaderState, challenger: LeaderState) -> bool:
+    """Phase 706 -- ``AdvancedAbility.SENSE_DANGER_TALENT``'s own real
+    description: "The Psychic is able to sense the approach of
+    dangerous enemies... encounters with unfriendly characters can be
+    avoided 50% of the time. It is used only when the Flee tactic is
+    the first one in the special encounter plan." True only when the
+    *target* holds the ability, the *challenger* isn't a friend (same
+    Kingdom or formally allied, ``GameState.is_allied()``), and the
+    target's own real Special Encounter Plan leads with ``Maneuver.
+    FLEE`` -- ``sep_accepts_challenge()`` (Phase 669) already reduces
+    to exactly that condition (``False`` iff Flee is the plan's own
+    first tactic), the same primitive ``rulebook [5.10]``'s own Duel-
+    trigger logic reuses. ``target_uses_special_encounter_plan()``
+    (Phase 674, "used in every Encounter... only when the target
+    commands no armies") gates whether the target's own SEP is even in
+    play at all -- an army-commanding target's plan is never consulted
+    here either, matching that same rulebook scoping rather than
+    inventing a separate one.
+
+    The "random encounters" half of this ability's own text has no
+    consumer to gate -- this project has no monster/random-encounter-
+    generation mechanism at all (confirmed by the SEP roadmap's own
+    investigation) -- so only the "unfriendly characters" half is
+    modeled here, deliberately, not silently.
+    """
+
+    if AdvancedAbility.SENSE_DANGER_TALENT not in target.advanced_abilities:
+        return False
+    if state.is_allied(target.kingdom_id, challenger.kingdom_id):
+        return False
+    target_sep = list(target.special_encounter_plan) if target_uses_special_encounter_plan(state, target) else []
+    return not sep_accepts_challenge(target_sep, state)
+
+
 def is_encounter_accepted(
     *,
     target_is_king: bool,
@@ -429,6 +463,7 @@ def is_encounter_accepted(
     rng: random.Random,
     has_spy_assassinate: bool = False,
     is_treasury_raid_attempt: bool = False,
+    has_sense_danger_evasion: bool = False,
 ) -> bool:
     """Rulebook [3.12]'s King/Hero acceptance decision tree -- see module docstring
     for the full quoted text this implements branch-for-branch.
@@ -458,6 +493,21 @@ def is_encounter_accepted(
     addendum) is a second, independent unconditional-accept condition,
     the same shape as `has_spy_assassinate` -- holding both abilities
     at once is not a conflict, exactly like Phase 698's own precedent.
+
+    Phase 706 -- `AdvancedAbility.SENSE_DANGER_TALENT`: "encounters with
+    unfriendly characters can be avoided 50% of the time." Deliberately
+    scoped to only the final, ordinary fallback below -- the King/army-
+    leader/King-challenger branches above each already have their own
+    real, more specific rule ([3.12]'s own text carves no exception into
+    any of them for this Talent), so this Talent's own veto only ever
+    replaces the unconditional "Heroes who don't lead armies can always
+    be Encountered" default, matching the narrowest reading that
+    doesn't invent a stacking interaction the source never describes.
+    `has_sense_danger_evasion` (computed by the caller via `target_
+    evades_via_sense_danger()`, which already folds in ability
+    possession, the SEP's own Flee-first condition, and "unfriendly")
+    is a single pre-combined eligibility flag, the same shape `is_
+    treasury_raid_attempt` already established.
     """
 
     if has_spy_assassinate or is_treasury_raid_attempt:
@@ -468,6 +518,8 @@ def is_encounter_accepted(
         return False
     if challenger_is_king:
         return rng.random() < 0.5  # "evade encounters from Kings 50% of the time"
+    if has_sense_danger_evasion:
+        return rng.random() < 0.5  # "avoided... 50% of the time"
     return True  # "Heroes who don't lead armies can always be Encountered by other Heroes"
 
 
@@ -1958,6 +2010,14 @@ def execute_challenge(
     otherwise never reaches ``resolve_challenge_combat()`` at all) and
     why it bypasses ``is_encounter_accepted()``'s own King-refusal via
     a new, dedicated parameter there.
+
+    Phase 706 -- ``AdvancedAbility.SENSE_DANGER_TALENT``: "encounters
+    with unfriendly characters can be avoided 50% of the time... used
+    only when the Flee tactic is the first one in the special
+    encounter plan." See ``target_evades_via_sense_danger()``'s own
+    docstring for the full eligibility computation and why the
+    "random encounters" half of this ability's own text stays
+    unmodeled (this project has no random-encounter mechanism at all).
     """
 
     rng = rng if rng is not None else random.Random()
@@ -2004,6 +2064,7 @@ def execute_challenge(
         rng=rng,
         has_spy_assassinate=AdvancedAbility.SPY_ASSASSINATE in challenger.advanced_abilities,
         is_treasury_raid_attempt=is_treasury_raid_attempt,
+        has_sense_danger_evasion=target_evades_via_sense_danger(state, target, challenger),
     )
     if not accepted:
         _apply_duel_encounter_merit(

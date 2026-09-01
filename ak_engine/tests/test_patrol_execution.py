@@ -659,3 +659,35 @@ def test_execute_patrol_spy_assassinate_accepts_a_king_intruder():
 
     assert result.intercepted is True
     assert result.combat_occurred is True
+
+
+def test_execute_patrol_sense_danger_talent_can_refuse_the_encounter():
+    state = _base_state()
+    patroller = LeaderState(1, kingdom_id=1, name="Patroller", location=HOME)
+    target = LeaderState(
+        2,
+        kingdom_id=2,
+        name="Intruder",
+        location=HOME,
+        advanced_abilities={AdvancedAbility.SENSE_DANGER_TALENT},
+        special_encounter_plan=(SearchTactic(Maneuver.FLEE),),
+    )
+    state.add_leader(patroller)
+    state.add_leader(target)
+
+    # Co-located, so no rule (i) wander roll; the only draw is
+    # is_encounter_accepted()'s own 50% Sense Danger roll.
+    result = execute_patrol(
+        state, 1, _melee_request(2), ScriptedRandom([0.7]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
+    )
+
+    assert result.intercepted is True
+    assert result.reason == "encounter refused"
+
+    # Note: unlike Pursue (whose target is named explicitly by the
+    # request), Patrol's own target always comes from find_patrol_target()
+    # (rule (c)), which only ever surfaces a non-allied leader in the
+    # first place -- so an "allied intruder" case can't arise through
+    # execute_patrol()'s real dispatch path at all. target_evades_via_
+    # sense_danger()'s own allied-exemption is already covered directly
+    # in test_challenge_execution.py.

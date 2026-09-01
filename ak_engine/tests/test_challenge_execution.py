@@ -35,6 +35,7 @@ from ak_engine.turn.challenge_execution import (
     has_combat_intent,
     is_encounter_accepted,
     resolve_challenge_combat,
+    target_evades_via_sense_danger,
 )
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
 from ak_engine.turn.combat import Quality
@@ -3188,6 +3189,197 @@ def test_resolve_steal_tactic_treasury_raid_not_triggered_against_a_hero():
     assert outcome == "success"
     assert gold_raided == 0  # never a King -- the ability makes no difference here
     assert state.items[item.item_id].owner_leader_id == 1
+
+
+def test_target_evades_via_sense_danger_requires_the_ability():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(
+        2, kingdom_id=2, name="Target", location=FIELD, special_encounter_plan=(SearchTactic(Maneuver.FLEE),)
+    )
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    assert target_evades_via_sense_danger(state, target, challenger) is False
+
+
+def test_target_evades_via_sense_danger_requires_flee_first_in_the_sep():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(
+        2,
+        kingdom_id=2,
+        name="Target",
+        location=FIELD,
+        advanced_abilities={AdvancedAbility.SENSE_DANGER_TALENT},
+        special_encounter_plan=(SearchTactic(Maneuver.MELEE),),
+    )
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    assert target_evades_via_sense_danger(state, target, challenger) is False
+
+
+def test_target_evades_via_sense_danger_requires_an_unfriendly_challenger():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(
+        2,
+        kingdom_id=1,  # same kingdom as the challenger -- allied by construction
+        name="Target",
+        location=FIELD,
+        advanced_abilities={AdvancedAbility.SENSE_DANGER_TALENT},
+        special_encounter_plan=(SearchTactic(Maneuver.FLEE),),
+    )
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    assert target_evades_via_sense_danger(state, target, challenger) is False
+
+
+def test_target_evades_via_sense_danger_true_when_all_conditions_met():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(
+        2,
+        kingdom_id=2,
+        name="Target",
+        location=FIELD,
+        advanced_abilities={AdvancedAbility.SENSE_DANGER_TALENT},
+        special_encounter_plan=(SearchTactic(Maneuver.FLEE),),
+    )
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    assert target_evades_via_sense_danger(state, target, challenger) is True
+
+
+def test_target_evades_via_sense_danger_ignores_an_army_commanding_targets_own_sep():
+    # [5.10]'s own scoping: the SEP is only "used" for a leader who
+    # commands no armies -- an army-commanding target's own Flee-first
+    # plan is never consulted here either.
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(
+        2,
+        kingdom_id=2,
+        name="Target",
+        location=FIELD,
+        advanced_abilities={AdvancedAbility.SENSE_DANGER_TALENT},
+        special_encounter_plan=(SearchTactic(Maneuver.FLEE),),
+    )
+    state.add_leader(challenger)
+    state.add_leader(target)
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
+
+    assert target_evades_via_sense_danger(state, target, challenger) is False
+
+
+def test_is_encounter_accepted_sense_danger_evasion_accepts_under_50_percent():
+    assert (
+        is_encounter_accepted(
+            target_is_king=False,
+            target_leads_army=False,
+            challenger_is_king=False,
+            mutual_encounter=False,
+            rng=ScriptedRandom([0.3]),
+            has_sense_danger_evasion=True,
+        )
+        is True
+    )
+
+
+def test_is_encounter_accepted_sense_danger_evasion_refuses_at_or_over_50_percent():
+    assert (
+        is_encounter_accepted(
+            target_is_king=False,
+            target_leads_army=False,
+            challenger_is_king=False,
+            mutual_encounter=False,
+            rng=ScriptedRandom([0.7]),
+            has_sense_danger_evasion=True,
+        )
+        is False
+    )
+
+
+def test_is_encounter_accepted_without_sense_danger_evasion_reproduces_the_default_case():
+    # Non-regression: default False reproduces the pre-Phase-706 result
+    # (unconditional accept) with no roll consumed.
+    assert (
+        is_encounter_accepted(
+            target_is_king=False,
+            target_leads_army=False,
+            challenger_is_king=False,
+            mutual_encounter=False,
+            rng=ScriptedRandom([]),
+        )
+        is True
+    )
+
+
+def test_execute_challenge_sense_danger_talent_can_refuse_an_ordinary_encounter():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(
+        2,
+        kingdom_id=2,
+        name="Target",
+        location=FIELD,
+        advanced_abilities={AdvancedAbility.SENSE_DANGER_TALENT},
+        special_encounter_plan=(SearchTactic(Maneuver.FLEE),),
+    )
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    result = execute_challenge(state, 1, _melee_request(2), rng=ScriptedRandom([0.7]))
+
+    assert result.accepted is False
+    assert result.reason == "encounter refused"
+
+
+def test_execute_challenge_sense_danger_talent_still_allows_the_encounter_sometimes():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(
+        2,
+        kingdom_id=2,
+        name="Target",
+        location=FIELD,
+        advanced_abilities={AdvancedAbility.SENSE_DANGER_TALENT},
+        special_encounter_plan=(SearchTactic(Maneuver.FLEE),),
+    )
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        result = execute_challenge(state, 1, _melee_request(2), rng=ScriptedRandom([0.3]))
+
+    assert result.accepted is True
+
+
+def test_execute_challenge_sense_danger_talent_does_not_apply_to_allied_challengers():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(
+        2,
+        kingdom_id=1,  # same kingdom -- allied, so the Talent never applies regardless of the roll
+        name="Target",
+        location=FIELD,
+        advanced_abilities={AdvancedAbility.SENSE_DANGER_TALENT},
+        special_encounter_plan=(SearchTactic(Maneuver.FLEE),),
+    )
+    state.add_leader(challenger)
+    state.add_leader(target)
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        result = execute_challenge(state, 1, _melee_request(2), rng=ScriptedRandom([0.99]))
+
+    assert result.accepted is True
 
 
 def test_is_encounter_accepted_treasury_raid_attempt_bypasses_king_refusal():

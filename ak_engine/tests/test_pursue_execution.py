@@ -903,6 +903,55 @@ def test_execute_pursue_spy_assassinate_accepts_a_king_target():
     assert result.combat_occurred is True
 
 
+# -- Phase 706: AdvancedAbility.SENSE_DANGER_TALENT (via the shared function) --
+
+
+def test_execute_pursue_sense_danger_talent_can_refuse_the_encounter():
+    state = _base_state()
+    pursuer = LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD)
+    target = LeaderState(
+        2,
+        kingdom_id=2,
+        name="Target",
+        location=FIELD,
+        advanced_abilities={AdvancedAbility.SENSE_DANGER_TALENT},
+        special_encounter_plan=(SearchTactic(Maneuver.FLEE),),
+    )
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    request = _melee_request(2)
+
+    # [0] catch-up roll (co-located, guaranteed); [1:2] add_experience's
+    # own trailing pair; [3] is_encounter_accepted()'s own 50% roll.
+    result = execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5, 0.7]))
+
+    assert result.caught_up is True
+    assert result.reason == "encounter refused"
+
+
+def test_execute_pursue_sense_danger_talent_does_not_apply_to_allied_pursuers():
+    state = _base_state()
+    pursuer = LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD)
+    target = LeaderState(
+        2,
+        kingdom_id=1,  # same kingdom -- allied, so the Talent never applies
+        name="Target",
+        location=FIELD,
+        advanced_abilities={AdvancedAbility.SENSE_DANGER_TALENT},
+        special_encounter_plan=(SearchTactic(Maneuver.FLEE),),
+    )
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    request = _melee_request(2)
+
+    with patch("ak_engine.turn.pursue_execution.resolve_challenge_combat") as mock_resolve:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner=None)
+        result = execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert result.caught_up is True
+    assert result.combat_occurred is True
+
+
 # -- Phase 700: AdvancedAbility.LONG_RANGE_ARCHERY (via the shared function) --
 
 

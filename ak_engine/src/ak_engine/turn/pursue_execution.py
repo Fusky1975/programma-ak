@@ -178,7 +178,12 @@ from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
-from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted, resolve_challenge_combat
+from ak_engine.turn.challenge_execution import (
+    has_combat_intent,
+    is_encounter_accepted,
+    resolve_challenge_combat,
+    target_evades_via_sense_danger,
+)
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.discovery_effects import effective_skill_level, equipped_combat_weapon, holds_bow_of_elven_kings
 from ak_engine.turn.encounter import (
@@ -430,6 +435,7 @@ def execute_pursue(
         mutual_encounter=mutual_encounter,
         rng=rng,
         has_spy_assassinate=AdvancedAbility.SPY_ASSASSINATE in pursuer.advanced_abilities,
+        has_sense_danger_evasion=target_evades_via_sense_danger(state, target, pursuer),
     )
     if not accepted:
         return PursueExecutionResult(caught_up=True, reason="encounter refused", guessed_distance=guessed_distance)
