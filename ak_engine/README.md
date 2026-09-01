@@ -29449,7 +29449,7 @@ follow-up request after the original 431-435 plan shipped.
   scripted values on every test that reaches real `Combatant`
   construction rather than by controlling the exact roll.
 
-- **Phase 709 (current)**: report narration for exactly what Phase 708
+- **Phase 709**: report narration for exactly what Phase 708
   already models -- a failed terrain roll (`_LNoRand`), the encounter
   opening (`_LREnc` + `_LWEnc`/`_LPEnc`), a diplomatically-safe patrol
   release (`_LSafe`), and the combat outcome. Re-reading the document's
@@ -29484,6 +29484,20 @@ follow-up request after the original 431-435 plan shipped.
   before being written into an assertion, avoiding any guesswork about
   the prose-template mini-language's exact resolution semantics. This
   closes the entire Random Encounters roadmap.
+
+- **Phase 710 (current)**: comment-only, no behavior change. Fixes the
+  last open item from the seventeenth fresh codebase survey: `turn/
+  strength.py`'s own module docstring still claimed Illusory Terrain's
+  blended-strength averaging was unbuilt because "no spellcasting
+  system exists yet"/"no item-effect system exists at all" -- both
+  false (spells since Phase 3, item effects since Phase 141). The
+  identical claim in `models/game_state.py` was already caught and
+  narrowed in Phase 683, but `strength.py`'s own copy was never updated
+  to match -- a fresh recurrence of the "stale known-gap claim"
+  pattern. Narrowed to the real, still-genuine gap: no exploration/
+  movement mechanic distinguishes real vs. illusory terrain for
+  combat-strength purposes (the illusion's only real consumer today is
+  report-layer narration). Full suite unchanged (6025).
 
 ## Setup
 

@@ -7,8 +7,8 @@ The rulebook gives an exact, ordered pipeline:
       +1 if home terrain for race
       +1 if home terrain for army type
       Halve for adverse terrain
-      (Illusory Terrain spell: averaged with real terrain -- SKIPPED, no
-       spellcasting system exists yet)
+      (Illusory Terrain spell: averaged with real terrain -- SKIPPED, see
+       the addendum below for why this is still a real, narrower gap)
     Multiply strength by modified unit quality:
       -1 if in desert without camels
       -? insufficient Druidic ability (see Druid Table) -- Phase 41,
@@ -43,11 +43,18 @@ The rulebook gives an exact, ordered pipeline:
 
 This resolves the "unspecified stacking order" gap flagged in earlier
 phases: the order above is a direct rulebook quote, not a guess.
-Illusory Terrain's blended-strength averaging and magic items still stay
-SKIPPED: Illusory Terrain needs an exploration/movement-side "does this
-observer know the real terrain" distinction this project hasn't built
-(see ``models/game_state.py``'s ``ProvinceState.illusory_terrain``
-docstring), and no item-effect system exists at all.
+Illusory Terrain's blended-strength averaging still stays SKIPPED --
+**narrowed as of Phase 710 (a stale-claim correction, matching Phase
+683's own already-corrected copy of this same note in ``models/
+game_state.py``)**: this project has had a real spellcasting system
+since Phase 3/Illusory-Terrain's own cast handler, and magic items
+have had a real effect system since Phase 141 -- neither is missing
+anymore. The real, still-genuine gap is narrower: no exploration/
+movement *mechanic* distinguishes what an outside observer is told the
+terrain is (``ProvinceState.illusory_terrain``) from what it really is
+for combat-strength purposes -- the illusion's only real consumer today
+is report-layer narration (``report/turn_report.py record_spell_world_
+events()``, Phase 232), not a gameplay effect this function could read.
 
 **Island provinces (Phase 282, ``is_island``)** -- a different kind of
 blended-terrain averaging from Illusory Terrain's (still-skipped) one,
