@@ -391,6 +391,7 @@ from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import PracticeExecutionResult, execute_practice
 from ak_engine.turn.pursue_execution import PursueExecutionResult, execute_pursue
+from ak_engine.turn.random_encounter_execution import dispatch_random_encounter_after_phase
 from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.recruit_execution import RecruitExecutionResult, execute_recruit
 from ak_engine.turn.rumor import RUMOR_CHANCE_BY_ACTION, resolve_rumor_generation
@@ -1271,6 +1272,17 @@ def run_leader_plan(
             except Exception as exc:  # noqa: BLE001 -- intentionally broad, see docstring
                 results.append(PhaseDispatchResult(leader.leader_id, segment_index, label, phase.action, None, exc))
                 continue
+
+            # Phase 708 -- CASUALENCOUNTER.md's own random-encounter roll,
+            # attempted right after this phase's own ordinary dispatch,
+            # for exactly the 5 real triggering action types. `rng is
+            # None` (a handful of deterministic/no-dice callers) means no
+            # random encounter can be attempted at all -- skipped, not an
+            # error.
+            if rng is not None:
+                random_encounter_result = dispatch_random_encounter_after_phase(state, leader, phase, rng)
+                if random_encounter_result is not None:
+                    results.append(PhaseDispatchResult(leader.leader_id, -1, label, None, random_encounter_result, None))
 
             if phase.nested_plan is not None and _nested_plan_triggered(phase.action, result):
                 results.extend(_dispatch_nested_plan(phase.nested_plan, state, kingdom_id, board_width, explorer_skill, rng))

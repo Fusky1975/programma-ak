@@ -29381,7 +29381,7 @@ follow-up request after the original 431-435 plan shipped.
   green (unchanged, 5934) before writing a single new test; every new
   test passed on the first run.
 
-- **Phase 707 (current)**: random-encounter generator primitives, new
+- **Phase 707**: random-encounter generator primitives, new
   `turn/random_encounter.py`, sourced from a new user-supplied reverse-
   engineering document (`CASUALENCOUNTER.md`) describing the game's
   random-encounter system: after Move/Explore/Search/Pursue/Trail,
@@ -29411,6 +29411,43 @@ follow-up request after the original 431-435 plan shipped.
   count: 5948 -> 5985 (net +37). Full suite verified green (unchanged,
   5948) before writing a single new test; every new test passed on the
   first run.
+
+- **Phase 708 (current)**: random-encounter dispatch wiring, synthetic
+  monster, combat integration, and `AdvancedAbility.SENSE_DANGER_
+  TALENT`'s own "random encounters" closure. New `turn/random_
+  encounter_execution.py`. The one open architectural question from
+  Phase 707 (how to resolve combat between a leader driven by their
+  own real Special Encounter Plan and a bare `Monster`) resolved by
+  direct investigation, not guesswork: no monster-side plan generator
+  is needed at all -- `turn/challenge_execution.py resolve_challenge_
+  combat()` already fully supports a synthetic, no-real-`LeaderState`
+  opponent (`target_leader=None`, a bare `Combatant` for `target`),
+  already a real production path (`turn/battle_orchestrator.py`'s own
+  Duel/garrison-commander reuse) -- the monster becomes a purely
+  reactive, passive opponent, matching the document's own "the base
+  combat engine is the ordinary shared one" framing exactly. `monster_
+  combatant()` builds a `Combatant` from a bare `Monster` value alone
+  (confirmed: `MONSTER_COMBAT_STATS` covers all 60 real species, zero
+  gaps). Sense Danger Talent's own random-encounter clause reduces to
+  the existing `sep_decode.py sep_accepts_challenge()` primitive
+  (Phase 669) at a fixed 100% (not 50%) since the opponent is
+  synthetic. Wired into `turn/plan_dispatch.py run_leader_plan()`'s
+  own per-phase loop, right after each phase's ordinary dispatch, for
+  exactly the 5 real triggering action types. **Deliberately deferred
+  to Phase 709, not silently skipped**: the document's own SS12
+  pre-combat social-outcome decision tree (`approach_score` and 8
+  named branches) is not modeled yet, so every non-evaded encounter
+  currently goes straight to combat -- more often than the real game
+  would; report-layer narration is also entirely Phase 709's own
+  scope. Test count: 5985 -> 6010 (net +25). Full suite verified green
+  (unchanged, 5985) before writing a single new test; every new test
+  passed after one fix found while writing them -- `tests/_helpers.py
+  ScriptedRandom` doesn't control `rng.randint()` the way it controls
+  `.random()` directly (Python's `_randbelow` fallback still reads
+  `.random()` internally in this environment, but needs a real queued
+  value, not an empty script) -- fixed by buffering a few extra
+  scripted values on every test that reaches real `Combatant`
+  construction rather than by controlling the exact roll.
 
 ## Setup
 

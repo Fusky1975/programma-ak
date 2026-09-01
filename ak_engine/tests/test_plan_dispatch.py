@@ -42,6 +42,7 @@ from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
+from ak_engine.turn.random_encounter_execution import RandomEncounterResult
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.search_execution import SearchExecutionResult
 from ak_engine.turn.trade_execution import CuratorResearchResult, TradeExecutionResult
@@ -1818,6 +1819,67 @@ def test_run_leader_plan_records_errors_and_continues():
     assert results[3].error is None
     assert results[4].error is None
     assert state.armies[army_id].location == end
+
+
+# -- Phase 708: random-encounter hook --
+
+
+def _wanderer_leader_and_state() -> tuple[Leader, GameState]:
+    origin = HexCoord(3, 9)
+    state = GameState()
+    state.turn_number = 2
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, origin))
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(LEADER_ID, 1, "Wanderer", origin))
+    leader = Leader(
+        leader_id=LEADER_ID,
+        name="Wanderer",
+        plan=ActionPlan(
+            leader_id=LEADER_ID,
+            segments=[PlanSegment(plan_start=0, plan_end=0, sp=(), phases={"P0": PlanPhase("P0", ActionCode.LMOVE, 0)})],
+        ),
+    )
+    return leader, state
+
+
+def test_run_leader_plan_appends_a_random_encounter_result_when_one_fires():
+    leader, state = _wanderer_leader_and_state()
+    origin = state.leaders[LEADER_ID].location
+
+    scripted_result = RandomEncounterResult(LEADER_ID, origin, terrain_roll_succeeded=True)
+    with patch("ak_engine.turn.plan_dispatch.dispatch_phase", return_value=NoOpResult(action=ActionCode.LMOVE)), patch(
+        "ak_engine.turn.plan_dispatch.dispatch_random_encounter_after_phase", return_value=scripted_result
+    ):
+        results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert [r.phase_label for r in results] == ["P0", "P0"]
+    sentinel = results[1]
+    assert sentinel.segment_index == -1
+    assert sentinel.action is None
+    assert sentinel.result is scripted_result
+
+
+def test_run_leader_plan_appends_nothing_when_no_random_encounter_fires():
+    leader, state = _wanderer_leader_and_state()
+
+    with patch("ak_engine.turn.plan_dispatch.dispatch_phase", return_value=NoOpResult(action=ActionCode.LMOVE)), patch(
+        "ak_engine.turn.plan_dispatch.dispatch_random_encounter_after_phase", return_value=None
+    ):
+        results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert [r.phase_label for r in results] == ["P0"]
+
+
+def test_run_leader_plan_skips_the_random_encounter_hook_when_rng_is_none():
+    leader, state = _wanderer_leader_and_state()
+
+    with patch("ak_engine.turn.plan_dispatch.dispatch_phase", return_value=NoOpResult(action=ActionCode.LMOVE)), patch(
+        "ak_engine.turn.plan_dispatch.dispatch_random_encounter_after_phase"
+    ) as mock_dispatch:
+        results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    mock_dispatch.assert_not_called()
+    assert [r.phase_label for r in results] == ["P0"]
 
 
 # -- Phase 547: Valhalla visitor phase/Practice cap --
