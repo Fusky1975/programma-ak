@@ -29350,7 +29350,7 @@ follow-up request after the original 431-435 plan shipped.
   (unchanged, 5923) before writing a single new test; every new test
   passed on the first run.
 
-- **Phase 706 (current)**: `AdvancedAbility.SENSE_DANGER_TALENT` --
+- **Phase 706**: `AdvancedAbility.SENSE_DANGER_TALENT` --
   "The Psychic is able to sense the approach of dangerous enemies and
   can avoid unwanted encounters, both random ones and with unfriendly
   characters. Encounters with unfriendly characters can be avoided 50%
@@ -29380,6 +29380,37 @@ follow-up request after the original 431-435 plan shipped.
   order type. Test count: 5934 -> 5948 (net +14). Full suite verified
   green (unchanged, 5934) before writing a single new test; every new
   test passed on the first run.
+
+- **Phase 707 (current)**: random-encounter generator primitives, new
+  `turn/random_encounter.py`, sourced from a new user-supplied reverse-
+  engineering document (`CASUALENCOUNTER.md`) describing the game's
+  random-encounter system: after Move/Explore/Search/Pursue/Trail,
+  there is a real per-terrain chance of an encounter with either a
+  reskinned "patrol" or a genuine wandering monster drawn from the full
+  60-species table with a real, non-uniform weighting formula
+  (`100/HP²`, plus a two-table habitat filter). Closes a real,
+  previously-confirmed-genuinely-blocked gap: `AdvancedAbility.SENSE_
+  DANGER_TALENT`'s own "random encounters" clause (Phase 706) had no
+  mechanism to hook into until now. `MONSTER_RUNTIME_PROFILE[monster].
+  average_hit_points` (Phase 381) matches the document's own `mtbasehp`
+  table exactly, all 60 entries -- reused directly, no new HP table.
+  Two genuinely unrecoverable Pascal internals, user-confirmed rather
+  than guessed: the patrol diplomatic-safety check (`rel + Rand2 >= 2`)
+  maps this project's own binary `is_allied()` to Allied=always-safe/
+  Neutral=50% (not "not allied = never safe" -- matches the rulebook's
+  own "twice as safe" framing the document itself quotes); the
+  "traveling with an army" escort exclusion is approximated as "a
+  same-Kingdom army physically present at the destination coordinate."
+  **Primitives only -- not yet wired into turn dispatch.** Two real,
+  scoped follow-ups: Phase 708 (dispatch wiring, the ephemeral
+  synthetic-monster representation, combat-engine integration, closing
+  Sense Danger Talent's own clause in full) and Phase 709 (the full
+  pre-combat outcome tree and report-layer wiring, including the
+  already-built-but-unwired `render_wandering_encounter()`/`render_
+  patrol_release()`/`render_patrol_encounter()`, Phase 106/107). Test
+  count: 5948 -> 5985 (net +37). Full suite verified green (unchanged,
+  5948) before writing a single new test; every new test passed on the
+  first run.
 
 ## Setup
 
