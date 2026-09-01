@@ -1292,6 +1292,7 @@ from ak_engine.turn.plan_dispatch import (
 )
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
+from ak_engine.turn.random_encounter_execution import RandomEncounterResult
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
 from ak_engine.turn.feature_power_execution import FeaturePowerAttemptResult
 from ak_engine.turn.search_execution import SearchExecutionResult
@@ -6057,6 +6058,104 @@ def describe_encounter_combat(
     return lines
 
 
+def describe_random_encounter_combat(
+    result: RandomEncounterResult, *, character_name: str, opponent_name: str, rng: random.Random, is_sea: bool = False
+) -> list[str]:
+    """Phase 709 -- a smaller sibling of ``describe_encounter_combat()``
+    above, for `turn/random_encounter_execution.py RandomEncounterResult`
+    specifically. Reuses the exact same Fire-Arrow/Melee/death renderers
+    -- deliberately **not** a call to `describe_encounter_combat()`
+    itself: that function also renders a `describe_steal()` sub-line,
+    and Steal has no sourced/meaningful application against a synthetic
+    monster here -- widening `RandomEncounterResult` with steal-
+    compatibility fields it doesn't otherwise need just to satisfy that
+    reuse isn't worth it for one skipped line. Only the human side
+    (`character_name`) can ever die in this mechanic (`resolve_random_
+    encounter()`'s own design -- the monster is never a real
+    ``LeaderState``), so no `loser_leader_id` comparison is needed the
+    way the Challenge/Pursue original has.
+    """
+
+    if not result.combat_occurred:
+        return []
+
+    lines: list[str] = []
+    for shot in result.fire_arrow_shots:
+        attacker_name, defender_name = (character_name, opponent_name) if shot.shooter == "a" else (opponent_name, character_name)
+        attack_line = render_fire_arrow_attack(attacker_name, defender_name, rng)
+        attack_line += (
+            render_attack_hit(defender_name, shot.damage, rng)
+            if shot.hit
+            else render_attack_missed(attacker_name, defender_name, "arrow", rng, is_sea=is_sea)
+        )
+        lines.append(attack_line)
+
+    for swing in result.melee_swings:
+        attacker_name, defender_name = (character_name, opponent_name) if swing.attacker == "a" else (opponent_name, character_name)
+        attack_line = render_melee_attack(attacker_name, defender_name, _MELEE_ATTACK_METHOD, rng)
+        attack_line += (
+            render_attack_hit(defender_name, swing.damage, rng)
+            if swing.hit
+            else render_attack_missed(attacker_name, defender_name, "blade", rng, is_sea=is_sea)
+        )
+        lines.append(attack_line)
+
+    if result.leader_died:
+        lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
+        lines.append(render_character_death(character_name, rng))
+
+    return lines
+
+
+def describe_random_encounter(
+    result: RandomEncounterResult, state: GameState, character_name: str, rng: random.Random
+) -> list[str]:
+    """Phase 709 -- the top-level composer for a random-encounter result
+    (`turn/random_encounter_execution.py`, Phase 707/708). Narrates
+    exactly what that mechanic already models: a failed terrain roll
+    (`_LNoRand`), the encounter opening (`_LREnc` + `_LWEnc`/`_LPEnc`),
+    a diplomatically-safe patrol release (`_LSafe`), and the combat
+    outcome. **Deliberately does not attempt CASUALENCOUNTER.md SS12's
+    own 8-branch pre-combat social-outcome tree** (`_LPass`/`_LBefr`/
+    `_LTricks`/`_LDense`/`_LDona`/`_LHear`/`_LNice`/`_LGreet`) -- the
+    document gives no formula for how those branches are chosen among,
+    only their names/ids/flavor text; a genuinely blocked gap, not a
+    deferred one. Sense Danger evasion likewise gets no resolution
+    sentence of its own -- no distinct `_L`-code survives for it (it
+    enters the same unbuilt avoidance branch) -- only the encounter's
+    own opening narrates.
+    """
+
+    if not result.terrain_roll_succeeded:
+        return [render_random_encounter_failure(character_name, rng)]
+
+    province = state.provinces.get(result.coord)
+    is_sea = province is not None and province.effective_terrain() is Terrain.SEA
+    intro = render_random_encounter_intro(character_name, rng, is_sea=is_sea)
+
+    lines: list[str] = []
+    if result.is_patrol:
+        king_name = _random_encounter_king_name(state, result.coord)
+        lines.append(intro + render_patrol_encounter(character_name, king_name, rng))
+        if result.evaded_via_diplomacy:
+            lines.append(render_patrol_release(character_name, king_name, rng))
+            return lines
+        opponent_name = _RANDOM_ENCOUNTER_PATROL_OPPONENT_NAME
+    else:
+        opponent_name = MONSTER_NAMES.get(result.monster, "a wandering monster") if result.monster is not None else "a wandering monster"
+        lines.append(intro + render_wandering_encounter(character_name, opponent_name, rng, is_sea=is_sea))
+
+    if result.evaded_via_sense_danger:
+        return lines
+
+    lines.extend(
+        describe_random_encounter_combat(
+            result, character_name=character_name, opponent_name=opponent_name, rng=rng, is_sea=is_sea
+        )
+    )
+    return lines
+
+
 # HostAK/TP/PROSE/ENCATT.X -- very likely Challenge's own opening
 # sentence, "searching for the target" before whatever encounter/combat
 # follows (Phase 597). `SAY.PAS:677 _LChall: FD('encatt',S_PCom,9)` sits
@@ -6704,6 +6803,12 @@ def describe_turn_results(
                 province_name = _province_label(state, feature.coord)
                 lines.extend(describe_feature_discovery(feature, caster_name, province_name, rng))
             continue
+        elif isinstance(entry.result, RandomEncounterResult):
+            # Phase 709 -- the Phase 708 random-encounter sentinel always
+            # sets `action=None`, so this branch matches by result type
+            # alone (no other action ever produces this result type).
+            lines.extend(describe_random_encounter(entry.result, state, caster_name, rng))
+            continue
         elif entry.action is ActionCode.RECRUIT and isinstance(entry.result, RecruitExecutionResult):
             leader = state.leaders.get(entry.leader_id)
             if leader is None:
@@ -7140,6 +7245,56 @@ def describe_steal(
         range_suffix = _STEAL_CAPTURE_RANGE_SUFFIX[result.steal_capture_range]
         return render_sneak_detected(thief_name, victim_name, range_suffix, rng)
     return None
+
+
+# CASUALENCOUNTER.md SS16.1 -- `_LNoRand`, a hardcoded ``Say(...)`` (no
+# ``.X`` file), fired only when the random-encounter terrain roll
+# itself fails. Phase 709.
+_RANDOM_ENCOUNTER_FAILURE_TEMPLATE = "{in_>_travels/Rwhile_adventuring, }< saw/Rencountered no wandering/Rmarauding monster{s}."
+
+
+def render_random_encounter_failure(character_name: str, rng: random.Random) -> str:
+    """CASUALENCOUNTER.md SS16.1's ``_LNoRand`` -- a failed terrain roll,
+    no monster/patrol encountered at all this phase.
+    """
+
+    values = {"<": character_name, ">": f"{character_name}'s"}
+    return render(_RANDOM_ENCOUNTER_FAILURE_TEMPLATE, values, rng=rng)
+
+
+# CASUALENCOUNTER.md SS16.1 -- `_LREnc`, a hardcoded prefix clause (no
+# trailing punctuation) that fires unconditionally right after monster
+# selection, *before* the patrol/wandering classification (SS14's own
+# reconstructed Pascal) -- prefixes both `_LWEnc` and `_LPEnc`, not
+# just the wandering branch. Phase 709.
+_RANDOM_ENCOUNTER_INTRO_TEMPLATE = "during > travels/Scoastal_explorations{ this season}, "
+
+
+def render_random_encounter_intro(character_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+    """CASUALENCOUNTER.md SS16.1's ``_LREnc`` -- the prefix clause every
+    successful random-encounter terrain roll opens with, regardless of
+    patrol/wandering framing. Concatenate its own return value directly
+    onto ``render_wandering_encounter()``'s or ``render_patrol_
+    encounter()``'s own output -- it deliberately ends mid-sentence.
+    """
+
+    values = {">": f"{character_name}'s"}
+    return render(_RANDOM_ENCOUNTER_INTRO_TEMPLATE, values, rng=rng, is_sea=is_sea)
+
+
+# CASUALENCOUNTER.md SS16.5 -- once an encounter is framed as a patrol
+# (``randlevel > 1``), any subsequent reference to the opponent's own
+# species name is replaced with "the Officer" for the same `Giant..
+# Witch` humanoid range `turn/random_encounter.py is_humanoid_species()`
+# already gates ``is_patrol_framing()`` on. Phase 709.
+_RANDOM_ENCOUNTER_PATROL_OPPONENT_NAME = "the Officer"
+
+# Project-original filler (no source covers this edge case): a patrol
+# framing doesn't require the province to have a real owner/King on
+# record (`is_patrol_framing()` is purely parity+species based), so a
+# King-name marker (PATENC.X's/SAFPAT.X's own `^K`) needs a fallback
+# for that rare case. Phase 709.
+_RANDOM_ENCOUNTER_UNKNOWN_KING_NAME = "the local authorities"
 
 
 # HostAK/TP/PROSE/RWENC.X -- a wandering encounter's opening sentence.
@@ -11067,6 +11222,20 @@ def _king_leader_id(state: GameState, kingdom_id: int) -> int | None:
         if leader.kingdom_id == kingdom_id and leader.is_king:
             return leader.leader_id
     return None
+
+
+def _random_encounter_king_name(state: GameState, coord: HexCoord) -> str:
+    """Resolves PATENC.X's/SAFPAT.X's own ``^K`` marker for a random-
+    encounter patrol -- the province owner's own King, falling back to
+    ``_RANDOM_ENCOUNTER_UNKNOWN_KING_NAME`` when there's no real owner/
+    King on record (see that constant's own citation). Phase 709.
+    """
+
+    province = state.provinces.get(coord)
+    owner_kingdom_id = province.owner_kingdom_id if province is not None else None
+    king_id = _king_leader_id(state, owner_kingdom_id) if owner_kingdom_id is not None else None
+    king_name = _leader_name(state, king_id) if king_id is not None else None
+    return king_name if king_name is not None else _RANDOM_ENCOUNTER_UNKNOWN_KING_NAME
 
 
 def describe_letter_reports(

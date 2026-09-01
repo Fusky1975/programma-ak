@@ -26,6 +26,7 @@ from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import TREASURE_NAME, Treasure
 from ak_engine.turn.feature_power_execution import FeaturePowerAttemptResult
+from ak_engine.turn.random_encounter_execution import RandomEncounterResult
 from ak_engine.report.turn_report import (
     ALREADY_ALLIED_TEMPLATE,
     ATTACK_DEVASTATING_HIT_TEMPLATE,
@@ -90,6 +91,9 @@ from ak_engine.report.turn_report import (
     describe_challenge,
     describe_curator_research,
     describe_encounter_combat,
+    describe_random_encounter,
+    describe_random_encounter_combat,
+    describe_turn_results,
     describe_fire,
     describe_give,
     describe_hire,
@@ -210,6 +214,8 @@ from ak_engine.report.turn_report import (
     render_move_to_melee_range,
     render_patrol_encounter,
     render_patrol_release,
+    render_random_encounter_failure,
+    render_random_encounter_intro,
     render_petrifying_gaze_hit,
     render_shadow_sword_drain,
     render_stun_recovery,
@@ -3184,6 +3190,195 @@ def test_describe_encounter_combat_returns_empty_for_a_peaceful_accepted_plan():
     rng = ScriptedRandom([])
 
     assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
+
+
+# -- Phase 709: random-encounter report narration --
+
+_RANDOM_ENCOUNTER_HOME = HexCoord(5, 4)
+
+
+def _random_encounter_state(*, owner_kingdom_id: int | None = 1) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Homeland", Race.HUMAN, Alignment.GOOD, _RANDOM_ENCOUNTER_HOME))
+    state.add_province(ProvinceState(_RANDOM_ENCOUNTER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=owner_kingdom_id))
+    state.add_leader(LeaderState(2, kingdom_id=1, name="King Harold", location=_RANDOM_ENCOUNTER_HOME, is_king=True))
+    return state
+
+
+def test_render_random_encounter_failure():
+    rng = ScriptedRandom([0.1] * 10)
+    assert render_random_encounter_failure("Arthur", rng) == "Arthur saw no wandering monster."
+
+
+def test_render_random_encounter_failure_other_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    assert render_random_encounter_failure("Arthur", rng) == "while adventuring, Arthur encountered no marauding monsters."
+
+
+def test_render_random_encounter_intro_land():
+    rng = ScriptedRandom([0.1] * 10)
+    assert render_random_encounter_intro("Arthur", rng) == "during Arthur's travels, "
+
+
+def test_render_random_encounter_intro_sea():
+    rng = ScriptedRandom([0.1] * 10)
+    assert render_random_encounter_intro("Arthur", rng, is_sea=True) == "during Arthur's coastal explorations, "
+
+
+def test_describe_random_encounter_combat_returns_empty_when_no_combat_occurred():
+    result = RandomEncounterResult(1, _RANDOM_ENCOUNTER_HOME, terrain_roll_succeeded=True)
+    rng = ScriptedRandom([])
+
+    assert describe_random_encounter_combat(result, character_name="Arthur", opponent_name="Grendel", rng=rng) == []
+
+
+def test_describe_random_encounter_combat_narrates_fire_arrow_shots_and_melee_swings_in_order():
+    result = RandomEncounterResult(
+        1,
+        _RANDOM_ENCOUNTER_HOME,
+        terrain_roll_succeeded=True,
+        combat_occurred=True,
+        fire_arrow_shots=(FireArrowShot(shooter="a", hit=True, damage=5),),
+        melee_swings=(MeleeSwing(attacker="b", hit=False, damage=0),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 8, 0])
+
+    lines = describe_random_encounter_combat(result, character_name="Arthur", opponent_name="Grendel", rng=rng)
+
+    assert lines == [
+        "Arthur Fired an arrow at Grendel and inflicted 5 damage points.",
+        "Grendel Attacked Arthur and missed.",
+    ]
+
+
+def test_describe_random_encounter_combat_narrates_the_characters_own_death():
+    result = RandomEncounterResult(1, _RANDOM_ENCOUNTER_HOME, terrain_roll_succeeded=True, combat_occurred=True, leader_died=True)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+
+    lines = describe_random_encounter_combat(result, character_name="Arthur", opponent_name="Grendel", rng=rng)
+
+    assert lines == [
+        "Arthur was mortally wounded.",
+        "and so it was that Arthur met Arthur's unseemly end.",
+    ]
+
+
+def test_describe_random_encounter_failed_terrain_roll():
+    state = _random_encounter_state()
+    result = RandomEncounterResult(1, _RANDOM_ENCOUNTER_HOME, terrain_roll_succeeded=False)
+    rng = ScriptedRandom([0.1] * 10)
+
+    assert describe_random_encounter(result, state, "Arthur", rng) == ["Arthur saw no wandering monster."]
+
+
+def test_describe_random_encounter_wandering_sense_danger_evasion_has_no_resolution_sentence():
+    state = _random_encounter_state()
+    result = RandomEncounterResult(
+        1, _RANDOM_ENCOUNTER_HOME, terrain_roll_succeeded=True, monster=Monster.GIANT, is_patrol=False, evaded_via_sense_danger=True
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_random_encounter(result, state, "Arthur", rng)
+
+    assert lines == ["during Arthur's travels, Arthur was crossing an open field when Giant spotted Arthur from a distance."]
+
+
+def test_describe_random_encounter_wandering_combat_uses_the_real_species_name():
+    state = _random_encounter_state()
+    result = RandomEncounterResult(
+        1,
+        _RANDOM_ENCOUNTER_HOME,
+        terrain_roll_succeeded=True,
+        monster=Monster.GIANT,
+        is_patrol=False,
+        combat_occurred=True,
+        melee_swings=(MeleeSwing(attacker="b", hit=True, damage=4),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0])
+
+    lines = describe_random_encounter(result, state, "Arthur", rng)
+
+    assert lines[0] == "during Arthur's travels, Arthur was crossing an open field when Giant spotted Arthur from a distance."
+    assert "Giant" in lines[1]
+    assert "Officer" not in lines[1]
+
+
+def test_describe_random_encounter_patrol_diplomatic_evasion_appends_the_release_line():
+    state = _random_encounter_state()
+    result = RandomEncounterResult(
+        1, _RANDOM_ENCOUNTER_HOME, terrain_roll_succeeded=True, monster=Monster.GIANT, is_patrol=True, evaded_via_diplomacy=True
+    )
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
+
+    lines = describe_random_encounter(result, state, "Arthur", rng)
+
+    assert lines == [
+        "during Arthur's travels, Arthur was ambushed, tied up and severely beaten by wild-eyed "
+        "soldiers.Arthur escaped.a King's Ranger tracked Arthur down.",
+        "but when Arthur was taken to the judge, Arthur showed him the official seal of King Harold, and was let go.",
+    ]
+
+
+def test_describe_random_encounter_patrol_evasion_never_appends_combat_lines():
+    state = _random_encounter_state()
+    result = RandomEncounterResult(
+        1,
+        _RANDOM_ENCOUNTER_HOME,
+        terrain_roll_succeeded=True,
+        monster=Monster.GIANT,
+        is_patrol=True,
+        evaded_via_diplomacy=True,
+        combat_occurred=True,
+        melee_swings=(MeleeSwing(attacker="b", hit=True, damage=4),),
+    )
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
+
+    lines = describe_random_encounter(result, state, "Arthur", rng)
+
+    assert len(lines) == 2
+
+
+def test_describe_random_encounter_patrol_combat_masks_the_species_as_the_officer():
+    state = _random_encounter_state()
+    result = RandomEncounterResult(
+        1,
+        _RANDOM_ENCOUNTER_HOME,
+        terrain_roll_succeeded=True,
+        monster=Monster.GIANT,
+        is_patrol=True,
+        combat_occurred=True,
+        melee_swings=(MeleeSwing(attacker="b", hit=True, damage=4),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0])
+
+    lines = describe_random_encounter(result, state, "Arthur", rng)
+
+    assert "the Officer" in lines[1]
+    assert "Giant" not in lines[1]
+
+
+def test_describe_random_encounter_patrol_falls_back_to_a_generic_king_name_for_an_unowned_province():
+    state = _random_encounter_state(owner_kingdom_id=None)
+    result = RandomEncounterResult(
+        1, _RANDOM_ENCOUNTER_HOME, terrain_roll_succeeded=True, monster=Monster.GIANT, is_patrol=True, evaded_via_diplomacy=True
+    )
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
+
+    lines = describe_random_encounter(result, state, "Arthur", rng)
+
+    assert "the local authorities" in lines[1]
+
+
+def test_describe_turn_results_narrates_a_random_encounter_sentinel():
+    state = _random_encounter_state()
+    result = RandomEncounterResult(1, _RANDOM_ENCOUNTER_HOME, terrain_roll_succeeded=False)
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Arthur", location=_RANDOM_ENCOUNTER_HOME))
+    entries = [PhaseDispatchResult(leader_id=1, segment_index=-1, phase_label="P0", action=None, result=result, error=None)]
+    rng = ScriptedRandom([0.1] * 10)
+
+    lines = describe_turn_results(entries, state, rng)
+
+    assert lines == ["Arthur saw no wandering monster."]
 
 
 # -- ENCATT.X (Phase 597) --

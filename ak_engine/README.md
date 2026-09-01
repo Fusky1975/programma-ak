@@ -29412,7 +29412,7 @@ follow-up request after the original 431-435 plan shipped.
   5948) before writing a single new test; every new test passed on the
   first run.
 
-- **Phase 708 (current)**: random-encounter dispatch wiring, synthetic
+- **Phase 708**: random-encounter dispatch wiring, synthetic
   monster, combat integration, and `AdvancedAbility.SENSE_DANGER_
   TALENT`'s own "random encounters" closure. New `turn/random_
   encounter_execution.py`. The one open architectural question from
@@ -29448,6 +29448,42 @@ follow-up request after the original 431-435 plan shipped.
   value, not an empty script) -- fixed by buffering a few extra
   scripted values on every test that reaches real `Combatant`
   construction rather than by controlling the exact roll.
+
+- **Phase 709 (current)**: report narration for exactly what Phase 708
+  already models -- a failed terrain roll (`_LNoRand`), the encounter
+  opening (`_LREnc` + `_LWEnc`/`_LPEnc`), a diplomatically-safe patrol
+  release (`_LSafe`), and the combat outcome. Re-reading the document's
+  own SS12 ("Decisione prima del combattimento") closely found it's
+  thinner than initially assessed: the `approach_score` formula that
+  gates the avoidance branch depends on two Pascal "local" values whose
+  meaning is confirmed unrecoverable, and -- more importantly -- the 8
+  named social-outcome branches (`_LPass`/`_LBefr`/`_LTricks`/`_LDense`/
+  `_LDona`/`_LHear`/`_LNice`/`_LGreet`) have no recoverable selection
+  formula at all, only names/ids/flavor text. **User-confirmed
+  directly, presented with this finding**: don't attempt that tree
+  (genuinely unrecoverable without inventing a whole sub-mechanic) --
+  it's recorded as a permanent, genuinely-blocked backlog item, not a
+  deferred phase. Two fully-sourced renderers built but never wired
+  since Phase 106/107 (`render_wandering_encounter()`/`render_patrol_
+  encounter()`/`render_patrol_release()`) are finally reached; two new
+  single-template renderers transcribed verbatim from the document's
+  own SS16.1. A real, easy-to-miss SS16.5 detail confirmed and applied:
+  once an encounter is framed as a patrol, the opponent's own species
+  name is replaced with "the Officer" in combat narration. New
+  `describe_random_encounter_combat()` deliberately doesn't reuse
+  `describe_encounter_combat()` verbatim (that function also renders a
+  Steal sub-line with no sourced/meaningful application against a
+  synthetic monster) -- a smaller sibling reusing the same Fire-Arrow/
+  Melee/death renderers instead. Sense Danger evasion gets no
+  resolution sentence of its own (no distinct `_L`-code survives for
+  it) -- only the encounter's own opening narrates, a real, flagged
+  gap. Test count: 6010 -> 6025 (net +15). Full suite verified green
+  (unchanged, 6010) before writing a single new test; every new test
+  passed on the first run -- each render/describe function's own exact
+  output was verified empirically (a live Python call, not predicted)
+  before being written into an assertion, avoiding any guesswork about
+  the prose-template mini-language's exact resolution semantics. This
+  closes the entire Random Encounters roadmap.
 
 ## Setup
 
