@@ -1546,9 +1546,12 @@ the reactive Melee swing itself is resolved by the caller, in `turn/
 challenge_execution.py`'s own `SHOOT` branch, before this function is
 ever called.
 
-`turn/search_execution.py`'s own separate, duplicated `CombatRange`/
-`SHOOT` state machine (leader-vs-monster Search combat) is likewise
-still untouched by both phases.
+**Phase 719 -- `turn/search_execution.py`'s own separate, duplicated
+`CombatRange`/`SHOOT` state machine (leader-vs-monster Search combat)
+now wires both abilities too**, via the exact same `long_range_archer`/
+`short_range_archer` kwargs on `resolve_fire_arrow_duel()` above -- see
+that module's own Phase 719 addendum for the one real structural
+difference (no intermediate Bow-Range step exists in that engine).
 """
 
 from __future__ import annotations

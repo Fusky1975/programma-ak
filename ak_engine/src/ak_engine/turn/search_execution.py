@@ -456,6 +456,41 @@ follows. This is the only real, gameplay-consequential ``Ability.DRUID``
 skill check anywhere in this project (confirmed by grep) -- every other
 consumer is either a strength-penalty formula or a title-scoring
 formula, not an action a leader takes.
+
+**Phase 719 -- ``AdvancedAbility.LONG_RANGE_ARCHERY``/``SHORT_RANGE_
+ARCHERY`` wired into this module's own ``CombatRange`` engine.**
+``turn/challenge_execution.py``'s own Phase 700/701 addenda and ``turn/
+encounter.py resolve_fire_arrow_duel()``'s own docstring both used to
+flag this module's separate, duplicated ``SHOOT`` dispatch as
+deliberately still untouched -- closed here. One genuine structural
+difference from Challenge/Pursue's engine: this module's own
+``current_range`` only ever tracks ``SPELL_RANGE`` vs. ``MELEE_RANGE``
+(no intermediate ``BOW_RANGE`` step exists anywhere in this file), so
+an ordinary ``SHOOT`` tactic at Spell Range already fires at full
+accuracy, fully bidirectionally, with no ability needed -- Long Range
+Archery's real effect here is trading that full accuracy and the
+guardian's own return fire for half accuracy and a one-sided shot, via
+the identical ``resolve_fire_arrow_duel(..., long_range_archer="a")``
+kwarg Phase 700 already built. Short Range Archery ports directly
+(a free reactive Melee swing against the archer first, then a
+one-sided shot at normal accuracy), since the Melee-Range gate here
+already matches Challenge's own shape exactly. Both are wired only at
+the leader's own explicit ``SHOOT`` tactic -- deliberately **not**
+threaded into the separate ``monster_wants_shoot`` pre-emptive-shot
+branch (inside the ``Maneuver.MELEE`` tactic), since both abilities
+describe how the leader personally fires when the leader's own order
+calls for it, not a monster-initiated shot the leader never ordered
+(and the leader's own tactic there is ``MELEE``, not ``SHOOT``, ruling
+out Long Range Archery's "fire from Spell Range" framing on its own
+terms). A third candidate call site, ``_resolve_steal()``'s own
+caught-thief branch, was checked and confirmed genuinely inapplicable:
+tracing its random ``combat_range`` roll shows its own ``resolve_fire_
+arrow_duel()`` call is only ever reached at ``CombatRange.BOW_RANGE``
+(``SPELL_RANGE`` returns ``None`` outright, ``MELEE_RANGE`` routes to
+``resolve_melee_duel()`` instead) -- neither ability's own gating
+condition can ever be true there, confirmed directly by the existing
+``test_execute_search_steal_caught_bow_range_resolves_fire_arrow_duel``
+test's own scripted ``choice_indices``.
 """
 
 from __future__ import annotations
@@ -2298,13 +2333,26 @@ def _resolve_search_encounter(
         _advance_monster_tactic()
         return _resolve_cast(monster_tactic, caster_is_leader=False, is_first_tactic=is_first_tactic)
 
-    def _resolve_fire_arrow_phase() -> SearchExecutionResult | None:
+    def _resolve_fire_arrow_phase(
+        *, long_range_archer: str | None = None, short_range_archer: str | None = None
+    ) -> SearchExecutionResult | None:
         nonlocal fire_arrow_shots, fire_arrow_resolved
         fire_arrow_resolved = True
         outcome = _resolve_monster_casts()
         if outcome is not None:
             return outcome
-        duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng)
+        # long_range_archer/short_range_archer are only ever passed when
+        # a real ability applies (both `None` otherwise) -- matches
+        # turn/challenge_execution.py's own Phase 700/701 convention of
+        # calling resolve_fire_arrow_duel() with no such kwarg at all in
+        # the ordinary case, keeping every pre-Phase-719 call/mock byte-
+        # for-byte identical.
+        kwargs: dict[str, str] = {}
+        if long_range_archer is not None:
+            kwargs["long_range_archer"] = long_range_archer
+        if short_range_archer is not None:
+            kwargs["short_range_archer"] = short_range_archer
+        duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng, **kwargs)
         fire_arrow_shots = duel_result.shots
         outcome = _outcome_from(duel_result)
         if outcome is not None:
@@ -2614,11 +2662,52 @@ def _resolve_search_encounter(
             continue
         if tactic.maneuver is Maneuver.SHOOT:
             if current_range is CombatRange.MELEE_RANGE:
+                # Phase 719: AdvancedAbility.SHORT_RANGE_ARCHERY -- "may
+                # now use the Fire tactic at Melee Range, with the normal
+                # chance to hit." Mirrors turn/challenge_execution.py's
+                # own Phase 701 wiring exactly: the guardian gets a free
+                # reactive Melee swing against the archer first (this
+                # module's own established Cast-at-Melee-Range reactive-
+                # swing pattern, lines above), then the shot itself
+                # resolves one-sided at normal accuracy.
+                if (
+                    not leader_combatant.blocked_from_cast_and_archery
+                    and AdvancedAbility.SHORT_RANGE_ARCHERY in leader.advanced_abilities
+                ):
+                    swing_result = resolve_reactive_melee_swing(monster_combatant, leader_combatant, rng)
+                    melee_swings.append(MeleeSwing(attacker="b", hit=swing_result.hit, damage=swing_result.damage))
+                    if leader_combatant.hit_points <= 0:
+                        return _finish_melee_outcome(EncounterCombatResult(winner="b", rounds=0))
+                    combat_attempted = True
+                    outcome = _resolve_fire_arrow_phase(short_range_archer="a")
+                    if outcome is not None:
+                        # _resolve_fire_arrow_phase() never sets
+                        # melee_swings itself (safe everywhere else it's
+                        # called -- this is the only path where a real
+                        # Melee round, and now this reactive swing, could
+                        # already have populated the shared accumulator
+                        # before Fire Arrow ends the encounter).
+                        outcome.melee_swings = tuple(melee_swings)
+                        return outcome
+                    continue
                 continue  # [5.0]: only spells or Melee are usable in the melee zone
             if leader_combatant.blocked_from_cast_and_archery:
                 continue
             combat_attempted = True
-            outcome = _resolve_fire_arrow_phase()
+            # Phase 719: AdvancedAbility.LONG_RANGE_ARCHERY -- "may now use
+            # the Fire tactic at Spell Range, with half the normal chance
+            # to hit." This engine has no explicit "close to Bow Range"
+            # step the way turn/challenge_execution.py's own SHOOT branch
+            # does (current_range only ever tracks SPELL_RANGE vs. MELEE_
+            # RANGE here) -- an ordinary shot at Spell Range already fires
+            # at full accuracy, bidirectionally. The ability instead trades
+            # that full accuracy and the guardian's own return fire for
+            # half accuracy and a one-sided shot, via the same real
+            # `resolve_fire_arrow_duel()` kwarg Phase 700 already built.
+            if current_range is CombatRange.SPELL_RANGE and AdvancedAbility.LONG_RANGE_ARCHERY in leader.advanced_abilities:
+                outcome = _resolve_fire_arrow_phase(long_range_archer="a")
+            else:
+                outcome = _resolve_fire_arrow_phase()
             if outcome is not None:
                 return outcome
             continue  # free attacks exhausted, nobody dead -- fall through

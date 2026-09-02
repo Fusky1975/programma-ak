@@ -250,9 +250,12 @@ challenge_combat()``'s own ``SHOOT`` branch now lets a caster holding
 this ability fire from Spell Range itself (half accuracy, one-sided --
 see ``turn/encounter.py resolve_fire_arrow_duel()``'s own Phase 700
 addendum) instead of the ordinary unconditional close-to-Bow-Range.
-``SHORT_RANGE_ARCHERY`` (fire at Melee Range) and ``turn/search_
-execution.py``'s own separate, duplicated ``CombatRange`` engine are
-both deliberately still untouched -- see that same addendum.
+``SHORT_RANGE_ARCHERY`` (fire at Melee Range) is untouched by this
+phase -- see that same addendum. **Phase 719 -- ``turn/search_
+execution.py``'s own separate, duplicated ``CombatRange`` engine now
+wires both abilities too**, adapted for a real structural difference
+(no intermediate Bow-Range step exists in that engine) -- see that
+module's own Phase 719 addendum.
 """
 
 from __future__ import annotations

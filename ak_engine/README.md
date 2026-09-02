@@ -29759,7 +29759,7 @@ follow-up request after the original 431-435 plan shipped.
   Test count: 6127 -> 6134 (net +7). Full suite verified green
   (unchanged, 6127) before writing a single new test.
 
-- **Phase 718 (current)**: illegal-move report narration, the
+- **Phase 718**: illegal-move report narration, the
   recommended lead candidate from a fresh (nineteenth) codebase
   survey run once the Fleet/Whale/air cargo-capacity roadmap's own
   low-risk items ran out. `turn/contested_province.py is_illegal_
@@ -29791,6 +29791,54 @@ follow-up request after the original 431-435 plan shipped.
   item #1 already defers. Test count: 6134 -> 6138 (net +4). Full
   suite verified green (unchanged, 6134) before writing a single new
   test.
+
+- **Phase 719 (current)**: `AdvancedAbility.LONG_RANGE_ARCHERY`/
+  `SHORT_RANGE_ARCHERY` wired into `turn/search_execution.py`'s own
+  separate, duplicated `CombatRange`/`SHOOT` state machine (leader-vs-
+  monster Search combat) -- the nineteenth survey's candidate #2, and
+  the one piece `turn/challenge_execution.py`'s own Phase 700/701
+  wiring (and `turn/encounter.py resolve_fire_arrow_duel()`'s own
+  docstring) explicitly still flagged as untouched. Re-reading this
+  module's own `SHOOT` dispatch found a genuine structural difference
+  from Challenge/Pursue's engine, not a drop-in port: `current_range`
+  here only ever tracks `SPELL_RANGE` vs. `MELEE_RANGE` -- there is no
+  intermediate `BOW_RANGE`-closing step anywhere in this file, so an
+  ordinary Shoot at Spell Range already fires at full accuracy,
+  bidirectionally, with no ability needed. Long Range Archery's real
+  effect here is trading that full accuracy and the guardian's own
+  return fire for half accuracy and a one-sided shot, via the same
+  `resolve_fire_arrow_duel(..., long_range_archer="a")` kwarg Phase
+  700 already built; Short Range Archery ports directly (a free
+  reactive Melee swing against the archer first, then a one-sided shot
+  at normal accuracy), since the Melee-Range gate here already matches
+  Challenge's own shape exactly. Both abilities are wired only at the
+  leader's own explicit Shoot tactic, deliberately **not** threaded
+  into the separate `monster_wants_shoot` pre-emptive-shot branch
+  (inside the Melee tactic) -- both abilities describe how the leader
+  personally fires when the leader's own order calls for it, not a
+  monster-initiated shot the leader never ordered, and the leader's
+  own tactic there is Melee, not Shoot, ruling out Long Range
+  Archery's "fire from Spell Range" framing on its own terms. A third
+  candidate call site, `_resolve_steal()`'s own caught-thief branch,
+  was checked and confirmed genuinely inapplicable: its own random
+  `combat_range` roll can only ever reach `resolve_fire_arrow_duel()`
+  at `CombatRange.BOW_RANGE` (`SPELL_RANGE` returns `None` outright,
+  `MELEE_RANGE` routes to `resolve_melee_duel()` instead), so neither
+  ability's own gating condition can ever be true there -- confirmed
+  directly by the existing `test_execute_search_steal_caught_bow_
+  range_resolves_fire_arrow_duel` test's own scripted `choice_indices`,
+  and by a new test re-running that exact fixture with both abilities
+  held. One real correctness fix made along the way: `_resolve_fire_
+  arrow_phase()` never set `outcome.melee_swings` on its own returned
+  result (safe everywhere it was reachable before this phase, since
+  Fire Arrow always resolved before any real Melee round could
+  populate the shared accumulator) -- the new Short Range Archery path
+  is the first case where a real Melee round, and the new reactive
+  swing itself, can already be sitting in that accumulator when Fire
+  Arrow ends the encounter, so the new branch now copies it onto the
+  returned outcome explicitly, mirroring `_finish_melee_outcome()`'s
+  own convention. Test count: 6138 -> 6145 (net +7). Full suite
+  verified green (unchanged, 6138) before writing a single new test.
 
 ## Setup
 

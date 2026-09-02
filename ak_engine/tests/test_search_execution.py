@@ -1332,6 +1332,176 @@ def test_execute_search_shoot_exhausted_with_no_further_tactic_defaults_to_melee
     assert result.guardian_monster is Monster.GARGOYLE
 
 
+# -- Phase 719: LONG_RANGE_ARCHERY/SHORT_RANGE_ARCHERY --
+
+
+def test_execute_search_long_range_archery_fires_from_spell_range_one_sided():
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.LONG_RANGE_ARCHERY)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, _shoot_request(1, Maneuver.SHOOT), random.Random(0))
+
+    assert mock_resolve.call_args.kwargs == {"long_range_archer": "a"}
+    assert result.winner == "leader"
+
+
+def test_execute_search_shoot_without_long_range_archery_calls_fire_arrow_duel_with_no_kwargs():
+    # Non-regression: an ordinary Shoot at Spell Range (no ability) still
+    # calls resolve_fire_arrow_duel() with no long_range_archer/short_
+    # range_archer kwarg at all, matching every pre-Phase-719 call.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _shoot_request(1, Maneuver.SHOOT), random.Random(0))
+
+    assert mock_resolve.call_args.kwargs == {}
+
+
+def test_execute_search_short_range_archery_fires_at_melee_range_after_reactive_swing():
+    # Plan [MELEE, SHOOT]: the first Melee tactic round-steps once
+    # (non-last, monster's own plan is empty so _peek_monster_action()
+    # returns None -- the ordinary Melee-vs-Melee branch), landing
+    # current_range on MELEE_RANGE before the SHOOT tactic is reached.
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.SHORT_RANGE_ARCHERY)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _shoot_request(1, Maneuver.MELEE, Maneuver.SHOOT)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_one_melee_round"
+    ) as mock_round, patch(
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing"
+    ) as mock_swing, patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel"
+    ) as mock_fire:
+        mock_round.return_value = MeleeRoundOutcome(result=None, swings=(MeleeSwing(attacker="a", hit=False, damage=0),))
+        mock_swing.return_value = ReactiveMeleeSwingResult(hit=True, damage=2)
+        mock_fire.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_round.called
+    assert mock_swing.called
+    assert mock_fire.call_args.kwargs == {"short_range_archer": "a"}
+    assert result.winner == "leader"
+    assert result.melee_swings == (
+        MeleeSwing(attacker="a", hit=False, damage=0),
+        MeleeSwing(attacker="b", hit=True, damage=2),
+    )
+
+
+def test_execute_search_short_range_archery_reactive_swing_kills_leader_before_any_shot():
+    # resolve_reactive_melee_swing() mutates its own `defender` argument's
+    # hit_points internally (see its own docstring) -- a mocked return
+    # value alone has no such side effect, so the side_effect below
+    # applies it explicitly, matching the real function's own contract.
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.SHORT_RANGE_ARCHERY)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _shoot_request(1, Maneuver.MELEE, Maneuver.SHOOT)
+
+    def _lethal_swing(attacker, defender, rng):
+        defender.hit_points = 0
+        return ReactiveMeleeSwingResult(hit=True, damage=CHARACTER_HIT_POINTS)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_one_melee_round"
+    ) as mock_round, patch(
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing", side_effect=_lethal_swing
+    ) as mock_swing, patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel"
+    ) as mock_fire:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_swing.called
+    assert not mock_fire.called
+    assert result.winner == "monster"
+
+
+def test_execute_search_shoot_without_short_range_archery_stays_blocked_at_melee_range():
+    # Non-regression: without the ability, [MELEE, SHOOT] still blocks
+    # the Shoot tactic outright at Melee Range -- no reactive swing, no
+    # fire-arrow call -- falling through to the exhausted-tactic-list
+    # default-to-Melee fallback (Phase 178) instead.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _shoot_request(1, Maneuver.MELEE, Maneuver.SHOOT)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_one_melee_round"
+    ) as mock_round, patch(
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing"
+    ) as mock_swing, patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel"
+    ) as mock_fire, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_round.called
+    assert not mock_swing.called
+    assert not mock_fire.called
+    assert mock_duel.called
+    assert result.winner == "leader"
+
+
+def test_execute_search_monster_wanting_shoot_ignores_the_leaders_own_archery_abilities():
+    # Both LONG_RANGE_ARCHERY and SHORT_RANGE_ARCHERY describe how the
+    # leader personally fires when the leader's own tactic calls for it
+    # -- neither applies to a monster-initiated pre-emptive shot the
+    # leader never ordered (the leader's own tactic here is MELEE, not
+    # SHOOT). Mirrors test_execute_search_monster_wanting_shoot_fires_
+    # even_when_the_leaders_plan_never_does's own fixture exactly.
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.LONG_RANGE_ARCHERY)
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.SHORT_RANGE_ARCHERY)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.TITAN))
+
+    with patch("ak_engine.turn.search_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee, patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False):
+        mock_shoot.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert mock_shoot.called
+    assert mock_shoot.call_args.kwargs == {}
+
+
+def test_execute_search_steal_caught_bow_range_ignores_the_leaders_own_archery_abilities():
+    # Confirms the Context finding directly: this call site's own random
+    # combat_range roll can only ever reach resolve_fire_arrow_duel() at
+    # BOW_RANGE (SPELL_RANGE returns None outright, MELEE_RANGE routes
+    # to resolve_melee_duel() instead) -- neither ability's own gating
+    # condition can ever be true here.
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.LONG_RANGE_ARCHERY)
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.SHORT_RANGE_ARCHERY)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _steal_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_steal_evasion", return_value=False
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_fire:
+        rng = ScriptedRandom([0.5] * 20, choice_indices=[1])  # BOW_RANGE
+        result = execute_search(state, LEADER_ID, request, rng)
+
+    assert mock_fire.called
+    assert mock_fire.call_args.kwargs == {}
+    assert result.winner == "leader"
+
+
 # -- Phase 178: the guardian's own Special Encounter Plan --
 
 
