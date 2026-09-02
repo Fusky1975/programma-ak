@@ -12628,22 +12628,15 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
 
     **Scar Terrain's own bystander notice (`_STZero`/`_STFite`,
     `SAY.PAS` ~747-748) is confirmed real text -- both are inline
-    `Say()` strings, not missing `PROSE/*.X2` files -- but investigated
-    (Phase 411) and found permanently unreachable from this project's
-    own state, not merely unwired.** Both notices fire only when
-    `turn/cast_execution.py scar_terrain_collapse()` actually runs, and
-    that function is never called from any real dispatch path: its own
-    precondition, "when the tax base reaches 0 gold"
-    (`scar_terrain_is_exhausted()`), needs a real per-province tax base
-    to check against, and this project has no tax/revenue-collection
-    system anywhere to supply one (the same gap `ProvinceState.tax_
-    modifier_percent`'s own docstring already flags). `_STFite`'s own
-    land-collapse race choice is separately unspecified by the rulebook
-    itself ("usually by immigration from an adjacent province" names an
-    external fact, not a formula) -- see `_execute_scar_terrain()`'s own
-    docstring for both points in full. A world-events recorder for this
-    notice would have nothing to call it from until a real tax system
-    exists; not attempted here.
+    `Say()` strings, not missing `PROSE/*.X2` files.** Phase 411 found
+    them permanently unreachable at the time (the underlying collapse
+    mechanic had no real tax base to check against) and Phase 721
+    closes that blocker for real (`Desktop/SCAR.md`, user-supplied --
+    see `turn/cast_execution.py apply_scar_terrain_collapse()`'s own
+    docstring for the full algorithm). **Narration wiring itself is
+    Phase 722, the immediate next phase** -- not done here yet, matching
+    this project's own "mechanic now, narration as a short, separate
+    follow-up" pattern.
 
     **The rest of the `S_Army`-tagged per-battle narrative cluster
     (`FD('invas'/'conq'/'invwin'/'defwin', S_Army, ...)`) is not a

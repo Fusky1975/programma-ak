@@ -399,67 +399,91 @@ text directly, one at a time.
      Earthquake's own ``tax_modifier_percent`` which is explicitly "not
      cumulative"). No terrain restriction and no skill-level scaling --
      the text gives neither, unlike Tornado's per-level destroy chance.
-  2. **"When the tax base reaches 0 gold" is a real, sourced trigger
-     this project genuinely cannot fire from real state yet.** This
-     project has no tax/revenue-collection system anywhere (same gap
-     ``ProvinceState.tax_modifier_percent``'s own docstring already
-     flags) -- no province anywhere carries a real starting gold-value
-     tax base to subtract ``scar_terrain_gold_reduction`` from, so
-     there is no way to know from real ``GameState`` data whether any
-     given province's tax base has actually reached zero.
-     ``scar_terrain_is_exhausted(remaining_tax_base)`` models the
-     *check itself* as a pure function (the same "caller supplies the
-     otherwise-unavailable precondition" pattern ``turn/encounter.py``
-     uses throughout, e.g. Ice Suspension's own ``victim_hit_points``
-     parameter) so a future revenue-system phase can call it directly
-     once a real remaining-tax-base value exists -- **not auto-invoked
-     inside ``_execute_scar_terrain`` itself**, since nothing in this
-     project can supply that value today.
-  3. **The collapse effect itself is modeled as a second pure
-     function, ``scar_terrain_collapse``, deliberately not
-     auto-triggered for the same reason.** Sea provinces ("will just
-     lose whatever provincial racial and army type they may have")
-     unconditionally become ``Race.NO_RACE`` -- the enum's own
-     dedicated "no race" member, confirmed to already suppress every
-     ``ArmyType``'s recruit-compatibility check (``turn/recruit.py
-     is_army_type_compatible_with_race`` returns ``False`` for every
-     ``ArmyType`` against a province race that's neither in
-     ``HUMANOID_RACES`` nor a ``MONSTROUS_ARMY_RACE`` key), so no
-     separate "clear the province's army type" state is needed at all.
-     Land provinces need a caller-chosen ``new_land_race`` from
-     ``SCAR_TERRAIN_LAND_COLLAPSE_RACES`` (``Race.ORCISH``,
-     ``Race.DRAGONS``, ``Race.TROLLISH``) -- **which of the three is
-     genuinely unspecified**: "usually by immigration from an adjacent
-     province" describes an external, caller-known fact (what races
-     border this province), not a formula this function can compute
-     from the province alone, so the choice is left to the caller
-     rather than guessed (e.g. via ``rng.choice``, which the text never
-     suggests). **"The army type will change to something suitable to
-     the new racial type" needs no new state either**, for Dragons and
-     Trolls specifically: ``models/army_type.py MONSTROUS_ARMY_RACE``
-     already maps ``Race.DRAGONS``/``Race.TROLLISH`` to exactly one
-     compatible ``ArmyType`` each (``DRAGON_WING``/``TROLLS``) via the
-     same recruit-compatibility check above -- changing
-     ``ProvinceState.race`` alone is sufficient, the existing recruit
-     machinery reflects the new eligibility automatically. Orcish has
-     no such single dedicated ``ArmyType`` (it's a ``HUMANOID_RACES``
-     member, compatible with every non-monstrous type at once) -- "the"
-     suitable army type for an Orc collapse is left unresolved, a
-     genuine gap with no formula given, not silently guessed.
-  4. **Phase 411 addendum -- the bystander report notice for this
-     collapse was investigated and confirmed permanently unreachable,
-     not merely unwired.** ``SAY.PAS`` ``_STZero``/``_STFite`` (~747-748)
-     are real, fully-sourced inline ``Say()`` strings (no missing
-     ``PROSE/*.X2`` file) for GENERAL INTELLIGENCE REPORT's own
-     bystander view of a collapsed province -- but since ``scar_terrain_
-     collapse()`` above is never called from any real dispatch path (the
-     same tax-base precondition this addendum's own point 2 already
-     established this project can't check), no ``report/turn_report.py``
-     world-events recorder has anything to call it from. Wiring the
-     notice itself would be trivial; the blocker is entirely upstream,
-     in the missing tax/revenue system. See ``report/turn_report.py
+  2. **Phase 721 -- "when the tax base reaches 0 gold" is now real,
+     fully resolved, and wired.** This paragraph used to say this
+     project has no tax/revenue-collection system, blocking the check
+     -- stale since Phase 412 (`turn/tax_base.py`) the very next phase,
+     never corrected. Closed for real by ``Desktop/SCAR.md`` (user-
+     supplied, 2026-09-02, a disassembly-level report of ``AK.EXE``/
+     ``AK.OVR`` with a validated Python reference implementation),
+     which gives the complete, real algorithm the earlier note assumed
+     unrecoverable. Checked immediately at cast-success time (the
+     compiled routine does ``ptax[x,y] := Max(0,ptax[x,y]-2)`` then the
+     zero-check back-to-back, not deferred to any per-turn sweep): if
+     ``province.tax`` is known, ``scar_terrain_is_exhausted(max(0,
+     province.tax - province.scar_terrain_gold_reduction))`` (deliberately
+     excluding ``mine_gold_bonus`` -- the real ``ptax`` mutation has no
+     mine interaction at all; that combination is ``turn/tax_base.py
+     province_tax_yield()``'s own separate, later design choice for the
+     *displayed yield*, not part of the real exhaustion trigger) decides
+     whether ``apply_scar_terrain_collapse()`` runs. A province never
+     bridged from a real world file (``tax is None``) never collapses --
+     the same "no data isn't a true zero" stance ``province_tax_yield()``
+     itself already takes.
+
+     **Real, load-bearing correction from SCAR.md, not assumed**: the
+     real trigger is "tax after this cast = 0," not "tax was positive
+     and just became 0" -- a successful cast on an *already*-exhausted
+     province re-runs the *entire* repopulation roll again, discarding
+     whatever race/recruits are already there (SCAR.md's own explicit
+     correction #1, its own worked test case). No "already collapsed"
+     guard exists anywhere in this mechanic, deliberately.
+  3. **The collapse effect, `apply_scar_terrain_collapse()`, implements
+     SCAR.md's own full algorithm (sections 1/6/7/8) -- replacing the
+     old `scar_terrain_collapse()` stub entirely**, whose own caller-
+     supplied-``new_land_race`` shape never matched the real mechanic:
+     the real routine determines the race *itself*. Always resets
+     ``race``/``recruit_type_1``/``recruit_type_2`` to ``Race.NO_RACE``/
+     ``None``/``None`` first (SCAR.md correction #2 -- unconditional,
+     before the sea/island check). A true Sea province (``effective_
+     terrain() is Terrain.SEA`` -- this alone already correctly excludes
+     exactly SCAR.md's own "Sea *without* island" case, since an Island
+     province's own ``effective_terrain()`` already returns its *land*
+     half per ``ProvinceState.is_island``'s own docstring, needing no
+     separate check) stops here, staying ``NO_RACE``/no recruits. A
+     land or Island province instead makes up to ``SCAR_TERRAIN_
+     IMMIGRATION_ATTEMPTS`` (10) real neighbor rolls via the dedicated
+     ``_scar_terrain_step_hex()`` helper (SCAR.md section 7.2's own
+     validated dice-direction table -- deliberately *not* a reuse of
+     `turn/movement.py neighbors()`, which was independently verified
+     against real GW3 samples for a *different* compiled routine using
+     the *opposite* y-parity convention for the identical six offset
+     vectors; mixing the two would silently apply the wrong parity here).
+     The first neighbor whose own real ``race`` is already Orcish/
+     Dragons/Trollish (``SCAR_TERRAIN_LAND_COLLAPSE_RACES``) donates its
+     ``race``/``recruit_type_1``/``recruit_type_2`` verbatim, even a
+     duplicate or ``None`` pair (SCAR.md correction #4 -- no
+     "regenerate from a compatibility table" substitute). Ten failed
+     attempts fall back to ``_resolve_scar_terrain_fallback()``'s own
+     real dice table (1-4 Orcish with a real ``army(3+b-a)`` recruit-type
+     arithmetic and an independent Warg Riders coin, 5 Dragons, 6
+     Trolls) -- SCAR.md section 8, transcribed exactly, including the
+     coin-role warning in its own section 8.1.
+  4. **The bystander report notice for this collapse (`SAY.PAS`
+     `_STZero`/`_STFite`) is real, sourced, and now mechanically
+     reachable -- narration wiring is Phase 722, the immediate next
+     phase**, not attempted here (matching this project's own
+     established "mechanic now, narration as a short, separate
+     follow-up" pattern). See ``report/turn_report.py
      describe_general_intelligence_report()``'s own docstring for the
-     full citation.
+     current citation, corrected fully once Phase 722 lands.
+
+     **Two further real SCAR.md findings, deliberately flagged, not
+     acted on here**: (a) SCAR.md's own section 5.3 describes True
+     Cross's real halving as a 50% cancellation coin-flip *then* the
+     full roll, not naive ``chance / 2`` arithmetic -- this project's
+     existing ``turn/discovery_effects.py province_halves_spell_
+     chance()`` (Phase 533) does apply a flat multiplier, but that
+     function is generic across all 5 protection amulets/colleges, not
+     Necromancy-specific, so fixing it is a separate, broader
+     investigation, not attempted here. (b) SCAR.md independently finds
+     a real, compiled ``pt2``/secondary-terrain field (``AK.EXE
+     DS:935D``) with the identical "half-Sea, half-land" shape this
+     project's own ``ProvinceState.is_island`` already models -- that
+     field's own docstring currently calls it "project-original, not a
+     recovered value," which this finding may make stale, but confirming
+     the two are really the same compiled field needs its own dedicated
+     investigation, not chased here.
 
 - **Mystic Winds** (``AdvancedAbility.MYSTIC_WINDS_SPELL``,
   ``Ability.ELEMENTAL``, Phase 204) -- the user's own quoted rule text
@@ -871,10 +895,22 @@ PROPAGANDA_MEGAPHONES_AFFECTED_CHANCE = 0.33
 # from Earthquake's own (not-cumulative) tax_modifier_percent.
 SCAR_TERRAIN_TAX_REDUCTION = 2
 
-# "the racial type will change to Orcs, Dragons or Trolls" -- which of
-# the three is left to the caller (see module docstring); this is only
-# the reference set of valid choices.
+# "the racial type will change to Orcs, Dragons or Trolls" -- the real
+# eligible-donor/fallback race set, SCAR.md sections 1/6/8.
 SCAR_TERRAIN_LAND_COLLAPSE_RACES = (Race.ORCISH, Race.DRAGONS, Race.TROLLISH)
+
+# SCAR.md section 7: up to 10 random-direction immigration attempts
+# before falling back to the dice table (section 8).
+SCAR_TERRAIN_IMMIGRATION_ATTEMPTS = 10
+
+# SCAR.md section 8: the real `army(3+b-a)` arithmetic for an Orcish
+# fallback's own recruit_type_1 -- `a` is the first coin (subtracted),
+# `b` the second (added), per that section's own worked table.
+_SCAR_TERRAIN_ORC_ARMY_BY_ORDINAL_OFFSET: dict[int, ArmyType] = {
+    2: ArmyType.AXEMEN,
+    3: ArmyType.PHALANX,
+    4: ArmyType.LEGION,
+}
 
 # "NUOVE REGOLE E MODIFICHE": "L'incantesimo Benedizione (Bless) ora rimuove
 # le unita' morte in una provincia. La probabilita' e' del 10% + 10% per
@@ -2676,9 +2712,9 @@ def _execute_scar_terrain(
     """"a co-located or adjacent province is scarred and mangled, and its tax base
     is reduced by 2 gold immediately and permanently." See module
     docstring's own Scar Terrain addendum for the full quoted rule text
-    and why the "tax base reaches 0" collapse (``scar_terrain_is_
-    exhausted``/``scar_terrain_collapse`` below) is deliberately not
-    triggered from here.
+    and the real, SCAR.md-sourced "tax base reaches 0" collapse
+    (``scar_terrain_is_exhausted``/``apply_scar_terrain_collapse``
+    below), triggered immediately on a successful cast, Phase 721.
     """
 
     caster = state.leaders[leader_id]
@@ -2694,49 +2730,139 @@ def _execute_scar_terrain(
         return CastExecutionResult(request, applied=False, reason=reason)
 
     province.scar_terrain_gold_reduction += SCAR_TERRAIN_TAX_REDUCTION
+    if province.tax is not None:
+        remaining = max(0, province.tax - province.scar_terrain_gold_reduction)
+        if scar_terrain_is_exhausted(remaining):
+            apply_scar_terrain_collapse(state, _coord, board_width, rng)
     return CastExecutionResult(request, applied=True)
 
 
 def scar_terrain_is_exhausted(remaining_tax_base: int) -> bool:
     """"When the tax base reaches 0 gold, the province becomes incapable of
-    supporting normal life forms." True once the remaining tax base
-    (caller-supplied -- this project has no revenue system tracking a
-    real starting value yet, see module docstring) is at or below zero.
+    supporting normal life forms." True once the remaining tax base is
+    at or below zero.
     """
 
     return remaining_tax_base <= 0
 
 
-def scar_terrain_collapse(province: ProvinceState, *, new_land_race: Race | None = None) -> None:
-    """Applies Scar Terrain's own tax-exhaustion collapse to ``province``, once a
-    future revenue-system phase determines ``scar_terrain_is_exhausted``
-    is True (never called automatically by this module -- see its own
-    docstring).
+def _scar_terrain_step_hex(coord: HexCoord, direction: int, board_width: int, board_height: int) -> HexCoord | None:
+    """``AK.EXE:0x41786`` ``StepHex`` -- SCAR.md section 7.2, ported
+    directly from that report's own validated ``adjacent()`` reference
+    (section 14). ``direction`` is a real ``Rand6`` roll, 1-6.
+    Deliberately **not** ``turn/movement.py neighbors()`` -- that
+    function was independently verified against real GW3 provinces for
+    a *different* compiled routine, and (checked value-by-value) uses
+    the *opposite* y-parity convention for the same six offset vectors;
+    reusing it here would silently apply the wrong parity for this one
+    specific mechanic.
 
-    A Sea province ("will just lose whatever provincial racial and army
-    type they may have") unconditionally becomes ``Race.NO_RACE`` -- no
-    ``ArmyType`` is compatible with it (``turn/recruit.py
-    is_army_type_compatible_with_race`` returns False for every type
-    against a race that's neither in ``HUMANOID_RACES`` nor a
-    ``MONSTROUS_ARMY_RACE`` key), so nothing else needs clearing.
-
-    A land province needs ``new_land_race`` from ``SCAR_TERRAIN_LAND_
-    COLLAPSE_RACES`` -- which of the three ("usually by immigration from
-    an adjacent province") is the caller's own decision, not something
-    this function can determine from the province alone; raises
-    ``ValueError`` if omitted or invalid, rather than silently guessing.
-    Changing ``province.race`` alone is sufficient for Dragons/Trolls to
-    become the only recruitable ``ArmyType`` there too (``models/
-    army_type.py MONSTROUS_ARMY_RACE`` already ties each to exactly one
-    type) -- see module docstring for why Orcish has no single such type.
+    Horizontal wraparound is unconditional (no ``Europe_V``/`gametyp``
+    exception in this specific compiled routine, per SCAR.md's own
+    explicit note). A step off the vertical board edge returns ``None``
+    -- the caller still counts this as one of the ten consumed
+    immigration attempts, it is not a free retry.
     """
 
+    odd = coord.y & 1
+    dx, dy = {
+        1: (odd, -1),
+        2: (1, 0),
+        3: (odd, 1),
+        4: (odd - 1, 1),
+        5: (-1, 0),
+        6: (odd - 1, -1),
+    }[direction]
+    nx, ny = coord.x + dx, coord.y + dy
+    if nx == -1:
+        nx = board_width - 1
+    elif nx == board_width:
+        nx = 0
+    if ny < 0 or ny >= board_height:
+        return None
+    return HexCoord(nx, ny)
+
+
+def _resolve_scar_terrain_fallback(rng: random.Random) -> tuple[Race, ArmyType | None, ArmyType | None]:
+    """SCAR.md section 8's own real dice-fallback table, used once all
+    ``SCAR_TERRAIN_IMMIGRATION_ATTEMPTS`` neighbor rolls fail to find a
+    real Orcish/Dragons/Trollish donor. ``1+Trunc(Random*6)`` for the
+    die, ``Trunc(Random*2)`` for each coin -- this project's own
+    established "ordinary ``random.Random`` reduction matching the
+    Pascal formula's statistical shape" convention, not ``randrange``.
+
+    Section 8.1's own warning: the first coin (``a``) is *subtracted*,
+    the second (``b``) is *added* (``army(3+b-a)``) -- do not swap their
+    roles, the distribution stays the same but the result for a given
+    scripted RNG sequence would not.
+    """
+
+    d = 1 + int(rng.random() * 6)
+    if d <= 4:
+        a = int(rng.random() * 2)
+        b = int(rng.random() * 2)
+        c = int(rng.random() * 2)
+        recruit_1 = _SCAR_TERRAIN_ORC_ARMY_BY_ORDINAL_OFFSET[3 + b - a]
+        recruit_2 = ArmyType.WARG_RIDERS if c == 0 else None
+        return Race.ORCISH, recruit_1, recruit_2
+    if d == 5:
+        return Race.DRAGONS, ArmyType.DRAGON_WING, None
+    return Race.TROLLISH, ArmyType.TROLLS, None
+
+
+def apply_scar_terrain_collapse(state: GameState, coord: HexCoord, board_width: int, rng: random.Random) -> None:
+    """Applies Scar Terrain's own real tax-exhaustion collapse to the
+    province at ``coord`` -- SCAR.md sections 1/6/7/8, replacing the
+    earlier ``scar_terrain_collapse()`` stub entirely (that stub's own
+    caller-supplied ``new_land_race`` shape never matched the real
+    mechanic, which determines the race itself).
+
+    Always resets ``race``/``recruit_type_1``/``recruit_type_2`` to
+    ``Race.NO_RACE``/``None``/``None`` first, unconditionally, before
+    the sea/island check (SCAR.md correction #2) -- called again on an
+    already-exhausted province (e.g. by a second successful cast) this
+    still re-rolls a fresh outcome, discarding whatever was there
+    before; there is no "already collapsed" guard anywhere in this
+    mechanic (SCAR.md correction #1, its own worked test case).
+
+    A true Sea province (``effective_terrain() is Terrain.SEA``) stops
+    here, staying ``NO_RACE``/no recruits -- this alone already
+    correctly excludes exactly SCAR.md's own "Sea *without* island"
+    case, since an Island province's own ``effective_terrain()``
+    already returns its *land* half (``ProvinceState.is_island``'s own
+    docstring), needing no separate check.
+
+    Otherwise, up to ``SCAR_TERRAIN_IMMIGRATION_ATTEMPTS`` real neighbor
+    rolls (``_scar_terrain_step_hex()``): the first neighbor with real
+    province data whose own ``race`` is already in ``SCAR_TERRAIN_LAND_
+    COLLAPSE_RACES`` donates its ``race``/``recruit_type_1``/
+    ``recruit_type_2`` verbatim -- even a duplicate or ``None`` pair
+    (SCAR.md correction #4, no "regenerate from a compatibility table"
+    substitute). A coordinate with no real province data, or one that
+    steps off the vertical board edge, still consumes one of the ten
+    attempts (SCAR.md section 7.1/7.2). Ten failed attempts fall back to
+    ``_resolve_scar_terrain_fallback()``.
+    """
+
+    province = state.provinces[coord]
+    province.race = Race.NO_RACE
+    province.recruit_type_1 = None
+    province.recruit_type_2 = None
     if province.effective_terrain() is Terrain.SEA:
-        province.race = Race.NO_RACE
         return
-    if new_land_race not in SCAR_TERRAIN_LAND_COLLAPSE_RACES:
-        raise ValueError(f"new_land_race must be one of {SCAR_TERRAIN_LAND_COLLAPSE_RACES}, got {new_land_race!r}")
-    province.race = new_land_race
+
+    board_height = NORMAL_MAP_BOUNDS[1]
+    for _attempt in range(SCAR_TERRAIN_IMMIGRATION_ATTEMPTS):
+        direction = 1 + int(rng.random() * 6)
+        donor_coord = _scar_terrain_step_hex(coord, direction, board_width, board_height)
+        donor = state.provinces.get(donor_coord) if donor_coord is not None else None
+        if donor is not None and donor.race in SCAR_TERRAIN_LAND_COLLAPSE_RACES:
+            province.race = donor.race
+            province.recruit_type_1 = donor.recruit_type_1
+            province.recruit_type_2 = donor.recruit_type_2
+            return
+
+    province.race, province.recruit_type_1, province.recruit_type_2 = _resolve_scar_terrain_fallback(rng)
 
 
 def _execute_skeletal_army(

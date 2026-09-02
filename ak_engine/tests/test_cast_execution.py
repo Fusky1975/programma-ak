@@ -36,15 +36,17 @@ from ak_engine.turn.cast_execution import (
     _apply_undead_king_alignment_conversion,
     _caster_holds_places_bonus,
     _kill_enemy_combatant,
+    _resolve_scar_terrain_fallback,
+    _scar_terrain_step_hex,
     _total_usable_skill,
     action_cast_slots,
     apply_plague_exposure,
+    apply_scar_terrain_collapse,
     execute_cast,
     illusory_fog_strength,
     is_illusory_fog_affected_air_unit,
     is_unfinalized_royal_heir,
     locate_object,
-    scar_terrain_collapse,
     scar_terrain_is_exhausted,
 )
 from ak_engine.turn.combat import Quality
@@ -3027,31 +3029,197 @@ def test_scar_terrain_is_exhausted_at_or_below_zero():
     assert scar_terrain_is_exhausted(1) is False
 
 
-def test_scar_terrain_collapse_sea_province_becomes_no_race():
-    province = ProvinceState(LOCATION, Terrain.SEA, Race.MERMISH)
+# ---------------------------------------------------------------------------
+# Scar Terrain's real collapse algorithm (Phase 721, user-supplied SCAR.md)
+# ---------------------------------------------------------------------------
 
-    scar_terrain_collapse(province)
 
+def test_scar_terrain_step_hex_worked_examples_from_scar_md():
+    # SCAR.md section 14's own validated adjacent() test vectors.
+    assert _scar_terrain_step_hex(HexCoord(2, 2), 1, 5, 5) == HexCoord(2, 1)
+    assert _scar_terrain_step_hex(HexCoord(2, 3), 1, 5, 5) == HexCoord(3, 2)
+    assert _scar_terrain_step_hex(HexCoord(0, 2), 5, 5, 5) == HexCoord(4, 2)  # west wraps
+    assert _scar_terrain_step_hex(HexCoord(4, 2), 2, 5, 5) == HexCoord(0, 2)  # east wraps
+    assert _scar_terrain_step_hex(HexCoord(2, 0), 1, 5, 5) is None  # off the top edge
+
+
+def test_resolve_scar_terrain_fallback_matches_scar_md_worked_examples():
+    # "Fallback Orcs | dado 1, monete a=1,b=0,c=0 -> Orcish, Axemen/Wargriders"
+    rng = ScriptedRandom([0.1, 0.5, 0.0, 0.0])
+    assert _resolve_scar_terrain_fallback(rng) == (Race.ORCISH, ArmyType.AXEMEN, ArmyType.WARG_RIDERS)
+
+    # "Fallback Orcs | dado 4, monete a=0,b=1,c=1 -> Orcish, Legion/noarmy"
+    rng = ScriptedRandom([0.55, 0.0, 0.9, 0.9])
+    assert _resolve_scar_terrain_fallback(rng) == (Race.ORCISH, ArmyType.LEGION, None)
+
+    rng = ScriptedRandom([0.7])  # d=5
+    assert _resolve_scar_terrain_fallback(rng) == (Race.DRAGONS, ArmyType.DRAGON_WING, None)
+
+    rng = ScriptedRandom([0.9])  # d=6
+    assert _resolve_scar_terrain_fallback(rng) == (Race.TROLLISH, ArmyType.TROLLS, None)
+
+
+def test_apply_scar_terrain_collapse_sea_without_island_stays_no_race():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.SEA, Race.MERMISH, recruit_type_1=ArmyType.MERMEN))
+
+    apply_scar_terrain_collapse(state, LOCATION, BOARD_WIDTH, ScriptedRandom([]))
+
+    province = state.provinces[LOCATION]
     assert province.race is Race.NO_RACE
+    assert province.recruit_type_1 is None
+    assert province.recruit_type_2 is None
 
 
-def test_scar_terrain_collapse_land_province_uses_the_callers_chosen_race():
-    province = ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN)
+def test_apply_scar_terrain_collapse_copies_a_donor_found_on_the_first_attempt():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.add_province(
+        ProvinceState(
+            HexCoord(2, 1), Terrain.PLAINS, Race.DRAGONS, recruit_type_1=ArmyType.DRAGON_WING, recruit_type_2=None
+        )
+    )
+    coord = HexCoord(2, 2)
+    state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN))
 
-    scar_terrain_collapse(province, new_land_race=Race.TROLLISH)
+    apply_scar_terrain_collapse(state, coord, BOARD_WIDTH, ScriptedRandom([0.0]))  # direction 1 (NE) -> (2, 1)
 
+    province = state.provinces[coord]
+    assert province.race is Race.DRAGONS
+    assert province.recruit_type_1 is ArmyType.DRAGON_WING
+    assert province.recruit_type_2 is None
+
+
+def test_apply_scar_terrain_collapse_copies_a_donors_duplicate_recruit_types_verbatim():
+    state = build_state()
+    donor = HexCoord(2, 1)
+    state.add_province(
+        ProvinceState(donor, Terrain.PLAINS, Race.ORCISH, recruit_type_1=ArmyType.PHALANX, recruit_type_2=ArmyType.PHALANX)
+    )
+    coord = HexCoord(2, 2)
+    state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN))
+
+    apply_scar_terrain_collapse(state, coord, BOARD_WIDTH, ScriptedRandom([0.0]))
+
+    province = state.provinces[coord]
+    assert province.race is Race.ORCISH
+    assert province.recruit_type_1 is ArmyType.PHALANX
+    assert province.recruit_type_2 is ArmyType.PHALANX
+
+
+def test_apply_scar_terrain_collapse_finds_a_donor_on_the_tenth_attempt():
+    state = build_state()
+    coord = HexCoord(2, 2)
+    state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN))
+    # Direction 2 (E) from (2, 2) is (3, 2) -- never added, so every one of
+    # the first 9 attempts fails (no real province data there). Direction 1
+    # (NE) on the 10th attempt reaches a real Trollish donor at (2, 1).
+    state.add_province(
+        ProvinceState(HexCoord(2, 1), Terrain.PLAINS, Race.TROLLISH, recruit_type_1=ArmyType.TROLLS, recruit_type_2=None)
+    )
+    rng = ScriptedRandom([0.2] * 9 + [0.0])  # d=2 nine times, then d=1
+
+    apply_scar_terrain_collapse(state, coord, BOARD_WIDTH, rng)
+
+    province = state.provinces[coord]
     assert province.race is Race.TROLLISH
-    assert Race.TROLLISH in SCAR_TERRAIN_LAND_COLLAPSE_RACES
+    assert province.recruit_type_1 is ArmyType.TROLLS
 
 
-def test_scar_terrain_collapse_land_province_requires_a_valid_race():
-    province = ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN)
+def test_apply_scar_terrain_collapse_falls_back_to_the_dice_table_after_ten_failures():
+    state = build_state()
+    coord = HexCoord(2, 2)
+    state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN))
+    # All ten immigration attempts point at (3, 2), which has no real
+    # province data, so every one fails; the dice fallback then rolls d=5.
+    rng = ScriptedRandom([0.2] * 10 + [0.7])
 
-    with pytest.raises(ValueError):
-        scar_terrain_collapse(province)
+    apply_scar_terrain_collapse(state, coord, BOARD_WIDTH, rng)
 
-    with pytest.raises(ValueError):
-        scar_terrain_collapse(province, new_land_race=Race.HUMAN)
+    province = state.provinces[coord]
+    assert province.race is Race.DRAGONS
+    assert province.recruit_type_1 is ArmyType.DRAGON_WING
+    assert province.recruit_type_2 is None
+
+
+def test_apply_scar_terrain_collapse_a_vertical_edge_step_still_consumes_an_attempt():
+    state = build_state()
+    coord = HexCoord(2, 0)  # top edge -- direction 1 (NE) always steps off-board here
+    state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN))
+    rng = ScriptedRandom([0.0] * 10 + [0.9])  # ten off-board attempts, then dice fallback d=6
+
+    apply_scar_terrain_collapse(state, coord, BOARD_WIDTH, rng)
+
+    assert state.provinces[coord].race is Race.TROLLISH
+
+
+def test_apply_scar_terrain_collapse_re_rolls_an_already_exhausted_province():
+    # SCAR.md's own explicit correction: a province already collapsed
+    # (race already Trollish here) still gets a completely fresh roll,
+    # discarding the old outcome -- no "already collapsed" guard exists.
+    state = build_state()
+    coord = HexCoord(2, 2)
+    state.add_province(
+        ProvinceState(coord, Terrain.PLAINS, Race.TROLLISH, recruit_type_1=ArmyType.TROLLS, recruit_type_2=None)
+    )
+    rng = ScriptedRandom([0.2] * 10 + [0.7])  # ten failures, dice fallback d=5
+
+    apply_scar_terrain_collapse(state, coord, BOARD_WIDTH, rng)
+
+    assert state.provinces[coord].race is Race.DRAGONS
+
+
+def test_execute_scar_terrain_collapses_when_tax_reaches_exactly_zero():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.SEA, Race.MERMISH, tax=2, recruit_type_1=ArmyType.MERMEN))
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([]))
+
+    assert result.applied is True
+    province = state.provinces[LOCATION]
+    assert province.scar_terrain_gold_reduction == 2
+    assert province.race is Race.NO_RACE
+    assert province.recruit_type_1 is None
+
+
+def test_execute_scar_terrain_does_not_collapse_while_tax_remains_positive():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, tax=7))
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=_target(LOCATION))
+
+    with patch("ak_engine.turn.cast_execution.apply_scar_terrain_collapse") as mock_collapse:
+        result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].race is Race.HUMAN
+    assert not mock_collapse.called
+
+
+def test_execute_scar_terrain_never_collapses_a_province_with_unknown_tax():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))  # tax defaults to None
+
+    with patch("ak_engine.turn.cast_execution.apply_scar_terrain_collapse") as mock_collapse:
+        for _ in range(5):  # enough casts to exhaust any real tax base, if one existed
+            execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.SCAR_TERRAIN, target=_target(LOCATION)))
+
+    assert state.provinces[LOCATION].race is Race.HUMAN
+    assert not mock_collapse.called
+
+
+def test_execute_scar_terrain_recollapses_an_already_exhausted_province():
+    state = build_state()
+    state.add_province(
+        ProvinceState(LOCATION, Terrain.PLAINS, Race.TROLLISH, tax=0, recruit_type_1=ArmyType.TROLLS)
+    )
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=_target(LOCATION))
+    rng = ScriptedRandom([0.2] * 10 + [0.7])  # ten failures, dice fallback d=5
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].race is Race.DRAGONS
 
 
 # ---------------------------------------------------------------------------

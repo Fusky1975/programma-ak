@@ -29840,7 +29840,7 @@ follow-up request after the original 431-435 plan shipped.
   own convention. Test count: 6138 -> 6145 (net +7). Full suite
   verified green (unchanged, 6138) before writing a single new test.
 
-- **Phase 720 (current)**: Naval Hug Coastline, capacity-aware --
+- **Phase 720**: Naval Hug Coastline, capacity-aware --
   the nineteenth survey's last candidate. `turn/move_execution.py
   _naval_hug_coastline_move_is_legal()`'s own docstring already flagged
   a real gap: the coastal shortcut was denied outright to the whole
@@ -29872,6 +29872,58 @@ follow-up request after the original 431-435 plan shipped.
   green (unchanged, 6145) before writing a single new test. This
   closes the entire nineteenth fresh codebase survey
   ([[project_nineteenth_survey_2026_09_02]]) -- all 3 candidates done.
+
+- **Phase 721 (current)**: Scar Terrain's real tax-exhaustion collapse
+  mechanic -- the twentieth survey's own only candidate
+  ([[project_twentieth_survey_2026_09_02]]). `turn/cast_execution.py
+  scar_terrain_is_exhausted()`/`scar_terrain_collapse()` (Phase 201)
+  were built, tested, and never called -- blocked on a stale Phase 411
+  docstring claim ("this project has no tax/revenue-collection system")
+  that Phase 412 (`turn/tax_base.py`) closed the very next phase
+  without anyone circling back. The user supplied `Desktop/SCAR.md`
+  mid-design, a disassembly-level report of `AK.EXE`/`AK.OVR` with a
+  validated Python reference implementation, resolving the collapse
+  algorithm completely -- far more precisely than the original "look
+  at neighbors, else random" framing this session started from, and
+  correcting several real, load-bearing assumptions: no "already
+  collapsed" guard exists (a successful cast on an already-exhausted
+  province re-runs the entire repopulation roll again, discarding
+  whatever's there); the check fires immediately at cast-success time,
+  not from a per-turn sweep (sidestepping a real bug the original
+  "hook into `apply_turn_revenue()`" idea would have had -- that
+  function only iterates each kingdom's own *owned* provinces, so an
+  unowned/neutral scarred province would never be checked at all); this
+  project already had the exact fields the real mechanic needs
+  (`ProvinceState.recruit_type_1`/`recruit_type_2` are the real
+  `pat[x,y,0]`/`pat[x,y,1]` pair, and `effective_terrain()` already
+  correctly distinguishes an Island province from a true Sea province
+  with zero extra code, since an Island's own `effective_terrain()`
+  already returns its land half). New `apply_scar_terrain_collapse()`
+  replaces the old `scar_terrain_collapse()` stub entirely, with a
+  dedicated `_scar_terrain_step_hex()` helper ported directly from
+  SCAR.md's own validated reference -- deliberately *not* a reuse of
+  `turn/movement.py neighbors()`, which was independently verified
+  against real GW3 samples for a *different* compiled routine using the
+  *opposite* y-parity convention for the same six offset vectors (the
+  exact "offset-vs-polarity" trap this project's own memory already
+  warns about). Two further real SCAR.md findings are flagged, not
+  acted on this phase: `turn/discovery_effects.py province_halves_
+  spell_chance()` (Phase 533) applies a naive `chance / 2` for True
+  Cross's own halving, where SCAR.md's own section 5.3 describes a real
+  50%-cancellation-coin-flip-then-full-roll mechanism instead -- but
+  that function is generic across all 5 protection amulets/colleges,
+  so fixing it needs its own broader investigation; and SCAR.md
+  independently finds a real, compiled `pt2`/secondary-terrain field
+  with the identical "half-Sea, half-land" shape `ProvinceState.
+  is_island` already models, which may make that field's own
+  "project-original, not a recovered value" docstring claim stale too,
+  but confirming the two are really the same compiled field needs its
+  own dedicated investigation. Test count: 6147 -> 6157 (net +10, plus
+  3 stale collapse-stub tests replaced). Full suite verified green
+  (unchanged, 6147) before writing a single new test; every new test
+  passed on the first run. **Narration for the now-mechanically-real
+  `_STZero`/`_STFite` bystander notices (SCAR.md section 10.2 fully
+  recovers the literal text) is Phase 722, the immediate next phase.**
 
 ## Setup
 

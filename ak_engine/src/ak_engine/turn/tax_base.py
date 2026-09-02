@@ -123,6 +123,18 @@ le entrate riscosse in quel turno... non cambia `ptax`") -- so every
 other consumer (FINANCES' own "Expected Revenues" line, the PROVINCES
 report's Tax column, ASpy's estimate) keeps showing the pre-raid
 *expected* figure unchanged.
+
+**Phase 721 -- Scar Terrain's own tax-exhaustion collapse is checked at
+cast-time, not from `apply_turn_revenue()` here.** `turn/cast_
+execution.py apply_scar_terrain_collapse()` (user-supplied `Desktop/
+SCAR.md`) fires immediately inside `_execute_scar_terrain()`'s own
+success branch, not from this module's per-turn loop -- deliberately:
+this loop only iterates each kingdom's own *owned* provinces, so an
+unowned/neutral scarred province would never be checked here at all.
+`province_tax_yield()`'s own `scar_terrain_gold_reduction` subtraction
+above is unaffected either way -- it already correctly reflects
+whatever the collapse mechanic leaves `ProvinceState.tax` implying,
+regardless of when the exhaustion check itself runs.
 """
 
 from __future__ import annotations
