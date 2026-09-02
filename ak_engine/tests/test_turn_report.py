@@ -130,6 +130,9 @@ from ak_engine.report.turn_report import (
     render_fly_move_world_event,
     render_illus_terrain_world_event,
     render_plague_world_event,
+    render_scar_terrain_cast_notice,
+    render_scar_terrain_fite,
+    render_scar_terrain_zero,
     render_wind_walk_move_world_event,
     render_already_allied,
     render_ally_proposed,
@@ -10723,6 +10726,162 @@ def test_record_spell_world_events_still_skips_tornado():
     record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
 
     assert state.world_events == []
+
+
+# -- Phase 722: render_scar_terrain_cast_notice() / render_scar_terrain_zero() /
+# render_scar_terrain_fite() / record_spell_world_events() (Scar Terrain) --
+
+
+def test_render_scar_terrain_cast_notice_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    assert render_scar_terrain_cast_notice("Border Fort", rng) == (
+        "Border Fort was scarred by pestilence and polluting toxins, "
+        "drastically driving down its taxable income."
+    )
+
+
+def test_render_scar_terrain_cast_notice_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    assert render_scar_terrain_cast_notice("Border Fort", rng) == (
+        "Border Fort was scarred and blighted by locust swarms and evil magic toxins, "
+        "inevitably reducing its property values and tax base."
+    )
+
+
+def test_render_scar_terrain_zero_land():
+    rng = ScriptedRandom([])
+    assert render_scar_terrain_zero("Border Fort", is_sea=False, rng=rng) == (
+        "Border Fort was magically changed into a wasteland, and its inhabitants all died or wandered away."
+    )
+
+
+def test_render_scar_terrain_zero_sea():
+    rng = ScriptedRandom([])
+    assert render_scar_terrain_zero("Border Fort", is_sea=True, rng=rng) == (
+        "Border Fort was magically changed into a polluted sea, and its inhabitants all died or wandered away."
+    )
+
+
+def test_render_scar_terrain_fite():
+    rng = ScriptedRandom([])
+    assert render_scar_terrain_fite("Orcish", "Phalanx", rng) == (
+        "A wandering tribe of Orcish, who fight as Phalanx, settled there, adapting themselves to the scarred terrain."
+    )
+
+
+def test_record_spell_world_events_scar_terrain_no_collapse_records_only_the_cast_notice():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=encode_hex_number(battle_coord, board_width))
+    result = CastExecutionResult(request, applied=True, scar_terrain_collapsed=False)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([0.1] * 10), board_width=board_width)
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].lines == [
+        "In spring, Border Fort was scarred by pestilence and polluting toxins, "
+        "drastically driving down its taxable income."
+    ]
+
+
+def test_record_spell_world_events_scar_terrain_sea_collapse_has_no_fite_lines():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    province = state.provinces[battle_coord]
+    province.terrain = Terrain.SEA
+    province.race = Race.NO_RACE
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=encode_hex_number(battle_coord, board_width))
+    result = CastExecutionResult(request, applied=True, scar_terrain_collapsed=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([0.1] * 10), board_width=board_width)
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].lines == [
+        "In spring, Border Fort was scarred by pestilence and polluting toxins, "
+        "drastically driving down its taxable income.",
+        "In spring, Border Fort was magically changed into a polluted sea, and its inhabitants all died or wandered away.",
+    ]
+
+
+def test_record_spell_world_events_scar_terrain_land_collapse_both_slots_records_two_fite_lines():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    province = state.provinces[battle_coord]
+    province.race = Race.ORCISH
+    province.recruit_type_1 = ArmyType.PHALANX
+    province.recruit_type_2 = ArmyType.WARG_RIDERS
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=encode_hex_number(battle_coord, board_width))
+    result = CastExecutionResult(request, applied=True, scar_terrain_collapsed=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([0.1] * 10), board_width=board_width)
+
+    assert len(state.world_events) == 1
+    lines = state.world_events[0].lines
+    assert len(lines) == 4
+    assert lines[1] == "In spring, Border Fort was magically changed into a wasteland, and its inhabitants all died or wandered away."
+    assert lines[2] == (
+        "In spring, A wandering tribe of Orc, who fight as Phalanx, "
+        "settled there, adapting themselves to the scarred terrain."
+    )
+    assert lines[3] == (
+        "In spring, A wandering tribe of Orc, who fight as Wargs, "
+        "settled there, adapting themselves to the scarred terrain."
+    )
+
+
+def test_record_spell_world_events_scar_terrain_land_collapse_one_slot_records_one_fite_line():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    province = state.provinces[battle_coord]
+    province.race = Race.TROLLISH
+    province.recruit_type_1 = ArmyType.TROLLS
+    province.recruit_type_2 = None
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=encode_hex_number(battle_coord, board_width))
+    result = CastExecutionResult(request, applied=True, scar_terrain_collapsed=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([0.1] * 10), board_width=board_width)
+
+    lines = state.world_events[0].lines
+    assert len(lines) == 3
+    assert lines[2] == (
+        "In spring, A wandering tribe of Troll, who fight as Trolls, "
+        "settled there, adapting themselves to the scarred terrain."
+    )
+
+
+def test_record_spell_world_events_scar_terrain_duplicate_recruit_types_no_dedup():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    province = state.provinces[battle_coord]
+    province.race = Race.ORCISH
+    province.recruit_type_1 = ArmyType.PHALANX
+    province.recruit_type_2 = ArmyType.PHALANX
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=encode_hex_number(battle_coord, board_width))
+    result = CastExecutionResult(request, applied=True, scar_terrain_collapsed=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([0.1] * 10), board_width=board_width)
+
+    lines = state.world_events[0].lines
+    assert len(lines) == 4
+    assert lines[2] == lines[3] == (
+        "In spring, A wandering tribe of Orc, who fight as Phalanx, "
+        "settled there, adapting themselves to the scarred terrain."
+    )
 
 
 # -- Phase 234: record_plague_spread_world_events() --

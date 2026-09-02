@@ -1021,6 +1021,14 @@ class CastExecutionResult:
     # cast -- this payload is the Crystal Ball's own extra benefit, not
     # something base Clairvoyance grants on its own.
     clairvoyance_target_offices: list[Office] | None = None
+    # Phase 722: True exactly when this successful Scar Terrain cast
+    # triggered ``apply_scar_terrain_collapse()`` (the province's tax
+    # base hit 0). Needed by ``report/turn_report.py record_spell_
+    # world_events()`` to render the real ``_STZero``/``_STFite`` SAY.PAS
+    # notices -- can't be safely re-derived from ``province.race is
+    # Race.NO_RACE`` alone, since a Sea province can legitimately
+    # already be NO_RACE from world generation, unrelated to this cast.
+    scar_terrain_collapsed: bool = False
 
 
 def execute_cast(
@@ -2730,11 +2738,13 @@ def _execute_scar_terrain(
         return CastExecutionResult(request, applied=False, reason=reason)
 
     province.scar_terrain_gold_reduction += SCAR_TERRAIN_TAX_REDUCTION
+    collapsed = False
     if province.tax is not None:
         remaining = max(0, province.tax - province.scar_terrain_gold_reduction)
         if scar_terrain_is_exhausted(remaining):
             apply_scar_terrain_collapse(state, _coord, board_width, rng)
-    return CastExecutionResult(request, applied=True)
+            collapsed = True
+    return CastExecutionResult(request, applied=True, scar_terrain_collapsed=collapsed)
 
 
 def scar_terrain_is_exhausted(remaining_tax_base: int) -> bool:

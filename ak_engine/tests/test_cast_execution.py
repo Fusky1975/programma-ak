@@ -3177,6 +3177,7 @@ def test_execute_scar_terrain_collapses_when_tax_reaches_exactly_zero():
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([]))
 
     assert result.applied is True
+    assert result.scar_terrain_collapsed is True
     province = state.provinces[LOCATION]
     assert province.scar_terrain_gold_reduction == 2
     assert province.race is Race.NO_RACE
@@ -3192,6 +3193,7 @@ def test_execute_scar_terrain_does_not_collapse_while_tax_remains_positive():
         result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
 
     assert result.applied is True
+    assert result.scar_terrain_collapsed is False
     assert state.provinces[LOCATION].race is Race.HUMAN
     assert not mock_collapse.called
 
@@ -3202,9 +3204,10 @@ def test_execute_scar_terrain_never_collapses_a_province_with_unknown_tax():
 
     with patch("ak_engine.turn.cast_execution.apply_scar_terrain_collapse") as mock_collapse:
         for _ in range(5):  # enough casts to exhaust any real tax base, if one existed
-            execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.SCAR_TERRAIN, target=_target(LOCATION)))
+            result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=CastRequest(spell=Spell.SCAR_TERRAIN, target=_target(LOCATION)))
 
     assert state.provinces[LOCATION].race is Race.HUMAN
+    assert result.scar_terrain_collapsed is False
     assert not mock_collapse.called
 
 
@@ -3219,6 +3222,7 @@ def test_execute_scar_terrain_recollapses_an_already_exhausted_province():
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
     assert result.applied is True
+    assert result.scar_terrain_collapsed is True
     assert state.provinces[LOCATION].race is Race.DRAGONS
 
 

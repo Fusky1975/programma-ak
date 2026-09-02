@@ -12119,6 +12119,68 @@ def render_bystander_spell_notice(spell: Spell, province_name: str, rng: random.
     return render(SPELL_CAST_ANNOUNCEMENT[spell], {"@": province_name}, rng=rng)
 
 
+# HostAK/TP/SANOTE.X2 choice 39, HostAK/TP/SAY.PAS lines 747-748
+# (Phase 722, `Desktop/SCAR.md` section 10.1/10.2) -- Scar Terrain's own
+# three real bystander notices, now reachable since Phase 721 built
+# `apply_scar_terrain_collapse()`.
+#
+# `_SANote` fires on EVERY successful Scar Terrain cast, regardless of
+# whether the tax base actually collapsed this time -- it's the generic
+# "you successfully cast your secret spell" notice `SANOTE.X2` grants
+# every secret-spell-granting Advanced Ability its own entry for
+# (`FD('sanote.x2', sa_lev[C_ST], 1001+C_ST)`, keyed by the Advanced
+# Ability's own ordinal, a different real dispatch mechanism from
+# `_BYSTANDER_SPELL_NOTICE_SPELLS`'s `Sps(sp,S_Comm)`/`SPNOTE.X2`
+# ability-ordinal keying above) -- SCAR.md only resolves Scar Terrain's
+# own entry (choice 39), so this gets its own dedicated render function
+# rather than folding into that frozenset or attempting the general
+# per-ability mechanism.
+SCAR_TERRAIN_CAST_NOTICE_TEMPLATE = (
+    "@ was scarred {and blighted }by pestilence/Rlocust_swarms and polluting/Revil_magic toxins, "
+    "drastically/Rinevitably driving_down/Rreducing its {property values and }taxable_income/Rtax_base."
+)
+
+# `_STZero` (`S_Army`, `SAY.PAS:747`) -- fires whenever the cast actually
+# collapses the tax base, regardless of terrain. Its own real `/S`
+# choice marker is already a first-class feature of `render()`
+# (`is_sea`, Phase 74) -- no new marker-parsing logic needed.
+SCAR_TERRAIN_ZERO_TEMPLATE = "@ was magically changed into a wasteland/Spolluted_sea, and its inhabitants all died or wandered away."
+
+# `_STFite` (`S_Army`, `SAY.PAS:748`) -- fires once per non-`noarmy`
+# recruit slot, ONLY for land/island collapses (never for Sea-without-
+# island). SCAR.md's own two embedded Pascal control bytes (`#18` a
+# race marker, `#12` an unrecovered "grammar treatment" token with no
+# independently-confirmed visible effect) don't map onto an existing
+# project marker convention -- transcribed here with two fresh marker
+# characters (`%`/`|`) as this project's own transcription choice for a
+# sourced *mechanic* whose exact glyph isn't recoverable, dropping
+# `#12`'s own token since it has no confirmed visible text.
+SCAR_TERRAIN_FITE_TEMPLATE = "A wandering tribe of %, who fight as |, settled there, adapting themselves to the scarred terrain."
+
+
+def render_scar_terrain_cast_notice(province_name: str, rng: random.Random) -> str:
+    """Renders `SANOTE.X2` choice 39, Scar Terrain's own real "you
+    successfully cast your secret spell" notice -- fires on every
+    successful cast, collapse or not."""
+
+    return render(SCAR_TERRAIN_CAST_NOTICE_TEMPLATE, {"@": province_name}, rng=rng)
+
+
+def render_scar_terrain_zero(province_name: str, *, is_sea: bool, rng: random.Random) -> str:
+    """Renders `_STZero` -- fires whenever a Scar Terrain cast collapses
+    the province's tax base to 0, land or sea alike."""
+
+    return render(SCAR_TERRAIN_ZERO_TEMPLATE, {"@": province_name}, rng=rng, is_sea=is_sea)
+
+
+def render_scar_terrain_fite(race_name: str, army_type_name: str, rng: random.Random) -> str:
+    """Renders `_STFite` -- one call per non-``None`` recruit slot left
+    by a land/island Scar Terrain collapse (see `record_spell_world_
+    events()`'s own Scar Terrain branch)."""
+
+    return render(SCAR_TERRAIN_FITE_TEMPLATE, {"%": race_name, "|": army_type_name}, rng=rng)
+
+
 def record_spell_world_events(
     state: GameState, results: list[PhaseDispatchResult], rng: random.Random, *, board_width: int = NORMAL_MAP_BOUNDS[0]
 ) -> None:
@@ -12143,6 +12205,17 @@ def record_spell_world_events(
     *is* the notice, not a separately-flagged condition the way
     Illusory Terrain's fake terrain choice is).
 
+    **Scar Terrain (`S_Army`/`S_Comm`, Phase 722) is a sixth, later
+    addition** -- `_SANote`/`_STZero`/`_STFite` (`Desktop/SCAR.md`
+    section 10.2), both above this function's own original `S_Comm`
+    scope: `_SANote` is `S_Comm`, `_STZero`/`_STFite` are `S_Army`,
+    confirmed above `record_move_world_events()`'s own corrected
+    "`S_Army` or higher" GIR-visibility cutoff. Unlike the five spells
+    above, it needs one new, narrow signal that can't be safely re-
+    derived from `ProvinceState` alone -- `CastExecutionResult.scar_
+    terrain_collapsed` -- since a Sea province can legitimately already
+    be `Race.NO_RACE` from world generation, unrelated to this cast.
+
     **Why not the other cast spells**: every other real `Sps(...)`
     dispatch in `SAY.PAS` is tagged a narrower severity than `S_Comm`
     -- confirmed by reading every `Sps(...)` call site directly, not
@@ -12151,9 +12224,11 @@ def record_spell_world_events(
     besides), Charm/Resurrection/Clairvoyance/the personal-combat
     spells are `S_PCom`, Oratory/Hide_Feature/Kill_Enemy are `S_Adv`,
     Bless is `S_Admin` (plausibly commonly-visible in spirit, but not
-    confirmed `S_Comm` in the source, so not guessed here). See
-    `render_bystander_spell_notice()`'s own module-level comment for
-    the full breakdown.
+    confirmed `S_Comm` in the source, so not guessed here). Scar
+    Terrain is now covered (Phase 722), via its own separate `SANOTE.X2`
+    ability-ordinal-keyed dispatch, not this generic `Sps()` mechanism.
+    See `render_bystander_spell_notice()`'s own module-level comment for
+    the full breakdown of what's still excluded.
 
     ``CastExecutionResult`` itself carries no caster/coord -- ``leader_
     id`` comes from the owning ``PhaseDispatchResult`` (each entry is
@@ -12193,6 +12268,21 @@ def record_spell_world_events(
         elif request.spell in _BYSTANDER_SPELL_NOTICE_SPELLS:
             line = render_bystander_spell_notice(request.spell, province_name, rng)
             state.record_world_event(coord, [prefix + line])
+        elif request.spell is Spell.SCAR_TERRAIN:
+            lines = [prefix + render_scar_terrain_cast_notice(province_name, rng)]
+            if result.scar_terrain_collapsed:
+                is_sea = province.effective_terrain() is Terrain.SEA
+                lines.append(prefix + render_scar_terrain_zero(province_name, is_sea=is_sea, rng=rng))
+                if not is_sea:
+                    for recruit_type in (province.recruit_type_1, province.recruit_type_2):
+                        if recruit_type is not None:
+                            lines.append(
+                                prefix
+                                + render_scar_terrain_fite(
+                                    RACE_NAME[province.race], ARMY_TYPE_DESIGNATION[recruit_type], rng
+                                )
+                            )
+            state.record_world_event(coord, lines)
 
 
 def record_plague_spread_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
@@ -12253,20 +12343,18 @@ def record_plague_spread_world_events(state: GameState, results: list[PhaseDispa
 # earlier phases' own restriction was an incomplete generalization
 # (nothing S_Army-tagged had been checked against a real GIR fixture
 # until now), not a wrong one for what it *did* cover. **Not a full
-# resolution**: `SAY.PAS` has other `S_Army`-tagged notices (a much
-# larger real per-battle narrative cluster --
-# `FD('invas'/'conq'/'invwin'/'defwin'/'heavp', S_Army, ...)` -- plus
-# Scar Terrain's own bystander notice, `_STZero`/`_STFite`) that stay
-# unwired here, not because they fail this now-corrected threshold, but
-# because each still needs its own separate research (the battle
+# resolution**: `SAY.PAS` has other `S_Army`-tagged notices -- a much
+# larger real per-battle narrative cluster
+# (`FD('invas'/'conq'/'invwin'/'defwin'/'heavp', S_Army, ...)`) -- that
+# stay unwired here, not because they fail this now-corrected threshold,
+# but because it still needs its own separate research (the battle
 # cluster dispatches to un-read `PROSE/*.X2` files and likely needs
-# per-army names, the same gap already flagged for `describe_battle()`;
-# Scar Terrain's own collapse effect is a pure function this project
-# never auto-invokes, since nothing here can supply its own real
-# precondition -- see `turn/cast_execution.py``_execute_scar_terrain``'s
-# own docstring). Movement is the one `S_Army` notice with both a
-# confirmed template *and* real execution-layer data already available
-# to trigger it correctly.
+# per-army names, the same gap already flagged for `describe_battle()`).
+# Scar Terrain's own bystander notice (`_SANote`/`_STZero`/`_STFite`) is
+# now wired (Phase 722, `record_spell_world_events()`'s own Scar Terrain
+# branch). Movement and Scar Terrain are the two `S_Army` notices with
+# both a confirmed template *and* real execution-layer data available to
+# trigger them correctly.
 #
 # **The trigger condition for `_LFly` over the ordinary, `S_Admin`-tagged
 # `_LMarch` is not recoverable from the available archive** -- the
@@ -12626,17 +12714,17 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
     engine, Bless's plausible-but-unconfirmed `S_Admin`, ...) is
     likewise a confirmed-real, deliberately-deferred follow-up.
 
-    **Scar Terrain's own bystander notice (`_STZero`/`_STFite`,
-    `SAY.PAS` ~747-748) is confirmed real text -- both are inline
-    `Say()` strings, not missing `PROSE/*.X2` files.** Phase 411 found
-    them permanently unreachable at the time (the underlying collapse
-    mechanic had no real tax base to check against) and Phase 721
-    closes that blocker for real (`Desktop/SCAR.md`, user-supplied --
-    see `turn/cast_execution.py apply_scar_terrain_collapse()`'s own
-    docstring for the full algorithm). **Narration wiring itself is
-    Phase 722, the immediate next phase** -- not done here yet, matching
-    this project's own "mechanic now, narration as a short, separate
-    follow-up" pattern.
+    **Scar Terrain's own bystander notices (`_SANote`/`_STZero`/
+    `_STFite`, `SAY.PAS` ~747-748 + `SANOTE.X2` choice 39) are confirmed
+    real text and are now fully wired (Phase 722)** -- `_SANote` fires
+    on every successful cast, `_STZero`/`_STFite` fire when the cast
+    actually collapses the province's tax base. Phase 411 found them
+    permanently unreachable at the time (the underlying collapse
+    mechanic had no real tax base to check against); Phase 721 closed
+    that blocker (`Desktop/SCAR.md`, user-supplied -- see `turn/cast_
+    execution.py apply_scar_terrain_collapse()`'s own docstring for the
+    full algorithm), and this phase (722) wires the real narration into
+    `record_spell_world_events()`'s own Scar Terrain branch.
 
     **The rest of the `S_Army`-tagged per-battle narrative cluster
     (`FD('invas'/'conq'/'invwin'/'defwin', S_Army, ...)`) is not a

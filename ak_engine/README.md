@@ -29873,7 +29873,7 @@ follow-up request after the original 431-435 plan shipped.
   closes the entire nineteenth fresh codebase survey
   ([[project_nineteenth_survey_2026_09_02]]) -- all 3 candidates done.
 
-- **Phase 721 (current)**: Scar Terrain's real tax-exhaustion collapse
+- **Phase 721**: Scar Terrain's real tax-exhaustion collapse
   mechanic -- the twentieth survey's own only candidate
   ([[project_twentieth_survey_2026_09_02]]). `turn/cast_execution.py
   scar_terrain_is_exhausted()`/`scar_terrain_collapse()` (Phase 201)
@@ -29924,6 +29924,46 @@ follow-up request after the original 431-435 plan shipped.
   passed on the first run. **Narration for the now-mechanically-real
   `_STZero`/`_STFite` bystander notices (SCAR.md section 10.2 fully
   recovers the literal text) is Phase 722, the immediate next phase.**
+
+- **Phase 722 (current)**: Scar Terrain's real bystander notices --
+  `_SANote`/`_STZero`/`_STFite`, the immediate narration follow-up to
+  Phase 721, now that a successful collapse is a real, mechanically
+  reachable event. `Desktop/SCAR.md` section 10.2 fully recovers all
+  three real `SAY.PAS`/`SANOTE.X2` texts. New `CastExecutionResult.
+  scar_terrain_collapsed: bool` -- can't be safely re-derived from
+  `province.race is Race.NO_RACE` alone, since a Sea province can
+  legitimately already be `NO_RACE` from world generation, unrelated to
+  this cast -- set by `_execute_scar_terrain()` exactly when it calls
+  `apply_scar_terrain_collapse()`. New `render_scar_terrain_cast_
+  notice()`/`render_scar_terrain_zero()`/`render_scar_terrain_fite()`
+  in `report/turn_report.py`, wired into `record_spell_world_events()`'s
+  own new `Spell.SCAR_TERRAIN` branch: `_SANote` (`SANOTE.X2` choice 39,
+  a different, ability-ordinal-keyed dispatch mechanism from the
+  existing `Sps()`/`SPNOTE.X2`-based `_BYSTANDER_SPELL_NOTICE_SPELLS`,
+  so it gets its own dedicated render function) fires on every
+  successful cast; `_STZero` (its own real `/S` choice marker, already
+  a first-class `render()` feature since Phase 74) fires only on a
+  real collapse; `_STFite` fires once per non-`None` recruit slot, only
+  for land/island collapses, using the province's own post-collapse
+  `race`/`recruit_type_1`/`recruit_type_2` (already mutated in place by
+  Phase 721) -- SCAR.md's own worked example (a donor with two
+  identical recruit types still emits `_STFite` twice, no dedup) is
+  reproduced exactly. `_STFite`'s own two embedded Pascal control bytes
+  (`#18` a race marker, `#12` an unrecovered "grammar treatment" token
+  with no confirmed visible effect) are transcribed with two fresh
+  marker characters (`%`/`|`) as this project's own transcription
+  choice for a sourced mechanic whose exact glyph isn't recoverable --
+  `#12`'s own token is dropped. Test count: 6157 -> 6167 (net +10).
+  Full suite verified green (unchanged, 6157) before writing a single
+  new test; every new test passed after one fix needed to the tests
+  themselves (a missing `In spring, ` prefix on the `_STZero`/`_STFite`
+  lines, and `RACE_NAME`/`ARMY_TYPE_DESIGNATION`'s own real display
+  strings -- "Orc"/"Troll"/"Wargs", not "Orcish"/"Trollish"/"Warg
+  Riders" -- both found by running, not assumed). This closes the
+  Scar Terrain mechanic/narration pair in full; two SCAR.md side-
+  findings remain flagged, not acted on (`turn/discovery_effects.py
+  province_halves_spell_chance()`'s own possible arithmetic-vs-coin-
+  flip discrepancy; the `pt2`/`is_island` cross-reference).
 
 ## Setup
 
