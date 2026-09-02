@@ -169,6 +169,49 @@ def test_can_board_whale_refuses_a_mounted_unit_even_with_the_ability():
     assert can_board(state, whale, ArmyType.ELEPHANTS, caster_has_druidic_whale_transport=True) is False
 
 
+# -- can_board(): Phase 717, Dragon Wing/Eagle Wing air transport -----------
+# (Regolamento AK.txt: "Possono trasportare un'unità di fanteria
+# ciascuna" -- a real base rule, unconditional, no Advanced Ability.)
+
+
+def test_can_board_dragon_wing_accepts_one_infantry_unconditionally():
+    dragon = _army(1, ArmyType.DRAGON_WING)
+    state = _state(dragon)
+
+    assert can_board(state, dragon, ArmyType.BOWMEN) is True
+
+
+def test_can_board_eagle_wing_accepts_one_infantry_unconditionally():
+    eagle = _army(1, ArmyType.EAGLE_WING)
+    state = _state(eagle)
+
+    assert can_board(state, eagle, ArmyType.BOWMEN) is True
+
+
+def test_can_board_dragon_wing_refuses_a_second_infantry_unit():
+    dragon = _army(1, ArmyType.DRAGON_WING)
+    cargo = _army(2, ArmyType.BOWMEN, transported_by=1)
+    state = _state(dragon, cargo)
+
+    assert can_board(state, dragon, ArmyType.AXEMEN) is False
+
+
+def test_can_board_dragon_wing_refuses_a_mounted_unit():
+    dragon = _army(1, ArmyType.DRAGON_WING)
+    state = _state(dragon)
+
+    assert can_board(state, dragon, ArmyType.ELEPHANTS) is False
+
+
+def test_can_board_dragon_wing_refuses_an_otherwise_ineligible_unit_even_with_druidic_transport():
+    # DRUIDIC_TRANSPORT's own text is scoped to Fleets specifically --
+    # never mentions air units, so it grants no exception here.
+    dragon = _army(1, ArmyType.DRAGON_WING)
+    state = _state(dragon)
+
+    assert can_board(state, dragon, ArmyType.ENTS, caster_has_druidic_transport=True) is False
+
+
 # -- can_board(): Mermen and other non-carriers never carry anything -------
 
 

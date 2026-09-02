@@ -72,22 +72,28 @@ boarded_army_ids` (Phase 715) and `apply_battle_carrier_destruction()`'s
 own return value (Phase 716) both exist for a future phase to render,
 once/if real or user-supplied text becomes available.
 
+**Phase 717 -- Dragon Wing/Eagle Wing air transport, `Regolamento
+AK.txt` lines 1932-1934** (quoted in full above): "Le unità aeree
+(Draghi e Aquile)... Possono trasportare un'unità di fanteria
+ciascuna." A third, real base mechanic, unrelated to either Druidic
+ability and unconditional (no Advanced Ability gate) -- reuses
+`models/army_type.py OVERFLIGHT_AIR` directly as the carrier-type set
+and `FLEET_INFANTRY_ARMY_TYPES` for eligible cargo, 1 unit each
+(`AIR_INFANTRY_CAPACITY`). See `can_board()` above.
+
 **Deliberately out of scope, real and separate follow-ups, none
 started**: the base Fleet-for-everyone rule as a *live, enforced*
 mechanic (Phase 715 wired automatic boarding into `execute_move()`,
 but land units still move onto/across Sea completely unassisted --
-nothing *requires* boarding); Dragon/Eagle Wing's own separate "one
-infantry unit each" air-transport rule (a third, real base mechanic
-the rulebook names in the same passage, unrelated to either Druidic
-ability); `turn/move_execution.py _naval_hug_coastline_move_is_legal()`'s
-own capacity-based allocation priority (a different, more specific
-rule -- deterministic priority by speed/army-id, `AKGEN_reverse_
-engineering_report (3).md` §106 -- not just "is there room," so it
-isn't a trivial reuse of `can_board()` even though it's wired
-elsewhere now). Matches this project's own established "primitives
-now, wiring later, staged" precedent (Feature->Power Phase 616 vs.
-622/623; SEP decode Phase 659 vs. 669; Random Encounters 707 vs.
-708/709).
+nothing *requires* boarding); `turn/move_execution.py
+_naval_hug_coastline_move_is_legal()`'s own capacity-based allocation
+priority (a different, more specific rule -- deterministic priority by
+speed/army-id, `AKGEN_reverse_engineering_report (3).md` §106 -- not
+just "is there room," so it isn't a trivial reuse of `can_board()`
+even though it's wired elsewhere now). Matches this project's own
+established "primitives now, wiring later, staged" precedent
+(Feature->Power Phase 616 vs. 622/623; SEP decode Phase 659 vs. 669;
+Random Encounters 707 vs. 708/709).
 """
 
 from __future__ import annotations
@@ -95,11 +101,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from ak_engine.models.army_type import (
+    AIR_INFANTRY_CAPACITY,
     DRUIDIC_TRANSPORT_CAPACITY,
     FLEET_INFANTRY_ARMY_TYPES,
     FLEET_INFANTRY_CAPACITY,
     FLEET_MOUNTED_ARMY_TYPES,
     FLEET_MOUNTED_CAPACITY,
+    OVERFLIGHT_AIR,
     WHALE_INFANTRY_CAPACITY,
     ArmyType,
 )
@@ -146,6 +154,14 @@ def can_board(
         if not caster_has_druidic_whale_transport or cargo_type not in FLEET_INFANTRY_ARMY_TYPES:
             return False
         return len(current_cargo_types) < WHALE_INFANTRY_CAPACITY
+
+    if carrier.army_type in OVERFLIGHT_AIR:
+        # Phase 717: "Possono trasportare un'unità di fanteria ciascuna"
+        # -- a real base rule, unconditional (no Advanced Ability gate,
+        # unlike the two Druidic Fleet/Whale extensions above).
+        if cargo_type not in FLEET_INFANTRY_ARMY_TYPES:
+            return False
+        return len(current_cargo_types) < AIR_INFANTRY_CAPACITY
 
     # Every other army type (Mermen included -- confirmed by the
     # rulebook as never able to carry anything) can never carry cargo.

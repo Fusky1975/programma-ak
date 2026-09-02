@@ -339,6 +339,18 @@ WHALE_INFANTRY_CAPACITY = 1
 # shared with the ordinary infantry/mounted rule).
 DRUIDIC_TRANSPORT_CAPACITY = 1
 
+# Phase 717 -- `Regolamento AK.txt` (lines 1932-1934): "Le unità aeree
+# (Draghi e Aquile) possono muovere per terra e per mare e possono
+# terminare un turno sul mare. Possono trasportare un'unità di fanteria
+# ciascuna." A real BASE mechanic, unconditional (no Advanced Ability
+# needed, unlike the two Druidic Fleet/Whale extensions above) -- see
+# `turn/sea_transport.py can_board()`. Reuses `OVERFLIGHT_AIR` directly
+# as the carrier-type set (already the exact Dragon Wing/Eagle Wing
+# pair) and `FLEET_INFANTRY_ARMY_TYPES` for eligible cargo (the
+# rulebook's own "un'unità di fanteria", the same classification the
+# Fleet/Whale rules already use).
+AIR_INFANTRY_CAPACITY = 1
+
 
 # Rulebook [6.3] "ARMY STRENGTH NOTES": race bonuses to basic strength.
 # "Elves: +1 when fighting as Bowmen, +1 in Forest. Dwarves: +1 as Axemen,

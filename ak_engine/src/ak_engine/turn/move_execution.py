@@ -553,7 +553,10 @@ def reveal_adjacent_provinces(state: GameState, province: ProvinceState, kingdom
 # armata più basso" -- reused directly here as the one real, documented
 # priority, since no other source gives a different one for ordinary
 # transport.
-_CARRIER_ARMY_TYPES = (ArmyType.FLEET, ArmyType.WHALES)
+# Phase 717: Dragon Wing/Eagle Wing join as carriers too -- `Regolamento
+# AK.txt`'s own "Possono trasportare un'unità di fanteria ciascuna,"
+# an unconditional base rule (no Advanced Ability gate).
+_CARRIER_ARMY_TYPES = (ArmyType.FLEET, ArmyType.WHALES, ArmyType.DRAGON_WING, ArmyType.EAGLE_WING)
 
 
 def _boarding_priority_tier(army_type: ArmyType) -> int:

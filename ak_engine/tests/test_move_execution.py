@@ -1317,6 +1317,33 @@ def test_execute_move_auto_board_whale_boards_with_the_ability():
     assert state.armies[102].transported_by == 101
 
 
+def test_execute_move_auto_board_dragon_wing_boards_one_infantry_unconditionally():
+    # Phase 717: unlike Whales, no Advanced Ability gates this -- a
+    # real base rule.
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, ORIGIN, movement_points=5))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101, 102], target=TARGET, auto_board=True)
+
+    assert result.boarded_army_ids == [102]
+    assert state.armies[102].transported_by == 101
+    assert state.armies[102].movement_points == 3  # rode along for free
+    assert state.armies[102].location == TARGET
+
+
+def test_execute_move_auto_board_dragon_wing_respects_1_unit_capacity():
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, ORIGIN, movement_points=5))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(103, 1, ArmyType.AXEMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101, 102, 103], target=TARGET, auto_board=True)
+
+    assert result.boarded_army_ids == [102]
+    assert state.armies[103].transported_by is None
+
+
 def test_execute_move_disembarks_a_boarded_army_moving_without_its_carrier():
     state = _transport_state()
     state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))

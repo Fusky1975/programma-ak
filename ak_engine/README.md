@@ -29692,7 +29692,7 @@ follow-up request after the original 431-435 plan shipped.
   report-layer narration for a real boarding event, and battle
   integration (`apply_carrier_destruction()` still has no live caller).
 
-- **Phase 716 (current)**: the Fleet/Whale cargo-capacity subsystem's
+- **Phase 716**: the Fleet/Whale cargo-capacity subsystem's
   own battle-integration follow-up -- the smaller, lower-risk half of
   what Phase 715 deliberately left open, picked directly by the user.
   New `turn/sea_transport.py apply_battle_carrier_destruction()`
@@ -29732,6 +29732,32 @@ follow-up request after the original 431-435 plan shipped.
   unpaid-blackmail tax penalty already established. Test count: 6119
   -> 6127 (net +8). Full suite verified green (unchanged, 6119) before
   writing a single new test.
+
+- **Phase 717 (current)**: the Fleet/Whale cargo-capacity subsystem's
+  own third carrier type -- Dragon Wing/Eagle Wing air transport,
+  user-picked directly over tackling the real movement-legality
+  restriction. `Regolamento AK.txt` (lines 1932-1934): "Le unità aeree
+  (Draghi e Aquile) possono muovere per terra e per mare e possono
+  terminare un turno sul mare. Possono trasportare un'unità di fanteria
+  ciascuna." A real, third base mechanic named in the same rulebook
+  passage as the Fleet/Whale rules -- unrelated to either Druidic
+  ability and, unlike them, entirely unconditional (no Advanced
+  Ability gate at all). New `models/army_type.py AIR_INFANTRY_
+  CAPACITY = 1`, reusing the already-existing `OVERFLIGHT_AIR`
+  (Dragon Wing/Eagle Wing) and `FLEET_INFANTRY_ARMY_TYPES` constants
+  directly rather than duplicating either. `turn/sea_transport.py
+  can_board()` gains one more carrier-type branch (1 infantry unit,
+  no ability check); `turn/move_execution.py`'s own `_CARRIER_ARMY_
+  TYPES` grows to include both air types, so the existing auto-
+  boarding/disembark-on-separation logic (Phase 715) recognizes them
+  for free -- no new movement-legality risk, since this only adds one
+  more carrier type to the same "capacity tracking only" design,
+  never a new requirement to cross Sea. Confirmed safe against every
+  existing test before writing any new one: no existing `dispatch_
+  phase()`-level test commands a Dragon Wing/Eagle Wing together with
+  land units (the only scenario `auto_board=True` could newly affect).
+  Test count: 6127 -> 6134 (net +7). Full suite verified green
+  (unchanged, 6127) before writing a single new test.
 
 ## Setup
 
