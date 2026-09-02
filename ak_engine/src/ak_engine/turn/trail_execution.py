@@ -178,12 +178,13 @@ from dataclasses import dataclass
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability, ActionCode
-from ak_engine.models.game_state import ArmyState, GameState, LeaderState
+from ak_engine.models.game_state import ArmyState, BlackmailClaim, GameState, LeaderState
 from ak_engine.models.item import ItemInstance
 from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
+from ak_engine.turn.blackmail import maybe_detect_blackmail
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
@@ -251,6 +252,14 @@ class TrailExecutionResult:
     # currently holds; empty for a caster who doesn't hold the ability,
     # or for a target who holds none.
     offices_held: tuple[Office, ...] = ()
+    # Phase 713: `AdvancedAbility.SPY_BLACKMAIL` -- the real demand just
+    # delivered this phase, if the trailer holds the ability, caught up
+    # with a foreign King this phase, and the detection roll (`turn/
+    # blackmail.py maybe_detect_blackmail()`) succeeded. `None` on every
+    # other phase (no roll attempted, a failed roll, or an already-
+    # outstanding claim against that Kingdom). See `execute_trail()`'s
+    # own Phase 713 addendum.
+    blackmail_claim: BlackmailClaim | None = None
 
 
 def execute_trail(
@@ -261,6 +270,7 @@ def execute_trail(
     *,
     has_spy_super_sleuth: bool = False,
     caster_has_spy_expanded_spying: bool = False,
+    caster_has_spy_blackmail: bool = False,
 ) -> TrailExecutionResult:
     """Resolve one phase of a Trail order: [3.17]'s no-army restriction, then a Spy
     Table catch-up roll. On success, populates the ``temper``/
@@ -285,6 +295,14 @@ def execute_trail(
     The skill-estimate half stays genuinely unmodeled: no ``Skill_Est``
     routine survives anywhere in the source (unlike ``Align_Est``/
     ``Temper_Est``), so inventing one would be a guess, not a recovery.
+
+    **Phase 713 -- `AdvancedAbility.SPY_BLACKMAIL`**: "ends any phase in
+    the same province" is exactly this function's own ``spied_on``
+    (the catch-up roll succeeding means the trailer is, this phase,
+    co-located with the target) -- see ``turn/blackmail.py``'s own
+    module docstring for the full mechanic. ``maybe_detect_blackmail()``
+    is a no-op unless the target is a foreign King with no already-
+    outstanding claim; it never consumes ``rng`` when it can't apply.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -328,6 +346,7 @@ def execute_trail(
         if caster_has_spy_expanded_spying
         else ()
     )
+    blackmail_claim = maybe_detect_blackmail(state, trailer, target, rng) if caster_has_spy_blackmail else None
 
     return TrailExecutionResult(
         spied_on=True,
@@ -339,6 +358,7 @@ def execute_trail(
         king_intelligence=king_intelligence,
         guessed_distance=guessed_distance,
         offices_held=offices_held,
+        blackmail_claim=blackmail_claim,
     )
 
 
@@ -364,6 +384,7 @@ def advance_trail(
     *,
     has_spy_super_sleuth: bool = False,
     caster_has_spy_expanded_spying: bool = False,
+    caster_has_spy_blackmail: bool = False,
     board_width: int = NORMAL_MAP_BOUNDS[0],
     board_height: int = NORMAL_MAP_BOUNDS[1],
 ) -> TrailExecutionResult:
@@ -392,4 +413,5 @@ def advance_trail(
         rng,
         has_spy_super_sleuth=has_spy_super_sleuth,
         caster_has_spy_expanded_spying=caster_has_spy_expanded_spying,
+        caster_has_spy_blackmail=caster_has_spy_blackmail,
     )

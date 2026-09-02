@@ -29533,7 +29533,7 @@ follow-up request after the original 431-435 plan shipped.
   claim about `retreated_army_ids` needed a fixture with a real battle
   column, not just the id list alone.
 
-- **Phase 712 (current)**: wires `render_tactical_comparison()`
+- **Phase 712**: wires `render_tactical_comparison()`
   (TACTICS.X2, `SAY.PAS _BTac`, sourced and render-tested since Phase
   109) into `describe_battle()` -- the last item from the eighteenth
   fresh codebase survey, picked directly by the user right after Phase
@@ -29552,6 +29552,51 @@ follow-up request after the original 431-435 plan shipped.
   get the exact rendered text right rather than predicted. Test count:
   6030 -> 6032 (net +2). Full suite verified green (unchanged, 6030)
   before touching any test.
+
+- **Phase 713 (current)**: `AdvancedAbility.SPY_BLACKMAIL` -- the last
+  real candidate from the eighteenth fresh codebase survey. Real text
+  (`models/advanced_ability.py`): a Spy Trailing a foreign king who
+  ends a phase in the same province has ~20% odds of "getting some
+  dirt on him" (harder against good kings, easier against evil ones);
+  on success a demand for ~15 gold is delivered (richer kings pay
+  more, evil kings pay less); an unpaid demand costs the victim 3x
+  that in tax revenue and halves the spy's own next demand. The
+  payment mechanism -- initially unclear from the ability text alone
+  -- was fully resolved by a second source, `AKPROSE_reverse_
+  engineering_report.md` (choice 080/090), which preserves the real
+  `SAY.PAS` demand-delivery message verbatim: the victim king pays via
+  an ordinary "Give" order to the blackmailer's own King, with one
+  real, sourced exception -- no co-location requirement for this
+  specific payment ("the money will be automatically transferred
+  without any need for the kings to be in the same province"). New
+  `turn/blackmail.py` (detection-chance/demand-amount formulas,
+  documented unsourced-but-reasonable interpretations of the
+  qualitative text; `advance_blackmail_claims()`/`resolve_unpaid_
+  blackmail()` implementing the real two-turn "pending, then due"
+  shape that mirrors the parsed-but-previously-unbridged `parser/
+  gw_world.py GWKingExtension.pending_blackmailer_king_id`/`active_
+  blackmailer_king_id` field pair exactly). `turn/trade_execution.py
+  execute_give()` gained the real, sourced co-location bypass for a
+  matching blackmail payment. `TrailExecutionResult.blackmail_claim`
+  threaded through `execute_trail()`/`advance_trail()` and both real
+  dispatch sites (`plan_dispatch.py`, the persistent Trail-chase
+  continuation in `turn_processor.py`). The one recovered message
+  (choice 080/090) is rendered identically to both the blackmailer's
+  and the victim's own ACTION REPORT (`record_blackmail_narratives()`,
+  mirroring Phase 711's own "one shared render call, both sides get
+  the identical text" shape) -- one real, transcription-only wrinkle
+  found and resolved: the recovered text reuses the literal symbol `#`
+  for two different values (the gold amount, and "King #" -- the
+  blackmailer's own Kingdom number), resolved by transcribing the
+  second occurrence as `#2` (this project's own existing "numbered
+  variant of a marker" convention). No new text exists anywhere for
+  "the tax penalty applied" -- that outcome stays a real, silent
+  mechanical effect this phase, per this project's own standing
+  "project-original replacement prose is the user's own call" stance.
+  Test count: 6032 -> 6077 (net +45). Full suite verified green
+  (unchanged, 6032) before writing a single new test. This closes the
+  entire eighteenth fresh codebase survey (only #4, `DRUIDIC_WHALE_
+  TRANSPORT`, deliberately deprioritized, remains).
 
 ## Setup
 

@@ -10,7 +10,7 @@ from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery, describe_discovery_line
 from ak_engine.models.feature import Feature, FeatureType, RaidEvent
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, BlackmailClaim, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.models.game_type import GameType
 from ak_engine.models.item import ItemInstance
@@ -118,10 +118,12 @@ from ak_engine.report.turn_report import (
     pick_variant,
     record_battle_narratives,
     record_battle_world_events,
+    record_blackmail_narratives,
     record_move_world_events,
     record_plague_spread_world_events,
     record_spell_world_events,
     record_uncontested_conquest_world_events,
+    render_blackmail_demand,
     render_bystander_spell_notice,
     render_flood_world_event,
     render_fly_move_world_event,
@@ -10901,6 +10903,88 @@ def test_record_battle_narratives_resolves_real_retreat_destination_names():
     record_battle_narratives(state, results, rng)
 
     assert any("retreated" in line for line in state.battle_narratives_by_kingdom[1])
+
+
+# -- Phase 713: render_blackmail_demand / record_blackmail_narratives ---------
+
+
+def test_render_blackmail_demand_substitutes_amount_and_disambiguated_kingdom_number():
+    rng = ScriptedRandom([0.1] * 15)
+
+    line = render_blackmail_demand("Spymaster", "King Bob", 17, 3, rng)
+
+    assert "17 gold" in line
+    assert 'King 3 in this amount' in line
+    assert "Spymaster" in line
+    assert "King Bob" in line
+
+
+def _blackmail_state():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Spydom", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Targetia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Spymaster", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="King Bob", location=HexCoord(0, 0), is_king=True))
+    return state
+
+
+def test_record_blackmail_narratives_populates_both_kingdoms_with_identical_content():
+    state = _blackmail_state()
+    claim = BlackmailClaim(spy_leader_id=1, spy_kingdom_id=1, amount=15)
+    state.kingdoms[2].pending_blackmail = claim
+    result = TrailExecutionResult(spied_on=True, blackmail_claim=claim)
+    results = [PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.TRAIL, result=result, error=None)]
+
+    record_blackmail_narratives(state, results, ScriptedRandom([0.1] * 15))
+
+    assert state.blackmail_narratives_by_kingdom[1] == state.blackmail_narratives_by_kingdom[2]
+    assert state.blackmail_narratives_by_kingdom[1] != []
+    assert any("Spymaster" in line and "King Bob" in line for line in state.blackmail_narratives_by_kingdom[1])
+
+
+def test_record_blackmail_narratives_skips_a_non_trail_result():
+    state = _blackmail_state()
+    results = [PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.LMOVE, result=object(), error=None)]
+
+    record_blackmail_narratives(state, results, ScriptedRandom([]))
+
+    assert state.blackmail_narratives_by_kingdom == {}
+
+
+def test_record_blackmail_narratives_skips_a_trail_result_with_no_claim():
+    state = _blackmail_state()
+    result = TrailExecutionResult(spied_on=True, blackmail_claim=None)
+    results = [PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.TRAIL, result=result, error=None)]
+
+    record_blackmail_narratives(state, results, ScriptedRandom([]))
+
+    assert state.blackmail_narratives_by_kingdom == {}
+
+
+def test_record_blackmail_narratives_skips_when_the_claim_is_not_found_on_any_kingdom():
+    state = _blackmail_state()
+    claim = BlackmailClaim(spy_leader_id=1, spy_kingdom_id=1, amount=15)  # never stored as pending anywhere
+    result = TrailExecutionResult(spied_on=True, blackmail_claim=claim)
+    results = [PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.TRAIL, result=result, error=None)]
+
+    record_blackmail_narratives(state, results, ScriptedRandom([]))
+
+    assert state.blackmail_narratives_by_kingdom == {}
+
+
+def test_compose_letter_report_includes_blackmail_narrative_for_both_involved_kingdoms():
+    state = _blackmail_state()
+    claim = BlackmailClaim(spy_leader_id=1, spy_kingdom_id=1, amount=15)
+    state.kingdoms[2].pending_blackmail = claim
+    result = TrailExecutionResult(spied_on=True, blackmail_claim=claim)
+    results = [PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.TRAIL, result=result, error=None)]
+    record_blackmail_narratives(state, results, ScriptedRandom([0.1] * 15))
+
+    spy_letter = compose_letter_report(results, state, 1, ScriptedRandom([]))
+    target_letter = compose_letter_report(results, state, 2, ScriptedRandom([]))
+
+    assert any("Spymaster" in line for line in spy_letter)
+    assert any("Spymaster" in line for line in target_letter)
 
 
 def test_render_fly_move_world_event_renders_the_lfly_template():

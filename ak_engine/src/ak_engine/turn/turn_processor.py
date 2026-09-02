@@ -266,6 +266,7 @@ from ak_engine.turn.battle_orchestrator import (
     fight_multi_attacker_battle,
 )
 from ak_engine.turn.aspy_defend_decode import decode_defend_phase
+from ak_engine.turn.blackmail import advance_blackmail_claims
 from ak_engine.turn.challenge_execution import execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
@@ -405,6 +406,13 @@ def run_turn(
     # a later phase in their own plan re-issues DEFEND -- persistent
     # across phases, unlike active_defends itself.
     defeated_while_defending: set[int] = set()
+
+    # Phase 713 -- AdvancedAbility.SPY_BLACKMAIL: promote every Kingdom's
+    # own still-pending demand (delivered last turn) into "active" (due
+    # this turn), before any phase dispatches -- mirrors the real parsed
+    # `pending_blackmailer_king_id`/`active_blackmailer_king_id` field
+    # pair exactly. See `turn/blackmail.py`'s own module docstring.
+    advance_blackmail_claims(state)
 
     # Phase 669 -- rulebook [5.10]: each leader's own real, standing
     # Special Encounter Plan, decoded once here (before any phase
@@ -1030,6 +1038,8 @@ def _continue_active_pursuits(
             caster_has_spy_expanded_spying = (
                 leader is not None and AdvancedAbility.SPY_EXPANDED_SPYING in leader.advanced_abilities
             )
+            # Phase 713: same real-possession pattern, for Spy Blackmail.
+            caster_has_spy_blackmail = leader is not None and AdvancedAbility.SPY_BLACKMAIL in leader.advanced_abilities
             result = advance_trail(
                 state,
                 leader_id,
@@ -1037,6 +1047,7 @@ def _continue_active_pursuits(
                 rng,
                 has_spy_super_sleuth=has_spy_super_sleuth,
                 caster_has_spy_expanded_spying=caster_has_spy_expanded_spying,
+                caster_has_spy_blackmail=caster_has_spy_blackmail,
             )
             action = ActionCode.TRAIL
             still_chasing = not result.spied_on and result.reason == _TRAIL_STILL_CHASING_REASON

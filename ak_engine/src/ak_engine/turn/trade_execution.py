@@ -151,6 +151,20 @@ def execute_give(
     l'oggetto e non l'oro" -- item takes priority). Otherwise ``obj`` is
     treated as a gold amount and the recipient's own King status plus
     [3.18]'s 10% cap are enforced, exactly as before Phase 140.
+
+    **Phase 713 -- `AdvancedAbility.SPY_BLACKMAIL`'s own real, sourced
+    exception**: the AKPROSE-recovered demand message states directly
+    that a victim king paying off a blackmail claim does so via an
+    ordinary gold Give order, and "the money will be automatically
+    transferred without any need for the kings to be in the same
+    province." When a King is paying off his own Kingdom's real
+    ``KingdomState.active_blackmail`` claim, to the exact blackmailer's
+    own Kingdom, the co-location check below is waived for that one
+    transfer -- everything else (10% treasury cap, recipient-must-be-
+    a-King) still applies unchanged. A successful payment of at least
+    the claimed amount clears the claim and resets the spy's own
+    ``LeaderState.unpaid_blackmail_penalty_exponent``. See ``turn/
+    blackmail.py``'s own module docstring for the full mechanic.
     """
 
     giver = state.leaders.get(giver_leader_id)
@@ -164,7 +178,18 @@ def execute_give(
     if recipient is None:
         return TradeExecutionResult(applied=False, reason="recipient not found")
 
-    if giver.location != recipient.location:
+    item = state.items.get(request.obj)
+    is_item_transfer = item is not None and item.owner_leader_id == giver_leader_id
+    giver_kingdom = state.kingdoms.get(giver.kingdom_id) if giver.kingdom_id is not None and giver.is_king else None
+    blackmail_claim = giver_kingdom.active_blackmail if giver_kingdom is not None else None
+    paying_off_blackmail = (
+        not is_item_transfer
+        and blackmail_claim is not None
+        and recipient.is_king
+        and recipient.kingdom_id == blackmail_claim.spy_kingdom_id
+    )
+
+    if giver.location != recipient.location and not paying_off_blackmail:
         # The user's own description of the order syntax: "(numero
         # d'ordine dell'eroe o del RE) che si trova nella stessa
         # provincia" -- the recipient must be co-located with the giver.
@@ -179,8 +204,7 @@ def execute_give(
     if giver.valhalla_fixed_item_id is not None and request.obj == giver.valhalla_fixed_item_id:
         return TradeExecutionResult(applied=False, reason="the Valhalla visitor's own fixed item cannot be given away")
 
-    item = state.items.get(request.obj)
-    if item is not None and item.owner_leader_id == giver_leader_id:
+    if is_item_transfer:
         # "si passa l'oggetto e non l'oro" -- item takes priority when
         # actually possessed, no King status or same-kingdom requirement
         # on either side (unlike the gold path below): "Se l'eroe
@@ -196,7 +220,13 @@ def execute_give(
     if recipient.kingdom_id is None:
         return TradeExecutionResult(applied=False, reason="recipient has no kingdom")
 
-    return execute_gold_give(state, giver_leader_id, recipient.kingdom_id, request.obj)
+    result = execute_gold_give(state, giver_leader_id, recipient.kingdom_id, request.obj)
+    if paying_off_blackmail and result.applied and result.gold_transferred >= blackmail_claim.amount:
+        giver_kingdom.active_blackmail = None
+        spy = state.leaders.get(blackmail_claim.spy_leader_id)
+        if spy is not None:
+            spy.unpaid_blackmail_penalty_exponent = 0
+    return result
 
 
 @dataclass(slots=True)

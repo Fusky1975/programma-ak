@@ -7,7 +7,7 @@ from __future__ import annotations
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import BlackmailClaim, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
@@ -295,3 +295,29 @@ def test_apply_turn_revenue_resets_turn_raid_events_each_call():
     apply_turn_revenue(state, ScriptedRandom([]))
 
     assert state.turn_raid_events == []
+
+
+# -- Phase 713: apply_turn_revenue() now resolves a still-unpaid
+# AdvancedAbility.SPY_BLACKMAIL claim once per Kingdom -----------------
+
+
+def test_apply_turn_revenue_applies_unpaid_blackmail_penalty():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=100))
+    state.add_leader(LeaderState(9, 2, "Spymaster", HOME))
+    state.kingdoms[1].active_blackmail = BlackmailClaim(spy_leader_id=9, spy_kingdom_id=2, amount=15)
+
+    credited = apply_turn_revenue(state, ScriptedRandom([]))
+
+    assert credited[1] == 100 - 45  # 3x the 15-gold demand
+    assert state.kingdoms[1].active_blackmail is None
+    assert state.leaders[9].unpaid_blackmail_penalty_exponent == 1
+
+
+def test_apply_turn_revenue_untouched_without_an_active_claim():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=100))
+
+    credited = apply_turn_revenue(state, ScriptedRandom([]))
+
+    assert credited[1] == 100

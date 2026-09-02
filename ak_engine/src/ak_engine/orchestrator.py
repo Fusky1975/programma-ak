@@ -55,6 +55,7 @@ from ak_engine.report.turn_report import (
     compose_letter_report,
     record_battle_narratives,
     record_battle_world_events,
+    record_blackmail_narratives,
     record_move_world_events,
     record_plague_spread_world_events,
     record_spell_world_events,
@@ -270,6 +271,10 @@ def process_turn(
     # populates the two involved Kingdoms' own ACTION REPORT narrative
     # (state.battle_narratives_by_kingdom), not GENERAL INTELLIGENCE.
     record_battle_narratives(state, results, rng)
+    # Phase 713 -- same once-per-turn requirement; populates both the
+    # blackmailer's and the victim's own ACTION REPORT (state.
+    # blackmail_narratives_by_kingdom), not GENERAL INTELLIGENCE.
+    record_blackmail_narratives(state, results, rng)
     record_spell_world_events(state, results, rng, board_width=board_width)
     record_plague_spread_world_events(state, results, rng)
     record_move_world_events(state, results, rng)

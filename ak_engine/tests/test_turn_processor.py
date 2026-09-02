@@ -1129,6 +1129,29 @@ def test_run_turn_unresolved_trail_preempts_p1_and_continues_the_chase():
     assert p2_entry.action is ActionCode.WAIT
 
 
+def test_run_turn_trail_continuation_wires_spy_blackmail():
+    # Same P0-miss/P1-continuation shape as the test above, proving
+    # `caster_has_spy_blackmail` reaches through `_continue_active_
+    # pursuits()`'s own Trail branch, not just the initial dispatch.
+    state = _chase_state()
+    state.leaders[20].is_king = True
+    state.leaders[10].advanced_abilities.add(AdvancedAbility.SPY_BLACKMAIL)
+    p0 = _trail_phase("P0", 20)
+    p1 = _lmove_phase("P1", DECOY)
+    p2 = PlanPhase(label="P2", action=ActionCode.WAIT, obj=0, extra=[0])
+    trailer = _three_phase_leader(10, "Trailer", p0, p1, p2)
+
+    results = run_turn(
+        [TurnLeader(trailer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1, 0.5, 0.5, 0.0])
+    )
+
+    by_label = {(r.leader_id, r.phase_label): r for r in results}
+    p1_entry = by_label[(10, "P1")]
+    assert p1_entry.result.spied_on is True
+    assert p1_entry.result.blackmail_claim is not None
+    assert state.kingdoms[2].pending_blackmail is p1_entry.result.blackmail_claim
+
+
 # -- Trail's own "Actions" field (Phase 252) ---------------------------------
 
 

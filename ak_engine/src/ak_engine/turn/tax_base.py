@@ -132,6 +132,7 @@ import random
 from ak_engine.models.discovery import DISCOVERY_REVENUE_BONUS_PERCENT
 from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
 from ak_engine.models.office import Office
+from ak_engine.turn.blackmail import resolve_unpaid_blackmail
 from ak_engine.turn.monster_raids import resolve_province_raids
 
 
@@ -241,6 +242,13 @@ def apply_turn_revenue(state: GameState, rng: random.Random) -> dict[int, int]:
     **Must be called before ``apply_turn_maintenance()``** -- rulebook
     [9]'s own explicit ordering ("si incassano le rendite, quindi si
     paga il mantenimento").
+
+    **Phase 713** folds in ``turn/blackmail.py resolve_unpaid_
+    blackmail()``'s own real "3 times that much in tax revenues"
+    penalty, per Kingdom, floored at 0 -- applied after the province
+    loop (province-level income is unaffected; this is a Kingdom-level
+    deduction, not tied to any one province) and before the office gold
+    bonus.
     """
 
     # Deferred import: same circular-import workaround `compute_office_
@@ -270,6 +278,7 @@ def apply_turn_revenue(state: GameState, rng: random.Random) -> dict[int, int]:
             )
             state.turn_raid_events.extend(events)
             amount += income
+        amount = max(0, amount - resolve_unpaid_blackmail(state, kingdom_id))
         amount += compute_office_gold_bonus(state, kingdom_id)
         kingdom.treasury += amount
         credited[kingdom_id] = amount

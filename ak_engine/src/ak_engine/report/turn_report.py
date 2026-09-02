@@ -6359,6 +6359,43 @@ def render_trail_king_no_provinces(trailer_name: str, king_name: str, rng: rando
     return render(TRAIL_KING_NO_PROVINCES_TEMPLATE, values, rng=rng)
 
 
+# Phase 713 -- AdvancedAbility.SPY_BLACKMAIL's own real demand-delivery
+# message, transcribed verbatim from AKPROSE_reverse_engineering_
+# report.md (choice 080/090). The recovered text uses the literal
+# symbol "#" twice for two different real values (the gold amount, and
+# "King #" -- the blackmailer's own Kingdom number) -- a known-lossy
+# transcription artifact, not a mechanic ambiguity: `render()`'s own
+# `values` dict substitutes one fixed string per marker key, so the
+# second occurrence is transcribed here as "#2" (this project's own
+# existing "numbered variant of an existing marker" convention, e.g.
+# "<2"/"[1" elsewhere in this file) rather than left colliding with the
+# first. See `turn/blackmail.py`'s own module docstring for the full
+# mechanic this message reports on.
+_BLACKMAIL_DEMAND_TEMPLATE = (
+    "Using > advanced Spy ability of Blackmail, < trailed [ and "
+    "dug_up_some_dirt_on_[/Rbribed_['s_mistress_to_disclose_damaging_information."
+    "< threatened/Rpromised to reveal/Rspread the information/Rdirt to the "
+    "public/Rtabloids, unless [1 gave/Rpaid_off # gold to <'s king{dom}. "
+    '[ must personally execute a "Give" order to King #2 in this amount, '
+    "sometime in the upcoming gameturn, or else lose 3 times that much gold "
+    "in taxes for one turn, as a result of lost prestige.  The money will be "
+    "automatically transferred without any need for the kings to be in the "
+    "same province."
+)
+
+
+def render_blackmail_demand(spy_name: str, target_king_name: str, amount: int, blackmailer_kingdom_id: int, rng: random.Random) -> str:
+    values = {
+        "<": spy_name,
+        ">": f"{spy_name}'s",
+        "[": target_king_name,
+        "[1": target_king_name,
+        "#": str(amount),
+        "#2": str(blackmailer_kingdom_id),
+    }
+    return render(_BLACKMAIL_DEMAND_TEMPLATE, values, rng=rng)
+
+
 def _trail_army_name(state: GameState, army: ArmyState) -> str:
     """Same race-resolution shape as ``turn/aspy_execution.py
     _army_display_name()`` (Phase 212) -- kept as a separate, small
@@ -11902,6 +11939,56 @@ def record_battle_narratives(state: GameState, results: list[PhaseDispatchResult
         state.battle_narratives_by_kingdom.setdefault(battle_report.defender_kingdom_id, []).extend(lines)
 
 
+def record_blackmail_narratives(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
+    """Phase 713 -- populates ``state.blackmail_narratives_by_kingdom``
+    with the real AKPROSE demand-delivery message (``render_blackmail_
+    demand()``) for every real ``AdvancedAbility.SPY_BLACKMAIL`` detection
+    found in ``results`` this turn, for BOTH the blackmailer's own
+    Kingdom and the victim Kingdom -- same "both sides get the identical
+    rendered text, from one shared render call" reasoning as `record_
+    battle_narratives()` right above (rendering independently per side
+    would risk each side's own `/R` choice-marker rolls picking
+    different synonyms for what is, in the real game, one single
+    delivered message).
+
+    **Must be called exactly once per turn, before any
+    ``compose_letter_report()`` call for that turn** -- same requirement
+    as `record_battle_narratives()`.
+
+    The victim's own Kingdom is identified by an object-identity scan
+    over `state.kingdoms` for whichever one's own `pending_blackmail`
+    *is* (not merely equals) this exact `BlackmailClaim` instance --
+    `maybe_detect_blackmail()` stores the very same object there, so
+    this is unambiguous even if two claims happened to share identical
+    field values. Deliberately does NOT depend on `TrailExecutionResult.
+    request` (which a persistent multi-phase Trail continuation never
+    sets, `turn/turn_processor.py _continue_active_pursuits()`'s own
+    pre-existing, unrelated gap -- the same reason `describe_turn_
+    results()`'s own TRAIL branch already skips narration for those
+    entries) -- resolving the target King via `_king_leader_id()`
+    instead keeps this function correct regardless of that gap.
+    """
+
+    for entry in results:
+        result = entry.result
+        if not isinstance(result, TrailExecutionResult) or result.blackmail_claim is None:
+            continue
+        claim = result.blackmail_claim
+        target_kingdom_id = next(
+            (kingdom_id for kingdom_id, kingdom in state.kingdoms.items() if kingdom.pending_blackmail is claim), None
+        )
+        if target_kingdom_id is None:
+            continue
+        spy = state.leaders.get(claim.spy_leader_id)
+        target_leader_id = _king_leader_id(state, target_kingdom_id)
+        target = state.leaders.get(target_leader_id) if target_leader_id is not None else None
+        if spy is None or target is None:
+            continue
+        line = render_blackmail_demand(spy.name, target.name, claim.amount, claim.spy_kingdom_id, rng)
+        state.blackmail_narratives_by_kingdom.setdefault(claim.spy_kingdom_id, []).append(line)
+        state.blackmail_narratives_by_kingdom.setdefault(target_kingdom_id, []).append(line)
+
+
 # HostAK/TP/SAY.PAS `_SPlague`/`_PPlague` (Phase 232) -- the province-
 # wide, "commonly known" (`S_Comm`) Plague notice, confirmed real and
 # distinct from `SPELL_CAST_ANNOUNCEMENT[Spell.PLAGUE]` (a private,
@@ -12933,6 +13020,10 @@ def compose_letter_report(
     # placement reasoning: no separate section header exists for this
     # in any confirmed real source.
     action_lines = action_lines + state.battle_narratives_by_kingdom.get(kingdom_id, [])
+    # Phase 713: AdvancedAbility.SPY_BLACKMAIL's own demand-delivery
+    # notice -- same "both sides carry the identical, already-rendered
+    # lines here" shape as the battle narrative right above.
+    action_lines = action_lines + state.blackmail_narratives_by_kingdom.get(kingdom_id, [])
     _emit_section("ACTION REPORT", action_lines)
 
     letter_lines = describe_letter_reports(

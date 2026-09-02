@@ -1152,6 +1152,27 @@ def test_dispatch_trail_wires_spy_expanded_spying_from_the_leaders_own_advanced_
     assert result.offices_held == (Office.CHANCELLOR,)
 
 
+def test_dispatch_trail_wires_spy_blackmail_from_the_leaders_own_advanced_ability():
+    # Same fixture shape as the Spy Super Sleuth/Expanded Spying
+    # dispatch tests above -- a fresh, armyless leader ([3.17]'s own
+    # no-army restriction), target is a King of a different Kingdom.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(3, 9)))
+    state.add_kingdom(KingdomState(2, "Fleeland", Race.HUMAN, Alignment.GOOD, HexCoord(3, 9)))
+    state.add_leader(LeaderState(LEADER_ID, 1, "Test Leader", HexCoord(3, 9)))
+    state.add_leader(LeaderState(88, kingdom_id=2, name="King Target", location=HexCoord(3, 9), is_king=True))
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.SPY_BLACKMAIL)
+    phase = PlanPhase(label="P0", action=ActionCode.TRAIL, obj=88, extra=[0])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0, 0.5, 0.5, 0.0])
+    )
+
+    assert result.spied_on is True
+    assert result.blackmail_claim is not None
+    assert state.kingdoms[2].pending_blackmail is result.blackmail_claim
+
+
 def test_dispatch_succ_trail_is_deliberately_unsupported():
     # ActionCode.SUCC_TRAIL is intentionally excluded from
     # SUPPORTED_ACTIONS -- see plan_dispatch.py's module docstring: no

@@ -844,6 +844,18 @@ def _has_spy_expanded_spying(state: GameState, leader_id: int) -> bool:
     return leader is not None and AdvancedAbility.SPY_EXPANDED_SPYING in leader.advanced_abilities
 
 
+def _has_spy_blackmail(state: GameState, leader_id: int) -> bool:
+    """Phase 713: same real-possession pattern as `_has_spy_super_sleuth`
+    -- `AdvancedAbility.SPY_BLACKMAIL` gates `_dispatch_trail()`'s own
+    per-phase blackmail-detection roll, resolved fresh at each real
+    dispatch site (Trail's own initial dispatch here, plus `turn_
+    processor.py`'s own persistent chase continuation loop).
+    """
+
+    leader = state.leaders.get(leader_id)
+    return leader is not None and AdvancedAbility.SPY_BLACKMAIL in leader.advanced_abilities
+
+
 def _dispatch_pursue(
     phase: PlanPhase, state: GameState, leader_id: int, rng: random.Random | None
 ) -> PursueExecutionResult:
@@ -936,6 +948,7 @@ def _dispatch_trail(
         rng,
         has_spy_super_sleuth=_has_spy_super_sleuth(state, leader_id),
         caster_has_spy_expanded_spying=_has_spy_expanded_spying(state, leader_id),
+        caster_has_spy_blackmail=_has_spy_blackmail(state, leader_id),
     )
     result.request = request
     return result

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import BlackmailClaim, GameState, KingdomState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
@@ -258,6 +258,100 @@ def test_execute_give_gold_path_still_enforces_the_10_percent_cap():
 
     assert result.applied is False
     assert "exceeds 10% treasury cap" in result.reason
+
+
+# -- Phase 713: AdvancedAbility.SPY_BLACKMAIL's own real "no co-location
+# needed" payment exception --
+
+
+def test_execute_give_pays_off_blackmail_without_co_location():
+    state = _state_with_recipient(giver_treasury=1000, recipient_location=ELSEWHERE)
+    claim = BlackmailClaim(spy_leader_id=9, spy_kingdom_id=RECIPIENT_KINGDOM, amount=15)
+    state.kingdoms[GIVER_KINGDOM].active_blackmail = claim
+    state.add_leader(LeaderState(9, RECIPIENT_KINGDOM, "Spymaster", ELSEWHERE, unpaid_blackmail_penalty_exponent=2))
+    request = TradeRequest(obj=15, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
+    assert result == TradeExecutionResult(applied=True, gold_transferred=15)
+    assert state.kingdoms[GIVER_KINGDOM].active_blackmail is None
+    assert state.leaders[9].unpaid_blackmail_penalty_exponent == 0
+
+
+def test_execute_give_paying_more_than_the_claim_still_clears_it():
+    state = _state_with_recipient(giver_treasury=1000, recipient_location=ELSEWHERE)
+    claim = BlackmailClaim(spy_leader_id=9, spy_kingdom_id=RECIPIENT_KINGDOM, amount=15)
+    state.kingdoms[GIVER_KINGDOM].active_blackmail = claim
+    request = TradeRequest(obj=20, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
+    assert result.applied is True
+    assert state.kingdoms[GIVER_KINGDOM].active_blackmail is None
+
+
+def test_execute_give_paying_less_than_the_claim_does_not_clear_it():
+    state = _state_with_recipient(giver_treasury=1000, recipient_location=ELSEWHERE)
+    claim = BlackmailClaim(spy_leader_id=9, spy_kingdom_id=RECIPIENT_KINGDOM, amount=15)
+    state.kingdoms[GIVER_KINGDOM].active_blackmail = claim
+    request = TradeRequest(obj=5, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
+    assert result.applied is True  # the gold transfer itself still succeeds
+    assert state.kingdoms[GIVER_KINGDOM].active_blackmail is claim  # but doesn't satisfy the demand
+
+
+def test_execute_give_non_co_located_still_refuses_without_an_active_claim():
+    state = _state_with_recipient(giver_treasury=1000, recipient_location=ELSEWHERE)
+    request = TradeRequest(obj=15, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
+    assert result.applied is False
+    assert result.reason == "not co-located with recipient"
+
+
+def test_execute_give_non_co_located_still_refuses_when_paying_a_different_kingdom():
+    # An active claim exists, but it's owed to a THIRD kingdom, not the
+    # recipient of this particular Give -- the bypass must not apply.
+    state = _state_with_recipient(giver_treasury=1000, recipient_location=ELSEWHERE)
+    state.kingdoms[GIVER_KINGDOM].active_blackmail = BlackmailClaim(spy_leader_id=9, spy_kingdom_id=3, amount=15)
+    request = TradeRequest(obj=15, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
+    assert result.applied is False
+    assert result.reason == "not co-located with recipient"
+
+
+def test_execute_give_co_located_unrelated_gold_give_is_unaffected_by_an_active_claim():
+    state = _state_with_recipient(giver_treasury=1000)
+    claim = BlackmailClaim(spy_leader_id=9, spy_kingdom_id=RECIPIENT_KINGDOM, amount=15)
+    state.kingdoms[GIVER_KINGDOM].active_blackmail = claim
+    request = TradeRequest(obj=50, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
+    assert result == TradeExecutionResult(applied=True, gold_transferred=50)
+    # A co-located ordinary Give that happens to also clear a matching
+    # claim is fine (indistinguishable from an intentional payment) --
+    # only the amount/recipient match, not "was it really meant as one".
+    assert state.kingdoms[GIVER_KINGDOM].active_blackmail is None
+
+
+def test_execute_give_item_give_is_never_treated_as_a_blackmail_payment():
+    state = _state_with_recipient(giver_treasury=1000, recipient_location=ELSEWHERE)
+    claim = BlackmailClaim(spy_leader_id=9, spy_kingdom_id=RECIPIENT_KINGDOM, amount=15)
+    state.kingdoms[GIVER_KINGDOM].active_blackmail = claim
+    item = state.add_item(Treasure.WAND_FIREBALL, GIVER_LEADER, charges=5)
+    request = TradeRequest(obj=item.item_id, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
+    assert result.applied is False
+    assert result.reason == "not co-located with recipient"
+    assert state.kingdoms[GIVER_KINGDOM].active_blackmail is claim
 
 
 # -- Phase 667: Office.CURATOR's own "research any item number" perk --

@@ -470,3 +470,73 @@ def test_advance_trail_forwards_caster_has_spy_expanded_spying():
         )
 
     assert result.offices_held == (Office.CHANCELLOR,)
+
+
+def test_execute_trail_blackmail_claim_none_without_the_ability():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="King", location=FIELD, is_king=True))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert result.blackmail_claim is None
+
+
+def test_execute_trail_blackmail_claim_none_when_target_is_not_a_king():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Hero", location=FIELD, is_king=False))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]), caster_has_spy_blackmail=True)
+
+    assert result.blackmail_claim is None
+
+
+def test_execute_trail_blackmail_claim_none_when_same_kingdom():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=1, name="King", location=FIELD, is_king=True))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]), caster_has_spy_blackmail=True)
+
+    assert result.blackmail_claim is None
+
+
+def test_execute_trail_blackmail_detection_success_populates_claim_and_state():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="King", location=FIELD, is_king=True))
+
+    result = execute_trail(
+        state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5, 0.0]), caster_has_spy_blackmail=True
+    )
+
+    assert result.blackmail_claim is not None
+    assert result.blackmail_claim.spy_leader_id == 1
+    assert result.blackmail_claim.spy_kingdom_id == 1
+    assert state.kingdoms[2].pending_blackmail is result.blackmail_claim
+
+
+def test_execute_trail_blackmail_detection_failed_roll_leaves_no_claim():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="King", location=FIELD, is_king=True))
+
+    result = execute_trail(
+        state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5, 0.99]), caster_has_spy_blackmail=True
+    )
+
+    assert result.blackmail_claim is None
+    assert state.kingdoms[2].pending_blackmail is None
+
+
+def test_advance_trail_forwards_caster_has_spy_blackmail():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="King", location=FIELD, is_king=True))
+
+    result = advance_trail(
+        state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5, 0.0]), caster_has_spy_blackmail=True
+    )
+
+    assert result.blackmail_claim is not None

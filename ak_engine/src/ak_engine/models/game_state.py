@@ -320,6 +320,22 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.search_decode import SearchTactic
 
 
+@dataclass(slots=True, frozen=True)
+class BlackmailClaim:
+    """One outstanding `AdvancedAbility.SPY_BLACKMAIL` demand against a
+    Kingdom -- see `turn/blackmail.py`'s own module docstring (Phase
+    713) for the full mechanic. `spy_leader_id`/`spy_kingdom_id`
+    identify who is owed; `amount` is the real gold figure that was
+    demanded (already adjusted for the target's own alignment/treasury
+    and the spy's own halving-on-non-payment history at the moment the
+    demand was made).
+    """
+
+    spy_leader_id: int
+    spy_kingdom_id: int
+    amount: int
+
+
 @dataclass(slots=True)
 class KingdomState:
     kingdom_id: int
@@ -345,6 +361,18 @@ class KingdomState:
     # (Phase 573), the same turn-boundary sweep every other "not auto-
     # reset -- the caller's job" field in this project uses.
     treasury_raid_attempts_this_turn: int = 0
+    # Phase 713 (AdvancedAbility.SPY_BLACKMAIL): mirrors the real parsed
+    # `GWKingExtension.pending_blackmailer_king_id`/`active_blackmailer_
+    # king_id` field PAIR exactly (`parser/gw_world.py`) -- a demand
+    # delivered this turn sits in `pending_blackmail` (not yet due);
+    # `turn/blackmail.py advance_blackmail_claims()` promotes it into
+    # `active_blackmail` (due this turn) at the very start of the next
+    # `run_turn()` call. At most one live claim of either kind can exist
+    # per Kingdom at a time -- this is also what implements the real
+    # "usable once per turn on a kingdom" cap (no new demand can be
+    # created while either is still set). See `turn/blackmail.py`.
+    pending_blackmail: BlackmailClaim | None = None
+    active_blackmail: BlackmailClaim | None = None
 
 
 @dataclass(slots=True)
@@ -926,6 +954,18 @@ class LeaderState:
     # reads as an aggressive Melee-intent SEP, matching this project's
     # own pre-Phase-669 always-duel default exactly.
     special_encounter_plan: tuple[SearchTactic, ...] = ()
+    # Phase 713 -- AdvancedAbility.SPY_BLACKMAIL. Mirrors the real
+    # parsed `GWLeaderRecord.unpaid_blackmail_penalty_exponent` field
+    # exactly (`parser/gw_world.py`, "an unpaid-blackmail counter that
+    # halves the next demand each time it's incremented") -- scoped to
+    # this Spy (the character), not to any particular target Kingdom.
+    # Incremented by `turn/blackmail.py resolve_unpaid_blackmail()`
+    # whenever one of this leader's own demands goes unpaid; reset to 0
+    # by `turn/trade_execution.py execute_give()` when a matching
+    # payment clears the claim. Never reset by `_replenish_turn_scoped_
+    # state()` -- a real, monotonic-until-paid counter, not a per-turn
+    # value.
+    unpaid_blackmail_penalty_exponent: int = 0
 
 
 @dataclass(slots=True)
@@ -1362,6 +1402,15 @@ class GameState:
     # no explicit reset, no multi-turn game loop exists yet for it to
     # matter" convention as `world_events`/`rumors`/`turn_raid_events`.
     battle_narratives_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
+    # Phase 713 -- AdvancedAbility.SPY_BLACKMAIL's own demand-delivery
+    # notice, keyed by kingdom_id -- both the blackmailer's own Kingdom
+    # and the victim Kingdom receive the identical rendered text (one
+    # shared `render_blackmail_demand()` call, same "both sides get the
+    # same rendered lines" reasoning as `battle_narratives_by_kingdom`
+    # above). Populated once per turn by `report/turn_report.py record_
+    # blackmail_narratives()`, the same "before any `compose_letter_
+    # report()` call" contract as that sibling dict.
+    blackmail_narratives_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
     # Phase 408 -- mirrors `RUMORS.PAS`/`REPORTS.PAS`'s own `kkmet` bitmask
     # (`Check_KKSugg`, `REPORTS.PAS` ~173-202): once two kingdoms' own
     # territories have ever bordered each other, `frozenset({a, b})` is
