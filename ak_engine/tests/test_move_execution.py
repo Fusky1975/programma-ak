@@ -1166,15 +1166,49 @@ def test_execute_move_naval_hug_coastline_withheld_when_no_shared_hex_is_actuall
 
 
 def test_execute_move_naval_hug_coastline_withheld_when_a_sea_unit_travels_in_the_stack():
-    # This project has no Fleet cargo-capacity model, so the shortcut is
-    # conservatively withheld whenever a sea-going unit accompanies the
-    # stack -- see _naval_hug_coastline_move_is_legal()'s own docstring.
+    # Phase 720: no longer "no Fleet cargo-capacity model" (Phase 714
+    # built one) -- this call simply never requests auto_board, so the
+    # Bowmen is never actually boarded, correctly reproducing the same
+    # conservative denial for a mixed stack with no boarding attempted.
     state = _hug_state()
     state.add_army(ArmyState(102, 1, ArmyType.FLEET, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
 
     execute_move(state, kingdom_id=1, army_ids=[101, 102], target=HUG_TARGET, has_naval_hug_coastline=True)
 
     assert state.armies[101].location != HUG_TARGET
+
+
+def test_execute_move_naval_hug_coastline_grants_the_hop_when_the_fleet_can_carry_every_land_army():
+    # Phase 720: SS106's own capacity-allocation rule, all-or-nothing --
+    # the Bowmen (speed 2, infantry-eligible) fully boards the Fleet
+    # (FLEET_INFANTRY_CAPACITY=2), so the whole group hops together.
+    state = _hug_state()
+    state.add_army(ArmyState(102, 1, ArmyType.FLEET, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+
+    execute_move(state, kingdom_id=1, army_ids=[101, 102], target=HUG_TARGET, has_naval_hug_coastline=True, auto_board=True)
+
+    assert state.armies[101].location == HUG_TARGET
+    assert state.armies[102].location == HUG_TARGET
+    assert state.armies[101].transported_by == 102
+
+
+def test_execute_move_naval_hug_coastline_still_withheld_when_the_fleet_cannot_carry_every_land_army():
+    # 3 Bowmen exceed FLEET_INFANTRY_CAPACITY=2 -- 2 board, 1 doesn't --
+    # the all-or-nothing rule denies the shortcut to the entire group,
+    # including the 2 that did board.
+    state = _hug_state()
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+    state.add_army(ArmyState(103, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+    state.add_army(ArmyState(104, 1, ArmyType.FLEET, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+
+    execute_move(
+        state, kingdom_id=1, army_ids=[101, 102, 103, 104], target=HUG_TARGET, has_naval_hug_coastline=True, auto_board=True
+    )
+
+    assert state.armies[101].location != HUG_TARGET
+    assert state.armies[102].location != HUG_TARGET
+    assert state.armies[103].location != HUG_TARGET
+    assert state.armies[104].location != HUG_TARGET
 
 
 # -- Phase 715: Fleet/Whale cargo-capacity subsystem, Phase B -- auto_board --

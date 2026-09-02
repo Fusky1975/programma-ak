@@ -29792,7 +29792,7 @@ follow-up request after the original 431-435 plan shipped.
   suite verified green (unchanged, 6134) before writing a single new
   test.
 
-- **Phase 719 (current)**: `AdvancedAbility.LONG_RANGE_ARCHERY`/
+- **Phase 719**: `AdvancedAbility.LONG_RANGE_ARCHERY`/
   `SHORT_RANGE_ARCHERY` wired into `turn/search_execution.py`'s own
   separate, duplicated `CombatRange`/`SHOOT` state machine (leader-vs-
   monster Search combat) -- the nineteenth survey's candidate #2, and
@@ -29839,6 +29839,39 @@ follow-up request after the original 431-435 plan shipped.
   returned outcome explicitly, mirroring `_finish_melee_outcome()`'s
   own convention. Test count: 6138 -> 6145 (net +7). Full suite
   verified green (unchanged, 6138) before writing a single new test.
+
+- **Phase 720 (current)**: Naval Hug Coastline, capacity-aware --
+  the nineteenth survey's last candidate. `turn/move_execution.py
+  _naval_hug_coastline_move_is_legal()`'s own docstring already flagged
+  a real gap: the coastal shortcut was denied outright to the whole
+  moving group whenever any `SEA_ARMY_TYPES` member (Fleet/Whales/
+  Mermen) travelled with it, a "safe, conservative default" from
+  before the Fleet/Whale cargo-capacity subsystem (Phase 714-717)
+  existed. Re-reading `AKGEN_reverse_engineering_report (3).md` SS106
+  in full found the real mechanic richer than expected: when a Fleet
+  and land units travel together, the engine allocates the Fleet's own
+  limited capacity by the identical deterministic priority already
+  built as `_auto_board_transport_group()`/`_boarding_priority_tier()`
+  (Phase 715) -- and land units that don't get a slot travel
+  *separately*, by the ordinary route, while the carrier plus whatever
+  it managed to board make the coastal hop. Faithfully splitting one
+  `execute_move()` call's outcome into two different fates would need
+  `MoveExecutionResult` to represent more than a single group-wide
+  `new_location` -- a real architectural change touching `report/
+  turn_report.py`/`turn/plan_dispatch.py` too. **User-confirmed
+  directly**: implement an all-or-nothing simplification instead --
+  the whole group gets the hop together only when *every* land-type
+  army present ends up boarded (reusing whatever the same call's own
+  earlier `auto_board` pass already did, no duplicate boarding logic);
+  if even one land army is left without a slot, the shortcut is denied
+  for the entire group, exactly as before this phase. A pure land
+  stack (no sea-going unit at all) is vacuously unaffected -- proven
+  by construction, not just by inspection. The un-boarded-stragglers-
+  travel-separately half of SS106 stays a real, explicitly-deferred
+  remainder. Test count: 6145 -> 6147 (net +2). Full suite verified
+  green (unchanged, 6145) before writing a single new test. This
+  closes the entire nineteenth fresh codebase survey
+  ([[project_nineteenth_survey_2026_09_02]]) -- all 3 candidates done.
 
 ## Setup
 

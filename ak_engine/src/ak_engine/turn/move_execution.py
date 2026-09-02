@@ -295,22 +295,38 @@ def _naval_hug_coastline_move_is_legal(
     through a sea hex" -- not a teleport and not an arbitrary route, so
     this is a direct neighbor-set intersection, not a pathfinding search.
 
-    **Deliberately not modeled here** (the dossier's own second
-    paragraph): when both Fleets and land units accompany the leader,
-    the real engine allocates the Fleets' own limited transport capacity
-    among the land units by a deterministic priority (speed 1-2 units
-    first, tiebroken by lowest army designation) and only the
-    land-walking survivors take the ordinary land route instead.
-    **Phase 714** built a real Fleet/Whale cargo-capacity model
-    (``turn/sea_transport.py``), but that priority-allocation rule is a
-    different, more specific mechanic than "is there room" -- not a
-    trivial reuse of ``can_board()`` -- and this function's own caller
-    still isn't wired to either: it requires the moving stack to
-    contain no sea-going unit at all (``models/army_type.py
-    SEA_ARMY_TYPES``) before granting this shortcut, falling back to
-    the ordinary chase-step Move otherwise (a safe, conservative
-    default: never wrongly grants the hop, only ever withholds it in a
-    case this project's own movement dispatch doesn't yet model).
+    The dossier's own second paragraph, quoted in full: "Se accompagnano
+    il leader sia Fleet sia unità terrestri, il motore assegna il
+    trasporto al maggior numero possibile di unità" -- deterministic
+    priority (speed 1-2 units first, tiebroken by lowest army
+    designation) -- "Le unità trasportate restano soggette al divieto di
+    usare anche movimento terrestre proprio nello stesso turno; quelle
+    non imbarcate percorrono il normale passo terrestre, se legale e con
+    punti sufficienti." The real engine genuinely splits a mixed group's
+    fate: the carrier(s) plus whatever they manage to board make the
+    coastal hop; land stragglers left without a slot travel separately,
+    by the ordinary route.
+
+    **Phase 720 -- the priority-allocation rule itself is now reused
+    directly** (it's the identical rule already built and tested as
+    ``turn/move_execution.py _auto_board_transport_group()``/
+    ``_boarding_priority_tier()``, Phase 715) **via an all-or-nothing
+    simplification, user-confirmed**: this function's own caller
+    (``execute_move()``'s ``is_hug_coastline_hop``) now grants the whole
+    group the hop together only when *every* land-type army present
+    ends up boarded (``ArmyState.transported_by is not None``, read
+    straight off whatever boarding the same call's own earlier ``auto_
+    board`` pass already performed -- no separate/duplicate boarding
+    logic here); if even one land army is left without a carrier slot,
+    the shortcut is denied for the entire group, exactly as before this
+    phase. **Deliberately still not modeled**: the real engine's own
+    "un-boarded stragglers still travel separately, by the ordinary
+    route, while the rest hops" split -- doing that faithfully would
+    need ``MoveExecutionResult`` to represent more than one outcome for
+    a single ``execute_move()`` call (today it has one ``new_location``
+    for the whole group), a real architectural change touching ``report/
+    turn_report.py``/``turn/plan_dispatch.py`` too, judged out of scope
+    for this phase.
     """
 
     origin_province = state.provinces.get(origin)
@@ -843,11 +859,21 @@ def execute_move(
     wind_walking = leader_snapshot is not None and leader_snapshot.mystic_winds_active
 
     bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    # Phase 720: a mixed stack (a sea-going carrier present alongside
+    # land units) still qualifies for the whole-group hop when every
+    # land-type army in it ended up boarded by the auto_board pass
+    # above (SS106's own capacity-allocation rule, all-or-nothing --
+    # see _naval_hug_coastline_move_is_legal()'s own Phase 720
+    # addendum). A pure land stack has no army needing transported_by
+    # at all, so this is vacuously satisfied, unchanged from before.
     is_hug_coastline_hop = (
         has_naval_hug_coastline
         and current != target
         and not is_adjacent(current, target, bounds)
-        and not any(army.army_type in SEA_ARMY_TYPES for army in armies)
+        and (
+            not any(army.army_type in SEA_ARMY_TYPES for army in armies)
+            or all(army.transported_by is not None for army in armies if is_land_army(army.army_type))
+        )
         and _naval_hug_coastline_move_is_legal(state, current, target, bounds)
     )
     if current != target and not is_adjacent(current, target, bounds) and not is_hug_coastline_hop:
