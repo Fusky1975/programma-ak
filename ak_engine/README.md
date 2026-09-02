@@ -29598,7 +29598,7 @@ follow-up request after the original 431-435 plan shipped.
   `DRUIDIC_WHALE_TRANSPORT`, remains deliberately deprioritized as its
   own separate, larger undertaking -- see Phase 714 below.
 
-- **Phase 714 (current)**: the Fleet/Whale cargo-capacity subsystem's
+- **Phase 714**: the Fleet/Whale cargo-capacity subsystem's
   own Phase A -- picked up directly at the user's request, "con
   cautela e pensandoci molto," after candidate #4 above was explained
   in detail. A dedicated investigation found the real scope is bigger
@@ -29641,6 +29641,56 @@ follow-up request after the original 431-435 plan shipped.
   carrier moves, and `_naval_hug_coastline_move_is_legal()`'s own
   capacity-based allocation priority (a different, more specific rule)
   -- all real, separate follow-ups, not started.
+
+- **Phase 715 (current)**: the Fleet/Whale cargo-capacity subsystem's
+  own Phase B -- wiring Phase 714's own primitives into the real Move
+  dispatch path, at the user's own direct request. Investigated first,
+  not assumed: no separate "board"/"embark" order verb exists anywhere
+  in this game (rulebook, AKGEN disassembly reports, or the closed,
+  fully-transcribed `ActionCode` enum) -- boarding is automatic
+  whenever a leader's own commanded group (the existing "leader-command"
+  model every multi-army Move already uses) contains both a Fleet/Whale
+  and eligible land units. The only real, sourced allocation-priority
+  algorithm found (`AKGEN_reverse_engineering_report (3).md` SS106,
+  "speed 1-2 units first, tiebroken by lowest army id") is technically
+  scoped to `NAVAL_HUG_COASTLINE` specifically, but is reused directly
+  here as the one real, documented priority order. A real, consequential
+  problem was found and put to the user directly before designing
+  further: the rulebook's own true rule is a hard legality restriction
+  (land units cannot move via sea without a Fleet), but several
+  currently-passing tests for unrelated features (Illusory Fog, March
+  Through Floods, sea-conquest surcharges) depend on this project's own
+  existing permissiveness (no terrain-movement-legality gate anywhere).
+  User-confirmed scope: capacity *tracking* only -- boarded cargo rides
+  for free (spends none of its own movement points, per rulebook: "una
+  unità non può usare un punto di movimento via terra ed essere
+  trasportata... nello stesso turno"), but land units stay exactly as
+  free to enter/cross Sea unassisted as they already were; zero
+  existing tests touched. `turn/move_execution.py execute_move()` gains
+  `auto_board`/`caster_has_druidic_whale_transport`/`caster_has_druidic_
+  transport` (all default `False`, every direct-call test unaffected),
+  a new `_auto_board_transport_group()` helper, and two explicit
+  consistency fixes using `turn/sea_transport.py`'s own primitives: an
+  army moving without its current carrier disembarks first (either
+  direction -- cargo moving alone, or a carrier moving without some of
+  its cargo left behind). `MoveExecutionResult` gains `boarded_army_
+  ids` for observability. `turn/plan_dispatch.py dispatch_phase()`'s
+  own real LMOVE branch passes `auto_board=True` and both ability
+  flags through -- the real, live wiring; `turn/turn_processor.py
+  _continue_active_move_chases()` already calls through the same
+  `dispatch_phase()` function, so the persistent Move-chase
+  continuation needed zero separate changes. One real, pre-existing bug
+  found and fixed before writing a single test: 8 `ArmyType` members
+  (including `CROSSBOW`/`JAVELINS`, already in Phase 714's own infantry
+  set) have no `ARMY_TABLE` entry at all -- the new priority sort would
+  have raised `KeyError` on them; fixed with a safe fallback tier
+  (`_boarding_priority_tier()`), verified with a dedicated test. Test
+  count: 6106 -> 6119 (net +13). Full suite verified green (unchanged,
+  6106) before writing a single new test. **Deliberately not built this
+  phase**: the real movement-legality restriction, Dragon/Eagle Wing's
+  own air-transport rule, Hug-Coastline's own capacity-aware version,
+  report-layer narration for a real boarding event, and battle
+  integration (`apply_carrier_destruction()` still has no live caller).
 
 ## Setup
 

@@ -1144,3 +1144,169 @@ def test_execute_move_naval_hug_coastline_withheld_when_a_sea_unit_travels_in_th
     execute_move(state, kingdom_id=1, army_ids=[101, 102], target=HUG_TARGET, has_naval_hug_coastline=True)
 
     assert state.armies[101].location != HUG_TARGET
+
+
+# -- Phase 715: Fleet/Whale cargo-capacity subsystem, Phase B -- auto_board --
+
+
+def _transport_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Coastia", Race.HUMAN, Alignment.GOOD, ORIGIN))
+    state.add_province(ProvinceState(ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    return state
+
+
+def test_execute_move_auto_board_false_by_default_never_boards():
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101, 102], target=TARGET)
+
+    assert result.boarded_army_ids == []
+    assert state.armies[102].transported_by is None
+    assert state.armies[102].movement_points == 2  # paid its own ordinary cost
+
+
+def test_execute_move_auto_board_boards_eligible_land_army_and_it_rides_free():
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101, 102], target=TARGET, auto_board=True)
+
+    assert result.boarded_army_ids == [102]
+    assert state.armies[102].transported_by == 101
+    assert state.armies[102].movement_points == 3  # unchanged -- rode along for free
+    assert state.armies[101].movement_points == 2  # the Fleet itself paid the ordinary cost
+    assert state.armies[102].location == TARGET  # traveled with the Fleet
+
+
+def test_execute_move_auto_board_respects_fleet_infantry_capacity():
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(103, 1, ArmyType.AXEMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(104, 1, ArmyType.PHALANX, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101, 102, 103, 104], target=TARGET, auto_board=True)
+
+    assert sorted(result.boarded_army_ids) == [102, 103]  # capacity 2, lowest army ids win
+    assert state.armies[104].transported_by is None
+    assert state.armies[104].movement_points == 2  # paid its own ordinary cost
+
+
+def test_execute_move_auto_board_priority_favors_lower_speed_tier():
+    # Werebeasts (speed 3) and Trolls (speed 2) are both infantry-
+    # eligible; with only 1 slot left, the real AKGEN SS106 priority
+    # ("speed 1 or 2 units first") means Trolls boards, not Werebeasts,
+    # regardless of army-id order.
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))  # fills 1st slot
+    state.add_army(ArmyState(103, 1, ArmyType.WEREBEASTS, Quality.AVERAGE, ORIGIN, movement_points=3))  # speed 3, lower army id
+    state.add_army(ArmyState(104, 1, ArmyType.TROLLS, Quality.AVERAGE, ORIGIN, movement_points=3))  # speed 2, higher army id
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101, 102, 103, 104], target=TARGET, auto_board=True)
+
+    assert sorted(result.boarded_army_ids) == [102, 104]
+    assert state.armies[103].transported_by is None
+
+
+def test_execute_move_auto_board_mounted_and_infantry_are_mutually_exclusive():
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.ELEPHANTS, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(103, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101, 102, 103], target=TARGET, auto_board=True)
+
+    assert result.boarded_army_ids == [102]  # mounted boards first (lower army id), fills the Fleet outright
+    assert state.armies[103].transported_by is None
+
+
+def test_execute_move_auto_board_missing_army_table_entry_does_not_crash():
+    # Crossbow has no ARMY_TABLE entry at all (a real, pre-existing gap)
+    # -- the priority sort must fall back safely, not raise KeyError.
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.CROSSBOW, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101, 102], target=TARGET, auto_board=True)
+
+    assert result.boarded_army_ids == [102]
+
+
+def test_execute_move_auto_board_ent_refuses_without_druidic_transport():
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.ENTS, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101, 102], target=TARGET, auto_board=True)
+
+    assert result.boarded_army_ids == []
+    assert state.armies[102].transported_by is None
+
+
+def test_execute_move_auto_board_ent_boards_with_druidic_transport():
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.ENTS, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(
+        state, kingdom_id=1, army_ids=[101, 102], target=TARGET, auto_board=True, caster_has_druidic_transport=True
+    )
+
+    assert result.boarded_army_ids == [102]
+    assert state.armies[102].transported_by == 101
+
+
+def test_execute_move_auto_board_whale_refuses_without_the_ability():
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.WHALES, Quality.AVERAGE, ORIGIN, movement_points=4))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101, 102], target=TARGET, auto_board=True)
+
+    assert result.boarded_army_ids == []
+
+
+def test_execute_move_auto_board_whale_boards_with_the_ability():
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.WHALES, Quality.AVERAGE, ORIGIN, movement_points=4))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(
+        state,
+        kingdom_id=1,
+        army_ids=[101, 102],
+        target=TARGET,
+        auto_board=True,
+        caster_has_druidic_whale_transport=True,
+    )
+
+    assert result.boarded_army_ids == [102]
+    assert state.armies[102].transported_by == 101
+
+
+def test_execute_move_disembarks_a_boarded_army_moving_without_its_carrier():
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3, transported_by=101))
+
+    execute_move(state, kingdom_id=1, army_ids=[102], target=TARGET)
+
+    assert state.armies[102].transported_by is None
+    assert state.armies[102].movement_points == 2  # paid its own ordinary cost, moving alone
+
+
+def test_execute_move_leaves_cargo_behind_when_carrier_moves_without_it():
+    state = _transport_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3, transported_by=101))
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert state.armies[102].transported_by is None
+    assert state.armies[102].location == ORIGIN  # left behind, not dragged along

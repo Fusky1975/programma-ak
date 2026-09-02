@@ -2336,3 +2336,28 @@ def test_real_move_file_resurrections_nested_plan_never_dispatches_without_a_dea
     assert len(results) == 1
     assert results[0].result.applied is False
     assert not any(r.leader_id == 22 for r in results)
+
+
+def test_dispatch_lmove_auto_boards_an_ent_when_the_leader_holds_druidic_transport():
+    # Phase 715: dispatch_phase()'s own real LMOVE branch passes
+    # auto_board=True plus both Druidic ability flags into execute_move()
+    # for real -- an Ent (needs DRUIDIC_TRANSPORT, per turn/sea_
+    # transport.py can_board()) boards a co-located Fleet, both
+    # commanded by the same leader. _state_with_army()'s own default
+    # Bowmen army (army_id 1) is left uncommanded here so it isn't part
+    # of this move -- only the Fleet and the Ent are.
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)  # adjacent to origin on the odd-r grid
+    state, _bowmen_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    state.armies[_bowmen_id].commanded_by = None
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.DRUIDIC_TRANSPORT)
+    fleet_id, ent_id = 2, 3
+    state.add_army(ArmyState(fleet_id, 1, ArmyType.FLEET, Quality.AVERAGE, origin, movement_points=3, commanded_by=LEADER_ID))
+    state.add_army(ArmyState(ent_id, 1, ArmyType.ENTS, Quality.AVERAGE, origin, movement_points=1, commanded_by=LEADER_ID))
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert ent_id in result.boarded_army_ids
+    assert state.armies[ent_id].transported_by == fleet_id
+    assert state.armies[ent_id].location == target

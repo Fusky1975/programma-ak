@@ -596,6 +596,12 @@ def dispatch_phase(
     naval_skill_level = effective_skill_level(state, leader, Ability.NAVAL) if leader is not None else 0
     # Phase 524: same real-possession pattern, for Naval Hug Coastline.
     has_naval_hug_coastline = leader is not None and AdvancedAbility.NAVAL_HUG_COASTLINE in leader.advanced_abilities
+    # Phase 715: same real-possession pattern, for the Fleet/Whale
+    # cargo-capacity subsystem's own two Advanced Abilities.
+    caster_has_druidic_whale_transport = (
+        leader is not None and AdvancedAbility.DRUIDIC_WHALE_TRANSPORT in leader.advanced_abilities
+    )
+    caster_has_druidic_transport = leader is not None and AdvancedAbility.DRUIDIC_TRANSPORT in leader.advanced_abilities
 
     if action is ActionCode.LMOVE:
         target = decode_hex_number(phase.obj, board_width)
@@ -617,6 +623,9 @@ def dispatch_phase(
             has_march_through_floods=has_march_through_floods,
             naval_skill_level=naval_skill_level,
             has_naval_hug_coastline=has_naval_hug_coastline,
+            auto_board=True,
+            caster_has_druidic_whale_transport=caster_has_druidic_whale_transport,
+            caster_has_druidic_transport=caster_has_druidic_transport,
         )
         # Phase 490 -- Arch-Mage's own "Sense Magic Items in Province"
         # perk: only meaningful once the mover actually arrived somewhere

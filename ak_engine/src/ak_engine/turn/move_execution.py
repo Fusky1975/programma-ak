@@ -168,11 +168,11 @@ move()`/`fight_multi_attacker_battle()` route that never calls
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from ak_engine.models.army_type import SEA_ARMY_TYPES, is_land_army
+from ak_engine.models.army_type import ARMY_TABLE, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.feature import Feature
-from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, GameState, ProvinceState
+from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, ArmyState, GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.treasure import Treasure
@@ -182,6 +182,7 @@ from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.contested_province import is_illegal_move_from_contested
 from ak_engine.turn.exploration import ExploreResult, discover_features, resolve_explore, resolve_find_mines
 from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.sea_transport import board_army, cargo_aboard, disembark_army
 from ak_engine.turn.movement import (
     NORMAL_MAP_BOUNDS,
     HexOwnershipTier,
@@ -357,6 +358,13 @@ class MoveExecutionResult:
     # Phase 634 addendum for why the caller can't safely reconstruct
     # this after the fact from the leader's own current flag value.
     wind_walking: bool = False
+    # Phase 715 -- Fleet/Whale cargo-capacity subsystem's own Phase B:
+    # every army id `_auto_board_transport_group()` actually boarded
+    # this call (empty when `auto_board` is `False`, the default).
+    # Observability for tests and a future report-narration phase --
+    # nothing renders this yet. See `turn/sea_transport.py`'s own
+    # module docstring for the full mechanic.
+    boarded_army_ids: list[int] = field(default_factory=list)
 
 
 def _classify_hex_ownership(state: GameState, kingdom_id: int, coord: HexCoord) -> HexOwnershipTier:
@@ -538,6 +546,67 @@ def reveal_adjacent_provinces(state: GameState, province: ProvinceState, kingdom
             neighbor_province.explored_percent_by_kingdom[kingdom_id] = KNOWN_PROVINCE_MIN_PERCENT
 
 
+# Phase 715 -- the one real, sourced allocation-priority order found for
+# this whole subsystem (`AKGEN_reverse_engineering_report (3).md` SS106,
+# scoped there to `AdvancedAbility.NAVAL_HUG_COASTLINE` specifically):
+# "prima unità con velocità base 1 o 2, a parità designazione/ID di
+# armata più basso" -- reused directly here as the one real, documented
+# priority, since no other source gives a different one for ordinary
+# transport.
+_CARRIER_ARMY_TYPES = (ArmyType.FLEET, ArmyType.WHALES)
+
+
+def _boarding_priority_tier(army_type: ArmyType) -> int:
+    """0 = "speed 1 or 2" (boards first); 1 = everything else, including
+    the handful of `ArmyType` members with no `ARMY_TABLE` entry at all
+    (Vampires, Marauders, Shamans, Crossbow, Javelins, Artillery,
+    Spiders, D Turtle -- a real, pre-existing gap, confirmed by direct
+    check) -- a safe, conservative fallback (never wrongly claims the
+    high-priority tier for a type whose real speed isn't recorded),
+    not a crash.
+    """
+
+    stats = ARMY_TABLE.get(army_type)
+    return 0 if stats is not None and stats.speed <= 2 else 1
+
+
+def _auto_board_transport_group(
+    state: GameState,
+    armies: list[ArmyState],
+    *,
+    caster_has_druidic_whale_transport: bool = False,
+    caster_has_druidic_transport: bool = False,
+) -> list[int]:
+    """Automatically boards as many eligible land armies as fit onto
+    whichever Fleet/Whale carriers are moving in the same group -- see
+    ``execute_move()``'s own Phase 715 addendum. Returns every army id
+    actually boarded this call.
+    """
+
+    carriers = sorted((army for army in armies if army.army_type in _CARRIER_ARMY_TYPES), key=lambda army: army.army_id)
+    if not carriers:
+        return []
+
+    candidates = sorted(
+        (army for army in armies if army.army_type not in _CARRIER_ARMY_TYPES and army.transported_by is None),
+        key=lambda army: (_boarding_priority_tier(army.army_type), army.army_id),
+    )
+
+    boarded_army_ids: list[int] = []
+    for candidate in candidates:
+        for carrier in carriers:
+            if board_army(
+                state,
+                candidate.army_id,
+                carrier.army_id,
+                caster_has_druidic_whale_transport=caster_has_druidic_whale_transport,
+                caster_has_druidic_transport=caster_has_druidic_transport,
+            ):
+                boarded_army_ids.append(candidate.army_id)
+                break
+    return boarded_army_ids
+
+
 def execute_move(
     state: GameState,
     kingdom_id: int,
@@ -558,6 +627,9 @@ def execute_move(
     has_march_through_floods: bool = False,
     naval_skill_level: int = 0,
     has_naval_hug_coastline: bool = False,
+    auto_board: bool = False,
+    caster_has_druidic_whale_transport: bool = False,
+    caster_has_druidic_transport: bool = False,
 ) -> MoveExecutionResult:
     """Move ``army_ids`` (all from the same province) toward ``target``.
 
@@ -669,8 +741,11 @@ def execute_move(
     function. Deliberately excluded (see that helper's own docstring):
     when a Fleet/Whale/Mermen unit travels in the same stack, the real
     engine's own transport-capacity allocation sub-mechanic would apply
-    instead, which this project has no data model for -- the shortcut
-    is only granted when every accompanying army is land-based.
+    instead -- **Phase 715** built that capacity model (`turn/sea_
+    transport.py`), but this specific shortcut still isn't wired to it
+    (a different, more specific priority rule, see that helper's own
+    docstring); the shortcut is still only granted when every
+    accompanying army is land-based.
 
     If ``target`` isn't adjacent to the mover's own current location,
     this is a chase (Phase 85, rulebook [3.1]): one hex-step toward
@@ -695,6 +770,34 @@ def execute_move(
     non-adjacent land-to-land hop that shares a coastal sea-hex
     neighbor resolve as an ordinary move instead of a chase step -- see
     module docstring's own Phase 524 addendum.
+
+    **Phase 715 -- Fleet/Whale cargo-capacity subsystem, Phase B.**
+    ``auto_board`` (default False) turns on automatic boarding: when the
+    moving party contains a Fleet/Whale alongside eligible land armies,
+    as many as fit are boarded onto it (``turn/sea_transport.py
+    can_board()``'s own real capacity rules, ``caster_has_druidic_
+    whale_transport``/``caster_has_druidic_transport`` gating the two
+    Advanced-Ability extensions) before movement points are ever
+    touched -- see ``_auto_board_transport_group()`` below. A boarded
+    army spends none of its own movement points this call (rulebook:
+    "cannot use a land movement point and be transported... in the same
+    turn") -- only its carrier pays the ordinary cost. An army that was
+    already boarded, moving without its own carrier this call (in
+    either direction -- the cargo moving alone, or the carrier moving
+    without some of its cargo), is disembarked first/left behind --
+    see the real code for both checks, right below and near the end of
+    this function. **Deliberately not enforced here**: the real
+    rulebook restriction that land units can *only* move via sea when
+    transported -- this project has no general terrain-movement-
+    legality gate anywhere (Phase 693's own note above still applies),
+    and several existing tests for unrelated features (Illusory Fog,
+    March Through Floods, sea-conquest surcharges) depend on that
+    permissiveness -- adding a real legality gate is a deliberately
+    separate, larger, not-yet-attempted follow-up. ``auto_board``
+    itself defaults False, so every pre-Phase-715 caller (including
+    every direct test call) is completely unaffected; only ``turn/
+    plan_dispatch.py dispatch_phase()``'s own real LMOVE dispatch passes
+    ``True``.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -710,6 +813,24 @@ def execute_move(
             raise ValueError("an army with no movement points left this gameturn can't move")
     else:
         current = state.leaders[leader_id].location
+
+    # Phase 715 -- an army moving without its own current carrier (the
+    # carrier's own id isn't part of this same move) naturally leaves
+    # it. Unconditional (not gated on auto_board) -- a correctness fix,
+    # not a new mechanic; a no-op for every army whose transported_by
+    # is already None. See the docstring's own Phase 715 addendum.
+    for army in armies:
+        if army.transported_by is not None and army.transported_by not in army_ids:
+            disembark_army(state, army.army_id)
+
+    boarded_army_ids: list[int] = []
+    if auto_board:
+        boarded_army_ids = _auto_board_transport_group(
+            state,
+            armies,
+            caster_has_druidic_whale_transport=caster_has_druidic_whale_transport,
+            caster_has_druidic_transport=caster_has_druidic_transport,
+        )
 
     # Phase 634: snapshotted here, before this same call's own
     # fight_battle() (below) can clear it -- see MoveExecutionResult.
@@ -895,27 +1016,34 @@ def execute_move(
         army = state.armies.get(army_id)
         if army is None:
             continue  # destroyed in the battle
-        if not army.march_bonus_applied_this_turn and is_land_army(army.army_type):
-            bonus = march_movement_point_bonus(
-                army.movement_points,
-                has_march_cavalry=has_march_cavalry,
-                has_march_cavalry_mastery=has_march_cavalry_mastery,
-                has_march_infantry=has_march_infantry,
-                has_march_infantry_mastery=has_march_infantry_mastery,
-            )
-            if bonus:
-                army.movement_points += bonus
-                army.march_bonus_applied_this_turn = True
-        if not army.naval_bonus_applied_this_turn and army.army_type in SEA_ARMY_TYPES:
-            naval_bonus = naval_movement_point_bonus(naval_skill_level)
-            if naval_bonus:
-                army.movement_points += naval_bonus
-                army.naval_bonus_applied_this_turn = True
-        army.movement_points -= cost
-        if fog_affected_move and is_illusory_fog_affected_air_unit(army.army_type, mystic_winds_active_for(army, state)):
-            army.movement_points -= ILLUSORY_FOG_EXTRA_MOVEMENT_COST
-        if flood_affected_move and is_land_army(army.army_type):
-            army.movement_points -= MARCH_THROUGH_FLOODS_EXTRA_MOVEMENT_COST
+        # Phase 715: an army actually being carried this move (boarded,
+        # by this call or an earlier one, onto a carrier also part of
+        # this same move) spends none of its own movement points --
+        # rulebook: "cannot use a land movement point and be
+        # transported... in the same turn" -- only its carrier pays.
+        carried_this_move = army.transported_by is not None and army.transported_by in army_ids
+        if not carried_this_move:
+            if not army.march_bonus_applied_this_turn and is_land_army(army.army_type):
+                bonus = march_movement_point_bonus(
+                    army.movement_points,
+                    has_march_cavalry=has_march_cavalry,
+                    has_march_cavalry_mastery=has_march_cavalry_mastery,
+                    has_march_infantry=has_march_infantry,
+                    has_march_infantry_mastery=has_march_infantry_mastery,
+                )
+                if bonus:
+                    army.movement_points += bonus
+                    army.march_bonus_applied_this_turn = True
+            if not army.naval_bonus_applied_this_turn and army.army_type in SEA_ARMY_TYPES:
+                naval_bonus = naval_movement_point_bonus(naval_skill_level)
+                if naval_bonus:
+                    army.movement_points += naval_bonus
+                    army.naval_bonus_applied_this_turn = True
+            army.movement_points -= cost
+            if fog_affected_move and is_illusory_fog_affected_air_unit(army.army_type, mystic_winds_active_for(army, state)):
+                army.movement_points -= ILLUSORY_FOG_EXTRA_MOVEMENT_COST
+            if flood_affected_move and is_land_army(army.army_type):
+                army.movement_points -= MARCH_THROUGH_FLOODS_EXTRA_MOVEMENT_COST
         if moved and army.location == current:
             army.location = actual_target
 
@@ -923,6 +1051,18 @@ def execute_move(
         leader = state.leaders.get(leader_id)
         if leader is not None and leader.location == current:
             leader.location = actual_target
+
+    # Phase 715: cargo left behind when its carrier moves without it
+    # this same call (the carrier's own id is in army_ids, but the
+    # cargo's own isn't) -- disembarked, not silently left "aboard" a
+    # carrier that's now elsewhere.
+    for army_id in army_ids:
+        carrier = state.armies.get(army_id)
+        if carrier is None or carrier.army_type not in _CARRIER_ARMY_TYPES:
+            continue
+        for cargo in cargo_aboard(state, army_id):
+            if cargo.army_id not in army_ids:
+                disembark_army(state, cargo.army_id)
 
     return MoveExecutionResult(
         moved=moved,
@@ -934,4 +1074,5 @@ def execute_move(
         stopped_chasing=False,
         conquered=conquered,
         wind_walking=wind_walking,
+        boarded_army_ids=boarded_army_ids,
     )
