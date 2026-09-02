@@ -441,6 +441,15 @@ class ArmyState:
     # Phase 523 addendum. Reset the same way and at the same point as
     # `march_bonus_applied_this_turn` above.
     naval_bonus_applied_this_turn: bool = False
+    # Phase 714 -- Fleet/Whale cargo-capacity subsystem: the carrying
+    # Fleet/Whale's own `army_id`, or `None` if this army isn't
+    # currently boarded on anything. Mirrors `commanded_by`'s own
+    # nullable-int-cross-reference style; set/cleared by `turn/sea_
+    # transport.py board_army()`/`disembark_army()`. Not kept in sync
+    # with the carrier's own `location` as the carrier moves -- that's
+    # real move-integration work, a separate, not-yet-started follow-up
+    # (see `turn/sea_transport.py`'s own module docstring).
+    transported_by: int | None = None
 
 
 @dataclass(slots=True)

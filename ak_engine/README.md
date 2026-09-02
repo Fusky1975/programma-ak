@@ -29553,7 +29553,7 @@ follow-up request after the original 431-435 plan shipped.
   6030 -> 6032 (net +2). Full suite verified green (unchanged, 6030)
   before touching any test.
 
-- **Phase 713 (current)**: `AdvancedAbility.SPY_BLACKMAIL` -- the last
+- **Phase 713**: `AdvancedAbility.SPY_BLACKMAIL` -- the last
   real candidate from the eighteenth fresh codebase survey. Real text
   (`models/advanced_ability.py`): a Spy Trailing a foreign king who
   ends a phase in the same province has ~20% odds of "getting some
@@ -29594,9 +29594,53 @@ follow-up request after the original 431-435 plan shipped.
   mechanical effect this phase, per this project's own standing
   "project-original replacement prose is the user's own call" stance.
   Test count: 6032 -> 6077 (net +45). Full suite verified green
-  (unchanged, 6032) before writing a single new test. This closes the
-  entire eighteenth fresh codebase survey (only #4, `DRUIDIC_WHALE_
-  TRANSPORT`, deliberately deprioritized, remains).
+  (unchanged, 6032) before writing a single new test. Candidate #4,
+  `DRUIDIC_WHALE_TRANSPORT`, remains deliberately deprioritized as its
+  own separate, larger undertaking -- see Phase 714 below.
+
+- **Phase 714 (current)**: the Fleet/Whale cargo-capacity subsystem's
+  own Phase A -- picked up directly at the user's request, "con
+  cautela e pensandoci molto," after candidate #4 above was explained
+  in detail. A dedicated investigation found the real scope is bigger
+  than just `AdvancedAbility.DRUIDIC_WHALE_TRANSPORT`/`DRUIDIC_
+  TRANSPORT`: `Regolamento AK.txt` (lines 1917-1937) describes a real
+  BASE mechanic, entirely unmodeled until now -- an ordinary Fleet
+  already carries 2 infantry units or 1 mounted unit, no Advanced
+  Ability needed; Ents can *never* board a Fleet under the base rule
+  (an explicit rulebook "never," not just an unclassified type); Mermen
+  can never carry anything at all; Dragon/Eagle Wing carry 1 infantry
+  unit each under a *third*, separate base rule. The two Druidic
+  abilities are narrow extensions on top of this: `DRUIDIC_WHALE_
+  TRANSPORT` grants Whales (normally unable to carry anything) 1
+  infantry slot each; `DRUIDIC_TRANSPORT` grants Fleets 1 extra slot
+  for an otherwise-forbidden type ("such as Ents and Dinosaurs") --
+  an explicit, sourced override of the Ent "never" rule specifically,
+  not an invented exception. User-confirmed scope for this phase:
+  primitives only (data model + capacity/eligibility rules for the two
+  abilities), not the base rule for every player and not any real
+  order-dispatch wiring -- matching this project's own well-established
+  "primitives now, wiring later" precedent. New `models/army_type.py
+  FLEET_INFANTRY_ARMY_TYPES`/`FLEET_MOUNTED_ARMY_TYPES` (the rulebook's
+  own parenthetical examples plus every other unambiguously-named
+  type; every other land-eligible type needs `DRUIDIC_TRANSPORT`).
+  New `ArmyState.transported_by: int | None`, mirroring `commanded_by`'s
+  own nullable-cross-reference style. New `turn/sea_transport.py`:
+  `can_board()` (the exclusive-or "2 infantry OR 1 mounted" rule, plus
+  `DRUIDIC_TRANSPORT`'s own separate 1-unit special-cargo capacity and
+  `DRUIDIC_WHALE_TRANSPORT`'s own 1-infantry-per-Whale rule),
+  `board_army()`/`disembark_army()`, and `apply_carrier_destruction()`
+  (user-confirmed directly, no source describes this: the cargo sinks
+  with the carrier -- deliberately not auto-hooked into `GameState.
+  remove_army()` itself, since that function is shared by every
+  removal reason; a future battle-integration phase calls this
+  explicitly instead). Test count: 6077 -> 6106 (net +29). Full suite
+  verified green (unchanged, 6077) before writing a single new test.
+  **Deliberately not built this phase**: the base Fleet-for-everyone
+  rule as a live mechanic, Dragon/Eagle Wing's own separate air-
+  transport rule, keeping a boarded army's own location in sync as its
+  carrier moves, and `_naval_hug_coastline_move_is_legal()`'s own
+  capacity-based allocation priority (a different, more specific rule)
+  -- all real, separate follow-ups, not started.
 
 ## Setup
 

@@ -299,15 +299,17 @@ def _naval_hug_coastline_move_is_legal(
     the real engine allocates the Fleets' own limited transport capacity
     among the land units by a deterministic priority (speed 1-2 units
     first, tiebroken by lowest army designation) and only the
-    land-walking survivors take the ordinary land route instead. This
-    project has no Fleet cargo-capacity model at all (no `ArmyState`
-    field for it), so that sub-mechanic can't be reproduced without
-    inventing one -- ``execute_move()``'s own caller instead requires
-    the moving stack to contain no sea-going unit at all
-    (``models/army_type.py SEA_ARMY_TYPES``) before granting this
-    shortcut, falling back to the ordinary chase-step Move otherwise (a
-    safe, conservative default: never wrongly grants the hop, only ever
-    withholds it in the one case this project can't fully model).
+    land-walking survivors take the ordinary land route instead.
+    **Phase 714** built a real Fleet/Whale cargo-capacity model
+    (``turn/sea_transport.py``), but that priority-allocation rule is a
+    different, more specific mechanic than "is there room" -- not a
+    trivial reuse of ``can_board()`` -- and this function's own caller
+    still isn't wired to either: it requires the moving stack to
+    contain no sea-going unit at all (``models/army_type.py
+    SEA_ARMY_TYPES``) before granting this shortcut, falling back to
+    the ordinary chase-step Move otherwise (a safe, conservative
+    default: never wrongly grants the hop, only ever withholds it in a
+    case this project's own movement dispatch doesn't yet model).
     """
 
     origin_province = state.provinces.get(origin)

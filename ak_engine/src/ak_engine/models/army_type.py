@@ -286,6 +286,60 @@ def is_land_army(army_type: ArmyType) -> bool:
     return army_type not in SEA_ARMY_TYPES and army_type not in OVERFLIGHT_AIR
 
 
+# Phase 714 -- Fleet/Whale cargo-capacity subsystem (`turn/sea_
+# transport.py`). `Regolamento AK.txt` (lines 1917-1926): "Una flotta
+# può trasportare due unità di fanteria (inclusi Troll e Bestie
+# Mannare) o un'unità montata (inclusi Elefanti e Cammelli)." The
+# rulebook's own parenthetical examples aren't exhaustive over the 23
+# land-eligible ArmyType members (`is_land_army()` above already
+# excludes the 3 sea types and 2 air types) -- classified here only for
+# the types whose own name is unambiguous, per that module's own
+# docstring for the full reasoning:
+# - Infantry (plainly-named line infantry, plus the rulebook's own
+#   explicit Troll/Werebeast examples).
+FLEET_INFANTRY_ARMY_TYPES = frozenset(
+    {
+        ArmyType.BOWMEN,
+        ArmyType.AXEMEN,
+        ArmyType.PHALANX,
+        ArmyType.LEGION,
+        ArmyType.CROSSBOW,
+        ArmyType.JAVELINS,
+        ArmyType.TROLLS,
+        ArmyType.WEREBEASTS,
+    }
+)
+# - Mounted (plainly mounted, plus the rulebook's own explicit
+#   Elephant/Camel Corps examples).
+FLEET_MOUNTED_ARMY_TYPES = frozenset(
+    {
+        ArmyType.LT_CAVALRY,
+        ArmyType.HVY_CAVALRY,
+        ArmyType.CHARIOTS,
+        ArmyType.WARG_RIDERS,
+        ArmyType.ELEPHANTS,
+        ArmyType.CAMEL_CORPS,
+    }
+)
+# Every other land-eligible type (Garrison, Ents, Dinosaurs, Marauders,
+# Shamans, Vampires, Spiders, D Turtle, Artillery) needs `Advanced
+# Ability.DRUIDIC_TRANSPORT` to board a Fleet at all -- see `turn/
+# sea_transport.py`'s own `can_board()`.
+
+# "Una flotta può trasportare due unità di fanteria... o un'unità
+# montata" -- exclusive-or, not additive slots (see `can_board()`).
+FLEET_INFANTRY_CAPACITY = 2
+FLEET_MOUNTED_CAPACITY = 1
+# `AdvancedAbility.DRUIDIC_WHALE_TRANSPORT`'s own real text: "Each
+# Whale unit may transport one infantry unit."
+WHALE_INFANTRY_CAPACITY = 1
+# `AdvancedAbility.DRUIDIC_TRANSPORT`'s own real text: "Each fleet may
+# transport one such unit" (one of the otherwise-ineligible types
+# above, e.g. Ents/Dinosaurs -- its own separate, 1-unit capacity, not
+# shared with the ordinary infantry/mounted rule).
+DRUIDIC_TRANSPORT_CAPACITY = 1
+
+
 # Rulebook [6.3] "ARMY STRENGTH NOTES": race bonuses to basic strength.
 # "Elves: +1 when fighting as Bowmen, +1 in Forest. Dwarves: +1 as Axemen,
 # +1 in Mountains. Orcs: +1 as Phalanx, +1 in Mountains. Humans: +1 as
