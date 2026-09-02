@@ -505,6 +505,32 @@ def test_execute_pursue_army_vs_army_catch_up_fights_a_real_battle():
     assert state.armies[101].location == DEFENDER_HOME
 
 
+def test_execute_pursue_wires_battle_carrier_destruction():
+    # Phase 716: same real-battle fixture as the test above, proving
+    # the wiring reaches through (Phase 686's own "mock the shared
+    # function, assert the call" convention).
+    state = _base_state()
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_leader(
+        LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD, skills=_skills_with(Ability.SPY, 4, 9))
+    )
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=DEFENDER_HOME))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=1))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, DEFENDER_HOME, commanded_by=2))
+
+    with patch("ak_engine.turn.pursue_execution.apply_battle_carrier_destruction") as mock_cascade:
+        result = execute_pursue(state, 1, _melee_request(2), rng=random.Random(1234))
+
+    assert result.battle_report is not None
+    mock_cascade.assert_called_once_with(
+        state,
+        result.battle_report.destroyed_army_ids,
+        result.battle_report.disbanded_army_ids,
+        result.battle_report.pursuit_destroyed_army_ids,
+    )
+
+
 def test_execute_pursue_army_vs_army_catch_up_with_no_province_data_is_not_fought():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))

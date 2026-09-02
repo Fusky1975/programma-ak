@@ -182,7 +182,7 @@ from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.contested_province import is_illegal_move_from_contested
 from ak_engine.turn.exploration import ExploreResult, discover_features, resolve_explore, resolve_find_mines
 from ak_engine.turn.office_holder import resolve_office_holder
-from ak_engine.turn.sea_transport import board_army, cargo_aboard, disembark_army
+from ak_engine.turn.sea_transport import apply_battle_carrier_destruction, board_army, cargo_aboard, disembark_army
 from ak_engine.turn.movement import (
     NORMAL_MAP_BOUNDS,
     HexOwnershipTier,
@@ -963,6 +963,13 @@ def execute_move(
             loser_retreats=loser_retreats,
             attacker_origin=current,
             rng=rng,
+        )
+        # Phase 716: the cargo sinks with the carrier.
+        apply_battle_carrier_destruction(
+            state,
+            battle_report.destroyed_army_ids,
+            battle_report.disbanded_army_ids,
+            battle_report.pursuit_destroyed_army_ids,
         )
         conquered = battle_report.conquered
         moved = conquered

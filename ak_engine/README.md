@@ -29642,7 +29642,7 @@ follow-up request after the original 431-435 plan shipped.
   capacity-based allocation priority (a different, more specific rule)
   -- all real, separate follow-ups, not started.
 
-- **Phase 715 (current)**: the Fleet/Whale cargo-capacity subsystem's
+- **Phase 715**: the Fleet/Whale cargo-capacity subsystem's
   own Phase B -- wiring Phase 714's own primitives into the real Move
   dispatch path, at the user's own direct request. Investigated first,
   not assumed: no separate "board"/"embark" order verb exists anywhere
@@ -29691,6 +29691,47 @@ follow-up request after the original 431-435 plan shipped.
   own air-transport rule, Hug-Coastline's own capacity-aware version,
   report-layer narration for a real boarding event, and battle
   integration (`apply_carrier_destruction()` still has no live caller).
+
+- **Phase 716 (current)**: the Fleet/Whale cargo-capacity subsystem's
+  own battle-integration follow-up -- the smaller, lower-risk half of
+  what Phase 715 deliberately left open, picked directly by the user.
+  New `turn/sea_transport.py apply_battle_carrier_destruction()`
+  cascades `apply_carrier_destruction()` (the user's own Phase 714
+  "cargo sinks with the carrier" decision) for every real army actually
+  destroyed in a battle -- takes `BattleReport`'s own three real
+  "this army no longer exists" lists (`destroyed_army_ids`/`disbanded_
+  army_ids`/`pursuit_destroyed_army_ids`) as plain id sequences rather
+  than the `BattleReport` object itself, deliberately avoiding a
+  circular import back into `turn/battle_orchestrator.py` (this
+  function's own caller there). Investigated first: `fight_battle()`
+  has no single central destruction call site (6 separate `remove_
+  army()` calls across 3 functions) -- reusing `BattleReport`'s own
+  already-aggregated lists after the battle resolves sidesteps hooking
+  into any of that internal logic directly, keeping this addition
+  fully isolated from `battle_orchestrator.py`'s own well-tested
+  internals. Wired at all 4 real `fight_battle()` call sites (`turn/
+  move_execution.py execute_move()`, `turn/pursue_execution.py`'s
+  army-vs-army case, `turn/turn_processor.py`'s forced-rebattle
+  continuation, `turn/battle_orchestrator.py fight_multi_attacker_
+  battle()`'s own per-group call) -- each verified end-to-end via a
+  real battle-triggering fixture and a mocked-call assertion (Phase
+  686's own established convention), not just unit-tested in
+  isolation. One real, pre-existing test artifact found by the
+  standing non-breaking check, not designed for up front: an existing
+  `pursue_execution.py` test mocks `fight_battle()` to return `None`
+  as a test double for an unrelated assertion -- guarded with a real
+  `if battle_report is not None:` check at that one call site (the
+  other 3 already assume a real return value unconditionally,
+  matching their own existing code, so no equivalent guard was added
+  there). **Report-layer narration was considered and explicitly
+  declined by the user**: no real `SAY.PAS`-style text survives
+  anywhere for cargo sinking with its carrier, and per this project's
+  own standing convention project-original replacement prose is the
+  user's own call -- this phase ships the mechanism only, silently,
+  the same "real, silent mechanical effect" shape Phase 713's own
+  unpaid-blackmail tax penalty already established. Test count: 6119
+  -> 6127 (net +8). Full suite verified green (unchanged, 6119) before
+  writing a single new test.
 
 ## Setup
 

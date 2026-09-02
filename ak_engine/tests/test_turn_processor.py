@@ -583,6 +583,22 @@ def test_run_turn_deducts_movement_points_for_the_forced_rebattle():
     assert [r for r in results if r.phase_label == "forced-rebattle"] != []
 
 
+def test_run_turn_forced_rebattle_wires_battle_carrier_destruction():
+    # Phase 716: same real-battle fixture as the test above, proving the
+    # forced-rebattle continuation's own real fight_battle() call
+    # reaches turn/sea_transport.py apply_battle_carrier_destruction()
+    # (Phase 686's own "mock the shared function, assert the call"
+    # convention).
+    state = _base_state()
+    state.provinces[TARGET].contested_by_kingdom_id = 1
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET, movement_points=3))
+
+    with patch("ak_engine.turn.turn_processor.apply_battle_carrier_destruction") as mock_cascade:
+        run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(42))
+
+    mock_cascade.assert_called_once()
+
+
 def test_run_turn_does_not_force_a_rebattle_once_movement_points_run_out():
     state = _base_state()
     state.provinces[TARGET].contested_by_kingdom_id = 1

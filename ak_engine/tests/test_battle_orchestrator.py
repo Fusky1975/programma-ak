@@ -375,6 +375,28 @@ def test_fight_multi_attacker_battle_unites_commanders_from_both_parties():
     assert battles[0].report.attacker_commanding_leader_ids == [10, 20]
 
 
+def test_fight_multi_attacker_battle_wires_battle_carrier_destruction():
+    # Phase 716: same real-battle fixture as the test above, proving
+    # fight_multi_attacker_battle()'s own per-group fight_battle() call
+    # reaches turn/sea_transport.py apply_battle_carrier_destruction()
+    # (Phase 686's own "mock the shared function, assert the call"
+    # convention).
+    state = build_state()
+    parties = [MultiAttackerParty(leader_id=None, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5))]
+    rng = ScriptedRandom([0.1] + [0.1] * 40, choice_indices=[0] * 40)
+
+    with patch("ak_engine.turn.battle_orchestrator.apply_battle_carrier_destruction") as mock_cascade:
+        battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 1
+    mock_cascade.assert_called_once_with(
+        state,
+        battles[0].report.destroyed_army_ids,
+        battles[0].report.disbanded_army_ids,
+        battles[0].report.pursuit_destroyed_army_ids,
+    )
+
+
 # -- Phase 658: BattleReport's per-side present-but-not-commanding roster --
 
 

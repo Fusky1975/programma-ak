@@ -267,6 +267,7 @@ from ak_engine.turn.battle_orchestrator import (
 )
 from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.blackmail import advance_blackmail_claims
+from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.challenge_execution import execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
@@ -1375,6 +1376,10 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
         # ProvinceState.contested_from_coord's own docstring.
         report = fight_battle(
             state, attacker_kingdom_id, coord, army_ids, attacker_origin=province.contested_from_coord, rng=rng
+        )
+        # Phase 716: the cargo sinks with the carrier.
+        apply_battle_carrier_destruction(
+            state, report.destroyed_army_ids, report.disbanded_army_ids, report.pursuit_destroyed_army_ids
         )
 
         cost = contested_battle_movement_cost(conquered=report.conquered)

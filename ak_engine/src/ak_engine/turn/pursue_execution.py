@@ -178,6 +178,7 @@ from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
+from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.challenge_execution import (
     has_combat_intent,
     is_encounter_accepted,
@@ -361,6 +362,18 @@ def _fight_army_pursuit_battle(
     battle_report = fight_battle(
         state, pursuer.kingdom_id, target.location, pursuer_army_ids, attacker_origin=origin, rng=rng,
     )
+    # Phase 716: the cargo sinks with the carrier. `battle_report` is
+    # never really None in production (fight_battle()'s own real return
+    # type) -- the guard exists only because some existing tests mock
+    # fight_battle() to return None as a test double for unrelated
+    # branches.
+    if battle_report is not None:
+        apply_battle_carrier_destruction(
+            state,
+            battle_report.destroyed_army_ids,
+            battle_report.disbanded_army_ids,
+            battle_report.pursuit_destroyed_army_ids,
+        )
     return PursueExecutionResult(caught_up=True, combat_occurred=True, battle_report=battle_report)
 
 

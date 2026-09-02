@@ -10,6 +10,7 @@ from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.map import HexCoord
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.sea_transport import (
+    apply_battle_carrier_destruction,
     apply_carrier_destruction,
     board_army,
     can_board,
@@ -286,3 +287,48 @@ def test_cargo_aboard_returns_only_matching_carrier():
     state = _state(fleet_a, fleet_b, on_a, on_b)
 
     assert [army.army_id for army in cargo_aboard(state, 1)] == [3]
+
+
+# -- Phase 716: apply_battle_carrier_destruction() -- battle integration ---
+
+
+def test_apply_battle_carrier_destruction_sinks_cargo_on_a_destroyed_fleet():
+    fleet = _army(1, ArmyType.FLEET)
+    cargo = _army(2, ArmyType.BOWMEN, transported_by=1)
+    state = _state(fleet, cargo)
+
+    sunk = apply_battle_carrier_destruction(state, destroyed_army_ids=[1])
+
+    assert sunk == [2]
+    assert 2 not in state.armies
+
+
+def test_apply_battle_carrier_destruction_checks_all_three_lists():
+    fleet_a = _army(1, ArmyType.FLEET)
+    fleet_b = _army(2, ArmyType.FLEET)
+    fleet_c = _army(3, ArmyType.FLEET)
+    on_a = _army(4, ArmyType.BOWMEN, transported_by=1)
+    on_b = _army(5, ArmyType.AXEMEN, transported_by=2)
+    on_c = _army(6, ArmyType.PHALANX, transported_by=3)
+    state = _state(fleet_a, fleet_b, fleet_c, on_a, on_b, on_c)
+
+    sunk = apply_battle_carrier_destruction(
+        state, destroyed_army_ids=[1], disbanded_army_ids=[2], pursuit_destroyed_army_ids=[3]
+    )
+
+    assert sorted(sunk) == [4, 5, 6]
+
+
+def test_apply_battle_carrier_destruction_ignores_non_carrier_destroyed_armies():
+    legion = _army(1, ArmyType.LEGION)
+    state = _state(legion)
+
+    sunk = apply_battle_carrier_destruction(state, destroyed_army_ids=[1])
+
+    assert sunk == []
+
+
+def test_apply_battle_carrier_destruction_returns_empty_with_no_arguments():
+    state = _state()
+
+    assert apply_battle_carrier_destruction(state) == []

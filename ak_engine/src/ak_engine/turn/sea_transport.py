@@ -54,35 +54,45 @@ needs `DRUIDIC_TRANSPORT` to board a Fleet at all, via its own separate
 
 **Fleet-destroyed-while-carrying, user-confirmed directly (no source
 describes this)**: the cargo sinks with the carrier. `apply_carrier_
-destruction()` implements this, but is deliberately **not** auto-hooked
-into `GameState.remove_army()` itself -- that function is shared by
-every removal reason (disband, battle death, Skeletal Army's own
-grave-digging, ...), and cascading cargo destruction there
-unconditionally would be a real behavior change to every existing
-caller. A future battle-integration phase calls this explicitly at the
-one real "carrier destroyed in battle" call site instead.
+destruction()` implements this, deliberately **not** auto-hooked into
+`GameState.remove_army()` itself (shared by every removal reason --
+disband, Skeletal Army's own grave-digging, ...; cascading cargo
+destruction there unconditionally would be a real behavior change to
+every existing caller). **Phase 716** wires the real battle case
+specifically -- see `apply_battle_carrier_destruction()` below, called
+at all 4 real `fight_battle()` call sites.
 
-**Deliberately out of scope this phase, a real and separate follow-up**:
-the base Fleet-for-everyone rule as a *live, enforced* mechanic (no
-order dispatch calls anything here yet -- no new `ActionCode`, no
-`turn/move_execution.py execute_move()` changes); Dragon/Eagle Wing's
-own separate "one infantry unit each" air-transport rule (a third, real
-base mechanic the rulebook names in the same passage, unrelated to
-either Druidic ability); keeping a boarded army's own `location` in
-sync as its carrier moves (real move-integration work); and `turn/
-move_execution.py _naval_hug_coastline_move_is_legal()`'s own
-capacity-based allocation priority (a different, more specific rule --
-deterministic priority by speed/army-id, `AKGEN_reverse_engineering_
-report (3).md` §106 -- not just "is there room," so it isn't a trivial
-reuse of `can_board()` even once wiring starts). This phase produces
-correct, tested primitives a later phase can wire into a real dispatch
-path, not a live game mechanic yet -- matching this project's own
-established "primitives now, wiring later" precedent (Feature->Power
-Phase 616 vs. 622/623; SEP decode Phase 659 vs. 669; Random Encounters
-707 vs. 708/709).
+**Report-layer narration, deliberately out of scope, user-confirmed
+directly**: no real `SAY.PAS`-style text survives anywhere for a
+boarding event or for cargo sinking with its carrier (confirmed by a
+direct search of every available reverse-engineering report) -- per
+this project's own standing convention, project-original replacement
+prose is the user's own call, not invented here. `MoveExecutionResult.
+boarded_army_ids` (Phase 715) and `apply_battle_carrier_destruction()`'s
+own return value (Phase 716) both exist for a future phase to render,
+once/if real or user-supplied text becomes available.
+
+**Deliberately out of scope, real and separate follow-ups, none
+started**: the base Fleet-for-everyone rule as a *live, enforced*
+mechanic (Phase 715 wired automatic boarding into `execute_move()`,
+but land units still move onto/across Sea completely unassisted --
+nothing *requires* boarding); Dragon/Eagle Wing's own separate "one
+infantry unit each" air-transport rule (a third, real base mechanic
+the rulebook names in the same passage, unrelated to either Druidic
+ability); `turn/move_execution.py _naval_hug_coastline_move_is_legal()`'s
+own capacity-based allocation priority (a different, more specific
+rule -- deterministic priority by speed/army-id, `AKGEN_reverse_
+engineering_report (3).md` §106 -- not just "is there room," so it
+isn't a trivial reuse of `can_board()` even though it's wired
+elsewhere now). Matches this project's own established "primitives
+now, wiring later, staged" precedent (Feature->Power Phase 616 vs.
+622/623; SEP decode Phase 659 vs. 669; Random Encounters 707 vs.
+708/709).
 """
 
 from __future__ import annotations
+
+from collections.abc import Sequence
 
 from ak_engine.models.army_type import (
     DRUIDIC_TRANSPORT_CAPACITY,
@@ -182,11 +192,45 @@ def disembark_army(state: GameState, cargo_army_id: int) -> bool:
 def apply_carrier_destruction(state: GameState, carrier_army_id: int) -> list[int]:
     """The cargo sinks with the carrier (user-confirmed, no source
     describes this) -- destroys every army currently boarded on
-    `carrier_army_id` and returns their own ids. Not auto-hooked into
-    any real removal call site yet -- see module docstring.
+    `carrier_army_id` and returns their own ids. Wired into every real
+    battle call site by `apply_battle_carrier_destruction()` below
+    (Phase 716) -- this primitive itself stays reusable on its own.
     """
 
     destroyed_ids = [army.army_id for army in cargo_aboard(state, carrier_army_id)]
     for army_id in destroyed_ids:
         state.remove_army(army_id)
     return destroyed_ids
+
+
+def apply_battle_carrier_destruction(
+    state: GameState,
+    destroyed_army_ids: Sequence[int] = (),
+    disbanded_army_ids: Sequence[int] = (),
+    pursuit_destroyed_army_ids: Sequence[int] = (),
+) -> list[int]:
+    """Phase 716 -- cascades `apply_carrier_destruction()` for every real
+    army destroyed this battle, whether or not it was actually a Fleet/
+    Whale carrier (a non-carrier id simply has no cargo aboard it, so
+    this is harmless to call unconditionally -- no per-army type check
+    needed). Takes the three real `turn/battle_orchestrator.py
+    BattleReport` lists that each correspond to a genuine `GameState.
+    remove_army()` call during battle resolution (`destroyed_army_ids`,
+    `disbanded_army_ids`, `pursuit_destroyed_army_ids`) as plain
+    sequences of ids, not the `BattleReport` object itself -- avoids a
+    circular import (`battle_orchestrator.py` is this function's own
+    caller). `retreated_army_ids`/`mercenary_army_ids` are deliberately
+    NOT included -- those armies stay in `state`, never removed.
+
+    Call this once, right after `fight_battle()` returns, at each of
+    this project's own 4 real call sites (`turn/move_execution.py
+    execute_move()`, `turn/pursue_execution.py execute_pursue()`,
+    `turn/turn_processor.py`'s forced-rebattle continuation, `turn/
+    battle_orchestrator.py fight_multi_attacker_battle()`'s own per-
+    group call). Returns every cargo army id sunk this way.
+    """
+
+    sunk_cargo_ids: list[int] = []
+    for army_id in (*destroyed_army_ids, *disbanded_army_ids, *pursuit_destroyed_army_ids):
+        sunk_cargo_ids.extend(apply_carrier_destruction(state, army_id))
+    return sunk_cargo_ids

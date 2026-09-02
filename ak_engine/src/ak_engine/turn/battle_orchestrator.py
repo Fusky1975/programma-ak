@@ -220,6 +220,7 @@ from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
 from ak_engine.turn.retreat import attacker_retreat_candidates, find_retreat_destination
+from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.sep_decode import sep_accepts_challenge, sep_is_aggressive
 from ak_engine.turn.strength import (
@@ -2828,6 +2829,10 @@ def fight_multi_attacker_battle(
                 attacker_origin=attacker_origin,
                 apply_fanaticism=apply_fanaticism,
                 rng=rng,
+            )
+            # Phase 716: the cargo sinks with the carrier.
+            apply_battle_carrier_destruction(
+                state, report.destroyed_army_ids, report.disbanded_army_ids, report.pursuit_destroyed_army_ids
             )
         else:
             # An earlier group already cleared/claimed the province this

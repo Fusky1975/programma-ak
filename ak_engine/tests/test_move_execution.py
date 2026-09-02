@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from ak_engine.models.alignment import Alignment
@@ -537,6 +539,31 @@ def test_execute_move_wind_walking_survives_a_battle_the_same_move_triggers():
     assert state.armies[101].movement_points == 1
     assert 201 in result.battle_report.retreated_army_ids
     assert state.armies[201].location == DEFENDER_HOME
+
+
+def test_execute_move_wires_battle_carrier_destruction():
+    # Phase 716: same real-battle fixture shape as the wind_walking test
+    # right above -- proves execute_move()'s own real battle trigger
+    # reaches turn/sea_transport.py apply_battle_carrier_destruction()
+    # with the battle report's own real destroyed/disbanded/pursuit-
+    # destroyed lists, mirroring the established "mock the shared
+    # function, assert the call" convention (Phase 686).
+    state = base_state()
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))
+    state.armies[101].army_type = ArmyType.HVY_CAVALRY
+    state.armies[101].quality = Quality.ELITE
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99])
+
+    with patch("ak_engine.turn.move_execution.apply_battle_carrier_destruction") as mock_cascade:
+        result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
+
+    assert result.battle_report is not None
+    mock_cascade.assert_called_once_with(
+        state,
+        result.battle_report.destroyed_army_ids,
+        result.battle_report.disbanded_army_ids,
+        result.battle_report.pursuit_destroyed_army_ids,
+    )
 
 
 def test_move_conquest_sea_surcharge_honors_terrain_override():
