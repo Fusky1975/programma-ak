@@ -26,6 +26,7 @@ from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import TREASURE_NAME, Treasure
 from ak_engine.turn.feature_power_execution import FeaturePowerAttemptResult
+from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.random_encounter_execution import RandomEncounterResult
 from ak_engine.report.turn_report import (
     ALREADY_ALLIED_TEMPLATE,
@@ -3424,6 +3425,48 @@ def test_describe_turn_results_narrates_a_random_encounter_sentinel():
     lines = describe_turn_results(entries, state, rng)
 
     assert lines == ["Arthur saw no wandering monster."]
+
+
+def test_describe_turn_results_narrates_an_illegal_move_from_contested():
+    # Phase 718: describe_turn_results() narrates the one real exception
+    # type it recognizes -- SAY.PAS code 32501's own generic prefix.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Arthur", location=HexCoord(0, 0)))
+    entries = [
+        PhaseDispatchResult(
+            leader_id=1,
+            segment_index=0,
+            phase_label="P0",
+            action=ActionCode.LMOVE,
+            result=None,
+            error=IllegalMoveFromContestedError("illegal to move from a contested province to an adjacent enemy province"),
+        )
+    ]
+    rng = ScriptedRandom([0.1] * 10)
+
+    lines = describe_turn_results(entries, state, rng)
+
+    assert lines == ["Arthur attempted an illegal move."]
+
+
+def test_describe_turn_results_still_ignores_an_unrelated_error():
+    # Non-regression: every other exception (including this same
+    # function's own "no province data" ValueError) still narrates
+    # nothing, matching the pre-existing "silently skip" behavior.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Arthur", location=HexCoord(0, 0)))
+    entries = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.LMOVE, result=None, error=ValueError("no province data for (9, 9)")
+        )
+    ]
+    rng = ScriptedRandom([0.1] * 10)
+
+    lines = describe_turn_results(entries, state, rng)
+
+    assert lines == []
 
 
 # -- ENCATT.X (Phase 597) --

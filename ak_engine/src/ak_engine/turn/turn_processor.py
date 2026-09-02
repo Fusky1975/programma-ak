@@ -274,6 +274,7 @@ from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.defend_execution import DefendCoverage, DefendReinforcement, defend_coverage_area, defend_radius_for_leader
 from ak_engine.turn.expenses import apply_turn_maintenance
 from ak_engine.turn.contested_province import (
+    IllegalMoveFromContestedError,
     attacker_can_force_rebattle,
     contested_battle_movement_cost,
     is_illegal_move_from_contested,
@@ -1498,7 +1499,7 @@ def _dispatch_multi_attacker_lmove(
                 target_province.owner_kingdom_id, tl.kingdom_id
             )
             if is_illegal_move_from_contested(origin_contested_by_mover, target_owner_is_enemy):
-                raise ValueError("illegal to move from a contested province to an adjacent enemy province")
+                raise IllegalMoveFromContestedError("illegal to move from a contested province to an adjacent enemy province")
             move_result = resolve_move(
                 origin,
                 target,

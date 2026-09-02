@@ -179,7 +179,7 @@ from ak_engine.models.treasure import Treasure
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle, mystic_winds_active_for
 from ak_engine.turn.cast_execution import ILLUSORY_FOG_EXTRA_MOVEMENT_COST, is_illusory_fog_affected_air_unit
 from ak_engine.turn.conquest import movement_cost_for_move
-from ak_engine.turn.contested_province import is_illegal_move_from_contested
+from ak_engine.turn.contested_province import IllegalMoveFromContestedError, is_illegal_move_from_contested
 from ak_engine.turn.exploration import ExploreResult, discover_features, resolve_explore, resolve_find_mines
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction, board_army, cargo_aboard, disembark_army
@@ -881,7 +881,7 @@ def execute_move(
         target_province.owner_kingdom_id, kingdom_id
     )
     if is_illegal_move_from_contested(origin_contested_by_mover, target_owner_is_enemy):
-        raise ValueError("illegal to move from a contested province to an adjacent enemy province")
+        raise IllegalMoveFromContestedError("illegal to move from a contested province to an adjacent enemy province")
 
     defenders_present = [
         army

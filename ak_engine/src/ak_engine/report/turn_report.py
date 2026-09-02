@@ -939,6 +939,24 @@ renderer, the caller composes them, the same caller-composes-the
 -sequence stance already taken for the Ice-Suspend cluster (Phase 123)
 and the Assassination cluster (Phase 125).
 
+**Phase 718 wires the generic prefix, deliberately no sub-case.**
+`turn/contested_province.py is_illegal_move_from_contested()` (Phase
+36) genuinely fires in production (`turn/move_execution.py execute_
+move()`, `turn/turn_processor.py`'s multi-attacker LMOVE path both
+raise a new `IllegalMoveFromContestedError`, a `ValueError` subclass
+distinguishing this one real, sourced scenario from those same
+functions' own unrelated "no province data" `ValueError`) -- but which
+of the 4 real `_next` sub-cases it corresponds to (if any) isn't
+sourced: "could not retreat into an occupied province" describes a
+retreat specifically, not "moving on from a contested province,"
+so attaching it here would be a guess, not a recovery. `describe_
+turn_results()` renders only `render_illegal_move_attempted()`'s own
+unconditional generic sentence ("< attempted an illegal move.") for
+this real exception -- honest and real, without inventing a specific
+reason this project can't confirm. The 3 transport-shortage sub-cases
+stay entirely unwired -- they need the real movement-legality gate the
+Fleet/Whale cargo-capacity roadmap's own item #1 already defers.
+
 **Phase 129 addendum -- Monster Quest Fulfillment dialogue.**
 `RUMORS.PAS` groups `_LFRaid = 3166` through `_LFRumor = 3193`
 contiguously (`SAY.PAS` lines 764-782) -- direct-speech ("Sayeth...")
@@ -1257,6 +1275,7 @@ from ak_engine.turn.emperor_election import (
     kingdom_election_vote_weight,
 )
 from ak_engine.turn.final_standings import compose_final_standings_report
+from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.encounter import CombatRange, FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
 from ak_engine.turn.move_execution import MoveExecutionResult
@@ -6673,6 +6692,18 @@ def describe_turn_results(
     lines: list[str] = []
     for entry in results:
         if entry.error is not None:
+            # Phase 718: `IllegalMoveFromContestedError` is the one
+            # exception type this composer narrates -- SAY.PAS code
+            # 32501's own generic, unconditional prefix sentence
+            # (`render_illegal_move_attempted()`, Phase 127). Every
+            # other exception (a genuinely unexpected dispatch failure,
+            # or the same functions' own unrelated "no province data"
+            # `ValueError`) still narrates nothing, matching this
+            # composer's own established stance.
+            if isinstance(entry.error, IllegalMoveFromContestedError):
+                caster_name = _leader_name(state, entry.leader_id)
+                if caster_name is not None:
+                    lines.append(render_illegal_move_attempted(caster_name, rng))
             continue
         caster_name = _leader_name(state, entry.leader_id)
         if caster_name is None:

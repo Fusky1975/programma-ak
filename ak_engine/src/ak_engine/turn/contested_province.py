@@ -29,6 +29,19 @@ def attacker_can_force_rebattle(attacker_movement_points: dict[int, int]) -> boo
     return all(points >= 1 for points in attacker_movement_points.values())
 
 
+class IllegalMoveFromContestedError(ValueError):
+    """Raised by `turn/move_execution.py execute_move()` and `turn/
+    turn_processor.py _dispatch_multi_attacker_lmove()` when `is_
+    illegal_move_from_contested()` refuses a move -- a dedicated
+    subclass (not a bare `ValueError`, which both real raise sites also
+    use for an unrelated "no province data" case) so `report/turn_
+    report.py describe_turn_results()` can narrate this one specific,
+    sourced scenario (Phase 718, SAY.PAS code 32501's own generic
+    prefix, `render_illegal_move_attempted()`) without narrating every
+    other exception type too.
+    """
+
+
 def is_illegal_move_from_contested(origin_is_contested: bool, target_owner_is_enemy: bool) -> bool:
     """"illegal to move from a contested province to an adjacent enemy province."
 

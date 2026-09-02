@@ -13,6 +13,7 @@ from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.move_execution import (
     MARCH_ABILITY_BONUS,
     MARCH_MASTERY_ABILITY_BONUS,
@@ -662,7 +663,10 @@ def test_raises_moving_from_a_province_the_mover_is_contesting_to_an_enemy_provi
     state = base_state()
     state.provinces[ORIGIN].contested_by_kingdom_id = 1  # kingdom 1 is the mover
 
-    with pytest.raises(ValueError):
+    # Phase 718: a dedicated IllegalMoveFromContestedError, not a bare
+    # ValueError -- distinguishes this real, narrated scenario from
+    # this same function's own unrelated "no province data" ValueError.
+    with pytest.raises(IllegalMoveFromContestedError):
         execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)  # TARGET is enemy-owned (kingdom 2)
 
 

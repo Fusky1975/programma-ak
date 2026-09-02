@@ -21,6 +21,7 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
+from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.movement import neighbors as _neighbors
 from ak_engine.turn.plan_dispatch import NoOpResult
 from ak_engine.turn.search_decode import SearchTactic
@@ -252,6 +253,29 @@ def test_run_turn_groups_same_phase_same_target_lmoves_into_one_multi_attacker_b
     battle_ids = {id(r.result.battle) for r in results}
     assert len(battle_ids) == 1
     assert sorted(results[0].result.battle.leader_ids) == [10, 20]
+
+
+def test_run_turn_multi_attacker_lmove_reports_illegal_move_from_contested():
+    # Phase 718: _dispatch_multi_attacker_lmove()'s own real is_illegal_
+    # move_from_contested() check, mirroring test_move_execution.py's
+    # own single-mover equivalent.
+    state = _base_state()
+    state.provinces[ORIGIN].contested_by_kingdom_id = 1
+    march_4 = _skills_with(Ability.MARCH, 4, 9)
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=march_4))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=ORIGIN, skills=march_4))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=10))
+    state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=20))
+
+    leader_a = _leader_with_phase(10, "A", "P0", _lmove_phase("P0", TARGET))
+    leader_b = _leader_with_phase(20, "B", "P0", _lmove_phase("P0", TARGET))
+
+    results = run_turn(
+        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
+
+    assert len(results) == 2
+    assert all(isinstance(r.error, IllegalMoveFromContestedError) for r in results)
 
 
 def test_run_turn_multi_attacker_lmove_records_each_movers_own_kingdom_exploration():

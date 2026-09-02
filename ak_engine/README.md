@@ -29733,7 +29733,7 @@ follow-up request after the original 431-435 plan shipped.
   -> 6127 (net +8). Full suite verified green (unchanged, 6119) before
   writing a single new test.
 
-- **Phase 717 (current)**: the Fleet/Whale cargo-capacity subsystem's
+- **Phase 717**: the Fleet/Whale cargo-capacity subsystem's
   own third carrier type -- Dragon Wing/Eagle Wing air transport,
   user-picked directly over tackling the real movement-legality
   restriction. `Regolamento AK.txt` (lines 1932-1934): "Le unità aeree
@@ -29758,6 +29758,39 @@ follow-up request after the original 431-435 plan shipped.
   land units (the only scenario `auto_board=True` could newly affect).
   Test count: 6127 -> 6134 (net +7). Full suite verified green
   (unchanged, 6127) before writing a single new test.
+
+- **Phase 718 (current)**: illegal-move report narration, the
+  recommended lead candidate from a fresh (nineteenth) codebase
+  survey run once the Fleet/Whale/air cargo-capacity roadmap's own
+  low-risk items ran out. `turn/contested_province.py is_illegal_
+  move_from_contested()` (Phase 36, rulebook [7.6]) already fires in
+  production -- both real call sites (`turn/move_execution.py
+  execute_move()`, `turn/turn_processor.py`'s multi-attacker LMOVE
+  path) raise a `ValueError` when it refuses a move -- and `report/
+  turn_report.py` already has a fully-built, tested, byte-verbatim-
+  sourced renderer for exactly this (`render_illegal_move_attempted()`,
+  `SAY.PAS` code 32501's own generic prefix, Phase 127). Neither side
+  was ever connected: the only consumer of `PhaseDispatchResult.error`
+  anywhere in the reporting pipeline was `describe_turn_results()`'s
+  own `if entry.error is not None: continue` -- every exception-
+  carrying dispatch result, including this one, was silently dropped.
+  New `IllegalMoveFromContestedError(ValueError)` (`turn/contested_
+  province.py`) -- a dedicated subclass, not a bare `ValueError` (both
+  real raise sites also use a bare one for an unrelated "no province
+  data" case), so `describe_turn_results()` can narrate this one
+  specific, sourced scenario without narrating every other exception
+  type too. **Deliberately renders only the generic prefix, no
+  specific sub-case sentence**: `SAY.PAS` code 32501 has 4 real named
+  sub-cases (`_next` values `-1`/`100-149`/`150-199`/`200-249`), but
+  none is sourced as the one this particular validation corresponds
+  to -- "could not retreat into an occupied province" (`_next=-1`)
+  describes a retreat specifically, not "moving on from a contested
+  province," so attaching it would be a guess, not a recovery; the 3
+  transport-shortage sub-cases stay unwired entirely, needing the real
+  movement-legality gate the Fleet/Whale cargo-capacity roadmap's own
+  item #1 already defers. Test count: 6134 -> 6138 (net +4). Full
+  suite verified green (unchanged, 6134) before writing a single new
+  test.
 
 ## Setup
 

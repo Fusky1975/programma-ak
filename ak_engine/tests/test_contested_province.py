@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ak_engine.turn.contested_province import (
+    IllegalMoveFromContestedError,
     attacker_can_force_rebattle,
     contested_battle_movement_cost,
     is_illegal_move_from_contested,
@@ -28,3 +29,11 @@ def test_illegal_move_only_when_origin_contested_and_target_enemy():
 def test_contested_battle_movement_cost():
     assert contested_battle_movement_cost(conquered=False) == 1
     assert contested_battle_movement_cost(conquered=True) == 2
+
+
+def test_illegal_move_from_contested_error_is_a_value_error_subclass():
+    # Phase 718: a dedicated subclass, not a bare ValueError -- so
+    # report/turn_report.py can narrate this one specific scenario
+    # without narrating an unrelated ValueError (e.g. "no province
+    # data") the same real raise sites also use.
+    assert issubclass(IllegalMoveFromContestedError, ValueError)
