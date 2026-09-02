@@ -7,6 +7,7 @@ module implements.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -70,6 +71,50 @@ def test_raises_on_a_records_count_not_a_multiple_of_height():
     records = parse_gw_world(FIXTURE)
     with pytest.raises(ValueError):
         bridge_gw_world_provinces(records[:-1])
+
+
+# -- Phase 723: pt2/alternate_terrain -> is_island bridging ------------
+#
+# No real GW3__T1-T12 sample ever has a non-NO_TERRAIN alternate_terrain
+# (see gw_world.py's own GWProvinceRecord.alternate_terrain docstring),
+# so every case below is a synthetic record built via `replace()` on a
+# real fixture record, explicitly labeled as such -- not a real-sample
+# regression case.
+
+
+def test_bridge_marks_a_sea_primary_record_with_a_real_alternate_terrain_as_an_island():
+    records = parse_gw_world(FIXTURE)
+    synthetic = replace(records[0], terrain=Terrain.SEA, alternate_terrain=Terrain.JUNGLE)
+
+    provinces = bridge_gw_world_provinces([synthetic], height=1)
+
+    province = provinces[HexCoord(0, 0)]
+    assert province.terrain is Terrain.JUNGLE
+    assert province.is_island is True
+
+
+def test_bridge_leaves_a_sea_primary_record_with_no_alternate_terrain_unmarked():
+    records = parse_gw_world(FIXTURE)
+    synthetic = replace(records[0], terrain=Terrain.SEA, alternate_terrain=Terrain.NO_TERRAIN)
+
+    provinces = bridge_gw_world_provinces([synthetic], height=1)
+
+    province = provinces[HexCoord(0, 0)]
+    assert province.terrain is Terrain.SEA
+    assert province.is_island is False
+
+
+def test_bridge_never_treats_a_land_primary_record_with_an_alternate_terrain_as_an_island():
+    # Never observed in any real sample, and neither available source
+    # describes this shape -- conservatively excluded, not guessed.
+    records = parse_gw_world(FIXTURE)
+    synthetic = replace(records[0], terrain=Terrain.PLAINS, alternate_terrain=Terrain.JUNGLE)
+
+    provinces = bridge_gw_world_provinces([synthetic], height=1)
+
+    province = provinces[HexCoord(0, 0)]
+    assert province.terrain is Terrain.PLAINS
+    assert province.is_island is False
 
 
 # -- Phase 224: resolve_province_owners() ------------------------------

@@ -9452,28 +9452,33 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
     show), so this composer doesn't need to distinguish them (see
     `ProvinceState.recruit_type_2`'s own docstring).
 
-    **Type 2 terrain "(Sea)" parenthetical (`pt2`), Phase 282/283**: still
-    genuinely confirmed absent from every surviving `.PAS` file (Phase
-    275's own audit, re-confirmed, not just repeated) -- a *different*
-    kind of closure from `ptax`/`Mod_PAT`/`Qual_Modfr`/`Pay` before it
-    (Phase 276/278/279/280), none of which is "formula lost, data
-    sourced elsewhere" here: no real Pascal formula AND no real-file
-    data source exist for `pt2` at all. What renders now
-    (`ProvinceState.is_island`, appended as `" (Sea)"` right after the
-    terrain name -- Type 1, the land terrain, is `terrain_name` itself;
-    Type 2, `is_island`, renders as the literal string `"Sea"`, per the
-    user's own real-report example, `"Jungle (Sea)"`, 2026-07-29,
-    correcting this composer's own first-draft `" (Island)"` wording) is
-    **project-original**, implemented per the user's own explicit domain
-    knowledge rather than recovered from any source -- an optional Super
-    AK variant rule (games up to 24 players): a province that's half
-    Sea, half its own land terrain, where armies fight at a blended
-    half-land/half-Sea strength (`turn/strength.py compute_effective_
-    strength()`'s own `is_island` parameter; overflight-air units --
-    Dragons, Eagles -- are exempt, the user's own words). Set at world-
-    creation time via the new `turn/island_provinces.py apply_island_
-    provinces()` (an exact-count picker, not a percentage), never
-    inferred at runtime.
+    **Type 2 terrain "(Sea)" parenthetical (`pt2`), Phase 282/283**:
+    **Phase 723 correction** -- a real data source for `pt2` DOES exist
+    after all (`parser/gw_world.py GWProvinceRecord.alternate_terrain`,
+    parsed since Phase 373; bridged into `ProvinceState.is_island` by
+    `parser/gw_world_bridge.py bridge_gw_world_provinces()`'s own Phase
+    723 addendum) -- only the *formula* for what a real `Sea`+`pt2`
+    province's tax/mechanics should be remains genuinely unrecovered
+    (`worldgen/province_tax.py`'s own docstring). **The rendering format
+    below is unchanged, confirmed directly with the user this same
+    session (2026-09-03)**: their own real-report example (`"Jungle
+    (Sea)"`, 2026-07-29) governs over a separate, freshly-recovered
+    literal `REPORTS.PAS` quote (`Desktop/PROGRAMMA AK/SCAR.md`) showing
+    a different, separately-indented `"(<pt2-terrain> Island)"` line --
+    do not reopen this format question without a new, explicit user
+    decision. What renders (`ProvinceState.is_island`, appended as
+    `" (Sea)"` right after the terrain name -- Type 1, the land terrain,
+    is `terrain_name` itself; Type 2, `is_island`, renders as the
+    literal string `"Sea"`) reflects an optional Super AK variant rule
+    (games up to 24 players): a province that's half Sea, half its own
+    land terrain, where armies fight at a blended half-land/half-Sea
+    strength (`turn/strength.py compute_effective_strength()`'s own
+    `is_island` parameter; overflight-air units -- Dragons, Eagles --
+    are exempt, the user's own words). Set either at world-creation time
+    via `turn/island_provinces.py apply_island_provinces()` (an
+    exact-count picker, not a percentage, for a hand-built/synthetic
+    world) or bridged directly from a real GW world file's own `pt2`
+    value (Phase 723) -- never inferred at runtime either way.
 
     **The real table's own "Type 1"/"Type 2" column pair is a different,
     unrelated pair of columns** -- the user's own real-report header,

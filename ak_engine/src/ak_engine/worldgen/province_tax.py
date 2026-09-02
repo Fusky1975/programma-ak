@@ -50,11 +50,16 @@ to an equivalent float threshold).
 documented gap:
 
 - ``island_or_alternate_terrain`` (Sea provinces with a secondary
-  ``pt2`` terrain: ``1 + trunc(U1*U2*M[pt2])``) -- this project has no
-  ``pt2``/secondary-terrain concept anywhere (Phase 355's own
-  docstring already flagged the same gap for ``effective_terrain``);
-  ``place_map`` (Phase 354) only ever assigns one terrain per cell, so
-  this branch has no input to act on.
+  ``pt2`` terrain: ``1 + trunc(U1*U2*M[pt2])``) -- **Phase 723
+  correction**: this project now has a real ``pt2``/secondary-terrain
+  concept (``ProvinceState.is_island``, bridged from a real GW world
+  file's own ``GWProvinceRecord.alternate_terrain`` by ``parser/
+  gw_world_bridge.py bridge_gw_world_provinces()``), but that doesn't
+  help *this* generator specifically: ``place_map`` (Phase 354) only
+  ever assigns one terrain per cell at world-*creation* time, so this
+  branch still has no ``pt2`` input to act on here. A real, separate,
+  still-open gap in world *generation* (this module), distinct from the
+  world-*loading* bridge Phase 723 fixed.
 - The true-Sea formula's own "geometry_bonuses" ("two special
   neighbor configurations add +1 or +2") -- the source names that
   these exist but never states what the two configurations are, so

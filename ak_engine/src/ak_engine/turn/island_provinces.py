@@ -1,13 +1,17 @@
 """Island-province (Type 2 terrain, `pt2`) world-creation setup -- Phase 282.
 
-**No Pascal source survives for `pt2` at all.** Phase 158/275's own audit
-confirmed no `var`/array declaration for it anywhere in the 13 real
-`.PAS` files this project has -- and unlike `ptax`/`Mod_PAT` (Phase
-222/278), no real `GW3`-family world file has ever shown a matching
-pattern to bridge from either (`report/turn_report.py describe_provinces_
-report()`'s own docstring). This module is therefore **project-original,
-not a recovered value**: implemented per the user's own explicit domain
-knowledge (2026-07-29), not a guess --
+**Phase 723 correction**: `pt2` is a real, parsed field, not absent from
+the archive -- `parser/gw_world.py GWProvinceRecord.alternate_terrain`
+has decoded it since Phase 373, and `parser/gw_world_bridge.py bridge_
+gw_world_provinces()` now bridges it into `ProvinceState.is_island`
+(Phase 723 addendum). This module's own opt-in, exact-count setup
+helper below remains the right, separate tool for a hand-built or
+synthetic Super-AK world -- one with no real `GWProvinceRecord` to
+bridge `pt2` from in the first place -- so the two paths are
+complementary, not redundant: whichever one a given `GameState` reaches
+`is_island` through, the field and its one real gameplay consequence
+(below) behave identically either way. Implemented per the user's own
+explicit domain knowledge (2026-07-29), not a guess --
 
     "Questa parte si usa per le partite di super AK (una variante con
     massimo 24 giocatori). Lì ci sono le isole, province per metà terra

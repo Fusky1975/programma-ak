@@ -1098,24 +1098,29 @@ class ProvinceState:
     # have a cumulative effect" guard: a recast on an already-`True`
     # province is a no-op beyond confirming `applied=True`.
     plague_active: bool = False
-    # Type 2 terrain "Island" (Phase 282, pt2). Confirmed absent from
-    # every surviving `.PAS` file since Phase 158/275's own audit -- no
-    # `pt2` writer survives, and unlike `ptax`/`Mod_PAT` (Phase 222/278),
-    # no real `GW3`-family world file has ever shown a matching pattern
-    # to bridge from either. This field is therefore project-original,
-    # not a recovered value: implemented per the user's own explicit
-    # domain knowledge (2026-07-29), an optional Super AK variant rule
-    # (games up to 24 players) -- an Island province is half-Sea/half-
-    # its-own-land-terrain; `terrain` above still holds the *land* half
-    # (an Island is never `Terrain.SEA` itself -- that would just be an
-    # ordinary Sea province), this flag marks the Sea half layered on
-    # top. See `turn/strength.py compute_effective_strength()`'s own
-    # `is_island` parameter for the one real gameplay consequence the
-    # user specified (armies fight at half land-strength/half Sea-
-    # strength here; overflight-air units -- Dragons, Eagles -- are
-    # unaffected) and `turn/island_provinces.py` for the opt-in,
-    # exact-count world-creation-time setup helper. `False` (the
-    # ordinary case) for every world never opting into this variant.
+    # Type 2 terrain "Island" (Phase 282, pt2). **Phase 723 correction**:
+    # `pt2` is a real, parsed field after all -- `parser/gw_world.py
+    # GWProvinceRecord.alternate_terrain` has decoded it since Phase 373
+    # (`AKGEN_reverse_engineering_report (5).md`), just never bridged
+    # into `ProvinceState` until `parser/gw_world_bridge.py bridge_gw_
+    # world_provinces()`'s own Phase 723 addendum. An Island province is
+    # half-Sea/half-its-own-land-terrain; `terrain` above still holds
+    # the *land* half (an Island is never `Terrain.SEA` itself -- that
+    # would just be an ordinary Sea province), this flag marks the Sea
+    # half layered on top -- confirmed the correct orientation for this
+    # project's own bridged data directly with the user (2026-09-03),
+    # against a real, older reverse-engineering report that models the
+    # opposite orientation for its own separate world-generation tax
+    # formula (see `worldgen/province_tax.py`'s own docstring). See
+    # `turn/strength.py compute_effective_strength()`'s own `is_island`
+    # parameter for the one real gameplay consequence the user specified
+    # (armies fight at half land-strength/half Sea-strength here;
+    # overflight-air units -- Dragons, Eagles -- are unaffected) and
+    # `turn/island_provinces.py` for the separate, still-needed opt-in,
+    # exact-count moderator tool for a hand-built/synthetic world with
+    # no real `GWProvinceRecord` to bridge from. `False` for every
+    # bridged province whose own real `pt2` reads the `NO_TERRAIN`
+    # sentinel -- true of every real `GW3__T1`-`T12` sample on hand.
     is_island: bool = False
     # Find Mines (Phase 509, Advanced Ability -- see models/advanced_
     # ability.py ADVANCED_ABILITY_DESCRIPTION[EXPLORER_FIND_MINES] for

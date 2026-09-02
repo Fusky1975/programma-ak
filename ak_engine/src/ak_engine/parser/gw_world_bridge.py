@@ -163,6 +163,27 @@ Hero's own name was in the roster, no longer deferred to
 `apply_confirmed_hero_ids()` at all. That function remains the correct
 path for the true residual case (a name the roster doesn't cover).
 
+**Phase 723 addendum -- `bridge_gw_world_provinces()` now bridges
+`pt2`/`GWProvinceRecord.alternate_terrain` (parsed since Phase 373, but
+silently discarded here until now) into `ProvinceState.is_island`.**
+Confirmed correct against the user's own two explicit calls this
+session (2026-09-03): a record is treated as an Island only when its
+own primary `terrain` is `Terrain.SEA` and `alternate_terrain` is not
+`Terrain.NO_TERRAIN` -- consistent with this project's own already-
+shipped convention (`ProvinceState.terrain` always holds the *land*
+half, `is_island` flags a Sea half layered on top) -- in which case the
+bridged `ProvinceState.terrain` becomes `alternate_terrain` (the real
+land half) rather than the record's own `Terrain.SEA`. A record whose
+primary terrain is NOT Sea but still carries a non-`NO_TERRAIN`
+`alternate_terrain` (never observed in any real sample, and neither
+`Desktop/PROGRAMMA AK/AKGEN_reverse_engineering_report.md:582-586` nor
+`Desktop/PROGRAMMA AK/SCAR.md` describes this shape) is conservatively
+left as NOT an island. Every real `GW3__T1`-`T12` sample on hand reads
+`Terrain.NO_TERRAIN` for `alternate_terrain`, so this is a provable
+no-op for every existing fixture -- see `tests/test_gw_world_bridge.py`'s
+own synthetic (never-observed-in-real-data, explicitly labeled) test
+cases for the actual island-bridging behavior.
+
 **Phase 366 addendum -- `models/hero_roster.py` itself was rewritten**
 from a real Pascal source (`LNAMES.PAS`, found by a later
 reverse-engineering pass) rather than the project-original document
@@ -181,7 +202,7 @@ from dataclasses import dataclass, field, replace
 
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.hero_roster import STANDARD_HERO_ID_BY_NAME, STANDARD_HERO_SEX_BY_NAME
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.parser.gw_world import GWArmyRecord, GWLeaderRecord, GWProvinceRecord
 
 # Rows per column, confirmed for GW3__T1 (see module docstring). 18
@@ -217,14 +238,17 @@ def bridge_gw_world_provinces(
     provinces: dict[HexCoord, ProvinceState] = {}
     for index, record in enumerate(records):
         coord = _coord_for_index(index, height)
+        is_island = record.terrain is Terrain.SEA and record.alternate_terrain is not Terrain.NO_TERRAIN
+        terrain = record.alternate_terrain if is_island else record.terrain
         provinces[coord] = ProvinceState(
             coord=coord,
-            terrain=record.terrain,
+            terrain=terrain,
             race=record.race,
             name=record.name,
             tax=record.tax,
             recruit_type_1=record.recruit_type_1,
             recruit_type_2=record.recruit_type_2,
+            is_island=is_island,
         )
     return provinces
 

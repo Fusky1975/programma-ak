@@ -29925,7 +29925,7 @@ follow-up request after the original 431-435 plan shipped.
   `_STZero`/`_STFite` bystander notices (SCAR.md section 10.2 fully
   recovers the literal text) is Phase 722, the immediate next phase.**
 
-- **Phase 722 (current)**: Scar Terrain's real bystander notices --
+- **Phase 722**: Scar Terrain's real bystander notices --
   `_SANote`/`_STZero`/`_STFite`, the immediate narration follow-up to
   Phase 721, now that a successful collapse is a real, mechanically
   reachable event. `Desktop/SCAR.md` section 10.2 fully recovers all
@@ -29964,6 +29964,46 @@ follow-up request after the original 431-435 plan shipped.
   findings remain flagged, not acted on (`turn/discovery_effects.py
   province_halves_spell_chance()`'s own possible arithmetic-vs-coin-
   flip discrepancy; the `pt2`/`is_island` cross-reference).
+
+- **Phase 723 (current)**: `ProvinceState.is_island`/`pt2` closes the
+  cross-reference flagged above -- a real, parsed field, not project-
+  original as four separate docstrings claimed. `parser/gw_world.py
+  GWProvinceRecord.alternate_terrain` has decoded the real `pt2` field
+  since Phase 373, but `parser/gw_world_bridge.py bridge_gw_world_
+  provinces()` silently discarded it at bridge time until now. Two
+  further real sources beyond SCAR.md independently corroborate it's
+  real: the older `Desktop/PROGRAMMA AK/AKGEN_reverse_engineering_
+  report.md` (its own world-gen tax formula for `pt2`-bearing cells)
+  and SCAR.md's own literal `REPORTS.PAS` quote (a separate, indented
+  `"(<terrain> Island)"` report line, offset `DS:935D`). Two real
+  design questions, both resolved directly with the user this session:
+  **orientation** -- a bridged record is an Island only when its own
+  primary `terrain` is `Terrain.SEA` and `alternate_terrain` isn't
+  `Terrain.NO_TERRAIN`, in which case `ProvinceState.terrain` becomes
+  `alternate_terrain` (the land half) and `is_island=True` -- consistent
+  with this project's own already-shipped convention (`terrain` always
+  holds the land half), the *opposite* orientation from the older
+  report's own world-gen formula (which treats Sea as primary, `pt2` as
+  the land secondary, for a different, still-unbuilt generator branch);
+  a never-observed land-primary-with-alternate_terrain shape is
+  conservatively left as NOT an island. **Report format** -- kept
+  exactly as-is (`"Jungle (Sea)"`, the user's own real, directly-
+  observed 2026-07-29 report example) over SCAR.md's own separate,
+  differently-formatted literal quote -- only the stale "no data
+  source" docstring claim was corrected, not the rendering itself.
+  Corrected all 4 stale "confirmed absent"/"no pt2 concept" docstrings
+  (`models/game_state.py`, `turn/island_provinces.py`, `worldgen/
+  province_tax.py`, `report/turn_report.py`) plus a free, unrelated
+  stale-claim fix (`turn/monster_raids.py`'s own "still-dormant
+  `select_monster_talk_reply()`" -- wired to production since Phase
+  528). Test count: 6167 -> 6170 (net +3, synthetic cases -- no real
+  `GW3__T1`-`T12` sample ever has a non-`NO_TERRAIN` `alternate_
+  terrain`, so this is provably a no-op for every existing fixture,
+  confirmed by running the full suite unchanged before writing a single
+  new test). `worldgen/province_tax.py`'s own world-*generation* gap
+  (nothing ever assigns a `pt2` value at world-creation time) stays a
+  real, separate, still-open item -- this phase only fixed the world-
+  *loading* bridge.
 
 ## Setup
 
