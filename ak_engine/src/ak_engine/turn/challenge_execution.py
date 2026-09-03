@@ -336,6 +336,8 @@ from ak_engine.turn.encounter import (
     resolve_steal_attempt,
     resolve_steal_character_item_transfer,
     resolve_steal_evasion,
+    resolve_words_of_healing_disruption,
+    resolve_words_of_healing_disruption_from_missed_attack,
     roll_fireball_damage,
     roll_holy_symbol_undead_damage,
     roll_melee_attack,
@@ -382,6 +384,32 @@ def _necromancer_mage_resists_spell(state: GameState, target_leader_id: int, rng
     if holder is None or holder.leader_id != target_leader_id:
         return False
     return rng.random() < NECROMANCER_MAGE_SPELL_RESIST_CHANCE
+
+
+def _resolve_cast_disruption(pending_cast: SearchTactic | None, damage: int, rng: random.Random) -> bool:
+    """Phase 730: rolls whether a queued ``CAST`` tactic is disrupted this
+    round by damage (or a missed/dodged attack, ``damage <= 0``) --
+    ``resolve_spell_disruption()``/``resolve_spell_disruption_from_
+    missed_attack()`` for every spell except Words of Healing, whose own
+    halved rate (``turn/encounter.py``'s Phase 200 addendum) was computed
+    but never actually reached either roll here (Phase 655's own
+    correction). Duplicated verbatim in `turn/search_execution.py`, this
+    project's own established "small per-consumer lookup" convention.
+    """
+
+    is_words_of_healing = False
+    if pending_cast is not None:
+        try:
+            is_words_of_healing = Spell(pending_cast.sub_object) is Spell.HEAL
+        except ValueError:
+            is_words_of_healing = False
+    if is_words_of_healing:
+        if damage > 0:
+            return resolve_words_of_healing_disruption(damage, rng)
+        return resolve_words_of_healing_disruption_from_missed_attack(rng)
+    if damage > 0:
+        return resolve_spell_disruption(damage, rng)
+    return resolve_spell_disruption_from_missed_attack(rng)
 
 
 def has_combat_intent(request: ChallengeRequest) -> bool:
@@ -1638,11 +1666,7 @@ def resolve_challenge_combat(
         melee_swings.append(MeleeSwing(attacker="a", hit=swing_result.hit, damage=swing_result.damage))
         if target.hit_points <= 0:
             return True, "a"
-        disrupted = (
-            resolve_spell_disruption(swing_result.damage, rng)
-            if swing_result.damage > 0
-            else resolve_spell_disruption_from_missed_attack(rng)
-        )
+        disrupted = _resolve_cast_disruption(target_cast, swing_result.damage, rng)
         is_first_target_tactic = target_tactic_index == 0
         _advance_target_tactic()
         if disrupted:
@@ -1744,11 +1768,7 @@ def resolve_challenge_combat(
                 melee_swings.append(MeleeSwing(attacker="b", hit=swing_result.hit, damage=swing_result.damage))
                 if caster.hit_points <= 0:
                     return _outcome(winner="b")
-                disrupted = (
-                    resolve_spell_disruption(damage, rng)
-                    if damage > 0
-                    else resolve_spell_disruption_from_missed_attack(rng)
-                )
+                disrupted = _resolve_cast_disruption(tactic, damage, rng)
                 if disrupted:
                     continue
             outcome = _resolve_personal_combat_cast(

@@ -43,6 +43,7 @@ from ak_engine.turn.search_execution import (
     WEAK_TEMPER_FLEE_CHANCE_BONUS,
     SearchExecutionResult,
     _leader_combatant,
+    _resolve_cast_disruption,
     effective_flee_chance,
     execute_search,
 )
@@ -4916,6 +4917,100 @@ def test_execute_search_leaders_own_cast_after_a_non_last_melee_tactic_can_be_di
     # Phase 416: the guardian's own reactive swing (attacker="b", since
     # this branch is "monster swings while the leader casts") is narrated.
     assert MeleeSwing(attacker="b", hit=True, damage=5) in result.melee_swings
+
+
+def test_execute_search_guardians_own_words_of_healing_cast_uses_the_halved_disruption_rate():
+    # Phase 730: the guardian's own queued Words of Healing cast routes
+    # through its own halved-rate disruption roll, not the generic one.
+    # Mirrors test_execute_search_guardians_own_cast_disrupted_by_a_
+    # landed_swing_never_attempts_the_cast()'s own fixture shape -- a
+    # leading MELEE entry so the CAST isn't resolved unconditionally by
+    # _resolve_monster_casts() before real combat (and disruption) even
+    # begins.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _melee_request(1)
+    monster_plan = (
+        SearchTactic(maneuver=Maneuver.MELEE),
+        SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.HEAL.value),
+    )
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch.dict(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.GARGOYLE: {Ability.WHITE: 5}}
+    ), patch("ak_engine.turn.search_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=True, damage=3),
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_words_of_healing_disruption", return_value=False
+    ) as mock_woh_disrupt, patch(
+        "ak_engine.turn.search_execution.resolve_spell_disruption"
+    ) as mock_generic_disrupt, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ) as mock_cast, patch("ak_engine.turn.search_execution.words_of_healing_heal") as mock_heal:
+        mock_round.side_effect = [
+            MeleeRoundOutcome(result=None),
+            MeleeRoundOutcome(result=EncounterCombatResult(winner="a", rounds=2)),
+        ]
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_woh_disrupt.called
+    assert not mock_generic_disrupt.called
+    assert mock_cast.called
+    assert mock_heal.called
+
+
+def test_execute_search_leaders_own_words_of_healing_cast_uses_the_halved_disruption_rate():
+    raw = [0] * 30
+    raw[Ability.WHITE.value * 2] = 5
+    raw[Ability.WHITE.value * 2 + 1] = 9
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(maneuver=Maneuver.MELEE),
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.HEAL.value),
+        ],
+    )
+
+    with patch("ak_engine.turn.search_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing",
+        return_value=ReactiveMeleeSwingResult(hit=True, damage=3),
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_words_of_healing_disruption", return_value=False
+    ) as mock_woh_disrupt, patch(
+        "ak_engine.turn.search_execution.resolve_spell_disruption"
+    ) as mock_generic_disrupt, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ) as mock_cast, patch("ak_engine.turn.search_execution.words_of_healing_heal") as mock_heal, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_woh_disrupt.called
+    assert not mock_generic_disrupt.called
+    assert mock_cast.called
+    assert mock_heal.called
+
+
+def test_resolve_cast_disruption_words_of_healing_uses_its_own_halved_formula():
+    tactic = SearchTactic(Maneuver.CAST, Spell.HEAL.value)
+    assert _resolve_cast_disruption(tactic, 3, ScriptedRandom([0.3])) is False
+    assert _resolve_cast_disruption(tactic, 3, ScriptedRandom([0.2])) is True
+    assert _resolve_cast_disruption(tactic, 0, ScriptedRandom([0.2])) is False
+    assert _resolve_cast_disruption(tactic, 0, ScriptedRandom([0.1])) is True
+
+
+def test_resolve_cast_disruption_a_different_spell_uses_the_generic_formula():
+    tactic = SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)
+    assert _resolve_cast_disruption(tactic, 3, ScriptedRandom([0.4])) is True
+
+
+def test_resolve_cast_disruption_with_no_pending_cast_uses_the_generic_formula():
+    assert _resolve_cast_disruption(None, 3, ScriptedRandom([0.4])) is True
 
 
 # -- Phase 297: exhausted-fallback's own resolve_melee_duel() must not

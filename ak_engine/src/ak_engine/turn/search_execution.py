@@ -606,6 +606,8 @@ from ak_engine.turn.encounter import (
     roll_telekinetic_storm_caster_damage,
     roll_telekinetic_storm_victim_damage,
     spiritwrack_melee_damage_reduction,
+    resolve_words_of_healing_disruption,
+    resolve_words_of_healing_disruption_from_missed_attack,
     words_of_healing_heal,
 )
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_WAND_SPELL, Treasure, TreasureCategory
@@ -756,6 +758,34 @@ def _necromancer_mage_resists_spell(state: GameState, target_leader_id: int, rng
     if holder is None or holder.leader_id != target_leader_id:
         return False
     return rng.random() < NECROMANCER_MAGE_SPELL_RESIST_CHANCE
+
+
+def _resolve_cast_disruption(pending_cast: SearchTactic | None, damage: int, rng: random.Random) -> bool:
+    """Phase 730: rolls whether a queued ``CAST`` tactic is disrupted this
+    round by damage (or a missed/dodged attack, ``damage <= 0``) --
+    ``resolve_spell_disruption()``/``resolve_spell_disruption_from_
+    missed_attack()`` for every spell except Words of Healing, whose own
+    halved rate (``turn/encounter.py``'s Phase 200 addendum) was computed
+    but never actually reached either roll (Phase 655's own correction,
+    kept accurate here at last). ``pending_cast`` may be ``None`` (no
+    cast queued -- never actually called in that shape by this module's
+    own call sites, but kept total rather than assuming a caller always
+    filters first).
+    """
+
+    is_words_of_healing = False
+    if pending_cast is not None:
+        try:
+            is_words_of_healing = Spell(pending_cast.sub_object) is Spell.HEAL
+        except ValueError:
+            is_words_of_healing = False
+    if is_words_of_healing:
+        if damage > 0:
+            return resolve_words_of_healing_disruption(damage, rng)
+        return resolve_words_of_healing_disruption_from_missed_attack(rng)
+    if damage > 0:
+        return resolve_spell_disruption(damage, rng)
+    return resolve_spell_disruption_from_missed_attack(rng)
 
 
 # TREASAB.X2: every one of the 20 wands' own label reads "Cast '<Spell>' at
@@ -2306,9 +2336,7 @@ def _resolve_search_encounter(
             melee_swings.append(MeleeSwing(attacker="a", hit=swing_result.hit, damage=swing_result.damage))
             if monster_combatant.hit_points <= 0:
                 return _finish_melee_outcome(EncounterCombatResult(winner="a", rounds=0))
-            disrupted = (
-                resolve_spell_disruption(damage, rng) if damage > 0 else resolve_spell_disruption_from_missed_attack(rng)
-            )
+            disrupted = _resolve_cast_disruption(monster_tactic, damage, rng)
             is_first_tactic = monster_tactic_index == 0
             _advance_monster_tactic()
             if disrupted:
@@ -2322,9 +2350,7 @@ def _resolve_search_encounter(
             melee_swings.append(MeleeSwing(attacker="b", hit=swing_result.hit, damage=swing_result.damage))
             if leader_combatant.hit_points <= 0:
                 return _finish_melee_outcome(EncounterCombatResult(winner="b", rounds=0))
-            disrupted = (
-                resolve_spell_disruption(damage, rng) if damage > 0 else resolve_spell_disruption_from_missed_attack(rng)
-            )
+            disrupted = _resolve_cast_disruption(leader_tactic, damage, rng)
             _advance_monster_tactic()  # this Melee entry has now been "used" too -- see the Melee-vs-Melee branch above
             if disrupted:
                 return None

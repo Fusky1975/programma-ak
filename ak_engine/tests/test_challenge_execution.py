@@ -29,6 +29,7 @@ from ak_engine.turn.challenge_execution import (
     _apply_treasury_raid,
     _close_to,
     _leader_combatant,
+    _resolve_cast_disruption,
     _resolve_personal_combat_cast,
     _resolve_steal_tactic,
     execute_challenge,
@@ -1579,8 +1580,10 @@ def test_resolve_challenge_combat_cast_at_melee_range_disrupted_by_a_landed_hit_
     with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
         "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
         return_value=ReactiveMeleeSwingResult(hit=True, damage=5),
-    ) as mock_swing, patch("ak_engine.turn.challenge_execution.resolve_spell_disruption", return_value=True) as mock_disrupt, patch(
-        "ak_engine.turn.challenge_execution.resolve_spell_disruption_from_missed_attack"
+    ) as mock_swing, patch(
+        "ak_engine.turn.challenge_execution.resolve_words_of_healing_disruption", return_value=True
+    ) as mock_disrupt, patch(
+        "ak_engine.turn.challenge_execution.resolve_words_of_healing_disruption_from_missed_attack"
     ) as mock_miss_disrupt, patch(
         "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast"
     ) as mock_cast, patch(
@@ -1591,7 +1594,7 @@ def test_resolve_challenge_combat_cast_at_melee_range_disrupted_by_a_landed_hit_
         resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
 
     assert mock_swing.called
-    assert mock_disrupt.called
+    assert mock_disrupt.called  # Phase 730: Spell.HEAL routes through its own halved-rate roll, not the generic one
     assert not mock_miss_disrupt.called  # a landed hit uses the damage-scaled formula, not the flat-miss one
     assert not mock_cast.called  # disrupted -- "the caster loses a turn," no cast-chance roll at all
 
@@ -1605,8 +1608,8 @@ def test_resolve_challenge_combat_cast_at_melee_range_disrupted_by_a_missed_swin
     with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
         "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
         return_value=ReactiveMeleeSwingResult(hit=False, damage=0),
-    ), patch("ak_engine.turn.challenge_execution.resolve_spell_disruption") as mock_damage_disrupt, patch(
-        "ak_engine.turn.challenge_execution.resolve_spell_disruption_from_missed_attack", return_value=True
+    ), patch("ak_engine.turn.challenge_execution.resolve_words_of_healing_disruption") as mock_damage_disrupt, patch(
+        "ak_engine.turn.challenge_execution.resolve_words_of_healing_disruption_from_missed_attack", return_value=True
     ) as mock_miss_disrupt, patch(
         "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast"
     ) as mock_cast, patch(
@@ -1630,7 +1633,7 @@ def test_resolve_challenge_combat_cast_at_melee_range_not_disrupted_still_attemp
     with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
         "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing",
         return_value=ReactiveMeleeSwingResult(hit=True, damage=2),
-    ), patch("ak_engine.turn.challenge_execution.resolve_spell_disruption", return_value=False), patch(
+    ), patch("ak_engine.turn.challenge_execution.resolve_words_of_healing_disruption", return_value=False), patch(
         "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True
     ) as mock_cast, patch("ak_engine.turn.challenge_execution.words_of_healing_heal") as mock_heal, patch(
         "ak_engine.turn.challenge_execution.resolve_melee_duel"
@@ -1641,6 +1644,38 @@ def test_resolve_challenge_combat_cast_at_melee_range_not_disrupted_still_attemp
 
     assert mock_cast.called  # not disrupted -- the cast-chance roll still happens
     assert mock_heal.called  # ... and, having succeeded, the spell's own effect still lands
+
+
+def test_resolve_cast_disruption_words_of_healing_uses_its_own_halved_damage_formula():
+    # Phase 730: SPELL_DISRUPTION_CHANCE_PER_DAMAGE_POINT = 0.5/3, so 3
+    # damage points is exactly 50% for an ordinary spell, 25% halved.
+    tactic = SearchTactic(Maneuver.CAST, Spell.HEAL.value)
+    assert _resolve_cast_disruption(tactic, 3, ScriptedRandom([0.3])) is False
+    assert _resolve_cast_disruption(tactic, 3, ScriptedRandom([0.2])) is True
+
+
+def test_resolve_cast_disruption_words_of_healing_uses_its_own_halved_missed_attack_chance():
+    # Flat 30% ordinarily, 15% halved.
+    tactic = SearchTactic(Maneuver.CAST, Spell.HEAL.value)
+    assert _resolve_cast_disruption(tactic, 0, ScriptedRandom([0.2])) is False
+    assert _resolve_cast_disruption(tactic, 0, ScriptedRandom([0.1])) is True
+
+
+def test_resolve_cast_disruption_a_different_spell_uses_the_generic_formula():
+    tactic = SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)
+    assert _resolve_cast_disruption(tactic, 3, ScriptedRandom([0.4])) is True  # 0.4 < 0.5, the un-halved rate
+    assert _resolve_cast_disruption(tactic, 0, ScriptedRandom([0.25])) is True  # 0.25 < the un-halved 30%
+
+
+def test_resolve_cast_disruption_with_no_pending_cast_uses_the_generic_formula():
+    assert _resolve_cast_disruption(None, 3, ScriptedRandom([0.4])) is True
+
+
+def test_resolve_cast_disruption_with_an_out_of_range_sub_object_uses_the_generic_formula():
+    # A non-CAST tactic (or any tactic whose own sub_object isn't a real
+    # Spell ordinal) never crashes -- falls through to the generic roll.
+    tactic = SearchTactic(Maneuver.MELEE)
+    assert _resolve_cast_disruption(tactic, 3, ScriptedRandom([0.4])) is True
 
 
 def test_resolve_challenge_combat_reactive_swing_killing_the_caster_ends_combat_immediately():

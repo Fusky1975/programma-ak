@@ -953,14 +953,21 @@ own code): `turn/search_execution.py _resolve_melee_range_round()`
 (Phase 293, predating this correction by a wide margin) already rolls
 `resolve_spell_disruption()`/`resolve_spell_disruption_from_missed_
 attack()` bidirectionally every time a `CAST` tactic is reached at
-`CombatRange.MELEE_RANGE`, on either side. **What genuinely is still
-true**: neither of those call sites passes a `chance_per_hit` override,
-so Words of Healing's own halved rate (`words_of_healing_disruption_
-chance()`) is computed but never actually reaches either disruption
-roll -- every spell, Words of Healing included, is disrupted at the
-same default rate there. That narrower gap (a spell-specific override
-never wired into an already-real disruption roll) is what remains
-open, not the disruption mechanic itself.
+`CombatRange.MELEE_RANGE`, on either side.
+
+**Phase 730 -- the narrower gap this correction itself flagged is now
+closed too**: both `turn/search_execution.py _resolve_melee_range_
+round()` and `turn/challenge_execution.py resolve_challenge_combat()`
+now call a small, per-module `_resolve_cast_disruption(pending_cast,
+damage, rng)` helper at every real disruption-roll call site instead
+of `resolve_spell_disruption()`/`resolve_spell_disruption_from_missed_
+attack()` directly -- it checks whether the tactic actually being
+disrupted (`Spell(pending_cast.sub_object)`) is `Spell.HEAL` and, if
+so, rolls `words_of_healing_disruption_chance()`'s own halved formula
+via `resolve_words_of_healing_disruption()`/`resolve_words_of_healing_
+disruption_from_missed_attack()` instead of the generic one. Every
+other spell (and a `None`/unresolvable `pending_cast`) still reaches
+the ordinary, un-halved roll unchanged.
 
 **Phase 202 addendum -- Gate Demon [GD], tied to Ability.NECROMANCY,
 project-original (user-supplied), the second Necromancy secret spell

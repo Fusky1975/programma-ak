@@ -30144,7 +30144,7 @@ follow-up request after the original 431-435 plan shipped.
   candidate #1 (`AdvancedAbility.SPY_DOUBLE_AGENT`, completely unwired,
   large scope) remains open, to be planned via EnterPlanMode next.
 
-- **Phase 729 (current)**: `AdvancedAbility.SPY_DOUBLE_AGENT` -- a Spy
+- **Phase 729**: `AdvancedAbility.SPY_DOUBLE_AGENT` -- a Spy
   appears to a foreign King as an unemployed wandering Hero, a foreign
   hire on them apparently succeeds (real gold spent, real employer
   unchanged), and their true Kingdom gains a free ASpy-equivalent
@@ -30182,6 +30182,42 @@ follow-up request after the original 431-435 plan shipped.
   text doesn't claim to defeat. Test count: 6193 -> 6206 (net +13).
   Full suite verified green (unchanged, 6193) before writing a single
   new test. This closes the entire twenty-fourth survey in full.
+
+- **Phase 730 (current)**: Words of Healing's own halved spell-
+  disruption rate (`turn/encounter.py`'s Phase 200 addendum, "the spell
+  is also half as likely to be disrupted... as other spells") was fully
+  built (`words_of_healing_disruption_chance()`/`resolve_words_of_
+  healing_disruption()`/`_from_missed_attack()`, Phase 292) but never
+  actually reached either of the two real, live disruption rolls
+  `_resolve_melee_range_round()` (`turn/search_execution.py`, Phase
+  293) and `resolve_challenge_combat()` (`turn/challenge_execution.py`,
+  Phase 292) already make once a `CAST` tactic is disrupted at Melee
+  Range -- both called the generic `resolve_spell_disruption()`/
+  `resolve_spell_disruption_from_missed_attack()` unconditionally,
+  found and confirmed still true (not a stale claim) by a fresh
+  codebase survey (the twenty-fifth) that grepped every real call site.
+  New, identical `_resolve_cast_disruption(pending_cast, damage, rng)`
+  helper in each module (duplicated per this project's own established
+  "small per-consumer lookup" convention): resolves the tactic actually
+  being disrupted's own spell via `Spell(pending_cast.sub_object)` and
+  routes to the halved Words-of-Healing rolls when it's `Spell.HEAL`,
+  the ordinary generic ones otherwise (including a `None`/unresolvable
+  `pending_cast`, never a crash). Wired at all 4 real call sites (2 per
+  module -- the guardian's/target's own queued cast disrupted by the
+  leader's/caster's reactive swing, and the leader's/caster's own cast
+  disrupted by the guardian's/target's reactive swing). 3 pre-existing
+  `test_challenge_execution.py` tests needed their own mocked function
+  target renamed (they already used `Spell.HEAL` as their tactic's
+  spell, for an unrelated reason -- the caster's White Magic skill 5+
+  gate -- so they were unknowingly exercising exactly the path this
+  phase changes); found and fixed by running the suite first, not
+  assumed. `turn/encounter.py`'s own Phase 655 correction note (which
+  first identified this exact narrower gap) updated to record it
+  closed. Test count: 6206 -> 6216 (net +10). Full suite verified green
+  (unchanged, 6206) before writing a single new test. This closes
+  candidate #1 of the twenty-fifth survey; candidate #2 (monster-hoard
+  Steal's own `MONSTER_STEAL_GOLD_IF_NO_ITEM` gold, sourced but never
+  credited on a successful transfer) remains open.
 
 ## Setup
 
