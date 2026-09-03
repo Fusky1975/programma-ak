@@ -2845,6 +2845,9 @@ def fight_multi_attacker_battle(
             for army in state.armies_at(province_coord)
         )
         if defenders_present:
+            # Phase 736: snapshot army types before fight_battle() removes
+            # any of them -- see move_execution.py's own identical note.
+            army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
             report = fight_battle(
                 state,
                 claiming_kingdom_id,
@@ -2857,7 +2860,12 @@ def fight_multi_attacker_battle(
             )
             # Phase 716: the cargo sinks with the carrier.
             apply_battle_carrier_destruction(
-                state, report.destroyed_army_ids, report.disbanded_army_ids, report.pursuit_destroyed_army_ids
+                state,
+                report.destroyed_army_ids,
+                report.disbanded_army_ids,
+                report.pursuit_destroyed_army_ids,
+                coord=province_coord,
+                army_types_before_battle=army_types_before_battle,
             )
         else:
             # An earlier group already cleared/claimed the province this

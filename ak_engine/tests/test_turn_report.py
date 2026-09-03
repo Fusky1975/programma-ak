@@ -10,7 +10,15 @@ from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery, describe_discovery_line
 from ak_engine.models.feature import Feature, FeatureType, RaidEvent
-from ak_engine.models.game_state import ArmyState, BlackmailClaim, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import (
+    ArmyState,
+    BlackmailClaim,
+    GameState,
+    KingdomState,
+    LeaderState,
+    ProvinceState,
+    SunkCargoEvent,
+)
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.models.game_type import GameType
 from ak_engine.models.item import ItemInstance
@@ -101,6 +109,7 @@ from ak_engine.report.turn_report import (
     describe_hire,
     describe_defend,
     describe_defend_reinforcement,
+    describe_cargo_boarded,
     describe_disband,
     describe_leave,
     describe_move,
@@ -124,6 +133,7 @@ from ak_engine.report.turn_report import (
     record_move_world_events,
     record_plague_spread_world_events,
     record_spell_world_events,
+    record_sunk_cargo_world_events,
     record_uncontested_conquest_world_events,
     render_blackmail_demand,
     render_bystander_spell_notice,
@@ -203,12 +213,14 @@ from ak_engine.report.turn_report import (
     render_cast_no_treasure,
     render_spell_fizzled_in_combat,
     render_spell_cast_failed,
+    render_cargo_boarded,
     render_defend,
     render_defend_reinforcement,
     render_disband_unit,
     render_flaming_scimitar_proc,
     render_leave_unit,
     render_skeletal_army_dug_grave,
+    render_sunk_cargo,
     render_march,
     render_pickup_unit,
     render_recruit_unit,
@@ -1911,6 +1923,104 @@ def test_describe_move_returns_none_without_new_location():
     assert line is None
 
 
+# -- Phase 736: render_cargo_boarded/describe_cargo_boarded, render_sunk_cargo/record_sunk_cargo_world_events --
+
+
+def test_render_cargo_boarded():
+    result = render_cargo_boarded("Arthur", "Bowmen", "Fleet", ScriptedRandom([]))
+    assert result == "Arthur boarded Bowmen aboard the Fleet."
+
+
+def test_describe_cargo_boarded_renders_one_line_per_boarded_army():
+    state = _leave_state()
+    state.add_army(ArmyState(1, 1, ArmyType.FLEET, Quality.AVERAGE, HexCoord(3, 9)))
+    state.add_army(ArmyState(2, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), transported_by=1))
+    result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1,
+        new_location=HexCoord(3, 9), boarded_army_ids=[2],
+    )
+
+    lines = describe_cargo_boarded(result, state, character_name="Arthur", rng=ScriptedRandom([]))
+
+    assert lines == ["Arthur boarded Bowmen aboard the Fleet."]
+
+
+def test_describe_cargo_boarded_skips_a_boarded_army_id_not_found():
+    state = _leave_state()
+    result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1,
+        new_location=HexCoord(3, 9), boarded_army_ids=[999],
+    )
+
+    lines = describe_cargo_boarded(result, state, character_name="Arthur", rng=ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_cargo_boarded_skips_an_army_with_no_carrier_recorded():
+    state = _leave_state()
+    state.add_army(ArmyState(2, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9)))
+    result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1,
+        new_location=HexCoord(3, 9), boarded_army_ids=[2],
+    )
+
+    lines = describe_cargo_boarded(result, state, character_name="Arthur", rng=ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_cargo_boarded_returns_empty_with_no_boarded_armies():
+    state = _leave_state()
+    result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1, new_location=HexCoord(3, 9)
+    )
+
+    lines = describe_cargo_boarded(result, state, character_name="Arthur", rng=ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_render_sunk_cargo():
+    result = render_sunk_cargo("Bowmen", "Fleet", ScriptedRandom([]))
+    assert result == (
+        "The Bowmen being transported sank together with the annihilated Fleet "
+        "and disappeared into the depths of the sea."
+    )
+
+
+def test_record_sunk_cargo_world_events_populates_state_world_events():
+    state = GameState()
+    state.sunk_cargo_events.append(SunkCargoEvent(HexCoord(3, 9), ArmyType.FLEET, ArmyType.BOWMEN))
+
+    record_sunk_cargo_world_events(state, ScriptedRandom([]))
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].coord == HexCoord(3, 9)
+    assert state.world_events[0].lines == [
+        "The Bowmen being transported sank together with the annihilated Fleet "
+        "and disappeared into the depths of the sea."
+    ]
+
+
+def test_record_sunk_cargo_world_events_appends_one_event_per_sunk_cargo_event():
+    state = GameState()
+    state.sunk_cargo_events.append(SunkCargoEvent(HexCoord(3, 9), ArmyType.FLEET, ArmyType.BOWMEN))
+    state.sunk_cargo_events.append(SunkCargoEvent(HexCoord(4, 9), ArmyType.WHALES, ArmyType.AXEMEN))
+
+    record_sunk_cargo_world_events(state, ScriptedRandom([]))
+
+    assert len(state.world_events) == 2
+
+
+def test_record_sunk_cargo_world_events_is_a_no_op_with_no_events():
+    state = GameState()
+
+    record_sunk_cargo_world_events(state, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
 # -- Phase 105: render_flee_failure (FLEEFAIL.X) + render_sneak_detected (SNEAKUP.X) --
 
 
@@ -3532,6 +3642,30 @@ def test_describe_turn_results_narrates_an_illegal_move_from_contested():
     lines = describe_turn_results(entries, state, rng)
 
     assert lines == ["Arthur attempted an illegal move."]
+
+
+def test_describe_turn_results_narrates_cargo_boarding_after_a_real_move():
+    # Phase 736: describe_turn_results()'s own ActionCode.LMOVE branch
+    # narrates both the MARCH.X move line and, when the move auto-
+    # boarded any cargo, one boarding-notice line per boarded army.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(3, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor"))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Arthur", location=HexCoord(3, 9)))
+    state.add_army(ArmyState(10, 1, ArmyType.FLEET, Quality.AVERAGE, HexCoord(3, 9)))
+    state.add_army(ArmyState(11, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9), transported_by=10))
+    result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1,
+        new_location=HexCoord(3, 9), boarded_army_ids=[11],
+    )
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.LMOVE, result=result, error=None)
+    ]
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_turn_results(entries, state, rng, board_width=20)
+
+    assert "Arthur boarded Bowmen aboard the Fleet." in lines
 
 
 def test_describe_turn_results_narrates_a_double_agent_report_sentinel():

@@ -389,12 +389,16 @@ def test_fight_multi_attacker_battle_wires_battle_carrier_destruction():
         battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
 
     assert len(battles) == 1
-    mock_cascade.assert_called_once_with(
+    mock_cascade.assert_called_once()
+    call_args, call_kwargs = mock_cascade.call_args
+    assert call_args == (
         state,
         battles[0].report.destroyed_army_ids,
         battles[0].report.disbanded_army_ids,
         battles[0].report.pursuit_destroyed_army_ids,
     )
+    assert call_kwargs["coord"] == FIELD
+    assert 101 in call_kwargs["army_types_before_battle"]
 
 
 # -- Phase 658: BattleReport's per-side present-but-not-commanding roster --

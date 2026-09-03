@@ -59,6 +59,7 @@ from ak_engine.report.turn_report import (
     record_move_world_events,
     record_plague_spread_world_events,
     record_spell_world_events,
+    record_sunk_cargo_world_events,
     record_uncontested_conquest_world_events,
 )
 from ak_engine.turn.assassin_guild import resolve_pending_guild_assassination
@@ -271,6 +272,10 @@ def process_turn(
     # populates the two involved Kingdoms' own ACTION REPORT narrative
     # (state.battle_narratives_by_kingdom), not GENERAL INTELLIGENCE.
     record_battle_narratives(state, results, rng)
+    # Phase 736 -- same once-per-turn requirement; populates state.world_
+    # events from state.sunk_cargo_events (recorded live during battle
+    # resolution above, at each of the 4 real fight_battle() call sites).
+    record_sunk_cargo_world_events(state, rng)
     # Phase 713 -- same once-per-turn requirement; populates both the
     # blackmailer's and the victim's own ACTION REPORT (state.
     # blackmail_narratives_by_kingdom), not GENERAL INTELLIGENCE.

@@ -984,6 +984,11 @@ def execute_move(
     battle_report = None
     conquered = False
     if occupied_by_enemy:
+        # Phase 736: snapshot army types *before* fight_battle() removes
+        # any of them -- apply_battle_carrier_destruction() needs the
+        # carrier's own type to record a real sinking event, but the
+        # carrier is already gone from state.armies by the time it runs.
+        army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
         battle_report = fight_battle(
             state,
             kingdom_id,
@@ -999,6 +1004,8 @@ def execute_move(
             battle_report.destroyed_army_ids,
             battle_report.disbanded_army_ids,
             battle_report.pursuit_destroyed_army_ids,
+            coord=actual_target,
+            army_types_before_battle=army_types_before_battle,
         )
         conquered = battle_report.conquered
         moved = conquered

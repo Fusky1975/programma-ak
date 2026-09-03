@@ -523,12 +523,16 @@ def test_execute_pursue_wires_battle_carrier_destruction():
         result = execute_pursue(state, 1, _melee_request(2), rng=random.Random(1234))
 
     assert result.battle_report is not None
-    mock_cascade.assert_called_once_with(
+    mock_cascade.assert_called_once()
+    call_args, call_kwargs = mock_cascade.call_args
+    assert call_args == (
         state,
         result.battle_report.destroyed_army_ids,
         result.battle_report.disbanded_army_ids,
         result.battle_report.pursuit_destroyed_army_ids,
     )
+    assert call_kwargs["coord"] == DEFENDER_HOME
+    assert 101 in call_kwargs["army_types_before_battle"]
 
 
 def test_execute_pursue_army_vs_army_catch_up_with_no_province_data_is_not_fought():

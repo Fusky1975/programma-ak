@@ -62,15 +62,21 @@ every existing caller). **Phase 716** wires the real battle case
 specifically -- see `apply_battle_carrier_destruction()` below, called
 at all 4 real `fight_battle()` call sites.
 
-**Report-layer narration, deliberately out of scope, user-confirmed
-directly**: no real `SAY.PAS`-style text survives anywhere for a
-boarding event or for cargo sinking with its carrier (confirmed by a
-direct search of every available reverse-engineering report) -- per
-this project's own standing convention, project-original replacement
-prose is the user's own call, not invented here. `MoveExecutionResult.
-boarded_army_ids` (Phase 715) and `apply_battle_carrier_destruction()`'s
-own return value (Phase 716) both exist for a future phase to render,
-once/if real or user-supplied text becomes available.
+**Report-layer narration -- DONE (Phase 736)**: no real `SAY.PAS`-style
+text survives anywhere for a boarding event or for cargo sinking with
+its carrier (confirmed by a direct search of every available reverse-
+engineering report) -- the user directly authored the sinking event's
+own theme ("the transported unit sinks together with the annihilated
+fleet and disappears into the depths of the sea") and authorized
+project-original prose for both events. `MoveExecutionResult.boarded_
+army_ids` (Phase 715) is narrated directly at render time (`report/
+turn_report.py`'s own `ActionCode.LMOVE` branch, `render_cargo_
+boarded()`); cargo sinking needed a new structured per-turn event list
+(`GameState.sunk_cargo_events`, `SunkCargoEvent`) since the carrier's
+own type is already gone from `state.armies` by the time `apply_
+carrier_destruction()` runs -- see that function's own Phase 736
+addendum, and `report/turn_report.py record_sunk_cargo_world_events()`
+for the render side.
 
 **Phase 717 -- Dragon Wing/Eagle Wing air transport, `Regolamento
 AK.txt` lines 1932-1934** (quoted in full above): "Le unità aeree
@@ -111,7 +117,8 @@ from ak_engine.models.army_type import (
     WHALE_INFANTRY_CAPACITY,
     ArmyType,
 )
-from ak_engine.models.game_state import ArmyState, GameState
+from ak_engine.models.game_state import ArmyState, GameState, SunkCargoEvent
+from ak_engine.models.map import HexCoord
 
 
 def cargo_aboard(state: GameState, carrier_army_id: int) -> list[ArmyState]:
@@ -205,15 +212,34 @@ def disembark_army(state: GameState, cargo_army_id: int) -> bool:
     return True
 
 
-def apply_carrier_destruction(state: GameState, carrier_army_id: int) -> list[int]:
+def apply_carrier_destruction(
+    state: GameState,
+    carrier_army_id: int,
+    *,
+    carrier_army_type: ArmyType | None = None,
+    coord: HexCoord | None = None,
+) -> list[int]:
     """The cargo sinks with the carrier (user-confirmed, no source
     describes this) -- destroys every army currently boarded on
     `carrier_army_id` and returns their own ids. Wired into every real
     battle call site by `apply_battle_carrier_destruction()` below
     (Phase 716) -- this primitive itself stays reusable on its own.
+
+    Phase 736: when `carrier_army_type`/`coord` are both given (every
+    real caller now supplies them -- the carrier is typically already
+    gone from `state.armies` by the time this runs, so its own type
+    can't be looked up here), records one `SunkCargoEvent` per real
+    cargo unit *before* it's removed -- `report/turn_report.py record_
+    sunk_cargo_world_events()` renders these once per turn. `None`
+    (the default) skips recording entirely, preserving every pre-
+    Phase-736 caller/test unchanged.
     """
 
-    destroyed_ids = [army.army_id for army in cargo_aboard(state, carrier_army_id)]
+    cargo = cargo_aboard(state, carrier_army_id)
+    if carrier_army_type is not None and coord is not None:
+        for army in cargo:
+            state.sunk_cargo_events.append(SunkCargoEvent(coord, carrier_army_type, army.army_type))
+    destroyed_ids = [army.army_id for army in cargo]
     for army_id in destroyed_ids:
         state.remove_army(army_id)
     return destroyed_ids
@@ -224,6 +250,9 @@ def apply_battle_carrier_destruction(
     destroyed_army_ids: Sequence[int] = (),
     disbanded_army_ids: Sequence[int] = (),
     pursuit_destroyed_army_ids: Sequence[int] = (),
+    *,
+    coord: HexCoord | None = None,
+    army_types_before_battle: dict[int, ArmyType] | None = None,
 ) -> list[int]:
     """Phase 716 -- cascades `apply_carrier_destruction()` for every real
     army destroyed this battle, whether or not it was actually a Fleet/
@@ -244,9 +273,20 @@ def apply_battle_carrier_destruction(
     `turn/turn_processor.py`'s forced-rebattle continuation, `turn/
     battle_orchestrator.py fight_multi_attacker_battle()`'s own per-
     group call). Returns every cargo army id sunk this way.
+
+    Phase 736: `coord`/`army_types_before_battle` (a `{army_id:
+    army_type}` snapshot the caller builds from `state.armies` *before*
+    calling `fight_battle()`, since `fight_battle()` itself already
+    removed the carrier by the time this function runs) let real event
+    recording reach `apply_carrier_destruction()` above -- both `None`
+    (every pre-Phase-736 caller/test) reproduces the exact prior
+    behavior, no recording at all.
     """
 
     sunk_cargo_ids: list[int] = []
     for army_id in (*destroyed_army_ids, *disbanded_army_ids, *pursuit_destroyed_army_ids):
-        sunk_cargo_ids.extend(apply_carrier_destruction(state, army_id))
+        carrier_army_type = army_types_before_battle.get(army_id) if army_types_before_battle is not None else None
+        sunk_cargo_ids.extend(
+            apply_carrier_destruction(state, army_id, carrier_army_type=carrier_army_type, coord=coord)
+        )
     return sunk_cargo_ids

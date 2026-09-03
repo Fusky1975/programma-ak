@@ -559,12 +559,16 @@ def test_execute_move_wires_battle_carrier_destruction():
         result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
 
     assert result.battle_report is not None
-    mock_cascade.assert_called_once_with(
+    mock_cascade.assert_called_once()
+    call_args, call_kwargs = mock_cascade.call_args
+    assert call_args == (
         state,
         result.battle_report.destroyed_army_ids,
         result.battle_report.disbanded_army_ids,
         result.battle_report.pursuit_destroyed_army_ids,
     )
+    assert call_kwargs["coord"] == TARGET
+    assert 101 in call_kwargs["army_types_before_battle"]
 
 
 def test_move_conquest_sea_surcharge_honors_terrain_override():

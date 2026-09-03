@@ -1427,12 +1427,20 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
         # rule (rulebook [7.4]) instead of falling back to the wrong
         # defender-style nearest-friendly-neighbor rule -- see
         # ProvinceState.contested_from_coord's own docstring.
+        # Phase 736: snapshot army types before fight_battle() removes
+        # any of them -- see move_execution.py's own identical note.
+        army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
         report = fight_battle(
             state, attacker_kingdom_id, coord, army_ids, attacker_origin=province.contested_from_coord, rng=rng
         )
         # Phase 716: the cargo sinks with the carrier.
         apply_battle_carrier_destruction(
-            state, report.destroyed_army_ids, report.disbanded_army_ids, report.pursuit_destroyed_army_ids
+            state,
+            report.destroyed_army_ids,
+            report.disbanded_army_ids,
+            report.pursuit_destroyed_army_ids,
+            coord=coord,
+            army_types_before_battle=army_types_before_battle,
         )
 
         cost = contested_battle_movement_cost(conquered=report.conquered)

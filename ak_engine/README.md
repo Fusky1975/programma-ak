@@ -30347,7 +30347,7 @@ follow-up request after the original 431-435 plan shipped.
   6242 -> 6248 (net +6). Full suite verified green (unchanged, 6242)
   before writing a single new test.
 
-- **Phase 735 (current)**: comment-only, no behavior change. Twenty-
+- **Phase 735**: comment-only, no behavior change. Twenty-
   eighth fresh codebase survey found 2 more instances of this
   project's own recurring "stale known-gap claim" pattern: `models/
   plan.py`'s own module
@@ -30362,6 +30362,55 @@ follow-up request after the original 431-435 plan shipped.
   the same survey (Fleet/Whale cargo report narration) needs a real
   user decision -- no sourced text survives, so it would need project-
   original prose -- and remains open for a future pick.
+
+- **Phase 736 (current)**: closes candidate #3 from the twenty-eighth
+  survey -- Fleet/Whale cargo report narration for boarding (Phase 715)
+  and sinking-with-the-carrier (Phase 716), both previously mechanic-
+  only with zero report-layer text. No `SAY.PAS`/`.X2` text survives for
+  either event (confirmed by a direct search of every available
+  reverse-engineering report) -- the user directly authorized project-
+  original prose, specifying the sinking event's own theme: the
+  transported unit sinks together with the annihilated fleet and
+  disappears into the depths of the sea. New `models/game_state.py
+  SunkCargoEvent` dataclass + `GameState.sunk_cargo_events` -- raw,
+  structured per-turn facts (not already-rendered text, unlike
+  `WorldEvent`), recorded live during battle resolution since the
+  carrier's own `army_type` is already gone from `state.armies` by the
+  time `apply_carrier_destruction()` runs (`fight_battle()` already
+  removed it). `turn/sea_transport.py apply_carrier_destruction()`/
+  `apply_battle_carrier_destruction()` both gain optional keyword
+  parameters (`carrier_army_type`/`coord` and `coord`/`army_types_
+  before_battle` respectively) to record one `SunkCargoEvent` per real
+  cargo unit before removal -- `None` (every pre-Phase-736 caller/test)
+  reproduces the exact prior behavior, no recording at all. All 4 real
+  `fight_battle()` call sites (`turn/move_execution.py`, `turn/
+  pursue_execution.py`, `turn/battle_orchestrator.py
+  fight_multi_attacker_battle()`, `turn/turn_processor.py`'s
+  forced-rebattle continuation) now snapshot `{army_id: army_type for
+  army in state.armies.values()}` immediately *before* their own
+  `fight_battle()` call, so the carrier's own type is still resolvable
+  after the fact -- mirrors the established Phase 634 "snapshot before
+  mutation" pattern.
+
+  New `report/turn_report.py` templates, both using a second, fresh
+  marker (`|` for the carrier's own designation) alongside the already-
+  established `=` (the cargo unit's own designation), following the
+  `_STFite`-style two-marker precedent for a sentence naming two
+  distinct army types at once: `render_cargo_boarded()`/`describe_
+  cargo_boarded()` (wired into `describe_turn_results()`'s existing
+  `ActionCode.LMOVE` branch, reading `MoveExecutionResult.boarded_army_
+  ids` and resolving each boarded army's own type and its carrier's own
+  type live from `state.armies`/`.transported_by` -- both still present
+  there, since boarding never removes an army); `render_sunk_cargo()`/
+  `record_sunk_cargo_world_events()` (a new turn-global recorder,
+  mirroring `record_battle_world_events()`'s own "call exactly once per
+  turn, before any `compose_letter_report()` call" contract, wired into
+  `orchestrator.py` right alongside `record_battle_narratives()`). No
+  season-prefix line on the sinking notice -- `SunkCargoEvent` carries
+  no phase label to derive one from, matching `record_battle_
+  narratives()`'s own precedent for project-original text with no
+  natural season anchor. Test count: 6248 -> 6264 (net +16). Full suite
+  verified green (unchanged, 6248) before writing a single new test.
 
 ## Setup
 

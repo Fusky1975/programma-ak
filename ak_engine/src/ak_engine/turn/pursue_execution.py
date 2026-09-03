@@ -359,6 +359,9 @@ def _fight_army_pursuit_battle(
     for army in pursuer_armies:
         army.location = target.location
 
+    # Phase 736: snapshot army types before fight_battle() removes any
+    # of them -- see move_execution.py's own identical Phase 736 note.
+    army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
     battle_report = fight_battle(
         state, pursuer.kingdom_id, target.location, pursuer_army_ids, attacker_origin=origin, rng=rng,
     )
@@ -373,6 +376,8 @@ def _fight_army_pursuit_battle(
             battle_report.destroyed_army_ids,
             battle_report.disbanded_army_ids,
             battle_report.pursuit_destroyed_army_ids,
+            coord=target.location,
+            army_types_before_battle=army_types_before_battle,
         )
     return PursueExecutionResult(caught_up=True, combat_occurred=True, battle_report=battle_report)
 

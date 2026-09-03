@@ -375,3 +375,82 @@ def test_apply_battle_carrier_destruction_returns_empty_with_no_arguments():
     state = _state()
 
     assert apply_battle_carrier_destruction(state) == []
+
+
+# -- Phase 736: real SunkCargoEvent recording -------------------------------
+
+
+def test_apply_carrier_destruction_records_a_sunk_cargo_event_when_type_and_coord_given():
+    fleet = _army(1, ArmyType.FLEET, location=ELSEWHERE)
+    cargo = _army(2, ArmyType.BOWMEN, location=ELSEWHERE, transported_by=1)
+    state = _state(fleet, cargo)
+
+    apply_carrier_destruction(state, 1, carrier_army_type=ArmyType.FLEET, coord=ELSEWHERE)
+
+    assert len(state.sunk_cargo_events) == 1
+    event = state.sunk_cargo_events[0]
+    assert event.coord == ELSEWHERE
+    assert event.carrier_army_type is ArmyType.FLEET
+    assert event.cargo_army_type is ArmyType.BOWMEN
+
+
+def test_apply_carrier_destruction_records_one_event_per_real_cargo_unit():
+    fleet = _army(1, ArmyType.FLEET)
+    first = _army(2, ArmyType.BOWMEN, transported_by=1)
+    second = _army(3, ArmyType.AXEMEN, transported_by=1)
+    state = _state(fleet, first, second)
+
+    apply_carrier_destruction(state, 1, carrier_army_type=ArmyType.FLEET, coord=HOME)
+
+    assert len(state.sunk_cargo_events) == 2
+    assert {e.cargo_army_type for e in state.sunk_cargo_events} == {ArmyType.BOWMEN, ArmyType.AXEMEN}
+
+
+def test_apply_carrier_destruction_skips_recording_with_defaults():
+    fleet = _army(1, ArmyType.FLEET)
+    cargo = _army(2, ArmyType.BOWMEN, transported_by=1)
+    state = _state(fleet, cargo)
+
+    apply_carrier_destruction(state, 1)
+
+    assert state.sunk_cargo_events == []
+
+
+def test_apply_carrier_destruction_skips_recording_when_only_one_of_the_two_is_given():
+    fleet = _army(1, ArmyType.FLEET)
+    cargo = _army(2, ArmyType.BOWMEN, transported_by=1)
+    state = _state(fleet, cargo)
+
+    apply_carrier_destruction(state, 1, coord=HOME)
+    assert state.sunk_cargo_events == []
+
+
+def test_apply_battle_carrier_destruction_records_events_via_the_pre_battle_snapshot():
+    # The carrier is already gone from state.armies by the time this
+    # function runs (fight_battle() already removed it) -- its own type
+    # can only be resolved from a caller-supplied snapshot.
+    cargo = _army(2, ArmyType.BOWMEN, transported_by=1)
+    state = _state(cargo)
+    army_types_before_battle = {1: ArmyType.FLEET, 2: ArmyType.BOWMEN}
+
+    sunk = apply_battle_carrier_destruction(
+        state, destroyed_army_ids=[1], coord=HOME, army_types_before_battle=army_types_before_battle
+    )
+
+    assert sunk == [2]
+    assert len(state.sunk_cargo_events) == 1
+    event = state.sunk_cargo_events[0]
+    assert event.coord == HOME
+    assert event.carrier_army_type is ArmyType.FLEET
+    assert event.cargo_army_type is ArmyType.BOWMEN
+
+
+def test_apply_battle_carrier_destruction_skips_recording_without_a_snapshot():
+    fleet = _army(1, ArmyType.FLEET)
+    cargo = _army(2, ArmyType.BOWMEN, transported_by=1)
+    state = _state(fleet, cargo)
+
+    sunk = apply_battle_carrier_destruction(state, destroyed_army_ids=[1])
+
+    assert sunk == [2]
+    assert state.sunk_cargo_events == []

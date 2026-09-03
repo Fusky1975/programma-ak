@@ -1205,6 +1205,25 @@ class GraveyardEntry:
 
 
 @dataclass(slots=True)
+class SunkCargoEvent:
+    """Phase 736: one unit lost when the Fleet/Whale carrying it was
+    destroyed in battle (``turn/sea_transport.py apply_carrier_
+    destruction()``, Phase 716's own "the cargo sinks with the carrier"
+    rule). Recorded as raw, structured data -- not already-rendered
+    text, unlike ``WorldEvent`` -- since it's produced mid-battle, at 4
+    real call sites across 3 files, and only rendered once, in a single
+    later pass (``report/turn_report.py record_sunk_cargo_world_
+    events()``). ``carrier_army_type``/``cargo_army_type`` are captured
+    *before* either army is removed from ``GameState.armies`` -- by the
+    time this event is recorded, both are already gone.
+    """
+
+    coord: HexCoord
+    carrier_army_type: ArmyType
+    cargo_army_type: ArmyType
+
+
+@dataclass(slots=True)
 class WorldEvent:
     """One cross-kingdom-visible happening (Phase 231) -- the real raw
     material for GENERAL INTELLIGENCE REPORT's own "Kingdom of X (#N):"
@@ -1416,6 +1435,16 @@ class GameState:
     # ``compose_letter_report()`` call for that turn -- every King's own
     # report reads the same shared list, filtered by ``is_visible_to()``.
     world_events: list[WorldEvent] = field(default_factory=list)
+    # Phase 736: raw material for a real, previously-unrendered Phase
+    # 716 event -- see SunkCargoEvent's own docstring. Populated by
+    # ``turn/sea_transport.py apply_battle_carrier_destruction()`` at
+    # its own 4 real call sites during a turn's own battle resolution;
+    # rendered into ``world_events`` once per turn by ``report/turn_
+    # report.py record_sunk_cargo_world_events()``, the same "accumulate
+    # for the turn, no explicit reset" convention ``world_events``
+    # itself already documents (no multi-turn game loop exists yet for
+    # a reset to matter).
+    sunk_cargo_events: list[SunkCargoEvent] = field(default_factory=list)
     # Phase 711 -- the ACTION REPORT's own richer, per-Kingdom battle
     # narrative (`report/turn_report.py describe_battle()`, wired via
     # the new `record_battle_narratives()`), keyed by `kingdom_id`.

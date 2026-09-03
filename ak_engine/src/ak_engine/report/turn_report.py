@@ -5606,6 +5606,86 @@ def describe_disband(
     return lines
 
 
+# Phase 736 -- project-original, no ``SAY.PAS``/``.X2`` text survives for
+# either the Fleet/Whale cargo-boarding notice or a sunk carrier's own
+# cargo (confirmed by a direct search of every available reverse-
+# engineering report) -- see ``turn/sea_transport.py``'s own module
+# docstring for the mechanic. Both templates use a second, independent
+# marker (``|`` for the carrier's own designation) alongside the
+# already-established ``=`` (the transported/cargo unit's own
+# designation), following this project's own ``_STFite``-style
+# two-marker precedent (Phase 736's own plan, tracing back to Phase 673)
+# for a sentence that names two distinct army types at once.
+CARGO_BOARDED_TEMPLATE = "< boarded = aboard the |."
+
+
+def render_cargo_boarded(character_name: str, cargo_type_name: str, carrier_type_name: str, rng: random.Random) -> str:
+    """Renders the project-original notice for a unit auto-boarded onto a
+    Fleet/Whale/air carrier during a Move (Phase 715's own ``auto_board``
+    mechanic, never narrated until now).
+    """
+
+    values = {"<": character_name, "=": cargo_type_name, "|": carrier_type_name}
+    return render(CARGO_BOARDED_TEMPLATE, values, rng=rng)
+
+
+def describe_cargo_boarded(
+    result: MoveExecutionResult, state: GameState, *, character_name: str, rng: random.Random
+) -> list[str]:
+    """Assembles one boarding-notice sentence per ``result.boarded_army_
+    ids`` (Phase 736), resolving each boarded army's own type and its
+    real carrier's own type live from ``state.armies`` -- both are still
+    present there (boarding never removes an army, only sets its own
+    ``transported_by``), unlike the sinking case below.
+    """
+
+    lines: list[str] = []
+    for army_id in result.boarded_army_ids:
+        army = state.armies.get(army_id)
+        if army is None or army.transported_by is None:
+            continue
+        carrier = state.armies.get(army.transported_by)
+        if carrier is None:
+            continue
+        lines.append(
+            render_cargo_boarded(character_name, ARMY_TYPE_DESIGNATION[army.army_type], ARMY_TYPE_DESIGNATION[carrier.army_type], rng)
+        )
+    return lines
+
+
+# Phase 736 -- project-original, per the user's own directive: the
+# transported unit sinks together with the annihilated fleet and
+# disappears into the depths of the sea. See ``CARGO_BOARDED_TEMPLATE``
+# above for the ``|``/``=`` two-marker precedent this shares.
+SUNK_CARGO_TEMPLATE = "The = being transported sank together with the annihilated | and disappeared into the depths of the sea."
+
+
+def render_sunk_cargo(cargo_type_name: str, carrier_type_name: str, rng: random.Random) -> str:
+    """Renders the project-original notice for a unit lost when its own
+    carrier was destroyed in battle (``turn/sea_transport.py apply_
+    carrier_destruction()``, Phase 716's own "the cargo sinks with the
+    carrier" rule, narrated for the first time in Phase 736).
+    """
+
+    values = {"=": cargo_type_name, "|": carrier_type_name}
+    return render(SUNK_CARGO_TEMPLATE, values, rng=rng)
+
+
+def record_sunk_cargo_world_events(state: GameState, rng: random.Random) -> None:
+    """Populates ``state.world_events`` from every ``SunkCargoEvent``
+    recorded this turn (Phase 736) -- mirrors ``record_battle_world_
+    events()``'s own "turn-global, called exactly once, before any
+    ``compose_letter_report()`` call" contract. No season-prefix line is
+    added (matching ``record_battle_narratives()``'s own precedent) --
+    ``SunkCargoEvent`` carries no phase label to derive one from, and no
+    source suggests one belongs here for project-original text anyway.
+    """
+
+    for event in state.sunk_cargo_events:
+        line = render_sunk_cargo(ARMY_TYPE_DESIGNATION[event.cargo_army_type], ARMY_TYPE_DESIGNATION[event.carrier_army_type], rng)
+        state.record_world_event(event.coord, [line])
+
+
 # SAY.PAS _LDefend -- a single hardcoded template, not a PROSE file
 # (Phase 421, same shape as _ADisb's own Phase 420 precedent): "<
 # prepared > armies/Sforces to defend @ and the surrounding
@@ -7068,6 +7148,7 @@ def describe_turn_results(
             line = describe_move(entry.result, state, character_name=caster_name, board_width=board_width, rng=rng)
             if line is not None:
                 lines.append(line)
+            lines.extend(describe_cargo_boarded(entry.result, state, character_name=caster_name, rng=rng))
             continue
         else:
             continue
