@@ -177,6 +177,44 @@ def test_run_turn_apply_turn_revenue_consumes_the_real_shared_rng():
     assert state.kingdoms[1].treasury == 700
 
 
+def test_run_turn_dissolves_illusory_terrain_once_per_real_turn_not_per_phase():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    coord = HexCoord(5, 5)
+    state.add_province(
+        ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, illusory_terrain=Terrain.SEA)
+    )
+    leader = _empty_plan_leader(10, "A")
+
+    # Exactly one draw expected: the illusory-terrain dissolve roll for
+    # this province's single entry. If the roll ran once per phase (5x)
+    # instead of once per real turn, this exact-length script would
+    # raise IndexError on the second draw.
+    rng = ScriptedRandom([0.1])
+
+    run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=rng)
+
+    assert rng._randoms == []
+    assert state.provinces[coord].illusory_terrain is None
+
+
+def test_run_turn_leaves_illusory_terrain_untouched_on_a_scripted_miss():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    coord = HexCoord(5, 5)
+    state.add_province(
+        ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, illusory_terrain=Terrain.SEA)
+    )
+    leader = _empty_plan_leader(10, "A")
+
+    rng = ScriptedRandom([0.9])
+
+    run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=rng)
+
+    assert rng._randoms == []
+    assert state.provinces[coord].illusory_terrain is Terrain.SEA
+
+
 def test_run_turn_empty_sp_block_leaves_special_encounter_plan_empty():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))

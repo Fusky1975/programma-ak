@@ -850,6 +850,45 @@ def test_fight_battle_reads_province_is_island_into_strength():
     )
 
 
+def test_fight_battle_reads_province_illusory_terrain_into_strength():
+    # Integration: fight_battle wires ProvinceState.illusory_terrain
+    # (Phase 724) into _build_battle_units for both sides -- same rng
+    # seed, only the province's own illusory_terrain differs, so any
+    # strength difference is attributable to the new wiring alone.
+    # HVY_CAVALRY: base 4, home Plains (+1) = 5 real; adverse Sea (/2) =
+    # 2 illusory -- blends to 3.5, genuinely different from ordinary 5.
+    state_ordinary = build_state()
+    state_illusory = build_state()
+    state_illusory.provinces[FIELD].illusory_terrain = Terrain.SEA
+
+    report_ordinary = fight_battle(state_ordinary, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=random.Random(3))
+    report_illusory = fight_battle(state_illusory, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=random.Random(3))
+
+    assert report_illusory.battle_result.columns[0].attacker_strength == pytest.approx(
+        report_ordinary.battle_result.columns[0].attacker_strength * 3.5 / 5
+    )
+
+
+def test_build_battle_units_applies_illusory_terrain_blend():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.PHALANX, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+
+    ordinary = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+    illusory = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        illusory_terrain=Terrain.SEA,
+    )
+
+    assert illusory[0].effective_strength != ordinary[0].effective_strength
+    assert illusory[0].effective_strength == compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, illusory_terrain=Terrain.SEA
+    )
+
+
 def test_build_battle_units_applies_is_island_blend():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))

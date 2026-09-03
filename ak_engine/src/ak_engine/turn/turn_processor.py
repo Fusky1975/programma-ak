@@ -268,6 +268,7 @@ from ak_engine.turn.battle_orchestrator import (
 from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.blackmail import advance_blackmail_claims
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
+from ak_engine.turn.cast_execution import maybe_dissolve_illusory_terrain
 from ak_engine.turn.challenge_execution import execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
@@ -659,6 +660,12 @@ def run_turn(
     # the maturation routine's own "Season" gate has one).
     for feature in state.features.values():
         maybe_dissipate_hidden_feature(feature, rng)
+    # Phase 724: Illusory Terrain's own real 15%/turn dissolve chance
+    # (rulebook [4.23.1]) -- identical shape/placement to Hide Feature's
+    # dissipation roll right above, just per-province instead of
+    # per-feature.
+    for province in state.provinces.values():
+        maybe_dissolve_illusory_terrain(province, rng)
     apply_turn_revenue(state, rng)
     apply_turn_maintenance(state, rng)
     # Phase 468: King of Cowards' own real per-turn temperament rise

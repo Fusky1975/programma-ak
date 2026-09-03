@@ -91,11 +91,13 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   terrain an outside observer would be told the province is. **Stale as
   of Phase 683 -- as of Phase 59 nothing read this; `report/turn_
   report.py record_spell_world_events()` has rendered a real world-
-  event narration line from it since Phase 232.** No exploration/
-  movement *mechanic* distinguishes real vs. illusory terrain even
-  today (the real consumer is report-layer narration, not a gameplay
-  effect) -- that narrower gap is still real, just not "no consumer at
-  all" the way this note used to say.
+  event narration line from it since Phase 232.** As of **Phase 724**,
+  this is also a real gameplay effect, not just narration: `turn/
+  strength.py compute_effective_strength()`'s own `illusory_terrain`
+  parameter blends real/illusory combat strength for a unit that enters
+  (rulebook [4.23.1]), and `turn/cast_execution.py maybe_dissolve_
+  illusory_terrain()` clears this field on a real 15%/turn roll, called
+  once per turn from `turn/turn_processor.py run_turn()`.
 - ``LeaderState.phantasmal_armies_level`` (Phantasmal Armies): unlike
   the three fields above, this one *is* wired into a real consumer the
   same phase it's added -- see ``turn/strength.py

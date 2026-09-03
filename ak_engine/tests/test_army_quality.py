@@ -13,7 +13,7 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import RACE_LEADERSHIP_TREASURE, Treasure
-from ak_engine.turn.army_quality import compute_army_modified_quality
+from ak_engine.turn.army_quality import army_peacetime_strength, compute_army_modified_quality
 from ak_engine.turn.combat import Quality
 
 HOME = HexCoord(0, 0)
@@ -147,6 +147,25 @@ def test_unregistered_province_has_no_desert_penalty():
     state.add_army(army)
 
     assert compute_army_modified_quality(state, army) == Quality.AVERAGE
+
+
+def test_army_peacetime_strength_reaches_through_illusory_terrain():
+    # Phase 724: ProvinceState.illusory_terrain reaches army_peacetime_
+    # strength() the same way is_island already does -- see turn/
+    # strength.py compute_effective_strength()'s own docstring.
+    state = _state()
+    state.provinces[FIELD].illusory_terrain = Terrain.SEA
+    army = ArmyState(1, 1, ArmyType.PHALANX, Quality.AVERAGE, FIELD)
+    state.add_army(army)
+
+    illusory = army_peacetime_strength(state, army, Ability.TACTICAL)
+
+    state_without = _state()
+    army_without = ArmyState(1, 1, ArmyType.PHALANX, Quality.AVERAGE, FIELD)
+    state_without.add_army(army_without)
+    ordinary = army_peacetime_strength(state_without, army_without, Ability.TACTICAL)
+
+    assert illusory != ordinary
 
 
 def test_race_leadership_treasure_covers_the_four_humanoid_races():

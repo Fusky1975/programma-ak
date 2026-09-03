@@ -362,6 +362,72 @@ def test_is_island_false_by_default_matches_pre_phase_282_behavior():
     assert without_param == explicit_false
 
 
+# -- Illusory Terrain (Phase 724) ------------------------------------------
+
+
+def test_illusory_terrain_averages_real_and_illusory_terrain_component():
+    # Phalanx: base 3, home Plains (+1) = 4 on the real terrain pass;
+    # adverse Sea (/2) = 1.5 on the illusory pass. Averages to 2.75
+    # before quality multiplies -- rulebook [4.23.1]'s own worked example
+    # shape (plains illusorily made to look like sea).
+    blended = compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, illusory_terrain=Terrain.SEA
+    )
+    assert blended == pytest.approx(2.75 * int(Quality.AVERAGE))
+
+
+def test_illusory_terrain_none_by_default_matches_pre_phase_724_behavior():
+    without_param = compute_effective_strength(ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    explicit_none = compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, illusory_terrain=None
+    )
+    assert without_param == explicit_none
+
+
+def test_illusory_terrain_whales_get_half_their_normal_sea_strength_when_illusion_is_sea():
+    # Same emergent mechanism as the Island blend: Whales' real-terrain
+    # pass on Plains is 0.0 (off-Sea override), averaged with their full
+    # Sea strength on the illusory pass yields exactly half.
+    normal_sea = compute_effective_strength(ArmyType.WHALES, Race.HUMAN, Quality.AVERAGE, Terrain.SEA)
+    illusory = compute_effective_strength(
+        ArmyType.WHALES, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, illusory_terrain=Terrain.SEA
+    )
+    assert illusory == pytest.approx(normal_sea / 2)
+
+
+def test_illusory_terrain_affects_overflight_air_units_unlike_is_island():
+    # Deliberate difference from is_island's own air-unit exemption --
+    # the rulebook names no such carve-out for Illusory Terrain. Eagle
+    # Wing: home Mountains (+1) = 5 real, adverse Forest (/2) = 2.0
+    # illusory -- averages to 3.5, clearly below the unaffected 5.0.
+    ordinary = compute_effective_strength(ArmyType.EAGLE_WING, Race.HUMAN, Quality.AVERAGE, Terrain.MTNS)
+    illusory = compute_effective_strength(
+        ArmyType.EAGLE_WING, Race.HUMAN, Quality.AVERAGE, Terrain.MTNS, illusory_terrain=Terrain.FOREST
+    )
+    assert illusory == pytest.approx(3.5 * int(Quality.AVERAGE))
+    assert illusory != ordinary
+    # is_island alone still exempts the same army type (unchanged Phase 282 behavior).
+    island_only = compute_effective_strength(
+        ArmyType.EAGLE_WING, Race.HUMAN, Quality.AVERAGE, Terrain.MTNS, is_island=True
+    )
+    assert island_only == ordinary
+
+
+def test_illusory_terrain_nests_around_is_island_rather_than_flattening_a_three_way_average():
+    # User-confirmed design: the real side of the illusory blend reuses
+    # the full is_island land/Sea average; the illusory side stays a
+    # single ordinary pass. Nested result: ((land+sea)/2 + illusory) / 2,
+    # not (land+sea+illusory) / 3.
+    nested = compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_island=True, illusory_terrain=Terrain.SEA
+    )
+    # land=4, sea=1.5 (both the is_island land/sea pair and the illusory
+    # terrain here happen to be the same Sea value) -> ((4+1.5)/2 + 1.5) / 2 = 2.125
+    assert nested == pytest.approx(2.125 * int(Quality.AVERAGE))
+    flattened_average = pytest.approx((4 + 1.5 + 1.5) / 3 * int(Quality.AVERAGE))
+    assert nested != flattened_average
+
+
 # -- Phase 351: cross-validation against the confirmed AK.EXE/AK.OVR ------
 # battle_engine.column_resolution.confirmed_multipliers and
 # battle_engine.special_events tables -- the exploration_max: 1.25 data

@@ -2323,11 +2323,14 @@ def _execute_illus_terrain(
 ) -> CastExecutionResult:
     """Rulebook [4.23.1]: "makes the province you're in (or one adjacent) appear to be a
     different terrain type of your choosing, to anyone examining it from
-    an adjacent province." Only the fake-terrain *record* is stored
-    (``ProvinceState.illusory_terrain``) -- the "who currently believes
-    the illusion," 15%/turn dissolve chance, and blended real/illusory
-    combat strength all need exploration/movement-side consumers that
-    don't exist yet (see ``models/game_state.py``'s field docstring).
+    an adjacent province." Only the fake-terrain *record* is stored here
+    (``ProvinceState.illusory_terrain``); the "who currently believes the
+    illusion" half stays project-original (see ``models/game_state.py``'s
+    field docstring). The 15%/turn dissolve chance
+    (``maybe_dissolve_illusory_terrain()``, right below) and the blended
+    real/illusory combat strength (``turn/strength.py compute_effective_
+    strength()``'s own ``illusory_terrain`` parameter) are both wired as
+    of Phase 724.
     """
 
     caster = state.leaders[leader_id]
@@ -2346,6 +2349,24 @@ def _execute_illus_terrain(
 
     province.illusory_terrain = request.terrain
     return CastExecutionResult(request, applied=True)
+
+
+ILLUSORY_TERRAIN_DISSOLVE_CHANCE = 0.15
+
+
+def maybe_dissolve_illusory_terrain(province: ProvinceState, rng: random.Random) -> None:
+    """Rulebook [4.23.1]: "L'illusione ha il 15% per turno di dissolversi."
+    A flat, independent per-province, per-turn roll -- mirrors ``turn/
+    monster_raids.py maybe_dissipate_hidden_feature()``'s own shape
+    exactly (Phase 670's identical "10%/turn" Hide Feature dissipation),
+    called once per real turn (not per phase) from the same ``turn/
+    turn_processor.py run_turn()`` tail position, right alongside it.
+    """
+
+    if province.illusory_terrain is None:
+        return
+    if rng.random() < ILLUSORY_TERRAIN_DISSOLVE_CHANCE:
+        province.illusory_terrain = None
 
 
 def _execute_illus_armies(

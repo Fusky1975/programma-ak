@@ -43,22 +43,31 @@ The rulebook gives an exact, ordered pipeline:
 
 This resolves the "unspecified stacking order" gap flagged in earlier
 phases: the order above is a direct rulebook quote, not a guess.
-Illusory Terrain's blended-strength averaging still stays SKIPPED --
-**narrowed as of Phase 710 (a stale-claim correction, matching Phase
-683's own already-corrected copy of this same note in ``models/
-game_state.py``)**: this project has had a real spellcasting system
-since Phase 3/Illusory-Terrain's own cast handler, and magic items
-have had a real effect system since Phase 141 -- neither is missing
-anymore. The real, still-genuine gap is narrower: no exploration/
-movement *mechanic* distinguishes what an outside observer is told the
-terrain is (``ProvinceState.illusory_terrain``) from what it really is
-for combat-strength purposes -- the illusion's only real consumer today
-is report-layer narration (``report/turn_report.py record_spell_world_
-events()``, Phase 232), not a gameplay effect this function could read.
+Illusory Terrain's blended-strength averaging -- **wired as of Phase
+724** (narrowed correctly by Phase 710, then closed in full): rulebook
+[4.23.1] (``Regolamento AK.txt`` lines 1199-1211, repeated at ~line
+3099-3100) says a unit that actually *enters* an illusorily-terrained
+province discovers the trick, but still fights at a strength "a metà
+strada" (halfway) between what it would have on the real terrain and on
+the illusory one -- worked example: a plains province illusorily turned
+to sea, entering units get the average of their plains-strength and
+their "embarked" (Sea) strength. Implemented as a second, independent
+blend layered on top of whatever the ordinary (possibly already
+Island-blended, see below) pipeline already produces -- see ``compute_
+effective_strength()``'s own ``illusory_terrain`` parameter docstring.
+The rulebook names no air-unit exemption for this blend (unlike
+Island's own, below) -- Dragons/Eagles are affected the same as every
+other army type, a deliberate difference, not an oversight. A separate
+new 15%/turn dissolve roll (``turn/cast_execution.py maybe_dissolve_
+illusory_terrain()``) clears the illusion at the same real-turn
+boundary Hide Feature's own dissipation roll already uses. ``Advanced
+Ability.ENHANCED_ILLUSORY_TERRAIN``'s own 67/33 blend ratio (instead of
+the base 50/50 built here) stays a deliberate, separate follow-up --
+not attempted this phase.
 
 **Island provinces (Phase 282, ``is_island``)** -- a different kind of
-blended-terrain averaging from Illusory Terrain's (still-skipped) one,
-and NOT part of the rulebook pipeline above: the optional Super AK
+blended-terrain averaging from Illusory Terrain's, and NOT part of the
+rulebook pipeline above: the optional Super AK
 variant (games up to 24 players, project-original per the user's own
 explicit domain knowledge -- no Pascal source describes it) where a
 province is half Sea, half its own land terrain. ``compute_effective_
@@ -451,6 +460,7 @@ def compute_effective_strength(
     base_strength_override: float | None = None,
     illusory_fog_affected: bool = False,
     is_island: bool = False,
+    illusory_terrain: Terrain | None = None,
     adapt_tactics_to_terrain: bool = False,
 ) -> float:
     """Full effective-strength pipeline, in the rulebook's documented order.
@@ -485,6 +495,17 @@ def compute_effective_strength(
     unit; a single ordinary pass otherwise. Defaults to ``False`` for
     every pre-Phase-282 caller, unaffected.
 
+    **Illusory Terrain** (Phase 724, ``illusory_terrain``): rulebook
+    [4.23.1] -- see the module docstring's own Phase 724 section. When
+    set to a real ``Terrain``, a *second*, independent blend runs on top
+    of whatever the step above already produced (the ordinary single
+    pass, or the Island land/Sea average) -- an ordinary single pass
+    against ``illusory_terrain`` itself (no Island-style blending on
+    this side; the illusion presents one chosen terrain, not two), then
+    the two results are averaged 50/50. No air-unit exemption, unlike
+    ``is_island``. Defaults to ``None`` (no effect) for every pre-Phase-
+    724 caller, unaffected.
+
     **Race-matching legendary leadership item** (Phase 279/285,
     ``race_item_bonus``): passed straight through to ``modified_
     quality()``'s own parameter of the same name -- see that function's
@@ -506,12 +527,21 @@ def compute_effective_strength(
             army_type, race, Terrain.SEA, is_defender=is_defender, base_strength_override=base_strength_override,
             adapt_tactics_to_terrain=adapt_tactics_to_terrain,
         )
-        strength = (land_strength + sea_strength) / 2
+        real_strength = (land_strength + sea_strength) / 2
     else:
-        strength = _terrain_strength(
+        real_strength = _terrain_strength(
             army_type, race, terrain, is_defender=is_defender, base_strength_override=base_strength_override,
             adapt_tactics_to_terrain=adapt_tactics_to_terrain,
         )
+
+    if illusory_terrain is not None:
+        illusory_strength = _terrain_strength(
+            army_type, race, illusory_terrain, is_defender=is_defender, base_strength_override=base_strength_override,
+            adapt_tactics_to_terrain=adapt_tactics_to_terrain,
+        )
+        strength = (real_strength + illusory_strength) / 2
+    else:
+        strength = real_strength
 
     quality = modified_quality(
         base_quality,

@@ -29965,7 +29965,7 @@ follow-up request after the original 431-435 plan shipped.
   province_halves_spell_chance()`'s own possible arithmetic-vs-coin-
   flip discrepancy; the `pt2`/`is_island` cross-reference).
 
-- **Phase 723 (current)**: `ProvinceState.is_island`/`pt2` closes the
+- **Phase 723**: `ProvinceState.is_island`/`pt2` closes the
   cross-reference flagged above -- a real, parsed field, not project-
   original as four separate docstrings claimed. `parser/gw_world.py
   GWProvinceRecord.alternate_terrain` has decoded the real `pt2` field
@@ -30004,6 +30004,33 @@ follow-up request after the original 431-435 plan shipped.
   (nothing ever assigns a `pt2` value at world-creation time) stays a
   real, separate, still-open item -- this phase only fixed the world-
   *loading* bridge.
+
+- **Phase 724 (current)**: Illusory Terrain's real blended combat
+  strength and 15%/turn dissolve chance -- rulebook [4.23.1]
+  (`Regolamento AK.txt` lines 1199-1211, repeated at ~line 3099-3100):
+  a unit that enters an illusorily-terrained province still fights at
+  a strength "a metà strada" (halfway) between what it would have on
+  the real terrain and on the illusory one. `turn/strength.py compute_
+  effective_strength()` gains a new `illusory_terrain` parameter,
+  layered as a second, independent blend on top of whatever the
+  ordinary pipeline (or the existing Island land/Sea average) already
+  produced -- user-confirmed directly: the two nest rather than
+  flatten into a 3-way average when a province is simultaneously an
+  Island and under Illusory Terrain. Deliberately no air-unit
+  exemption (unlike `is_island`'s own, sourced to a different, project-
+  original rule) -- the rulebook names none for this mechanic. New
+  `turn/cast_execution.py maybe_dissolve_illusory_terrain()` (15%/turn,
+  the identical shape/placement as Phase 670's Hide Feature dissipation
+  roll) clears the illusion, called once per real turn from `turn/
+  turn_processor.py run_turn()`. Threaded through every real caller
+  that already threads `is_island` (`turn/army_quality.py
+  army_peacetime_strength()`, `turn/battle_orchestrator.py
+  fight_battle()`/`_build_battle_units()`/`_apply_monster_summoning_
+  aid()`/`_apply_pursuit()`). `AdvancedAbility.ENHANCED_ILLUSORY_
+  TERRAIN`'s own 67/33 blend ratio (instead of the base 50/50 built
+  here) stays a deliberate, separate follow-up. Test count: 6170 ->
+  6183 (net +13). Full suite verified green (unchanged, 6170) before
+  writing a single new test; every new test passed on the first run.
 
 ## Setup
 

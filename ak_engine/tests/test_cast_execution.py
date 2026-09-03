@@ -47,6 +47,7 @@ from ak_engine.turn.cast_execution import (
     is_illusory_fog_affected_air_unit,
     is_unfinalized_royal_heir,
     locate_object,
+    maybe_dissolve_illusory_terrain,
     scar_terrain_is_exhausted,
 )
 from ak_engine.turn.combat import Quality
@@ -1832,6 +1833,30 @@ def test_illus_terrain_fails_without_a_fake_terrain_specified():
 
     assert result.applied is False
     assert result.reason == "fake terrain not specified"
+
+
+def test_maybe_dissolve_illusory_terrain_is_a_no_op_when_no_illusion_is_active():
+    province = ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN)
+
+    maybe_dissolve_illusory_terrain(province, ScriptedRandom([0.0]))
+
+    assert province.illusory_terrain is None
+
+
+def test_maybe_dissolve_illusory_terrain_clears_the_illusion_on_a_scripted_hit():
+    province = ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, illusory_terrain=Terrain.SEA)
+
+    maybe_dissolve_illusory_terrain(province, ScriptedRandom([0.1]))
+
+    assert province.illusory_terrain is None
+
+
+def test_maybe_dissolve_illusory_terrain_leaves_the_illusion_untouched_on_a_scripted_miss():
+    province = ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, illusory_terrain=Terrain.SEA)
+
+    maybe_dissolve_illusory_terrain(province, ScriptedRandom([0.9]))
+
+    assert province.illusory_terrain is Terrain.SEA
 
 
 # ---------------------------------------------------------------------------
