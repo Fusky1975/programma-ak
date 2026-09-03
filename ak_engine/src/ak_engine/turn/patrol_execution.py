@@ -112,6 +112,7 @@ from ak_engine.turn.discovery_effects import effective_skill_level, equipped_com
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     Combatant,
+    MeleeSwing,
     archery_free_attack_bonus,
     bow_of_elven_kings_archery_damage_bonus,
     bow_of_elven_kings_archery_hit_multiplier,
@@ -276,6 +277,13 @@ class PatrolExecutionResult:
     # Phase 313: same field/reason as `turn/challenge_execution.py
     # ChallengeExecutionResult`'s own Phase 313 addendum.
     looted_item_ids: list[int] = field(default_factory=list)
+    # Phase 733: real per-swing detail (Patrol has no Fire Arrow at all,
+    # per the module docstring's own Phase 686 addendum) -- lets
+    # `report/turn_report.py describe_patrol_combat()` narrate the whole
+    # duel, not just its own final blow. Same shape/reason as `turn/
+    # challenge_execution.py ChallengeExecutionResult`'s own Phase 417
+    # addendum.
+    melee_swings: tuple[MeleeSwing, ...] = ()
 
 
 def execute_patrol(
@@ -336,7 +344,10 @@ def execute_patrol(
         add_experience(target, Ability.MELEE, 10, rng)
 
     if combat_result.winner is None:
-        return PatrolExecutionResult(intercepted=True, target_leader_id=target.leader_id, combat_occurred=True)
+        return PatrolExecutionResult(
+            intercepted=True, target_leader_id=target.leader_id, combat_occurred=True,
+            melee_swings=combat_result.melee_swings,
+        )
 
     winner_id, loser_id = (
         (patroller_leader_id, target.leader_id)
@@ -352,6 +363,7 @@ def execute_patrol(
         combat_occurred=True,
         winner_leader_id=winner_id,
         loser_leader_id=loser_id,
+        melee_swings=combat_result.melee_swings,
         loser_killed=True,
         looted_item_ids=[item.item_id for item in looted_items],
     )

@@ -1310,6 +1310,7 @@ from ak_engine.turn.plan_dispatch import (
     PhaseDispatchResult,
 )
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL, PracticeExecutionResult
+from ak_engine.turn.patrol_execution import PatrolExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.random_encounter_execution import RandomEncounterResult
 from ak_engine.turn.recruit_execution import RecruitExecutionResult
@@ -6103,6 +6104,49 @@ def describe_encounter_combat(
     return lines
 
 
+def describe_patrol_combat(
+    result: PatrolExecutionResult, *, a_leader_id: int, a_name: str, b_name: str, rng: random.Random, is_sea: bool = False
+) -> list[str]:
+    """Phase 733: a smaller sibling of ``describe_encounter_combat()``
+    above, for ``turn/patrol_execution.py PatrolExecutionResult``
+    specifically -- deliberately **not** a call to `describe_encounter_
+    combat()` itself: that function also renders a Fire Arrow loop and
+    a ``describe_steal()`` sub-line, and Patrol has neither (its own
+    module docstring: "Patrol has no Fire Arrow at all", and its combat
+    resolution never walks a Steal tactic either) -- widening
+    ``PatrolExecutionResult`` with fields it doesn't otherwise need just
+    to satisfy that reuse isn't worth it, the same reasoning ``describe_
+    random_encounter_combat()`` already established for its own,
+    differently-shaped sibling case. No sourced sentence exists for a
+    non-combat Patrol outcome (a Spy Table wander, a refused encounter,
+    a peaceful accepted plan) -- only the real swings that happened are
+    narrated here, the same "no source, no guess" stance `describe_
+    encounter_combat()`'s own docstring already states for the
+    identical situation.
+    """
+
+    if not result.combat_occurred:
+        return []
+
+    lines: list[str] = []
+    for swing in result.melee_swings:
+        attacker_name, defender_name = (a_name, b_name) if swing.attacker == "a" else (b_name, a_name)
+        attack_line = render_melee_attack(attacker_name, defender_name, _MELEE_ATTACK_METHOD, rng)
+        attack_line += (
+            render_attack_hit(defender_name, swing.damage, rng)
+            if swing.hit
+            else render_attack_missed(attacker_name, defender_name, "blade", rng, is_sea=is_sea)
+        )
+        lines.append(attack_line)
+
+    if result.loser_killed:
+        loser_name = a_name if result.loser_leader_id == a_leader_id else b_name
+        lines.append(render_mortally_wounded(loser_name, rng, is_sea=is_sea))
+        lines.append(render_character_death(loser_name, rng))
+
+    return lines
+
+
 def describe_random_encounter_combat(
     result: RandomEncounterResult, *, character_name: str, opponent_name: str, rng: random.Random, is_sea: bool = False
 ) -> list[str]:
@@ -6813,6 +6857,25 @@ def describe_turn_results(
                     b_name=target_name,
                     rng=rng,
                     is_sea=is_sea,
+                )
+            )
+            continue
+        elif entry.action is ActionCode.PURSUE and isinstance(entry.result, PatrolExecutionResult):
+            # Phase 733: a standing Patrol order dispatches under the
+            # same ActionCode.PURSUE as a directed Pursue (turn/turn_
+            # processor.py's own sentinel, segment_index=-1) but with a
+            # structurally different result type -- the isinstance check
+            # above never matched it, so this outcome was silently
+            # unnarrated until now.
+            target_name = _leader_name(state, entry.result.target_leader_id)
+            if target_name is None:
+                continue
+            leader_location = _leader_location(state, entry.leader_id)
+            province = state.provinces.get(leader_location)
+            is_sea = province is not None and province.effective_terrain() is Terrain.SEA
+            lines.extend(
+                describe_patrol_combat(
+                    entry.result, a_leader_id=entry.leader_id, a_name=caster_name, b_name=target_name, rng=rng, is_sea=is_sea
                 )
             )
             continue

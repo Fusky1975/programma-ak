@@ -551,6 +551,35 @@ def test_execute_patrol_melee_request_fights_and_removes_the_loser():
     assert result.loser_leader_id == 2
     assert result.loser_killed is True
     assert 2 not in state.leaders
+    # Phase 733: real per-swing detail, so report/turn_report.py can
+    # narrate the whole duel, not just its own final blow.
+    assert len(result.melee_swings) > 0
+    assert all(isinstance(swing, MeleeSwing) for swing in result.melee_swings)
+
+
+def test_execute_patrol_draw_still_carries_the_real_melee_swings():
+    # Phase 733: an inconclusive duel (resolve_melee_duel's own
+    # defensive max_rounds cap) must still carry whatever swings were
+    # actually landed before it gave up -- mocked here since a real
+    # draw is astronomically unlikely to script by hand.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Patroller", location=HOME))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Intruder", location=HOME))
+    swings = (MeleeSwing(attacker="a", hit=True, damage=1),)
+
+    with patch(
+        "ak_engine.turn.patrol_execution.resolve_melee_duel",
+        return_value=EncounterCombatResult(winner=None, rounds=999, melee_swings=swings),
+    ):
+        # 2 extra scripted values: the landed swing's own Add_Experience
+        # triangular draw (Phase 686).
+        result = execute_patrol(
+            state, 1, _melee_request(1), ScriptedRandom([0.5, 0.5]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
+        )
+
+    assert result.combat_occurred is True
+    assert result.winner_leader_id is None
+    assert result.melee_swings == swings
 
 
 def test_execute_patrol_melee_request_loots_the_decisive_losers_items():

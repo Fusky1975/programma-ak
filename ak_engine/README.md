@@ -30246,7 +30246,7 @@ follow-up request after the original 431-435 plan shipped.
   green (unchanged, 6216) before writing a single new test. This closes
   the entire twenty-fifth survey in full.
 
-- **Phase 732 (current)**: twenty-sixth survey's own candidate #1 --
+- **Phase 732**: twenty-sixth survey's own candidate #1 --
   AKGEN's own confirmed `combat_slots_per_school` (1 Personal-Combat
   cast attempt per Ability per encounter at skill level 1, 2 at level
   2+) finally enforced, together with its tightly-coupled sibling rule
@@ -30284,6 +30284,37 @@ follow-up request after the original 431-435 plan shipped.
   mechanical fixture update, not a behavior change). Test count: 6219
   -> 6236 (net +17). Full suite verified green (unchanged, 6219) before
   writing a single new test.
+
+- **Phase 733 (current)**: twenty-sixth survey's own candidate #2, as
+  originally framed, turned out to be a false finding -- the standing
+  "Characters On Patrol" mechanic ([3.16]) is already fully implemented
+  (Phase 71, `turn/patrol_execution.py`, wired into `turn_processor.py`'s
+  real dispatch, 45 pre-existing tests) with every real rule from the
+  rulebook's own numbered list already modeled. Verified directly before
+  implementing anything, per this project's own standing discipline.
+  What was genuinely missing, found while confirming this: Patrol's own
+  combat/interception outcomes were never narrated in the letter report
+  at all -- `describe_turn_results()`'s only `ActionCode.PURSUE` branch
+  requires `isinstance(entry.result, PursueExecutionResult)`, which a
+  `PatrolExecutionResult` (a structurally different type sharing the
+  same `ActionCode.PURSUE` dispatch, `turn_processor.py`'s own
+  `segment_index=-1` sentinel) never satisfies, so the outcome was
+  silently invisible. `PatrolExecutionResult` gains a `melee_swings`
+  field (Patrol has no Fire Arrow or Steal at all, unlike Challenge/
+  Pursue), populated at both real `execute_patrol()` return sites. New
+  `report/turn_report.py describe_patrol_combat()`, a smaller sibling of
+  `describe_encounter_combat()` mirroring `describe_random_encounter_
+  combat()`'s own established "don't widen the result type just to
+  reuse the bigger composer" precedent -- no Fire Arrow loop, no Steal
+  line, just the real Melee swings and the death lines. No sourced text
+  exists for a non-combat Patrol outcome (a Spy Table wander, a refused
+  encounter, a peaceful accepted plan) -- only real swings are narrated,
+  the same "no source, no guess" stance `describe_encounter_combat()`'s
+  own docstring already states for the identical situation. New branch
+  in `describe_turn_results()`, positioned right next to the existing
+  Pursue branch, disambiguated by `isinstance`. Test count: 6236 -> 6242
+  (net +6). Full suite verified green (unchanged, 6236) before writing a
+  single new test.
 
 ## Setup
 

@@ -92,6 +92,7 @@ from ak_engine.report.turn_report import (
     describe_challenge,
     describe_curator_research,
     describe_encounter_combat,
+    describe_patrol_combat,
     describe_random_encounter,
     describe_random_encounter_combat,
     describe_turn_results,
@@ -363,6 +364,7 @@ from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.plan_dispatch import ArmyListExecutionResult, FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
+from ak_engine.turn.patrol_execution import PatrolExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.recruit_execution import RecruitedUnit, RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
@@ -3239,6 +3241,85 @@ def test_describe_encounter_combat_returns_empty_for_a_peaceful_accepted_plan():
     rng = ScriptedRandom([])
 
     assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
+
+
+# -- Phase 733: describe_patrol_combat() --
+
+
+def test_describe_patrol_combat_returns_empty_when_no_combat_occurred():
+    result = PatrolExecutionResult(intercepted=False, reason="wandered into a random hex")
+    rng = ScriptedRandom([])
+
+    assert describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
+
+
+def test_describe_patrol_combat_returns_empty_for_a_peaceful_accepted_encounter():
+    result = PatrolExecutionResult(intercepted=True, target_leader_id=2, combat_occurred=False)
+    rng = ScriptedRandom([])
+
+    assert describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
+
+
+def test_describe_patrol_combat_narrates_melee_swings_in_order():
+    result = PatrolExecutionResult(
+        intercepted=True,
+        target_leader_id=2,
+        combat_occurred=True,
+        melee_swings=(MeleeSwing(attacker="a", hit=True, damage=5), MeleeSwing(attacker="b", hit=False, damage=0)),
+    )
+    rng = ScriptedRandom([0.1] * 40, choice_indices=[0] * 10)
+
+    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+
+    assert lines == [
+        "Aldric assailed Borin and inflicted 5 damage points.",
+        "Borin assailed Aldric and missed.",
+    ]
+
+
+def test_describe_patrol_combat_narrates_the_mortal_wound_line_for_the_loser():
+    result = PatrolExecutionResult(
+        intercepted=True,
+        target_leader_id=2,
+        combat_occurred=True,
+        winner_leader_id=1,
+        loser_leader_id=2,
+        loser_killed=True,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+
+    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+
+    assert lines == [
+        "Borin was mortally wounded.",
+        "and so it was that Borin met Borin's unseemly end.",
+    ]
+
+
+def test_describe_turn_results_narrates_a_patrol_interception_sentinel():
+    state = GameState()
+    location = HexCoord(0, 0)
+    state.add_kingdom(KingdomState(1, "Kingdom A", Race.HUMAN, Alignment.NEUTRAL, location))
+    state.add_kingdom(KingdomState(2, "Kingdom B", Race.HUMAN, Alignment.NEUTRAL, location))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Patroller", location=location))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Intruder", location=location))
+    result = PatrolExecutionResult(
+        intercepted=True,
+        target_leader_id=2,
+        combat_occurred=True,
+        winner_leader_id=1,
+        loser_leader_id=2,
+        loser_killed=True,
+        melee_swings=(MeleeSwing(attacker="a", hit=True, damage=6),),
+    )
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=-1, phase_label="P0", action=ActionCode.PURSUE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0]))
+
+    assert "Patroller assailed Intruder and inflicted 6 damage points." in lines
+    assert "and so it was that Intruder met Intruder's unseemly end." in lines
 
 
 # -- Phase 709: random-encounter report narration --
