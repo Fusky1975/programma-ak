@@ -30316,7 +30316,7 @@ follow-up request after the original 431-435 plan shipped.
   (net +6). Full suite verified green (unchanged, 6236) before writing a
   single new test.
 
-- **Phase 734 (current)**: twenty-seventh survey's own only candidate --
+- **Phase 734**: twenty-seventh survey's own only candidate --
   `AdvancedAbility.DRUIDIC_TRADES` ("Trade with Monsters," level 5+
   Druidism): "The Druid can trade any magic item he possesses for one
   treasure held by a monster occupying a feature. This is done by just
@@ -30346,6 +30346,22 @@ follow-up request after the original 431-435 plan shipped.
   "mechanism now, narration only when sourced" convention. Test count:
   6242 -> 6248 (net +6). Full suite verified green (unchanged, 6242)
   before writing a single new test.
+
+- **Phase 735 (current)**: comment-only, no behavior change. Twenty-
+  eighth fresh codebase survey found 2 more instances of this
+  project's own recurring "stale known-gap claim" pattern: `models/
+  plan.py`'s own module
+  docstring still said `SP:`'s "meaning is not yet confirmed" -- stale
+  since Phase 659/669/675, when `turn/sep_decode.py`'s own Special
+  Encounter Plan decoder and its real `battle_orchestrator.py` callers
+  were built; `turn/office_holder.py`'s own Phase 633 note still said
+  "report-layer visibility for these 3 [army-scoped] titles is still
+  untouched" -- stale since Phase 668, which built a real second loop
+  over `ARMY_RANKED_OFFICES` in `describe_imperial_office_report()`.
+  Both corrected. Full suite unchanged (6248). A third candidate from
+  the same survey (Fleet/Whale cargo report narration) needs a real
+  user decision -- no sourced text survives, so it would need project-
+  original prose -- and remains open for a future pick.
 
 ## Setup
 

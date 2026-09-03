@@ -4,8 +4,18 @@ A move file encodes, per leader, one or more "segments": an ``AP:``/``SP:``
 header followed by up to five phases (``P0``..``P4``). The Pascal source
 (``CTBOTH.PAS`` ``planrec``, lines 1586-1601) has matching ``planstart``/
 ``planend`` fields, which is almost certainly what the two ``AP:`` integers
-mean. The meaning of ``SP:`` is not yet confirmed against the Pascal source
-and is kept as a raw tuple pending further reverse-engineering.
+mean. **Phase 735 correction**: ``SP:`` is now confirmed and decoded --
+rulebook [5.10]'s own Special Encounter Plan (a standing tactic list a
+commander's army-vs-army Duel is governed by). ``turn/sep_decode.py``
+(Phase 659, sourced to ``AKGEN_reverse_engineering_report (5).md``
+SS72 and hand-verified against 20 real K1 samples) walks ``PlanSegment.
+sp`` directly via ``decode_special_encounter_plan()``; ``turn/battle_
+orchestrator.py``'s own ``_commander_challenges()``/``_maybe_fight_
+duel()`` (Phase 669/675) are real production callers. Kept as a raw
+tuple here regardless -- the *decoding* lives in ``sep_decode.py``, not
+in this model module, matching this project's own established layering
+(``PlanPhase.extra``'s own raw ints/strs are likewise decoded by each
+``turn/*_decode.py`` module, never interpreted here).
 
 **Nested plans (Phase 18)**: per ``HostAK/TP/DEF2.PAS`` (~line 505, "IF m <
 4 THEN R_HPLan(...)"), whenever a phase in position ``P0``-``P3`` (never

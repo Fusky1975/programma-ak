@@ -185,10 +185,13 @@ improvement chance for matching unit types, 1.5x for non-matching) is
 now wired (Phase 641, `turn/practice_execution.py _improved_training_
 multiplier()`, hooked into `execute_practice_tactical()`/`_group()`'s
 own [6.1] army-quality-training roll -- resolved fresh via `resolve_
-army_office_holder()` here, not the sticky commit-cache). Report-layer
-visibility for these 3 titles is still untouched -- out of scope,
-matching the "counters/VP first, effects and report visibility later"
-split Phase 630 already used for the 18 leader-scoped titles.
+army_office_holder()` here, not the sticky commit-cache). **Phase 735
+correction**: report-layer visibility for these 3 titles is wired too,
+since Phase 668 -- `report/turn_report.py describe_imperial_office_
+report()` has a second, real loop over `ARMY_RANKED_OFFICES` (`resolve_
+army_office_holder()`/`kingdom_best_army_candidate()`/`_army_office_
+candidate_line()`), the same suppression-gate shape the 39 minor
+leader titles already use.
 
 **Phase 475 -- the real tier-1 tie-break, ``AKGEN_reverse_engineering_
 report (2).md`` SS14.4, real disassembly source**: "per i titoli
