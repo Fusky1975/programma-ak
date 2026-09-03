@@ -558,6 +558,7 @@ from ak_engine.turn.encounter import (
     MeleeSwing,
     MirrorImageIntelligenceTier,
     MonsterTalkReply,
+    MONSTER_STEAL_GOLD_IF_NO_ITEM,
     MONSTER_TALK_REPLY_OUTCOME,
     TalkReplyOutcome,
     apply_temper_melee_setup,
@@ -2405,10 +2406,31 @@ def _resolve_search_encounter(
         Two separate rolls, in the real formula's own order: the success
         roll (``resolve_steal_attempt()``) is monster-intelligence-blind;
         only *after* it succeeds does a second, intelligence-based roll
-        (``resolve_steal_monster_item_transfer()``) decide whether the
-        guardian's hoard was actually hidden from the thief -- a failure
-        there is a documented no-effect (the thief got past the guardian
-        but found nothing), not a caught-thief consequence.
+        (``resolve_steal_monster_item_transfer()``) decide whether an
+        item actually transfers.
+
+        **Phase 731**: a failed item-transfer roll is *not* a no-effect
+        (this project's own guardian monsters never hold an
+        ``ItemInstance`` at all, so the roll can never really "find" an
+        item either way) -- ``turn/encounter.py``'s own ``MONSTER_
+        STEAL_GOLD_IF_NO_ITEM`` addendum (``CTME.PAS``'s real basegold
+        table via ``AK.EXE``'s ``G_MSteal``) confirms this branch always
+        grants a real, sourced gold consolation instead, credited to the
+        thief's own Kingdom treasury (a kingdomless Hero has nowhere to
+        credit it -- a documented no-op, matching every other gold-gain
+        mechanic in this project, e.g. ``THIEF_TREASURY_RAIDS``/Practice
+        Make Gems). Per ``turn/merit_points.py thiefprince_merit_
+        points()``'s own Phase 369 addendum ("+1 per successful theft
+        result... no distinction between gold and item stolen"), both
+        outcomes below are equally real "successful theft results" and
+        credit the Prince of Thieves merit point and the real
+        ``Add_Experience`` credit identically -- neither branch actually
+        hands the leader a real item object either way (no ``state.
+        add_item(...)`` call on either path), so gold-vs-item was never
+        more than which loot bucket applies. The gold branch still
+        doesn't end the encounter or loot the feature's own separate
+        ``treasure`` (``_outcome_from()``'s own side effect) -- that
+        stays scoped to a real combat win, unchanged.
         """
 
         nonlocal combat_attempted
@@ -2424,13 +2446,14 @@ def _resolve_search_encounter(
             target_leads_army_or_is_king=False,
         ):
             intelligence_ordinal = MONSTER_INTELLIGENCE_ORDINAL[MONSTER_RUNTIME_PROFILE[feature.guardian_monster].intelligence]
-            if not resolve_steal_monster_item_transfer(intelligence_ordinal, 0, rng):
-                return None  # past the guardian, but the hoard was hidden -- plan continues
-            # Phase 442: one of the real compiled formula's own "two
-            # separate success paths that award the [Prince of Thieves]
-            # point" (turn/merit_points.py thiefprince_merit_points()'s
-            # own Phase 369 addendum) -- this one, Search's own Steal
-            # against a guarded feature's hoard.
+            item_transferred = resolve_steal_monster_item_transfer(intelligence_ordinal, 0, rng)
+            # Phase 442 / Phase 731: one of the real compiled formula's
+            # own "two separate success paths that award the [Prince of
+            # Thieves] point" (turn/merit_points.py thiefprince_merit_
+            # points()'s own Phase 369 addendum) -- this one, Search's
+            # own Steal against a guarded feature's hoard, credited
+            # identically regardless of whether the item-transfer roll
+            # below passes or fails (see this function's own docstring).
             leader.merit_tally.successful_thefts += 1
             # Phase 457: the same real Add_Experience credit (base 15,
             # AKGEN_reverse_engineering_report (2).md SS3.3's own Thief
@@ -2439,6 +2462,11 @@ def _resolve_search_encounter(
             # that function's own Phase 457 addendum for why this and
             # that are the two real "qualifying theft event" triggers.
             add_experience(leader, Ability.THIEF, 15, rng)
+            if not item_transferred:
+                gold = MONSTER_STEAL_GOLD_IF_NO_ITEM.get(feature.guardian_monster, 0)
+                if leader.kingdom_id is not None:
+                    state.kingdoms[leader.kingdom_id].treasury += gold
+                return None  # gold taken, but the feature itself isn't looted -- plan continues
             return _outcome_from(EncounterCombatResult(winner="a", rounds=0))
         if resolve_steal_evasion(level, rng):
             return None  # failed, but not caught -- plan continues

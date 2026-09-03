@@ -4458,11 +4458,12 @@ def resolve_steal_monster_item_transfer(intelligence_ordinal: int, items_already
 # (G_MSteal's own "inc; shr 1" -- ceil(basegold/2)): only consulted
 # when the character-item scan above found nothing to transfer
 # (monsters hold no ItemInstance in this project's model at all, so
-# this branch is always the one that would fire) -- confirmed, sourced
-# data, kept here for whichever future phase gives monsters an actual
-# gold pool to subtract from; not wired to any state change yet, the
-# same "sourced but no consumer" treatment this project already gives
-# other confirmed-but-not-yet-connected figures.
+# this branch is always the one that would fire). **Phase 731**: wired
+# into `turn/search_execution.py _resolve_steal()` -- credited to the
+# thief's own Kingdom treasury, a documented no-op for a kingdomless
+# Hero. See that function's own docstring for the full account,
+# including why this counts as a real "successful theft result" for
+# merit/Add_Experience purposes just like an item transfer would.
 MONSTER_STEAL_GOLD_IF_NO_ITEM: dict[Monster, int] = {
     Monster.ROC: 1,
     Monster.GRYPHON: 1,

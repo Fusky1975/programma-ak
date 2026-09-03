@@ -30183,7 +30183,7 @@ follow-up request after the original 431-435 plan shipped.
   Full suite verified green (unchanged, 6193) before writing a single
   new test. This closes the entire twenty-fourth survey in full.
 
-- **Phase 730 (current)**: Words of Healing's own halved spell-
+- **Phase 730**: Words of Healing's own halved spell-
   disruption rate (`turn/encounter.py`'s Phase 200 addendum, "the spell
   is also half as likely to be disrupted... as other spells") was fully
   built (`words_of_healing_disruption_chance()`/`resolve_words_of_
@@ -30218,6 +30218,33 @@ follow-up request after the original 431-435 plan shipped.
   candidate #1 of the twenty-fifth survey; candidate #2 (monster-hoard
   Steal's own `MONSTER_STEAL_GOLD_IF_NO_ITEM` gold, sourced but never
   credited on a successful transfer) remains open.
+
+- **Phase 731 (current)**: closes candidate #2 above -- monster-hoard
+  Steal's own real, disassembly-sourced "gold if no item was stolen"
+  magnitude (`turn/encounter.py MONSTER_STEAL_GOLD_IF_NO_ITEM`,
+  `CTME.PAS`'s basegold table via `AK.EXE`'s `G_MSteal`) finally
+  credited. User-confirmed directly: the gold lands on the thief's own
+  Kingdom treasury (a kingdomless Hero is a documented no-op), matching
+  every other gold-gain mechanic already in this project (`THIEF_
+  TREASURY_RAIDS`, Practice Make Gems). A second, self-sourced decision
+  made while implementing (not asked separately, directly cited to
+  already-shipped code): `turn/merit_points.py thiefprince_merit_
+  points()`'s own Phase 369 addendum ("+1 per successful theft
+  result... no distinction between gold and item stolen") means a
+  failed item-transfer roll is not the no-effect it used to read as --
+  this project's own guardian monsters never hold a real `ItemInstance`
+  either way (no branch ever actually hands the leader an item object),
+  so "item transferred" vs. "gold instead" was already only a choice of
+  loot bucket, not of whether a real theft happened. Both branches now
+  credit the Prince of Thieves merit point and the real `Add_Experience`
+  credit identically; only a genuine combat win still ends the
+  encounter and marks the whole feature as looted (`_outcome_from()`'s
+  own effect) -- the gold consolation deliberately doesn't. 4
+  pre-existing tests needed a registered `KingdomState`/2 extra scripted
+  `Add_Experience` draws; found and fixed by running the suite first,
+  not assumed. Test count: 6216 -> 6219 (net +3). Full suite verified
+  green (unchanged, 6216) before writing a single new test. This closes
+  the entire twenty-fifth survey in full.
 
 ## Setup
 

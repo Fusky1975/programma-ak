@@ -32,6 +32,7 @@ from ak_engine.turn.encounter import (
     MeleeRoundOutcome,
     MeleeSwing,
     MonsterTalkReply,
+    MONSTER_STEAL_GOLD_IF_NO_ITEM,
     ReactiveMeleeSwingResult,
 )
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
@@ -3070,8 +3071,11 @@ def test_execute_search_steal_success_but_monster_hides_the_hoard_falls_through(
     # The real formula's own two-roll order: the success roll (monster-
     # intelligence-blind) passes here, but the second, intelligence-based
     # item-transfer roll fails -- the thief got past the guardian but
-    # found nothing, a documented no-effect, not a caught-thief outcome.
+    # (Phase 731) walks away with real, sourced gold instead of an item,
+    # not a no-effect; the plan still continues (Melee still runs), and
+    # the feature itself is never marked as fully looted.
     state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _steal_request(1, Maneuver.MELEE)
 
@@ -3085,8 +3089,69 @@ def test_execute_search_steal_success_but_monster_hides_the_hoard_falls_through(
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert mock_transfer.called
-    assert mock_melee.called  # nothing found -- the plan's own Melee still runs
+    assert mock_melee.called  # nothing found to loot as an item -- the plan's own Melee still runs
     assert result.winner == "leader"
+    # Phase 731: a real, sourced gold consolation, not a no-effect.
+    assert state.kingdoms[1].treasury == MONSTER_STEAL_GOLD_IF_NO_ITEM[Monster.ARCHER]
+    assert state.leaders[LEADER_ID].merit_tally.successful_thefts == 1
+
+
+def test_execute_search_steal_gold_consolation_does_not_loot_the_feature():
+    # Phase 731: unlike a real item transfer, the gold consolation
+    # doesn't end the encounter or mark the whole feature as looted --
+    # only a genuine combat win does that (_outcome_from()'s own effect).
+    # A Steal-only plan never sets combat_attempted, so once Steal itself
+    # returns (no more tactics to walk) the encounter ends cleanly via
+    # the "no Melee or Fire Arrow tactic" fallback, never a synthetic
+    # melee fight against the still-alive guardian.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    request = _steal_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=False):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert feature.looted is False
+    assert result.feature_looted is False
+    assert result.winner is None
+
+
+def test_execute_search_steal_gold_consolation_awards_real_add_experience_credit():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _steal_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=False):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert state.leaders[LEADER_ID].experience_credit > 0
+
+
+def test_execute_search_steal_gold_consolation_kingdomless_leader_is_a_documented_no_op():
+    # A kingdomless Hero (kingdom_id=None) has no Kingdom treasury to
+    # credit -- a documented no-op, matching every other gold-gain
+    # mechanic in this project. Merit/XP are still credited: the
+    # theft itself still happened, only the gold's own destination is
+    # missing.
+    state = GameState()
+    state.add_leader(LeaderState(LEADER_ID, None, "Wanderer", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _steal_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=False):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert state.kingdoms == {}  # nothing to crash on, nothing to credit
+    assert state.leaders[LEADER_ID].merit_tally.successful_thefts == 1
 
 
 def test_execute_search_steal_success_loots_the_feature():
@@ -4287,6 +4352,7 @@ def test_execute_search_scout_skipped_when_the_leader_dies_but_still_counted():
 
 def test_execute_search_scout_steal_only_partial_discovery_on_the_documented_33_percent_miss():
     state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
     request = _scout_request(1, Maneuver.STEAL, Maneuver.SCOUT)
 
@@ -4294,8 +4360,10 @@ def test_execute_search_scout_steal_only_partial_discovery_on_the_documented_33_
         "ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=False
     ):
         # First value: the monster's own hit_points roll at Combatant
-        # construction. Second: Scout's own roll, >= 0.67 -- the 33% miss.
-        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.9]))
+        # construction. Next two (Phase 731): the gold-consolation
+        # branch's own real Add_Experience triangular draw. Last: Scout's
+        # own roll, >= 0.67 -- the 33% miss.
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.5, 0.5, 0.9]))
 
     assert result.scout_orders_given == 1
     assert state.features[1].discovery_level(1) == 2  # told it's there, not what it does
@@ -4303,13 +4371,16 @@ def test_execute_search_scout_steal_only_partial_discovery_on_the_documented_33_
 
 def test_execute_search_scout_steal_only_full_discovery_on_the_documented_67_percent_hit():
     state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
     request = _scout_request(1, Maneuver.STEAL, Maneuver.SCOUT)
 
     with patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True), patch(
         "ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=False
     ):
-        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.1]))  # < 0.67 -- the 67% hit
+        # Phase 731: 2 extra scripted values for the gold-consolation
+        # branch's own real Add_Experience triangular draw.
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.5, 0.5, 0.1]))  # < 0.67 -- the 67% hit
 
     assert state.features[1].discovery_level(1) == 3
 
@@ -4340,6 +4411,7 @@ def test_execute_search_scout_flee_only_full_discovery_on_the_documented_33_perc
 
 def test_execute_search_scout_never_downgrades_an_already_fully_known_feature():
     state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
     feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
     feature.discovered_by_kingdom[1] = 3  # already fully known from an earlier Search
     state.add_feature(feature)
@@ -4348,7 +4420,9 @@ def test_execute_search_scout_never_downgrades_an_already_fully_known_feature():
     with patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=True), patch(
         "ak_engine.turn.search_execution.resolve_steal_monster_item_transfer", return_value=False
     ):
-        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.9]))  # the 33% miss
+        # Phase 731: 2 extra scripted values for the gold-consolation
+        # branch's own real Add_Experience triangular draw.
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.5, 0.5, 0.9]))  # the 33% miss
 
     assert feature.discovery_level(1) == 3  # a failed re-scout never downgrades a known feature
 
