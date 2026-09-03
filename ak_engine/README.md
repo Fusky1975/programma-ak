@@ -30285,7 +30285,7 @@ follow-up request after the original 431-435 plan shipped.
   -> 6236 (net +17). Full suite verified green (unchanged, 6219) before
   writing a single new test.
 
-- **Phase 733 (current)**: twenty-sixth survey's own candidate #2, as
+- **Phase 733**: twenty-sixth survey's own candidate #2, as
   originally framed, turned out to be a false finding -- the standing
   "Characters On Patrol" mechanic ([3.16]) is already fully implemented
   (Phase 71, `turn/patrol_execution.py`, wired into `turn_processor.py`'s
@@ -30315,6 +30315,37 @@ follow-up request after the original 431-435 plan shipped.
   Pursue branch, disambiguated by `isinstance`. Test count: 6236 -> 6242
   (net +6). Full suite verified green (unchanged, 6236) before writing a
   single new test.
+
+- **Phase 734 (current)**: twenty-seventh survey's own only candidate --
+  `AdvancedAbility.DRUIDIC_TRADES` ("Trade with Monsters," level 5+
+  Druidism): "The Druid can trade any magic item he possesses for one
+  treasure held by a monster occupying a feature. This is done by just
+  using the 'GI-ve' order. If there is a specific treasure number you
+  want to trade for, just use the 'Say' tactic to say the item number."
+  The real mechanism, confirmed by direct investigation: `Maneuver.GIVE`
+  is a genuine Search-Encounter-Plan tactic (`models/enums.py TACTICS_
+  WITH_SUB_OBJECT`, `turn/search_decode.py`'s own confirmed "gift-item
+  id" reading) that has carried this exact wire format since the
+  original decode with **zero dispatch anywhere** until now -- an
+  adjacent, stale "Give is structurally inapplicable to a monster
+  target" docstring paragraph (right where the new branch now lives)
+  is corrected as part of this phase. Two design decisions confirmed
+  directly with the user: a stated-but-mismatched treasure number (via
+  a trailing `SAY` tactic, reusing `parse_sa_argument()`, Phase 619)
+  refuses the whole trade outright, since this project's own `Feature`
+  model holds only one real `treasure` at a time; a successful trade
+  clears `Feature.treasure` (not re-tradeable or re-lootable
+  afterward). New `_resolve_give_tactic()` in `turn/search_execution.py`,
+  reusing `_grant_search_treasure()` (the same primitive a combat win
+  already uses) and `GameState.remove_item()` (the offered item is
+  destroyed outright -- monsters hold no `ItemInstance` in this
+  project's model at all, confirmed during the Phase 731 Steal
+  investigation). No sourced report text survives for either outcome
+  (checked `AKPROSE_reverse_engineering_report.md` directly) -- the
+  mechanism is silent, matching this project's own established
+  "mechanism now, narration only when sourced" convention. Test count:
+  6242 -> 6248 (net +6). Full suite verified green (unchanged, 6242)
+  before writing a single new test.
 
 ## Setup
 

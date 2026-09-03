@@ -434,6 +434,133 @@ def test_execute_search_leader_wins_grants_the_features_own_treasure():
     assert granted[0].treasure is Treasure.ABILITY_TACTICAL
 
 
+# -- Phase 734: AdvancedAbility.DRUIDIC_TRADES, the Give tactic --
+
+
+def _give_request(feature_id: int, item_id: int, *following: Maneuver) -> SearchRequest:
+    tactics = [SearchTactic(maneuver=Maneuver.GIVE, sub_object=item_id)]
+    tactics += [SearchTactic(maneuver=m) for m in following]
+    return SearchRequest(feature_id=feature_id, unconfirmed_extra0=0, tactics=tactics)
+
+
+def test_execute_search_druidic_trades_succeeds_and_consumes_the_given_item():
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities = {AdvancedAbility.DRUIDIC_TRADES}
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE,
+        treasure=Treasure.ABILITY_TACTICAL,
+    )
+    state.add_feature(feature)
+    given = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=LEADER_ID, charges=1)
+    request = _give_request(1, given.item_id)
+
+    execute_search(state, LEADER_ID, request, random.Random(0))
+
+    # The offered wand is truly gone (not just sitting alongside the new
+    # grant) -- exactly one item exists afterward, and it's the granted
+    # treasure, not the wand (item ids may be reused once freed).
+    assert len(state.items) == 1
+    granted = next(iter(state.items.values()))
+    assert granted.owner_leader_id == LEADER_ID
+    assert granted.treasure is Treasure.ABILITY_TACTICAL
+    assert feature.treasure is None  # not re-tradeable/lootable afterward
+
+
+def test_execute_search_druidic_trades_requires_the_advanced_ability():
+    state = _state_with_leader()  # no advanced_abilities at all
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE,
+        treasure=Treasure.ABILITY_TACTICAL,
+    )
+    state.add_feature(feature)
+    given = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=LEADER_ID, charges=1)
+    request = _give_request(1, given.item_id)
+
+    execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert given.item_id in state.items  # untouched -- no ability, no trade
+    assert feature.treasure is Treasure.ABILITY_TACTICAL
+
+
+def test_execute_search_druidic_trades_requires_a_real_feature_treasure():
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities = {AdvancedAbility.DRUIDIC_TRADES}
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    given = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=LEADER_ID, charges=1)
+    request = _give_request(1, given.item_id)
+
+    execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert given.item_id in state.items  # nothing to trade for
+
+
+def test_execute_search_druidic_trades_requires_owning_the_offered_item():
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities = {AdvancedAbility.DRUIDIC_TRADES}
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE,
+        treasure=Treasure.ABILITY_TACTICAL,
+    )
+    state.add_feature(feature)
+    someone_elses_item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=99, charges=1)
+    request = _give_request(1, someone_elses_item.item_id)
+
+    execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert someone_elses_item.item_id in state.items
+    assert feature.treasure is Treasure.ABILITY_TACTICAL
+
+
+def test_execute_search_druidic_trades_matching_say_argument_succeeds():
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities = {AdvancedAbility.DRUIDIC_TRADES}
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE,
+        treasure=Treasure.ABILITY_TACTICAL,
+    )
+    state.add_feature(feature)
+    given = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=LEADER_ID, charges=1)
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(maneuver=Maneuver.GIVE, sub_object=given.item_id),
+            SearchTactic(maneuver=Maneuver.SAY, say_text=str(Treasure.ABILITY_TACTICAL.value)),
+        ],
+    )
+
+    execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert len(state.items) == 1
+    assert next(iter(state.items.values())).treasure is Treasure.ABILITY_TACTICAL
+    assert feature.treasure is None
+
+
+def test_execute_search_druidic_trades_mismatched_say_argument_refuses_the_trade():
+    state = _state_with_leader()
+    state.leaders[LEADER_ID].advanced_abilities = {AdvancedAbility.DRUIDIC_TRADES}
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE,
+        treasure=Treasure.ABILITY_TACTICAL,
+    )
+    state.add_feature(feature)
+    given = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=LEADER_ID, charges=1)
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(maneuver=Maneuver.GIVE, sub_object=given.item_id),
+            SearchTactic(maneuver=Maneuver.SAY, say_text=str(Treasure.ABILITY_TACTICAL.value + 1)),
+        ],
+    )
+
+    execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert given.item_id in state.items  # refused -- not the treasure asked for
+    assert feature.treasure is Treasure.ABILITY_TACTICAL
+
+
 # -- Phase 548: Valhalla visitor Gold Hoard routing --
 
 

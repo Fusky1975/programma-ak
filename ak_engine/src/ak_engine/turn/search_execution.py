@@ -2705,6 +2705,74 @@ def _resolve_search_encounter(
             )
         return None  # not honored -- the plan continues to its next tactic
 
+    def _resolve_give_tactic(tactic: SearchTactic) -> SearchExecutionResult | None:
+        """Give [GI] inside a Search Encounter Plan -- Phase 734,
+        ``AdvancedAbility.DRUIDIC_TRADES``'s own real text (``models/
+        advanced_ability.py``): "The Druid can trade any magic item he
+        possesses for one treasure held by a monster occupying a
+        feature. This is done by just using the 'GI-ve' order. If there
+        is a specific treasure number you want to trade for, just use
+        the 'Say' tactic to say the item number." ``tactic.sub_object``
+        is the offered item's own id -- ``turn/search_decode.py``'s own
+        confirmed "gift-item id" reading, the same ``TACTICS_WITH_SUB_
+        OBJECT`` shape ``CAST``/``USE_MI`` already use. ``Maneuver.GIVE``
+        itself has carried this exact wire format since the original
+        decode (Phase 46-ish) with zero dispatch anywhere until now --
+        confirmed the *only* real sourced use of it inside a Search plan
+        (an earlier docstring paragraph right below this function's own
+        call site used to call Give "structurally inapplicable" to a
+        monster target -- stale, corrected here).
+
+        A trailing ``SAY`` tactic anywhere in the plan may name a
+        specific treasure number the Druid wants in return (reuses
+        ``parse_sa_argument()``, Phase 619, the same "SA-y the number"
+        primitive Oracle/Recharge/Grant Wish/Gamble already use). This
+        project's own ``Feature`` model holds only one real ``treasure``
+        at a time -- no multi-item hoard concept anywhere (confirmed
+        during the Phase 731 Steal investigation: monsters hold no
+        ``ItemInstance`` at all in this project's model either) -- so a
+        stated number that doesn't match the feature's own real treasure
+        refuses the whole trade outright (user-confirmed directly),
+        rather than silently substituting whatever treasure is really
+        there.
+
+        A documented no-effect whenever any precondition fails -- no
+        ability, no live guardian/real treasure to trade for, no real
+        item owned by this leader, or a stated-but-mismatched treasure
+        number -- nothing in the source describes a caught-cheater
+        consequence for a failed trade attempt, unlike Steal. On
+        success: the given item is destroyed outright (``state.remove_
+        item()`` -- a monster never actually holds it, matching the
+        Phase 731 "monsters hold no items" finding), the feature's own
+        treasure is granted via the same ``_grant_search_treasure()``
+        primitive a combat win already uses, and the feature's own
+        ``treasure`` is cleared (user-confirmed: the monster has now
+        given up its one and only treasure, not re-tradeable or re-
+        lootable afterward). No sourced report text survives for either
+        outcome (checked ``AKPROSE_reverse_engineering_report.md``
+        directly -- only the ability's own description text itself
+        matches) -- the mechanism is silent, matching this project's own
+        established "mechanism now, narration only when sourced"
+        convention.
+        """
+
+        if AdvancedAbility.DRUIDIC_TRADES not in leader.advanced_abilities:
+            return None
+        if feature.guardian_monster is None or feature.looted or feature.treasure is None:
+            return None
+        item = state.items.get(tactic.sub_object) if tactic.sub_object is not None else None
+        if item is None or item.owner_leader_id != leader_id:
+            return None
+        say_tactic = next((t for t in request.tactics if t.maneuver is Maneuver.SAY), None)
+        if say_tactic is not None and say_tactic.say_text:
+            requested_treasure = parse_sa_argument(say_tactic.say_text)
+            if requested_treasure is not None and requested_treasure != feature.treasure.value:
+                return None  # asked for a specific treasure the monster doesn't have
+        state.remove_item(item.item_id)
+        _grant_search_treasure(state, leader_id, feature.treasure)
+        feature.treasure = None
+        return None  # peaceful -- the plan continues to its next tactic
+
     def _resolve_beg() -> SearchExecutionResult | None:
         """Beg [BE] -- Phase 241, project-original (no Pascal source, no
         rulebook text -- ``turn/encounter.py``'s own Phase 241 addendum
@@ -2889,16 +2957,22 @@ def _resolve_search_encounter(
             if outcome is not None:
                 return outcome
             continue
+        if tactic.maneuver is Maneuver.GIVE:
+            outcome = _resolve_give_tactic(tactic)
+            if outcome is not None:
+                return outcome
+            continue
         # Every other maneuver isn't wired -- skip it and keep walking
         # the plan, matching how real Encounter Plans mix wired and
         # unwired tactics (module docstring's own quoted examples).
-        # - **Give** (Phase 274, re-confirmed): has exactly one real use
-        #   -- passing an item to another Hero or King (any realm), never
-        #   to a monster. Search's own target is always the guardian
-        #   monster, so Give is structurally inapplicable here, not
-        #   merely unresearched (Fulfill is the monster-facing
-        #   counterpart -- see `turn/encounter.py`'s own Phase 240
-        #   addendum for why that stays unwired too).
+        # - **Give** (Phase 274, corrected Phase 734): the earlier claim
+        #   here -- "has exactly one real use, passing an item to another
+        #   Hero or King, never a monster... structurally inapplicable" --
+        #   was stale, found and fixed while implementing `AdvancedAbility.
+        #   DRUIDIC_TRADES`'s own real "trade with a monster via the GI-ve
+        #   order" text (see `_resolve_give_tactic()`'s own docstring,
+        #   right above this loop). Give now has exactly one real,
+        #   sourced monster-facing use too.
         # - **Scout** (Phase 274): resolved separately, *after* this
         #   tactic walk finishes -- see `_apply_scout()`'s own docstring
         #   for why it can't simply take a branch here like every other
