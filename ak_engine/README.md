@@ -30094,7 +30094,7 @@ follow-up request after the original 431-435 plan shipped.
   treasure` hardcoding) remains open, pending a user decision on
   removing a live-`rng` draw from the Talk dispatch path.
 
-- **Phase 727 (current)**: candidate #2 of the twenty-third survey --
+- **Phase 727**: candidate #2 of the twenty-third survey --
   `turn/search_execution.py _resolve_talk()` now calls `turn/
   monster_raids.py resolve_monster_raid_reply()` (Phase 679, `Desktop/
   NOARMY.md`'s own disassembly of `Get_Reply`) instead of `turn/
@@ -30129,6 +30129,20 @@ follow-up request after the original 431-435 plan shipped.
   count: 6191 -> 6193 (net +2). Full suite verified green (unchanged,
   6191) before touching a single test. This closes the entire
   twenty-third survey in full.
+
+- **Phase 728 (current)**: comment-only, no behavior change. A
+  twenty-fourth fresh codebase survey (2026-09-03, "come proseguiamo?")
+  found `turn/encounter.py`'s own Phase 516/517 addenda still calling
+  `AdvancedAbility.MELEE_DUELLISTS_MEDAL` "still-unwired" -- stale since
+  the very next phase in the same file (Phase 518's own addendum,
+  `apply_temper_melee_setup()`, lines ~3204-3208) actually wires it: a
+  symmetric ±10% hit/±1 damage swing gated on `opponent.is_humanoid`,
+  matching the ability's own sourced text exactly. Both mentions
+  corrected in place, framed as accurate-at-the-time-written rather
+  than rewritten as if always true. Full suite unchanged (6193). See
+  [[project_twentyfourth_survey_2026_09_03]] for the survey record --
+  candidate #1 (`AdvancedAbility.SPY_DOUBLE_AGENT`, completely unwired,
+  large scope) remains open, to be planned via EnterPlanMode next.
 
 ## Setup
 

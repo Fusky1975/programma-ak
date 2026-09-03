@@ -1367,9 +1367,10 @@ of the six per-consumer `_leader_combatant()`/`_commander_combatant()`/
 `pursue_execution.py`, `search_execution.py`) via `AdvancedAbility.
 MELEE_HIT_POINTS in leader.advanced_abilities`, mirroring `temper=leader.
 temper`'s own Phase 284 wiring -- full, real coverage in a single phase,
-unlike most other unwired Melee Advanced Abilities (Duellists Medal,
-Mastery, True Mastery) which would need a new "+damage dealt" `Combatant`
-field this module has never had before.
+unlike most other Melee Advanced Abilities unwired *at the time this
+addendum was written* (Duellists Medal, Mastery, True Mastery), which
+needed a new "+damage dealt" `Combatant` field this module had never
+had before -- all three are wired now (Phase 517/518 addenda below).
 
 **Phase 517 addendum -- `AdvancedAbility.MELEE_MASTERY`/`MELEE_TRUE_
 MASTERY`.** `models/advanced_ability.py`'s own sourced text: Mastery
@@ -1377,10 +1378,11 @@ MASTERY`.** `models/advanced_ability.py`'s own sourced text: Mastery
 melee does not get a -10% chance or less damage)"; True Mastery "gains
 a plus 2 damage (the opponent in melee does not get a -10% chance or
 less damage)" -- the explicit "no opponent penalty" clause distinguishes
-both from the still-unwired Duellists Medal, which *does* apply a
-symmetric penalty but only against humanoid targets (needs an "is the
-opponent humanoid" check this module has no other reason to have yet,
-so it stays out of scope here).
+both from Duellists Medal, which *does* apply a symmetric penalty but
+only against humanoid targets (needed an "is the opponent humanoid"
+check this module had no other reason to have yet, so it stayed out of
+scope in *this* addendum -- wired the very next phase, see the Phase
+518 addendum below).
 
 New `Combatant.melee_damage_dealt_bonus: int = 0` field (the attacker-
 side counterpart to `melee_damage_dealt_reduction` above), plus two pure
