@@ -279,12 +279,17 @@ class Feature:
     # assigns this once, seeded from a deterministic combination of the
     # feature's own id and its guardian's monster id, then reuses it for
     # every subsequent Talk against the same guardian ("per una tana
-    # concreta l'esito e pertanto fissato") -- the exact seed combination
-    # itself is never given, so persisting the first roll here (this
-    # project's own `rng`, not a reproduction of the real seed formula)
-    # is the project-original substitute for that specific missing
-    # magnitude, while the selection algorithm/weights it persists are
-    # 100% sourced (`turn/encounter.py select_monster_talk_reply()`).
+    # concreta l'esito e pertanto fissato"). **Phase 727**: the exact
+    # seed formula is now real, not project-original -- `Desktop/
+    # NOARMY.md`'s own disassembly of `Get_Reply` gives it in full
+    # (`turn/monster_raids.py resolve_monster_raid_reply()`, Phase 679),
+    # and `turn/search_execution.py`'s own Talk branch resolves the
+    # first roll via that real, deterministic function rather than the
+    # turn's own live `rng`. Persisting the result here is no longer
+    # substituting for an unknown formula -- a fresh call would
+    # reproduce the identical reply regardless -- it's kept purely to
+    # avoid recomputing the same deterministic roll on every subsequent
+    # Talk attempt against the same guardian.
     # `None` means "not yet resolved" (or the feature has no guardian at
     # all) -- set by `turn/search_execution.py`'s own Talk branch.
     guardian_talk_reply_id: int | None = None

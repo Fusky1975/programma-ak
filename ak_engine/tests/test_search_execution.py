@@ -3239,7 +3239,7 @@ def test_execute_search_talk_command_item_skips_the_roll_and_loots_the_feature()
     )
     request = _talk_request(1)
 
-    with patch("ak_engine.turn.search_execution.select_monster_talk_reply") as mock_reply:
+    with patch("ak_engine.turn.search_execution.resolve_monster_raid_reply") as mock_reply:
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert not mock_reply.called  # no social roll at all
@@ -3261,7 +3261,7 @@ def test_execute_search_talk_command_item_does_not_apply_to_a_non_matching_speci
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch(
-        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_PUZZLED
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_PUZZLED
     ) as mock_reply, patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ):
@@ -3276,7 +3276,7 @@ def test_execute_search_talk_without_the_item_still_uses_the_normal_roll_against
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch(
-        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_PUZZLED
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_PUZZLED
     ) as mock_reply, patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ):
@@ -3328,7 +3328,7 @@ def test_execute_search_talk_dr_gate_met_awards_real_add_experience_credit():
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_PUZZLED
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_PUZZLED
     ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ):
@@ -3383,7 +3383,7 @@ def test_execute_search_talk_language_failure_not_set_when_dr_gate_passes():
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_PUZZLED
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_PUZZLED
     ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ):
@@ -3417,7 +3417,7 @@ def test_execute_search_talk_attack_reply_falls_through():
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_CHARGE
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_CHARGE
     ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ) as mock_melee:
@@ -3434,7 +3434,7 @@ def test_execute_search_talk_ignore_reply_falls_through():
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_WARN
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_WARN
     ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ) as mock_melee:
@@ -3454,7 +3454,7 @@ def test_execute_search_talk_quest_reply_ends_search_unresolved():
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_REGAIN
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_REGAIN
     ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel"
     ) as mock_melee:
@@ -3469,18 +3469,19 @@ def test_execute_search_talk_quest_reply_ends_search_unresolved():
 def test_execute_search_talk_reply_is_resolved_once_and_reused():
     # Phase 528: AKGEN_reverse_engineering_report (3).md SS62's own "per
     # la stessa feature e lo stesso guardiano la risposta e normalmente
-    # ripetibile" -- select_monster_talk_reply() is consulted at most
-    # once per guardian; a later Search's own Talk against the same
-    # feature reuses Feature.guardian_talk_reply_id instead of rolling
-    # again (simulated here as two separate execute_search() calls
-    # sharing the same Feature, standing in for two different turns).
+    # ripetibile" -- resolve_monster_raid_reply() (Phase 727) is
+    # consulted at most once per guardian; a later Search's own Talk
+    # against the same feature reuses Feature.guardian_talk_reply_id
+    # instead of rolling again (simulated here as two separate
+    # execute_search() calls sharing the same Feature, standing in for
+    # two different turns).
     state = _state_with_leader()
     feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
     state.add_feature(feature)
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_WARN
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_WARN
     ) as mock_select, patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ):
@@ -3608,13 +3609,70 @@ def test_execute_search_talk_deal_reaction_records_the_pending_deal():
     request = _talk_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
-        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_REGAIN
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_REGAIN
     ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel"
     ):
         execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
 
     assert feature.pending_deal_leader_id == LEADER_ID
+
+
+# -- Phase 727: real, deterministic reply selector wired in -----------------
+# turn/monster_raids.py resolve_monster_raid_reply() (Phase 679, Desktop/
+# NOARMY.md) replaces turn/encounter.py select_monster_talk_reply() here --
+# no mock, exercising the real function end to end.
+
+
+def test_execute_search_talk_derives_has_purchasable_treasure_from_feature_treasure():
+    # NOARMY.md's own real worked example (the same oracle used directly
+    # for resolve_monster_raid_reply() in tests/test_monster_raids.py):
+    # Monster.GW_WHALE, feature_id=39, Treasure(48) -> R_SELL, only ever
+    # reachable when has_purchasable_treasure is derived correctly from
+    # Feature.treasure (48 < 67, the real GOLD_HOARD_LARGE cutoff) --
+    # before Phase 727 this was hardcoded False, so R_SELL could never be
+    # selected via this Talk dispatch path.
+    raw = [0] * 30
+    raw[Ability.DRUID.value * 2] = 2  # GW_WHALE's own talkdiff requirement
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))
+    feature = Feature(
+        feature_id=39, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GW_WHALE, treasure=Treasure(48)
+    )
+    state.add_feature(feature)
+    request = _talk_request(39)
+
+    execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert feature.guardian_talk_reply_id == MonsterTalkReply.R_SELL.value
+    assert feature.pending_deal_leader_id == LEADER_ID
+
+
+def test_execute_search_talk_reply_is_deterministic_regardless_of_the_live_rng_stream():
+    # Same real (monster, feature_id) pair, two wildly different rng
+    # seeds -- Phase 727's own point: the reply no longer depends on the
+    # turn's own live rng stream at all.
+    raw = [0] * 30
+    raw[Ability.DRUID.value * 2] = 2
+
+    def _whale_state() -> GameState:
+        s = _state_with_leader(skills=SkillTable(raw_values=raw))
+        s.add_feature(
+            Feature(
+                feature_id=39, coord=LOCATION, kind=FeatureType.DUNGEON,
+                guardian_monster=Monster.GW_WHALE, treasure=Treasure(48),
+            )
+        )
+        return s
+
+    state_a = _whale_state()
+    state_b = _whale_state()
+    request = _talk_request(39)
+
+    execute_search(state_a, LEADER_ID, request, random.Random(0))
+    execute_search(state_b, LEADER_ID, request, random.Random(999999))
+
+    assert state_a.features[39].guardian_talk_reply_id == MonsterTalkReply.R_SELL.value
+    assert state_b.features[39].guardian_talk_reply_id == MonsterTalkReply.R_SELL.value
 
 
 # -- Phase 468: Silver Tongue wiring ---------------------------------------
@@ -3634,7 +3692,7 @@ def test_execute_search_talk_silver_tongue_titleholder_suppresses_combat():
     request = _talk_request(1)
 
     with patch(
-        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_CHARGE
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_CHARGE
     ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ) as mock_melee:
@@ -3650,7 +3708,7 @@ def test_execute_search_talk_non_titleholder_still_forces_combat_on_attack_reply
     request = _talk_request(1)
 
     with patch(
-        "ak_engine.turn.search_execution.select_monster_talk_reply", return_value=MonsterTalkReply.R_CHARGE
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_CHARGE
     ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ) as mock_melee:

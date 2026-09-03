@@ -65,15 +65,18 @@ skipping just that one step and continuing through every remaining
 iteration; both this module's own ``resolve_monster_raid_reply()``
 above and ``turn/druidic_monster_aid.py``'s own Battle Assistance
 consumer were silently skewed by it) -- and further algorithm
-divergences in ``select_monster_talk_reply()`` itself, still open --
-**Phase 723 correction**: that function is not "still-dormant" (wired
-to production since Phase 528, ``turn/search_execution.py``'s own
-``_resolve_talk()``); the real, still-open gap is narrower -- its own
+divergences in ``select_monster_talk_reply()`` itself -- **closed by
+Phase 727**: ``turn/search_execution.py _resolve_talk()`` now calls
+``resolve_monster_raid_reply()`` directly (the same function this
+module already used for raids) instead of ``turn/encounter.py select_
+monster_talk_reply()``'s own less-accurate approximation -- its own
 pre-filter-then-roll shape vs. the real propose-then-check-in-order
 loop, its own static ``base_view`` vs. the real per-feature ``Agent_
 Align``-walked view, and its own live, non-deterministic ``rng`` vs.
-the real per-(monster, feature) reseeded stream all remain unfixed
-divergences in *how* it's wired, not in *whether* it's called at all.
+the real per-(monster, feature) reseeded stream are no longer live
+divergences for the Talk path specifically (``select_monster_talk_
+reply()`` itself stays defined and tested, just no longer called from
+here -- see ``turn/search_execution.py``'s own Phase 727 addendum).
 
 Then the Thunderbird check: 40% chance, blocked ONLY IF the
 province's owning King currently holds ``Office.DIVINE_KING`` (Divine

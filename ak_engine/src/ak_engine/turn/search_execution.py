@@ -597,7 +597,6 @@ from ak_engine.turn.encounter import (
     resolve_steal_attempt,
     resolve_steal_evasion,
     resolve_steal_monster_item_transfer,
-    select_monster_talk_reply,
     roll_fireball_damage,
     roll_holy_symbol_undead_damage,
     roll_ice_suspension_flying_bonus_rounds,
@@ -620,7 +619,12 @@ from ak_engine.turn.feature_power_execution import (
     parse_sa_argument,
     resolve_feature_power_attempt,
 )
-from ak_engine.turn.monster_raids import apply_fulfill_pacification, guardian_undeterred, roll_guardian_intimidation
+from ak_engine.turn.monster_raids import (
+    apply_fulfill_pacification,
+    guardian_undeterred,
+    resolve_monster_raid_reply,
+    roll_guardian_intimidation,
+)
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 
@@ -2443,7 +2447,11 @@ def _resolve_search_encounter(
         """Talk [TA], rulebook [5.5] -- Phase 240, **superseded by Phase 528**
         with the real 24-reply selector (``turn/encounter.py``'s own
         Phase 382 addendum has the full sourcing: ``MonsterTalkReply``,
-        ``select_monster_talk_reply()``, ``MONSTER_TALK_REPLY_OUTCOME``).
+        ``MONSTER_TALK_REPLY_OUTCOME``), **and again by Phase 727** (see
+        that addendum below -- the reply is now resolved via ``turn/
+        monster_raids.py resolve_monster_raid_reply()``, the real,
+        disassembly-verified algorithm, not ``turn/encounter.py select_
+        monster_talk_reply()``'s own less-accurate approximation).
         If the leader's own Druid skill doesn't meet the guardian's own
         ``talkdiff`` requirement, no effect -- the character simply can't
         communicate with this species (unchanged from Phase 240).
@@ -2466,12 +2474,10 @@ def _resolve_search_encounter(
         The real selector generates one of 24 replies **once per
         guardian, not once per Talk attempt** (SS62: "per la stessa
         feature e lo stesso guardiano la risposta e normalmente
-        ripetibile") -- persisted on ``Feature.guardian_talk_reply_id``
-        (see that field's own docstring for why persistence substitutes
-        for the real, never-fully-specified per-tana seed formula). Each
-        reply's own ``TalkReplyOutcome`` category (``MONSTER_TALK_REPLY_
-        OUTCOME``) then drives exactly the old three-way branch's own
-        shape: ``ATTACK`` (``RCharge``/``RMAdvance``) forces combat
+        ripetibile") -- persisted on ``Feature.guardian_talk_reply_id``.
+        Each reply's own ``TalkReplyOutcome`` category (``MONSTER_TALK_
+        REPLY_OUTCOME``) then drives exactly the old three-way branch's
+        own shape: ``ATTACK`` (``RCharge``/``RMAdvance``) forces combat
         unless Silver Tongue suppresses it (unchanged Phase 468
         behavior, just re-anchored to the real reply instead of a raw
         roll); ``IGNORE`` (``RPuzzled``/``RWarn``) is a no-op, same as
@@ -2481,13 +2487,34 @@ def _resolve_search_encounter(
         condition (Phase 258's own scope note), only which of the three
         real outcome categories fires.
 
-        ``has_purchasable_treasure`` is passed as ``False`` unconditionally:
-        nothing in this project's own ``Feature``/``Treasure`` model
-        distinguishes "a purchasable magic item" from any other treasure
-        kind, and ``select_monster_talk_reply()``'s own docstring already
-        flags this as a caller-supplied gate rather than something to
-        guess -- ``RSell`` is simply never eligible here, a documented
-        scope limitation, not a silent wrong default.
+        **Phase 727 addendum -- the real, deterministic selector, wired
+        in.** ``turn/monster_raids.py resolve_monster_raid_reply()``
+        (Phase 679, ``Desktop/NOARMY.md``'s own disassembly of `Get_
+        Reply`) is a *more* accurate port of this exact same real
+        algorithm than ``turn/encounter.py select_monster_talk_reply()``
+        (Phase 382/528, used here until now) ever was, in three real
+        ways this phase closes: (a) it's fully deterministic per
+        ``(monster, feature_id)`` -- reseeding a self-contained
+        generator rather than drawing from the turn's own live, shared
+        ``rng`` -- matching the real engine's own save/reseed/restore
+        behavior around this call, and matching how ``Feature.guardian_
+        talk_reply_id``'s own persistence *already* assumed a real reply
+        is stable per guardian, not merely cached for convenience; (b)
+        it walks the real per-feature ``Agent_Align``-derived effective
+        alignment (fixed in Phase 726) rather than the monster's own
+        static ``base_view``; (c) it derives ``has_purchasable_treasure``
+        for real from ``Feature.treasure`` (``feature_treasure.value <
+        67``, ``Treasure.GOLD_HOARD_LARGE``) instead of the previous
+        hardcoded ``False`` -- that hardcoding's own justification ("no
+        concept of a purchasable item anywhere in this project's model")
+        was stale the moment Phase 679 built exactly this derivation for
+        the raid path; ``RSell`` is now genuinely reachable here. User-
+        confirmed directly (2026-09-03): the resulting loss of one live-
+        ``rng`` draw from this dispatch path is the correct trade for
+        real-algorithm accuracy, not a regression -- every real test
+        exercising this call site already mocks the reply selector
+        outright (never scripts a real roll for it), so no test needed
+        its own ``rng`` sequence re-counted.
         """
 
         nonlocal combat_attempted
@@ -2522,9 +2549,7 @@ def _resolve_search_encounter(
         add_experience(leader, Ability.DRUID, 10, rng)
 
         if feature.guardian_talk_reply_id is None:
-            reply = select_monster_talk_reply(feature.guardian_monster, rng, has_purchasable_treasure=False)
-            if reply is None:
-                return None  # no eligible reply at all -- never observed for a real Monster, but not assumed impossible
+            reply = resolve_monster_raid_reply(feature.guardian_monster, feature.feature_id, feature.treasure)
             feature.guardian_talk_reply_id = reply.value
         reply = MonsterTalkReply(feature.guardian_talk_reply_id)
 

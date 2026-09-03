@@ -30064,7 +30064,7 @@ follow-up request after the original 431-435 plan shipped.
   assumed, by running before touching them). This closes the entire
   twenty-second survey in full.
 
-- **Phase 726 (current)**: `Agent_Align`'s walk-termination bug --
+- **Phase 726**: `Agent_Align`'s walk-termination bug --
   `turn/druidic_monster_aid.py monster_effective_alignment()` was
   permanently breaking out of its own alignment-walk loop the first
   time its internal bit pattern `q` went even, instead of skipping just
@@ -30093,6 +30093,42 @@ follow-up request after the original 431-435 plan shipped.
   `resolve_monster_raid_reply()`, plus a stale `has_purchasable_
   treasure` hardcoding) remains open, pending a user decision on
   removing a live-`rng` draw from the Talk dispatch path.
+
+- **Phase 727 (current)**: candidate #2 of the twenty-third survey --
+  `turn/search_execution.py _resolve_talk()` now calls `turn/
+  monster_raids.py resolve_monster_raid_reply()` (Phase 679, `Desktop/
+  NOARMY.md`'s own disassembly of `Get_Reply`) instead of `turn/
+  encounter.py select_monster_talk_reply()` (Phase 382/528), closing
+  all three real accuracy gaps at once: the reply is now fully
+  deterministic per `(monster, feature_id)` (a self-contained reseeded
+  generator, not the turn's own live, shared `rng`) matching the real
+  engine's own save/reseed/restore behavior and `Feature.guardian_talk_
+  reply_id`'s own "fixed per den" persistence semantics; it walks the
+  real per-feature `Agent_Align`-derived effective alignment (fixed in
+  Phase 726) instead of the monster's own static `base_view`; and
+  `has_purchasable_treasure` is now genuinely derived from `Feature.
+  treasure` instead of hardcoded `False` -- that hardcoding's own
+  justification ("no purchasable-item concept anywhere in this
+  project's model") was stale the moment Phase 679 built exactly that
+  derivation for the raid path. User-confirmed directly (2026-09-03):
+  the resulting loss of one live-`rng` draw from this dispatch path is
+  the correct trade for real-algorithm accuracy. Every one of the 12
+  existing tests exercising this call site already mocked the reply
+  selector outright (never scripted a real roll for it), so fixing them
+  was a pure patch-target rename, zero `rng`-sequence recounting needed
+  -- confirmed empirically, not assumed, by running the suite before
+  touching them (12 failures, all and only `AttributeError` on the old
+  mock target). Two new end-to-end tests (unmocked, using the exact
+  same NOARMY.md real worked example `resolve_monster_raid_reply()`'s
+  own oracle tests use -- `Monster.GW_WHALE`, `feature_id=39`,
+  `Treasure(48)` -> `R_SELL`) prove the `has_purchasable_treasure` fix
+  directly, and that the reply stays identical across two wildly
+  different `rng` seeds. `select_monster_talk_reply()`/`TalkReaction`
+  stay defined and tested in `turn/encounter.py` -- no other production
+  call site exists, but nothing here required removing them. Test
+  count: 6191 -> 6193 (net +2). Full suite verified green (unchanged,
+  6191) before touching a single test. This closes the entire
+  twenty-third survey in full.
 
 ## Setup
 
