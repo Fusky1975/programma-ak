@@ -829,11 +829,12 @@ ACTION_CAST_SLOTS_LEVEL_4_PLUS = 3
 # The same AKGEN source also confirmed 4 more real spellcasting rules,
 # originally left deliberately NOT wired here (Phase 387):
 # - `combat_slots_per_school` (1 slot at level 1, 2 at level 2+, per
-#   encounter): STILL genuinely unwired -- `turn/encounter.py resolve_
-#   personal_combat_spell_cast()` is a single, stateless roll with no
-#   per-encounter, per-(leader, Ability) call counter threaded through
-#   its own callers (`turn/search_execution.py`, `turn/challenge_
-#   execution.py`) to gate against. A real, separate follow-up.
+#   encounter), plus its tightly-coupled sibling `same_combat_spell_
+#   may_repeat_in_encounter: false`: DONE (Phase 732) -- `turn/
+#   encounter.py try_consume_combat_cast_slot()`, called from `turn/
+#   search_execution.py`/`turn/challenge_execution.py`'s own two real
+#   `resolve_personal_combat_spell_cast()` call sites, both leader and
+#   guardian-monster casters alike, a wand-cast (`[3.11]`) exempt.
 # - `damp_magic` (halves the roll) / `damp_college` (blocks a specific
 #   Ability's combat spells entirely inside that feature): DONE (Phase
 #   617) -- `Power.DAMP_MAGIC`/`Power.DAMP_COLLEGE` are both live,

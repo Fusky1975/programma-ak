@@ -338,6 +338,7 @@ from ak_engine.turn.encounter import (
     resolve_steal_evasion,
     resolve_words_of_healing_disruption,
     resolve_words_of_healing_disruption_from_missed_attack,
+    try_consume_combat_cast_slot,
     roll_fireball_damage,
     roll_holy_symbol_undead_damage,
     roll_melee_attack,
@@ -626,6 +627,8 @@ def _resolve_personal_combat_cast(
     rng: random.Random,
     *,
     is_first_tactic: bool,
+    cast_slots_used: dict[Ability, int],
+    cast_spells_attempted: set[Spell],
 ) -> str | None:
     """Leader-vs-leader Personal-Combat spell dispatch -- see module
     docstring's own Phase 290 addendum for how this was re-derived
@@ -715,6 +718,14 @@ def _resolve_personal_combat_cast(
         # chance table wired -- module docstring's own Phase 290
         # addendum records this as a genuine, still-open gap rather than
         # guessing a formula.
+        return None
+
+    # Phase 732: no wand-cast/`forced_level` concept exists anywhere in
+    # this module (confirmed by grep) -- every real attempt reaching
+    # this point is a genuine Personal-Combat cast, so the slot check
+    # applies unconditionally, right before the real success roll, once
+    # every other precondition above has already passed.
+    if not try_consume_combat_cast_slot(ability, spell, level, cast_slots_used, cast_spells_attempted):
         return None
 
     succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan)
@@ -1540,6 +1551,15 @@ def resolve_challenge_combat(
     current_range = CombatRange.SPELL_RANGE
     melee_setup_done = False
     target_tactic_index = 0
+    # Phase 732: this encounter's own Personal-Combat cast-slot trackers
+    # (`turn/encounter.py try_consume_combat_cast_slot()`'s own docstring
+    # has the full sourced rule) -- one pair per side, never persisted
+    # beyond this one call. `turn/battle_orchestrator.py`'s own Duel
+    # reuse of this function picks these up for free.
+    caster_cast_slots_used: dict[Ability, int] = {}
+    caster_cast_spells_attempted: set[Spell] = set()
+    target_cast_slots_used: dict[Ability, int] = {}
+    target_cast_spells_attempted: set[Spell] = set()
     # Phase 306: carried into every ``ChallengeCombatOutcome`` returned
     # below (not just a terminal STEAL branch) -- see that dataclass's own
     # Phase 306 addendum for why a non-terminal Steal outcome (success/
@@ -1612,7 +1632,16 @@ def resolve_challenge_combat(
         """
 
         outcome = _resolve_personal_combat_cast(
-            target, target_leader, caster, caster_leader, tactic, state, rng, is_first_tactic=is_first
+            target,
+            target_leader,
+            caster,
+            caster_leader,
+            tactic,
+            state,
+            rng,
+            is_first_tactic=is_first,
+            cast_slots_used=target_cast_slots_used,
+            cast_spells_attempted=target_cast_spells_attempted,
         )
         if outcome == "fled":
             return "fled"
@@ -1772,7 +1801,16 @@ def resolve_challenge_combat(
                 if disrupted:
                     continue
             outcome = _resolve_personal_combat_cast(
-                caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=(index == 0)
+                caster,
+                caster_leader,
+                target,
+                target_leader,
+                tactic,
+                state,
+                rng,
+                is_first_tactic=(index == 0),
+                cast_slots_used=caster_cast_slots_used,
+                cast_spells_attempted=caster_cast_spells_attempted,
             )
             if outcome == "fled":
                 return _outcome(fled=True)

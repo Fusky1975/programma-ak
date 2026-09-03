@@ -49,7 +49,7 @@ from ak_engine.turn.challenge_execution import ChallengeCombatOutcome
 from ak_engine.turn.druidic_monster_aid import DruidicMonsterAssistance
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.duel import Commander, provincial_garrison_commander
-from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, MeleeSwing
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, EncounterCombatResult, MeleeSwing
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.strength import compute_effective_strength
@@ -3337,6 +3337,40 @@ def test_maybe_fight_duel_flee_only_matters_as_the_first_tactic():
     )
 
     assert outcome.loser_side == "defender"
+
+
+def test_maybe_fight_duel_combat_cast_slot_level_1_blocks_a_second_different_spell():
+    # Phase 732: `resolve_challenge_combat()`'s own new per-encounter
+    # cast-slot trackers apply for free to the Duel-reuse path too --
+    # no special-casing needed in `_maybe_fight_duel()` itself.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.GOOD, FIELD))
+    state.add_leader(
+        LeaderState(501, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ELEMENTAL, 1, 9))
+    )
+    state.add_leader(LeaderState(502, kingdom_id=2, name="B", location=FIELD))
+    attacker_armies = [ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501)]
+    defender_armies = [ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=502)]
+    attacker_units = [BattleUnit(ArmyType.HVY_CAVALRY, 100.0, source_id=101)]
+    defender_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=201)]
+    attacker_commander = Commander(leader_id=501, contingent_size=1, tactical_ability=0)
+    defender_commander = Commander(leader_id=502, contingent_size=1, tactical_ability=0)
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner=None, rounds=1)
+        _maybe_fight_duel(
+            attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units,
+            ScriptedRandom([]), state=state, use_real_duel_combat=True,
+            duel_maneuvers=[
+                SearchTactic(Maneuver.CAST, Spell.FIREBALL.value),
+                SearchTactic(Maneuver.CAST, Spell.ICE_SUSPEND.value),
+            ],
+        )
+
+    assert mock_cast.call_count == 1  # the 2nd attempt never reached the roll -- slot exhausted
 
 
 def test_maybe_fight_duel_cast_fireball_kill_demoralizes_the_loser():

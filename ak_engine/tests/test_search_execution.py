@@ -1612,6 +1612,148 @@ def _skilled_leader(ability: Ability, level: int, **kwargs) -> LeaderState:
     return LeaderState(LEADER_ID, 1, "Searcher", LOCATION, skills=SkillTable(raw_values=raw), **kwargs)
 
 
+# -- Phase 732: combat_slots_per_school / same_combat_spell_may_repeat_in_encounter --
+
+
+def _elemental_slot_request(spell_a: Spell, spell_b: Spell) -> SearchRequest:
+    return SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=spell_a.value),
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=spell_b.value),
+        ],
+    )
+
+
+def test_execute_search_leaders_own_cast_slot_level_1_blocks_a_second_different_spell_of_the_same_ability():
+    raw = [0] * 30
+    raw[Ability.ELEMENTAL.value * 2] = 1
+    raw[Ability.ELEMENTAL.value * 2 + 1] = 9
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _elemental_slot_request(Spell.FIREBALL, Spell.ICE_SUSPEND)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast:
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_cast.call_count == 1  # the 2nd attempt never reached the roll -- slot exhausted
+
+
+def test_execute_search_leaders_own_cast_slot_level_2_allows_two_different_spells_of_the_same_ability():
+    raw = [0] * 30
+    raw[Ability.ELEMENTAL.value * 2] = 2
+    raw[Ability.ELEMENTAL.value * 2 + 1] = 9
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _elemental_slot_request(Spell.FIREBALL, Spell.ICE_SUSPEND)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast:
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_cast.call_count == 2
+
+
+def test_execute_search_leaders_own_cast_slot_same_spell_never_repeats_even_with_slots_free():
+    raw = [0] * 30
+    raw[Ability.ELEMENTAL.value * 2] = 2
+    raw[Ability.ELEMENTAL.value * 2 + 1] = 9
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _elemental_slot_request(Spell.FIREBALL, Spell.FIREBALL)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast:
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_cast.call_count == 1  # same Spell repeated -- blocked despite a free slot
+
+
+def test_execute_search_guardians_own_cast_slot_level_1_blocks_a_second_different_spell_of_the_same_ability():
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    monster_plan = (
+        SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),
+        SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.ICE_SUSPEND.value),
+    )
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch.dict(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.GARGOYLE: {Ability.ELEMENTAL: 1}}
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert mock_cast.call_count == 1  # the guardian's own 2nd cast never reached the roll -- slot exhausted
+
+
+def test_execute_search_guardian_and_leader_cast_slots_track_independently():
+    # A leader-side slot exhaustion must never block the guardian's own
+    # independent slot pool for the identical Ability, and vice versa.
+    raw = [0] * 30
+    raw[Ability.ELEMENTAL.value * 2] = 1
+    raw[Ability.ELEMENTAL.value * 2 + 1] = 9
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    # The guardian's own leading Cast is only ever resolved once combat
+    # actually begins (`_resolve_monster_casts()`, called from the
+    # Melee branch) -- a Cast-only leader plan never reaches it at all
+    # (mirrors the Phase 731 Steal-only-plan finding), so a trailing
+    # Melee tactic is required here.
+    monster_plan = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.ICE_SUSPEND.value),)
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        ],
+    )
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch.dict(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.GARGOYLE: {Ability.ELEMENTAL: 1}}
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    # Both the leader's own Fireball and the guardian's own Ice Suspend
+    # (a different caster identity, same Ability) get their own real roll.
+    assert mock_cast.call_count == 2
+
+
+def test_execute_search_wand_cast_never_touches_the_combat_cast_slot_tracker():
+    raw = [0] * 30
+    raw[Ability.ELEMENTAL.value * 2] = 1
+    raw[Ability.ELEMENTAL.value * 2 + 1] = 9
+    state = _state_with_leader(skills=SkillTable(raw_values=raw))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    wand = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=LEADER_ID, charges=2)
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[
+            SearchTactic(maneuver=Maneuver.USE_MI, sub_object=wand.item_id),
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),
+        ],
+    )
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False) as mock_cast:
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    # The wand cast (automatic success, no roll) never consumed the
+    # leader's own level-1 Elemental slot -- the ordinary CAST right
+    # after it still reaches a real roll.
+    assert mock_cast.call_count == 1
+
+
 def test_execute_search_cast_charm_success_makes_the_caster_flee():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))

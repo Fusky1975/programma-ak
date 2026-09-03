@@ -749,7 +749,7 @@ def test_resolve_personal_combat_cast_charm_blocked_by_analytical_psychology():
     rng = ScriptedRandom([0.1])  # cast roll succeeds
 
     outcome = _resolve_personal_combat_cast(
-        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
     )
 
     assert outcome is None  # ineffective -- no flee, combat continues
@@ -767,7 +767,7 @@ def test_resolve_personal_combat_cast_charm_unprotected_target_still_flees():
     rng = ScriptedRandom([0.1])
 
     outcome = _resolve_personal_combat_cast(
-        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
     )
 
     assert outcome == "fled"
@@ -790,7 +790,7 @@ def test_resolve_personal_combat_cast_charm_with_enhanced_ability_transfers_item
     rng = ScriptedRandom([0.1])
 
     outcome = _resolve_personal_combat_cast(
-        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
     )
 
     assert outcome == "fled"
@@ -813,7 +813,7 @@ def test_resolve_personal_combat_cast_charm_blocked_target_never_transfers_item_
     rng = ScriptedRandom([0.1])
 
     outcome = _resolve_personal_combat_cast(
-        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
     )
 
     assert outcome is None
@@ -836,7 +836,7 @@ def test_resolve_personal_combat_cast_fireball_blocked_by_anti_elemental_amulet(
     rng = ScriptedRandom([0.1])
 
     outcome = _resolve_personal_combat_cast(
-        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
     )
 
     assert outcome is None
@@ -861,7 +861,7 @@ def test_resolve_personal_combat_cast_psychic_blast_blocked_by_anti_psychic_amul
     rng = ScriptedRandom([0.1])
 
     outcome = _resolve_personal_combat_cast(
-        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
     )
 
     assert outcome is None
@@ -884,7 +884,7 @@ def test_resolve_personal_combat_cast_hand_of_death_blocked_by_anti_necromancy_a
     rng = ScriptedRandom([0.1])
 
     outcome = _resolve_personal_combat_cast(
-        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
     )
 
     assert outcome is None
@@ -908,7 +908,7 @@ def test_resolve_personal_combat_cast_necro_mage_target_resists_the_successful_s
     rng = ScriptedRandom([0.1, 0.1])  # [0] cast succeeds, [1] under the 25% resistance chance
 
     outcome = _resolve_personal_combat_cast(
-        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
     )
 
     assert outcome is None
@@ -930,7 +930,7 @@ def test_resolve_personal_combat_cast_necro_mage_target_does_not_always_resist()
     rng = ScriptedRandom([0.1, 0.99, 0.5])  # [0] cast succeeds, [1] over the 25% resistance chance, [2] damage roll
 
     outcome = _resolve_personal_combat_cast(
-        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
     )
 
     assert outcome is None  # Fireball's own effect doesn't end the encounter outright
@@ -952,7 +952,7 @@ def test_resolve_personal_combat_cast_no_necro_mage_title_never_consumes_a_resis
     rng = ScriptedRandom([0.1, 0.5])
 
     outcome = _resolve_personal_combat_cast(
-        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
     )
 
     assert outcome is None
@@ -978,7 +978,7 @@ def test_resolve_personal_combat_cast_control_undead_not_blocked_by_anti_necroma
     rng = ScriptedRandom([0.1])
 
     outcome = _resolve_personal_combat_cast(
-        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
     )
 
     assert outcome == "a"  # succeeds -- not in the True Cross's blocked set
@@ -1002,7 +1002,7 @@ def test_resolve_personal_combat_cast_invisibility_not_blocked_by_target_anti_ma
     rng = ScriptedRandom([0.1])
 
     outcome = _resolve_personal_combat_cast(
-        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
     )
 
     assert outcome is None
@@ -1444,7 +1444,7 @@ def test_augur_combat_cast_first_shirks_and_flees_on_a_simulated_loss():
     ) as mock_melee, patch("ak_engine.turn.challenge_execution.resolve_augur_combat", return_value=True):
         mock_melee.return_value = EncounterCombatResult(winner="b", rounds=1)
         outcome = _resolve_personal_combat_cast(
-            caster, caster_leader, target, target_leader, tactic, state, ScriptedRandom([]), is_first_tactic=True
+            caster, caster_leader, target, target_leader, tactic, state, ScriptedRandom([]), is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
         )
 
     assert outcome == "fled"
@@ -1467,7 +1467,7 @@ def test_augur_combat_cast_later_is_a_documented_gap_with_no_effect_yet():
 
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
         outcome = _resolve_personal_combat_cast(
-            caster, caster_leader, target, target_leader, tactic, state, ScriptedRandom([]), is_first_tactic=False
+            caster, caster_leader, target, target_leader, tactic, state, ScriptedRandom([]), is_first_tactic=False, cast_slots_used={}, cast_spells_attempted=set()
         )
 
     assert outcome is None
@@ -1725,6 +1725,80 @@ def test_resolve_challenge_combat_cast_at_spell_range_never_checks_disruption():
 
     assert not mock_swing.called
     assert not mock_disrupt.called
+
+
+# -- Phase 732: combat_slots_per_school / same_combat_spell_may_repeat_in_encounter --
+
+
+def test_resolve_challenge_combat_casters_own_cast_slot_level_1_blocks_a_second_different_spell():
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": _skills_with(Ability.ELEMENTAL, 1, 9)}
+    )
+    tactics = [SearchTactic(Maneuver.CAST, Spell.FIREBALL.value), SearchTactic(Maneuver.CAST, Spell.ICE_SUSPEND.value)]
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert mock_cast.call_count == 1  # the 2nd attempt never reached the roll -- slot exhausted
+
+
+def test_resolve_challenge_combat_casters_own_cast_slot_level_2_allows_two_different_spells():
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": _skills_with(Ability.ELEMENTAL, 2, 9)}
+    )
+    tactics = [SearchTactic(Maneuver.CAST, Spell.FIREBALL.value), SearchTactic(Maneuver.CAST, Spell.ICE_SUSPEND.value)]
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert mock_cast.call_count == 2
+
+
+def test_resolve_challenge_combat_casters_own_same_spell_never_repeats_even_with_slots_free():
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": _skills_with(Ability.ELEMENTAL, 2, 9)}
+    )
+    tactics = [SearchTactic(Maneuver.CAST, Spell.FIREBALL.value), SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)]
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert mock_cast.call_count == 1
+
+
+def test_resolve_challenge_combat_caster_and_target_cast_slots_track_independently():
+    # The target's own leading Cast(s) (`target_tactics`, resolved via
+    # `_resolve_target_casts()` before the caster's own tactics even
+    # start) must never share a slot pool with the caster's own side,
+    # even for the identical Ability.
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": _skills_with(Ability.ELEMENTAL, 2, 9)},
+        target_kwargs={"skills": _skills_with(Ability.ELEMENTAL, 2, 9)},
+    )
+    tactics = [SearchTactic(Maneuver.CAST, Spell.FIREBALL.value), SearchTactic(Maneuver.CAST, Spell.ICE_SUSPEND.value)]
+    target_tactics = [
+        SearchTactic(Maneuver.CAST, Spell.FIREBALL.value),
+        SearchTactic(Maneuver.CAST, Spell.ICE_SUSPEND.value),
+    ]
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=False
+    ) as mock_cast, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]), target_tactics=target_tactics
+        )
+
+    assert mock_cast.call_count == 4  # 2 real rolls per side
 
 
 # -- Phase 294: apply_temper_melee_setup fix for the non-last MELEE branch --
@@ -2028,7 +2102,7 @@ def test_resolve_challenge_combat_cast_vs_cast_both_sides_attempt_their_own_spel
     caster_cast_calls = []
     target_cast_calls = []
 
-    def _fake_cast(caster_arg, caster_leader_arg, target_arg, target_leader_arg, tactic, state_arg, rng_arg, *, is_first_tactic):
+    def _fake_cast(caster_arg, caster_leader_arg, target_arg, target_leader_arg, tactic, state_arg, rng_arg, *, is_first_tactic, **_kwargs):
         if caster_arg is caster:
             caster_cast_calls.append(tactic)
         else:

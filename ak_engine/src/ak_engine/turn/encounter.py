@@ -878,12 +878,17 @@ excludes Magia Bianca -- this module has no `Ability` parameter to
 gate that internally, by the same design choice already used
 throughout.
 
-**Also confirmed, not modeled**: the quoted text also describes
+**Also confirmed, now both wired**: the quoted text also describes
 per-turn Action-Cast quotas (1 cast/turn, 2 at skill level 3, 3 at
-level 4) and a per-encounter "not twice with the same Personal-Combat
-spell" limit -- see `turn/cast_execution.py`'s own Phase 192 addendum
-for why neither is wired in yet (no per-turn/per-encounter cast-count
-state exists anywhere in this project).
+level 4) -- live since before this session (`turn/cast_execution.py
+action_cast_slots()`/`_consume_action_cast_slot()`, `GameState.
+action_casts_used`) -- and a per-encounter "not twice with the same
+Personal-Combat spell" limit, plus its own `combat_slots_per_school`
+sibling rule -- both wired by Phase 732 (`try_consume_combat_cast_
+slot()` below), scoped to a purely local, per-encounter pair of
+trackers rather than any `GameState`-level state (the per-*turn* half
+above is the one that genuinely needed `GameState` persistence; the
+per-*encounter* half never did).
 
 **Phase 200 addendum -- Words of Healing [WH], tied to Ability.WHITE,
 project-original (user-supplied), the eleventh Personal-Combat spell
@@ -2444,6 +2449,67 @@ def resolve_personal_combat_spell_cast(
     return rng.random() < personal_combat_spell_cast_chance(
         skill_level, caster_is_pagan=caster_is_pagan, damp_magic=damp_magic, places_bonus=places_bonus
     )
+
+
+# Phase 732: AKGEN's own confirmed `combat_slots_per_school` -- 1
+# Personal-Combat cast attempt per Ability per encounter at skill level
+# 1, 2 at level 2 and up (`AKGEN_embedded_catalogs.json.txt`'s own
+# `spellcasting` block: `"combat_slots_per_school": {"level_1": 1,
+# "level_2_plus": 2}`) -- and its tightly-coupled sibling rule,
+# `"same_combat_spell_may_repeat_in_encounter": false`: the exact same
+# Spell can never be attempted twice in one encounter, even with slots
+# still free for its own Ability (the opposite of the sourced Action-
+# Cast rule, `"same_action_spell_may_repeat": true`). Mirrors `turn/
+# cast_execution.py action_cast_slots()`/`_consume_action_cast_slot()`
+# -- the Action-Cast sibling of this exact mechanic -- in shape, but
+# per-encounter-local rather than per-turn-`GameState`: this system has
+# no persistent state of its own at all, only whatever `slots_used`/
+# `spells_attempted` its own caller keeps for the lifetime of a single
+# encounter resolution, one pair per real caster identity (a leader, or
+# -- per the user's own direct confirmation this session -- a guardian
+# monster too).
+COMBAT_CAST_SLOTS_LEVEL_1 = 1
+COMBAT_CAST_SLOTS_LEVEL_2_PLUS = 2
+
+
+def combat_cast_slots(level: int) -> int:
+    """1 slot at skill level 1 (or below -- moot in practice, the same
+    floor `turn/cast_execution.py action_cast_slots()` uses), 2 at
+    level 2 and up.
+    """
+
+    return COMBAT_CAST_SLOTS_LEVEL_1 if level <= 1 else COMBAT_CAST_SLOTS_LEVEL_2_PLUS
+
+
+def try_consume_combat_cast_slot(
+    ability: Ability, spell: Spell, level: int, slots_used: dict[Ability, int], spells_attempted: set[Spell]
+) -> bool:
+    """Attempts to spend one of this caster's own per-Ability, per-
+    encounter combat-cast slots for `spell`. `failed_attempt_consumes_
+    slot` is confirmed true (the same rule `_consume_action_cast_slot()`
+    already honors for Action-Cast), so this must be called once every
+    other precondition/eligibility check has already passed -- right
+    before the real success roll, not after -- and only for a genuine
+    Personal-Combat cast attempt; a wand-cast (`[3.11]`'s own automatic-
+    success rule) is a separate mechanic entirely and must never reach
+    this function at all (see each real caller's own bypass).
+
+    `slots_used`/`spells_attempted` are mutated in place and must be
+    the caller's own per-caster-identity, per-encounter pair (never
+    shared across two different casters, and never reused across two
+    different encounters) -- this function itself holds no state.
+    Returns `False` (nothing mutated) when this exact Spell was already
+    attempted this encounter, or this Ability's own slots are already
+    exhausted for it.
+    """
+
+    if spell in spells_attempted:
+        return False
+    if slots_used.get(ability, 0) >= combat_cast_slots(level):
+        return False
+    slots_used[ability] = slots_used.get(ability, 0) + 1
+    spells_attempted.add(spell)
+    return True
 
 
 # Phase 209 -- the Spell -> Ability mapping for the ten Personal-Combat-only

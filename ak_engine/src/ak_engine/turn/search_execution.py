@@ -598,6 +598,7 @@ from ak_engine.turn.encounter import (
     resolve_steal_attempt,
     resolve_steal_evasion,
     resolve_steal_monster_item_transfer,
+    try_consume_combat_cast_slot,
     roll_fireball_damage,
     roll_holy_symbol_undead_damage,
     roll_ice_suspension_flying_bonus_rounds,
@@ -1381,6 +1382,16 @@ def _resolve_search_encounter(
     current_range = CombatRange.SPELL_RANGE
     melee_setup_done = False
 
+    # Phase 732: this encounter's own Personal-Combat cast-slot trackers
+    # (`turn/encounter.py try_consume_combat_cast_slot()`'s own docstring
+    # has the full sourced rule) -- one pair per real caster identity,
+    # leader and guardian monster alike (user-confirmed both are in
+    # scope), never persisted beyond this one call.
+    leader_cast_slots_used: dict[Ability, int] = {}
+    leader_cast_spells_attempted: set[Spell] = set()
+    monster_cast_slots_used: dict[Ability, int] = {}
+    monster_cast_spells_attempted: set[Spell] = set()
+
     def _outcome_from(combat_result: EncounterCombatResult) -> SearchExecutionResult | None:
         """Translate a resolved duel into a terminal result, or None if the
         encounter isn't over yet (only possible for Fire Arrow -- Melee
@@ -1610,6 +1621,17 @@ def _resolve_search_encounter(
             return None
         if spell is Spell.HEAL and level < WORDS_OF_HEALING_KNOWN_ABILITY_LEVEL:
             return None
+
+        # Phase 732: a wand-cast (`forced_level` set) is [3.11]'s own
+        # separate automatic-success mechanic and never consumes a
+        # combat-cast slot at all (user-confirmed) -- only a genuine
+        # Personal-Combat cast attempt does, right before its own real
+        # success roll, once every other precondition above has passed.
+        if forced_level is None:
+            slots_used = leader_cast_slots_used if caster_is_leader else monster_cast_slots_used
+            spells_attempted = leader_cast_spells_attempted if caster_is_leader else monster_cast_spells_attempted
+            if not try_consume_combat_cast_slot(ability, spell, level, slots_used, spells_attempted):
+                return None
 
         cast_attempt_applied = True  # every real precondition above is now passed
         if forced_level is not None:

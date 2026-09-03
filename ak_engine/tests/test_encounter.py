@@ -72,6 +72,7 @@ from ak_engine.turn.encounter import (
     ice_suspension_slowed_bonus_rounds,
     invisibility_reduced_hit_chance,
     mirror_image_disbelief_chance,
+    combat_cast_slots,
     personal_combat_spell_cast_chance,
     resolve_encounter_combat,
     resolve_fire_arrow_duel,
@@ -203,6 +204,7 @@ from ak_engine.turn.encounter import (
     melee_mastery_offensive_hit_multiplier,
     _melee_landed_damage,
     loot_defeated_leader,
+    try_consume_combat_cast_slot,
 )
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.advanced_ability import AdvancedAbility
@@ -1591,6 +1593,56 @@ def test_resolve_personal_combat_spell_cast_places_bonus_succeeds_a_roll_the_unb
     # boosted threshold but would have failed unboosted.
     rng = ScriptedRandom([0.5])
     assert resolve_personal_combat_spell_cast(1, rng, places_bonus=True) is True
+
+
+# -- Phase 732: combat_slots_per_school / same_combat_spell_may_repeat_in_encounter --
+
+
+def test_combat_cast_slots():
+    assert combat_cast_slots(1) == 1
+    assert combat_cast_slots(2) == 2
+    assert combat_cast_slots(9) == 2
+
+
+def test_try_consume_combat_cast_slot_first_attempt_succeeds():
+    slots_used: dict[Ability, int] = {}
+    spells_attempted: set[Spell] = set()
+    assert try_consume_combat_cast_slot(Ability.ELEMENTAL, Spell.FIREBALL, 1, slots_used, spells_attempted) is True
+    assert slots_used[Ability.ELEMENTAL] == 1
+    assert spells_attempted == {Spell.FIREBALL}
+
+
+def test_try_consume_combat_cast_slot_level_1_second_attempt_of_a_different_spell_exhausts_the_slot():
+    slots_used: dict[Ability, int] = {}
+    spells_attempted: set[Spell] = set()
+    assert try_consume_combat_cast_slot(Ability.ELEMENTAL, Spell.FIREBALL, 1, slots_used, spells_attempted) is True
+    assert try_consume_combat_cast_slot(Ability.ELEMENTAL, Spell.ICE_SUSPEND, 1, slots_used, spells_attempted) is False
+    assert slots_used[Ability.ELEMENTAL] == 1  # nothing further consumed
+
+
+def test_try_consume_combat_cast_slot_level_2_plus_allows_two_different_spells_then_blocks_a_third():
+    slots_used: dict[Ability, int] = {}
+    spells_attempted: set[Spell] = set()
+    assert try_consume_combat_cast_slot(Ability.WHITE, Spell.HOLY_SYMBOL, 2, slots_used, spells_attempted) is True
+    assert try_consume_combat_cast_slot(Ability.WHITE, Spell.SPIRITWRACK, 2, slots_used, spells_attempted) is True
+    assert try_consume_combat_cast_slot(Ability.WHITE, Spell.HEAL, 2, slots_used, spells_attempted) is False
+    assert slots_used[Ability.WHITE] == 2
+
+
+def test_try_consume_combat_cast_slot_the_same_spell_never_repeats_even_with_slots_free():
+    slots_used: dict[Ability, int] = {}
+    spells_attempted: set[Spell] = set()
+    assert try_consume_combat_cast_slot(Ability.WHITE, Spell.HOLY_SYMBOL, 2, slots_used, spells_attempted) is True
+    assert try_consume_combat_cast_slot(Ability.WHITE, Spell.HOLY_SYMBOL, 2, slots_used, spells_attempted) is False
+    assert slots_used[Ability.WHITE] == 1  # the repeat never consumed a second slot
+
+
+def test_try_consume_combat_cast_slot_two_abilities_track_independently():
+    slots_used: dict[Ability, int] = {}
+    spells_attempted: set[Spell] = set()
+    assert try_consume_combat_cast_slot(Ability.ELEMENTAL, Spell.FIREBALL, 1, slots_used, spells_attempted) is True
+    assert try_consume_combat_cast_slot(Ability.PSYCHIC, Spell.PSYCHIC_BLAST, 1, slots_used, spells_attempted) is True
+    assert slots_used == {Ability.ELEMENTAL: 1, Ability.PSYCHIC: 1}
 
 
 # -- Phase 200: Words of Healing [WH] --

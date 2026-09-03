@@ -30219,7 +30219,7 @@ follow-up request after the original 431-435 plan shipped.
   Steal's own `MONSTER_STEAL_GOLD_IF_NO_ITEM` gold, sourced but never
   credited on a successful transfer) remains open.
 
-- **Phase 731 (current)**: closes candidate #2 above -- monster-hoard
+- **Phase 731**: closes candidate #2 above -- monster-hoard
   Steal's own real, disassembly-sourced "gold if no item was stolen"
   magnitude (`turn/encounter.py MONSTER_STEAL_GOLD_IF_NO_ITEM`,
   `CTME.PAS`'s basegold table via `AK.EXE`'s `G_MSteal`) finally
@@ -30245,6 +30245,45 @@ follow-up request after the original 431-435 plan shipped.
   not assumed. Test count: 6216 -> 6219 (net +3). Full suite verified
   green (unchanged, 6216) before writing a single new test. This closes
   the entire twenty-fifth survey in full.
+
+- **Phase 732 (current)**: twenty-sixth survey's own candidate #1 --
+  AKGEN's own confirmed `combat_slots_per_school` (1 Personal-Combat
+  cast attempt per Ability per encounter at skill level 1, 2 at level
+  2+) finally enforced, together with its tightly-coupled sibling rule
+  `same_combat_spell_may_repeat_in_encounter: false` (the exact same
+  Spell can never be attempted twice in one encounter, even with slots
+  still free for its own Ability) -- both flagged together in `turn/
+  encounter.py`'s own module docstring as "no per-turn/per-encounter
+  cast-count state exists anywhere in this project," a claim that was
+  itself half-stale (the per-turn Action-Cast half has been wired since
+  well before this session, `_consume_action_cast_slot()`) and is now
+  corrected. Three design questions resolved directly with the user:
+  both rules implemented together (not split); the cap applies to
+  guardian monsters' own canned Search combat plans too, not just
+  leaders; a wand-cast (`[3.11]`'s own automatic-success rule) bypasses
+  it entirely. New `turn/encounter.py combat_cast_slots()`/`try_
+  consume_combat_cast_slot()`, mirroring `action_cast_slots()`/`_
+  consume_action_cast_slot()`'s own exact check-then-consume shape but
+  scoped to a purely local, per-encounter pair of trackers (never
+  `GameState`) -- one pair per real caster identity, since a single
+  encounter can have up to two independent casters (leader vs. guardian
+  in Search; caster vs. target in Challenge/Pursue/Duel). Wired at both
+  real call sites of `resolve_personal_combat_spell_cast()`: `turn/
+  search_execution.py`'s nested `_resolve_cast_tactic()` (closure
+  access to `_resolve_search_encounter()`'s own new locals) and `turn/
+  challenge_execution.py`'s module-level `_resolve_personal_combat_
+  cast()` (two new keyword-only parameters, threaded from `resolve_
+  challenge_combat()`'s own new locals at both its real call sites) --
+  `turn/battle_orchestrator.py`'s own Duel reuse of that shared function
+  picks up the gate for free, no special-casing. A dedicated Explore-
+  agent audit confirmed zero existing tests construct a plan with the
+  same Ability (or Spell) cast more than once in a single encounter, so
+  this is provably a no-op for the entire pre-existing suite -- 14
+  direct `_resolve_personal_combat_cast()` unit-test call sites still
+  needed the two new required keyword arguments threaded through (a
+  mechanical fixture update, not a behavior change). Test count: 6219
+  -> 6236 (net +17). Full suite verified green (unchanged, 6219) before
+  writing a single new test.
 
 ## Setup
 
