@@ -1473,6 +1473,80 @@ def test_dispatch_hire_fails_when_hero_already_employed():
     assert state.leaders[32].kingdom_id == 2  # untouched
 
 
+# --- Phase 729: AdvancedAbility.SPY_DOUBLE_AGENT -------------------------
+
+
+def test_dispatch_hire_double_agent_appears_hired_by_a_foreign_king_without_changing_real_employer():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    spy = LeaderState(32, 2, "Double Agent", location, race=Race.HUMAN)
+    spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+    state.add_leader(spy)
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[3])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is True
+    assert state.leaders[32].kingdom_id == 2  # real employer never changes
+    assert state.leaders[32].double_agent_hired_by_kingdom_id == 1
+    assert state.kingdoms[1].treasury == 98  # the foreign king's own gold really is spent
+
+
+def test_dispatch_hire_double_agent_without_the_ability_still_refuses():
+    # Non-regression: an ordinary employed Hero (no SPY_DOUBLE_AGENT)
+    # is unaffected by the new bypass -- same as the existing "already
+    # in service" test above, just re-confirmed alongside the new
+    # ability-gated behavior.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(32, 2, "Rival's Hero", location))
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[3])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is False
+    assert result.reason == "hero already in service"
+    assert state.leaders[32].double_agent_hired_by_kingdom_id is None
+
+
+def test_dispatch_hire_double_agent_own_kingdom_reissuing_hire_still_refuses():
+    # A Double Agent's own real Kingdom re-issuing a Hire order against
+    # its own already-employed Spy is not a "foreign" hire -- falls
+    # through to the ordinary refusal, not the bypass.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    spy = LeaderState(32, 1, "Double Agent", location)
+    spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+    state.add_leader(spy)
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[3])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is False
+    assert result.reason == "hero already in service"
+    assert state.leaders[32].double_agent_hired_by_kingdom_id is None
+
+
+def test_dispatch_hire_double_agent_still_refused_on_insufficient_treasury():
+    # The Double Agent bypass only skips the "already in service" gate
+    # -- every other real check (here, treasury) still applies exactly
+    # as an ordinary hire would, matching "the hiring will appear to be
+    # successful" (a genuine success, not a freebie).
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {}, treasury=0)
+    spy = LeaderState(32, 2, "Double Agent", location, race=Race.HUMAN)
+    spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+    state.add_leader(spy)
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[3])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.hired is False
+    assert result.reason == "insufficient treasury"
+    assert state.leaders[32].kingdom_id == 2
+    assert state.leaders[32].double_agent_hired_by_kingdom_id is None
+
+
 def test_dispatch_hire_fails_on_insufficient_treasury():
     location = HexCoord(3, 9)
     # required_pay() defaults to 1 (no alignment/temper recorded on

@@ -3453,6 +3453,30 @@ def test_describe_turn_results_narrates_an_illegal_move_from_contested():
     assert lines == ["Arthur attempted an illegal move."]
 
 
+def test_describe_turn_results_narrates_a_double_agent_report_sentinel():
+    # Phase 729: AdvancedAbility.SPY_DOUBLE_AGENT's own end-of-turn
+    # intel grant -- action=None, matched by phase_label alone, renders
+    # identically to a real ActionCode.ASPY dispatch via the same
+    # describe_aspy() composer.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=None)
+    entries = [
+        PhaseDispatchResult(
+            leader_id=20, segment_index=-1, phase_label="double-agent-report", action=None, result=report, error=None
+        )
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 20, choice_indices=[0]))
+
+    expected = describe_aspy(
+        report, spy_name="Aldric", province_name="(0, 0)", owner_name=None,
+        adjacent_owner_names=[], rng=ScriptedRandom([0.1] * 20, choice_indices=[0]),
+    )
+    assert lines == expected
+
+
 def test_describe_turn_results_still_ignores_an_unrelated_error():
     # Non-regression: every other exception (including this same
     # function's own "no province data" ValueError) still narrates
@@ -8072,7 +8096,7 @@ def test_stranger_descriptor_dead_leader_shows_named_province():
     state.add_leader(leader)
     state.remove_leader(9)
 
-    assert _stranger_descriptor(state, state.dead_leaders[9]) == ": buried in Ashford"
+    assert _stranger_descriptor(state, state.dead_leaders[9], viewer_kingdom_id=99) == ": buried in Ashford"
 
 
 def test_stranger_descriptor_dead_leader_falls_back_to_province_code_when_unnamed():
@@ -8082,21 +8106,21 @@ def test_stranger_descriptor_dead_leader_falls_back_to_province_code_when_unname
     state.add_leader(leader)
     state.remove_leader(9)
 
-    assert _stranger_descriptor(state, state.dead_leaders[9]) == ": buried in 203"
+    assert _stranger_descriptor(state, state.dead_leaders[9], viewer_kingdom_id=99) == ": buried in 203"
 
 
 def test_stranger_descriptor_wandering_hero():
     state = GameState()
     leader = LeaderState(9, None, "Kwoth", HexCoord(1, 1))
 
-    assert _stranger_descriptor(state, leader) == ": a wandering Hero"
+    assert _stranger_descriptor(state, leader, viewer_kingdom_id=99) == ": a wandering Hero"
 
 
 def test_stranger_descriptor_a_king():
     state = GameState()
     leader = LeaderState(9, 2, "Foreign King", HexCoord(1, 1), is_king=True)
 
-    assert _stranger_descriptor(state, leader) == ": a King character"
+    assert _stranger_descriptor(state, leader, viewer_kingdom_id=99) == ": a King character"
 
 
 def test_stranger_descriptor_an_ordinary_hero_of_a_real_king():
@@ -8105,7 +8129,7 @@ def test_stranger_descriptor_an_ordinary_hero_of_a_real_king():
     state.add_leader(LeaderState(1, 2, "Roderick", HexCoord(1, 1), is_king=True))
     hero = LeaderState(9, 2, "Kwoth", HexCoord(1, 1))
 
-    assert _stranger_descriptor(state, hero) == ": Roderick's Hero"
+    assert _stranger_descriptor(state, hero, viewer_kingdom_id=99) == ": Roderick's Hero"
 
 
 def test_stranger_descriptor_truncates_at_26_characters():
@@ -8114,9 +8138,57 @@ def test_stranger_descriptor_truncates_at_26_characters():
     state.add_leader(LeaderState(1, 2, "A Very Long Royal Name Indeed", HexCoord(1, 1), is_king=True))
     hero = LeaderState(9, 2, "Kwoth", HexCoord(1, 1))
 
-    descriptor = _stranger_descriptor(state, hero)
+    descriptor = _stranger_descriptor(state, hero, viewer_kingdom_id=99)
     assert len(descriptor) == 26
     assert descriptor == ": A Very Long Royal Name I"
+
+
+# -- Phase 729: AdvancedAbility.SPY_DOUBLE_AGENT's own report masquerade --
+
+
+def test_stranger_descriptor_double_agent_masquerades_as_a_wandering_hero_to_a_foreign_viewer():
+    state = GameState()
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 2, "Roderick", HexCoord(1, 1), is_king=True))
+    spy = LeaderState(9, 2, "Kwoth", HexCoord(1, 1))
+    spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+
+    assert _stranger_descriptor(state, spy, viewer_kingdom_id=99) == ": a wandering Hero"
+
+
+def test_stranger_descriptor_double_agent_shows_truthfully_to_their_own_real_kingdom():
+    state = GameState()
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 2, "Roderick", HexCoord(1, 1), is_king=True))
+    spy = LeaderState(9, 2, "Kwoth", HexCoord(1, 1))
+    spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+
+    assert _stranger_descriptor(state, spy, viewer_kingdom_id=2) == ": Roderick's Hero"
+
+
+def test_render_stranger_row_shows_hire_hint_for_a_masquerading_double_agent():
+    state = GameState()
+    spy = LeaderState(9, 2, "Kwoth", HexCoord(5, 5), race=Race.HUMAN)
+    spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+
+    lines = _render_stranger_row(
+        state, spy, show_location=True, priest=None, tell_align_distance=2, viewer_kingdom_id=99, king=None
+    )
+
+    # king=None -> required_pay() permissively returns 1.
+    assert lines[1] == "  (who, we hear, desires to enter thy Majesty's service for 1 gold per annum)"
+
+
+def test_render_stranger_row_omits_hire_hint_for_a_double_agent_viewed_by_their_own_kingdom():
+    state = GameState()
+    spy = LeaderState(9, 2, "Kwoth", HexCoord(5, 5), race=Race.HUMAN)
+    spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+
+    lines = _render_stranger_row(
+        state, spy, show_location=True, priest=None, tell_align_distance=2, viewer_kingdom_id=2, king=None
+    )
+
+    assert len(lines) == 1
 
 
 def test_tell_align_basic_arithmetic_and_the_king_vs_hero_shift():
@@ -8281,6 +8353,27 @@ def test_describe_characters_report_impulse2_known_stranger_appears_with_ability
     assert not any('Rod senses' in line for line in lines)  # no Priest resolved
 
 
+def test_describe_characters_report_impulse2_masquerading_double_agent_shows_as_a_wandering_hero():
+    # Phase 729: end-to-end proof that describe_characters_report()
+    # threads viewer_kingdom_id=kingdom_id through to the masquerade --
+    # same fixture shape as the "known stranger" test above, but the
+    # stranger holds SPY_DOUBLE_AGENT and should NOT reveal Roderick.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(5, 5)))
+    state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, 2, "Roderick", HexCoord(5, 5), is_king=True))
+    spy = LeaderState(9, 2, "Kwoth", HexCoord(5, 5), skills=_skills_with(ARCHERY=2))
+    spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+    state.add_leader(spy)
+
+    lines = describe_characters_report(state, 1)
+
+    stranger_row = next(line for line in lines if line.startswith("Kwoth"))
+    assert ": a wandering Hero" in stranger_row
+    assert "Roderick" not in stranger_row
+
+
 def test_describe_characters_report_impulse2_secondary_reveal_fires_within_two_hexes():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
@@ -8372,7 +8465,9 @@ def test_render_stranger_row_shows_hire_hint_for_cheap_kingdomless_hero():
     state = GameState()
     hero = LeaderState(9, None, "Kwoth", HexCoord(5, 5), race=Race.HUMAN)
 
-    lines = _render_stranger_row(state, hero, show_location=True, priest=None, tell_align_distance=2, king=None)
+    lines = _render_stranger_row(
+        state, hero, show_location=True, priest=None, tell_align_distance=2, viewer_kingdom_id=99, king=None
+    )
 
     # king=None -> required_pay() permissively returns 1.
     assert lines[1] == "  (who, we hear, desires to enter thy Majesty's service for 1 gold per annum)"
@@ -8385,7 +8480,9 @@ def test_render_stranger_row_omits_hire_hint_when_cost_exceeds_three():
     king = LeaderState(1, 1, "Roderick", HexCoord(0, 0), is_king=True, race=Race.HUMAN)
     king.alignment = Alignment.UNDEAD  # max alignment distance -> pay == 5
 
-    lines = _render_stranger_row(state, hero, show_location=True, priest=None, tell_align_distance=2, king=king)
+    lines = _render_stranger_row(
+        state, hero, show_location=True, priest=None, tell_align_distance=2, viewer_kingdom_id=99, king=king
+    )
 
     assert len(lines) == 1
 
@@ -8396,7 +8493,9 @@ def test_render_stranger_row_omits_hire_hint_for_a_dead_kingdomless_hero():
     state.remove_leader(9)
     dead_hero = state.dead_leaders[9]
 
-    lines = _render_stranger_row(state, dead_hero, show_location=True, priest=None, tell_align_distance=2, king=None)
+    lines = _render_stranger_row(
+        state, dead_hero, show_location=True, priest=None, tell_align_distance=2, viewer_kingdom_id=99, king=None
+    )
 
     assert len(lines) == 1
     assert "Majesty's service" not in lines[0]
@@ -8406,7 +8505,9 @@ def test_render_stranger_row_omits_hire_hint_for_a_leader_with_a_kingdom():
     state = GameState()
     hero = LeaderState(9, 2, "Kwoth", HexCoord(5, 5), race=Race.HUMAN)
 
-    lines = _render_stranger_row(state, hero, show_location=True, priest=None, tell_align_distance=2, king=None)
+    lines = _render_stranger_row(
+        state, hero, show_location=True, priest=None, tell_align_distance=2, viewer_kingdom_id=99, king=None
+    )
 
     assert len(lines) == 1
 
@@ -8418,7 +8519,9 @@ def test_render_stranger_row_never_shows_hire_hint_for_impulse_3():
     # not merely absent because no real impulse-3 candidate is ever kingdomless.
     hero = LeaderState(9, None, "Kwoth", HexCoord(5, 5))
 
-    lines = _render_stranger_row(state, hero, show_location=False, priest=None, tell_align_distance=None, king=None)
+    lines = _render_stranger_row(
+        state, hero, show_location=False, priest=None, tell_align_distance=None, viewer_kingdom_id=99, king=None
+    )
 
     assert len(lines) == 1
 

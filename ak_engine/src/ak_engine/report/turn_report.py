@@ -6892,6 +6892,34 @@ def describe_turn_results(
                 )
             )
             continue
+        elif entry.phase_label == "double-agent-report" and isinstance(entry.result, SpyReport):
+            # Phase 729: AdvancedAbility.SPY_DOUBLE_AGENT's own end-of-
+            # turn intel grant (turn/turn_processor.py run_turn()'s own
+            # sentinel) -- `action=None`, so the real ActionCode.ASPY
+            # branch above never matches this; rendered identically via
+            # the same describe_aspy() composer, matching a real ASpy
+            # report's own shape exactly (no separate template exists
+            # or is described for this specific grant).
+            province_name = _province_label(state, entry.result.province)
+            owner_name = (
+                _kingdom_display_name(state, entry.result.owner_kingdom_id)
+                if entry.result.owner_kingdom_id is not None
+                else None
+            )
+            adjacent_owner_names = [
+                _kingdom_display_name(state, kid) for kid in entry.result.adjacent_owners.values() if kid is not None
+            ]
+            lines.extend(
+                describe_aspy(
+                    entry.result,
+                    spy_name=caster_name,
+                    province_name=province_name,
+                    owner_name=owner_name,
+                    adjacent_owner_names=adjacent_owner_names,
+                    rng=rng,
+                )
+            )
+            continue
         elif entry.action is ActionCode.EXPLORE and isinstance(entry.result, ExploreResult):
             for feature in entry.result.discovered_features:
                 province_name = _province_label(state, feature.coord)
@@ -9894,7 +9922,7 @@ def _king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | None:
     return next((leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king), None)
 
 
-def _stranger_descriptor(state: GameState, target: LeaderState) -> str:
+def _stranger_descriptor(state: GameState, target: LeaderState, *, viewer_kingdom_id: int) -> str:
     """The "as" descriptor string (`REPORTS.PAS Desc_Stranger`, Phase
     638), capped at 26 characters like the real `Delete(as,27,99)`:
     a dead leader shows "buried in {province}"; a kingdomless leader
@@ -9903,12 +9931,40 @@ def _stranger_descriptor(state: GameState, target: LeaderState) -> str:
     English branch is modeled (the `Company = Roland` French variant
     renders identical text either way -- every other composer in this
     project already only renders the English branch).
+
+    **Phase 729 -- `AdvancedAbility.SPY_DOUBLE_AGENT`**: "The Spy can
+    now give the impression of being a wandering hero and will show up
+    as such in any foreign king's turn report" -- an employed Spy
+    holding this ability renders the same `": a wandering Hero"` text a
+    genuinely kingdomless leader would, but only to a *foreign*
+    `viewer_kingdom_id` (their own real Kingdom's own report is
+    unaffected -- they always see the truth, matching how this
+    function is only ever reached for a foreign viewer's own stranger
+    table in the first place via `leader_location_known_to_kingdom()`'s
+    own `target.kingdom_id == viewer_kingdom_id` exclusion). "Naturally,
+    kings may not use this ability" -- the `is_king` branch below is
+    unaffected, since `target.is_king` and holding this ability are
+    mutually exclusive by the ability's own text, not by a check here.
+    One real, documented residual gap, deliberately out of scope this
+    phase: Enhanced Clairvoyance's own `Was_Clairved` full-table bypass
+    (`describe_characters_report()`'s own impulse-1 pass) reveals a
+    watched leader's real fields directly, without going through this
+    function at all -- a foreign Kingdom that specifically Clairvoys a
+    Double Agent could still learn their real Kingdom that way; this
+    ability's own text doesn't claim to defeat every other detection
+    channel, only the ordinary stranger-report/Hire path modeled here.
     """
 
     if target.leader_id in state.dead_leaders:
         province = state.provinces.get(target.location)
         place = province.name if province is not None and province.name else province_code(target.location)
         descriptor = f": buried in {place}"
+    elif (
+        target.kingdom_id is not None
+        and target.kingdom_id != viewer_kingdom_id
+        and AdvancedAbility.SPY_DOUBLE_AGENT in target.advanced_abilities
+    ):
+        descriptor = ": a wandering Hero"
     elif target.kingdom_id is None:
         descriptor = ": a wandering Hero"
     elif target.is_king:
@@ -10048,6 +10104,7 @@ def _render_stranger_row(
     show_location: bool,
     priest: LeaderState | None,
     tell_align_distance: int | None,
+    viewer_kingdom_id: int,
     king: LeaderState | None = None,
 ) -> list[str]:
     """``Desc_Stranger`` (`REPORTS.PAS` lines 690-754, Phase 639): the
@@ -10098,15 +10155,30 @@ def _render_stranger_row(
     kingdomless Hero reaching this branch, so the two functions agree
     here) -- the same function the impulse-1 table's own "Pay" column
     already calls, not a fresh formula.
+
+    **Phase 729 -- `AdvancedAbility.SPY_DOUBLE_AGENT`**: the hire-cost
+    hint's own gate widens to also fire for an employed Spy holding
+    this ability, viewed by a genuinely foreign `viewer_kingdom_id` --
+    "the hiring will appear to be successful" needs the foreign King to
+    be able to *see* the hint in order to attempt the hire at all,
+    matching `_stranger_descriptor()`'s own identical masquerade
+    condition right above.
     """
 
     name = _characters_report_display_name(state, leader)
     loc = province_code(leader.location) if show_location else ""
-    descriptor = f"{_stranger_descriptor(state, leader):<26}"
+    descriptor = f"{_stranger_descriptor(state, leader, viewer_kingdom_id=viewer_kingdom_id):<26}"
+    is_masquerading_double_agent = (
+        leader.kingdom_id is not None
+        and leader.kingdom_id != viewer_kingdom_id
+        and AdvancedAbility.SPY_DOUBLE_AGENT in leader.advanced_abilities
+    )
     if show_location:
         ability_desc = _leader_ability_description(state, leader)[1:-1]
         lines = [f"{name:<14}{loc:>4}{descriptor}{ability_desc}"]
-        if leader.kingdom_id is None and leader.leader_id not in state.dead_leaders:
+        if (
+            leader.kingdom_id is None or is_masquerading_double_agent
+        ) and leader.leader_id not in state.dead_leaders:
             hire_cost = leader_pay(state, leader, king)
             if hire_cost <= 3:
                 lines.append(
@@ -10399,10 +10471,18 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
 
     for leader in impulse2:
         lines.extend(
-            _render_stranger_row(state, leader, show_location=True, priest=priest, tell_align_distance=2, king=king)
+            _render_stranger_row(
+                state, leader, show_location=True, priest=priest, tell_align_distance=2,
+                viewer_kingdom_id=kingdom_id, king=king,
+            )
         )
     for leader in impulse3:
-        lines.extend(_render_stranger_row(state, leader, show_location=False, priest=priest, tell_align_distance=None))
+        lines.extend(
+            _render_stranger_row(
+                state, leader, show_location=False, priest=priest, tell_align_distance=None,
+                viewer_kingdom_id=kingdom_id,
+            )
+        )
 
     return lines
 

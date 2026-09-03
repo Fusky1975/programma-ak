@@ -1131,7 +1131,18 @@ def _dispatch_hire(
         # as a side effect -- that only works if the King happens to
         # have a kingdom_id set, which isn't guaranteed by is_king alone.
         return HireExecutionResult(request, hired=False, reason="cannot hire a King")
-    if hero.kingdom_id is not None:
+    # Phase 729: AdvancedAbility.SPY_DOUBLE_AGENT -- "If a foreign king
+    # tries to hire the Spy, the hiring will appear to be successful,
+    # but the spy will continue to execute the orders you give him."
+    # Only a genuinely foreign Kingdom's own hire attempt qualifies --
+    # the Spy's own real employer re-issuing a Hire order against their
+    # own already-employed Spy still hits the ordinary refusal below.
+    is_double_agent_hire = (
+        AdvancedAbility.SPY_DOUBLE_AGENT in hero.advanced_abilities
+        and hero.kingdom_id is not None
+        and hero.kingdom_id != kingdom_id
+    )
+    if hero.kingdom_id is not None and not is_double_agent_hire:
         return HireExecutionResult(request, hired=False, reason="hero already in service")
     if hero.location != acting_leader.location:
         # rulebook [3.5]: "Any character can attempt to Hire a Hero in the
@@ -1164,7 +1175,15 @@ def _dispatch_hire(
         return HireExecutionResult(request, hired=False, reason="insufficient treasury", minimum_gold=pay)
 
     kingdom.treasury -= pay
-    hero.kingdom_id = kingdom_id
+    if is_double_agent_hire:
+        # The whole point: hero.kingdom_id never changes, so this
+        # Kingdom's own real orders (submitted separately, under the
+        # Spy's own true kingdom_id) keep driving this leader exactly as
+        # before -- see turn/turn_processor.py run_turn()'s own Phase
+        # 729 end-of-turn hook for the resulting intel grant.
+        hero.double_agent_hired_by_kingdom_id = kingdom_id
+    else:
+        hero.kingdom_id = kingdom_id
 
     return HireExecutionResult(request, hired=True, minimum_gold=pay, rare_alignment_exception=rare_exception)
 

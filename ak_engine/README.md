@@ -30130,7 +30130,7 @@ follow-up request after the original 431-435 plan shipped.
   6191) before touching a single test. This closes the entire
   twenty-third survey in full.
 
-- **Phase 728 (current)**: comment-only, no behavior change. A
+- **Phase 728**: comment-only, no behavior change. A
   twenty-fourth fresh codebase survey (2026-09-03, "come proseguiamo?")
   found `turn/encounter.py`'s own Phase 516/517 addenda still calling
   `AdvancedAbility.MELEE_DUELLISTS_MEDAL` "still-unwired" -- stale since
@@ -30143,6 +30143,45 @@ follow-up request after the original 431-435 plan shipped.
   [[project_twentyfourth_survey_2026_09_03]] for the survey record --
   candidate #1 (`AdvancedAbility.SPY_DOUBLE_AGENT`, completely unwired,
   large scope) remains open, to be planned via EnterPlanMode next.
+
+- **Phase 729 (current)**: `AdvancedAbility.SPY_DOUBLE_AGENT` -- a Spy
+  appears to a foreign King as an unemployed wandering Hero, a foreign
+  hire on them apparently succeeds (real gold spent, real employer
+  unchanged), and their true Kingdom gains a free ASpy-equivalent
+  intelligence report once the province they end the turn in belongs
+  to the kingdom that "hired" them. Three design questions resolved
+  directly with the user first (reuse existing detection, real gold is
+  paid, reuse `SpyReport`), then three parallel Explore-agent
+  investigations mapped exactly which existing mechanisms to reuse:
+  `turn/leader_visibility.py leader_location_known_to_kingdom()`
+  (Phase 636's own `Known_Loc` port, already the CHARACTERS report's
+  own stranger-visibility gate) for "if the spy is detected at all";
+  `report/turn_report.py _stranger_descriptor()`/`_render_stranger_row()`
+  (the only 2 real disclosure sites, both now take a `viewer_kingdom_id`
+  and mask an employed Double Agent to any foreign viewer) for the
+  report masquerade; and the `segment_index=-1` sentinel pattern
+  (`gate-angel-visit`/`plague-spread`, `turn/turn_processor.py`) for
+  the intel grant, timed to the same once-per-turn "everything is
+  resolved" checkpoint Illusory Terrain's dissolve roll already uses --
+  a documented simplification, since every leader's own phases are
+  already finished by then, making "the Spy's last action" and "the
+  end of the turn" the same real moment for the province he occupies.
+  New `LeaderState.double_agent_hired_by_kingdom_id`; `turn/plan_
+  dispatch.py _dispatch_hire()`'s own "already in service" refusal
+  gains a bypass for a genuinely foreign hire against a Double Agent
+  (every other real check -- co-location, pay, alignment gap -- still
+  applies unchanged). Mechanically needs no extra protection against
+  the foreign king actually controlling the Spy: `run_turn()` dispatches
+  from an explicit, pre-built `TurnLeader` list built from the real
+  Kingdom's own submitted orders, never re-derived from `kingdom_id` at
+  run time, so simply never writing `hero.kingdom_id = kingdom_id` is
+  sufficient by construction. One real, documented residual gap, left
+  out of scope: Enhanced Clairvoyance's own `Was_Clairved` full-table
+  bypass could still reveal a Double Agent's real Kingdom to a foreign
+  Clairvoyance caster, a separate detection channel this ability's own
+  text doesn't claim to defeat. Test count: 6193 -> 6206 (net +13).
+  Full suite verified green (unchanged, 6193) before writing a single
+  new test. This closes the entire twenty-fourth survey in full.
 
 ## Setup
 

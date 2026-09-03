@@ -268,6 +268,8 @@ from ak_engine.turn.battle_orchestrator import (
 from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.blackmail import advance_blackmail_claims
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
+from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
+from ak_engine.turn.aspy_execution import execute_aspy
 from ak_engine.turn.cast_execution import maybe_dissolve_illusory_terrain
 from ak_engine.turn.challenge_execution import execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
@@ -666,6 +668,49 @@ def run_turn(
     # per-feature.
     for province in state.provinces.values():
         maybe_dissolve_illusory_terrain(province, rng)
+    # Phase 729: AdvancedAbility.SPY_DOUBLE_AGENT -- "at the end of the
+    # Spy's last action, you will gain spy reports on the province he
+    # occupies and the surrounding provinces, if they belong to the
+    # hiring king." Every leader's own phases are already fully resolved
+    # by this point in run_turn(), so the Spy's "last action" and "the
+    # end of the turn" are the same real moment for the province the
+    # Spy occupies -- reading it here, at this already-established
+    # once-per-turn checkpoint, needs no new per-leader completion
+    # tracking. `double_agent_hired_by_kingdom_id` is set by `turn/
+    # plan_dispatch.py _dispatch_hire()`'s own Double Agent bypass, read
+    # and cleared here (fully resolved within this same call, no
+    # `_replenish_turn_scoped_state()` involvement needed). "If they
+    # belong to the hiring king" is read as one precondition on the
+    # whole grant (the Spy's own current province must be owned by the
+    # hiring Kingdom), not a per-province filter inside the returned
+    # SpyReport -- no source describes stripping out other provinces'
+    # own real neighbor data. Deliberately doesn't thread the Spy's own
+    # other Detect-Align/Psychic-Mage/Druidic-Animal-Spies/Spy-Expanded-
+    # Spying flags into this automatic grant (defaults to False, same
+    # as execute_aspy()'s own defaults) -- a rare ability combination
+    # the source text doesn't describe interacting with this one.
+    for spy in state.leaders.values():
+        hiring_kingdom_id = spy.double_agent_hired_by_kingdom_id
+        if hiring_kingdom_id is None:
+            continue
+        spy.double_agent_hired_by_kingdom_id = None
+        spy_province = state.provinces.get(spy.location)
+        if spy_province is None or spy_province.owner_kingdom_id != hiring_kingdom_id:
+            continue
+        double_agent_report = execute_aspy(
+            state, spy.leader_id, SpyProvinceRequest(target_province=0, unconfirmed_extra0=0), rng=rng
+        )
+        if double_agent_report is not None:
+            results.append(
+                PhaseDispatchResult(
+                    leader_id=spy.leader_id,
+                    segment_index=-1,
+                    phase_label="double-agent-report",
+                    action=None,
+                    result=double_agent_report,
+                    error=None,
+                )
+            )
     apply_turn_revenue(state, rng)
     apply_turn_maintenance(state, rng)
     # Phase 468: King of Cowards' own real per-turn temperament rise

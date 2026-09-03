@@ -23,6 +23,7 @@ from ak_engine.turn.move_execution import MoveExecutionResult
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.movement import neighbors as _neighbors
+from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.plan_dispatch import NoOpResult
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.turn_processor import (
@@ -213,6 +214,63 @@ def test_run_turn_leaves_illusory_terrain_untouched_on_a_scripted_miss():
 
     assert rng._randoms == []
     assert state.provinces[coord].illusory_terrain is Terrain.SEA
+
+
+# -- Phase 729: AdvancedAbility.SPY_DOUBLE_AGENT's own end-of-turn intel grant
+
+
+def test_run_turn_grants_a_double_agent_report_when_apparently_hired_and_in_the_hiring_kingdoms_own_territory():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    coord = HexCoord(5, 5)
+    state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    spy = LeaderState(20, 1, "Double Agent", coord, race=Race.HUMAN)
+    spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+    spy.double_agent_hired_by_kingdom_id = 2
+    state.add_leader(spy)
+    leader = _empty_plan_leader(10, "A")
+
+    results = run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    matching = [r for r in results if r.phase_label == "double-agent-report"]
+    assert len(matching) == 1
+    assert matching[0].leader_id == 20
+    assert isinstance(matching[0].result, SpyReport)
+    assert state.leaders[20].double_agent_hired_by_kingdom_id is None
+
+
+def test_run_turn_grants_no_double_agent_report_when_the_province_is_not_the_hiring_kingdoms_own():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    coord = HexCoord(5, 5)
+    # Owned by a third Kingdom, not the hiring Kingdom (2).
+    state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+    spy = LeaderState(20, 1, "Double Agent", coord, race=Race.HUMAN)
+    spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+    spy.double_agent_hired_by_kingdom_id = 2
+    state.add_leader(spy)
+    leader = _empty_plan_leader(10, "A")
+
+    results = run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    assert not [r for r in results if r.phase_label == "double-agent-report"]
+    assert state.leaders[20].double_agent_hired_by_kingdom_id is None
+
+
+def test_run_turn_no_hire_this_turn_grants_no_report_and_draws_no_extra_rng():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    coord = HexCoord(5, 5)
+    state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    spy = LeaderState(20, 1, "Double Agent", coord, race=Race.HUMAN)
+    spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+    state.add_leader(spy)  # double_agent_hired_by_kingdom_id stays None -- not hired this turn
+    leader = _empty_plan_leader(10, "A")
+
+    rng = ScriptedRandom([])
+    results = run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=rng)
+
+    assert not [r for r in results if r.phase_label == "double-agent-report"]
 
 
 def test_run_turn_empty_sp_block_leaves_special_encounter_plan_empty():

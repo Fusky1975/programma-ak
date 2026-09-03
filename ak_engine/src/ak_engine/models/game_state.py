@@ -736,6 +736,15 @@ class LeaderState:
     kingdom_id: int | None  # None = independent Hero, not in any kingdom's service
     name: str
     location: HexCoord
+    # Phase 729: AdvancedAbility.SPY_DOUBLE_AGENT -- the foreign
+    # Kingdom's own id, when this leader's own real kingdom_id (above,
+    # left unchanged) was "apparently" hired by a different Kingdom this
+    # turn (`turn/plan_dispatch.py _dispatch_hire()`'s own Double Agent
+    # bypass). Read and cleared the same turn by `turn/turn_processor.py
+    # run_turn()`'s own end-of-turn intel-grant hook -- never persists
+    # past the turn it's set on, so it needs no `_replenish_turn_scoped_
+    # state()` reset. `None` = not apparently hired by anyone this turn.
+    double_agent_hired_by_kingdom_id: int | None = None
     # None = no ability data recorded for this leader -- see module docstring.
     skills: SkillTable | None = None
     # King/Hero distinction (Phase 40) -- see module docstring.
