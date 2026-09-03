@@ -57,19 +57,23 @@ own caller never reads. See ``resolve_monster_raid_reply()`` below for
 the real algorithm -- a self-contained, deterministic-per-(monster,
 feature) reply selection, fully independent of the turn's own live
 ``rng``. Two real, separate follow-ups this same investigation
-surfaced are deliberately not touched here (see
-``project_genuinely_blocked_backlog_2026_08_29`` memory): a walk-
-termination discrepancy in ``turn/druidic_monster_aid.py monster_
-effective_alignment()``, and further algorithm divergences in
-``select_monster_talk_reply()`` itself -- **Phase 723 correction**:
-that function is not "still-dormant" (wired to production since Phase
-528, ``turn/search_execution.py``'s own ``_resolve_talk()``); the real,
-still-open gap is narrower -- its own pre-filter-then-roll shape vs.
-the real propose-then-check-in-order loop, its own static ``base_view``
-vs. the real per-feature ``Agent_Align``-walked view, and its own live,
-non-deterministic ``rng`` vs. the real per-(monster, feature) reseeded
-stream all remain unfixed divergences in *how* it's wired, not in
-*whether* it's called at all.
+surfaced (see ``project_genuinely_blocked_backlog_2026_08_29``
+memory): a walk-termination discrepancy in ``turn/druidic_monster_
+aid.py monster_effective_alignment()`` -- **fixed in Phase 726**
+(the walk was permanently breaking on the first even bit instead of
+skipping just that one step and continuing through every remaining
+iteration; both this module's own ``resolve_monster_raid_reply()``
+above and ``turn/druidic_monster_aid.py``'s own Battle Assistance
+consumer were silently skewed by it) -- and further algorithm
+divergences in ``select_monster_talk_reply()`` itself, still open --
+**Phase 723 correction**: that function is not "still-dormant" (wired
+to production since Phase 528, ``turn/search_execution.py``'s own
+``_resolve_talk()``); the real, still-open gap is narrower -- its own
+pre-filter-then-roll shape vs. the real propose-then-check-in-order
+loop, its own static ``base_view`` vs. the real per-feature ``Agent_
+Align``-walked view, and its own live, non-deterministic ``rng`` vs.
+the real per-(monster, feature) reseeded stream all remain unfixed
+divergences in *how* it's wired, not in *whether* it's called at all.
 
 Then the Thunderbird check: 40% chance, blocked ONLY IF the
 province's owning King currently holds ``Office.DIVINE_KING`` (Divine

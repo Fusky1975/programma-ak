@@ -30032,7 +30032,7 @@ follow-up request after the original 431-435 plan shipped.
   6183 (net +13). Full suite verified green (unchanged, 6170) before
   writing a single new test; every new test passed on the first run.
 
-- **Phase 725 (current)**: the province protective-amulet gate is a
+- **Phase 725**: the province protective-amulet gate is a
   50% coin-flip-then-ownership-check, not arithmetic chance-halving --
   and had a real, missing own-kingdom exemption. `SCAR.md` sections 5.3
   and 15.5 (its own full disassembly of `AK.EXE raw 0xEBAA-0xEC85`,
@@ -30063,6 +30063,36 @@ follow-up request after the original 431-435 plan shipped.
   a coin-hit block under the new mechanism, confirmed empirically, not
   assumed, by running before touching them). This closes the entire
   twenty-second survey in full.
+
+- **Phase 726 (current)**: `Agent_Align`'s walk-termination bug --
+  `turn/druidic_monster_aid.py monster_effective_alignment()` was
+  permanently breaking out of its own alignment-walk loop the first
+  time its internal bit pattern `q` went even, instead of skipping just
+  that one step and continuing to shift through every remaining
+  iteration. `Desktop/NOARMY.md` lines 942-955's own disassembly-
+  verified reference (`agent_align()`) confirms the real routine always
+  runs its full `view_variation` iterations, applying the ordinal step
+  only when the *current* low bit is 1 but *always* shifting -- never
+  an early exit. This function is shared by two already-shipped
+  mechanics silently skewed by the bug: Druidic Monster Battle
+  Assistance (Phase 452/453) and Monster Raid reply resolution
+  (`resolve_monster_raid_reply()`, Phase 679) -- neither's own existing
+  tests happened to exercise a case where an even bit was followed by
+  more remaining iterations, so the full suite stayed green (unchanged,
+  6190) before a single new test was written, and every one of Phase
+  679's own 5 real NOARMY.md oracle tests still passes unchanged after
+  the fix (further confirming the corrected walk now genuinely matches
+  the real disassembly, not just a plausible guess). New regression
+  test proves the actual divergence directly: `feature_id=0,
+  monster_id=2` (`q=258=0b100000010`) walks NEUTRAL -> `Alignment.
+  DRUID` under the real algorithm across 2 iterations (skip, then
+  apply), where the old bug would have applied zero steps and wrongly
+  stayed at NEUTRAL. Test count: 6190 -> 6191 (net +1). This closes
+  candidate #1 of the twenty-third survey; candidate #2 (`select_
+  monster_talk_reply()`'s own further algorithm divergences from
+  `resolve_monster_raid_reply()`, plus a stale `has_purchasable_
+  treasure` hardcoding) remains open, pending a user decision on
+  removing a live-`rng` draw from the Talk dispatch path.
 
 ## Setup
 

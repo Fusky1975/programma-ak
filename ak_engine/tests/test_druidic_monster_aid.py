@@ -31,10 +31,22 @@ def test_monster_effective_alignment_no_walk_when_view_variation_zero():
     assert monster_effective_alignment(0, 0, Alignment.NEUTRAL, 0) is Alignment.NEUTRAL
 
 
-def test_monster_effective_alignment_stops_early_on_even_q():
-    # feature_id=0, monster_id=0 -> q=256, already even -> the loop
-    # breaks on its very first check regardless of view_variation.
+def test_monster_effective_alignment_skips_the_step_on_an_even_bit_but_keeps_shifting():
+    # feature_id=0, monster_id=0 -> q=256=0b100000000 -- its own low 3
+    # bits are all 0, so every one of 3 iterations skips the ordinal
+    # step (no early exit, still shifts each time) -- stays NEUTRAL.
     assert monster_effective_alignment(0, 0, Alignment.NEUTRAL, 3) is Alignment.NEUTRAL
+
+
+def test_monster_effective_alignment_phase_726_fix_an_even_bit_no_longer_ends_the_whole_walk():
+    # Phase 726 regression case: feature_id=0, monster_id=2 -> q=258=
+    # 0b100000010 -- direction -1 (bit 3 unset). Iteration 1: low bit 0
+    # (even) -> skip the step, but still shift (q -> 129). Iteration 2:
+    # low bit 1 (odd) -> apply one step. Real result: NEUTRAL(3) -> 2 =
+    # Alignment.DRUID. The pre-Phase-726 bug would have permanently
+    # broken out of the loop on iteration 1's even bit, applying zero
+    # steps and wrongly staying at NEUTRAL.
+    assert monster_effective_alignment(0, 2, Alignment.NEUTRAL, 2) is Alignment.DRUID
 
 
 def test_monster_effective_alignment_walks_multiple_steps_direction_positive():

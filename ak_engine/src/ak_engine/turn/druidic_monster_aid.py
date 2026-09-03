@@ -13,13 +13,19 @@ necessarily how it perceives *this* specific battle -- the source's own
 feature/monster-specific number of steps away from `base_view`, seeded by
 `q = 256 + feature_id + monster_id` (`monster_id` being the guardian
 species' own `Monster.value`). `direction` is fixed by `q`'s own bit 3
-(`q & 8`); the walk runs up to `view_variation` steps
-(`MonsterRuntimeProfile.view_variation`), stopping early the first time
-`q` goes even, and clamped to ordinals 0-8 (`Alignment.DIVINE` through
-`Alignment.MECHANICAL`) -- `Alignment.SPECIAL` (ordinal 9, confirmed
-never a selectable Kingdom Alignment anywhere in this project, e.g.
-`turn/emperor_election.py _ORDINARY_ALIGNMENTS`'s own exclusion) is
-never a reachable walk endpoint here either.
+(`q & 8`); the walk runs exactly `view_variation` iterations
+(`MonsterRuntimeProfile.view_variation`), shifting `q` right by one bit
+every iteration regardless, but only actually stepping the ordinal when
+the *current* low bit of `q` is 1 -- **not** an early-exit the first
+time `q` goes even (a real bug this project shipped from Phase 452
+through Phase 725, fixed in **Phase 726**: `Desktop/NOARMY.md` lines
+942-955's own disassembly-verified reference walks all `view_variation`
+iterations unconditionally, skipping only the ordinal step -- never the
+shift -- on an even bit). Clamped to ordinals 0-8 (`Alignment.DIVINE`
+through `Alignment.MECHANICAL`) -- `Alignment.SPECIAL` (ordinal 9,
+confirmed never a selectable Kingdom Alignment anywhere in this
+project, e.g. `turn/emperor_election.py _ORDINARY_ALIGNMENTS`'s own
+exclusion) is never a reachable walk endpoint here either.
 
 **Join probability**: `d_D` is the effective alignment's own ordinal
 distance from `Alignment.DRUID` (ordinal 2, the Druidic side doing the
@@ -93,9 +99,8 @@ def monster_effective_alignment(
     ordinal = ALIGNMENT_ORDINAL[base_view]
 
     for _ in range(view_variation):
-        if q % 2 == 0:
-            break
-        ordinal = max(0, min(_WALK_MAX_ORDINAL, ordinal + direction))
+        if q & 1:
+            ordinal = max(0, min(_WALK_MAX_ORDINAL, ordinal + direction))
         q >>= 1
 
     return ALIGNMENT_BY_ORDINAL[ordinal]
