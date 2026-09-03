@@ -3575,16 +3575,17 @@ def test_execute_cast_failed_cast_credits_no_school_title_merit():
 
 
 # ---------------------------------------------------------------------------
-# Province spell-chance halving (Phase 533) -- AKGEN_reverse_engineering_
-# report (4).md SS8: each of the 5 protection amulets also halves the
-# cast-success chance of any matching-college spell targeted at a province
-# the amulet holder's own Kingdom owns. All 10 province-targeted, ability-
-# mapped spells get one test each: caster skill level 4 (75% base chance),
-# a rival Kingdom owning the target province and holding the matching
-# amulet halves it to 37.5%; a single scripted 0.5 roll is > 37.5% (so the
-# halved chance always fails here) and < 75% (so an unhalved cast at the
-# same roll would have succeeded, per each spell's own pre-existing test
-# above) -- the failure alone proves the multiplier reached the roll.
+# Province protective-amulet gate (Phase 533, real mechanism corrected
+# Phase 725) -- SCAR.md 5.3/15.5: each of the 5 protection amulets grants
+# a coin-flip-then-ownership-check gate, not an arithmetic chance-halving,
+# to a foreign province the amulet holder's own Kingdom owns. All 10
+# province-targeted, ability-mapped spells get one test each: a rival
+# Kingdom owning the target province and holding the matching amulet, a
+# single scripted 0.5 roll (`int(0.5*2) == 1`, a real coin hit) blocks the
+# cast outright before any success roll -- see
+# resolve_province_protection_block()'s own dedicated test section in
+# test_discovery_effects.py for the coin-miss/own-kingdom/RNG-ordering
+# cases this shared file-level block doesn't repeat per spell.
 # ---------------------------------------------------------------------------
 
 
@@ -3604,7 +3605,7 @@ def test_part_sea_success_chance_halved_by_provinces_owning_kingdoms_anti_white_
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
 
     assert result.applied is False
-    assert result.reason == "spell failed"
+    assert result.reason == "province is protected (anti-magic amulet)"
 
 
 def test_flood_success_chance_halved_by_provinces_owning_kingdoms_anti_elemental_amulet():
@@ -3615,7 +3616,7 @@ def test_flood_success_chance_halved_by_provinces_owning_kingdoms_anti_elemental
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
 
     assert result.applied is False
-    assert result.reason == "spell failed"
+    assert result.reason == "province is protected (anti-magic amulet)"
 
 
 def test_tornado_success_chance_halved_by_provinces_owning_kingdoms_anti_elemental_amulet():
@@ -3626,7 +3627,7 @@ def test_tornado_success_chance_halved_by_provinces_owning_kingdoms_anti_element
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
 
     assert result.applied is False
-    assert result.reason == "spell failed"
+    assert result.reason == "province is protected (anti-magic amulet)"
 
 
 def test_earthquake_success_chance_halved_by_provinces_owning_kingdoms_anti_elemental_amulet():
@@ -3637,7 +3638,7 @@ def test_earthquake_success_chance_halved_by_provinces_owning_kingdoms_anti_elem
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
 
     assert result.applied is False
-    assert result.reason == "spell failed"
+    assert result.reason == "province is protected (anti-magic amulet)"
 
 
 def test_bless_success_chance_halved_by_provinces_owning_kingdoms_anti_white_amulet():
@@ -3648,7 +3649,7 @@ def test_bless_success_chance_halved_by_provinces_owning_kingdoms_anti_white_amu
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
 
     assert result.applied is False
-    assert result.reason == "spell failed"
+    assert result.reason == "province is protected (anti-magic amulet)"
 
 
 def test_illus_terrain_success_chance_halved_by_provinces_owning_kingdoms_anti_illusion_amulet():
@@ -3659,7 +3660,7 @@ def test_illus_terrain_success_chance_halved_by_provinces_owning_kingdoms_anti_i
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
 
     assert result.applied is False
-    assert result.reason == "spell failed"
+    assert result.reason == "province is protected (anti-magic amulet)"
 
 
 def test_illus_fog_success_chance_halved_by_provinces_owning_kingdoms_anti_illusion_amulet():
@@ -3670,7 +3671,7 @@ def test_illus_fog_success_chance_halved_by_provinces_owning_kingdoms_anti_illus
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
 
     assert result.applied is False
-    assert result.reason == "spell failed"
+    assert result.reason == "province is protected (anti-magic amulet)"
 
 
 def test_plague_success_chance_halved_by_provinces_owning_kingdoms_anti_necromancy_amulet():
@@ -3681,7 +3682,7 @@ def test_plague_success_chance_halved_by_provinces_owning_kingdoms_anti_necroman
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
 
     assert result.applied is False
-    assert result.reason == "spell failed"
+    assert result.reason == "province is protected (anti-magic amulet)"
 
 
 def test_scar_terrain_success_chance_halved_by_provinces_owning_kingdoms_anti_necromancy_amulet():
@@ -3692,7 +3693,7 @@ def test_scar_terrain_success_chance_halved_by_provinces_owning_kingdoms_anti_ne
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
 
     assert result.applied is False
-    assert result.reason == "spell failed"
+    assert result.reason == "province is protected (anti-magic amulet)"
 
 
 def test_hide_feature_success_chance_halved_by_provinces_owning_kingdoms_anti_illusion_amulet():
@@ -3704,7 +3705,42 @@ def test_hide_feature_success_chance_halved_by_provinces_owning_kingdoms_anti_il
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5]))
 
     assert result.applied is False
-    assert result.reason == "spell failed"
+    assert result.reason == "province is protected (anti-magic amulet)"
+
+
+def test_earthquake_coin_miss_proceeds_to_a_full_unmultiplied_success_roll():
+    # Phase 725: when the protective-amulet coin misses, the cast proceeds
+    # at its full, un-halved chance -- not the old chance/2. Coin=0.4
+    # (int(0.4*2)==0, a miss); the success roll that follows is 0.5, which
+    # only beats the real 75% chance because it's NOT halved to 37.5%.
+    state = _state_with_amulet_owned_province(Treasure.AMULET_ANTI_ELEMENTAL, Terrain.PLAINS)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(LOCATION))
+
+    result = execute_cast(
+        state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.4, 0.5, 0.5, 0.5])
+    )
+
+    assert result.applied is True
+
+
+def test_earthquake_never_blocked_by_the_castings_own_kingdoms_amulet_but_still_draws_the_coin():
+    # Phase 725: the real, previously-missing own-kingdom exemption --
+    # this Kingdom's own province, protected by this Kingdom's own
+    # amulet, is never blocked by a cast from this same Kingdom, even on
+    # a scripted coin hit (0.5). The coin is still drawn first (SCAR.md's
+    # own RNG-ordering detail) before the ordinary, full-chance roll.
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=CASTER_ID)
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=_target(LOCATION))
+
+    result = execute_cast(
+        state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=ScriptedRandom([0.5, 0.5, 0.5, 0.5])
+    )
+
+    assert result.applied is True
 
 
 def test_earthquake_not_halved_when_target_province_has_no_owner():

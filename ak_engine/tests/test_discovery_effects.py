@@ -26,8 +26,11 @@ from ak_engine.turn.discovery_effects import (
     holds_bow_of_elven_kings,
     holds_monster_command_item_for,
     province_halves_spell_chance,
+    resolve_province_protection_block,
 )
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL
+
+from _helpers import ScriptedRandom
 
 HOME = HexCoord(0, 0)
 
@@ -318,6 +321,58 @@ def test_province_halves_spell_chance_covers_every_amulet_ability():
         solo_state.add_province(_province_owned_by(1))
         solo_state.add_item(amulet, owner_leader_id=1)
         assert province_halves_spell_chance(solo_state, HOME, ability) is True
+
+
+# -- Phase 725: resolve_province_protection_block() -- SCAR.md 5.3/15.5's
+# real coin-flip-then-ownership-check gate, replacing the flat arithmetic
+# halving province_halves_spell_chance() alone used to feed. -----------
+
+
+def _foreign_protected_province_state() -> GameState:
+    state = make_state()
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.NEUTRAL, HOME))
+    state.add_leader(LeaderState(2, 2, "Rival", HOME))
+    state.add_province(_province_owned_by(2))
+    state.add_item(Treasure.AMULET_ANTI_ELEMENTAL, owner_leader_id=2)
+    return state
+
+
+def test_resolve_province_protection_block_no_protection_never_blocks_and_consumes_no_rng():
+    state = make_state()
+    state.add_province(_province_owned_by(1))  # caster's own province, no amulet at all
+
+    assert resolve_province_protection_block(state, HOME, Ability.ELEMENTAL, 1, ScriptedRandom([])) is False
+
+
+def test_resolve_province_protection_block_coin_miss_never_blocks():
+    state = _foreign_protected_province_state()
+
+    assert resolve_province_protection_block(state, HOME, Ability.ELEMENTAL, 1, ScriptedRandom([0.4])) is False
+
+
+def test_resolve_province_protection_block_coin_hit_against_a_foreign_province_blocks():
+    state = _foreign_protected_province_state()
+
+    assert resolve_province_protection_block(state, HOME, Ability.ELEMENTAL, 1, ScriptedRandom([0.5])) is True
+
+
+def test_resolve_province_protection_block_never_blocks_the_owning_kingdoms_own_cast_but_still_draws_the_coin():
+    # Rulebook/SCAR.md: powner = LKing(caster) keeps blocked False
+    # regardless of the coin -- the owning Kingdom casting on its own
+    # protected province is never blocked by its own amulet. SCAR.md's own
+    # "Dettaglio RNG" also says the coin is drawn unconditionally whenever
+    # protection exists, before the ownership check -- the single-value
+    # script (not consuming a 2nd value, not raising IndexError) proves
+    # the coin fires even though it can never actually block here.
+    state = _foreign_protected_province_state()
+
+    assert resolve_province_protection_block(state, HOME, Ability.ELEMENTAL, 2, ScriptedRandom([0.5])) is False
+
+
+def test_resolve_province_protection_block_treats_a_kingdomless_caster_as_foreign():
+    state = _foreign_protected_province_state()
+
+    assert resolve_province_protection_block(state, HOME, Ability.ELEMENTAL, None, ScriptedRandom([0.5])) is True
 
 
 # -- Phase 532: Crystal of True Seeing (AMULET_ANTI_ILLUSION) joins the

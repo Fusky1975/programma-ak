@@ -468,22 +468,23 @@ text directly, one at a time.
      describe_general_intelligence_report()``'s own docstring for the
      current citation, corrected fully once Phase 722 lands.
 
-     **Two further real SCAR.md findings, deliberately flagged, not
-     acted on here**: (a) SCAR.md's own section 5.3 describes True
-     Cross's real halving as a 50% cancellation coin-flip *then* the
-     full roll, not naive ``chance / 2`` arithmetic -- this project's
-     existing ``turn/discovery_effects.py province_halves_spell_
-     chance()`` (Phase 533) does apply a flat multiplier, but that
-     function is generic across all 5 protection amulets/colleges, not
-     Necromancy-specific, so fixing it is a separate, broader
-     investigation, not attempted here. (b) SCAR.md independently finds
-     a real, compiled ``pt2``/secondary-terrain field (``AK.EXE
-     DS:935D``) with the identical "half-Sea, half-land" shape this
-     project's own ``ProvinceState.is_island`` already models -- that
-     field's own docstring currently calls it "project-original, not a
-     recovered value," which this finding may make stale, but confirming
-     the two are really the same compiled field needs its own dedicated
-     investigation, not chased here.
+     **Two further real SCAR.md findings, flagged here at the time,
+     both now closed by later phases**: (a) SCAR.md's own section 5.3
+     describes True Cross's real halving as a 50% cancellation coin-flip
+     *then* the full roll, not naive ``chance / 2`` arithmetic -- closed
+     in full by **Phase 725**, which found (via SCAR.md's own entry-
+     points table and full 15.5 disassembly) that the gate is a shared,
+     generic routine, not Necromancy-specific, and rebuilt ``turn/
+     discovery_effects.py resolve_province_protection_block()`` to
+     implement the real coin-flip-then-ownership-check for all 10 real
+     province-targeted spell call sites, including a real, separate,
+     previously-missing own-kingdom exemption the arithmetic version
+     never had. (b) SCAR.md independently finds a real, compiled
+     ``pt2``/secondary-terrain field (``AK.EXE DS:935D``) with the
+     identical "half-Sea, half-land" shape this project's own
+     ``ProvinceState.is_island`` already models -- closed by **Phase
+     723**, which confirmed the two are the same real field and wired
+     it into ``parser/gw_world_bridge.py``.
 
 - **Mystic Winds** (``AdvancedAbility.MYSTIC_WINDS_SPELL``,
   ``Ability.ELEMENTAL``, Phase 204) -- the user's own quoted rule text
@@ -721,7 +722,7 @@ from ak_engine.turn.discovery_effects import (
     equipped_combat_weapon,
     holder_is_immune_to_spell,
     holds_bow_of_elven_kings,
-    province_halves_spell_chance,
+    resolve_province_protection_block,
 )
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
@@ -2025,10 +2026,9 @@ def _execute_part_sea(
     if province.effective_terrain() is not Terrain.SEA:
         return CastExecutionResult(request, applied=False, reason="target province is not Sea")
 
-    part_sea_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.WHITE) else 1.0
-    succeeded, reason = _roll_cast_success(
-        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=part_sea_multiplier
-    )
+    if resolve_province_protection_block(state, _coord, Ability.WHITE, caster.kingdom_id, rng):
+        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -2060,10 +2060,9 @@ def _execute_flood(
     if province.effective_terrain() not in _FLOOD_ELIGIBLE_TERRAIN:
         return CastExecutionResult(request, applied=False, reason="target province is not a non-mountain land province")
 
-    flood_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.ELEMENTAL) else 1.0
-    succeeded, reason = _roll_cast_success(
-        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=flood_multiplier
-    )
+    if resolve_province_protection_block(state, _coord, Ability.ELEMENTAL, caster.kingdom_id, rng):
+        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -2098,10 +2097,9 @@ def _execute_tornado(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
 
-    tornado_multiplier = 0.5 if province_halves_spell_chance(state, coord, Ability.ELEMENTAL) else 1.0
-    succeeded, reason = _roll_cast_success(
-        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=tornado_multiplier
-    )
+    if resolve_province_protection_block(state, coord, Ability.ELEMENTAL, caster.kingdom_id, rng):
+        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -2233,10 +2231,9 @@ def _execute_earthquake(
     if province.effective_terrain() is Terrain.SEA and AdvancedAbility.ENHANCED_EARTHQUAKE not in caster.advanced_abilities:
         return CastExecutionResult(request, applied=False, reason="target province is not land")
 
-    earthquake_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.ELEMENTAL) else 1.0
-    succeeded, reason = _roll_cast_success(
-        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=earthquake_multiplier
-    )
+    if resolve_province_protection_block(state, _coord, Ability.ELEMENTAL, caster.kingdom_id, rng):
+        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -2295,10 +2292,9 @@ def _execute_bless(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found")
 
-    bless_multiplier = 0.5 if province_halves_spell_chance(state, coord, Ability.WHITE) else 1.0
-    succeeded, reason = _roll_cast_success(
-        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=bless_multiplier
-    )
+    if resolve_province_protection_block(state, coord, Ability.WHITE, caster.kingdom_id, rng):
+        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -2340,10 +2336,9 @@ def _execute_illus_terrain(
     if not isinstance(request.terrain, Terrain):
         return CastExecutionResult(request, applied=False, reason="fake terrain not specified")
 
-    illus_terrain_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.ILLUSION) else 1.0
-    succeeded, reason = _roll_cast_success(
-        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=illus_terrain_multiplier
-    )
+    if resolve_province_protection_block(state, _coord, Ability.ILLUSION, caster.kingdom_id, rng):
+        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -2545,10 +2540,9 @@ def _execute_illus_fog(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
 
-    illus_fog_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.ILLUSION) else 1.0
-    succeeded, reason = _roll_cast_success(
-        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=illus_fog_multiplier
-    )
+    if resolve_province_protection_block(state, _coord, Ability.ILLUSION, caster.kingdom_id, rng):
+        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -2712,10 +2706,9 @@ def _execute_plague(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
 
-    plague_multiplier = 0.5 if province_halves_spell_chance(state, coord, Ability.NECROMANCY) else 1.0
-    succeeded, reason = _roll_cast_success(
-        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=plague_multiplier
-    )
+    if resolve_province_protection_block(state, coord, Ability.NECROMANCY, caster.kingdom_id, rng):
+        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -2751,10 +2744,9 @@ def _execute_scar_terrain(
     if province is None:
         return CastExecutionResult(request, applied=False, reason="province not found or not in range")
 
-    scar_terrain_multiplier = 0.5 if province_halves_spell_chance(state, _coord, Ability.NECROMANCY) else 1.0
-    succeeded, reason = _roll_cast_success(
-        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=scar_terrain_multiplier
-    )
+    if resolve_province_protection_block(state, _coord, Ability.NECROMANCY, caster.kingdom_id, rng):
+        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
@@ -3103,10 +3095,9 @@ def _execute_hide_feature(
     if not features:
         return CastExecutionResult(request, applied=False, reason="no feature to hide")
 
-    hide_feature_multiplier = 0.5 if province_halves_spell_chance(state, coord, Ability.ILLUSION) else 1.0
-    succeeded, reason = _roll_cast_success(
-        state, caster, request.spell, rng, wand_skill_level, success_chance_multiplier=hide_feature_multiplier
-    )
+    if resolve_province_protection_block(state, coord, Ability.ILLUSION, caster.kingdom_id, rng):
+        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 

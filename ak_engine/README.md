@@ -30005,7 +30005,7 @@ follow-up request after the original 431-435 plan shipped.
   real, separate, still-open item -- this phase only fixed the world-
   *loading* bridge.
 
-- **Phase 724 (current)**: Illusory Terrain's real blended combat
+- **Phase 724**: Illusory Terrain's real blended combat
   strength and 15%/turn dissolve chance -- rulebook [4.23.1]
   (`Regolamento AK.txt` lines 1199-1211, repeated at ~line 3099-3100):
   a unit that enters an illusorily-terrained province still fights at
@@ -30031,6 +30031,38 @@ follow-up request after the original 431-435 plan shipped.
   here) stays a deliberate, separate follow-up. Test count: 6170 ->
   6183 (net +13). Full suite verified green (unchanged, 6170) before
   writing a single new test; every new test passed on the first run.
+
+- **Phase 725 (current)**: the province protective-amulet gate is a
+  50% coin-flip-then-ownership-check, not arithmetic chance-halving --
+  and had a real, missing own-kingdom exemption. `SCAR.md` sections 5.3
+  and 15.5 (its own full disassembly of `AK.EXE raw 0xEBAA-0xEC85`,
+  listed generically in the entry-points table as "protezione antim
+  magia della provincia," not Scar-Terrain-specific) give the real
+  algorithm: `if OwnerHasProtection then if Rand2=1 then if powner <>
+  LKing(caster) then blocked := true` -- a fixed 50% coin (drawn
+  *whenever* protection exists, even for a cast that can never actually
+  be blocked -- SCAR.md's own "Dettaglio RNG" warns not to reorder this),
+  and a block that only ever applies against a *foreign* province; if
+  not blocked, the cast proceeds at its full, un-multiplied chance.
+  Cross-confirmed against `AKGEN_reverse_engineering_report (4).md` line
+  331's own item-catalog text for the identical 5-item protection table.
+  New `turn/discovery_effects.py resolve_province_protection_block()`
+  reuses the existing, untouched `province_halves_spell_chance()` as its
+  own cheap first check, then implements the real gate; rewired at all
+  10 real province-targeted spell call sites in `turn/cast_execution.py`
+  (`_execute_part_sea`/`_flood`/`_tornado`/`_earthquake`/`_bless`/
+  `_illus_terrain`/`_illus_fog`/`_plague`/`_scar_terrain`/`_hide_
+  feature`), each now short-circuiting to a block *before* the ordinary
+  `_roll_cast_success()` call instead of feeding it a `0.5` multiplier.
+  This closes both real SCAR.md findings flagged since Phase 721's own
+  Scar Terrain docstring (the other, `pt2`/`is_island`, was already
+  closed by Phase 723). Test count: 6183 -> 6190 (net +7). Full suite
+  verified green (unchanged, 6183) before writing a single new test;
+  the 10 pre-existing "halved" tests needed only their own `reason`
+  string updated (their scripted `ScriptedRandom([0.5])` still produces
+  a coin-hit block under the new mechanism, confirmed empirically, not
+  assumed, by running before touching them). This closes the entire
+  twenty-second survey in full.
 
 ## Setup
 

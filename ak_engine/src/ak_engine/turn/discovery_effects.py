@@ -50,6 +50,8 @@ bonuses -- left as the raw stored value rather than guessed).
 
 from __future__ import annotations
 
+import random
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import DISCOVERY_ABILITY_BONUS
 from ak_engine.models.enums import Ability, Spell
@@ -202,6 +204,14 @@ def province_halves_spell_chance(state: GameState, province_coord: HexCoord, abi
     currently holding the matching amulet -- the holder need not be
     physically present, matching the personal-immunity check's own
     "state.items_held_by" possession-only shape.
+
+    **Phase 725**: this boolean is no longer fed into an arithmetic
+    multiplier anywhere -- see ``resolve_province_protection_block()``
+    right below, which reuses this function purely as its own cheap
+    "does the protection even exist here" first check, then implements
+    the real coin-flip-then-ownership gate (``SCAR.md`` 5.3/15.5) on top.
+    This function's own name/return value stay accurate either way: "does
+    this province's protection apply" is still exactly what it answers.
     """
 
     province = state.provinces.get(province_coord)
@@ -215,6 +225,60 @@ def province_halves_spell_chance(state: GameState, province_coord: HexCoord, abi
         and any(item.treasure is amulet for item in state.items_held_by(leader.leader_id))
         for leader in state.leaders.values()
     )
+
+
+def resolve_province_protection_block(
+    state: GameState, province_coord: HexCoord, ability: Ability, caster_kingdom_id: int | None, rng: random.Random
+) -> bool:
+    """Phase 725: ``SCAR.md`` 5.3/15.5 -- the real gate a province's own
+    protective amulet applies, disassembled directly at `AK.EXE raw
+    0xEBAA-0xEC85` ("protezione antim magia della provincia," a shared
+    routine, not Scar-Terrain-specific -- its own entry-points table lists
+    it generically, and its own internal call to `0x35eb:0x79cf` derives
+    the protective treasure from the spell's college, the exact same
+    5-item table ``ANTI_MAGIC_AMULET_BY_ABILITY``/``province_halves_spell_
+    chance()`` above already model, independently cross-confirmed against
+    `AKGEN_reverse_engineering_report (4).md` line 331's own item-catalog
+    text for the same table):
+
+        blocked := false;
+        if OwnerHasProtection(powner[x,y], <spell's college>) then
+          if Rand2 = 1 then                      { 50% coin, Trunc(2*Random) }
+            if powner[x,y] <> LKing(caster) then
+              blocked := true;
+
+    **Not arithmetic halving.** A 50% coin is drawn first; only on a hit
+    does the block actually apply, and only against a province owned by a
+    *different* Kingdom than the caster's own -- if not blocked, the
+    ordinary cast proceeds at its full, un-multiplied chance. In aggregate
+    this reproduces the same expected success rate as `chance/2` against a
+    foreign protected province (matching the item's own "dimezza la
+    chance" catalog text), but the real RNG-consumption shape is a fixed
+    coin draw (only when protection is present) plus a conditional
+    full-chance roll -- not one draw at a halved chance.
+
+    **A real, separate own-kingdom exemption**, missing before this
+    phase: the province's own owning Kingdom can never be blocked from
+    casting on its own province (`powner = LKing(caster)` keeps `blocked`
+    `False` regardless of the coin) -- e.g. a Kingdom Blessing its own
+    White-protected province is never halved/blocked by its own amulet.
+
+    **RNG-ordering detail, replicated faithfully** (SCAR.md's own
+    "Dettaglio RNG"): the coin is drawn unconditionally whenever
+    protection exists, *before* the ownership comparison -- even for an
+    own-kingdom cast that can never actually be blocked, the coin still
+    consumes one `rng.random()` call. Do not reorder the ownership check
+    ahead of the coin in any future change here; SCAR.md explicitly warns
+    against it for deterministic-replay fidelity.
+    """
+
+    if not province_halves_spell_chance(state, province_coord, ability):
+        return False
+    coin = int(rng.random() * 2)
+    if coin != 1:
+        return False
+    province = state.provinces[province_coord]
+    return province.owner_kingdom_id != caster_kingdom_id
 
 
 def equipped_combat_weapon(state: GameState, leader_id: int) -> Treasure | None:
