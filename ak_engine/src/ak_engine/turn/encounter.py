@@ -1573,6 +1573,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
@@ -3131,8 +3132,28 @@ SHADOW_SWORD_LIFE_DRAIN_FRACTION = 0.5
 FLAMING_SCIMITAR_INSTAKILL_CHANCE = 0.05
 PSYCHIC_FLAIL_STUN_CHANCE = 0.50
 
+# Phase 740 -- report-layer narration for Shadow Sword's/Flaming
+# Scimitar's own on-hit procs (`report/turn_report.py render_shadow_
+# sword_drain()`/`render_flaming_scimitar_proc()`, Phase 588, sourced
+# and render-tested but never called from anywhere until now). Deliberately
+# excludes Psychic Flail's own stun: a dedicated investigation this phase
+# found `Combatant.bonus_unanswered_attacks` (what Psychic Flail sets) is
+# only ever *consumed* right after a CAST tactic resolves (`turn/
+# challenge_execution.py`/`turn/search_execution.py _consume_bonus_
+# attacks()`, built for Psychic Blast/Ice Suspension) -- an ordinary
+# Melee-only duel with no Cast tactics at all has no consumption point
+# for it, so a Psychic-Flail-triggered stun may never actually manifest
+# as extra attacks there. Narrating STUN.X/RECSTUN.X convincingly needs
+# that real mechanical question resolved first (does a pure-Melee stun
+# need its own consumption point, and what "recovers" it), not just a
+# render call -- flagged as a real, separate follow-up, not attempted
+# here.
+WeaponOnHitProc = Literal["shadow_sword_drain", "flaming_scimitar_instakill"]
 
-def apply_weapon_on_hit_effects(attacker: "Combatant", defender: "Combatant", damage_dealt: int, rng: random.Random) -> None:
+
+def apply_weapon_on_hit_effects(
+    attacker: "Combatant", defender: "Combatant", damage_dealt: int, rng: random.Random
+) -> WeaponOnHitProc | None:
     """Applies Shadow Sword's life drain, Flaming Scimitar's instant-kill
     chance, and Psychic Flail's stun -- see module docstring's own Phase
     536 addendum for the quoted dossier pseudocode. Called immediately
@@ -3142,10 +3163,11 @@ def apply_weapon_on_hit_effects(attacker: "Combatant", defender: "Combatant", da
     simplified Mirror-Image/Illusory-Hero phantasm duels and Hand of
     Death's own victim counter-swing, none of which apply any of the
     other per-attacker ``Combatant`` bonus fields either -- the same
-    established scope boundary, not a new one). A no-op when ``attacker.
-    equipped_weapon`` is not one of the three weapons with an on-hit
-    effect, or when ``damage_dealt`` is 0 (a miss, or a hit reduced to
-    net 0 by Spiritwrack/``damage_reduction``, procs nothing).
+    established scope boundary, not a new one). A no-op (returns
+    ``None``) when ``attacker.equipped_weapon`` is not one of the three
+    weapons with an on-hit effect, or when ``damage_dealt`` is 0 (a
+    miss, or a hit reduced to net 0 by Spiritwrack/``damage_reduction``,
+    procs nothing).
 
     ``CHARACTER_HIT_POINTS`` is Shadow Sword's own healing cap (dossier's
     ``attacker.maxhp``), used unconditionally: these weapons only ever
@@ -3153,20 +3175,30 @@ def apply_weapon_on_hit_effects(attacker: "Combatant", defender: "Combatant", da
     never consulted for a monster), so ``attacker`` always has the
     standard 10-hit-point character maximum here, never a monster's own
     stat-block total.
+
+    Phase 740: the return value (``None`` for every pre-Phase-740
+    caller, since none of them capture it) reports which of the two
+    narratable procs above fired, if any, for real callers to attach to
+    their own ``MeleeSwing``/``ReactiveMeleeSwingResult`` -- Psychic
+    Flail's own stun still applies mechanically (unchanged) but is
+    never reported this way, see this constant block's own addendum.
     """
 
     if damage_dealt <= 0:
-        return
+        return None
     weapon = attacker.equipped_weapon
     if weapon is Treasure.WEAPON_2:  # Shadow Sword
         drain = int(damage_dealt * SHADOW_SWORD_LIFE_DRAIN_FRACTION)
         attacker.hit_points = min(CHARACTER_HIT_POINTS, attacker.hit_points + drain)
+        return "shadow_sword_drain"
     elif weapon is Treasure.WEAPON_3:  # Flaming Scimitar
         if rng.random() < FLAMING_SCIMITAR_INSTAKILL_CHANCE:
             defender.hit_points = 0
+            return "flaming_scimitar_instakill"
     elif weapon is Treasure.WEAPON_4:  # Psychic Flail
         if rng.random() < PSYCHIC_FLAIL_STUN_CHANCE:
             attacker.bonus_unanswered_attacks += 1
+    return None
 
 
 def _melee_landed_damage(raw_damage: int, attacker: "Combatant", defender: "Combatant") -> int:
@@ -3396,11 +3428,19 @@ class MeleeSwing:
     range. Only ``resolve_melee_duel()``/``resolve_one_melee_round()``
     populate these; every other resolver's own ``melee_swings`` stays
     empty.
+
+    Phase 740: ``weapon_proc``/``weapon_proc_hit_points`` carry
+    ``apply_weapon_on_hit_effects()``'s own real result -- ``None``/
+    ``None`` for every swing that didn't proc one of the two narratable
+    weapons (or wasn't even a landed hit), matching every pre-Phase-740
+    swing's own implicit shape.
     """
 
     attacker: str  # "a" / "b"
     hit: bool
     damage: int  # net, post-reduction -- 0 on a miss, possibly also 0 on a reduced hit
+    weapon_proc: "WeaponOnHitProc | None" = None
+    weapon_proc_hit_points: int | None = None  # the wielder's own new total, only for "shadow_sword_drain"
 
 
 @dataclass(slots=True)
@@ -3414,10 +3454,16 @@ class ReactiveMeleeSwingResult:
     ``leader_combatant``/``monster_combatant`` to a side, knows that) --
     a caller narrating this swing wraps it into a real ``MeleeSwing``
     itself, supplying the label.
+
+    Phase 740: ``weapon_proc``/``weapon_proc_hit_points`` mirror
+    ``MeleeSwing``'s own new fields of the same name -- a caller
+    wrapping this into a real ``MeleeSwing`` copies both across too.
     """
 
     hit: bool
     damage: int  # net, post-reduction -- 0 on a miss, possibly also 0 on a reduced hit
+    weapon_proc: "WeaponOnHitProc | None" = None
+    weapon_proc_hit_points: int | None = None
 
 
 @dataclass(slots=True)
@@ -3513,9 +3559,14 @@ def resolve_one_melee_round(
         )
         damage = _melee_landed_damage(raw_damage, attacker, defender)
         defender.hit_points -= damage
-        apply_weapon_on_hit_effects(attacker, defender, damage, rng)
+        proc = apply_weapon_on_hit_effects(attacker, defender, damage, rng)
+        proc_hit_points = attacker.hit_points if proc == "shadow_sword_drain" else None
         attacker_side = "a" if attacker is a else "b"
-        swings.append(MeleeSwing(attacker=attacker_side, hit=raw_damage > 0, damage=damage))
+        swings.append(
+            MeleeSwing(
+                attacker=attacker_side, hit=raw_damage > 0, damage=damage, weapon_proc=proc, weapon_proc_hit_points=proc_hit_points
+            )
+        )
         if attacker is a:
             outcome.damage_dealt_to_b = damage
             outcome.a_attacked = True
@@ -3563,8 +3614,9 @@ def resolve_reactive_melee_swing(attacker: Combatant, defender: Combatant, rng: 
     )
     damage = _melee_landed_damage(raw_damage, attacker, defender)
     defender.hit_points -= damage
-    apply_weapon_on_hit_effects(attacker, defender, damage, rng)
-    return ReactiveMeleeSwingResult(hit=raw_damage > 0, damage=damage)
+    proc = apply_weapon_on_hit_effects(attacker, defender, damage, rng)
+    proc_hit_points = attacker.hit_points if proc == "shadow_sword_drain" else None
+    return ReactiveMeleeSwingResult(hit=raw_damage > 0, damage=damage, weapon_proc=proc, weapon_proc_hit_points=proc_hit_points)
 
 
 def resolve_melee_duel(

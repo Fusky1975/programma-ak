@@ -3310,6 +3310,9 @@ def describe_kill_enemy_berserk_retaliation(
             else render_attack_missed(attacker_name, defender_name, "blade", rng)
         )
         swing_lines.append(attack_line)
+        proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
+        if proc_line is not None:
+            swing_lines.append(proc_line)
 
     lines: list[str] = []
     if swing_lines:
@@ -4003,7 +4006,9 @@ _FLAMEREL_TEMPLATES: list[str] = [
 
 def render_flaming_scimitar_proc(defender_name: str, rng: random.Random) -> str:
     """Renders FLAMEREL.X's sentence for the Flaming Scimitar's own
-    instant-death fireball proc (Phase 588).
+    instant-death fireball proc (Phase 588). Wired (Phase 740) via
+    ``render_weapon_proc_line()``, called from every real ``melee_
+    swings`` consumer.
     """
 
     variant = pick_variant(_FLAMEREL_TEMPLATES, rng)
@@ -4031,7 +4036,8 @@ def render_shadow_sword_drain(wielder_name: str, opponent_name: str, new_hit_poi
     """Renders SHADTR.X's sentence for the Shadow Sword's own
     life-drain-heal proc (Phase 588). ``<2`` is the wielder (this
     catalog never uses a bare ``<``); ``[``/``]`` the opponent whose
-    life energy was drained.
+    life energy was drained. Wired (Phase 740) via ``render_weapon_
+    proc_line()``, called from every real ``melee_swings`` consumer.
     """
 
     variant = pick_variant(_SHADTR_TEMPLATES, rng)
@@ -4043,6 +4049,31 @@ def render_shadow_sword_drain(wielder_name: str, opponent_name: str, new_hit_poi
         "#": str(new_hit_points),
     }
     return render(variant, values, rng=rng)
+
+
+# Phase 740 -- the shared "did this landed swing also proc a narratable
+# weapon effect" check, reused by every real `melee_swings` consumer
+# below (Kill Enemy's own Berserk retaliation, Challenge/Pursue,
+# Patrol, Random Encounter, Search) rather than duplicating the same
+# two-branch dispatch five times. Psychic Flail's own stun is
+# deliberately not one of the two branches -- see `turn/encounter.py`'s
+# own Phase 740 addendum (right above `WeaponOnHitProc`) for why.
+def render_weapon_proc_line(
+    proc: str | None, attacker_name: str, defender_name: str, attacker_hit_points: int | None, rng: random.Random
+) -> str | None:
+    """Renders the one extra sentence a landed Melee swing's own weapon
+    proc adds, if any (``swing.weapon_proc``/``swing.weapon_proc_hit_
+    points``, ``turn/encounter.py apply_weapon_on_hit_effects()``).
+    ``None`` for every swing that didn't proc one of the two narratable
+    weapons (the overwhelming majority of swings) or that wasn't even a
+    landed hit.
+    """
+
+    if proc == "shadow_sword_drain":
+        return render_shadow_sword_drain(attacker_name, defender_name, attacker_hit_points, rng)
+    if proc == "flaming_scimitar_instakill":
+        return render_flaming_scimitar_proc(defender_name, rng)
+    return None
 
 
 # HostAK/TP/PROSE/RECSTUN.X -- recovering from a stunned state (the
@@ -6227,6 +6258,9 @@ def describe_encounter_combat(
             else render_attack_missed(attacker_name, defender_name, "blade", rng, is_sea=is_sea)
         )
         lines.append(attack_line)
+        proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
+        if proc_line is not None:
+            lines.append(proc_line)
 
     if result.loser_killed:
         loser_name = a_name if result.loser_leader_id == a_leader_id else b_name
@@ -6270,6 +6304,9 @@ def describe_patrol_combat(
             else render_attack_missed(attacker_name, defender_name, "blade", rng, is_sea=is_sea)
         )
         lines.append(attack_line)
+        proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
+        if proc_line is not None:
+            lines.append(proc_line)
 
     if result.loser_killed:
         loser_name = a_name if result.loser_leader_id == a_leader_id else b_name
@@ -6320,6 +6357,9 @@ def describe_random_encounter_combat(
             else render_attack_missed(attacker_name, defender_name, "blade", rng, is_sea=is_sea)
         )
         lines.append(attack_line)
+        proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
+        if proc_line is not None:
+            lines.append(proc_line)
 
     if result.leader_died:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
@@ -9279,6 +9319,9 @@ def describe_search(
             else render_attack_missed(melee_attacker, melee_defender, "blade", rng, is_sea=is_sea)
         )
         lines.append(attack_line)
+        proc_line = render_weapon_proc_line(swing.weapon_proc, melee_attacker, melee_defender, swing.weapon_proc_hit_points, rng)
+        if proc_line is not None:
+            lines.append(proc_line)
 
     if result.combat_resolved and result.winner == "monster" and result.leader_killed:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))

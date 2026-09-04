@@ -2356,7 +2356,15 @@ def _resolve_search_encounter(
         if leader_tactic.maneuver is Maneuver.MELEE:
             swing_result = resolve_reactive_melee_swing(leader_combatant, monster_combatant, rng)
             damage = swing_result.damage
-            melee_swings.append(MeleeSwing(attacker="a", hit=swing_result.hit, damage=swing_result.damage))
+            melee_swings.append(
+                MeleeSwing(
+                    attacker="a",
+                    hit=swing_result.hit,
+                    damage=swing_result.damage,
+                    weapon_proc=swing_result.weapon_proc,
+                    weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
+                )
+            )
             if monster_combatant.hit_points <= 0:
                 return _finish_melee_outcome(EncounterCombatResult(winner="a", rounds=0))
             disrupted = _resolve_cast_disruption(monster_tactic, damage, rng)
@@ -2370,7 +2378,15 @@ def _resolve_search_encounter(
         if monster_tactic is None:
             swing_result = resolve_reactive_melee_swing(monster_combatant, leader_combatant, rng)
             damage = swing_result.damage
-            melee_swings.append(MeleeSwing(attacker="b", hit=swing_result.hit, damage=swing_result.damage))
+            melee_swings.append(
+                MeleeSwing(
+                    attacker="b",
+                    hit=swing_result.hit,
+                    damage=swing_result.damage,
+                    weapon_proc=swing_result.weapon_proc,
+                    weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
+                )
+            )
             if leader_combatant.hit_points <= 0:
                 return _finish_melee_outcome(EncounterCombatResult(winner="b", rounds=0))
             disrupted = _resolve_cast_disruption(leader_tactic, damage, rng)
@@ -2844,7 +2860,15 @@ def _resolve_search_encounter(
                     and AdvancedAbility.SHORT_RANGE_ARCHERY in leader.advanced_abilities
                 ):
                     swing_result = resolve_reactive_melee_swing(monster_combatant, leader_combatant, rng)
-                    melee_swings.append(MeleeSwing(attacker="b", hit=swing_result.hit, damage=swing_result.damage))
+                    melee_swings.append(
+                        MeleeSwing(
+                            attacker="b",
+                            hit=swing_result.hit,
+                            damage=swing_result.damage,
+                            weapon_proc=swing_result.weapon_proc,
+                            weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
+                        )
+                    )
                     if leader_combatant.hit_points <= 0:
                         return _finish_melee_outcome(EncounterCombatResult(winner="b", rounds=0))
                     combat_attempted = True

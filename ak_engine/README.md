@@ -30501,7 +30501,7 @@ follow-up request after the original 431-435 plan shipped.
   provable no-op for every existing fixture, since none of them ever
   attempts to board a Mermen unit onto an air carrier.
 
-- **Phase 739 (current)**: thirtieth survey's own candidate #2 --
+- **Phase 739**: thirtieth survey's own candidate #2 --
   Duel-loser demoralization narration. `_ADishK`/`_ADishF` (`RUMORS.PAS`,
   Phase 121) are two fully-ported, tested prose entries narrating
   rulebook [7.1]'s "loser's forces become demoralized, reduced 25% in
@@ -30524,6 +30524,38 @@ follow-up request after the original 431-435 plan shipped.
   wirings already document. Test count: 6307 -> 6311 (net +4). Full
   suite verified green (unchanged, 6307) before writing a single new
   test.
+
+- **Phase 740 (current)**: thirtieth survey's own candidate #3 --
+  weapon on-hit-proc narration. `turn/encounter.py apply_weapon_on_
+  hit_effects()` (Phase 536) is a real, live mechanic (Shadow Sword's
+  life drain, Flaming Scimitar's 5% instant-kill) called from both real
+  Melee-swing call sites, but discarded its own outcome -- neither
+  caller captured *which* proc fired, so `report/turn_report.py`'s own
+  fully-ported, tested `render_shadow_sword_drain()`/`render_flaming_
+  scimitar_proc()` (Phase 588) were never called from any composer.
+  `apply_weapon_on_hit_effects()` now returns a `WeaponOnHitProc | None`
+  tag; `MeleeSwing`/`ReactiveMeleeSwingResult` gained matching
+  `weapon_proc`/`weapon_proc_hit_points` fields, threaded through all 7
+  real `MeleeSwing`-construction call sites across `turn/encounter.py`/
+  `turn/challenge_execution.py`/`turn/search_execution.py`. A new shared
+  `report/turn_report.py render_weapon_proc_line()` is reused by all 5
+  real `melee_swings` consumers (Kill Enemy's own Berserk retaliation,
+  Challenge/Pursue, Patrol, Random Encounter, Search) instead of
+  duplicating the same two-branch dispatch five times.
+
+  **Deliberately excludes Psychic Flail's own stun** -- a dedicated
+  investigation this phase found `Combatant.bonus_unanswered_attacks`
+  (what Psychic Flail sets) is only ever *consumed* right after a real
+  `CAST` tactic resolves (`_consume_bonus_attacks()`, built for Psychic
+  Blast/Ice Suspension); an ordinary Melee-only duel with no Cast
+  tactics at all has no consumption point for it at all, so a Psychic-
+  Flail-triggered stun may never actually manifest as extra attacks
+  there. Narrating STUN.X/RECSTUN.X convincingly needs that real
+  mechanical question resolved first, not just a render call -- flagged
+  as a real, separate follow-up, not attempted here. Test count: 6311
+  -> 6316 (net +5). Full suite verified green (unchanged, 6311) before
+  writing a single new test -- a provable no-op for every existing
+  fixture, since `weapon_proc` defaults to `None` everywhere.
 
 ## Setup
 

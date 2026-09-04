@@ -364,6 +364,28 @@ def test_resolve_one_melee_round_no_death_reports_both_sides_damage():
     assert b.hit_points == 10 - outcome.damage_dealt_to_b
 
 
+def test_resolve_one_melee_round_carries_a_shadow_sword_proc_onto_its_own_swing():
+    # Phase 740: only the wielder's own swing carries the proc -- the
+    # other side's own swing (no weapon) stays weapon_proc=None.
+    a = Combatant("A", melee_skill=1, hit_points=5, equipped_weapon=Treasure.WEAPON_2)
+    b = Combatant("B", melee_skill=0, hit_points=10)
+    block = [0.1, 0.5, 0.1, 0.4]
+    rng = ScriptedRandom(block)
+
+    outcome = resolve_one_melee_round(a, b, rng, round_number=1)
+
+    a_swing = next(s for s in outcome.swings if s.attacker == "a")
+    b_swing = next(s for s in outcome.swings if s.attacker == "b")
+    assert a_swing.weapon_proc == "shadow_sword_drain"
+    # The drain's own hit-points snapshot is taken right after A's own
+    # swing, before B's own counter-swing (later the same round) can
+    # reduce A's hit points again -- so it's compared against A's own
+    # landed damage, not A's own final post-round hit_points.
+    assert a_swing.weapon_proc_hit_points == 5 + (a_swing.damage // 2)
+    assert b_swing.weapon_proc is None
+    assert b_swing.weapon_proc_hit_points is None
+
+
 def test_resolve_one_melee_round_records_a_miss_as_zero_damage_but_attacked_true():
     a = Combatant("A", melee_skill=1, hit_points=10)
     b = Combatant("B", melee_skill=0, hit_points=10)
@@ -3677,9 +3699,10 @@ def test_apply_weapon_on_hit_effects_no_op_on_a_miss_regardless_of_weapon():
     defender = Combatant("B")
     rng = ScriptedRandom([])  # any .random() call here raises IndexError
 
-    apply_weapon_on_hit_effects(attacker, defender, 0, rng)
+    result = apply_weapon_on_hit_effects(attacker, defender, 0, rng)
 
     assert defender.hit_points == CHARACTER_HIT_POINTS
+    assert result is None
 
 
 def test_apply_weapon_on_hit_effects_no_op_with_no_weapon_equipped():
@@ -3687,9 +3710,10 @@ def test_apply_weapon_on_hit_effects_no_op_with_no_weapon_equipped():
     defender = Combatant("B")
     rng = ScriptedRandom([])
 
-    apply_weapon_on_hit_effects(attacker, defender, 5, rng)
+    result = apply_weapon_on_hit_effects(attacker, defender, 5, rng)
 
     assert defender.hit_points == CHARACTER_HIT_POINTS
+    assert result is None
 
 
 def test_apply_weapon_on_hit_effects_shadow_sword_drains_half_the_landed_damage():
@@ -3697,10 +3721,11 @@ def test_apply_weapon_on_hit_effects_shadow_sword_drains_half_the_landed_damage(
     defender = Combatant("B")
     rng = ScriptedRandom([])
 
-    apply_weapon_on_hit_effects(attacker, defender, 4, rng)
+    result = apply_weapon_on_hit_effects(attacker, defender, 4, rng)
 
     assert SHADOW_SWORD_LIFE_DRAIN_FRACTION == 0.5
     assert attacker.hit_points == 7  # 5 + (4 // 2)
+    assert result == "shadow_sword_drain"  # Phase 740
 
 
 def test_apply_weapon_on_hit_effects_shadow_sword_drain_is_capped_at_character_hit_points():
@@ -3708,9 +3733,10 @@ def test_apply_weapon_on_hit_effects_shadow_sword_drain_is_capped_at_character_h
     defender = Combatant("B")
     rng = ScriptedRandom([])
 
-    apply_weapon_on_hit_effects(attacker, defender, 6, rng)
+    result = apply_weapon_on_hit_effects(attacker, defender, 6, rng)
 
     assert attacker.hit_points == CHARACTER_HIT_POINTS
+    assert result == "shadow_sword_drain"  # Phase 740, still proc'd even though the drain itself is capped
 
 
 def test_apply_weapon_on_hit_effects_flaming_scimitar_instakills_below_the_chance_threshold():
@@ -3719,9 +3745,10 @@ def test_apply_weapon_on_hit_effects_flaming_scimitar_instakills_below_the_chanc
     rng = ScriptedRandom([0.01])
 
     assert FLAMING_SCIMITAR_INSTAKILL_CHANCE == 0.05
-    apply_weapon_on_hit_effects(attacker, defender, 3, rng)
+    result = apply_weapon_on_hit_effects(attacker, defender, 3, rng)
 
     assert defender.hit_points == 0
+    assert result == "flaming_scimitar_instakill"  # Phase 740
 
 
 def test_apply_weapon_on_hit_effects_flaming_scimitar_does_not_instakill_above_the_chance_threshold():
@@ -3729,9 +3756,10 @@ def test_apply_weapon_on_hit_effects_flaming_scimitar_does_not_instakill_above_t
     defender = Combatant("B")
     rng = ScriptedRandom([0.5])
 
-    apply_weapon_on_hit_effects(attacker, defender, 3, rng)
+    result = apply_weapon_on_hit_effects(attacker, defender, 3, rng)
 
     assert defender.hit_points == CHARACTER_HIT_POINTS
+    assert result is None
 
 
 def test_apply_weapon_on_hit_effects_psychic_flail_stuns_below_the_chance_threshold():
@@ -3740,11 +3768,15 @@ def test_apply_weapon_on_hit_effects_psychic_flail_stuns_below_the_chance_thresh
     rng = ScriptedRandom([0.49])
 
     assert PSYCHIC_FLAIL_STUN_CHANCE == 0.50
-    apply_weapon_on_hit_effects(attacker, defender, 3, rng)
+    result = apply_weapon_on_hit_effects(attacker, defender, 3, rng)
 
     # "si somma a Psychic Blast invece di sostituirlo" -- same
     # bonus_unanswered_attacks counter Psychic Blast's own stun feeds.
     assert attacker.bonus_unanswered_attacks == 1
+    # Phase 740: deliberately not reported as a narratable proc -- see
+    # this function's own Phase 740 addendum for why (bonus_unanswered_
+    # attacks has no real consumption point outside a Cast tactic).
+    assert result is None
 
 
 def test_apply_weapon_on_hit_effects_psychic_flail_does_not_stun_above_the_chance_threshold():
@@ -3752,9 +3784,10 @@ def test_apply_weapon_on_hit_effects_psychic_flail_does_not_stun_above_the_chanc
     defender = Combatant("B")
     rng = ScriptedRandom([0.5])
 
-    apply_weapon_on_hit_effects(attacker, defender, 3, rng)
+    result = apply_weapon_on_hit_effects(attacker, defender, 3, rng)
 
     assert attacker.bonus_unanswered_attacks == 0
+    assert result is None
 
 
 def test_resolve_one_melee_round_flaming_scimitar_proc_wins_the_round_via_instakill():
@@ -3780,3 +3813,5 @@ def test_resolve_reactive_melee_swing_shadow_sword_proc_heals_the_attacker():
 
     assert result.hit is True
     assert attacker.hit_points == 5 + (result.damage // 2)
+    assert result.weapon_proc == "shadow_sword_drain"  # Phase 740
+    assert result.weapon_proc_hit_points == attacker.hit_points

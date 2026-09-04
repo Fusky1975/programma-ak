@@ -1692,7 +1692,15 @@ def resolve_challenge_combat(
         # branch -- [5.1]'s own melee-precedence rule still applies, so
         # the caster's own swing lands on the casting target first.
         swing_result = resolve_reactive_melee_swing(caster, target, rng)
-        melee_swings.append(MeleeSwing(attacker="a", hit=swing_result.hit, damage=swing_result.damage))
+        melee_swings.append(
+            MeleeSwing(
+                attacker="a",
+                hit=swing_result.hit,
+                damage=swing_result.damage,
+                weapon_proc=swing_result.weapon_proc,
+                weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
+            )
+        )
         if target.hit_points <= 0:
             return True, "a"
         disrupted = _resolve_cast_disruption(target_cast, swing_result.damage, rng)
@@ -1744,7 +1752,15 @@ def resolve_challenge_combat(
                 # established pattern to this ability).
                 if caster_leader is not None and AdvancedAbility.SHORT_RANGE_ARCHERY in caster_leader.advanced_abilities:
                     swing_result = resolve_reactive_melee_swing(target, caster, rng)
-                    melee_swings.append(MeleeSwing(attacker="b", hit=swing_result.hit, damage=swing_result.damage))
+                    melee_swings.append(
+                        MeleeSwing(
+                            attacker="b",
+                            hit=swing_result.hit,
+                            damage=swing_result.damage,
+                            weapon_proc=swing_result.weapon_proc,
+                            weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
+                        )
+                    )
                     if caster.hit_points <= 0:
                         return _outcome(winner="b")
                     result = resolve_fire_arrow_duel(caster, target, rng, short_range_archer="a")
@@ -1794,7 +1810,15 @@ def resolve_challenge_combat(
                 # too (Cast-vs-Cast, below) rather than reactively swinging.
                 swing_result = resolve_reactive_melee_swing(target, caster, rng)
                 damage = swing_result.damage
-                melee_swings.append(MeleeSwing(attacker="b", hit=swing_result.hit, damage=swing_result.damage))
+                melee_swings.append(
+                    MeleeSwing(
+                        attacker="b",
+                        hit=swing_result.hit,
+                        damage=swing_result.damage,
+                        weapon_proc=swing_result.weapon_proc,
+                        weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
+                    )
+                )
                 if caster.hit_points <= 0:
                     return _outcome(winner="b")
                 disrupted = _resolve_cast_disruption(tactic, damage, rng)

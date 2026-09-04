@@ -240,6 +240,7 @@ from ak_engine.report.turn_report import (
     render_random_encounter_intro,
     render_petrifying_gaze_hit,
     render_shadow_sword_drain,
+    render_weapon_proc_line,
     render_stun_recovery,
     render_stunned,
     render_group_theft_from_survivor,
@@ -2713,6 +2714,26 @@ def test_render_shadow_sword_drain_first_variant():
     assert result == "the Shadow Sword transferred the life energy to Aldric and Aldric's hit points rose to 42."
 
 
+# -- Phase 740: render_weapon_proc_line() ------------------------------
+
+
+def test_render_weapon_proc_line_shadow_sword_drain():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_weapon_proc_line("shadow_sword_drain", "Aldric", "Borin", 7, rng)
+    assert result == "the Shadow Sword transferred the life energy to Aldric and Aldric's hit points rose to 7."
+
+
+def test_render_weapon_proc_line_flaming_scimitar_instakill():
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_weapon_proc_line("flaming_scimitar_instakill", "Aldric", "Borin", None, rng)
+    assert result == "the Flaming Scimitar released a fireball which imploded inside Borin."
+
+
+def test_render_weapon_proc_line_returns_none_for_no_proc():
+    rng = ScriptedRandom([])
+    assert render_weapon_proc_line(None, "Aldric", "Borin", None, rng) is None
+
+
 def test_render_stun_recovery_first_variant():
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
     result = render_stun_recovery("Aldric", rng)
@@ -3414,6 +3435,24 @@ def test_describe_encounter_combat_narrates_fire_arrow_shots_and_melee_swings_in
     assert lines == [
         "Aldric Fired an arrow at Borin and inflicted 5 damage points.",
         "Borin Attacked Aldric and missed.",
+    ]
+
+
+def test_describe_encounter_combat_narrates_a_shadow_sword_proc_after_its_own_swing():
+    # Phase 740: the proc line follows the swing's own attack line
+    # immediately, for whichever side actually wields the weapon.
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        melee_swings=(MeleeSwing(attacker="a", hit=True, damage=5, weapon_proc="shadow_sword_drain", weapon_proc_hit_points=8),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0])
+
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+
+    assert lines == [
+        "Aldric assailed Borin and inflicted 5 damage points.",
+        "the Shadow Sword transferred the life energy to Aldric and Aldric's hit points rose to 8.",
     ]
 
 
