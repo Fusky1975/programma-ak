@@ -58,14 +58,17 @@ then halved once per the spy's own ``LeaderState.unpaid_blackmail_
 penalty_exponent`` (the real parsed field's own "halves the next
 demand each time it's incremented" behavior).
 
-**Deliberately out of scope this phase, documented not guessed**: no
-new report text exists anywhere for "the tax penalty applied" -- only
-the one demand-delivery message survives in the whole corpus. Per this
-project's own standing convention (project-original replacement prose
-is the user's own call, not invented here), the tax-revenue reduction
-this module resolves stays a real, silent mechanical effect; a
-FINANCES-report line for it is a real, separate follow-up if the user
-ever wants project-original text for it.
+**Phase 741 closes the report-line gap this addendum used to flag.**
+No new report text survives anywhere for "the tax penalty applied" --
+only the one demand-delivery message (`render_blackmail_demand()`)
+exists in the whole corpus -- but that message's own sourced clause
+("or else lose 3 times that much gold in taxes for one turn, as a
+result of lost prestige") gave enough real material to build a close-
+paraphrase, user-approved, project-original FINANCES-report line from.
+See `models/game_state.py UnpaidBlackmailPenalty`/`turn/tax_base.py
+apply_turn_revenue()`'s own Phase 741 addendum for the real recording
+mechanism, and `report/turn_report.py render_blackmail_penalty()` for
+the render side.
 """
 
 from __future__ import annotations

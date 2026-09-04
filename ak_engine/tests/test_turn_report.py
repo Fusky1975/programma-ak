@@ -18,6 +18,7 @@ from ak_engine.models.game_state import (
     LeaderState,
     ProvinceState,
     SunkCargoEvent,
+    UnpaidBlackmailPenalty,
 )
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.models.game_type import GameType
@@ -137,6 +138,7 @@ from ak_engine.report.turn_report import (
     record_sunk_cargo_world_events,
     record_uncontested_conquest_world_events,
     render_blackmail_demand,
+    render_blackmail_penalty,
     render_bystander_spell_notice,
     render_flood_world_event,
     render_fly_move_world_event,
@@ -7981,6 +7983,49 @@ def test_describe_finances_report_omits_another_kingdoms_raid_event():
 
 
 def test_describe_finances_report_no_raid_events_leaves_lines_unchanged():
+    state = _finances_state_with_owned_province()
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    assert lines[3] == "Expected Revenues:   0"
+    assert lines[4] == "Expected Expenses:   0"
+
+
+# -- Phase 741: render_blackmail_penalty() / its own FINANCES-report wiring --
+
+
+def test_render_blackmail_penalty():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_blackmail_penalty(45, 2, rng)
+    assert result == (
+        "45 gold was lost from the treasury's tax revenues this turn as a "
+        "result of lost prestige, after a blackmail demand from King 2 "
+        "went unpaid and the dirt was leaked to the public."
+    )
+
+
+def test_describe_finances_report_renders_a_blackmail_penalty_line_for_this_kingdom():
+    state = _finances_state_with_owned_province()
+    state.turn_blackmail_penalties.append(UnpaidBlackmailPenalty(kingdom_id=1, blackmailer_kingdom_id=2, amount=45))
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    revenues_index = lines.index("Expected Revenues:   0")
+    penalty_line = lines[revenues_index + 1]
+    assert "45 gold" in penalty_line
+    assert "King 2" in penalty_line
+
+
+def test_describe_finances_report_omits_another_kingdoms_blackmail_penalty():
+    state = _finances_state_with_owned_province()
+    state.turn_blackmail_penalties.append(UnpaidBlackmailPenalty(kingdom_id=2, blackmailer_kingdom_id=1, amount=45))
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    assert not any("lost prestige" in line for line in lines)
+
+
+def test_describe_finances_report_no_blackmail_penalties_leaves_lines_unchanged():
     state = _finances_state_with_owned_province()
 
     lines = describe_finances_report(state, 1, random.Random(0))

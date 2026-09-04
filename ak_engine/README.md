@@ -30525,7 +30525,7 @@ follow-up request after the original 431-435 plan shipped.
   suite verified green (unchanged, 6307) before writing a single new
   test.
 
-- **Phase 740 (current)**: thirtieth survey's own candidate #3 --
+- **Phase 740**: thirtieth survey's own candidate #3 --
   weapon on-hit-proc narration. `turn/encounter.py apply_weapon_on_
   hit_effects()` (Phase 536) is a real, live mechanic (Shadow Sword's
   life drain, Flaming Scimitar's 5% instant-kill) called from both real
@@ -30556,6 +30556,37 @@ follow-up request after the original 431-435 plan shipped.
   -> 6316 (net +5). Full suite verified green (unchanged, 6311) before
   writing a single new test -- a provable no-op for every existing
   fixture, since `weapon_proc` defaults to `None` everywhere.
+
+- **Phase 741 (current)**: thirty-first survey's own candidate #1 --
+  `AdvancedAbility.SPY_BLACKMAIL`'s own unpaid-tax penalty finally gets
+  a FINANCES-report line. `turn/blackmail.py`'s own module docstring
+  already flagged this precisely: the real "3 times that much in tax
+  revenues" penalty (Phase 713) has been a real, silent mechanical
+  effect ever since, with no report text anywhere naming the reduction
+  the way sibling FINANCES lines (monster raids, Thunderbird) already
+  do. No separate "the tax penalty applied" notice survives anywhere in
+  the corpus -- only the demand-delivery message itself (`render_
+  blackmail_demand()`, choice 080/090) does -- but that message's own
+  sourced clause ("or else lose 3 times that much gold in taxes for one
+  turn, as a result of lost prestige") gave enough real material for a
+  close-paraphrase, user-approved, project-original line rather than an
+  invention from nothing.
+
+  New `models/game_state.py UnpaidBlackmailPenalty` (mirrors `RaidEvent`/
+  `turn_raid_events`'s own "structured facts now, one later render pass"
+  shape exactly) and `GameState.turn_blackmail_penalties`, populated by
+  `turn/tax_base.py apply_turn_revenue()` -- the real penalty amount
+  actually deducted, floored at whatever province income was available
+  that turn (the same cap the credited total itself already applies),
+  with the blackmailer's own Kingdom id read off `KingdomState.active_
+  blackmail` before `resolve_unpaid_blackmail()` clears it. New
+  `report/turn_report.py render_blackmail_penalty()`, reusing `render_
+  blackmail_demand()`'s own established `#`/`#2` marker convention
+  (amount, blackmailer's Kingdom number), wired into `describe_finances_
+  report()` right after the existing raid-event loop. Test count: 6316
+  -> 6321 (net +5). Full suite verified green (unchanged, 6316) before
+  writing a single new test -- a provable no-op for every existing
+  fixture.
 
 ## Setup
 

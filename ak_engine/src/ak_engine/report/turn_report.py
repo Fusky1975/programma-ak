@@ -9699,6 +9699,10 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
             lines.append(render_thunderbird_intervention(province_name, monster_name, rng))
         else:
             lines.append(render_monster_raid(province_name, monster_name, raid_event.damage, rng, is_sea=is_sea))
+    for penalty in state.turn_blackmail_penalties:
+        if penalty.kingdom_id != kingdom_id:
+            continue
+        lines.append(render_blackmail_penalty(penalty.amount, penalty.blackmailer_kingdom_id, rng))
     lines.append(f"Expected Expenses: {compute_expected_expenses(state, kingdom_id):>3}")
     invention_bonus_percent = compute_invention_bonus_percent(kingdom)
     if invention_bonus_percent > 0:
@@ -12871,6 +12875,33 @@ def render_thunderbird_intervention(province_name: str, monster_name: str, rng: 
 
     values = {"@": province_name, "<2": monster_name, ">": f"{monster_name}'s"}
     return render(_THUNDERBIRD_INTERVENTION_TEMPLATE, values, rng=rng)
+
+
+# Phase 741 -- project-original, user-approved directly. No separate
+# "the tax penalty applied" notice survives anywhere in the corpus
+# (`turn/blackmail.py`'s own module docstring, confirmed exhaustively --
+# only the demand-delivery message itself, choice 080/090, survives) --
+# built by close paraphrase of the real, sourced clause already embedded
+# in `_BLACKMAIL_DEMAND_TEMPLATE` itself: "or else lose 3 times that
+# much gold in taxes for one turn, as a result of lost prestige." `#`/
+# `#2` follow `render_blackmail_demand()`'s own established marker
+# convention (the real gold amount, the blackmailer's own Kingdom
+# number) -- reused here for consistency, not independently invented.
+_BLACKMAIL_PENALTY_TEMPLATE = (
+    "# gold was lost from the treasury's tax revenues this turn as a "
+    "result of lost prestige, after a blackmail demand from King #2 "
+    "went unpaid and the dirt was leaked to the public."
+)
+
+
+def render_blackmail_penalty(amount: int, blackmailer_kingdom_id: int, rng: random.Random) -> str:
+    """Renders the project-original notice for a real, applied
+    ``AdvancedAbility.SPY_BLACKMAIL`` unpaid-tax penalty (Phase 741) --
+    see the module-level comment above for the sourcing basis.
+    """
+
+    values = {"#": str(amount), "#2": str(blackmailer_kingdom_id)}
+    return render(_BLACKMAIL_PENALTY_TEMPLATE, values, rng=rng)
 
 
 # Phase 672 built report-layer narration for the two Search-encounter

@@ -338,6 +338,27 @@ class BlackmailClaim:
     amount: int
 
 
+@dataclass(slots=True, frozen=True)
+class UnpaidBlackmailPenalty:
+    """Phase 741 -- one real "3 times that much in tax revenues" penalty
+    (`AdvancedAbility.SPY_BLACKMAIL`'s own text, `turn/blackmail.py
+    resolve_unpaid_blackmail()`) actually applied this turn. `kingdom_id`
+    is the victim (whose credited tax revenue was reduced);
+    `blackmailer_kingdom_id` is `BlackmailClaim.spy_kingdom_id`, captured
+    before the claim is cleared; `amount` is the real gold figure
+    deducted (the penalty itself, floored at the province income
+    actually available that turn -- see `turn/tax_base.py apply_turn_
+    revenue()`'s own Phase 741 addendum). Recorded once per turn by that
+    same function, rendered by `report/turn_report.py render_blackmail_
+    penalty()`, the same "structured facts now, one later render pass"
+    shape `RaidEvent`/`turn_raid_events` already established.
+    """
+
+    kingdom_id: int
+    blackmailer_kingdom_id: int
+    amount: int
+
+
 @dataclass(slots=True)
 class KingdomState:
     kingdom_id: int
@@ -1310,6 +1331,12 @@ class GameState:
     # convention already used for `LeaderState.mystic_winds_active`/
     # `ProvinceState.plague_active`.
     turn_raid_events: list[RaidEvent] = field(default_factory=list)
+    # Phase 741 -- this turn's own real "3 times that much in tax
+    # revenues" blackmail penalties, reset and repopulated once per turn
+    # by `turn/tax_base.py apply_turn_revenue()` -- the identical
+    # convention `turn_raid_events` right above already established.
+    # Read directly by `report/turn_report.py describe_finances_report()`.
+    turn_blackmail_penalties: list[UnpaidBlackmailPenalty] = field(default_factory=list)
     kingdoms: dict[int, KingdomState] = field(default_factory=dict)
     provinces: dict[HexCoord, ProvinceState] = field(default_factory=dict)
     armies: dict[int, ArmyState] = field(default_factory=dict)

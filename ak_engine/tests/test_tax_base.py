@@ -312,6 +312,13 @@ def test_apply_turn_revenue_applies_unpaid_blackmail_penalty():
     assert credited[1] == 100 - 45  # 3x the 15-gold demand
     assert state.kingdoms[1].active_blackmail is None
     assert state.leaders[9].unpaid_blackmail_penalty_exponent == 1
+    # Phase 741: the real penalty actually deducted is recorded for
+    # report/turn_report.py's own FINANCES-section narration.
+    assert len(state.turn_blackmail_penalties) == 1
+    penalty = state.turn_blackmail_penalties[0]
+    assert penalty.kingdom_id == 1
+    assert penalty.blackmailer_kingdom_id == 2
+    assert penalty.amount == 45
 
 
 def test_apply_turn_revenue_untouched_without_an_active_claim():
@@ -321,3 +328,20 @@ def test_apply_turn_revenue_untouched_without_an_active_claim():
     credited = apply_turn_revenue(state, ScriptedRandom([]))
 
     assert credited[1] == 100
+    assert state.turn_blackmail_penalties == []
+
+
+def test_apply_turn_revenue_blackmail_penalty_is_capped_at_available_income():
+    # A demand far larger than this turn's own real province income --
+    # the recorded penalty (and the credited deduction) can't exceed
+    # what was actually available to lose.
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=10))
+    state.add_leader(LeaderState(9, 2, "Spymaster", HOME))
+    state.kingdoms[1].active_blackmail = BlackmailClaim(spy_leader_id=9, spy_kingdom_id=2, amount=15)
+
+    credited = apply_turn_revenue(state, ScriptedRandom([]))
+
+    assert credited[1] == 0  # floored, never negative
+    assert len(state.turn_blackmail_penalties) == 1
+    assert state.turn_blackmail_penalties[0].amount == 10  # capped, not the full 45

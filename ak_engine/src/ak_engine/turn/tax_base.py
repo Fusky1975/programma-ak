@@ -142,7 +142,7 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.discovery import DISCOVERY_REVENUE_BONUS_PERCENT
-from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
+from ak_engine.models.game_state import GameState, KingdomState, ProvinceState, UnpaidBlackmailPenalty
 from ak_engine.models.office import Office
 from ak_engine.turn.blackmail import resolve_unpaid_blackmail
 from ak_engine.turn.monster_raids import resolve_province_raids
@@ -261,6 +261,15 @@ def apply_turn_revenue(state: GameState, rng: random.Random) -> dict[int, int]:
     loop (province-level income is unaffected; this is a Kingdom-level
     deduction, not tied to any one province) and before the office gold
     bonus.
+
+    **Phase 741**: the real penalty amount actually deducted (floored at
+    whatever province income was available that turn -- the same "can't
+    lose more revenue than you had" cap the rest of this loop already
+    applies) is recorded onto ``state.turn_blackmail_penalties`` for
+    ``report/turn_report.py describe_finances_report()`` to narrate --
+    see ``UnpaidBlackmailPenalty``'s own docstring. The blackmailer's own
+    Kingdom id is read off ``kingdom.active_blackmail`` *before*
+    ``resolve_unpaid_blackmail()`` clears it.
     """
 
     # Deferred import: same circular-import workaround `compute_office_
@@ -268,6 +277,7 @@ def apply_turn_revenue(state: GameState, rng: random.Random) -> dict[int, int]:
     from ak_engine.turn.office_holder import resolve_office_holder
 
     state.turn_raid_events = []
+    state.turn_blackmail_penalties = []
     divine_archangel_holder = resolve_office_holder(state, Office.DIVINE_KING)
     divine_archangel_kingdom_id = (
         state.leaders[divine_archangel_holder.leader_id].kingdom_id if divine_archangel_holder is not None else None
@@ -290,7 +300,17 @@ def apply_turn_revenue(state: GameState, rng: random.Random) -> dict[int, int]:
             )
             state.turn_raid_events.extend(events)
             amount += income
-        amount = max(0, amount - resolve_unpaid_blackmail(state, kingdom_id))
+        active_claim = kingdom.active_blackmail
+        penalty = resolve_unpaid_blackmail(state, kingdom_id)
+        if penalty > 0 and active_claim is not None:
+            state.turn_blackmail_penalties.append(
+                UnpaidBlackmailPenalty(
+                    kingdom_id=kingdom_id,
+                    blackmailer_kingdom_id=active_claim.spy_kingdom_id,
+                    amount=min(penalty, amount),
+                )
+            )
+        amount = max(0, amount - penalty)
         amount += compute_office_gold_bonus(state, kingdom_id)
         kingdom.treasury += amount
         credited[kingdom_id] = amount
