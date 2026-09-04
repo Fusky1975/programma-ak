@@ -50,14 +50,37 @@ a single post-`run_turn()` call is this project's own equivalent of "a
 real sequencing point with nothing to hook automatically" no longer
 applying).
 
-**The formula**: ``P_base = 0.50 - 0.05*A - 0.10*M``, floored at ``0.0``
-(no source describes what a formally-negative value would mean, so this
-follows the same floor-at-zero convention already used throughout this
-project's other probability formulas, e.g. Phase 474's alignment-decay
-gate) -- see ``grandfather_of_assassins_base_success_chance()``. ``A`` is
-every army physically present in the target's own province
-(``GameState.armies_at()``, not ``armies_commanded_by()`` -- the source
-says "nella provincia del bersaglio", not "sotto il suo comando").
+**The formula**: ``B = max(0, 50 - 5*A - 10*M)``, an **integer** percent
+(floored at ``0``, no source describes what a formally-negative value
+would mean, so this follows the same floor-at-zero convention already
+used throughout this project's other probability formulas, e.g. Phase
+474's alignment-decay gate) -- see ``grandfather_of_assassins_base_
+success_chance()``. ``A`` is every army physically present in the
+target's own province (``GameState.armies_at()``, not ``armies_
+commanded_by()`` -- the source says "nella provincia del bersaglio",
+not "sotto il suo comando").
+
+**Phase 745 correction -- integer truncation, not float halving.** A
+second, independent user-supplied disassembly (`Desktop/Grandfather.md`
+SS8.5/SS9.4, `AK.EXE:0x18D89-0x18DEB`, CERTO) resolves the compiled
+formula precisely: ``P = B shr F`` -- an x86 integer right-shift of the
+integer percent ``B``, not a continuous probability halved by ``0.5**F``.
+The two only agree when every intermediate ``B`` happens to be evenly
+divisible by every power of two up to ``2**F`` -- in general they
+diverge: e.g. ``B=15, F=1`` gives the real engine ``7`` (7%,
+``15 >> 1``), while ``0.15 * 0.5 == 0.075`` (7.5%) silently overstates
+it; a small ``B`` can floor to a real, exact ``0%`` (the guard
+permanently blocking further attempts) at an ``F`` where the float
+formula still returns a nonzero chance. SS9.4 itself flags the compiled
+``SHR AX,CL``'s own real 8086/80286+ wraparound quirks (a 16-bit `F>=16`
+zeroing, a modulo-32 shift-count mask thereafter) as "an effect of the
+machine code, not an intentional rulebook rule," and explicitly leaves
+the modern-port choice open: reproduce the DOS hardware quirk, or
+implement the plain intent (``floor(B / 2**F)``, saturating at zero for
+any large ``F``, never wrapping back up). This project implements the
+latter -- Python's own arbitrary-precision ``>>`` already does exactly
+that for a non-negative integer, with no special-casing needed for a
+large ``attempts`` count.
 
 **``M`` correction (Phase 614)**: previously read as the target's own
 *raw* stored Melee skill. The new disassembly is explicit (CERTO,
@@ -71,11 +94,16 @@ even before this phase (Phase 534 predates this module).
 
 **Guard escalation** ("ogni fallimento raddoppia la guardia e dimezza la
 probabilita' normale del tentativo seguente"): modeled as ``effective_
-chance = base_chance * 0.5**attempts``, where ``attempts`` is the
-target's own ``LeaderState.assassination_guild_attempts`` (see that
-field's own docstring for why it's per-target, never reset, and kept
-separate from ``MeritTally``'s own Assassin counter). **Phase 614
-correction**: this counter increments after *every* resolved attempt,
+percent = base_percent >> attempts`` (Phase 745, an integer right-shift
+-- see the module's own Phase 745 correction above), where ``attempts``
+is the target's own ``LeaderState.assassination_guild_attempts`` (see
+that field's own docstring for why it's per-target, never reset, and
+kept separate from ``MeritTally``'s own Assassin counter). ``success_
+chance`` on the returned result is ``effective_percent / 100`` -- a
+plain probability fraction, matching every other "chance" field in this
+project, even though the real roll is against an integer percent
+internally. **Phase 614 correction**: this counter increments after
+*every* resolved attempt,
 not only a failed one (CERTO, `AK.EXE:0x18F0F-0x18F1D` -- both branches
 converge on the same increment) -- renamed from `assassination_guild_
 failed_attempts` accordingly; see that field's own docstring.
@@ -140,23 +168,29 @@ from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.office_holder import resolve_office_holder
 
 
-def grandfather_of_assassins_base_success_chance(army_count_in_target_province: int, target_melee_skill: int) -> float:
-    """SS20.9's own ``P_base = 50% - 5%*A - 10%*M``, floored at ``0.0`` --
-    see module docstring for why a floor (not a documented negative
-    meaning) is the right reading here, and why guard escalation is
-    deliberately a separate multiplier applied by the caller of this
-    function, not baked into it.
+def grandfather_of_assassins_base_success_chance(army_count_in_target_province: int, target_melee_skill: int) -> int:
+    """SS20.9/Grandfather.md SS8.5's own ``B = max(0, 50 - 5*A - 10*M)``,
+    an **integer** percent (not a probability fraction) -- see module
+    docstring's own Phase 745 correction for why this must stay an
+    integer (the real compiled formula right-shifts it, an operation
+    that only matches repeated float halving when every intermediate
+    value happens to be evenly divisible). Floored at ``0`` -- see
+    module docstring for why a floor (not a documented negative meaning)
+    is the right reading here, and why guard escalation is deliberately
+    a separate right-shift applied by the caller of this function, not
+    baked into it.
     """
 
-    return max(0.0, 0.50 - 0.05 * army_count_in_target_province - 0.10 * target_melee_skill)
+    return max(0, 50 - 5 * army_count_in_target_province - 10 * target_melee_skill)
 
 
 @dataclass(slots=True, frozen=True)
 class GrandfatherOfAssassinsAttemptResult:
     """One resolved Guild attempt -- see module docstring for the full
-    derivation of ``success_chance`` (base formula times the target's
-    own guard-escalation multiplier) and why a successful attempt
-    updates neither side's ``MeritTally``.
+    derivation of ``success_chance`` (the base integer percent, right-
+    shifted by the target's own guard-escalation attempt count, then
+    converted to a plain probability fraction) and why a successful
+    attempt updates neither side's ``MeritTally``.
     """
 
     titleholder_leader_id: int
@@ -189,8 +223,11 @@ def resolve_grandfather_of_assassins_attempt(
 
     army_count = len(state.armies_at(target.location))
     melee_skill = effective_skill_level(state, target, Ability.MELEE)
-    base_chance = grandfather_of_assassins_base_success_chance(army_count, melee_skill)
-    effective_chance = base_chance * (0.5**target.assassination_guild_attempts)
+    base_percent = grandfather_of_assassins_base_success_chance(army_count, melee_skill)
+    # Phase 745: integer right-shift (P = B shr F), not float halving --
+    # see module docstring's own Phase 745 correction.
+    effective_percent = base_percent >> target.assassination_guild_attempts
+    effective_chance = effective_percent / 100
 
     succeeded = rng.random() < effective_chance
     target.assassination_guild_attempts += 1

@@ -46,12 +46,13 @@ def build_state() -> GameState:
 
 
 def test_grandfather_of_assassins_base_success_chance_matches_the_formula():
-    assert grandfather_of_assassins_base_success_chance(0, 0) == 0.50
-    assert grandfather_of_assassins_base_success_chance(2, 1) == pytest.approx(0.30)  # 0.50 - 0.10 - 0.10
+    # Phase 745: an integer percent, not a probability fraction.
+    assert grandfather_of_assassins_base_success_chance(0, 0) == 50
+    assert grandfather_of_assassins_base_success_chance(2, 1) == 30  # 50 - 10 - 10
 
 
 def test_grandfather_of_assassins_base_success_chance_floors_at_zero():
-    assert grandfather_of_assassins_base_success_chance(10, 10) == 0.0
+    assert grandfather_of_assassins_base_success_chance(10, 10) == 0
 
 
 def test_resolve_attempt_none_without_a_titleholder():
@@ -117,7 +118,40 @@ def test_resolve_attempt_guard_escalation_halves_the_chance():
     result = resolve_grandfather_of_assassins_attempt(state, target_leader_id=2, rng=ScriptedRandom([0.0]))
 
     assert result is not None
-    assert result.success_chance == 0.25  # 0.50 * 0.5**1
+    assert result.success_chance == 0.25  # 50 >> 1 == 25 -- happens to match float halving, B=50 is exact
+
+
+def test_resolve_attempt_guard_escalation_truncates_rather_than_halves():
+    # Phase 745: B=15 (A=1 army, M=3 Melee) at F=1 attempt -- the real
+    # engine's integer shift gives 15 >> 1 == 7 (7%), not the old
+    # 0.15 * 0.5 == 0.075 (7.5%) float halving.
+    state = build_state()
+    state.leaders[2].skills = _skills_with(Ability.MELEE, 3)
+    state.add_army(ArmyState(100, None, ArmyType.BOWMEN, Quality.AVERAGE, TARGET_LOCATION))
+    state.leaders[2].assassination_guild_attempts = 1
+
+    result = resolve_grandfather_of_assassins_attempt(state, target_leader_id=2, rng=ScriptedRandom([0.0]))
+
+    assert result is not None
+    assert result.success_chance == pytest.approx(0.07)
+
+
+def test_resolve_attempt_guard_escalation_can_floor_to_exact_zero():
+    # Phase 745: B=5 (A=1, M=4) at F=3 attempts -- 5 >> 3 == 0, a real,
+    # exact zero (the guard permanently blocking further attempts) --
+    # the old float formula (0.05 * 0.5**3 == 0.625%) would still give
+    # a nonzero chance here.
+    state = build_state()
+    state.leaders[2].skills = _skills_with(Ability.MELEE, 4)
+    state.add_army(ArmyState(100, None, ArmyType.BOWMEN, Quality.AVERAGE, TARGET_LOCATION))
+    state.leaders[2].assassination_guild_attempts = 3
+
+    result = resolve_grandfather_of_assassins_attempt(state, target_leader_id=2, rng=ScriptedRandom([0.0]))
+
+    assert result is not None
+    assert result.success_chance == 0.0
+    assert result.succeeded is False  # 0.0 < 0.0 is False, even at the lowest possible roll
+    assert 2 in state.leaders
 
 
 def test_resolve_attempt_accounts_for_armies_and_melee_skill():

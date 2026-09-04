@@ -30651,7 +30651,7 @@ follow-up request after the original 431-435 plan shipped.
   test (previously asserting "documented no-effect") was replaced with
   two real success/failure cases.
 
-- **Phase 744 (current)**: thirty-second survey's own candidate #1 --
+- **Phase 744**: thirty-second survey's own candidate #1 --
   production battles finally roll real Fanaticism. `turn/strength.py
   TITLE_FANATICISM_CHANCE`/`roll_fanaticism()`/`roll_title_fanaticism()`
   (Phase 35/390) -- fully sourced ("An army fighting for a Divine/Good/
@@ -30695,6 +30695,34 @@ follow-up request after the original 431-435 plan shipped.
   touching any test; the exact 6-test breakage was measured empirically
   first, not assumed. This closes the entire thirty-second survey --
   every candidate (#1-#4) is now done.
+
+- **Phase 745 (current)**: thirty-third survey's own candidate #1 --
+  `turn/assassin_guild.py`'s Grandfather of Assassins guard-escalation
+  formula was using continuous float halving (`base_chance * 0.5**
+  attempts`) where the real compiled engine truncates an **integer**
+  percent via an x86 right-shift (`P = B shr F`), confirmed by a second,
+  independent user-supplied disassembly (`Desktop/Grandfather.md`
+  SS8.5/SS9.4, `AK.EXE:0x18D89-0x18DEB`, CERTO). The two only agree when
+  every intermediate value happens to be evenly divisible by the
+  relevant power of two -- in general the old formula overstated the
+  real chance (e.g. `B=15, F=1`: real `7%` vs. the old `7.5%`), and
+  could never reach a real, exact `0%` the way the true integer shift
+  can (a permanently-blocked guard) while the float formula always kept
+  a small residual chance alive. `grandfather_of_assassins_base_success_
+  chance()` now returns an integer percent instead of a probability
+  fraction; `resolve_grandfather_of_assassins_attempt()` right-shifts it
+  by the target's own attempt count (`base_percent >> attempts`,
+  Python's own arbitrary-precision `>>` already implementing the
+  source's own recommended "floor with saturation at zero" reading
+  rather than reproducing the compiled code's own 8086/80286+ SHR
+  wraparound quirks, which SS9.4 itself flags as an unintentional
+  machine-code artifact, not a rulebook rule) before converting to a
+  plain probability fraction for `success_chance`. Test count: 6338 ->
+  6340 (net +2). Full suite verified green (unchanged, 6338) before
+  touching any test; only 1 of the 17 pre-existing tests needed fixing
+  (the base-formula's own float-vs-int assertion) -- every other
+  existing test's own `F`/`B` combination happened to be an exact
+  power-of-two division, so the fix was a provable no-op for them.
 
 ## Setup
 
