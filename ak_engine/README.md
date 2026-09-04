@@ -30412,7 +30412,7 @@ follow-up request after the original 431-435 plan shipped.
   natural season anchor. Test count: 6248 -> 6264 (net +16). Full suite
   verified green (unchanged, 6248) before writing a single new test.
 
-- **Phase 737 (current)**: the sea-transport movement-legality gate,
+- **Phase 737**: the sea-transport movement-legality gate,
   twenty-ninth fresh codebase survey's own candidate #1. `Regolamento
   AK.txt` lines 870-876: land units genuinely cannot cross onto/off Sea
   terrain without boarding a Fleet/Whale with real capacity, and a
@@ -30482,6 +30482,24 @@ follow-up request after the original 431-435 plan shipped.
   moved a Fleet/Ent directly between two land provinces -- a real,
   previously-silent illegality, corrected by changing their own target
   terrain to Sea) before writing a single new test.
+
+- **Phase 738 (current)**: thirtieth fresh codebase survey's own
+  candidate #1 -- closes the real, adjacent gap Phase 737's own closing
+  note flagged: `turn/sea_transport.py can_board()`'s air-carrier
+  branch only accepted `FLEET_INFANTRY_ARMY_TYPES` cargo, so `Regolamento
+  AK.txt`'s own sourced Mermen clause ("possono essere trasportate da
+  unità aeree" -- can be carried by air units, already quoted verbatim
+  in this module's own docstring since Phase 714) could never actually
+  fire through real boarding, even though `find_transport_illegality()`'s
+  own `"mermen_air_transport"` legality exemption (Phase 737) was
+  already real and tested. One new `cargo_type is not ArmyType.MERMEN`
+  branch in `can_board()`, sharing the identical one-unit `AIR_
+  INFANTRY_CAPACITY` slot every other eligible infantry type already
+  does (the rulebook's own Mermen clause names no separate capacity).
+  Test count: 6301 -> 6307 (net +6). Full suite verified green
+  (unchanged, 6301) before writing a single new test -- this fix is a
+  provable no-op for every existing fixture, since none of them ever
+  attempts to board a Mermen unit onto an air carrier.
 
 ## Setup
 

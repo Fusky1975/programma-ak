@@ -1635,3 +1635,23 @@ def test_execute_move_enforced_checks_the_real_chase_step_not_the_ultimate_targe
 
     assert excinfo.value.origin_coord == ORIGIN
     assert excinfo.value.destination_coord == TARGET  # the real hop, not `further`
+
+
+def test_execute_move_enforced_permits_a_mermen_carried_by_a_real_air_carrier():
+    # Phase 738 closes the loop Phase 737 left open: can_board() now
+    # accepts Mermen as air-carrier cargo, so this real, sourced
+    # legality exemption is reachable via real automatic boarding, not
+    # just directly-constructed state.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Coastia", Race.HUMAN, Alignment.GOOD, ORIGIN))
+    state.add_province(ProvinceState(ORIGIN, Terrain.SEA, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.MERMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(
+        state, kingdom_id=1, army_ids=[101, 102], target=TARGET, auto_board=True, enforce_transport_legality=True
+    )
+
+    assert result.moved is True
+    assert state.armies[102].transported_by == 101

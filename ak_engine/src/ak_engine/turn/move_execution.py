@@ -668,15 +668,14 @@ def _auto_board_transport_group(
 # their own rule is about the province's *real* base terrain
 # (`ProvinceState.terrain`), not just its current effective one.
 #
-# A known, adjacent, pre-existing gap, deliberately NOT fixed here (out
-# of this phase's own scope, flagged rather than silently expanded
-# into): `turn/sea_transport.py can_board()`'s own air-carrier branch
-# only accepts `FLEET_INFANTRY_ARMY_TYPES` cargo, which does not include
-# `ArmyType.MERMEN` -- so a real `board_army()` call can never actually
-# seat a Mermen unit onto a Dragon/Eagle Wing today, even though this
-# gate's own Mermen-via-air-carrier exemption is modeled as real and
-# correct (and is directly tested as such, independent of whether real
-# automatic boarding can produce that state yet).
+# Phase 738 closed a real, adjacent gap this phase's own first version
+# left open: `turn/sea_transport.py can_board()`'s own air-carrier
+# branch didn't accept `ArmyType.MERMEN` cargo, so a real `board_army()`
+# call could never actually seat a Mermen unit onto a Dragon/Eagle Wing
+# -- meaning this gate's own Mermen-via-air-carrier exemption below
+# (`"mermen_air_transport"`) was real and tested but unreachable via
+# real automatic boarding. Now reachable -- see that module's own Phase
+# 738 addendum.
 TransportIllegalMoveReason = Literal[
     "insufficient_water_transport", "naval_land_hop", "ent_shoreline", "dinosaur_shoreline", "mermen_air_transport"
 ]

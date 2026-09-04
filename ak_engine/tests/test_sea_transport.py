@@ -212,6 +212,51 @@ def test_can_board_dragon_wing_refuses_an_otherwise_ineligible_unit_even_with_dr
     assert can_board(state, dragon, ArmyType.ENTS, caster_has_druidic_transport=True) is False
 
 
+# -- Phase 738: can_board() accepts Mermen as air-carrier cargo -------------
+
+
+def test_can_board_dragon_wing_accepts_mermen_unconditionally():
+    dragon = _army(1, ArmyType.DRAGON_WING)
+    state = _state(dragon)
+
+    assert can_board(state, dragon, ArmyType.MERMEN) is True
+
+
+def test_can_board_eagle_wing_accepts_mermen_unconditionally():
+    eagle = _army(1, ArmyType.EAGLE_WING)
+    state = _state(eagle)
+
+    assert can_board(state, eagle, ArmyType.MERMEN) is True
+
+
+def test_can_board_dragon_wing_refuses_a_second_mermen_unit():
+    dragon = _army(1, ArmyType.DRAGON_WING)
+    cargo = _army(2, ArmyType.MERMEN, transported_by=1)
+    state = _state(dragon, cargo)
+
+    assert can_board(state, dragon, ArmyType.MERMEN) is False
+
+
+def test_can_board_dragon_wing_mermen_and_ordinary_infantry_share_the_same_slot():
+    # The rulebook's own Mermen clause names no capacity of its own --
+    # they share the identical one-unit slot every other eligible
+    # infantry type already does, not a separate pool.
+    dragon = _army(1, ArmyType.DRAGON_WING)
+    cargo = _army(2, ArmyType.BOWMEN, transported_by=1)
+    state = _state(dragon, cargo)
+
+    assert can_board(state, dragon, ArmyType.MERMEN) is False
+
+
+def test_board_army_seats_a_real_mermen_unit_onto_a_dragon_wing():
+    dragon = _army(1, ArmyType.DRAGON_WING)
+    mermen = _army(2, ArmyType.MERMEN)
+    state = _state(dragon, mermen)
+
+    assert board_army(state, 2, 1) is True
+    assert state.armies[2].transported_by == 1
+
+
 # -- can_board(): Mermen and other non-carriers never carry anything -------
 
 

@@ -41,6 +41,20 @@ sourced override of the rulebook's own "Ents can never be transported"
 line, not an invented exception. Mermen are confirmed to never be able
 to carry anything (they can only ever be cargo, for an air unit).
 
+**Phase 738**: that last sentence describes the rulebook's own real
+promise, but `can_board()`'s own air-carrier branch didn't honor it
+until now -- Mermen were absent from `FLEET_INFANTRY_ARMY_TYPES` (the
+Fleet/Whale rule's own eligible-cargo set) since Phase 714, and the
+air-carrier branch (Phase 717) reused that same set directly, so a
+real `board_army()` call could never actually seat a Mermen unit onto
+a Dragon/Eagle Wing -- a gap flagged explicitly in Phase 737's own
+closing note (`turn/move_execution.py`'s own `find_transport_
+illegality()` already had a real, tested "carried by an air unit"
+legality exemption for Mermen with nothing to make it reachable).
+Closed by adding `ArmyType.MERMEN` as a second, explicit eligible type
+in that one branch, sharing the same one-unit `AIR_INFANTRY_CAPACITY`
+slot (the rulebook's own Mermen clause names no capacity of its own).
+
 **Army-type classification** (`models/army_type.py FLEET_INFANTRY_
 ARMY_TYPES`/`FLEET_MOUNTED_ARMY_TYPES`): the rulebook's own "(inclusi
 Troll e Bestie Mannare)"/"(inclusi Elefanti e Cammelli)" parentheticals
@@ -166,7 +180,13 @@ def can_board(
         # Phase 717: "Possono trasportare un'unità di fanteria ciascuna"
         # -- a real base rule, unconditional (no Advanced Ability gate,
         # unlike the two Druidic Fleet/Whale extensions above).
-        if cargo_type not in FLEET_INFANTRY_ARMY_TYPES:
+        # Phase 738: Mermen are a second, real exception to this same
+        # rule -- the rulebook's own separate clause for them, quoted in
+        # full in this module's own docstring above ("possono essere
+        # trasportate da unità aeree"), names no capacity of its own, so
+        # they share the identical one-unit slot every other eligible
+        # infantry type already does, rather than a separate pool.
+        if cargo_type not in FLEET_INFANTRY_ARMY_TYPES and cargo_type is not ArmyType.MERMEN:
             return False
         return len(current_cargo_types) < AIR_INFANTRY_CAPACITY
 
