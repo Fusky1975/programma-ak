@@ -437,10 +437,10 @@ escalation()`, called once per turn from `turn_processor.run_turn()` --
 expected to be a permanent no-op given the structural-unreachability bug
 two paragraphs above, modeled anyway since the effect itself is real.
 **Bravest of the Brave's own effect ("quando parla a un Hero, il
-temperamento di quel Hero sale di un livello") is deliberately deferred**:
-it needs a leader-vs-leader Talk mechanic `turn/challenge_execution.py`
-doesn't have at all yet (that module only dispatches `MELEE`/`SHOOT`/
-`STEAL`) -- a larger, separate follow-up, not attempted here.
+temperamento di quel Hero sale di un livello") is wired** (Phase 469):
+`turn/challenge_execution.py _apply_bravest_talk_inspiration()`, gated
+on the `Office.BRAVEST` holder issuing a `Maneuver.TALK` tactic against
+a Hero target.
 
 **None of these 18 grant Victory Points** (`models/office.py
 OFFICE_VALUE` already reflects this, Phase 81, same as every royal

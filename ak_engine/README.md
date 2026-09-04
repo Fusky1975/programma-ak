@@ -30557,7 +30557,7 @@ follow-up request after the original 431-435 plan shipped.
   writing a single new test -- a provable no-op for every existing
   fixture, since `weapon_proc` defaults to `None` everywhere.
 
-- **Phase 741 (current)**: thirty-first survey's own candidate #1 --
+- **Phase 741**: thirty-first survey's own candidate #1 --
   `AdvancedAbility.SPY_BLACKMAIL`'s own unpaid-tax penalty finally gets
   a FINANCES-report line. `turn/blackmail.py`'s own module docstring
   already flagged this precisely: the real "3 times that much in tax
@@ -30587,6 +30587,20 @@ follow-up request after the original 431-435 plan shipped.
   -> 6321 (net +5). Full suite verified green (unchanged, 6316) before
   writing a single new test -- a provable no-op for every existing
   fixture.
+
+- **Phase 742 (current)**: not part of a phased roadmap -- comment-only,
+  no behavior change. Fixes 2 stale known-gap-claim docstrings flagged by
+  the thirty-second fresh codebase survey (2026-09-04): `turn/merit_
+  points.py`'s own note on Bravest of the Brave's Talk-inspiration effect
+  ("deliberately deferred... `challenge_execution.py` doesn't have a
+  leader-vs-leader Talk mechanic at all yet") was stale since Phase 469,
+  which already built `_apply_bravest_talk_inspiration()` for exactly
+  this; `turn/aspy_execution.py`'s own SS3.4 addendum ("Not wired here:
+  Trail and Pursue") was stale since Phase 461, which already wired both
+  (`trail_execution.py`/`pursue_execution.py` both already had their own
+  correct, un-stale docstrings pointing at this same wiring -- only the
+  ASpy-side copy of the claim was never updated). Full suite unchanged
+  (6321).
 
 ## Setup
 

@@ -155,12 +155,13 @@ has no success/failure roll of its own -- every call that reaches a
 real ``SpyReport`` (the caster's location resolves to a known
 province) is a genuine informational event, so ``turn/experience.py
 add_experience(leader, Ability.SPY, 10, rng)`` fires unconditionally
-right before that report is built. **Not wired here**: Trail
-(``turn/trail_execution.py``) and Pursue (``turn/pursue_execution.py``)
--- SS3.4's own text names all three under one row, but each is its
-own action executor with its own real "qualifying" moment to identify
-first, left for its own future phase rather than assumed identical to
-ASpy's own always-fires shape.
+right before that report is built. **Also wired** (Phase 461): Trail
+(``turn/trail_execution.py``, on its own real "qualifying" moment) and
+Pursue (``turn/pursue_execution.py``, gated on its own ``spied_on=True``)
+-- SS3.4's own text names all three under one row; each fires the same
+``add_experience(leader, Ability.SPY, 10, rng)`` call at its own
+action-specific qualifying moment rather than reusing ASpy's own
+always-fires shape verbatim.
 
 **Phase 694 -- Druidic Animal Spies.** ``models/advanced_ability.py
 ADVANCED_ABILITY_DESCRIPTION[DRUIDIC_ANIMAL_SPIES]``: "When the Druid
