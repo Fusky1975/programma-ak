@@ -491,6 +491,19 @@ arrow_duel()`` call is only ever reached at ``CombatRange.BOW_RANGE``
 condition can ever be true there, confirmed directly by the existing
 ``test_execute_search_steal_caught_bow_range_resolves_fire_arrow_duel``
 test's own scripted ``choice_indices``.
+
+**Phase 748 (``Desktop/FDISCKNGFN.md``) -- the Search order registers
+its target's bare existence, unconditionally.** A real, previously
+entirely unmodeled step this project didn't know it was missing: the
+instant a Search order validly targets a Feature this Kingdom knows
+*nothing* about (``discovery_level`` 0), the real engine records that
+it exists at all (level 1) before the encounter itself even starts --
+independent of every tactic, Scout included -- and, if no other Kingdom
+in the world had found it either, credits the acting character's own
+Chancellor merit (``MeritTally.features_discovered_first``, already
+live for Explore's own discovery path since Phase 256, never for
+Search until now). See ``_register_search_target_known()``'s own
+docstring for the full disassembly citation.
 """
 
 from __future__ import annotations
@@ -912,6 +925,13 @@ class SearchExecutionResult:
     # PayUp/DrainSkill/DrainCourage Power condition -- wired into that
     # real gate since Phase 688, see `_apply_scout()`'s own docstring.
     scout_orders_given: int = 0
+    # Phase 748 (Desktop/FDISCKNGFN.md): whether this Search order just
+    # registered the target Feature's bare existence for the first time
+    # (``discovered_by_kingdom`` 0 -> 1) -- see ``_register_search_
+    # target_known()``'s own docstring. ``False`` when the Feature was
+    # already known at any level, or when this Kingdom already had an
+    # entry (however low).
+    target_newly_registered: bool = False
     # Phase 544: a Talk tactic's own Druid DR gate failed against a
     # guardian too unintelligent to be silently ignored (``mintel <
     # Medium`` -- see ``_apply_talk_language_failure()``'s own Phase 544
@@ -968,6 +988,7 @@ def execute_search(
         )
     result = _resolve_search_encounter(state, leader_id, request, rng)
     if result.accepted:
+        _register_search_target_known(state, leader, request, result)
         if leader is not None:
             # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's
             # own Melee/Archery rows -- "evento di mischia/duello
@@ -1049,6 +1070,82 @@ def _apply_talk_language_failure(
     if monster_intelligence_at_least_medium(feature.guardian_monster):
         return  # _LIgnore -- silent, matches this project's own IGNORE convention
     result.talk_language_failure = True
+
+
+def _register_search_target_known(
+    state: GameState,
+    leader: LeaderState | None,
+    request: SearchRequest,
+    result: SearchExecutionResult,
+) -> None:
+    """``Reveal_Feature`` (a descriptive label -- no symbol survives),
+    the compiled ``AK.EXE`` helper the real ``Search`` resolver calls
+    whenever its target Feature is still completely unknown to the
+    searching character's own Kingdom -- ``Desktop/FDISCKNGFN.md``
+    (user-supplied disassembly, 2026-09-05, CERTO throughout), a
+    byte-exact trace of raw offsets ``0xDACC``-``0xDBA4`` (the ``Search``
+    resolver itself) and ``0x249EC``-``0x24B78`` (the shared helper).
+
+    **What the disassembly proves, verbatim**: once the resolver's own
+    coordinate check passes (the character really is co-located with
+    the Feature -- ``execute_search()``'s own ``result.accepted``,
+    below), it reads ``fdisc^[LKing(ldr),fn]``; if that cell is still
+    exactly ``0``, it calls the shared helper, which does two things
+    *unconditionally*, independent of any Encounter Plan tactic
+    (Scout included) and *before* the encounter itself even starts:
+
+    1. ``fdisc^[kng,fn] := 1`` -- the Feature's bare existence becomes
+       known ("luogo noto; colonna Special ancora '?'", ``models/
+       feature.py``'s own already-documented level 1). A single literal
+       ``mov byte ptr es:[di],01h`` (raw ``0x24B4D``) -- never a `2`/`3`,
+       and never reached at all when the cell is already nonzero (the
+       gate itself prevents ever *downgrading* a higher level).
+    2. **Chancellor's "+2 per first-in-the-world discovery" merit**
+       (``lfdisc[ldr]``, already modeled as ``MeritTally.features_
+       discovered_first`` since Phase 256 -- but, until this phase,
+       only ever credited from ``turn/plan_dispatch.py``'s own EXPLORE
+       branch): the helper scans every Kingdom's own row for this same
+       Feature, and increments the *acting character's own* (not the
+       Kingdom's) tally only when none of them already had a positive
+       entry -- i.e. this Search is genuinely the first anyone, anywhere,
+       has ever found this Feature. Exactly the same "no other row is
+       positive yet" check ``plan_dispatch.py``'s own Explore-side
+       credit already performs via ``len(feature.discovered_by_kingdom)
+       == 1`` right after the write -- reused verbatim here, not a new
+       formula.
+
+    A kingdomless (independent Hero) leader is skipped, same reasoning
+    ``_apply_scout()``'s own docstring already gives for the identical
+    situation: discovery is tracked per ``kingdom_id``, and there's
+    nowhere to record it for one. Scoped to whatever ``execute_search()``
+    already accepts as a valid target (Phase 132's own pre-existing
+    "must have a recorded guardian" boundary included) -- a genuinely
+    guardian-less Feature never reaches this function at all today, a
+    separate, pre-existing limit this phase doesn't touch.
+
+    Deliberately **not** gated on ``result.leader_killed``, unlike
+    ``_apply_scout()`` -- the disassembly places this registration
+    *before* ``Start_Encounter`` runs, so a character who dies fighting
+    the guardian moments later has already, unconditionally, made the
+    Feature's existence known. This is also *why* the caller passes the
+    already-resolved ``leader`` object (captured at the top of
+    ``execute_search()``, before the encounter runs) rather than a bare
+    ``leader_id`` for this function to look up itself: a leader who dies
+    during the encounter is already gone from ``state.leaders`` (and, for
+    a King, immediately succeeded by a Royal Heir under the same id) by
+    the time this runs -- the object captured earlier is still the real
+    searcher, with the real ``kingdom_id``/``merit_tally`` to credit.
+    """
+
+    feature = state.features.get(request.feature_id)
+    if leader is None or feature is None or leader.kingdom_id is None:
+        return
+    if feature.discovery_level(leader.kingdom_id) != 0:
+        return
+    feature.discovered_by_kingdom[leader.kingdom_id] = 1
+    result.target_newly_registered = True
+    if len(feature.discovered_by_kingdom) == 1:
+        leader.merit_tally.features_discovered_first += 1
 
 
 def _apply_scout(

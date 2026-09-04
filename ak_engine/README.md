@@ -30768,7 +30768,7 @@ follow-up request after the original 431-435 plan shipped.
   gated on a real `leader_id` that no pre-Phase-746 test happened to
   pass alongside a co-located mercenary army.
 
-- **Phase 747 (current)**: `Inv_Bonus` really credits gold, not just a
+- **Phase 747**: `Inv_Bonus` really credits gold, not just a
   report percentage -- `Desktop/INVBONUS.md` (user-supplied disassembly,
   2026-09-04) resolves the standing "deliberately not folded into the
   credited amount" note. `AK.EXE`'s own real economic resolver, quoted
@@ -30821,6 +30821,50 @@ follow-up request after the original 431-435 plan shipped.
 
   Test count: 6348 -> 6357 (net +9). This closes backlog item #2 in
   full (both the `Inv_Bonus` and `Racial_Tax` halves).
+
+- **Phase 748 (current)**: closes two real, previously entirely
+  unmodeled gaps found while chasing backlog item #3's own Scout
+  success-chance question -- `Desktop/FDISCKNGFN.md` (user-supplied
+  disassembly, 2026-09-05, CERTO throughout) doesn't resolve that
+  question itself (it says so explicitly -- Scout's own tactic-driven
+  discovery advancement is "a later phase of the encounter," out of
+  scope for this document), but isolates byte-exact the *earlier*
+  moment a Search order registers its target at all. The real ``AK.EXE``
+  ``Search`` resolver, the instant its own coordinate check passes,
+  reads `fdisc^[LKing(ldr),fn]`; if that cell is still `0`, a shared
+  helper (also called from Explore's own random-discovery branch)
+  writes it to `1` -- the Feature's bare existence becomes known
+  ("luogo noto, colonna Special ancora '?'") -- **unconditionally**,
+  independent of every Encounter Plan tactic (Scout included) and
+  *before* the encounter itself starts, and, if no other Kingdom's own
+  row was already positive, credits the acting character's own
+  Chancellor merit (`MeritTally.features_discovered_first`, live since
+  Phase 256 but, until now, only ever credited from Explore's own
+  dispatch branch).
+
+  Neither piece existed anywhere in `ak_engine`: `_apply_scout()` only
+  ever wrote levels 2/3, and only when a Scout tactic was present, so a
+  Search with no Scout tactic at all left `discovered_by_kingdom`
+  completely untouched forever. New `turn/search_execution.py
+  _register_search_target_known()`, called once per accepted Search,
+  right before `_apply_scout()`. Takes the caller's own already-resolved
+  `leader` object (not a bare id) rather than re-fetching it internally
+  -- a leader who dies fighting the guardian moments later is already
+  gone from `state.leaders` (a King even succeeded by a Royal Heir under
+  the same id) by the time this runs, but the disassembly places the
+  registration *before* `Start_Encounter`, so it must still apply; found
+  and fixed via a genuine end-to-end test failure, not assumed correct.
+  Scoped to whatever `execute_search()` already accepts as a valid
+  target (its own pre-existing "must have a recorded guardian" boundary
+  included) -- a guardian-less Feature never reaches this function
+  either, a separate, pre-existing limit untouched here. Test count:
+  6357 -> 6365 (net +8). Full suite verified green (unchanged, 6357)
+  before touching a single test; the 4 pre-existing failures this
+  surfaced were all the same real, expected interaction (a Search that
+  previously left a Feature at `{}` now correctly shows `{kingdom_id:
+  1}`) -- updated, not silenced. Backlog item #3's own original question
+  (Scout's missing success percentage for Cast-only/Beg-only/Say-only/
+  bare-Scout plans) remains exactly as open as before.
 
 ## Setup
 

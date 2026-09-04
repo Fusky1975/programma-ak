@@ -83,7 +83,11 @@ discovers a Special Place; `turn/plan_dispatch.py`'s own
 `ActionCode.EXPLORE` branch checks, for each newly-discovered feature,
 whether that kingdom's own entry is still the *only* one in the dict
 (nobody else got there first) and credits the acting leader's own
-`MeritTally.features_discovered_first` when so.
+`MeritTally.features_discovered_first` when so. **Phase 748** (`Desktop/
+FDISCKNGFN.md`) extends the identical check to `turn/search_execution.py
+_register_search_target_known()` -- the real compiled helper both
+Explore's and Search's own discovery paths call credits this merit the
+same way, not just Explore's.
 
 `discoveries_found_first`/`discoveries_found_not_first` (Phase 271)
 and `discoveries_via_espionage` (Phase 267) are live too, now that a

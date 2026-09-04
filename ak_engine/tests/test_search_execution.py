@@ -44,6 +44,7 @@ from ak_engine.turn.search_execution import (
     WEAK_TEMPER_FLEE_CHANCE_BONUS,
     SearchExecutionResult,
     _leader_combatant,
+    _register_search_target_known,
     _resolve_cast_disruption,
     effective_flee_chance,
     execute_search,
@@ -4556,7 +4557,12 @@ def test_execute_search_no_scout_tactic_leaves_the_feature_undiscovered():
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert result.scout_orders_given == 0
-    assert state.features[1].discovered_by_kingdom == {}
+    # Phase 748 (Desktop/FDISCKNGFN.md): a valid Search order registers
+    # the target's bare existence (level 1) unconditionally, independent
+    # of Scout -- this is no longer "undiscovered" the way the test's
+    # own name suggests pre-Phase-748; only Scout's own further reveal
+    # (level 2/3) stays absent, which is what this test really proves.
+    assert state.features[1].discovered_by_kingdom == {1: 1}
 
 
 def test_execute_search_scout_counts_every_scout_tactic_in_the_plan():
@@ -4586,7 +4592,10 @@ def test_execute_search_scout_with_only_unnamed_tactics_is_genuinely_unresolved(
     result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))  # the monster's own hit_points roll
 
     assert result.scout_orders_given == 1
-    assert state.features[1].discovered_by_kingdom == {}
+    # Phase 748: the bare-existence registration still fires (it's
+    # independent of Scout's own tactics-based reveal) -- only the
+    # Scout-driven level 2/3 bump stays genuinely unresolved here.
+    assert state.features[1].discovered_by_kingdom == {1: 1}
 
 
 def test_execute_search_scout_with_melee_in_plan_is_a_guaranteed_full_discovery():
@@ -4616,7 +4625,11 @@ def test_execute_search_scout_skipped_when_the_leader_dies_but_still_counted():
 
     assert result.leader_killed is True
     assert result.scout_orders_given == 1  # still recorded -- see _apply_scout()'s own docstring
-    assert state.features[1].discovered_by_kingdom == {}  # but no discovery -- a dead leader can't scout
+    # Phase 748: a dead leader can't Scout (level 2/3, _apply_scout()'s
+    # own leader_killed gate) -- but the bare-existence registration
+    # (level 1) already happened before the encounter started, so it
+    # survives the leader's own death.
+    assert state.features[1].discovered_by_kingdom == {1: 1}
 
 
 def test_execute_search_scout_steal_only_partial_discovery_on_the_documented_33_percent_miss():
@@ -5256,7 +5269,10 @@ def test_execute_search_leaders_own_cast_after_a_non_last_melee_tactic_can_be_di
     assert mock_swing.called
     assert mock_disrupt.called
     assert not mock_cast.called
-    assert state.features[1].discovered_by_kingdom == {}  # nowhere to record it
+    # Phase 748: a valid Search order registers bare existence regardless
+    # of tactics -- no Scout tactic is present in this plan at all, but
+    # the registration doesn't depend on one.
+    assert state.features[1].discovered_by_kingdom == {1: 1}
     # Phase 416: the guardian's own reactive swing (attacker="b", since
     # this branch is "monster swings while the leader casts") is narrated.
     assert MeleeSwing(attacker="b", hit=True, damage=5) in result.melee_swings
@@ -5385,3 +5401,120 @@ def test_execute_search_non_last_melee_trailing_fallback_skips_temper_setup_alre
         execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
 
     assert mock_duel.call_args.kwargs["skip_temper_setup"] is True
+
+
+# -- Phase 748 (Desktop/FDISCKNGFN.md): a valid Search order registers its
+# target's bare existence, unconditionally, before the encounter starts --
+
+
+def _unknown_feature(feature_id: int = 1) -> Feature:
+    return Feature(feature_id=feature_id, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+
+
+def test_register_search_target_known_writes_level_1_for_a_wholly_unknown_feature():
+    state = _state_with_leader()
+    feature = _unknown_feature()
+    state.add_feature(feature)
+    result = SearchExecutionResult(accepted=True)
+
+    _register_search_target_known(state, state.leaders[LEADER_ID], SearchRequest(feature_id=1, unconfirmed_extra0=0, tactics=[]), result)
+
+    assert feature.discovered_by_kingdom == {1: 1}
+    assert result.target_newly_registered is True
+
+
+def test_register_search_target_known_never_downgrades_an_already_higher_level():
+    state = _state_with_leader()
+    feature = _unknown_feature()
+    feature.discovered_by_kingdom[1] = 3
+    state.add_feature(feature)
+    result = SearchExecutionResult(accepted=True)
+
+    _register_search_target_known(state, state.leaders[LEADER_ID], SearchRequest(feature_id=1, unconfirmed_extra0=0, tactics=[]), result)
+
+    assert feature.discovered_by_kingdom == {1: 3}
+    assert result.target_newly_registered is False
+
+
+def test_register_search_target_known_skips_a_kingdomless_leader():
+    state = GameState()
+    state.add_leader(LeaderState(LEADER_ID, kingdom_id=None, name="Wanderer", location=LOCATION))
+    feature = _unknown_feature()
+    state.add_feature(feature)
+    result = SearchExecutionResult(accepted=True)
+
+    _register_search_target_known(state, state.leaders[LEADER_ID], SearchRequest(feature_id=1, unconfirmed_extra0=0, tactics=[]), result)
+
+    assert feature.discovered_by_kingdom == {}
+    assert result.target_newly_registered is False
+
+
+def test_register_search_target_known_none_leader_is_a_safe_no_op():
+    # The searcher couldn't be resolved at all (e.g. removed and not
+    # succeeded, an edge case no real dispatch produces but the type
+    # signature allows) -- a defensive no-op, not a crash.
+    state = GameState()
+    feature = _unknown_feature()
+    state.add_feature(feature)
+    result = SearchExecutionResult(accepted=True)
+
+    _register_search_target_known(state, None, SearchRequest(feature_id=1, unconfirmed_extra0=0, tactics=[]), result)
+
+    assert feature.discovered_by_kingdom == {}
+    assert result.target_newly_registered is False
+
+
+def test_register_search_target_known_credits_chancellor_merit_when_first_in_the_world():
+    state = _state_with_leader()
+    feature = _unknown_feature()
+    state.add_feature(feature)
+    result = SearchExecutionResult(accepted=True)
+
+    _register_search_target_known(state, state.leaders[LEADER_ID], SearchRequest(feature_id=1, unconfirmed_extra0=0, tactics=[]), result)
+
+    assert state.leaders[LEADER_ID].merit_tally.features_discovered_first == 1
+
+
+def test_register_search_target_known_no_merit_when_another_kingdom_already_knows_it():
+    state = _state_with_leader()
+    feature = _unknown_feature()
+    feature.discovered_by_kingdom[2] = 1  # a different Kingdom already found it
+    state.add_feature(feature)
+    result = SearchExecutionResult(accepted=True)
+
+    _register_search_target_known(state, state.leaders[LEADER_ID], SearchRequest(feature_id=1, unconfirmed_extra0=0, tactics=[]), result)
+
+    assert feature.discovered_by_kingdom == {1: 1, 2: 1}
+    assert state.leaders[LEADER_ID].merit_tally.features_discovered_first == 0
+
+
+def test_execute_search_registers_bare_discovery_even_when_the_leader_dies():
+    # Deliberately not gated on leader_killed -- the disassembly places
+    # this registration before Start_Encounter runs, so a character who
+    # dies fighting the guardian moments later already made the Feature
+    # known.
+    state = _state_with_leader()
+    state.add_feature(_unknown_feature())
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="b", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.leader_killed is True
+    assert state.features[1].discovered_by_kingdom == {1: 1}
+
+
+def test_execute_search_does_not_reregister_an_already_known_feature():
+    state = _state_with_leader()
+    feature = _unknown_feature()
+    feature.discovered_by_kingdom[1] = 2
+    state.add_feature(feature)
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.target_newly_registered is False
+    assert feature.discovered_by_kingdom == {1: 2}
