@@ -17,6 +17,8 @@ from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
 from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID
+from ak_engine.turn.battle_orchestrator import BattleReport, MultiAttackerBattle
+from ak_engine.turn.battle_resolution import BattleResult
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalMoveError
@@ -349,6 +351,32 @@ def test_run_turn_groups_same_phase_same_target_lmoves_into_one_multi_attacker_b
     battle_ids = {id(r.result.battle) for r in results}
     assert len(battle_ids) == 1
     assert sorted(results[0].result.battle.leader_ids) == [10, 20]
+
+
+def test_run_turn_multi_attacker_lmove_threads_apply_fanaticism_true():
+    # Phase 744: the multi-attacker-LMOVE dispatch's own real
+    # fight_multi_attacker_battle() call now opts real production
+    # battles into Fanaticism -- mirrors the "mock the shared function,
+    # assert the call kwarg" convention already used for execute_move()/
+    # execute_pursue()'s own equivalent Phase 744 tests.
+    state = _base_state()
+    march_4 = _skills_with(Ability.MARCH, 4, 9)
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=march_4))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=ORIGIN, skills=march_4))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=10))
+    state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=20))
+
+    leader_a = _leader_with_phase(10, "A", "P0", _lmove_phase("P0", TARGET))
+    leader_b = _leader_with_phase(20, "B", "P0", _lmove_phase("P0", TARGET))
+
+    stub_report = BattleReport(battle_result=BattleResult(), conquered=False)
+    stub_battle = MultiAttackerBattle(leader_ids=[10, 20], report=stub_report)
+    with patch("ak_engine.turn.turn_processor.fight_multi_attacker_battle") as mock_fight:
+        mock_fight.return_value = [stub_battle]
+        run_turn([TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    mock_fight.assert_called_once()
+    assert mock_fight.call_args.kwargs["apply_fanaticism"] is True
 
 
 def test_run_turn_multi_attacker_lmove_reports_illegal_move_from_contested():
@@ -1636,7 +1664,7 @@ def test_run_turn_defend_battle_loss_blocks_a_later_redeclaration():
 
 
 def test_run_turn_defend_battle_win_does_not_block_a_later_redeclaration():
-    # seed 0: the defender wins this exact matchup -- verified
+    # seed 1: the defender wins this exact matchup -- verified
     # deterministic for this fixture. (Phase 370: the shared
     # _defend_loss_state()'s own GARRISON/GREEN defender is categorically
     # outmatched by an ELITE HVY_CAVALRY attacker under the real,
@@ -1646,7 +1674,11 @@ def test_run_turn_defend_battle_win_does_not_block_a_later_redeclaration():
     # probability-then-coin-flip win roll. Evened the defender's own army
     # up to the attacker's own type/quality so a genuine coin-flip battle
     # -- decided by the real luck draws, not an unwinnable mismatch -- is
-    # possible again; seed 0 still lands a defender win at this matchup.)
+    # possible again. Phase 744: both kingdoms here are Alignment.GOOD, so
+    # turning on real per-army Fanaticism rolls (apply_fanaticism=True at
+    # every real production battle call site) makes this a genuinely live
+    # coin-flip, not just an RNG-position shift -- seed 0 no longer lands
+    # a defender win, reselected to seed 1.)
     state = _defend_loss_state()
     state.add_army(ArmyState(901, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_HOME, commanded_by=100))
     state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=DL_FIRST_ATTACKER_ORIGIN))
@@ -1665,7 +1697,7 @@ def test_run_turn_defend_battle_win_does_not_block_a_later_redeclaration():
         [TurnLeader(defender, 2), TurnLeader(attacker, 1), TurnLeader(second_attacker, 1)],
         state,
         board_width=BOARD_WIDTH,
-        rng=random.Random(0),
+        rng=random.Random(1),
     )
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}

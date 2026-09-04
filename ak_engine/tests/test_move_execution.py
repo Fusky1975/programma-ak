@@ -481,8 +481,10 @@ def test_move_triggers_battle_and_conquest_relocates_the_attacker():
     # unchanged (see test_battle_orchestrator.py's
     # no_luck_overwhelming_attacker_rng for the same pattern).
     # Phase 296: leading 0.9 accounts for the new terrain-line-length-cap
-    # roll -- see that fixture's own Phase 296 note.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # roll -- see that fixture's own Phase 296 note. Phase 744: 2 more
+    # leading 0.9s account for the per-army Fanaticism roll (attacker is
+    # GOOD, 40% chance; defender is NEUTRAL, 0% -- 0.9 avoids both).
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
 
@@ -527,7 +529,8 @@ def test_execute_move_wind_walking_survives_a_battle_the_same_move_triggers():
     state.armies[101].army_type = ArmyType.HVY_CAVALRY
     state.armies[101].quality = Quality.ELITE
     state.armies[101].commanded_by = 1  # so fight_battle() sees leader 1 as genuinely involved
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99])
+    # Phase 744: 2 leading 0.9s account for the per-army Fanaticism roll.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=rng)
 
@@ -555,7 +558,8 @@ def test_execute_move_wires_battle_carrier_destruction():
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))
     state.armies[101].army_type = ArmyType.HVY_CAVALRY
     state.armies[101].quality = Quality.ELITE
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99])
+    # Phase 744: 2 leading 0.9s account for the per-army Fanaticism roll.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99])
 
     with patch("ak_engine.turn.move_execution.apply_battle_carrier_destruction") as mock_cascade:
         result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
@@ -585,7 +589,8 @@ def test_move_conquest_sea_surcharge_honors_terrain_override():
     state.armies[101].quality = Quality.ELITE
     # Phase 296: leading 0.9 accounts for the new terrain-line-length-cap
     # roll -- see no_luck_overwhelming_attacker_rng()'s own Phase 296 note.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # Phase 744: 2 more leading 0.9s account for the per-army Fanaticism roll.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
 
@@ -608,7 +613,8 @@ def test_move_that_fails_to_conquer_leaves_attacker_at_origin():
     # winner_quality_roll.
     # Phase 296: leading 0.9 accounts for the new terrain-line-length-cap
     # roll -- see no_luck_overwhelming_attacker_rng()'s own Phase 296 note.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.99, 0.99, 0.99, 0.99])
+    # Phase 744: 2 more leading 0.9s account for the per-army Fanaticism roll.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.99, 0.99, 0.99, 0.99])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
 
@@ -617,6 +623,25 @@ def test_move_that_fails_to_conquer_leaves_attacker_at_origin():
     assert state.armies[101].location == ORIGIN
     # attacker wasn't clean-swept destroyer's info aside, no conquest -> cost 1
     assert result.movement_points_spent == 1
+
+
+def test_execute_move_threads_apply_fanaticism_true_into_the_real_battle():
+    # Phase 744: execute_move()'s own real battle trigger now opts real
+    # production battles into Fanaticism -- proven by mocking roll_
+    # fanaticism() directly (which also means it never touches rng
+    # itself, so the pre-Phase-744 unpadded script still applies).
+    state = base_state()
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))
+    state.armies[101].army_type = ArmyType.HVY_CAVALRY
+    state.armies[101].quality = Quality.ELITE
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+
+    with patch("ak_engine.turn.battle_orchestrator.roll_fanaticism", return_value=False) as mock_roll:
+        result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
+
+    assert result.battle_report is not None
+    mock_roll.assert_any_call(Alignment.GOOD, rng)  # attacker, kingdom 1 (Attackia)
+    mock_roll.assert_any_call(Alignment.NEUTRAL, rng)  # defender, kingdom 2 (Defendia)
 
 
 def test_raises_without_movement_points():

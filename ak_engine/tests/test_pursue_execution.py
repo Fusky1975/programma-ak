@@ -829,6 +829,29 @@ def test_execute_pursue_never_threads_an_army_commanding_targets_plan():
     assert result.combat_occurred is True
 
 
+def test_execute_pursue_threads_apply_fanaticism_true_into_the_real_battle():
+    # Phase 744: execute_pursue()'s own army-vs-army battle call now opts
+    # real production battles into Fanaticism -- mirrors the "mock the
+    # shared function, assert the call kwarg" convention already used by
+    # test_execute_pursue_never_threads_an_army_commanding_targets_plan
+    # right above.
+    state = _base_state()
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, name="Field"))
+    pursuer = LeaderState(1, kingdom_id=1, name="A", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    state.add_army(ArmyState(101, 1, ArmyType.AXEMEN, Quality.AVERAGE, FIELD, commanded_by=1))
+    state.add_army(ArmyState(201, 2, ArmyType.AXEMEN, Quality.AVERAGE, FIELD, commanded_by=2))
+    request = _melee_request(2)
+
+    with patch("ak_engine.turn.pursue_execution.fight_battle") as mock_fight_battle:
+        mock_fight_battle.return_value = None
+        execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert mock_fight_battle.call_args.kwargs["apply_fanaticism"] is True
+
+
 # -- Phase 695: AdvancedAbility.SPY_SUPER_SLEUTH --------------------------
 
 

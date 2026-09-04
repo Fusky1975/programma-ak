@@ -368,7 +368,7 @@ def _fight_army_pursuit_battle(
     # of them -- see move_execution.py's own identical Phase 736 note.
     army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
     battle_report = fight_battle(
-        state, pursuer.kingdom_id, target.location, pursuer_army_ids, attacker_origin=origin, rng=rng,
+        state, pursuer.kingdom_id, target.location, pursuer_army_ids, attacker_origin=origin, apply_fanaticism=True, rng=rng,
     )
     # Phase 716: the cargo sinks with the carrier. `battle_report` is
     # never really None in production (fight_battle()'s own real return

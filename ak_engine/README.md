@@ -30602,7 +30602,7 @@ follow-up request after the original 431-435 plan shipped.
   ASpy-side copy of the claim was never updated). Full suite unchanged
   (6321).
 
-- **Phase 743 (current)**: thirty-second survey's own candidate #2 --
+- **Phase 743**: thirty-second survey's own candidate #2 --
   `Maneuver.FLEE` finally wired into leader-vs-leader Challenge/Pursue.
   `turn/challenge_execution.py`'s own docstring already flagged this
   precisely: rulebook [5.6] ("The chance of fleeing from fast monsters
@@ -30650,6 +30650,51 @@ follow-up request after the original 431-435 plan shipped.
   on Flee being silently skipped), and the Augur-Combat "cast later"
   test (previously asserting "documented no-effect") was replaced with
   two real success/failure cases.
+
+- **Phase 744 (current)**: thirty-second survey's own candidate #1 --
+  production battles finally roll real Fanaticism. `turn/strength.py
+  TITLE_FANATICISM_CHANCE`/`roll_fanaticism()`/`roll_title_fanaticism()`
+  (Phase 35/390) -- fully sourced ("An army fighting for a Divine/Good/
+  Evil kingdom has a 50%/40%/25% chance of becoming fanatical," plus the
+  11 race-loyalty title rows, independently confirmed by `battle_engine.
+  special_events`) -- were fully built and exercised inside `turn/
+  battle_orchestrator.py fight_battle()`/`fight_multi_attacker_battle()`,
+  entirely behind an `apply_fanaticism: bool = False` parameter that no
+  real production call site ever flipped on. All 4 real entry points
+  (`turn_processor.py`'s own forced-rebattle call and multi-attacker-
+  LMOVE dispatch, `move_execution.py execute_move()`, `pursue_
+  execution.py execute_pursue()`) now pass `apply_fanaticism=True`;
+  every lower-level function's own default stays unchanged at `False`,
+  matching this project's established `use_real_duel_combat`-style
+  "opt-in only at the real production call site" convention -- every
+  direct/unit-level test calling `fight_battle()`/`fight_multi_attacker_
+  battle()`/`_build_battle_units()` on its own is unaffected.
+
+  The recorded reason this was left off (`battle_orchestrator.py`'s own
+  Phase 35 addendum) was real but overstated -- `roll_fanaticism()`
+  consumes an `rng.random()` call per army unconditionally once enabled,
+  feared to "silently perturb scripted RNG sequences across most of the
+  pre-Phase-35 test suite." **Empirically measured this session**:
+  flipping the 4 call sites broke exactly 6 of 6335 existing tests, not
+  "most of the suite." 5 (`tests/test_move_execution.py`) needed 2 new
+  leading `ScriptedRandom` values (one per army, single-army-per-side
+  fixtures); 1 (`tests/test_turn_processor.py test_run_turn_defend_
+  battle_win_does_not_block_a_later_redeclaration`) used a real
+  `random.Random(0)` seed whose "defender wins" outcome was already an
+  empirically-tuned artifact (its own comment already documented one
+  earlier reseed, Phase 296) -- both kingdoms there are `Alignment.GOOD`,
+  so the new roll is a genuinely live 40% coin-flip, not just an RNG-
+  position shift; reseeded to `random.Random(1)`, found the same way
+  its own sibling test's seed was originally chosen.
+
+  New wiring-proof tests (mock the shared battle function, assert
+  `apply_fanaticism=True` reaches it -- the same convention Phase 743
+  just used for `Maneuver.FLEE`) for `execute_move()`, `execute_
+  pursue()`, and the multi-attacker LMOVE dispatch. Test count: 6335 ->
+  6338 (net +3). Full suite verified green (unchanged, 6335) before
+  touching any test; the exact 6-test breakage was measured empirically
+  first, not assumed. This closes the entire thirty-second survey --
+  every candidate (#1-#4) is now done.
 
 ## Setup
 

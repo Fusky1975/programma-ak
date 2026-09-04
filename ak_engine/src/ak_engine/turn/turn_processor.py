@@ -1437,7 +1437,13 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
         # any of them -- see move_execution.py's own identical note.
         army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
         report = fight_battle(
-            state, attacker_kingdom_id, coord, army_ids, attacker_origin=province.contested_from_coord, rng=rng
+            state,
+            attacker_kingdom_id,
+            coord,
+            army_ids,
+            attacker_origin=province.contested_from_coord,
+            apply_fanaticism=True,
+            rng=rng,
         )
         # Phase 716: the cargo sinks with the carrier.
         apply_battle_carrier_destruction(
@@ -1620,7 +1626,7 @@ def _dispatch_multi_attacker_lmove(
             results.extend(_dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng))
         return results
 
-    battles = fight_multi_attacker_battle(state, target, parties, rng=rng)
+    battles = fight_multi_attacker_battle(state, target, parties, apply_fanaticism=True, rng=rng)
     battle_by_leader = {leader_id: battle for battle in battles for leader_id in battle.leader_ids}
 
     for tl, segment_index, phase, army_ids, origin in valid:

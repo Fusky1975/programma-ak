@@ -411,18 +411,29 @@ def _build_battle_units(
     **Fanaticism** (Phase 35, ``apply_fanaticism``): "An army fighting
     for a Divine/Good/Evil kingdom has a 50%/40%/25% chance of becoming
     fanatical" -- rolled once per army via ``turn/strength.py
-    roll_fanaticism(kingdom.alignment, rng)``. Defaults to **off**
-    (``False``): unlike ``combat_ability_level``, there's no data-absence
-    condition that keeps this naturally silent, since every
+    roll_fanaticism(kingdom.alignment, rng)``. This function's own
+    default stays ``False`` (unlike ``combat_ability_level``, there's no
+    data-absence condition that keeps this naturally silent, since every
     ``KingdomState`` always has a concrete, often-nonzero-chance
-    ``Alignment`` -- an unconditional roll would consume a new ``rng``
-    call for essentially every unit in every existing battle test (many
-    already use ``Alignment.GOOD``, a real 40% chance), silently
-    perturbing scripted RNG sequences across most of the pre-Phase-35
-    test suite for a mechanic most callers don't need precision on. A
-    caller that wants real fanaticism opts in explicitly.
+    ``Alignment``) -- but **Phase 744 wires ``apply_fanaticism=True`` at
+    every real production battle call site** (``turn/turn_processor.py``'s
+    own forced-rebattle and multi-attacker-LMOVE dispatch, ``turn/
+    move_execution.py execute_move()``, ``turn/pursue_execution.py
+    execute_pursue()``), so real Fanaticism now applies in every turn
+    this engine actually processes. Only *direct*, unit-level callers of
+    this function (or ``fight_multi_attacker_battle()``/``_build_battle_
+    units()``) -- i.e. tests exercising this function in isolation, not
+    through the real dispatch path -- still get the quiet ``False``
+    default, unaffected. Measured empirically at Phase 744: flipping the
+    4 production call sites broke exactly 6 of 6335 existing tests (5
+    needed 2 new leading scripted-RNG values per single-army-per-side
+    fixture; 1 needed a reseeded ``random.Random`` since both kingdoms
+    in that fixture are ``Alignment.GOOD`` and the roll is now a real,
+    live coin-flip there) -- a materially smaller blast radius than this
+    note originally feared.
 
-    **Title-based fanaticism** (Phase 390, same ``apply_fanaticism`` opt-in):
+    **Title-based fanaticism** (Phase 390, same ``apply_fanaticism`` opt-in,
+    now also real in production as of Phase 744):
     AKGEN's own confirmed ``battle_engine.special_events`` rows for
     "Savior of Humankind"/"First Elder of Elvenkind"/"King Under the
     Mountain"/"Khan of the Orcish Hordes" (20%/35%/40%/45%) and the
@@ -1485,10 +1496,12 @@ def _maybe_fight_duel(
     still defaults ``False`` for every production caller in this
     project (confirmed by grep) -- this is what keeps all of the above
     dormant in real games today, a separate, larger, already-repeatedly-
-    deferred decision (the same class as ``apply_fanaticism``), not
-    flipped here. A later-than-first Flee's own "attempts combat first"
-    refusal ordering during a triggered duel's own resolution remains
-    the same still-unaddressed limitation it always was.
+    deferred decision (``apply_fanaticism`` was once in this same bucket
+    too, but Phase 744 resolved it -- see this module's own Phase 35/390
+    addenda above), not flipped here. A later-than-first Flee's own
+    "attempts combat first" refusal ordering during a triggered duel's
+    own resolution remains the same still-unaddressed limitation it
+    always was.
 
     **Deliberately still not modeled, two further real, AKGEN-confirmed,
     but genuinely blocked pieces of this same cluster:**
