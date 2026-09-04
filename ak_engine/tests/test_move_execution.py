@@ -24,6 +24,7 @@ from ak_engine.turn.move_execution import (
     march_movement_point_bonus,
     naval_movement_point_bonus,
     record_kingdom_exploration,
+    resolve_wandering_mercenary_absorption,
     reveal_adjacent_provinces,
 )
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
@@ -457,7 +458,9 @@ def test_move_into_allied_territory_is_uncontested():
 
 def test_move_into_province_with_only_a_mercenary_band_is_uncontested():
     # A masterless mercenary isn't "an enemy" by default -- moving into a
-    # province it occupies shouldn't force a battle.
+    # province it occupies shouldn't force a battle. No leader_id here --
+    # Phase 746's own "Wandering Mercenaries" absorption is gated on a
+    # real general passing through, so it never even rolls for this one.
     state = base_state()
     state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET))
 
@@ -467,6 +470,109 @@ def test_move_into_province_with_only_a_mercenary_band_is_uncontested():
     assert result.moved is True
     assert state.armies[101].location == TARGET
     assert state.armies[301].kingdom_id is None  # untouched
+    assert result.absorbed_mercenary_army_ids == []
+
+
+# -- Phase 746: ADDEND.AK [3.6] "Wandering Mercenaries" --------------------
+
+
+def test_resolve_wandering_mercenary_absorption_success():
+    state = base_state()
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET))
+
+    absorbed = resolve_wandering_mercenary_absorption(state, TARGET, kingdom_id=1, leader_id=10, rng=ScriptedRandom([0.49]))
+
+    assert absorbed == [301]
+    assert state.armies[301].kingdom_id == 1
+    assert state.armies[301].commanded_by == 10
+
+
+def test_resolve_wandering_mercenary_absorption_failure_leaves_it_untouched():
+    state = base_state()
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET))
+
+    absorbed = resolve_wandering_mercenary_absorption(state, TARGET, kingdom_id=1, leader_id=10, rng=ScriptedRandom([0.50]))
+
+    assert absorbed == []
+    assert state.armies[301].kingdom_id is None
+    assert state.armies[301].commanded_by is None
+
+
+def test_resolve_wandering_mercenary_absorption_rolls_independently_per_army_in_sorted_order():
+    state = base_state()
+    state.add_army(ArmyState(302, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET))
+
+    # Sorted by army_id: 301 rolls first (succeeds), 302 second (fails).
+    absorbed = resolve_wandering_mercenary_absorption(
+        state, TARGET, kingdom_id=1, leader_id=10, rng=ScriptedRandom([0.0, 0.99])
+    )
+
+    assert absorbed == [301]
+    assert state.armies[301].kingdom_id == 1
+    assert state.armies[302].kingdom_id is None
+
+
+def test_resolve_wandering_mercenary_absorption_ignores_non_mercenary_armies():
+    state = base_state()
+    state.add_army(ArmyState(301, 2, ArmyType.GARRISON, Quality.AVERAGE, TARGET))  # already owned by kingdom 2
+
+    absorbed = resolve_wandering_mercenary_absorption(state, TARGET, kingdom_id=1, leader_id=10, rng=ScriptedRandom([]))
+
+    assert absorbed == []
+    assert state.armies[301].kingdom_id == 2
+
+
+def test_resolve_wandering_mercenary_absorption_with_none_present_consumes_no_rng():
+    state = base_state()
+
+    absorbed = resolve_wandering_mercenary_absorption(state, TARGET, kingdom_id=1, leader_id=10, rng=ScriptedRandom([]))
+
+    assert absorbed == []
+
+
+def test_execute_move_absorbs_a_co_located_mercenary_army():
+    state = base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10, rng=ScriptedRandom([0.49]))
+
+    assert result.absorbed_mercenary_army_ids == [301]
+    assert state.armies[301].kingdom_id == 1
+    assert state.armies[301].commanded_by == 10
+
+
+def test_execute_move_leader_alone_still_absorbs_a_co_located_mercenary_army():
+    # A "general" doesn't need troops of his own this specific move --
+    # the rule's own text just says "a general passes through."
+    state = base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[], target=TARGET, leader_id=10, rng=ScriptedRandom([0.49]))
+
+    assert result.absorbed_mercenary_army_ids == [301]
+    assert state.armies[301].kingdom_id == 1
+
+
+def test_execute_move_failed_conquest_does_not_absorb_mercenaries():
+    # moved=False (repelled -- a clean defender win, attacker retreats to
+    # origin) -- the general never genuinely landed in the hex, so
+    # nothing follows him. Mirrors test_move_that_fails_to_conquer_
+    # leaves_attacker_at_origin's own exact fixture/script, plus a
+    # co-located mercenary army and a leader.
+    state = base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
+    state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET))
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.99, 0.99, 0.99, 0.99])
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10, rng=rng)
+
+    assert result.moved is False
+    assert result.absorbed_mercenary_army_ids == []
+    assert state.armies[301].kingdom_id is None
 
 
 def test_move_triggers_battle_and_conquest_relocates_the_attacker():

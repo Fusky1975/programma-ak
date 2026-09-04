@@ -163,6 +163,53 @@ that ends the spell. Deliberately not extended to `turn/turn_
 processor.py`'s own multi-attacker LMOVE path (a separate `resolve_
 move()`/`fight_multi_attacker_battle()` route that never calls
 ``execute_move()`` at all).
+
+**Wandering Mercenaries (Phase 746).** ``Desktop/MS/ADDEND.AK`` [3.6]
+(this addendum's own independent section numbering -- unrelated to the
+main rulebook's own [3.6], Disband, already cited elsewhere in this
+project): "If there are mercenary armies in a hex when a general
+passes through it, they may follow that general instead of staying
+behind. This counteracts the sneaky trick of disbanding armies when
+faced with attack, then rehiring them when the opposing general has
+passed through the hex." Confirmed genuinely unwired before this
+phase: ``GameState.mercenaries_at()`` (already real, Phase 642) had
+exactly one consumer anywhere in this project, the ordinary Recruit
+dispatch -- nothing tied it to Move.
+
+**User-confirmed design decisions, both real forks the source text
+itself leaves open**:
+1. **Magnitude**: the rule's own "may follow" gives no percentage.
+   The user chose a project-original, explicitly documented 50% coin-
+   flip per mercenary army (``WANDERING_MERCENARY_FOLLOW_CHANCE``) over
+   an unconditional 100% -- the same "no sourced formula, plain neutral
+   reading" convention already used throughout this project (e.g.
+   ``turn/random_encounter.py``'s own Neutral-diplomacy coin, `[5.6]`'s
+   own "medium speed... 50-50" reading).
+2. **Scope**: applies only to the ordinary ``ActionCode.LMOVE``
+   dispatch (``execute_move()`` below) -- the single most direct,
+   unambiguous "a general passes through a hex" case. Deliberately NOT
+   extended to Pursue/Trail (which also relocate a leader) or to
+   ``turn/turn_processor.py``'s own separate multi-attacker-LMOVE path
+   (which, per the addendum right above, never calls ``execute_move()``
+   at all) -- both real, separate, smaller follow-ups, not attempted
+   here.
+
+**Reading the rule's own scope literally, not narrowed to the
+motivating example**: the rule's own first sentence ("if there are
+mercenary armies in a hex when a general passes through it...") states
+no friend/foe restriction -- only its own second sentence gives the
+specific anti-exploit scenario that motivated it (an enemy general
+denying a disbanded army back to its original owner). Modeled as
+applying to *any* passing general, including a Kingdom re-absorbing
+its own recently-deserted mercenary army, matching the literal, wider
+first-sentence wording rather than the narrower illustrative example.
+No report-layer narration is added this phase -- no `SAY.PAS`/`.X2`
+text was found anywhere describing this specific event (distinct from
+the still-genuinely-blocked `AWANDFR`/`AWANDTO`/`LWANDFR`/`LWANDTO`
+cluster, which narrates a mercenary's own *unprompted* self-relocation,
+a different mechanic); mechanism only, matching this project's own
+repeated "mechanic now, narration only when a real source exists"
+precedent.
 """
 
 from __future__ import annotations
@@ -382,6 +429,13 @@ class MoveExecutionResult:
     # nothing renders this yet. See `turn/sea_transport.py`'s own
     # module docstring for the full mechanic.
     boarded_army_ids: list[int] = field(default_factory=list)
+    # Phase 746: ADDEND.AK [3.6] "Wandering Mercenaries" -- every
+    # mercenary army id absorbed into the mover's own command this call
+    # (empty when the mover's leader didn't genuinely land in a hex
+    # holding one, or none of the coin flips succeeded). Observability
+    # for tests -- no report-layer narration is wired yet, see this
+    # module's own Phase 746 addendum.
+    absorbed_mercenary_army_ids: list[int] = field(default_factory=list)
 
 
 def _classify_hex_ownership(state: GameState, kingdom_id: int, coord: HexCoord) -> HexOwnershipTier:
@@ -561,6 +615,40 @@ def reveal_adjacent_provinces(state: GameState, province: ProvinceState, kingdom
         neighbor_province = state.provinces.get(neighbor)
         if neighbor_province is not None and not neighbor_province.known_to_kingdom(kingdom_id):
             neighbor_province.explored_percent_by_kingdom[kingdom_id] = KNOWN_PROVINCE_MIN_PERCENT
+
+
+# Phase 746: `Desktop/MS/ADDEND.AK` [3.6] "Wandering Mercenaries" gives
+# no percentage ("may follow") -- the user's own confirmed, documented,
+# project-original choice, a plain 50/50 coin flip per mercenary army.
+WANDERING_MERCENARY_FOLLOW_CHANCE = 0.50
+
+
+def resolve_wandering_mercenary_absorption(
+    state: GameState, coord: HexCoord, kingdom_id: int, leader_id: int, rng: random.Random
+) -> list[int]:
+    """`Desktop/MS/ADDEND.AK` [3.6]: any mercenary army (`GameState.
+    mercenaries_at()`, `ArmyState.kingdom_id is None`) sitting in `coord`
+    when `leader_id`'s own Move genuinely lands them there may follow
+    that general -- see this module's own Phase 746 addendum for the
+    real rule text and the two user-confirmed design decisions (a 50%
+    coin flip per army, Move-only scope). Absorption mirrors `turn/
+    recruit_execution.py`'s own mercenary-hire field-setting exactly
+    (`army.kingdom_id`/`army.commanded_by`, nothing else touched -- no
+    quality/movement-point reset).
+
+    Every co-located mercenary army gets its own independent roll, in a
+    deterministic (`army_id`-sorted) order. Returns the ids of every
+    army actually absorbed this call -- `[]`, no `rng` consumed, when
+    none are present.
+    """
+
+    absorbed: list[int] = []
+    for army in sorted(state.mercenaries_at(coord), key=lambda a: a.army_id):
+        if rng.random() < WANDERING_MERCENARY_FOLLOW_CHANCE:
+            army.kingdom_id = kingdom_id
+            army.commanded_by = leader_id
+            absorbed.append(army.army_id)
+    return absorbed
 
 
 # Phase 715 -- the one real, sourced allocation-priority order found for
@@ -1299,6 +1387,16 @@ def execute_move(
             if cargo.army_id not in army_ids:
                 disembark_army(state, cargo.army_id)
 
+    # Phase 746: ADDEND.AK [3.6] "Wandering Mercenaries" -- the general
+    # genuinely has to have landed in the hex (`moved`) for mercenaries
+    # there to have anyone real to follow; a leader moving alone
+    # (`army_ids=[]`) still counts as a passing general.
+    absorbed_mercenary_army_ids: list[int] = []
+    if leader_id is not None and moved:
+        absorbed_mercenary_army_ids = resolve_wandering_mercenary_absorption(
+            state, actual_target, kingdom_id, leader_id, rng
+        )
+
     return MoveExecutionResult(
         moved=moved,
         battle_report=battle_report,
@@ -1310,4 +1408,5 @@ def execute_move(
         conquered=conquered,
         wind_walking=wind_walking,
         boarded_army_ids=boarded_army_ids,
+        absorbed_mercenary_army_ids=absorbed_mercenary_army_ids,
     )

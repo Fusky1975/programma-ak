@@ -30696,7 +30696,7 @@ follow-up request after the original 431-435 plan shipped.
   first, not assumed. This closes the entire thirty-second survey --
   every candidate (#1-#4) is now done.
 
-- **Phase 745 (current)**: thirty-third survey's own candidate #1 --
+- **Phase 745**: thirty-third survey's own candidate #1 --
   `turn/assassin_guild.py`'s Grandfather of Assassins guard-escalation
   formula was using continuous float halving (`base_chance * 0.5**
   attempts`) where the real compiled engine truncates an **integer**
@@ -30723,6 +30723,50 @@ follow-up request after the original 431-435 plan shipped.
   (the base-formula's own float-vs-int assertion) -- every other
   existing test's own `F`/`B` combination happened to be an exact
   power-of-two division, so the fix was a provable no-op for them.
+
+- **Phase 746 (current)**: thirty-third survey's own candidate #4, a
+  new finding surfaced while investigating candidate #3 -- "Wandering
+  Mercenaries" (`Desktop/MS/ADDEND.AK` [3.6], this addendum's own
+  independent section numbering, unrelated to the main rulebook's own
+  [3.6] Disband section already cited elsewhere): "If there are
+  mercenary armies in a hex when a general passes through it, they may
+  follow that general instead of staying behind. This counteracts the
+  sneaky trick of disbanding armies when faced with attack, then
+  rehiring them when the opposing general has passed through the hex."
+  Confirmed genuinely unwired: `GameState.mercenaries_at()` (Phase 642)
+  had exactly one consumer anywhere, the ordinary Recruit dispatch --
+  nothing tied it to Move.
+
+  Two real design forks the source text itself leaves open, both user-
+  confirmed directly: the magnitude ("may follow" gives no percentage
+  -- chose a project-original, explicitly documented 50% coin flip per
+  mercenary army over an unconditional 100%, matching this project's
+  own established "no sourced formula, plain neutral reading"
+  convention) and the scope (applies only to the ordinary `execute_
+  move()` LMOVE dispatch -- the single most direct "a general passes
+  through a hex" case; Pursue/Trail and the separate multi-attacker-
+  LMOVE path stay real, deliberate follow-ups, not attempted here).
+  Read the rule's own first sentence literally rather than narrowed to
+  its own illustrative anti-exploit example -- applies to any passing
+  general, friend or foe, including a Kingdom re-absorbing its own
+  recently-deserted mercenary army.
+
+  New `turn/move_execution.py resolve_wandering_mercenary_absorption()`
+  (mirrors `turn/recruit_execution.py`'s own mercenary-hire field-
+  setting exactly -- `army.kingdom_id`/`army.commanded_by`, nothing
+  else touched), wired into `execute_move()` right after army/leader
+  relocation, gated on `leader_id is not None and moved` (a leader
+  moving alone with no armies of his own still counts as a passing
+  general). New `MoveExecutionResult.absorbed_mercenary_army_ids`. No
+  report-layer narration this phase -- no source text was found for
+  this specific event (distinct from the still-genuinely-blocked
+  `AWANDFR`/`AWANDTO`/`LWANDFR`/`LWANDTO` cluster, candidate #3, which
+  narrates a mercenary's own *unprompted* self-relocation, a different
+  mechanic). Test count: 6340 -> 6348 (net +8). Full suite verified
+  green (unchanged, 6340) before writing a single new test -- a
+  provable no-op for every existing fixture, since the mechanic is
+  gated on a real `leader_id` that no pre-Phase-746 test happened to
+  pass alongside a co-located mercenary army.
 
 ## Setup
 
