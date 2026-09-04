@@ -19,7 +19,7 @@ from ak_engine.models.race import Race
 from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.hex_numbering import encode_hex_number
-from ak_engine.turn.move_execution import MoveExecutionResult
+from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalMoveError
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.movement import neighbors as _neighbors
@@ -372,6 +372,32 @@ def test_run_turn_multi_attacker_lmove_reports_illegal_move_from_contested():
 
     assert len(results) == 2
     assert all(isinstance(r.error, IllegalMoveFromContestedError) for r in results)
+
+
+def test_run_turn_multi_attacker_lmove_reports_transport_illegal_move():
+    # Phase 737: _dispatch_multi_attacker_lmove() has its own separate
+    # movement logic (never calls execute_move()) and needs its own
+    # copy of find_transport_illegality() -- an unassisted land army
+    # moving onto Sea terrain is refused here too, mirroring test_move_
+    # execution.py's own single-mover equivalent.
+    state = _base_state()
+    state.provinces[TARGET].terrain = Terrain.SEA
+    march_4 = _skills_with(Ability.MARCH, 4, 9)
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=march_4))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=ORIGIN, skills=march_4))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=10))
+    state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=20))
+
+    leader_a = _leader_with_phase(10, "A", "P0", _lmove_phase("P0", TARGET))
+    leader_b = _leader_with_phase(20, "B", "P0", _lmove_phase("P0", TARGET))
+
+    results = run_turn(
+        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
+
+    assert len(results) == 2
+    assert all(isinstance(r.error, TransportIllegalMoveError) for r in results)
+    assert all(r.error.reason == "insufficient_water_transport" for r in results)
 
 
 def test_run_turn_multi_attacker_lmove_records_each_movers_own_kingdom_exploration():

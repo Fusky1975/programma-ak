@@ -4,6 +4,8 @@ import random
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
@@ -23,7 +25,7 @@ from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.turn.army_list_decode import ArmyListRequest
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.move_execution import MoveExecutionResult
+from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalMoveError
 from ak_engine.turn.office_holder import OfficeHolder
 from ak_engine.turn.plan_dispatch import (
     ArmyListExecutionResult,
@@ -303,9 +305,11 @@ def test_dispatch_lmove_wires_naval_skill_level_from_the_leaders_own_naval_abili
     # Phase 523: dispatch_phase() derives naval_skill_level from the
     # leader's own real effective_skill_level(Ability.NAVAL) -- a Fleet
     # gets the bonus applied before this move's own cost is deducted.
+    # Phase 737: target is Sea, not Plains -- a Fleet can enter/exit a
+    # land province on its own, but not hop directly land-to-land.
     origin = HexCoord(3, 9)
     target = HexCoord(4, 9)
-    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    state, army_id = _state_with_army(origin, {target: Terrain.SEA})
     state.armies[army_id] = ArmyState(
         army_id, 1, ArmyType.FLEET, Quality.AVERAGE, origin, movement_points=5, commanded_by=LEADER_ID
     )
@@ -317,6 +321,21 @@ def test_dispatch_lmove_wires_naval_skill_level_from_the_leaders_own_naval_abili
     dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
 
     assert state.armies[army_id].naval_bonus_applied_this_turn is True
+
+
+def test_dispatch_lmove_enforces_transport_legality():
+    # Phase 737: dispatch_phase()'s own real LMOVE branch passes
+    # enforce_transport_legality=True into execute_move() -- an
+    # unassisted land army crossing onto Sea terrain is refused here,
+    # unlike a direct execute_move() call (which defaults to False and
+    # would let this same crossing through, see test_move_execution.py).
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {target: Terrain.SEA})
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    with pytest.raises(TransportIllegalMoveError):
+        dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
 
 
 def test_dispatch_explore_wires_society_maps_from_the_leaders_own_advanced_ability():
@@ -2419,10 +2438,12 @@ def test_dispatch_lmove_auto_boards_an_ent_when_the_leader_holds_druidic_transpo
     # transport.py can_board()) boards a co-located Fleet, both
     # commanded by the same leader. _state_with_army()'s own default
     # Bowmen army (army_id 1) is left uncommanded here so it isn't part
-    # of this move -- only the Fleet and the Ent are.
+    # of this move -- only the Fleet and the Ent are. Phase 737: target
+    # is Sea, not Plains -- the Fleet's own crossing must itself be
+    # legal (can't hop land-to-land), independent of what it carries.
     origin = HexCoord(3, 9)
     target = HexCoord(4, 9)  # adjacent to origin on the odd-r grid
-    state, _bowmen_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    state, _bowmen_id = _state_with_army(origin, {target: Terrain.SEA})
     state.armies[_bowmen_id].commanded_by = None
     state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.DRUIDIC_TRANSPORT)
     fleet_id, ent_id = 2, 3

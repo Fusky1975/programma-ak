@@ -17,7 +17,9 @@ from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.move_execution import (
     MARCH_ABILITY_BONUS,
     MARCH_MASTERY_ABILITY_BONUS,
+    TransportIllegalMoveError,
     execute_move,
+    find_transport_illegality,
     is_flooded_province,
     march_movement_point_bonus,
     naval_movement_point_bonus,
@@ -1406,3 +1408,230 @@ def test_execute_move_leaves_cargo_behind_when_carrier_moves_without_it():
 
     assert state.armies[102].transported_by is None
     assert state.armies[102].location == ORIGIN  # left behind, not dragged along
+
+
+# -- Phase 737: find_transport_illegality() -- the real sea-transport movement-legality gate --
+
+
+def _sea_province(coord: HexCoord) -> ProvinceState:
+    return ProvinceState(coord, Terrain.SEA, Race.HUMAN)
+
+
+def _land_province(coord: HexCoord) -> ProvinceState:
+    return ProvinceState(coord, Terrain.PLAINS, Race.HUMAN)
+
+
+def _flooded_province(coord: HexCoord) -> ProvinceState:
+    return ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, terrain_override=Terrain.SEA)
+
+
+def _part_sea_province(coord: HexCoord) -> ProvinceState:
+    return ProvinceState(coord, Terrain.SEA, Race.HUMAN, terrain_override=Terrain.PLAINS)
+
+
+def test_find_transport_illegality_land_army_into_sea_without_carrier():
+    army = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality([army], [1], _land_province(ORIGIN), _sea_province(TARGET))
+    assert reason == "insufficient_water_transport"
+
+
+def test_find_transport_illegality_land_army_boarded_onto_a_same_move_fleet():
+    fleet = ArmyState(1, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN)
+    bowmen = ArmyState(2, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, transported_by=1)
+    reason = find_transport_illegality([fleet, bowmen], [1, 2], _land_province(ORIGIN), _sea_province(TARGET))
+    assert reason is None
+
+
+def test_find_transport_illegality_land_army_boarded_onto_a_carrier_not_in_this_move():
+    # transported_by is set, but the carrier's own id isn't part of
+    # army_ids for this call -- not legally aboard for THIS hop.
+    bowmen = ArmyState(2, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, transported_by=99)
+    reason = find_transport_illegality([bowmen], [2], _land_province(ORIGIN), _sea_province(TARGET))
+    assert reason == "insufficient_water_transport"
+
+
+def test_find_transport_illegality_fleet_hopping_land_to_land():
+    fleet = ArmyState(1, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality([fleet], [1], _land_province(ORIGIN), _land_province(TARGET))
+    assert reason == "naval_land_hop"
+
+
+def test_find_transport_illegality_fleet_entering_or_leaving_land_is_fine():
+    fleet = ArmyState(1, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN)
+    assert find_transport_illegality([fleet], [1], _land_province(ORIGIN), _sea_province(TARGET)) is None
+    assert find_transport_illegality([fleet], [1], _sea_province(ORIGIN), _land_province(TARGET)) is None
+
+
+def test_find_transport_illegality_whales_treated_identically_to_fleet():
+    # User-confirmed: trust the rulebook, not ILLMOVE_TEMPLATE[2] --
+    # Whales and Fleet both may enter/exit land freely.
+    whales = ArmyState(1, 1, ArmyType.WHALES, Quality.AVERAGE, ORIGIN)
+    assert find_transport_illegality([whales], [1], _land_province(ORIGIN), _sea_province(TARGET)) is None
+    reason = find_transport_illegality([whales], [1], _land_province(ORIGIN), _land_province(TARGET))
+    assert reason == "naval_land_hop"
+
+
+def test_find_transport_illegality_ent_into_sea_without_transport():
+    ent = ArmyState(1, 1, ArmyType.ENTS, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality([ent], [1], _land_province(ORIGIN), _sea_province(TARGET))
+    assert reason == "ent_shoreline"
+
+
+def test_find_transport_illegality_ent_boarded_via_druidic_transport():
+    fleet = ArmyState(1, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN)
+    ent = ArmyState(2, 1, ArmyType.ENTS, Quality.AVERAGE, ORIGIN, transported_by=1)
+    reason = find_transport_illegality([fleet, ent], [1, 2], _land_province(ORIGIN), _sea_province(TARGET))
+    assert reason is None
+
+
+def test_find_transport_illegality_ent_may_cross_a_part_sea_province():
+    ent = ArmyState(1, 1, ArmyType.ENTS, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality([ent], [1], _land_province(ORIGIN), _part_sea_province(TARGET))
+    assert reason is None
+
+
+def test_find_transport_illegality_dinosaur_into_sea_without_transport():
+    dinosaur = ArmyState(1, 1, ArmyType.DINOSAURS, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality([dinosaur], [1], _land_province(ORIGIN), _sea_province(TARGET))
+    assert reason == "dinosaur_shoreline"
+
+
+def test_find_transport_illegality_dinosaur_boarded_via_druidic_transport():
+    fleet = ArmyState(1, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN)
+    dinosaur = ArmyState(2, 1, ArmyType.DINOSAURS, Quality.AVERAGE, ORIGIN, transported_by=1)
+    reason = find_transport_illegality([fleet, dinosaur], [1, 2], _land_province(ORIGIN), _sea_province(TARGET))
+    assert reason is None
+
+
+def test_find_transport_illegality_mermen_into_genuinely_permanent_land():
+    mermen = ArmyState(1, 1, ArmyType.MERMEN, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality([mermen], [1], _sea_province(ORIGIN), _land_province(TARGET))
+    assert reason == "mermen_air_transport"
+
+
+def test_find_transport_illegality_mermen_may_cross_a_part_sea_province():
+    mermen = ArmyState(1, 1, ArmyType.MERMEN, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality([mermen], [1], _sea_province(ORIGIN), _part_sea_province(TARGET))
+    assert reason is None
+
+
+def test_find_transport_illegality_mermen_moving_between_sea_provinces():
+    mermen = ArmyState(1, 1, ArmyType.MERMEN, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality([mermen], [1], _sea_province(ORIGIN), _sea_province(TARGET))
+    assert reason is None
+
+
+def test_find_transport_illegality_mermen_carried_by_an_air_carrier_onto_land():
+    dragon = ArmyState(1, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, ORIGIN)
+    mermen = ArmyState(2, 1, ArmyType.MERMEN, Quality.AVERAGE, ORIGIN, transported_by=1)
+    reason = find_transport_illegality([dragon, mermen], [1, 2], _sea_province(ORIGIN), _land_province(TARGET))
+    assert reason is None
+
+
+def test_find_transport_illegality_air_unit_never_restricted():
+    dragon = ArmyState(1, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, ORIGIN)
+    assert find_transport_illegality([dragon], [1], _land_province(ORIGIN), _land_province(TARGET)) is None
+    assert find_transport_illegality([dragon], [1], _land_province(ORIGIN), _sea_province(TARGET)) is None
+
+
+def test_find_transport_illegality_mixed_group_the_illegal_army_wins():
+    fleet = ArmyState(1, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN)  # legal on its own (land->sea)
+    bowmen = ArmyState(2, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN)  # unassisted -- illegal
+    reason = find_transport_illegality([fleet, bowmen], [1, 2], _land_province(ORIGIN), _sea_province(TARGET))
+    assert reason == "insufficient_water_transport"
+
+
+def test_find_transport_illegality_all_legal_mixed_group():
+    fleet = ArmyState(1, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN)
+    bowmen = ArmyState(2, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, transported_by=1)
+    reason = find_transport_illegality([fleet, bowmen], [1, 2], _land_province(ORIGIN), _sea_province(TARGET))
+    assert reason is None
+
+
+def test_find_transport_illegality_march_through_floods_excuses_a_real_flood():
+    bowmen = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality(
+        [bowmen], [1], _land_province(ORIGIN), _flooded_province(TARGET), has_march_through_floods=True
+    )
+    assert reason is None
+
+
+def test_find_transport_illegality_march_through_floods_does_not_excuse_natural_sea():
+    bowmen = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality(
+        [bowmen], [1], _land_province(ORIGIN), _sea_province(TARGET), has_march_through_floods=True
+    )
+    assert reason == "insufficient_water_transport"
+
+
+def test_find_transport_illegality_no_origin_province_treated_as_no_terrain():
+    bowmen = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality([bowmen], [1], None, _land_province(TARGET))
+    assert reason == "insufficient_water_transport"
+
+
+# -- Phase 737: execute_move()'s own enforce_transport_legality parameter --
+
+
+def _sea_transport_legality_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Coastia", Race.HUMAN, Alignment.GOOD, ORIGIN))
+    state.add_province(ProvinceState(ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(TARGET, Terrain.SEA, Race.HUMAN, owner_kingdom_id=1))
+    return state
+
+
+def test_execute_move_default_still_permits_an_unassisted_sea_crossing():
+    # Non-breaking check: enforce_transport_legality defaults False, so
+    # every pre-Phase-737 caller (including every other feature's own
+    # existing test fixture) is completely unaffected.
+    state = _sea_transport_legality_state()
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert result.moved is True
+    assert state.armies[101].location == TARGET
+
+
+def test_execute_move_enforced_raises_for_an_unassisted_sea_crossing():
+    state = _sea_transport_legality_state()
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    with pytest.raises(TransportIllegalMoveError) as excinfo:
+        execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, enforce_transport_legality=True)
+
+    assert excinfo.value.reason == "insufficient_water_transport"
+    assert excinfo.value.origin_coord == ORIGIN
+    assert excinfo.value.destination_coord == TARGET
+    assert state.armies[101].location == ORIGIN  # never moved
+
+
+def test_execute_move_enforced_permits_a_real_boarded_crossing():
+    state = _sea_transport_legality_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    result = execute_move(
+        state, kingdom_id=1, army_ids=[101, 102], target=TARGET, auto_board=True, enforce_transport_legality=True
+    )
+
+    assert result.moved is True
+    assert state.armies[102].transported_by == 101
+
+
+def test_execute_move_enforced_checks_the_real_chase_step_not_the_ultimate_target():
+    # A 2-hex chase: FURTHER isn't adjacent to ORIGIN, so this call only
+    # ever resolves the real single-hex hop toward it (through TARGET,
+    # a Sea province) -- the gate must check that real hop, not the
+    # eventual, further destination.
+    state = _sea_transport_legality_state()
+    further = HexCoord(3, 1)
+    state.provinces[further] = ProvinceState(further, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1)
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    with pytest.raises(TransportIllegalMoveError) as excinfo:
+        execute_move(state, kingdom_id=1, army_ids=[101], target=further, enforce_transport_legality=True)
+
+    assert excinfo.value.origin_coord == ORIGIN
+    assert excinfo.value.destination_coord == TARGET  # the real hop, not `further`

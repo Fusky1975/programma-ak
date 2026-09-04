@@ -285,7 +285,13 @@ from ak_engine.turn.contested_province import (
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.plague_spread import resolve_plague_spread
 from ak_engine.turn.missed_deadline import build_missed_deadline_plan
-from ak_engine.turn.move_execution import MoveExecutionResult, record_kingdom_exploration, reveal_adjacent_provinces
+from ak_engine.turn.move_execution import (
+    MoveExecutionResult,
+    TransportIllegalMoveError,
+    find_transport_illegality,
+    record_kingdom_exploration,
+    reveal_adjacent_provinces,
+)
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
 from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, apply_cravenest_temperament_escalation
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, dispatch_phase, run_leader_plan
@@ -1560,6 +1566,24 @@ def _dispatch_multi_attacker_lmove(
             )
             if is_illegal_move_from_contested(origin_contested_by_mover, target_owner_is_enemy):
                 raise IllegalMoveFromContestedError("illegal to move from a contested province to an adjacent enemy province")
+            # Phase 737: this function has its own separate movement
+            # logic (never calls execute_move()), so it needs its own
+            # copy of the same real transport-legality gate -- see
+            # move_execution.py's own Phase 737 addendum for the full
+            # sourcing/design. has_march_through_floods is derived the
+            # same real-possession pattern turn/plan_dispatch.py already
+            # uses for the single-leader path -- this function doesn't
+            # otherwise model March Through Floods' own movement-point
+            # surcharge at all, only the legality-relaxing half of it.
+            mover_leader = state.leaders.get(tl.leader.leader_id)
+            has_march_through_floods = (
+                mover_leader is not None and AdvancedAbility.MARCH_THROUGH_FLOODS in mover_leader.advanced_abilities
+            )
+            transport_reason = find_transport_illegality(
+                armies, army_ids, origin_province, target_province, has_march_through_floods=has_march_through_floods
+            )
+            if transport_reason is not None:
+                raise TransportIllegalMoveError(transport_reason, origin_coord=origin, destination_coord=target)
             move_result = resolve_move(
                 origin,
                 target,

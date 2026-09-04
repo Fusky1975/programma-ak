@@ -953,9 +953,26 @@ so attaching it here would be a guess, not a recovery. `describe_
 turn_results()` renders only `render_illegal_move_attempted()`'s own
 unconditional generic sentence ("< attempted an illegal move.") for
 this real exception -- honest and real, without inventing a specific
-reason this project can't confirm. The 3 transport-shortage sub-cases
-stay entirely unwired -- they need the real movement-legality gate the
-Fleet/Whale cargo-capacity roadmap's own item #1 already defers.
+reason this project can't confirm.
+
+**Phase 737 closes the 2 real transport-shortage sub-cases (and 3
+`ILLMOVE_TEMPLATE` choices) this note used to call "entirely unwired."**
+`turn/move_execution.py find_transport_illegality()`/`TransportIllegal
+MoveError` (the real sea-transport movement-legality gate, `Regolamento
+AK.txt` lines 870-876) is a second, independent `TransportIllegalMove
+Error` exception -- distinct from `IllegalMoveFromContestedError`, so
+`describe_turn_results()` can tell the two real scenarios apart -- whose
+own `.reason` field maps directly onto a real, confirmed `_next`
+sub-case: `"insufficient_water_transport"` -> `render_illegal_move_
+insufficient_water_transport()` (`_next` 100-149); `"mermen_air_
+transport"` -> `render_illegal_move_mermen_air_transport()` (`_next`
+200-249); `"naval_land_hop"`/`"ent_shoreline"`/`"dinosaur_shoreline"`
+-> `ILLMOVE_TEMPLATE` choices `1`/`16`/`19` respectively, via the new
+`render_illegal_move_choice()`. See `describe_transport_illegal_move()`
+below for the composer, and `turn/move_execution.py`'s own module-level
+Phase 737 addendum for the full design (including the user-confirmed
+Whale/Fleet symmetry that leaves `ILLMOVE_TEMPLATE[2]` still
+unattributed, and the Mermen interpretation).
 
 **Phase 129 addendum -- Monster Quest Fulfillment dialogue.**
 `RUMORS.PAS` groups `_LFRaid = 3166` through `_LFRumor = 3193`
@@ -1278,7 +1295,7 @@ from ak_engine.turn.final_standings import compose_final_standings_report
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.encounter import CombatRange, FireArrowShot
 from ak_engine.turn.exploration import ExploreResult
-from ak_engine.turn.move_execution import MoveExecutionResult
+from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalMoveError
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.imperial_intelligence import known_bordering_kingdom_tax_bases, known_bordering_kingdom_treasuries
 from ak_engine.turn.leader_visibility import known_mercenary, leader_location_known_to_kingdom
@@ -6828,6 +6845,19 @@ def describe_turn_results(
                 caster_name = _leader_name(state, entry.leader_id)
                 if caster_name is not None:
                     lines.append(render_illegal_move_attempted(caster_name, rng))
+            elif isinstance(entry.error, TransportIllegalMoveError):
+                # Phase 737: the exception carries its own origin/
+                # destination coords (PhaseDispatchResult itself has no
+                # raw target hex once dispatch fails) -- resolved via
+                # the same _province_label() fallback every other
+                # composer here already uses.
+                caster_name = _leader_name(state, entry.leader_id)
+                if caster_name is not None:
+                    origin_name = _province_label(state, entry.error.origin_coord)
+                    destination_name = _province_label(state, entry.error.destination_coord)
+                    lines.extend(
+                        describe_transport_illegal_move(entry.error, caster_name, origin_name, destination_name, rng)
+                    )
             continue
         caster_name = _leader_name(state, entry.leader_id)
         if caster_name is None:
@@ -8315,6 +8345,76 @@ ILLMOVE_TEMPLATE: dict[int, str] = {
     20: '< tried to move from ⟦CTRL-S:province-2⟧ to @, a non-adjacent province.Instead,_',
     21: "< couldn't move to @ because > non-flying armies couldn't move into a Lava province.",
 }
+
+
+def render_illegal_move_choice(
+    choice: int, character_name: str, origin_province_name: str, destination_province_name: str, rng: random.Random
+) -> str:
+    """Renders one of ``ILLMOVE_TEMPLATE``'s real sentences -- the first
+    real consumer of that dict (Phase 737: choices ``1``/``16``/``19``,
+    the only three this project has a confirmed real trigger for so
+    far). ``⟦CTRL-S:province-2⟧`` is substituted the same literal way
+    every other marker is (``report/prose.py _substitute_placeholders()``
+    does a plain substring scan, so the bracket notation needs no
+    special-casing) -- see that dict's own docstring for why it's kept
+    verbatim rather than normalized to ``^S``.
+    """
+
+    values = {
+        "<": character_name,
+        "⟦CTRL-S:province-2⟧": origin_province_name,
+        "@": destination_province_name,
+        ">": f"{character_name}'s",
+    }
+    return render(ILLMOVE_TEMPLATE[choice], values, rng=rng)
+
+
+# Phase 737 -- which ILLMOVE_TEMPLATE choice each of find_transport_
+# illegality()'s own non-generic reasons maps onto ("insufficient_water_
+# transport"/"mermen_air_transport" instead reuse the two already-built
+# code-32501 sub-case renderers directly, see describe_transport_
+# illegal_move() below).
+_TRANSPORT_ILLEGAL_MOVE_ILLMOVE_CHOICE: dict[str, int] = {
+    "naval_land_hop": 1,
+    "ent_shoreline": 16,
+    "dinosaur_shoreline": 19,
+}
+
+
+def describe_transport_illegal_move(
+    error: TransportIllegalMoveError,
+    character_name: str,
+    origin_province_name: str,
+    destination_province_name: str,
+    rng: random.Random,
+) -> list[str]:
+    """Assembles code ``32501``'s own generic prefix (``render_illegal_
+    move_attempted()``) plus the real, reason-specific sentence for a
+    Phase 737 ``TransportIllegalMoveError`` -- see `turn/move_execution.
+    py`'s own module-level Phase 737 addendum for the full sourcing.
+    Both lines are rendered together, matching the real Pascal source's
+    own sequential ``Say()`` calls quoted in this composer's own module
+    docstring (``IF _next <> 5 THEN Say(prefix); CASE _next OF ...``) --
+    none of this gate's own real triggers is ``_next == 5``.
+    """
+
+    lines = [render_illegal_move_attempted(character_name, rng)]
+    if error.reason == "insufficient_water_transport":
+        lines.append(
+            render_illegal_move_insufficient_water_transport(
+                character_name, origin_province_name, destination_province_name, rng
+            )
+        )
+    elif error.reason == "mermen_air_transport":
+        lines.append(
+            render_illegal_move_mermen_air_transport(
+                character_name, origin_province_name, destination_province_name, rng
+            )
+        )
+    else:
+        choice = _TRANSPORT_ILLEGAL_MOVE_ILLMOVE_CHOICE[error.reason]
+        lines.append(render_illegal_move_choice(choice, character_name, origin_province_name, destination_province_name, rng))
+    return lines
 
 
 # HostAK/TP/SAY.PAS _LHaHa -- a single, real, hardcoded template (no

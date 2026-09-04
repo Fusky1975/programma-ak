@@ -626,6 +626,7 @@ def dispatch_phase(
             auto_board=True,
             caster_has_druidic_whale_transport=caster_has_druidic_whale_transport,
             caster_has_druidic_transport=caster_has_druidic_transport,
+            enforce_transport_legality=True,
         )
         # Phase 490 -- Arch-Mage's own "Sense Magic Items in Province"
         # perk: only meaningful once the mover actually arrived somewhere

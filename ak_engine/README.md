@@ -30363,7 +30363,7 @@ follow-up request after the original 431-435 plan shipped.
   user decision -- no sourced text survives, so it would need project-
   original prose -- and remains open for a future pick.
 
-- **Phase 736 (current)**: closes candidate #3 from the twenty-eighth
+- **Phase 736**: closes candidate #3 from the twenty-eighth
   survey -- Fleet/Whale cargo report narration for boarding (Phase 715)
   and sinking-with-the-carrier (Phase 716), both previously mechanic-
   only with zero report-layer text. No `SAY.PAS`/`.X2` text survives for
@@ -30411,6 +30411,77 @@ follow-up request after the original 431-435 plan shipped.
   narratives()`'s own precedent for project-original text with no
   natural season anchor. Test count: 6248 -> 6264 (net +16). Full suite
   verified green (unchanged, 6248) before writing a single new test.
+
+- **Phase 737 (current)**: the sea-transport movement-legality gate,
+  twenty-ninth fresh codebase survey's own candidate #1. `Regolamento
+  AK.txt` lines 870-876: land units genuinely cannot cross onto/off Sea
+  terrain without boarding a Fleet/Whale with real capacity, and a
+  Fleet/Whale itself cannot hop directly between two land provinces --
+  `execute_move()`'s own docstring had flagged this as unenforced since
+  the Fleet/Whale cargo-capacity subsystem shipped (Phase 714-717),
+  deliberately deferred three times over because of its own test blast
+  radius. A dedicated research pass found the report layer already has
+  extensive, real, previously-unwired text for almost every violation
+  this gate needs: `render_illegal_move_insufficient_water_transport()`/
+  `render_illegal_move_mermen_air_transport()` (code `32501`'s own real
+  sub-cases, built since Phase 127, zero real callers) and 3 choices
+  (`1`/`16`/`19`) of the 21-entry `ILLMOVE_TEMPLATE` dict (Phase 583,
+  zero consumers anywhere). Four design decisions confirmed directly
+  with the user: broad scope (also Ent/Dinosaur/Mermen, not just the
+  two base rules); the Whale-vs-Fleet conflict (rulebook says both may
+  enter/exit land; `ILLMOVE_TEMPLATE[2]` forbids Whales specifically)
+  resolved in the rulebook's favor, choice `2` left unattributed;
+  both real dispatch paths covered (`execute_move()` and `turn/
+  turn_processor.py _dispatch_multi_attacker_lmove()`, which has its
+  own entirely separate movement logic and would not otherwise inherit
+  this gate) via one shared, pure `find_transport_illegality()` helper;
+  a new opt-in `enforce_transport_legality` parameter defaulting False
+  (matching `auto_board`/`has_naval_hug_coastline`'s own established
+  rollout), wired `True` only at the real `turn/plan_dispatch.py` LMOVE
+  dispatch call site.
+
+  A key mechanical simplification found by tracing the code: `Province
+  State.effective_terrain()` already resolves a Part-Sea'd province
+  back to land (`terrain_override = Terrain.PLAINS`), so a plain
+  `effective_terrain() == Terrain.SEA` check at both endpoints already
+  correctly permits an ordinary land army, Ent, or Dinosaur to cross
+  during an active Part Sea effect -- Ents/Dinosaurs need only different
+  *narration text*, not different *legality* logic, since `can_board()`
+  (Phase 714) already refuses to board one without `DRUIDIC_TRANSPORT`.
+  A second real refinement, found empirically when the standing non-
+  breaking test run caught 3 real fixture breaks: `AdvancedAbility.
+  MARCH_THROUGH_FLOODS`'s own sourced text ("it becomes possible for
+  armies to enter or leave any province affected by the Flood spell")
+  is itself a legality-relaxing ability, not just a movement-point
+  surcharge -- `find_transport_illegality()` now excuses a real Flood
+  specifically (never natural Sea) when the mover holds it. Mermen get
+  a genuinely narrower, documented interpretation of the source text:
+  unlike Fleet/Whale (any land province), Mermen may only cross onto
+  land where the province's own real base terrain is still Sea
+  (currently Part-Sea'd) or when carried by an air-type carrier --
+  flagged as an interpretation, not a literal quote. A known, adjacent,
+  pre-existing gap is deliberately left unfixed: `can_board()`'s own
+  air-carrier branch doesn't yet accept Mermen cargo, so the new
+  Mermen-via-air-carrier legality exemption is real and directly
+  tested but can't yet be reached via real automatic boarding.
+
+  New `TransportIllegalMoveError` (mirrors `IllegalMoveFromContested
+  Error`'s own shape, carrying its own `origin_coord`/`destination_
+  coord` since `PhaseDispatchResult` has no raw target hex once
+  dispatch fails) and `find_transport_illegality()` in `turn/move_
+  execution.py`; both real LMOVE dispatch call sites now build/consult
+  it. New `report/turn_report.py render_illegal_move_choice()`
+  (`ILLMOVE_TEMPLATE`'s first
+  real consumer) and `describe_transport_illegal_move()`, wired into
+  `describe_turn_results()`'s error branch alongside the existing
+  `IllegalMoveFromContestedError` handling -- both render the generic
+  code-`32501` prefix plus the real, reason-specific sentence, matching
+  the Pascal source's own sequential `Say()` calls. Test count: 6264 ->
+  6301 (net +37). Full suite verified green (unchanged, 6264, after
+  fixing 3 pre-existing test fixtures in `test_plan_dispatch.py` that
+  moved a Fleet/Ent directly between two land provinces -- a real,
+  previously-silent illegality, corrected by changing their own target
+  terrain to Sea) before writing a single new test.
 
 ## Setup
 

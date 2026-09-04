@@ -169,8 +169,9 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
+from typing import Literal
 
-from ak_engine.models.army_type import ARMY_TABLE, SEA_ARMY_TYPES, ArmyType, is_land_army
+from ak_engine.models.army_type import ARMY_TABLE, OVERFLIGHT_AIR, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, ArmyState, GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
@@ -626,6 +627,184 @@ def _auto_board_transport_group(
     return boarded_army_ids
 
 
+# Phase 737 -- the real sea-transport movement-legality gate `execute_
+# move()`'s own docstring long flagged as unenforced (`Regolamento
+# AK.txt` lines 870-876): land units genuinely cannot cross onto/off
+# Sea terrain without a same-move carrier with free capacity; a Fleet/
+# Whale itself cannot hop directly between two land provinces; Ents/
+# Dinosaurs additionally need a real, successful boarding (`DRUIDIC_
+# TRANSPORT`) or an active Part Sea effect to cross Sea at all; Mermen
+# need either an active Part Sea effect on the land endpoint
+# specifically, or a same-move air-type carrier, to cross onto
+# genuinely permanent land (`turn/sea_transport.py`'s own module
+# docstring: "I Tritoni muovono come le Flotte, con l'eccezione che
+# possono entrare ed uscire da una provincia colpita da un incantesimo
+# Separare le Acque... possono essere trasportate da unità aeree").
+#
+# Twenty-ninth fresh codebase survey (2026-09-04), candidate #1. Four
+# design decisions confirmed directly with the user: (1) broad scope --
+# also enforce Ent/Dinosaur/Mermen, not just the two base rules; (2) the
+# Whale-vs-Fleet conflict (rulebook says both may enter/exit land;
+# `ILLMOVE_TEMPLATE[2]` forbids Whales specifically) is resolved in the
+# rulebook's favor -- Whales and Fleets treated identically, choice `2`
+# stays unattributed to any real scenario; (3) both real LMOVE dispatch
+# paths are covered by this one shared, pure helper (`execute_move()`
+# below, and `turn/turn_processor.py _dispatch_multi_attacker_lmove()`,
+# which has its own entirely separate movement logic and would not
+# otherwise inherit this gate); (4) `execute_move()`'s own new parameter
+# defaults off, matching every prior Move feature's own opt-in rollout
+# (`auto_board`, `has_naval_hug_coastline`, ...) -- wired True only at
+# the real `turn/plan_dispatch.py` LMOVE dispatch call site.
+#
+# A key mechanical simplification, found by tracing the code, not
+# assumed: `ProvinceState.effective_terrain()` already correctly
+# resolves a Part-Sea'd province back to its land terrain (`turn/
+# cast_execution.py _execute_part_sea()` sets `terrain_override =
+# Terrain.PLAINS`) -- so a plain `effective_terrain() == Terrain.SEA`
+# check at both endpoints already correctly permits an ordinary land
+# army, Ent, or Dinosaur to cross during an active Part Sea effect, with
+# no separate "is this province currently Parted" detection needed for
+# them. Only Mermen need that distinction spelled out explicitly, since
+# their own rule is about the province's *real* base terrain
+# (`ProvinceState.terrain`), not just its current effective one.
+#
+# A known, adjacent, pre-existing gap, deliberately NOT fixed here (out
+# of this phase's own scope, flagged rather than silently expanded
+# into): `turn/sea_transport.py can_board()`'s own air-carrier branch
+# only accepts `FLEET_INFANTRY_ARMY_TYPES` cargo, which does not include
+# `ArmyType.MERMEN` -- so a real `board_army()` call can never actually
+# seat a Mermen unit onto a Dragon/Eagle Wing today, even though this
+# gate's own Mermen-via-air-carrier exemption is modeled as real and
+# correct (and is directly tested as such, independent of whether real
+# automatic boarding can produce that state yet).
+TransportIllegalMoveReason = Literal[
+    "insufficient_water_transport", "naval_land_hop", "ent_shoreline", "dinosaur_shoreline", "mermen_air_transport"
+]
+
+
+class TransportIllegalMoveError(ValueError):
+    """Raised by `execute_move()` and `turn/turn_processor.py _dispatch_
+    multi_attacker_lmove()` when `find_transport_illegality()` refuses a
+    move -- a dedicated subclass (not a bare `ValueError`, which both
+    real raise sites also use for an unrelated "no province data" case),
+    mirroring `turn/contested_province.py IllegalMoveFromContestedError`'s
+    own exact shape, so `report/turn_report.py describe_turn_results()`
+    can narrate this one specific, sourced scenario without narrating
+    every other exception type too. See the addendum right above this
+    class for the full sourcing.
+    """
+
+    def __init__(self, reason: TransportIllegalMoveReason, *, origin_coord: HexCoord, destination_coord: HexCoord) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        # PhaseDispatchResult carries no raw target hex once dispatch
+        # fails (result stays None) -- report/turn_report.py describe_
+        # turn_results() reads these two fields directly off the
+        # exception itself to resolve real province names, rather than
+        # widening PhaseDispatchResult's own shape for one error type.
+        self.origin_coord = origin_coord
+        self.destination_coord = destination_coord
+
+
+def _is_part_sea(province: ProvinceState | None) -> bool:
+    """A province currently under a Part Sea effect: its own real base
+    terrain is still Sea, but `terrain_override` has flipped it walkable
+    (`turn/cast_execution.py _execute_part_sea()`). Distinct from
+    `effective_terrain() != Terrain.SEA` alone, which can't tell a
+    naturally-land province from a Part-Sea'd one -- only Mermen's own
+    rule (see `find_transport_illegality()`) needs that distinction.
+    """
+
+    return province is not None and province.terrain is Terrain.SEA and province.terrain_override is Terrain.PLAINS
+
+
+def _land_crossing_blocked(province: ProvinceState | None, is_sea: bool, has_march_through_floods: bool) -> bool:
+    """Whether this one endpoint blocks an ordinary land-type army's own
+    passage: Sea-effective (or `NO_TERRAIN`), and -- when it's a real
+    Flood (`terrain_override = Terrain.SEA` on a province whose own base
+    `.terrain` isn't Sea) rather than naturally Sea -- not excused by
+    `AdvancedAbility.MARCH_THROUGH_FLOODS`'s own sourced text: "it
+    becomes possible for armies to enter or leave any province affected
+    by the Flood spell" (the ability's own real, separate movement-point
+    surcharge, `turn/move_execution.py`'s own Phase 693 addendum, is
+    unaffected by this -- it's a cost, not a legality question, and
+    stays wired exactly as before). A genuinely natural Sea province is
+    never excused this way -- no source claims Floods helps against
+    real ocean, only against the spell's own effect.
+    """
+
+    if not is_sea:
+        return False
+    if has_march_through_floods and province is not None and province.terrain is not Terrain.SEA:
+        return False  # a real Flood, excused by the ability
+    return True
+
+
+def find_transport_illegality(
+    armies: list[ArmyState],
+    army_ids: list[int],
+    origin_province: ProvinceState | None,
+    target_province: ProvinceState,
+    *,
+    has_march_through_floods: bool = False,
+) -> TransportIllegalMoveReason | None:
+    """The real sea-transport legality check -- see the module-level
+    Phase 737 addendum right above `TransportIllegalMoveReason` for the
+    full sourcing and design. Pure and side-effect-free: does not raise
+    itself, does not mutate `armies`/either province -- both real
+    callers (`execute_move()`, `turn_processor.py _dispatch_multi_
+    attacker_lmove()`) decide what to do with the result.
+
+    Returns the *first* violation found across `armies` -- an all-or-
+    nothing refusal for the whole moving group, matching this project's
+    own established Hug-Coastline-style "one blocker refuses the entire
+    stack" convention. `None` means every army has legal passage for
+    this specific hop. `Terrain.NO_TERRAIN` is treated like `Terrain.
+    SEA` throughout (impassable without transport), mirroring `_naval_
+    hug_coastline_move_is_legal()`'s own existing precedent -- the only
+    prior movement-legality code to touch `NO_TERRAIN` at all.
+
+    `has_march_through_floods` only ever *relaxes* the ordinary land-
+    unit/Ent/Dinosaur checks below against a real Flood specifically
+    (see `_land_crossing_blocked()`) -- it never affects Fleet/Whale's
+    own land-to-land restriction (a Flooded endpoint already counts as
+    Sea for their own purposes, so the question never arises) or
+    Mermen's own rule (already sea-effective either way, flooded or
+    natural).
+    """
+
+    origin_terrain = origin_province.effective_terrain() if origin_province is not None else Terrain.NO_TERRAIN
+    target_terrain = target_province.effective_terrain()
+    origin_is_sea = origin_terrain in (Terrain.SEA, Terrain.NO_TERRAIN)
+    target_is_sea = target_terrain in (Terrain.SEA, Terrain.NO_TERRAIN)
+
+    for army in armies:
+        if army.transported_by is not None and army.transported_by in army_ids:
+            continue  # legally aboard a same-move carrier
+        if army.army_type in OVERFLIGHT_AIR:
+            continue  # "can move by land and sea... can end a turn on the sea"
+        if army.army_type is ArmyType.MERMEN:
+            origin_passable = origin_is_sea or _is_part_sea(origin_province)
+            target_passable = target_is_sea or _is_part_sea(target_province)
+            if origin_passable and target_passable:
+                continue
+            return "mermen_air_transport"
+        if army.army_type in SEA_ARMY_TYPES:  # Fleet, Whales
+            if origin_is_sea or target_is_sea:
+                continue  # entering/leaving land on its own is fine
+            return "naval_land_hop"
+        origin_blocked = _land_crossing_blocked(origin_province, origin_is_sea, has_march_through_floods)
+        target_blocked = _land_crossing_blocked(target_province, target_is_sea, has_march_through_floods)
+        if not (origin_blocked or target_blocked):
+            continue  # an ordinary land move, no unexcused Sea endpoint
+        if army.army_type is ArmyType.ENTS:
+            return "ent_shoreline"
+        if army.army_type is ArmyType.DINOSAURS:
+            return "dinosaur_shoreline"
+        return "insufficient_water_transport"
+    return None
+
+
 def execute_move(
     state: GameState,
     kingdom_id: int,
@@ -649,6 +828,7 @@ def execute_move(
     auto_board: bool = False,
     caster_has_druidic_whale_transport: bool = False,
     caster_has_druidic_transport: bool = False,
+    enforce_transport_legality: bool = False,
 ) -> MoveExecutionResult:
     """Move ``army_ids`` (all from the same province) toward ``target``.
 
@@ -805,18 +985,23 @@ def execute_move(
     either direction -- the cargo moving alone, or the carrier moving
     without some of its cargo), is disembarked first/left behind --
     see the real code for both checks, right below and near the end of
-    this function. **Deliberately not enforced here**: the real
-    rulebook restriction that land units can *only* move via sea when
-    transported -- this project has no general terrain-movement-
-    legality gate anywhere (Phase 693's own note above still applies),
-    and several existing tests for unrelated features (Illusory Fog,
-    March Through Floods, sea-conquest surcharges) depend on that
-    permissiveness -- adding a real legality gate is a deliberately
-    separate, larger, not-yet-attempted follow-up. ``auto_board``
-    itself defaults False, so every pre-Phase-715 caller (including
-    every direct test call) is completely unaffected; only ``turn/
-    plan_dispatch.py dispatch_phase()``'s own real LMOVE dispatch passes
-    ``True``.
+    this function. ``auto_board`` itself defaults False, so every pre-
+    Phase-715 caller (including every direct test call) is completely
+    unaffected; only ``turn/plan_dispatch.py dispatch_phase()``'s own
+    real LMOVE dispatch passes ``True``.
+
+    **Phase 737 -- the real transport-legality restriction, now
+    enforced.** ``enforce_transport_legality`` (default False) raises
+    ``TransportIllegalMoveError`` when ``find_transport_illegality()``
+    (above) finds any army in ``army_ids`` lacking legal passage for
+    this specific single-hex hop -- see that function's own docstring,
+    and the module-level Phase 737 addendum right above it, for the
+    full sourcing/design. Defaults False for the identical reason
+    ``auto_board`` does: every existing test for an unrelated feature
+    (Illusory Fog, March Through Floods, sea-conquest surcharges) that
+    moves a land army onto Sea terrain unassisted stays unaffected;
+    only ``turn/plan_dispatch.py dispatch_phase()``'s own real LMOVE
+    dispatch passes ``True``.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -908,6 +1093,13 @@ def execute_move(
     )
     if is_illegal_move_from_contested(origin_contested_by_mover, target_owner_is_enemy):
         raise IllegalMoveFromContestedError("illegal to move from a contested province to an adjacent enemy province")
+
+    if enforce_transport_legality and armies:
+        transport_reason = find_transport_illegality(
+            armies, army_ids, origin_province, target_province, has_march_through_floods=has_march_through_floods
+        )
+        if transport_reason is not None:
+            raise TransportIllegalMoveError(transport_reason, origin_coord=current, destination_coord=actual_target)
 
     defenders_present = [
         army

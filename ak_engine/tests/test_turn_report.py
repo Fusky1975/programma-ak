@@ -113,6 +113,7 @@ from ak_engine.report.turn_report import (
     describe_disband,
     describe_leave,
     describe_move,
+    describe_transport_illegal_move,
     describe_pick_up,
     describe_practice,
     describe_pursue,
@@ -190,6 +191,7 @@ from ak_engine.report.turn_report import (
     render_hire_accepted,
     render_hire_counter_offer,
     render_illegal_move_attempted,
+    render_illegal_move_choice,
     render_illegal_move_flooding_transport,
     render_illegal_move_insufficient_water_transport,
     render_illegal_move_mermen_air_transport,
@@ -373,7 +375,7 @@ from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.tax_base import compute_tax_base
 from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.defend_execution import DefendReinforcement
-from ak_engine.turn.move_execution import MoveExecutionResult
+from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalMoveError
 from ak_engine.turn.plan_dispatch import ArmyListExecutionResult, FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.patrol_execution import PatrolExecutionResult
@@ -4939,6 +4941,141 @@ def test_render_illegal_move_mermen_air_transport():
         "Aldric was ordered to move with Mermen from Greenfield to "
         "Redhaven, but had insufficient air-transport."
     )
+
+
+# -- Phase 737: render_illegal_move_choice() / describe_transport_illegal_move() --
+
+
+def test_render_illegal_move_choice_1_naval_land_hop():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_illegal_move_choice(1, "Aldric", "Greenfield", "Redhaven", rng)
+    assert result == (
+        "Aldric was ordered to move from Greenfield to Redhaven, but it is "
+        "illegal to move naval forces from one non-sea province to another."
+    )
+
+
+def test_render_illegal_move_choice_16_ent_shoreline():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_illegal_move_choice(16, "Aldric", "Greenfield", "Redhaven", rng)
+    assert result == (
+        "Aldric could not move from Greenfield to Redhaven because "
+        "Aldric's ents refused to cross the shoreline."
+    )
+
+
+def test_render_illegal_move_choice_19_dinosaur_shoreline():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_illegal_move_choice(19, "Aldric", "Greenfield", "Redhaven", rng)
+    assert result == (
+        "Aldric could not move from Greenfield to Redhaven because "
+        "Aldric's dinosaurs refused to cross the shoreline."
+    )
+
+
+def test_describe_transport_illegal_move_insufficient_water_transport():
+    error = TransportIllegalMoveError("insufficient_water_transport", origin_coord=HexCoord(0, 0), destination_coord=HexCoord(1, 0))
+    rng = ScriptedRandom([0.1] * 10)
+    lines = describe_transport_illegal_move(error, "Aldric", "Greenfield", "Redhaven", rng)
+    assert lines == [
+        "Aldric attempted an illegal move.",
+        "Aldric tried to use water-borne movement to move from Greenfield to "
+        "Redhaven, but Aldric's transport was insufficent for the task.",
+    ]
+
+
+def test_describe_transport_illegal_move_mermen_air_transport():
+    error = TransportIllegalMoveError("mermen_air_transport", origin_coord=HexCoord(0, 0), destination_coord=HexCoord(1, 0))
+    rng = ScriptedRandom([0.1] * 10)
+    lines = describe_transport_illegal_move(error, "Aldric", "Greenfield", "Redhaven", rng)
+    assert lines == [
+        "Aldric attempted an illegal move.",
+        "Aldric was ordered to move with Mermen from Greenfield to Redhaven, "
+        "but had insufficient air-transport.",
+    ]
+
+
+def test_describe_transport_illegal_move_naval_land_hop():
+    error = TransportIllegalMoveError("naval_land_hop", origin_coord=HexCoord(0, 0), destination_coord=HexCoord(1, 0))
+    rng = ScriptedRandom([0.1] * 10)
+    lines = describe_transport_illegal_move(error, "Aldric", "Greenfield", "Redhaven", rng)
+    assert lines == [
+        "Aldric attempted an illegal move.",
+        "Aldric was ordered to move from Greenfield to Redhaven, but it is "
+        "illegal to move naval forces from one non-sea province to another.",
+    ]
+
+
+def test_describe_transport_illegal_move_ent_shoreline():
+    error = TransportIllegalMoveError("ent_shoreline", origin_coord=HexCoord(0, 0), destination_coord=HexCoord(1, 0))
+    rng = ScriptedRandom([0.1] * 10)
+    lines = describe_transport_illegal_move(error, "Aldric", "Greenfield", "Redhaven", rng)
+    assert lines == [
+        "Aldric attempted an illegal move.",
+        "Aldric could not move from Greenfield to Redhaven because Aldric's "
+        "ents refused to cross the shoreline.",
+    ]
+
+
+def test_describe_transport_illegal_move_dinosaur_shoreline():
+    error = TransportIllegalMoveError("dinosaur_shoreline", origin_coord=HexCoord(0, 0), destination_coord=HexCoord(1, 0))
+    rng = ScriptedRandom([0.1] * 10)
+    lines = describe_transport_illegal_move(error, "Aldric", "Greenfield", "Redhaven", rng)
+    assert lines == [
+        "Aldric attempted an illegal move.",
+        "Aldric could not move from Greenfield to Redhaven because Aldric's "
+        "dinosaurs refused to cross the shoreline.",
+    ]
+
+
+def test_describe_turn_results_narrates_a_transport_illegal_move():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Arthur", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor"))
+    state.add_province(ProvinceState(HexCoord(1, 0), Terrain.SEA, Race.HUMAN, name="Deepwater"))
+    entries = [
+        PhaseDispatchResult(
+            leader_id=1,
+            segment_index=0,
+            phase_label="P0",
+            action=ActionCode.LMOVE,
+            result=None,
+            error=TransportIllegalMoveError(
+                "insufficient_water_transport", origin_coord=HexCoord(0, 0), destination_coord=HexCoord(1, 0)
+            ),
+        )
+    ]
+    rng = ScriptedRandom([0.1] * 10)
+
+    lines = describe_turn_results(entries, state, rng)
+
+    assert lines == [
+        "Arthur attempted an illegal move.",
+        "Arthur tried to use water-borne movement to move from Numenor to "
+        "Deepwater, but Arthur's transport was insufficent for the task.",
+    ]
+
+
+def test_describe_turn_results_transport_illegal_move_skips_an_unresolvable_leader():
+    state = GameState()
+    entries = [
+        PhaseDispatchResult(
+            leader_id=999,
+            segment_index=0,
+            phase_label="P0",
+            action=ActionCode.LMOVE,
+            result=None,
+            error=TransportIllegalMoveError(
+                "insufficient_water_transport", origin_coord=HexCoord(0, 0), destination_coord=HexCoord(1, 0)
+            ),
+        )
+    ]
+    rng = ScriptedRandom([0.1] * 10)
+
+    lines = describe_turn_results(entries, state, rng)
+
+    assert lines == []
 
 
 # -- ILLMOVE_TEMPLATE (Phase 583) --------------------------------------------
