@@ -30588,7 +30588,7 @@ follow-up request after the original 431-435 plan shipped.
   writing a single new test -- a provable no-op for every existing
   fixture.
 
-- **Phase 742 (current)**: not part of a phased roadmap -- comment-only,
+- **Phase 742**: not part of a phased roadmap -- comment-only,
   no behavior change. Fixes 2 stale known-gap-claim docstrings flagged by
   the thirty-second fresh codebase survey (2026-09-04): `turn/merit_
   points.py`'s own note on Bravest of the Brave's Talk-inspiration effect
@@ -30601,6 +30601,55 @@ follow-up request after the original 431-435 plan shipped.
   correct, un-stale docstrings pointing at this same wiring -- only the
   ASpy-side copy of the claim was never updated). Full suite unchanged
   (6321).
+
+- **Phase 743 (current)**: thirty-second survey's own candidate #2 --
+  `Maneuver.FLEE` finally wired into leader-vs-leader Challenge/Pursue.
+  `turn/challenge_execution.py`'s own docstring already flagged this
+  precisely: rulebook [5.6] ("The chance of fleeing from fast monsters
+  is 20%, from medium-speed monsters or other characters 50%, and slow
+  monsters can be escaped from 80% of the time") had no wired tactic or
+  base-chance table anywhere in this module or `turn/pursue_execution.py`
+  -- `Maneuver.FLEE` silently fell through the main tactic loop's own
+  "every other tactic is unwired" catch-all, even though the rulebook's
+  own worked example [11.3] ("CA-IN, ST, FL, ME") uses it directly.
+
+  The real formula already existed and needed porting, not inventing:
+  `turn/search_execution.py FLEE_CHANCE`/`effective_flee_chance()`
+  (Phase 169/286/312/515/665) already implements [5.6] verbatim, plus
+  the Weak-Temperament/Invisibility/Melee-Evasion additive bonuses and
+  `Office.ELE_MAGE`'s own unconditional 100% override. [5.6]'s own text
+  already names the leader-vs-leader base chance as the medium tier
+  (50%, "... or other characters") -- no per-unit speed lookup needed,
+  the same reading this module's own Lava Pool escape chance already
+  used. `FLEE_CHANCE`/`effective_flee_chance()`/`_has_air_elemental_
+  familiar()` are duplicated verbatim from `search_execution.py`'s own
+  copies, matching this project's established "small, duplicated per-
+  consumer" convention between these two peer modules (neither imports
+  from the other; only genuinely shared primitives live in `turn/
+  encounter.py`).
+
+  This phase also closed the directly-dependent Augur-Combat gap the
+  same docstring paragraph already named: the "cast later -> acts as
+  Flee" branch (`AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER`) was a
+  silent `return None` standing in for the missing mechanic -- now
+  rolls the real formula, mirroring `search_execution.py`'s own
+  identical branch. `turn/pursue_execution.py`'s armyless case needed
+  zero code changes -- it already delegates its whole combat walk to
+  `resolve_challenge_combat()` directly, inheriting the fix for free
+  (proven end-to-end with a new test). Deliberately out of scope: the
+  *target's* own SEP-driven Flee agency (`target_tactics` still only
+  peeks for leading `CAST` tactics) -- this phase wires Flee only for
+  the primary walked tactic list, the same scope every other tactic in
+  this loop already has.
+
+  Test count: 6321 -> 6335 (net +14). Full suite verified green
+  (unchanged, 6321) before touching any test; 2 pre-existing tests
+  needed fixing (not just re-running unchanged) once the standing
+  non-breaking check caught them: a STEAL-capture-then-FLEE-then-MELEE
+  fixture needed its own scripted Flee roll added (previously relied
+  on Flee being silently skipped), and the Augur-Combat "cast later"
+  test (previously asserting "documented no-effect") was replaced with
+  two real success/failure cases.
 
 ## Setup
 

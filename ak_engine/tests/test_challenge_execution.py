@@ -14,12 +14,16 @@ from ak_engine.models.game_state import ArmyState, GameState, KingdomState, Lead
 from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
-from ak_engine.models.monster import Monster
+from ak_engine.models.monster import Monster, MonsterSpeed
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.challenge_execution import (
+    FLEE_CHANCE,
+    INVISIBILITY_FLEE_CHANCE_BONUS,
+    MELEE_EVASION_FLEE_CHANCE_BONUS,
+    WEAK_TEMPER_FLEE_CHANCE_BONUS,
     ChallengeCombatOutcome,
     ChallengeExecutionResult,
     _apply_bravest_talk_inspiration,
@@ -32,6 +36,7 @@ from ak_engine.turn.challenge_execution import (
     _resolve_cast_disruption,
     _resolve_personal_combat_cast,
     _resolve_steal_tactic,
+    effective_flee_chance,
     execute_challenge,
     has_combat_intent,
     is_encounter_accepted,
@@ -1450,10 +1455,12 @@ def test_augur_combat_cast_first_shirks_and_flees_on_a_simulated_loss():
     assert outcome == "fled"
 
 
-def test_augur_combat_cast_later_is_a_documented_gap_with_no_effect_yet():
-    # Module docstring's own Phase 290 addendum: unlike Search, this
-    # module has no real Flee tactic/base-chance table to act as yet --
-    # confirmed as a genuine, still-open gap rather than a guess.
+def test_augur_combat_cast_later_flee_succeeds():
+    # Phase 743: AUGUR_COMBAT_ACTS_AS_FLEE_WHEN_CAST_LATER, now wired via
+    # this module's own real [5.6] Flee formula. Cowardly gives +30% on
+    # top of the MonsterSpeed.MEDIUM 50% base ("... or other characters"),
+    # so 0.79 (< 0.80) succeeds. resolve_personal_combat_spell_cast() is
+    # never reached -- the "cast later" branch returns before any roll.
     state = _base_state()
     caster_leader = LeaderState(
         1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9), temper=Temper.COWARDLY
@@ -1467,7 +1474,46 @@ def test_augur_combat_cast_later_is_a_documented_gap_with_no_effect_yet():
 
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
         outcome = _resolve_personal_combat_cast(
-            caster, caster_leader, target, target_leader, tactic, state, ScriptedRandom([]), is_first_tactic=False, cast_slots_used={}, cast_spells_attempted=set()
+            caster,
+            caster_leader,
+            target,
+            target_leader,
+            tactic,
+            state,
+            ScriptedRandom([0.79]),
+            is_first_tactic=False,
+            cast_slots_used={},
+            cast_spells_attempted=set(),
+        )
+
+    assert outcome == "fled"
+    assert not mock_roll.called
+
+
+def test_augur_combat_cast_later_flee_fails_falls_through():
+    state = _base_state()
+    caster_leader = LeaderState(
+        1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9), temper=Temper.COWARDLY
+    )
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.AUGUR_COMBAT.value)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
+        outcome = _resolve_personal_combat_cast(
+            caster,
+            caster_leader,
+            target,
+            target_leader,
+            tactic,
+            state,
+            ScriptedRandom([0.80]),
+            is_first_tactic=False,
+            cast_slots_used={},
+            cast_spells_attempted=set(),
         )
 
     assert outcome is None
@@ -1644,6 +1690,127 @@ def test_resolve_challenge_combat_cast_at_melee_range_not_disrupted_still_attemp
 
     assert mock_cast.called  # not disrupted -- the cast-chance roll still happens
     assert mock_heal.called  # ... and, having succeeded, the spell's own effect still lands
+
+
+# -- Phase 743: Maneuver.FLEE -----------------------------------------------
+
+
+def test_effective_flee_chance_medium_speed_base_is_fifty_percent():
+    # [5.6]: "... 50%..., from medium-speed monsters or other characters".
+    assert effective_flee_chance(FLEE_CHANCE[MonsterSpeed.MEDIUM], temper=None, is_invisible=False) == 0.50
+
+
+def test_effective_flee_chance_weak_temper_adds_its_own_bonus():
+    assert effective_flee_chance(0.50, temper=Temper.CAUTIOUS, is_invisible=False) == pytest.approx(
+        0.50 + WEAK_TEMPER_FLEE_CHANCE_BONUS
+    )
+    assert effective_flee_chance(0.50, temper=Temper.COWARDLY, is_invisible=False) == pytest.approx(
+        0.50 + WEAK_TEMPER_FLEE_CHANCE_BONUS
+    )
+    assert effective_flee_chance(0.50, temper=Temper.BRAVE, is_invisible=False) == 0.50
+
+
+def test_effective_flee_chance_invisibility_adds_its_own_bonus_independently_of_temper():
+    assert effective_flee_chance(0.20, temper=None, is_invisible=True) == pytest.approx(
+        0.20 + INVISIBILITY_FLEE_CHANCE_BONUS
+    )
+
+
+def test_effective_flee_chance_melee_evasion_adds_its_own_bonus_independently():
+    assert effective_flee_chance(0.20, temper=None, is_invisible=False, has_melee_evasion=True) == pytest.approx(
+        0.20 + MELEE_EVASION_FLEE_CHANCE_BONUS
+    )
+
+
+def test_effective_flee_chance_bonuses_stack_and_clamp_at_certainty():
+    assert effective_flee_chance(0.80, temper=Temper.CAUTIOUS, is_invisible=True) == 1.0
+
+
+def test_effective_flee_chance_air_elemental_familiar_guarantees_success():
+    # Office.ELE_MAGE -- "all flee attempts are automatically successful,"
+    # an unconditional override, not another additive bonus.
+    assert effective_flee_chance(
+        0.20, temper=Temper.BRAVE, is_invisible=False, has_air_elemental_familiar=True
+    ) == 1.0
+
+
+def test_resolve_challenge_combat_flee_tactic_success_ends_the_encounter():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.FLEE)]
+
+    outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([0.49]))
+
+    assert outcome.fled is True
+    assert outcome.winner is None
+
+
+def test_resolve_challenge_combat_flee_tactic_failure_falls_through_to_the_next_tactic():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.FLEE), SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([0.50])
+        )
+
+    assert outcome.fled is False
+    assert outcome.winner == "a"
+    mock_duel.assert_called_once()
+
+
+def test_resolve_challenge_combat_flee_only_plan_still_falls_through_to_the_exhausted_list_melee_default():
+    # A failed, standalone Flee tactic is the plan's own last (only)
+    # tactic -- the pre-existing "exhausted tactic list defaults to
+    # Melee" rule still applies, now reached via a real Flee branch
+    # instead of the old unwired-tactic fallthrough.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.FLEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="b", rounds=1)
+        outcome = resolve_challenge_combat(
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([0.99])
+        )
+
+    assert outcome.fled is False
+    assert outcome.winner == "b"
+    mock_duel.assert_called_once()
+
+
+def test_resolve_challenge_combat_flee_tactic_temper_bonus_reaches_through():
+    state, caster_leader, caster, target_leader, target = _combatants(caster_kwargs={"temper": Temper.COWARDLY})
+    tactics = [SearchTactic(Maneuver.FLEE)]
+
+    # 0.79 fails the bare 50% base but succeeds once Cowardly's own +30%
+    # is applied (0.50 + 0.30 = 0.80) -- proves the real LeaderState.temper
+    # reaches the roll, not just the formula in isolation.
+    outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([0.79]))
+
+    assert outcome.fled is True
+
+
+def test_resolve_challenge_combat_flee_tactic_melee_evasion_bonus_reaches_through():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    caster_leader.advanced_abilities.add(AdvancedAbility.MELEE_EVASION)
+    tactics = [SearchTactic(Maneuver.FLEE)]
+
+    outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([0.79]))
+
+    assert outcome.fled is True
+
+
+def test_resolve_challenge_combat_flee_tactic_with_no_real_caster_leader_uses_degraded_defaults():
+    # caster_leader=None only for turn/battle_orchestrator.py's own Duel/
+    # garrison-commander reuse (Phase 291) -- no real LeaderState to read
+    # Temper/abilities/Office from, so the flee roll uses the bare 50%
+    # base with no crash.
+    state, _caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.FLEE)]
+
+    outcome = resolve_challenge_combat(tactics, None, caster, target_leader, target, state, ScriptedRandom([0.49]))
+
+    assert outcome.fled is True
 
 
 def test_resolve_cast_disruption_words_of_healing_uses_its_own_halved_damage_formula():
@@ -2872,9 +3039,10 @@ def test_resolve_challenge_combat_steal_capture_sets_the_rolled_range_and_falls_
 
 def test_resolve_challenge_combat_steal_capture_at_melee_range_then_a_following_melee_tactic_resolves_once():
     # [11.3]'s own worked example ("CA-IN, ST, FL, ME"): getting caught
-    # hands control to the plan's own next tactic. FLEE stays unwired
-    # (a separate, already-documented gap) and is skipped; the following
-    # MELEE picks up from the rolled range without re-closing it.
+    # hands control to the plan's own next tactic. Phase 743: FLEE is now
+    # wired (base 50%, no bonuses on this fixture's default leaders) --
+    # scripted to fail (0.50, not < 0.50) so the following MELEE still
+    # picks up from the rolled range without re-closing it.
     state, caster_leader, caster, target_leader, target = _combatants()
     tactics = [SearchTactic(Maneuver.STEAL), SearchTactic(Maneuver.FLEE), SearchTactic(Maneuver.MELEE)]
 
@@ -2883,7 +3051,7 @@ def test_resolve_challenge_combat_steal_capture_at_melee_range_then_a_following_
     ) as mock_duel:
         mock_duel.return_value = EncounterCombatResult(winner="b", rounds=1)
         outcome = resolve_challenge_combat(
-            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([], choice_indices=[2])
+            tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([0.50], choice_indices=[2])
         )
 
     assert outcome.winner == "b"

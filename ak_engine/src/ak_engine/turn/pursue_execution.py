@@ -143,6 +143,11 @@ adds direct verification of that inheritance through ``execute_pursue()``'s
 own public API, mirroring the equivalent ``test_challenge_execution.py``
 tests.
 
+**Phase 743 -- ``Maneuver.FLEE`` inherited for free.** Same reasoning:
+``turn/challenge_execution.py``'s own real [5.6] Flee mechanic reaches
+the armyless case automatically through the shared ``resolve_challenge_
+combat()`` call, no code change needed here.
+
 **Phase 461 -- wires ``turn/experience.py add_experience()`` into
 Pursue's own real "informational event" moment.**
 ``AKGEN_reverse_engineering_report (2).md`` SS3.3's own Spy row (base

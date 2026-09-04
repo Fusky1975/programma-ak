@@ -1038,6 +1038,37 @@ def test_execute_pursue_short_range_archery_reaches_through_the_shared_function(
     mock_resolve.assert_called_once_with(ANY, ANY, ANY, short_range_archer="a")
 
 
+# -- Phase 743: Maneuver.FLEE (via the shared function) -----------------------
+
+
+def test_execute_pursue_flee_tactic_reaches_through_the_shared_function():
+    # Proves execute_pursue()'s armyless case reuses turn/challenge_
+    # execution.py resolve_challenge_combat() unchanged -- the new
+    # Phase 743 Flee branch reaches through with zero pursue-side wiring.
+    # A trailing MELEE tactic gives the plan real combat intent (so
+    # has_combat_intent() lets it reach resolve_challenge_combat() at
+    # all) but is never dispatched -- the Flee roll ends the encounter
+    # first.
+    state = _base_state()
+    pursuer = LeaderState(1, kingdom_id=1, name="Chaser", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    request = PursueRequest(
+        target_character_id=2, unconfirmed_extra0=0, tactics=[SearchTactic(Maneuver.FLEE), SearchTactic(Maneuver.MELEE)]
+    )
+
+    # Padding: the Spy Table catch-up roll (0.0, guaranteed success) then
+    # add_experience()'s own triangular-distribution draw (Spy XP for the
+    # qualifying event, 2 values) both run before combat begins.
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        result = execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5, 0.1]))
+
+    assert result.combat_occurred is True
+    assert result.fled is True
+    assert not mock_duel.called
+
+
 # -- Phase 702: AdvancedAbility.THIEF_TREASURY_RAIDS (via the shared function) --
 
 

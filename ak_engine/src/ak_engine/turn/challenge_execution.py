@@ -140,13 +140,33 @@ target_is_monster: ... else: ...``), not a guess at new behavior:
   gated shirk) is wired identically to Search's own leader-caster case
   -- ``caster_is_leader`` is unconditionally true here (nothing but a
   leader ever initiates a Challenge/Pursue). **The "cast later -> acts
-  as Flee" branch is deliberately left unwired**: it needs a real Flee
-  *tactic* and [5.6]'s own base-chance table, and neither exists
-  anywhere in this module or ``turn/pursue_execution.py`` today (unlike
-  Search, which has both) -- a genuine, narrower gap than Words of
-  Healing's own Phase 289 fix, not attempted here to avoid silently
-  half-wiring a spell whose second branch would otherwise just look
-  broken. Recorded as a confirmed, sourced gap.
+  as Flee" branch is now wired too (Phase 743)**, via this module's own
+  real ``Maneuver.FLEE`` mechanic below -- previously a genuine, sourced
+  gap (no Flee tactic or [5.6] base-chance table existed anywhere in
+  this module or ``turn/pursue_execution.py``).
+- **``Maneuver.FLEE`` (Phase 743, rulebook [5.6])**: "The chance of
+  fleeing from fast monsters is 20%, from medium-speed monsters or
+  other characters 50%, and slow monsters can be escaped from 80% of
+  the time." A leader-vs-leader Flee here always resolves against
+  ``FLEE_CHANCE[MonsterSpeed.MEDIUM]`` ("... or other characters") --
+  no per-unit speed lookup is needed, the same reading the Lava Pool
+  branch above already established. ``FLEE_CHANCE``/``effective_flee_
+  chance()``/``_has_air_elemental_familiar()`` are duplicated verbatim
+  from ``turn/search_execution.py``'s own copies (Phase 169/286/312/
+  515/665) -- this project's own established "small, duplicated per-
+  consumer" convention between these two peer modules (neither imports
+  from the other anywhere; only genuinely shared primitives like
+  ``resolve_augur_combat()`` live in ``turn/encounter.py``). A failed
+  roll falls through to the plan's next tactic, matching [11.3]'s own
+  worked example ("CA-IN, ST, FL, ME"). **Deliberately still out of
+  scope**: the *target's* own SEP-driven Flee agency (``target_
+  tactics`` today only ever peeks for leading ``CAST`` tactics) --
+  wiring Flee only for the primary walked ``tactics`` list matches
+  every other tactic in this loop's own existing scope; a genuinely
+  Flee-capable target SEP is a separate, larger follow-up.
+  ``turn/pursue_execution.py``'s own armyless case inherits this for
+  free via the shared ``resolve_challenge_combat()`` call, no code
+  change needed there.
 
 **Phase 292 addendum -- the real round-based range engine, and spell
 disruption, both now wired.** ``turn/search_execution.py``'s own Phase
@@ -278,7 +298,7 @@ from ak_engine.models.monster import (
 )
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
-from ak_engine.models.temper import raise_temper_one_level
+from ak_engine.models.temper import Temper, raise_temper_one_level
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
 from ak_engine.turn.discovery_effects import (
@@ -385,6 +405,68 @@ def _necromancer_mage_resists_spell(state: GameState, target_leader_id: int, rng
     if holder is None or holder.leader_id != target_leader_id:
         return False
     return rng.random() < NECROMANCER_MAGE_SPELL_RESIST_CHANCE
+
+
+# Phase 743: rulebook [5.6] Flee, transcribed verbatim -- "The chance of
+# fleeing from fast monsters is 20%, from medium-speed monsters or other
+# characters 50%, and slow monsters can be escaped from 80% of the time."
+# Duplicated from `turn/search_execution.py`'s own copy (Phase 169) --
+# see that module's own docstring for the full sourcing of every bonus
+# below. A leader-vs-leader Flee here always uses `MonsterSpeed.MEDIUM`
+# ("... or other characters") -- no per-unit speed lookup is needed,
+# the same reading `_resolve_personal_combat_cast()`'s own Lava Pool
+# branch already uses for this exact reason.
+FLEE_CHANCE: dict[MonsterSpeed, float] = {
+    MonsterSpeed.FAST: 0.20,
+    MonsterSpeed.MEDIUM: 0.50,
+    MonsterSpeed.SLOW: 0.80,
+}
+
+# Rulebook [5.6] Weak-Temperament/Invisibility/Melee-Evasion flee bonuses
+# -- see `turn/search_execution.py`'s own Phase 286/312/515 addenda for
+# the full sourcing (including the Cowardly extension and the +30%-vs-
+# +20% rulebook contradiction, resolved in favor of +30%).
+WEAK_TEMPER_FLEE_CHANCE_BONUS = 0.30
+WEAK_FLEE_TEMPERS = frozenset({Temper.CAUTIOUS, Temper.COWARDLY})
+INVISIBILITY_FLEE_CHANCE_BONUS = 0.30
+MELEE_EVASION_FLEE_CHANCE_BONUS = 0.30
+
+
+def effective_flee_chance(
+    base_chance: float,
+    *,
+    temper: Temper | None,
+    is_invisible: bool,
+    has_melee_evasion: bool = False,
+    has_air_elemental_familiar: bool = False,
+) -> float:
+    """Phase 286 (via Phase 743): applies the Weak-Temperament,
+    Invisibility, Melee Evasion, and Air Elemental flee bonuses to a
+    base [5.6] chance. Duplicated verbatim from `turn/search_execution.
+    py`'s own copy -- see that module's own Phase 286/515/665 addenda
+    for the full sourcing, the additive-not-multiplicative reasoning,
+    and the Cautious-plus-Cowardly extension. Clamped to 1.0.
+    """
+
+    if has_air_elemental_familiar:
+        return 1.0
+    bonus = WEAK_TEMPER_FLEE_CHANCE_BONUS if temper in WEAK_FLEE_TEMPERS else 0.0
+    if is_invisible:
+        bonus += INVISIBILITY_FLEE_CHANCE_BONUS
+    if has_melee_evasion:
+        bonus += MELEE_EVASION_FLEE_CHANCE_BONUS
+    return min(1.0, base_chance + bonus)
+
+
+def _has_air_elemental_familiar(state: GameState, leader_id: int) -> bool:
+    """Office.ELE_MAGE's own Air Elemental familiar (Phase 665) -- "<2",
+    the titleholder personally, not his whole Kingdom. Duplicated from
+    `turn/search_execution.py`'s own copy, this project's own established
+    "small per-consumer lookup" convention.
+    """
+
+    holder = resolve_office_holder(state, Office.ELE_MAGE)
+    return holder is not None and holder.leader_id == leader_id
 
 
 def _resolve_cast_disruption(pending_cast: SearchTactic | None, damage: int, rng: random.Random) -> bool:
@@ -713,11 +795,18 @@ def _resolve_personal_combat_cast(
 
     if spell is Spell.AUGUR_COMBAT and not is_first_tactic:
         # `turn/encounter.py`'s own Phase 205 addendum: "if it comes
-        # later, then the result will be an attempt to flee." Unlike
-        # Search, this module has no real Flee tactic or [5.6] base-
-        # chance table wired -- module docstring's own Phase 290
-        # addendum records this as a genuine, still-open gap rather than
-        # guessing a formula.
+        # later, then the result will be an attempt to flee." Phase 743:
+        # now wired via this module's own real Flee formula -- mirrors
+        # `turn/search_execution.py`'s own identical AUGUR_COMBAT branch.
+        flee_chance = effective_flee_chance(
+            FLEE_CHANCE[MonsterSpeed.MEDIUM],
+            temper=caster_leader.temper,
+            is_invisible=caster.is_invisible,
+            has_melee_evasion=AdvancedAbility.MELEE_EVASION in caster_leader.advanced_abilities,
+            has_air_elemental_familiar=_has_air_elemental_familiar(state, caster_leader.leader_id),
+        )
+        if rng.random() < flee_chance:
+            return "fled"
         return None
 
     # Phase 732: no wand-cast/`forced_level` concept exists anywhere in
@@ -1739,6 +1828,20 @@ def resolve_challenge_combat(
         return _outcome(winner=target_cast_outcome)
 
     for index, tactic in enumerate(tactics):
+        if tactic.maneuver is Maneuver.FLEE:
+            # Phase 743: rulebook [5.6], "from ... other characters
+            # [50%]" -- MonsterSpeed.MEDIUM needs no per-unit lookup
+            # here, see this function's own module-docstring addendum.
+            flee_chance = effective_flee_chance(
+                FLEE_CHANCE[MonsterSpeed.MEDIUM],
+                temper=caster_leader.temper if caster_leader is not None else None,
+                is_invisible=caster.is_invisible,
+                has_melee_evasion=caster_leader is not None and AdvancedAbility.MELEE_EVASION in caster_leader.advanced_abilities,
+                has_air_elemental_familiar=caster_leader is not None and _has_air_elemental_familiar(state, caster_leader.leader_id),
+            )
+            if rng.random() < flee_chance:
+                return _outcome(fled=True)
+            continue
         if tactic.maneuver is Maneuver.SHOOT:
             if current_range is CombatRange.MELEE_RANGE:
                 # Phase 701: AdvancedAbility.SHORT_RANGE_ARCHERY -- "may
