@@ -786,7 +786,11 @@ kingdom receives -- the first narrative in this module tied to
 - `_LRev: Say('this turn, the Kingdom collected # gold in
   revenue.',S_Red)` -- `#` is `PROSE.TXT`'s own numeric marker (same
   convention as `render_attack_hit()`, Phase 112).
-  `render_finance_revenue()`.
+  `render_finance_revenue()`. **Phase 747** wires this into
+  `describe_finances_report()` for real, using `state.turn_revenue_
+  credited`'s own now-correct final total (`Desktop/INVBONUS.md`) -- the
+  other four renderers below stay dormant, no confirmed real position
+  for any of them either.
 - `_LLCosts: Say('# gold was expended to finance our
   leaders.',S_Red)` -- leader upkeep cost. `render_finance_leader_costs()`.
 - `_AUnpaid: Say('unfortunately, #% of your Majesty''s armies had to
@@ -9671,6 +9675,22 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
     modeled, the same "internal messaging, not player-facing" stance
     already established elsewhere in this project (e.g. the DIPLOMACY
     composer's own `mknext1`/`Imp_Code` note).
+
+    **Phase 747** (`Desktop/INVBONUS.md`) moves `+Invention Bonus: N%`
+    to sit immediately after `Expected Revenues`, matching the exact
+    `REPORTS.PAS` order quoted in `models/discovery.py`'s own docstring
+    (`Expected Revenues` -> `Inv_Bonus` -> nothing else in between in the
+    real source) -- previously rendered after `Expected Expenses`, a
+    stale ordering this same docstring's own quoted source already
+    contradicted. Also adds a new `_LRev` line (`render_finance_revenue()`,
+    Phase 124, wired here for the first time) right after the raid/
+    blackmail explanatory lines and before `Expected Expenses`, using
+    `state.turn_revenue_credited`'s own real, final per-kingdom total
+    (`turn/tax_base.py apply_turn_revenue()`) -- omitted entirely when
+    that `GameState` never ran `apply_turn_revenue()`. The other four
+    real `SAY.PAS` financial-narrative renderers this same module's own
+    `_LFinance`/`_LRev`/... addendum names (`_LFinance`/`_LLCosts`/
+    `_AUnpaid`/`_LACosts`/`_LTreas`) stay dormant, a separate follow-up.
     """
 
     kingdom = state.kingdoms[kingdom_id]
@@ -9688,6 +9708,9 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
     if thiefprince_holder is not None and state.leaders[thiefprince_holder.leader_id].kingdom_id == kingdom_id:
         lines.append("(Including +10 Thieves Guild)")
     lines.append(f"Expected Revenues: {compute_tax_base(state, kingdom_id):>3}")
+    invention_bonus_percent = compute_invention_bonus_percent(kingdom)
+    if invention_bonus_percent > 0:
+        lines.append(f"+Invention Bonus: {invention_bonus_percent}%")
     for raid_event in state.turn_raid_events:
         province = state.provinces.get(raid_event.province_coord)
         if province is None or province.owner_kingdom_id != kingdom_id:
@@ -9703,10 +9726,9 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
         if penalty.kingdom_id != kingdom_id:
             continue
         lines.append(render_blackmail_penalty(penalty.amount, penalty.blackmailer_kingdom_id, rng))
+    if kingdom_id in state.turn_revenue_credited:
+        lines.append(render_finance_revenue(state.turn_revenue_credited[kingdom_id], rng))
     lines.append(f"Expected Expenses: {compute_expected_expenses(state, kingdom_id):>3}")
-    invention_bonus_percent = compute_invention_bonus_percent(kingdom)
-    if invention_bonus_percent > 0:
-        lines.append(f"+Invention Bonus: {invention_bonus_percent}%")
     lines.append(_FINANCES_DISCOVERIES_INTRO)
     if kingdom.discoveries:
         for discovery in sorted_kingdom_discoveries(kingdom.discoveries):

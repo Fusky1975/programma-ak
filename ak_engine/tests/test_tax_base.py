@@ -220,7 +220,9 @@ def test_apply_turn_revenue_credits_tax_base_plus_office_bonus_to_treasury():
     state.add_leader(LeaderState(1, 1, "Vaelgor", HOME, is_king=True))
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
 
-    credited = apply_turn_revenue(state, ScriptedRandom([]))
+    # Phase 747: one extra `rng.random()` draw per kingdom, unconditional
+    # (the real `Inv_Bonus` credit formula), even with `Inv_Bonus() == 0`.
+    credited = apply_turn_revenue(state, ScriptedRandom([0.0, 0.0]))
 
     assert credited == {1: 35, 2: 0}
     assert state.kingdoms[1].treasury == 85
@@ -231,7 +233,7 @@ def test_apply_turn_revenue_credits_each_kingdom_independently():
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=4))
     state.add_province(ProvinceState(HexCoord(0, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, tax=6))
 
-    credited = apply_turn_revenue(state, ScriptedRandom([]))
+    credited = apply_turn_revenue(state, ScriptedRandom([0.0, 0.0]))
 
     assert credited == {1: 4, 2: 6}
     assert state.kingdoms[1].treasury == 4
@@ -256,8 +258,10 @@ def test_apply_turn_revenue_reduces_credit_for_a_raided_province_and_records_the
     )
 
     # Activity check (Berserk, always active regardless of the draw); no
-    # Thunderbird holder configured, so no second roll is consumed.
-    credited = apply_turn_revenue(state, ScriptedRandom([0.0]))
+    # Thunderbird holder configured, so no second roll is consumed. Phase
+    # 747 adds one more unconditional `rng.random()` draw per kingdom
+    # for the real `Inv_Bonus` credit formula.
+    credited = apply_turn_revenue(state, ScriptedRandom([0.0, 0.0, 0.0]))
 
     assert credited[1] < 700
     assert len(state.turn_raid_events) == 1
@@ -278,7 +282,7 @@ def test_apply_turn_revenue_expected_revenues_line_unaffected_by_a_raid():
         )
     )
 
-    apply_turn_revenue(state, ScriptedRandom([0.0]))
+    apply_turn_revenue(state, ScriptedRandom([0.0, 0.0, 0.0]))
 
     # The persisted per-province tax base -- what "Expected Revenues"
     # renders -- is untouched by the raid; only this turn's own credited
@@ -292,7 +296,7 @@ def test_apply_turn_revenue_resets_turn_raid_events_each_call():
     state.turn_raid_events = ["stale"]  # type: ignore[list-item]
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=4))
 
-    apply_turn_revenue(state, ScriptedRandom([]))
+    apply_turn_revenue(state, ScriptedRandom([0.0, 0.0]))
 
     assert state.turn_raid_events == []
 
@@ -307,7 +311,7 @@ def test_apply_turn_revenue_applies_unpaid_blackmail_penalty():
     state.add_leader(LeaderState(9, 2, "Spymaster", HOME))
     state.kingdoms[1].active_blackmail = BlackmailClaim(spy_leader_id=9, spy_kingdom_id=2, amount=15)
 
-    credited = apply_turn_revenue(state, ScriptedRandom([]))
+    credited = apply_turn_revenue(state, ScriptedRandom([0.0, 0.0]))
 
     assert credited[1] == 100 - 45  # 3x the 15-gold demand
     assert state.kingdoms[1].active_blackmail is None
@@ -325,7 +329,7 @@ def test_apply_turn_revenue_untouched_without_an_active_claim():
     state = make_state()
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=100))
 
-    credited = apply_turn_revenue(state, ScriptedRandom([]))
+    credited = apply_turn_revenue(state, ScriptedRandom([0.0, 0.0]))
 
     assert credited[1] == 100
     assert state.turn_blackmail_penalties == []
@@ -340,8 +344,64 @@ def test_apply_turn_revenue_blackmail_penalty_is_capped_at_available_income():
     state.add_leader(LeaderState(9, 2, "Spymaster", HOME))
     state.kingdoms[1].active_blackmail = BlackmailClaim(spy_leader_id=9, spy_kingdom_id=2, amount=15)
 
-    credited = apply_turn_revenue(state, ScriptedRandom([]))
+    credited = apply_turn_revenue(state, ScriptedRandom([0.0, 0.0]))
 
     assert credited[1] == 0  # floored, never negative
     assert len(state.turn_blackmail_penalties) == 1
     assert state.turn_blackmail_penalties[0].amount == 10  # capped, not the full 45
+
+
+# -- Phase 747: Inv_Bonus really credits gold (Desktop/INVBONUS.md) -------
+
+
+def test_apply_turn_revenue_applies_the_real_stochastic_invention_bonus_rounding():
+    # INVBONUS.md SS6's own worked example: B=26, P=2% -> 0.52, rounding
+    # down (U<0.52 -> Trunc(0.52+U)==0) or up (U>=0.48 -> Trunc(0.52+U)
+    # ==1) -- Trunc(x+U), not round()/floor-only.
+    state = make_state()
+    state.kingdoms[1].discoveries = {Discovery.ASPIRIN_PILL}  # +2%
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=26))
+
+    credited_down = apply_turn_revenue(state, ScriptedRandom([0.0, 0.0]))
+    assert credited_down[1] == 26  # Trunc(0.52 + 0.0) == 0
+
+    state = make_state()
+    state.kingdoms[1].discoveries = {Discovery.ASPIRIN_PILL}
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=26))
+    credited_up = apply_turn_revenue(state, ScriptedRandom([0.48, 0.0]))
+    assert credited_up[1] == 27  # Trunc(0.52 + 0.48) == 1
+
+
+def test_apply_turn_revenue_draws_rng_unconditionally_even_with_zero_percent():
+    # INVBONUS.md's own confirmed fidelity point: `Random` is drawn once
+    # per active Kingdom regardless of whether Inv_Bonus(kng) == 0 --
+    # skipping it would desync every later RNG draw. No IndexError means
+    # exactly one draw per kingdom was consumed, not zero.
+    state = make_state()  # no discoveries, no provinces -- percent == 0, amount == 0 for both
+
+    credited = apply_turn_revenue(state, ScriptedRandom([0.0, 0.0]))
+
+    assert credited == {1: 0, 2: 0}
+
+
+def test_apply_turn_revenue_populates_turn_revenue_credited_for_the_lrev_narration():
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=4))
+
+    apply_turn_revenue(state, ScriptedRandom([0.0, 0.0]))
+
+    assert state.turn_revenue_credited == {1: 4, 2: 0}
+
+
+def test_apply_turn_revenue_each_kingdom_draws_its_own_independent_invention_roll():
+    state = make_state()
+    state.kingdoms[1].discoveries = {Discovery.ASPIRIN_PILL}  # +2%
+    state.kingdoms[2].discoveries = {Discovery.ASPIRIN_PILL}
+    state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=26))
+    state.add_province(ProvinceState(HexCoord(0, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, tax=26))
+
+    # Kingdom 1's own roll rounds down, Kingdom 2's own roll (drawn
+    # independently, second in `state.kingdoms` iteration order) rounds up.
+    credited = apply_turn_revenue(state, ScriptedRandom([0.0, 0.48]))
+
+    assert credited == {1: 26, 2: 27}

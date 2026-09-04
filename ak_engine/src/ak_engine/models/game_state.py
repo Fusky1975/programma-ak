@@ -1337,6 +1337,17 @@ class GameState:
     # convention `turn_raid_events` right above already established.
     # Read directly by `report/turn_report.py describe_finances_report()`.
     turn_blackmail_penalties: list[UnpaidBlackmailPenalty] = field(default_factory=list)
+    # Phase 747 -- this turn's own real, final per-kingdom gold credit
+    # (province income, post-raid, minus any unpaid-blackmail penalty,
+    # plus the office gold bonus, plus `Inv_Bonus`'s own real invention-
+    # bonus gold, `Desktop/INVBONUS.md`), overwritten once per turn by
+    # `turn/tax_base.py apply_turn_revenue()`'s own returned dict -- same
+    # convention as `turn_raid_events`/`turn_blackmail_penalties` above.
+    # Read directly by `report/turn_report.py describe_finances_report()`
+    # to narrate `_LRev` ("this turn, the Kingdom collected # gold in
+    # revenue."). A kingdom_id absent here means `apply_turn_revenue()`
+    # never ran against this `GameState` -- no line renders, not a guess.
+    turn_revenue_credited: dict[int, int] = field(default_factory=dict)
     kingdoms: dict[int, KingdomState] = field(default_factory=dict)
     provinces: dict[HexCoord, ProvinceState] = field(default_factory=dict)
     armies: dict[int, ArmyState] = field(default_factory=dict)

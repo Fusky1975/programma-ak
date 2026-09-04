@@ -140,7 +140,7 @@ def test_run_turn_ages_feature_guardians_only_from_fall_phase_index_3_onward():
     # exact-length script would either desync the CALM->MERCENARY
     # transition's own timing or raise IndexError on an unexpected extra
     # draw -- either way the assertion below would fail.
-    rng = ScriptedRandom([0.02, 0.1, 0.5])
+    rng = ScriptedRandom([0.02, 0.1, 0.5, 0.0])
 
     run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=rng)
 
@@ -171,7 +171,7 @@ def test_run_turn_apply_turn_revenue_consumes_the_real_shared_rng():
     # revenue()` used its own fresh `random.Random()` instead of this
     # same shared `rng`, this script would be left with one unconsumed
     # element at the end.
-    rng = ScriptedRandom([0.5, 0.5, 0.9])
+    rng = ScriptedRandom([0.5, 0.5, 0.9, 0.0])
 
     run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=rng)
 
@@ -193,7 +193,7 @@ def test_run_turn_dissolves_illusory_terrain_once_per_real_turn_not_per_phase():
     # this province's single entry. If the roll ran once per phase (5x)
     # instead of once per real turn, this exact-length script would
     # raise IndexError on the second draw.
-    rng = ScriptedRandom([0.1])
+    rng = ScriptedRandom([0.1, 0.0])
 
     run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=rng)
 
@@ -210,7 +210,7 @@ def test_run_turn_leaves_illusory_terrain_untouched_on_a_scripted_miss():
     )
     leader = _empty_plan_leader(10, "A")
 
-    rng = ScriptedRandom([0.9])
+    rng = ScriptedRandom([0.9, 0.0])
 
     run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=rng)
 
@@ -269,7 +269,7 @@ def test_run_turn_no_hire_this_turn_grants_no_report_and_draws_no_extra_rng():
     state.add_leader(spy)  # double_agent_hired_by_kingdom_id stays None -- not hired this turn
     leader = _empty_plan_leader(10, "A")
 
-    rng = ScriptedRandom([])
+    rng = ScriptedRandom([0.0])
     results = run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=rng)
 
     assert not [r for r in results if r.phase_label == "double-agent-report"]
@@ -599,7 +599,7 @@ def test_run_turn_groups_co_located_same_ability_practicers():
     leader_b = _leader_with_phase(20, "B", "P0", _practice_phase("P0", Ability.NECROMANCY))
 
     results = run_turn(
-        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.01])
+        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.01, 0.0])
     )
 
     by_leader = {r.leader_id: r for r in results}
@@ -627,7 +627,7 @@ def test_run_turn_pools_armies_for_co_located_tactical_practicers():
     leader_b = _leader_with_phase(20, "B", "P0", _practice_phase("P0", Ability.TACTICAL))
 
     results = run_turn(
-        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0])
+        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0, 0.0])
     )
 
     by_leader = {r.leader_id: r for r in results}
@@ -659,7 +659,7 @@ def test_run_turn_does_not_group_different_abilities_even_when_co_located():
         [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)],
         state,
         board_width=BOARD_WIDTH,
-        rng=ScriptedRandom([0.07, 0.07, 0.9]),
+        rng=ScriptedRandom([0.07, 0.07, 0.9, 0.0]),
     )
 
     by_leader = {r.leader_id: r for r in results}
@@ -683,7 +683,7 @@ def test_run_turn_does_not_group_same_ability_at_different_locations():
         [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)],
         state,
         board_width=BOARD_WIDTH,
-        rng=ScriptedRandom([0.07, 0.07]),
+        rng=ScriptedRandom([0.07, 0.07, 0.0]),
     )
 
     by_leader = {r.leader_id: r for r in results}
@@ -713,7 +713,7 @@ def test_run_turn_groups_three_co_located_same_ability_practicers():
         [TurnLeader(leaders[0], 1), TurnLeader(leaders[1], 1), TurnLeader(leaders[2], 1)],
         state,
         board_width=BOARD_WIDTH,
-        rng=ScriptedRandom([0.01, 0.01]),
+        rng=ScriptedRandom([0.01, 0.01, 0.0]),
     )
 
     by_leader = {r.leader_id: r for r in results}
@@ -934,11 +934,17 @@ def test_run_turn_one_sided_challenge_dispatches_normally_not_as_mutual():
         _leader_with_phase(20, "King", "P1", _encounter_phase("P1", ActionCode.CHALLENGE, 10, melee=True)),
     ]
 
+    # P1's own King-challenges-a-Hero roll ("evade encounters from Kings
+    # 50% of the time") also fires this turn -- 0.9 misses it (refused,
+    # no combat, matching pre-Phase-747 behavior, where this exact draw
+    # ran out of an empty script and errored silently inside that one
+    # phase's own dispatch, rather than proceeding). Phase 747 then adds
+    # one more unconditional `rng.random()` draw per kingdom (2 here).
     results = run_turn(
         [TurnLeader(leaders[0], 1), TurnLeader(leaders[1], 2)],
         state,
         board_width=BOARD_WIDTH,
-        rng=ScriptedRandom([]),
+        rng=ScriptedRandom([0.9, 0.0, 0.0]),
     )
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
@@ -958,7 +964,7 @@ def test_run_turn_self_targeting_pursue_is_not_misdetected_as_mutual():
     state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
     leader = _leader_with_phase(10, "A", "P0", _encounter_phase("P0", ActionCode.PURSUE, 10, melee=False))
 
-    results = run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0]))
+    results = run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0, 0.0, 0.0]))
 
     assert results == []
 
@@ -1269,7 +1275,7 @@ def test_run_turn_unresolved_pursue_preempts_p1_and_continues_the_chase():
     pursuer = _three_phase_leader(10, "Pursuer", p0, p1, p2)
 
     results = run_turn(
-        [TurnLeader(pursuer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1, 0.5, 0.5])
+        [TurnLeader(pursuer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1, 0.5, 0.5, 0.0, 0.0])
     )
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
@@ -1301,7 +1307,7 @@ def test_run_turn_unresolved_trail_preempts_p1_and_continues_the_chase():
     trailer = _three_phase_leader(10, "Trailer", p0, p1, p2)
 
     results = run_turn(
-        [TurnLeader(trailer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1, 0.5, 0.5])
+        [TurnLeader(trailer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1, 0.5, 0.5, 0.0, 0.0])
     )
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
@@ -1332,7 +1338,7 @@ def test_run_turn_trail_continuation_wires_spy_blackmail():
     trailer = _three_phase_leader(10, "Trailer", p0, p1, p2)
 
     results = run_turn(
-        [TurnLeader(trailer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1, 0.5, 0.5, 0.0])
+        [TurnLeader(trailer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1, 0.5, 0.5, 0.0, 0.0, 0.0])
     )
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
@@ -1359,7 +1365,7 @@ def test_run_turn_trail_backfills_the_targets_own_action_this_phase():
     )
 
     results = run_turn(
-        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.1, 0.5, 0.5])
+        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.1, 0.5, 0.5, 0.0, 0.0])
     )
 
     trail_result = next(r for r in results if r.leader_id == 10 and r.phase_label == "P0").result
@@ -1375,7 +1381,7 @@ def test_run_turn_trail_actions_is_none_when_target_has_no_order_this_phase():
     target = Leader(leader_id=20, name="Target", plan=ActionPlan(leader_id=20, segments=[PlanSegment(0, 0, (), {})]))
 
     results = run_turn(
-        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.1, 0.5, 0.5])
+        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.1, 0.5, 0.5, 0.0, 0.0])
     )
 
     trail_result = next(r for r in results if r.leader_id == 10 and r.phase_label == "P0").result
@@ -1404,7 +1410,7 @@ def test_run_turn_trail_continuation_backfills_the_targets_own_action():
     )
 
     results = run_turn(
-        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1, 0.5, 0.5])
+        [TurnLeader(trailer, 1), TurnLeader(target, 2)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.1, 0.5, 0.5, 0.0, 0.0])
     )
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
@@ -1474,7 +1480,7 @@ def test_run_turn_move_chase_that_stops_does_not_preempt_the_next_phase():
     mover = _leader_with_phase(10, "Mover", "P0", p0)
     mover.plan.segments[0] = PlanSegment(0, 1, (), {"P0": p0, "P1": p1})
 
-    results = run_turn([TurnLeader(mover, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+    results = run_turn([TurnLeader(mover, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0]))
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
     assert by_label[(10, "P0")].result.stopped_chasing is True
@@ -1493,7 +1499,7 @@ def test_run_turn_pursue_with_no_target_is_not_registered_for_continuation():
     pursuer = _leader_with_phase(10, "Pursuer", "P0", p0)
     pursuer.plan.segments[0] = PlanSegment(0, 1, (), {"P0": p0, "P1": p1})
 
-    results = run_turn([TurnLeader(pursuer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+    results = run_turn([TurnLeader(pursuer, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0, 0.0]))
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
     assert by_label[(10, "P0")].result.reason == "pursuer or target not found"
@@ -1538,7 +1544,7 @@ def test_run_turn_patrol_intercepts_an_adjacent_intruder_and_preempts_a_later_or
     # regardless of how many the plan itself uses, and nothing here ever
     # removes the intruder, so the standing Patrol keeps re-checking
     # through P2-P4 too; one scripted success per phase.
-    results = run_turn([TurnLeader(patroller, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9] * 5))
+    results = run_turn([TurnLeader(patroller, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.0, 0.0] * 5))
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
 
@@ -1562,7 +1568,7 @@ def test_run_turn_patrol_lets_the_scheduled_order_through_when_no_threat():
     p1 = PlanPhase(label="P1", action=ActionCode.WAIT, obj=0, extra=[0])
     patroller = _two_phase_leader(10, "Patroller", p0, p1)
 
-    results = run_turn([TurnLeader(patroller, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([]))
+    results = run_turn([TurnLeader(patroller, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0, 0.0]))
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
     # No threat at P0 -- the Patrol declaration itself produces no
@@ -1586,7 +1592,7 @@ def test_run_turn_patrol_is_cancelled_by_a_later_move_order():
     # One roll: P0's own adjacent-hex wander check (succeeds, intercepts).
     # P1's cancelling LMOVE removes the Patrol before any P1 wander check
     # would otherwise run, even though the intruder is still adjacent.
-    results = run_turn([TurnLeader(patroller, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9]))
+    results = run_turn([TurnLeader(patroller, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9, 0.0, 0.0]))
 
     by_label = {(r.leader_id, r.phase_label): r for r in results}
     assert by_label[(10, "P0")].result.intercepted is True
@@ -1865,7 +1871,7 @@ def test_run_turn_spawns_a_valhalla_visitor_after_a_successful_gate_angel_cast()
     # [0] -> due alignment GOOD (matches kingdom 1). GameState.turn_number
     # defaults to 1, so visitor_selection is deterministic (Phase 386: the
     # roster's own final record, no rng.choice consumed at all).
-    rng = ScriptedRandom([], choice_indices=[0])
+    rng = ScriptedRandom([0.0], choice_indices=[0])
 
     results = run_turn(turn_leaders, state, board_width=BOARD_WIDTH, rng=rng)
 
@@ -1893,7 +1899,7 @@ def test_run_turn_produces_no_gate_angel_result_when_the_cast_targets_the_wrong_
     state.add_leader(LeaderState(10, kingdom_id=1, name="Caster", location=HexCoord(3, 3)))
     turn_leaders = [TurnLeader(_leader_with_phase(10, "Caster", "P0", _cast_gate_angel_phase("P0")), 1)]
     # [0] -> due alignment GOOD -- doesn't match kingdom 1's own NEUTRAL
-    rng = ScriptedRandom([], choice_indices=[0])
+    rng = ScriptedRandom([0.0], choice_indices=[0])
 
     results = run_turn(turn_leaders, state, board_width=BOARD_WIDTH, rng=rng)
 

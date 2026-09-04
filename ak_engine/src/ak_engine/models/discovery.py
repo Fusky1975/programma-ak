@@ -100,6 +100,13 @@ percentage (`DISCOVERY_REVENUE_BONUS_PERCENT`), not a gold figure --
 `turn/tax_base.py compute_invention_bonus_percent()` (Phase 268) is
 therefore additive to, not folded into, `compute_tax_base()`'s own
 return value, matching how the two print as separate report lines.
+**Phase 747** (`Desktop/INVBONUS.md`, user-supplied disassembly) closes
+the other half of this: although `Inv_Bonus` itself only ever returns a
+bare percentage, `AK.EXE`'s own real economic resolver does use that
+percentage to credit real gold (`Trunc(Inv_Bonus(kng)*0.01*eligible_
+revenue + Random)`, `Random` drawn unconditionally) -- `turn/tax_base.py
+apply_turn_revenue()` now applies this formula for real; the percentage
+computed here and displayed by `+Invention Bonus: N%` is unchanged.
 Each Discoveries-list line orders by descending `discval` (a real,
 previously-unmodeled field, extracted verbatim from `CTBOTH.PAS` line
 766's own `discval: discbyte = (...)` const array as

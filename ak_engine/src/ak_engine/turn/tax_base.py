@@ -77,15 +77,37 @@ office holders ``report/turn_report.py describe_finances_report()``'s
 own "(Including +5 Black Knights)"/"(Including +10 Thieves Guild)"
 notes already reference, now made true for the first time).
 
-**Deliberately not folded into the credited amount: `Inv_Bonus`
-(`compute_invention_bonus_percent()`).** `Inv_Bonus` is real Pascal
-(`REPORTS.PAS`: `IF Inv_Bonus(kng) > 0 THEN WRITELN(...,Inv_Bonus(kng)
-:3,'%')`), but nothing in the available source confirms it modifies
+**Phase 747 -- `Inv_Bonus` really credits gold, resolved by `Desktop/
+INVBONUS.md` (user-supplied disassembly, 2026-09-04).** This note used
+to say nothing in the available source confirmed `Inv_Bonus` modified
 the actual gold credited rather than being a report-only percentage --
-Phase 268's own design choice to keep it "additive to (not folded
-into) `compute_tax_base()`'s own return value" for *display* purposes
-is preserved here for the *real credit* too, rather than silently
-broadening its scope to a formula this project can't source.
+that's now resolved. `AK.EXE`'s own real economic resolver (quoted
+byte-for-byte in the document) reads:
+
+```pascal
+eligible_revenue := lgold[kng] - old_gold;   { "B": the delta this turn's
+                                                own province income + the
+                                                +5/+10 office bonus already
+                                                produced }
+invention_gold := Trunc(Inv_Bonus(kng) * 0.01 * eligible_revenue + Random);
+lgold[kng]      := lgold[kng] + invention_gold;
+```
+
+`amount` below (after the existing per-province raid-adjusted income,
+the blackmail-penalty deduction, and `compute_office_gold_bonus()`) is
+already exactly this "B" -- no reordering of those three existing steps
+was needed. `Random` (`[0,1)`) is drawn **unconditionally**, even when
+`Inv_Bonus(kng) = 0` (INVBONUS.md's own explicit point: skipping that
+draw "disallinea tutti i tiri casuali successivi") -- the same RNG-
+order-fidelity choice already made for THUNDERBIRD.md's coin-always-
+drawn Scar-protection gate and BOLD OK.txt's every-packet-always-rolls
+intimidation formula. `Trunc(x+U)` is an unbiased stochastic rounding
+(not `round()`, not a floor-only `DIV`), matching Python's `int()`
+truncation-toward-zero exactly since `amount`/`percent` are always
+non-negative here. The resulting per-kingdom total is stashed on
+`state.turn_revenue_credited` for `report/turn_report.py describe_
+finances_report()`'s own new `_LRev` narration line (Phase 747) --
+see that composer's own docstring.
 
 **`Racial_Tax` -- confirmed NOT a real mechanic, Phase 680,
 `Desktop/RACIALTAX.md` (user-supplied disassembly/source audit,
@@ -240,10 +262,17 @@ def apply_turn_revenue(state: GameState, rng: random.Random) -> dict[int, int]:
     province run through ``turn/monster_raids.py resolve_province_raids()``
     first, Phase 670) plus ``compute_office_gold_bonus()`` to its treasury,
     once per turn -- see module docstring's Phase 412 section for the
-    rulebook citation, why this was a display-only figure through Phase
-    411, and what's deliberately not folded in (``Inv_Bonus`` -- see also
-    the Phase 680 note on ``Racial_Tax``, confirmed never a real mechanic
-    at all).
+    rulebook citation and why this was a display-only figure through
+    Phase 411 (see also the Phase 680 note on ``Racial_Tax``, confirmed
+    never a real mechanic at all).
+
+    **Phase 747**: also folds ``compute_invention_bonus_percent()``'s
+    own real gold credit into ``amount``, per ``Desktop/INVBONUS.md`` --
+    see the module docstring's own Phase 747 section for the exact
+    formula and the unconditional-``rng.random()``-draw fidelity choice.
+    The final per-kingdom total is stashed on ``state.turn_revenue_
+    credited`` for ``report/turn_report.py describe_finances_report()``'s
+    own ``_LRev`` line.
 
     Returns the amount credited per kingdom, keyed by ``kingdom_id`` --
     the same "callers/tests that want to verify a specific credit don't
@@ -278,6 +307,7 @@ def apply_turn_revenue(state: GameState, rng: random.Random) -> dict[int, int]:
 
     state.turn_raid_events = []
     state.turn_blackmail_penalties = []
+    state.turn_revenue_credited = {}
     divine_archangel_holder = resolve_office_holder(state, Office.DIVINE_KING)
     divine_archangel_kingdom_id = (
         state.leaders[divine_archangel_holder.leader_id].kingdom_id if divine_archangel_holder is not None else None
@@ -312,6 +342,10 @@ def apply_turn_revenue(state: GameState, rng: random.Random) -> dict[int, int]:
             )
         amount = max(0, amount - penalty)
         amount += compute_office_gold_bonus(state, kingdom_id)
+        percent = compute_invention_bonus_percent(kingdom)
+        invention_gold = int(percent * 0.01 * amount + rng.random())
+        amount += invention_gold
         kingdom.treasury += amount
         credited[kingdom_id] = amount
+    state.turn_revenue_credited = credited
     return credited

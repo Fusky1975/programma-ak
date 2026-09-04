@@ -30724,7 +30724,7 @@ follow-up request after the original 431-435 plan shipped.
   existing test's own `F`/`B` combination happened to be an exact
   power-of-two division, so the fix was a provable no-op for them.
 
-- **Phase 746 (current)**: thirty-third survey's own candidate #4, a
+- **Phase 746**: thirty-third survey's own candidate #4, a
   new finding surfaced while investigating candidate #3 -- "Wandering
   Mercenaries" (`Desktop/MS/ADDEND.AK` [3.6], this addendum's own
   independent section numbering, unrelated to the main rulebook's own
@@ -30767,6 +30767,60 @@ follow-up request after the original 431-435 plan shipped.
   provable no-op for every existing fixture, since the mechanic is
   gated on a real `leader_id` that no pre-Phase-746 test happened to
   pass alongside a co-located mercenary army.
+
+- **Phase 747 (current)**: `Inv_Bonus` really credits gold, not just a
+  report percentage -- `Desktop/INVBONUS.md` (user-supplied disassembly,
+  2026-09-04) resolves the standing "deliberately not folded into the
+  credited amount" note. `AK.EXE`'s own real economic resolver, quoted
+  byte-for-byte: `eligible_revenue := lgold[kng] - old_gold` (this
+  turn's own province income plus the `+5`/`+10` office bonus, already
+  exactly `apply_turn_revenue()`'s own `amount` local, no reordering
+  needed), then `invention_gold := Trunc(Inv_Bonus(kng) * 0.01 *
+  eligible_revenue + Random)`. `Random` is drawn **unconditionally**,
+  once per active Kingdom, even when `Inv_Bonus(kng) = 0` -- the
+  document's own confirmed fidelity point ("skipping this draw
+  desyncs every later RNG draw"), the same RNG-order-fidelity choice
+  already made for THUNDERBIRD.md's coin-always-drawn Scar gate and
+  BOLD OK.txt's every-packet-always-rolls intimidation formula.
+  `Trunc(x+U)` is an unbiased stochastic rounding, not `round()`; the 28
+  `crunch0..crunch27` percentages themselves were already correct
+  (Phase 268) -- this closes only the credit side.
+
+  Empirically measured the blast radius before designing anything
+  (mirrors Phase 744's own discipline): the one-line change alone broke
+  **42** pre-existing tests, all `IndexError`s from the new
+  unconditional draw landing in a `ScriptedRandom`/exact-seed sequence
+  that never expected it (8 in `test_tax_base.py`, 25 in
+  `test_turn_processor.py`, 9 in `test_orchestrator.py`). Fixed test by
+  test -- one extra `0.0` per Kingdom actually reached, at the correct
+  point in each fixture's own real draw order; one test (`test_run_
+  turn_one_sided_challenge_dispatches_normally_not_as_mutual`) needed a
+  real (non-zero) value instead, because a *different*, pre-existing,
+  unrelated 50%-chance roll (`challenger_is_king` in `is_encounter_
+  accepted()`) was previously left to run out of an intentionally-short
+  script and fail silently inside that one phase's own dispatch --
+  padding it with `0.0` would have flipped that unrelated roll from
+  "refused" to "accepted," triggering a full, unscripted melee. Found
+  by tracing each `.random()` call's own call site directly rather than
+  padding blindly.
+
+  A second, small, directly-adjacent defect found while re-reading the
+  exact `REPORTS.PAS` quote already sitting in this same docstring:
+  `+Invention Bonus: N%` is supposed to print immediately after
+  `Expected Revenues` (nothing in between, per the quoted source), but
+  `describe_finances_report()` rendered it after `Expected Expenses`
+  instead -- moved to the correct position. Also wires the long-dormant
+  `render_finance_revenue()` (Phase 124, `_LRev`, zero prior callers)
+  into the same section, right after the raid/blackmail explanatory
+  lines and before `Expected Expenses`, using the new `GameState.
+  turn_revenue_credited` (populated by `apply_turn_revenue()`, same
+  per-turn-scoped-state convention as `turn_raid_events`) -- the real
+  final per-kingdom total, now finally meaningful to show. The other
+  four real financial-narrative renderers (`_LFinance`/`_LLCosts`/
+  `_AUnpaid`/`_LACosts`/`_LTreas`) stay dormant, a separate follow-up.
+
+  Test count: 6348 -> 6357 (net +9). This closes backlog item #2 in
+  full (both the `Inv_Bonus` and `Racial_Tax` halves).
 
 ## Setup
 

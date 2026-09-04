@@ -8034,6 +8034,68 @@ def test_describe_finances_report_no_blackmail_penalties_leaves_lines_unchanged(
     assert lines[4] == "Expected Expenses:   0"
 
 
+# -- Phase 747: Inv_Bonus really credits gold -- FINANCES-section wiring --
+
+
+def test_describe_finances_report_invention_bonus_line_sits_right_after_expected_revenues():
+    # REPORTS.PAS's own exact quoted order (models/discovery.py's own
+    # docstring): Expected Revenues -> Inv_Bonus, nothing else in between
+    # -- previously rendered after Expected Expenses instead.
+    state = _finances_state_with_owned_province()
+    state.kingdoms[1].discoveries = {Discovery.PEANUT_BUTTER_SANDWICH}  # +1%
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    revenues_index = lines.index("Expected Revenues:   0")
+    assert lines[revenues_index + 1] == "+Invention Bonus: 1%"
+
+
+def test_describe_finances_report_renders_lrev_line_using_turn_revenue_credited():
+    state = _finances_state_with_owned_province()
+    state.turn_revenue_credited = {1: 42, 2: 999}
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    assert "this turn, the Kingdom collected 42 gold in revenue." in lines
+    # Sits before Expected Expenses, after any raid/blackmail explanatory
+    # lines -- here there are none, so it's the line right before it.
+    expenses_index = lines.index("Expected Expenses:   0")
+    assert lines[expenses_index - 1] == "this turn, the Kingdom collected 42 gold in revenue."
+
+
+def test_describe_finances_report_lrev_line_reads_only_this_kingdoms_own_credit():
+    state = _finances_state_with_owned_province()
+    state.turn_revenue_credited = {2: 999}  # no entry for kingdom 1
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    assert not any("collected" in line and "gold in revenue" in line for line in lines)
+
+
+def test_describe_finances_report_omits_lrev_line_when_apply_turn_revenue_never_ran():
+    # No `state.turn_revenue_credited` entry at all (the default empty
+    # dict) -- no data isn't a guess, the line simply doesn't render.
+    state = _finances_state_with_owned_province()
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    assert not any("gold in revenue" in line for line in lines)
+
+
+def test_describe_finances_report_lrev_line_sits_after_raid_and_blackmail_lines():
+    state = _finances_state_with_owned_province()
+    state.turn_raid_events.append(RaidEvent("raid", HexCoord(0, 0), 1, Monster.GARGOYLE, 4))
+    state.turn_blackmail_penalties.append(UnpaidBlackmailPenalty(kingdom_id=1, blackmailer_kingdom_id=2, amount=45))
+    state.turn_revenue_credited = {1: 42}
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    lrev_index = lines.index("this turn, the Kingdom collected 42 gold in revenue.")
+    expenses_index = lines.index("Expected Expenses:   0")
+    revenues_index = lines.index("Expected Revenues:   0")
+    assert revenues_index < lrev_index < expenses_index
+
+
 # -- Phase 220: describe_provinces_report() -- the "PROVINCES" section --
 
 
