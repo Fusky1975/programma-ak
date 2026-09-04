@@ -704,6 +704,19 @@ Both concatenate their two rendered sentences with no separator,
 matching every other multi-`Say()` entry already found in this module
 (Phase 107, 116, 119).
 
+**Phase 739 wires both, both previously unreachable from any composer.**
+`turn/battle_orchestrator.py BattleReport.duel_loser_fled` (new field)
+resolves the "caller decides" question above using the one real,
+structural signal this project actually has: `True` only when the
+loser's own duel-ending Special Encounter Plan led with `Maneuver.
+FLEE` (`_maybe_fight_duel()`'s own dedicated branch) -- a genuinely
+distinct outcome from an ordinary lost duel (the probability-estimate
+roll, or a real-combat defeat), both of which leave it `False` and get
+`_ADishK`'s "died" narration instead. `describe_battle()` renders
+whichever applies right after the leader-roster loop (BATLDR), before
+MCOME -- no real trigger call survives to confirm the exact position,
+same "missing main program" gap those wirings already document.
+
 **Phase 123 addendum -- Ice-Suspend narrative cluster.** `SAY.PAS`
 lines 637-646, immediately following `_LSIBers` and immediately
 preceding `_LUndWF` (`Sps(Fireball,S_PCom)`): the full narrative
@@ -2473,6 +2486,28 @@ def describe_battle(
             leader_name = _leader_name(state, leader_id)
             if leader_name is not None:
                 lines.append(render_battle_leader_no_command(leader_name, rng))
+
+    # Phase 739 -- _ADishK/_ADishF (SAY.PAS): the duel loser's own forces
+    # become demoralized (rulebook [7.1]). No real trigger call survives
+    # to confirm this notice's exact position relative to BATLDR/MCOME/
+    # BLUCK (the same "missing main program" gap those wirings already
+    # document) -- placed here, right after the leader roster, since
+    # it's itself about the duel's own Supreme Commander, matching the
+    # roster's own "who's fighting" framing. `duel_loser_fled` (Phase
+    # 739) picks between the two narrations -- see BattleReport's own
+    # docstring for why.
+    if battle_report.duel_loser_side is not None:
+        loser_leader_id = (
+            battle_report.attacker_commander_leader_id
+            if battle_report.duel_loser_side == "attacker"
+            else battle_report.defender_commander_leader_id
+        )
+        loser_name = _leader_name(state, loser_leader_id) if loser_leader_id is not None else None
+        if loser_name is not None:
+            if battle_report.duel_loser_fled:
+                lines.append(render_commander_fled_demoralized(loser_name, rng))
+            else:
+                lines.append(render_commander_died_demoralized(loser_name, rng))
 
     # Phase 657 -- MCOME.X/MFIGHT.X (SAY.PAS `_BMonst`): a Druidic side's
     # own assisting Feature monster(s). No real trigger call survives to
@@ -7376,7 +7411,8 @@ _COMMANDER_DIED_TEMPLATES = (
 def render_commander_died_demoralized(commander_name: str, rng: random.Random) -> str:
     """Renders ``_ADishK``'s two-sentence entry: the Supreme Commander
     died, demoralizing their own side. Concatenated with no separator
-    (see module docstring).
+    (see module docstring). Wired (Phase 739) via ``describe_battle()``,
+    keyed on ``BattleReport.duel_loser_fled``.
     """
 
     values = {"[3": commander_name, "]": f"{commander_name}'s"}
@@ -7398,9 +7434,8 @@ _COMMANDER_FLED_TEMPLATES = (
 def render_commander_fled_demoralized(commander_name: str, rng: random.Random) -> str:
     """Renders ``_ADishF``'s two-sentence entry: the Supreme Commander
     fled/was cowardly, demoralizing their own side. Concatenated with
-    no separator (see module docstring). This project has no source
-    for what decides between this narration and ``render_commander_
-    died_demoralized()`` -- the caller decides.
+    no separator (see module docstring). Wired (Phase 739) via
+    ``describe_battle()``, keyed on ``BattleReport.duel_loser_fled``.
     """
 
     values = {"<3": commander_name, ">": f"{commander_name}'s"}

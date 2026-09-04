@@ -2299,6 +2299,7 @@ def test_fight_battle_reads_a_led_attackers_real_tactical_skill_end_to_end():
 
     assert report.attacker_commander_leader_id == 1
     assert report.duel_loser_side == "defender"
+    assert report.duel_loser_fled is False  # Phase 739: threaded end-to-end onto BattleReport
     assert report.conquered is True
 
 
@@ -2435,6 +2436,7 @@ def test_maybe_fight_duel_demoralizes_the_losers_own_led_units():
     assert outcome.attacker_commander_leader_id == 501
     assert outcome.defender_commander_leader_id == 502
     assert outcome.loser_side == "defender"
+    assert outcome.loser_fled is False  # Phase 739: an ordinary lost duel, not a Flee
     assert defender_units[0].effective_strength == 10.0 * 0.75  # DUEL_DEMORALIZATION_MULTIPLIER
     assert attacker_units[0].effective_strength == 100.0  # winner's own units untouched
 
@@ -3072,6 +3074,7 @@ def test_maybe_fight_duel_real_combat_decisive_winner_demoralizes_loser_not_kill
     )
 
     assert outcome.loser_side == "defender"
+    assert outcome.loser_fled is False  # Phase 739: a real-combat defeat, not a Flee
     assert defender_units[0].effective_strength == 10.0 * 0.75  # DUEL_DEMORALIZATION_MULTIPLIER
     assert attacker_units[0].effective_strength == 100.0
     # Rulebook [7.1]: only the loser's armies are demoralized -- the
@@ -3300,6 +3303,7 @@ def test_maybe_fight_duel_flee_as_first_tactic_always_escapes_no_rng_consumed():
     assert outcome.attacker_commander_leader_id == 501
     assert outcome.defender_commander_leader_id == 502
     assert outcome.loser_side == "attacker"
+    assert outcome.loser_fled is True  # Phase 739: Flee-first, a real, distinct outcome
     assert attacker_units[0].effective_strength == 100.0 * 0.75  # DUEL_DEMORALIZATION_MULTIPLIER
     assert defender_units[0].effective_strength == 10.0  # untouched -- attacker never landed a blow
 

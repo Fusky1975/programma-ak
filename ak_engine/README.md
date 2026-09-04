@@ -30483,7 +30483,7 @@ follow-up request after the original 431-435 plan shipped.
   previously-silent illegality, corrected by changing their own target
   terrain to Sea) before writing a single new test.
 
-- **Phase 738 (current)**: thirtieth fresh codebase survey's own
+- **Phase 738**: thirtieth fresh codebase survey's own
   candidate #1 -- closes the real, adjacent gap Phase 737's own closing
   note flagged: `turn/sea_transport.py can_board()`'s air-carrier
   branch only accepted `FLEET_INFANTRY_ARMY_TYPES` cargo, so `Regolamento
@@ -30500,6 +30500,30 @@ follow-up request after the original 431-435 plan shipped.
   (unchanged, 6301) before writing a single new test -- this fix is a
   provable no-op for every existing fixture, since none of them ever
   attempts to board a Mermen unit onto an air carrier.
+
+- **Phase 739 (current)**: thirtieth survey's own candidate #2 --
+  Duel-loser demoralization narration. `_ADishK`/`_ADishF` (`RUMORS.PAS`,
+  Phase 121) are two fully-ported, tested prose entries narrating
+  rulebook [7.1]'s "loser's forces become demoralized, reduced 25% in
+  strength" -- the commander died vs. fled/was cowardly. The mechanic
+  itself is live (`turn/duel.py apply_duel_demoralization()`) and its
+  outcome already reached `BattleReport.duel_loser_side`, but that
+  field had exactly one reader in the whole codebase: its own
+  assignment. `describe_battle()` never read it. The module's own
+  docstring already pre-authorized "which of the two narrations" as a
+  caller's-choice decision (no source distinguishes them) -- resolved
+  using the one real structural signal this project actually has: a new
+  `BattleReport.duel_loser_fled` field, `True` only when the loser's own
+  duel-ending Special Encounter Plan led with `Maneuver.FLEE`
+  (`_maybe_fight_duel()`'s own dedicated branch, a genuinely distinct
+  outcome from an ordinary lost duel via the probability-estimate roll
+  or a real-combat defeat, both of which leave it `False`). `describe_
+  battle()` renders the matching sentence right after the leader roster
+  (BATLDR), before MCOME -- no real trigger call survives to confirm
+  the exact position, the same "missing main program" gap those
+  wirings already document. Test count: 6307 -> 6311 (net +4). Full
+  suite verified green (unchanged, 6307) before writing a single new
+  test.
 
 ## Setup
 

@@ -719,6 +719,113 @@ def test_describe_battle_skips_a_commanding_leader_no_longer_in_state():
     assert lines == ["Aldric led Aldric's armies into the battle."]
 
 
+# -- Phase 739: _ADishK/_ADishF (duel-loser demoralization narrative) --
+
+
+def test_describe_battle_renders_the_died_narration_for_an_ordinary_duel_loss():
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Borin", location=HexCoord(0, 0)))
+    report = BattleReport(
+        battle_result=BattleResult(),
+        conquered=False,
+        attacker_commander_leader_id=1,
+        defender_commander_leader_id=2,
+        duel_loser_side="defender",
+        duel_loser_fled=False,
+    )
+
+    rng = ScriptedRandom([0.1] * 20)
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=rng,
+    )
+
+    assert lines == [
+        "The forces commanded by Borin were disheartened by Borin's death, "
+        "but still they pressed forward with some hope of victory."
+    ]
+
+
+def test_describe_battle_renders_the_fled_narration_when_the_loser_fled():
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Borin", location=HexCoord(0, 0)))
+    report = BattleReport(
+        battle_result=BattleResult(),
+        conquered=False,
+        attacker_commander_leader_id=1,
+        defender_commander_leader_id=2,
+        duel_loser_side="attacker",
+        duel_loser_fled=True,
+    )
+
+    rng = ScriptedRandom([0.1] * 20)
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=rng,
+    )
+
+    assert lines == [
+        "The forces commanded by Aldric were disappointed by Aldric's "
+        "cowardice.They marched on, though with lessened confidence."
+    ]
+
+
+def test_describe_battle_renders_no_duel_demoralization_line_when_no_duel_occurred():
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    report = BattleReport(battle_result=BattleResult(), conquered=False, attacker_commander_leader_id=1)
+
+    rng = ScriptedRandom([0.1] * 20)
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=rng,
+    )
+
+    assert lines == []
+
+
+def test_describe_battle_skips_the_duel_demoralization_line_when_the_loser_no_longer_resolves():
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    report = BattleReport(
+        battle_result=BattleResult(),
+        conquered=False,
+        attacker_commander_leader_id=1,
+        defender_commander_leader_id=999,  # died earlier the same turn
+        duel_loser_side="defender",
+    )
+
+    rng = ScriptedRandom([0.1] * 20)
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=rng,
+    )
+
+    assert lines == []
+
+
 def test_describe_battle_renders_present_but_not_commanding_leaders():
     # Phase 658: a present-but-not-commanding leader gets the "was there,
     # leading no armies" sentence, right after that same side's own

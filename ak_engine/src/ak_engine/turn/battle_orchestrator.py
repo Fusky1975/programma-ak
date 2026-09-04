@@ -268,6 +268,18 @@ class BattleReport:
     attacker_commander_leader_id: int | None = None
     defender_commander_leader_id: int | None = None
     duel_loser_side: str | None = None  # "attacker" / "defender" / None if no duel occurred
+    # Phase 739: True only when the loser's own duel-ending Special
+    # Encounter Plan led with Maneuver.FLEE (`_maybe_fight_duel()`'s own
+    # dedicated branch) -- a real, structurally distinct "the commander
+    # fled" outcome from an ordinary lost duel (the probability-estimate
+    # roll, or a real-combat defeat via `use_real_duel_combat`), both of
+    # which leave this `False`. `report/turn_report.py describe_battle()`
+    # uses this to pick between `_ADishK` ("died") and `_ADishF` ("fled/
+    # was cowardly") -- that composer's own docstring already states no
+    # source distinguishes the two narrations, "the caller decides"; this
+    # is that decision, grounded in the one real structural signal this
+    # project actually has for it, not an arbitrary pick.
+    duel_loser_fled: bool = False
     # Phase 231 -- GENERAL INTELLIGENCE REPORT's own raw material
     # (`report/turn_report.py record_battle_world_events()`). Both are
     # already computed locally in `fight_battle()` for its own
@@ -1127,6 +1139,13 @@ class _DuelOutcome:
     attacker_commander_leader_id: int | None
     defender_commander_leader_id: int | None
     loser_side: str | None  # "attacker" / "defender" / None if no duel occurred
+    # Phase 739: True only for the Maneuver.FLEE-first branch below --
+    # the loser's own Special Encounter Plan led with Flee, a real,
+    # structurally distinct outcome from an ordinary lost duel (the
+    # probability-estimate roll, or a real-combat defeat). See
+    # BattleReport.duel_loser_fled's own docstring for how this picks
+    # between _ADishK/_ADishF's two narrations.
+    loser_fled: bool = False
 
 
 def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
@@ -1522,7 +1541,7 @@ def _maybe_fight_duel(
             for index, unit in enumerate(attacker_units):
                 if unit.source_id in demoralized_by_id:
                     attacker_units[index] = demoralized_by_id[unit.source_id]
-            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, "attacker")
+            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, "attacker", loser_fled=True)
 
     if use_real_duel_combat and state is not None:
         attacker_combatant = _commander_combatant(attacker_commander, state)
@@ -2461,6 +2480,7 @@ def fight_battle(
         attacker_commanding_leader_ids=attacker_commanding_leader_ids,
         defender_commanding_leader_ids=defender_commanding_leader_ids,
         duel_loser_side=duel.loser_side,
+        duel_loser_fled=duel.loser_fled,
         province_coord=province_coord,
         attacker_kingdom_id=attacker_kingdom_id,
         defender_kingdom_id=defender_kingdom_id,
