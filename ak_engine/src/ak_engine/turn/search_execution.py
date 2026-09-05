@@ -1198,12 +1198,20 @@ def _apply_scout(
     chance of not finding out. If you Flee and Scout, this chance is
     67%."
 
-    This project has no "special function or event" system at all to
-    trigger ([5.8]'s own beneficial/detrimental Specials need the
-    Feature->Power link ``models/power.py``/``models/magic_feature.py``
-    flag as never wired anywhere, see those modules' own docstrings) --
-    the one real, already-modeled effect Scout can drive is [5.8]'s own
-    "gain information on what treasure is in the feature," i.e. a
+    **Stale as of Phase 616 -- frozen from Phase 274, corrected here.**
+    This paragraph used to say the project had no "special function or
+    event" system at all to trigger, and that the Feature->Power link
+    (``models/power.py``/``models/magic_feature.py``) was never wired
+    anywhere. That link has been fully live since Phases 616-623 --
+    ``Feature.magic_power``, resolved via ``turn/feature_power_
+    execution.py resolve_feature_power_attempt()``, called directly a
+    few dozen lines below in this very function (see the Phase 616
+    addendum there). Only the ~55% of real Features with no power at
+    all (``Power.PNONE``) and [5.8]'s own generic "beneficial/
+    detrimental Special" narrative *flavor* (as opposed to the real,
+    already-modeled mechanical effect) stay unmodeled. The one real,
+    already-modeled effect Scout can drive is [5.8]'s own "gain
+    information on what treasure is in the feature," i.e. a
     discovery-level bump on ``Feature.discovered_by_kingdom`` (Phase 75)
     from a partial "a magic-power hint is known" (2) to a full "fully
     known" (3) reveal -- the exact two non-zero, non-"riches unknown"

@@ -55,15 +55,18 @@ shared, sequentially-advancing cursor, so which items appear together
 on one map is far more constrained than 128 (or 230) independent
 uniform draws would produce.
 
-**Deliberately NOT implemented here**: wiring this cursor into
-`generate_world_features()` -- that needs features processed in their
-real generation *order* (index 0, 1, 2, ...) so the shared cursor
-advances correctly and the gold/item pattern lines up, which in turn
-needs the full spatial placement loop Phase 359 already left as an
-integration gap. `standalone_treasures` (source records beyond
-``nfeatures`` with no feature coordinate at all) is likewise a
-documentation-only note -- this project has no other treasure-record
-stream to apply it to yet.
+**Stale as of Phase 365 -- frozen from Phase 360, corrected here.** This
+paragraph used to say wiring the cursor into real feature generation
+was deliberately not implemented, pending the full spatial placement
+loop. That loop landed the very next phase: `worldgen/generate_new_
+game.py` (~lines 642-648) now calls `initial_item_cursor()`/
+`feature_gets_item_slot()`/`cursor_to_treasure()`/`next_item_cursor()`
+in sequence, iterating `placements` from `place_all_features()` in
+their own real generation order -- exactly what this paragraph said was
+still missing. `standalone_treasures` (source records beyond
+``nfeatures`` with no feature coordinate at all) remains a
+documentation-only note -- this project still has no other treasure-
+record stream to apply it to.
 
 **Verification**: `item_slot_count()` is checked against both of the
 source's own declared totals exactly. `feature_gets_item_slot()` is

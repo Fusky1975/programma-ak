@@ -1590,13 +1590,13 @@ def resolve_challenge_combat(
     ``_close_to()`` -- "a randomly chosen distance" is a fresh
     confrontation, not a continuation) and ``continue``s the walk, the
     same way a SHOOT/MELEE tactic already leaves ``current_range`` for
-    whatever comes next. ``Maneuver.FLEE`` is still unwired in this
-    module (a separate, already-documented gap, Phase 290's own
-    addendum), so it's silently skipped exactly like any other unwired
-    tactic -- but a following ``MELEE`` (as in this very example) now
-    correctly picks up from the rolled range via the existing MELEE
-    branch, and an exhausted list still falls through to the existing
-    "defaults to Melee" tail if nothing follows at all. No test exercised
+    whatever comes next. **Stale as of Phase 743** (this paragraph is
+    frozen at the time it was written): ``Maneuver.FLEE`` is real and
+    wired in this module now (`effective_flee_chance()`/`FLEE_CHANCE`,
+    the caster's own main-loop branch) -- a following ``FLEE`` picks up
+    from the rolled range exactly like the ``MELEE`` case this paragraph
+    already describes; only the *target's* own reactive Flee agency
+    stays unwired (Phase 743's own explicit scope boundary). No test exercised
     the old atomic path with a following tactic, so this is a correction
     caught before it shipped a wrong default, not a regression fix.
 
@@ -1630,11 +1630,13 @@ def resolve_challenge_combat(
     peeked/advanced via `_peek_target_cast()`/`_advance_target_tactic()`
     below, consulted by the `MELEE` branch (now `_resolve_melee_round()`)
     and the `CAST` branch. Deliberately NOT given: `Maneuver.FLEE`
-    agency (unwired for *either* side in this module already, a
-    separate, pre-existing gap -- see the STEAL addendum above) and any
-    "does the target want to Shoot" gate (`resolve_fire_arrow_duel()`
-    is already a fully mutual exchange in one call, regardless of
-    either side's own plan).
+    agency for the *target's* own tactic list specifically (real and
+    wired for the caster's own primary tactics since Phase 743, but
+    this project has no mechanism anywhere for a target to react with
+    its own Flee mid-fight -- a real, still-open, narrower gap than
+    this paragraph originally claimed) and any "does the target want to
+    Shoot" gate (`resolve_fire_arrow_duel()` is already a fully mutual
+    exchange in one call, regardless of either side's own plan).
     """
 
     current_range = CombatRange.SPELL_RANGE

@@ -4797,17 +4797,20 @@ def resolve_talk_reaction(
 
 # **Phase 382 -- the real 24-reply Talk selector, `runtime_mechanics.
 # monster_talk` (`AK.OVR TALK branch`/`AK.EXE reply selector`, a real
-# static disassembly).** `TalkReaction`/`resolve_talk_reaction()` above
-# stay exactly as they are -- confirmed directly with the user
-# (project author) as project-original, and already the live mechanism
-# `turn/search_execution.py`'s own Talk branch calls. What follows is
-# **additive, not a replacement**: the real compiled selector this
-# source names, given real per-reply data this project didn't have
-# before, but not yet wired into live Talk execution -- swapping
-# `search_execution.py`'s own Talk branch over to it is a separate,
-# larger follow-up decision (the same "confirmed real, not unilaterally
-# swapped into live behavior" stance Phase 381's own `MONSTER_RUNTIME_
-# PROFILE` addendum already takes for `MONSTER_COMBAT_STATS`).
+# static disassembly).** **Stale as of Phase 528, and again as of Phase
+# 727 -- frozen at the moment of writing, corrected here.** This
+# comment used to say `TalkReaction`/`resolve_talk_reaction()` above
+# were still the live mechanism `search_execution.py`'s own Talk branch
+# calls, with the reply selector below being additive but "not yet
+# wired." Both claims are long superseded: Phase 528 replaced the live
+# call with `select_monster_talk_reply()`/`MONSTER_TALK_REPLY_OUTCOME`
+# (the reply selector this same comment block introduces), and Phase
+# 727 replaced *that* in turn with `turn/monster_raids.py resolve_
+# monster_raid_reply()` (a real, deterministic, per-(monster,feature)
+# reseed) -- see `search_execution.py _resolve_talk()`'s own docstring
+# for the full, accurate account of both supersessions. `TalkReaction`/
+# `resolve_talk_reaction()` above are retained for their own existing
+# tests only; neither has a production caller anymore.
 #
 # The 24 real reply identifiers (`RPuzzled`..`RMAdvance`), each with a
 # real `repfreq` (0-10, the reply's own acceptance chance out of 10),

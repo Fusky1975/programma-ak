@@ -31015,7 +31015,7 @@ follow-up request after the original 431-435 plan shipped.
   distinguishes today. Part IV's own personal-combat formula set also
   remains a separate, not-attempted reconciliation.
 
-- **Phase 751 (current)**: closes Phase 749's own second deferred
+- **Phase 751**: closes Phase 749's own second deferred
   finding -- the real 3-outcome Scout model (SS9-11, CERTO) plus the
   access-denied clamp (SS9.5, RICOSTRUITO byte-observable, user-
   confirmed interpretation after two design iterations).
@@ -31080,6 +31080,59 @@ follow-up request after the original 431-435 plan shipped.
   formula set (materially different in shape from this project's own
   already-shipped `MELEE_HIT_CHANCE`/multiplier combat engine) remains
   a separate, not-attempted reconciliation for a future session.
+
+  A direct review of Part IV followed, closing SE+SC.md's own
+  investigation entirely: Fire Arrow's `30+10*Archery` matches the
+  already-shipped `fire_arrow_hit_chance()` exactly; the Flee table
+  (slow/medium/fast 80/50/20%) was already confirmed matching; the
+  60-monster stat table spot-checked clean against `MONSTER_RUNTIME_
+  PROFILE`; protection-halving stacking is mathematically equivalent
+  to this project's own existing multiplicative hit-multiplier system;
+  post-combat full-HP recovery is already the de facto behavior (`
+  Combatant` is a fresh per-encounter object, never a persisted wound).
+  Melee's own hit-chance/damage formula is a genuine, unresolved
+  conflict between two primary sources -- SE+SC.md's disassembly
+  (`50+10*skill_diff`) vs. the published rulebook [5.3], quoted
+  verbatim in this project's own already-shipped code ("A character has
+  a base chance to hit of 50%... " -- flat, not skill-scaled). **User-
+  confirmed directly: trust the published rulebook.** `MELEE_HIT_
+  CHANCE = 0.50`/`MELEE_DAMAGE_RANGE = (1, 6)` stay exactly as they are,
+  untouched, unless new evidence surfaces.
+
+- **Phase 752 (current)**: a fresh codebase survey (an Explore agent
+  audit, focused specifically on stale "known-gap" docstring claims per
+  this project's own most common recurring finding type) found 4
+  independently-verified stale claims, all comment-only, no behavior
+  change:
+  1. `turn/challenge_execution.py` (2 spots): the STEAL-branch docstring
+     and `resolve_challenge_combat()`'s own Phase 674 addendum both
+     still claimed `Maneuver.FLEE` was "unwired in this module" --
+     stale since Phase 743, which wired the caster's own Flee tactic in
+     full. Only the *target's* own reactive Flee agency is still
+     genuinely unwired (a real, narrower gap than either paragraph
+     originally claimed) -- both corrected to say so precisely.
+  2. `turn/search_execution.py _apply_scout()`'s own opening paragraph
+     still claimed "this project has no 'special function or event'
+     system at all... the Feature->Power link... never wired anywhere"
+     -- stale since Phases 616-623, which built exactly that link and
+     wired it a few dozen lines below in this very function.
+  3. `worldgen/magic_item_placement.py`'s own "Deliberately NOT
+     implemented here" paragraph (Phase 360) still claimed the shared
+     item-placement cursor wasn't wired into real feature generation --
+     stale since Phase 365, which wired it into `generate_new_game.py`'s
+     own real placement loop.
+  4. `turn/encounter.py`'s own Phase 382 comment block still claimed
+     `TalkReaction`/`resolve_talk_reaction()` were "the live mechanism"
+     `search_execution.py`'s own Talk branch calls, with the real
+     24-reply selector this block introduces merely "additive, not yet
+     wired" -- stale twice over: Phase 528 replaced the live call with
+     that very selector, and Phase 727 replaced *that* again with
+     `turn/monster_raids.py resolve_monster_raid_reply()`. Neither
+     `TalkReaction` nor `resolve_talk_reaction()` has a production
+     caller anymore.
+
+  Full suite unchanged (6381) -- confirmed comment-only, no test
+  updates needed.
 
 ## Setup
 
