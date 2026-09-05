@@ -220,7 +220,7 @@ from typing import Literal
 
 from ak_engine.models.army_type import ARMY_TABLE, OVERFLIGHT_AIR, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.feature import Feature
-from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, ArmyState, GameState, ProvinceState
+from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.treasure import Treasure
@@ -478,6 +478,24 @@ _TERRAIN_KING_FIELD: dict[Terrain, str] = {
     Terrain.SEA: "sea_explorations",
 }
 
+
+def credit_terrain_king_title(leader: LeaderState, terrain: Terrain) -> None:
+    """Credits +1 to the terrain-King royal-title ``MeritTally`` counter
+    (``_TERRAIN_KING_FIELD``) for ``terrain`` -- a no-op for a terrain
+    with no matching title (e.g. ``Terrain.NO_TERRAIN``). Shared by
+    ``record_kingdom_exploration()`` (Explore results, Phase 630) and,
+    since Phase 749 (``Desktop/SE+SC.md`` SS25), Scout's own ``fdisc``
+    promotion (``turn/search_execution.py _apply_scout()``) -- the real
+    ``Inc_Tit(ldr, 30+terrain, 1)`` call the disassembly confirms fires
+    from *both* fdisc-promotion routines (``0x114FF`` for 1->2,
+    ``0x11371`` for 2->3), a second, independent trigger for the exact
+    same counters Explore already credits.
+    """
+
+    field = _TERRAIN_KING_FIELD.get(terrain)
+    if field is not None:
+        setattr(leader.merit_tally, field, getattr(leader.merit_tally, field) + 1)
+
 # Phase 660: the same 6 terrain-King titles' own real "effect_while_held"
 # bonus (`models/office.py OFFICE_TITLE_DESCRIPTION`: "can now explore
 # [terrain] provinces at double [their] normal rate") -- same 6-member
@@ -582,9 +600,8 @@ def record_kingdom_exploration(
     province.explored_percent_by_kingdom[kingdom_id] = result.new_percent
     if state is not None and leader_id is not None:
         leader = state.leaders.get(leader_id)
-        field = _TERRAIN_KING_FIELD.get(terrain)
-        if leader is not None and field is not None:
-            setattr(leader.merit_tally, field, getattr(leader.merit_tally, field) + 1)
+        if leader is not None:
+            credit_terrain_king_title(leader, terrain)
     discovered: list[Feature] = []
     if state is not None:
         rng = rng if rng is not None else random.Random()

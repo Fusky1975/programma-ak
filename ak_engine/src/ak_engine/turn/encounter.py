@@ -5436,49 +5436,52 @@ def resolve_fulfill_honored(
     return fulfill_monster_honors(monster_alignment, hero_alignment, bonus, rng, monster_intelligence=guardian_intelligence)
 
 
-# Beg [BE], rulebook [5.8] -- Phase 241. No Pascal source and no
-# rulebook text survive for this tactic (confirmed: `CBeg` appears only
-# in `CTBOTH.PAS`'s own `maneuver` enum declaration, never referenced
-# by name anywhere else in the available archive). Designed
-# collaboratively with the user (project author), who confirmed the
-# concept directly: a Cowardly-tempered character (or any character, in
-# extremis) begging a monster or another Hero for mercy to avoid being
-# killed.
+# Beg [BE], rulebook [5.8] -- Phase 241 originally shipped this as
+# project-original ("No Pascal source and no rulebook text survive for
+# this tactic... designed collaboratively with the user"), keyed on
+# monster intelligence tier. **Phase 749 supersedes that placeholder**:
+# `Desktop/SE+SC.md` SS40 (raw `AK.OVR 0x1C8A8-0x1C9BF`, graded CERTO)
+# recovers the real, disassembled mercy formula --
 #
-# Three design questions, all answered directly by the user:
-# 1. **Only meaningful after the character has already taken damage
-#    this same encounter** -- an undamaged character has nothing to
-#    beg about. Checked via `Combatant.hit_points < CHARACTER_HIT_
-#    POINTS` (every combatant starts at the flat rulebook value, [5.0]
-#    "In combat, all characters have 10 hit points" -- no per-leader
-#    starting-HP variation exists to complicate this check).
-# 2. **Only monsters intelligent enough to understand a plea can grant
-#    mercy** -- reuses the existing, real per-species `MIRROR_IMAGE_
-#    MONSTER_INTELLIGENCE_TIER` (Phase 187) directly rather than a new
-#    mapping, since all six of its tiers are meaningful here (not
-#    collapsed to three buckets the way Steal's own cunning table was
-#    -- see that table's own Phase 239 addendum for why that collapse
-#    was appropriate there but isn't needed here).
-# 3. **A successful plea ends the encounter exactly like a successful
-#    Flee** -- the character escapes unharmed, no further combat, no
-#    loot.
+#   A = ALIGNMENT_ORDINAL[target_alignment]      { the one being begged }
+#   H = ALIGNMENT_ORDINAL[beggar_alignment]
+#   threshold = 20 * abs(6 - A) - 15 * abs(A - H)   { percent, no explicit clamp in the compiled code }
+#   mercy <=> IRand100 < threshold
 #
-# The per-tier mercy chances themselves are project-original -- no
-# source gives numbers, only the qualitative "sufficiently intelligent"
-# gate above. Animal/Mechanical tiers get a flat 0%: they're confirmed
-# unable to even understand a plea, not merely unlikely to grant one.
-BEG_MERCY_CHANCE: dict[MirrorImageIntelligenceTier, float] = {
-    MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN: 0.60,
-    MirrorImageIntelligenceTier.HIGH_HUMAN: 0.45,
-    MirrorImageIntelligenceTier.MEDIUM_HUMAN: 0.30,
-    MirrorImageIntelligenceTier.LOW_HUMAN: 0.15,
-    MirrorImageIntelligenceTier.ANIMAL: 0.0,
-    MirrorImageIntelligenceTier.MECHANICAL: 0.0,
-}
+# -- keyed on *alignment distance*, not intelligence, with `6` the
+# Hellish/Anti-Holy reference point (`FULFILL_HELLISH_REFERENCE_
+# ORDINAL`, already defined above for an unrelated formula, reused
+# verbatim here). Verified by hand against every one of SS40's own
+# worked examples: Heavenly/Heavenly=120->100%, Worldly/Worldly=60->
+# 60%, Evil/Evil=20->20%, Hellish/anything except zero distance-><0->
+# 0%, Undead/Undead=20->20%, Mechanical/Mechanical=40->40% -- all match
+# exactly against this project's own `ALIGNMENT_ORDINAL` (`models/
+# alignment.py`), which already uses the real Pascal `outlook` ordinal
+# sequence this formula needs.
+#
+# Two of the original three Phase 241 design points still stand,
+# undisturbed by the new document (which is silent on both): Beg is
+# only meaningful once the character has already taken damage this
+# same encounter (checked by the caller, `turn/search_execution.py
+# _resolve_beg()`, via `Combatant.hit_points < CHARACTER_HIT_POINTS`),
+# and a successful plea ends the encounter exactly like a successful
+# Flee -- SE+SC.md SS40/43 independently reconfirm this exact outcome.
+# `None` alignments (unrecorded) fall back to `FULFILL_UNRECORDED_
+# ALIGNMENT_FALLBACK`, the same convention `resolve_fulfill_honored()`
+# already uses for the identical situation.
+def mercy_chance(target_alignment: Alignment | None, beggar_alignment: Alignment | None) -> float:
+    target = target_alignment if target_alignment is not None else FULFILL_UNRECORDED_ALIGNMENT_FALLBACK
+    beggar = beggar_alignment if beggar_alignment is not None else FULFILL_UNRECORDED_ALIGNMENT_FALLBACK
+    a = ALIGNMENT_ORDINAL[target]
+    h = ALIGNMENT_ORDINAL[beggar]
+    raw = 20 * abs(FULFILL_HELLISH_REFERENCE_ORDINAL - a) - 15 * abs(a - h)
+    return max(0.0, min(100.0, raw)) / 100
 
 
-def resolve_beg_for_mercy(tier: MirrorImageIntelligenceTier, rng: random.Random) -> bool:
-    return rng.random() < BEG_MERCY_CHANCE[tier]
+def resolve_beg_for_mercy(
+    target_alignment: Alignment | None, beggar_alignment: Alignment | None, rng: random.Random
+) -> bool:
+    return rng.random() < mercy_chance(target_alignment, beggar_alignment)
 
 
 def loot_defeated_leader(state: GameState, *, winner_id: int, loser_id: int) -> list[ItemInstance]:

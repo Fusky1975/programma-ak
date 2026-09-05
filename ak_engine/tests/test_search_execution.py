@@ -13,6 +13,7 @@ from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
+from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_COMBAT_STATS, Monster, MonsterEngagementState, MonsterSpeed
 from ak_engine.models.office import Office
@@ -35,6 +36,7 @@ from ak_engine.turn.encounter import (
     MONSTER_STEAL_GOLD_IF_NO_ITEM,
     ReactiveMeleeSwingResult,
 )
+from ak_engine.turn.feature_power_execution import FeaturePowerEvent
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.search_execution import (
     FLEE_CHANCE,
@@ -3873,10 +3875,22 @@ def test_execute_search_beg_undamaged_leader_falls_through():
 
 
 def test_execute_search_beg_animal_tier_monster_never_succeeds():
-    # Gryphon is Animal-tier -- BEG_MERCY_CHANCE is 0.0, so even a roll of
-    # 0.0 (the most favorable possible) grants no mercy.
-    state = _state_with_leader()
-    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GRYPHON))
+    # Phase 749: the real mercy formula is alignment-based, not species-
+    # based -- a Hellish/Anti-Holy guardian's own base term is always 0,
+    # so any real alignment distance from the beggar drives the
+    # threshold negative (clamped to 0%). Even a roll of 0.0 (the most
+    # favorable possible) grants no mercy.
+    state = GameState()
+    state.add_leader(LeaderState(LEADER_ID, 1, "Searcher", LOCATION, alignment=Alignment.DIVINE))
+    state.add_feature(
+        Feature(
+            feature_id=1,
+            coord=LOCATION,
+            kind=FeatureType.DUNGEON,
+            guardian_monster=Monster.GRYPHON,
+            guardian_alignment=Alignment.ANTI_HOLY,
+        )
+    )
     request = _beg_request(1, Maneuver.MELEE)
 
     with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
@@ -3891,9 +3905,11 @@ def test_execute_search_beg_animal_tier_monster_never_succeeds():
 
 
 def test_execute_search_beg_success_flees_unharmed():
-    # Archer is Medium-Human tier -- BEG_MERCY_CHANCE is 0.30. A damaged
-    # leader rolling under that succeeds, ending the Search exactly like
-    # a successful Flee.
+    # Phase 749: neither the leader nor the guardian has a recorded
+    # alignment in this fixture, so both fall back to Neutral -- real
+    # mercy_chance(Neutral, Neutral) is 60%. A damaged leader rolling
+    # under that succeeds, ending the Search exactly like a successful
+    # Flee.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _beg_request(1, Maneuver.MELEE)
@@ -3912,8 +3928,9 @@ def test_execute_search_beg_success_flees_unharmed():
 
 
 def test_execute_search_beg_failure_falls_through():
-    # Same setup as the success case, but a roll above the 30% threshold
-    # fails -- no mercy, the plan's own next tactic (Melee) still runs.
+    # Same setup as the success case (fallback Neutral/Neutral, 60%), but
+    # a roll above that threshold fails -- no mercy, the plan's own next
+    # tactic (Melee) still runs.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _beg_request(1, Maneuver.MELEE)
@@ -4630,6 +4647,101 @@ def test_execute_search_scout_skipped_when_the_leader_dies_but_still_counted():
     # (level 1) already happened before the encounter started, so it
     # survives the leader's own death.
     assert state.features[1].discovered_by_kingdom == {1: 1}
+
+
+# -- Phase 749 (Desktop/SE+SC.md SS25): Scout's own terrain-King title crediting --
+
+
+def test_execute_search_scout_first_discovery_with_no_power_credits_only_the_first_terrain_point():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee, patch(
+        "ak_engine.turn.search_execution.derive_feature_event",
+        return_value=FeaturePowerEvent(power=Power.PNONE, magic_feature=MagicFeature.NONE),
+    ):
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    # The real 0x11371 promotion (fdisc 2->3) is never reached for a
+    # `PNone` Feature -- only the unconditional first (1->2) credit
+    # fires, even though `discovered_by_kingdom` itself (a separate,
+    # already-shipped Phase 616 simplification) still jumps to 3.
+    assert state.features[1].discovery_level(1) == 3
+    assert state.leaders[LEADER_ID].merit_tally.plains_explorations == 1
+
+
+def test_execute_search_scout_first_discovery_with_a_real_power_credits_both_terrain_points():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee, patch(
+        "ak_engine.turn.search_execution.derive_feature_event",
+        return_value=FeaturePowerEvent(power=Power.NEW_SEX, magic_feature=MagicFeature.NONE),
+    ):
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.5]))
+
+    # Starting from level 1, a single Scout that reaches full discovery
+    # of a real-Power feature crosses both 1->2 and 2->3 -- two points.
+    assert state.leaders[LEADER_ID].merit_tally.plains_explorations == 2
+
+
+def test_execute_search_scout_second_visit_credits_only_the_second_terrain_point():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    feature.discovered_by_kingdom[1] = 2  # already "sees the object"
+    state.add_feature(feature)
+    request = _scout_request(1, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee, patch(
+        "ak_engine.turn.search_execution.derive_feature_event",
+        return_value=FeaturePowerEvent(power=Power.NEW_SEX, magic_feature=MagicFeature.NONE),
+    ):
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.5]))
+
+    assert state.leaders[LEADER_ID].merit_tally.plains_explorations == 1
+
+
+def test_execute_search_scout_already_fully_known_credits_nothing_further():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    feature.discovered_by_kingdom[1] = 3  # already fully known
+    state.add_feature(feature)
+    request = _scout_request(1, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee, patch(
+        "ak_engine.turn.search_execution.derive_feature_event",
+        return_value=FeaturePowerEvent(power=Power.NEW_SEX, magic_feature=MagicFeature.NONE),
+    ):
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.5]))
+
+    assert state.leaders[LEADER_ID].merit_tally.plains_explorations == 0
+
+
+def test_execute_search_scout_credits_nothing_without_a_registered_province():
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert state.leaders[LEADER_ID].merit_tally.plains_explorations == 0
 
 
 def test_execute_search_scout_steal_only_partial_discovery_on_the_documented_33_percent_miss():

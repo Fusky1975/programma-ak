@@ -552,7 +552,6 @@ from ak_engine.turn.discovery_effects import (
     holds_monster_command_item_for,
 )
 from ak_engine.turn.encounter import (
-    BEG_MERCY_CHANCE,
     CHARACTER_HIT_POINTS,
     DAMP_MAGIC_CAST_CHANCE_MULTIPLIER,
     FIRE_ARROW_DAMAGE_RANGE,
@@ -642,6 +641,7 @@ from ak_engine.turn.monster_raids import (
     resolve_monster_raid_reply,
     roll_guardian_intimidation,
 )
+from ak_engine.turn.move_execution import credit_terrain_king_title
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 
@@ -1242,11 +1242,46 @@ def _apply_scout(
         # rulebook's two named exceptions (Cast-only, Beg-only, a bare
         # Scout, ...) -- genuinely unresolved by the source, so this
         # attempt has no effect at all rather than guessing a percentage.
+        #
+        # Phase 749 flag, not acted on: `Desktop/SE+SC.md` SS7 recovers
+        # `Plan_Intent()`'s real Pascal `case` statement, which has no
+        # arm at all for `CBeg` and falls back unconditionally to
+        # `CMelee` (a *guaranteed* discovery) for anything it doesn't
+        # otherwise classify -- Beg-only, Cast-only with a non-exempt
+        # spell, non-terminal Say, and even a bare Scout-only plan all
+        # appear to reduce to `CMelee`, not to "genuinely unresolved" as
+        # this classification claims. A real, separate discrepancy in
+        # this project's own Phase 274 discovery-gating logic, not
+        # investigated or fixed here -- see that same document's SS25
+        # note in `credit_terrain_king_title()`'s own call sites below
+        # for why this phase deliberately stops short of a full rewrite.
         return
 
     current_level = feature.discovery_level(leader.kingdom_id)
     new_level = SCOUT_FULL_DISCOVERY_LEVEL if discovered else max(current_level, SCOUT_PARTIAL_DISCOVERY_LEVEL)
     feature.discovered_by_kingdom[leader.kingdom_id] = new_level
+
+    # Phase 749 (`Desktop/SE+SC.md` SS25/12.1, CERTO): the same two
+    # routines that promote `fdisc` in the real engine (`0x114FF` for
+    # 1->2, `0x11371` for 2->3) also each credit +1 to the feature's own
+    # province terrain-King royal title (`turn/move_execution.py
+    # credit_terrain_king_title()`) -- a second, independent trigger for
+    # the exact counters Explore already credits (Phase 630). The first
+    # credit is unconditional (matches `0x114FF`'s own unconditional
+    # `PNone` short-circuit, and still fires on a *failed* Steal/Flee-
+    # only attempt, since `new_level` is already >= 2 either way). The
+    # second is gated on a real `Power` existing (`event.power is not
+    # Power.PNONE`): the real `0x11371` promotion is never reached at
+    # all for a `PNone` Feature, so crediting it there would be a real
+    # overcount -- note this does NOT change `discovered_by_kingdom`'s
+    # own value, which still jumps straight to 3 for a `PNone` Feature
+    # on a "discovered" attempt (an already-shipped Phase 616
+    # simplification, untouched here); only the second *merit* credit is
+    # gated. Both credits need a real registered province to read a
+    # terrain from -- `None` (no data) means no credit, not a guess.
+    province = state.provinces.get(feature.coord)
+    if province is not None and current_level < SCOUT_PARTIAL_DISCOVERY_LEVEL:
+        credit_terrain_king_title(leader, province.effective_terrain())
 
     # Phase 616: a full discovery is real "special function or event"
     # knowledge per the rulebook quote above -- resolve and apply the
@@ -1256,6 +1291,8 @@ def _apply_scout(
     # none) reaches `derive_feature_event()` with nothing to resolve.
     if discovered:
         event = derive_feature_event(feature, state=state)
+        if province is not None and current_level < SCOUT_FULL_DISCOVERY_LEVEL and event.power is not Power.PNONE:
+            credit_terrain_king_title(leader, province.effective_terrain())
         if event.power in TRACTABLE_POWERS or event.power in TERRAIN_SPELL_POWERS or event.power is Power.CHANCE:
             # Phase 620/621: CAST_SPELL/ANS_PRAYER land here too --
             # tractable whenever `event.spell_parameter` resolved (all
@@ -2887,29 +2924,26 @@ def _resolve_search_encounter(
         return None  # peaceful -- the plan continues to its next tactic
 
     def _resolve_beg() -> SearchExecutionResult | None:
-        """Beg [BE] -- Phase 241, project-original (no Pascal source, no
-        rulebook text -- ``turn/encounter.py``'s own Phase 241 addendum
-        has the full "why nothing survives" account and the three design
-        decisions confirmed directly by the user/project author). Only
-        meaningful once the leader has already taken damage this same
-        encounter (``leader_combatant.hit_points < CHARACTER_HIT_POINTS``
-        -- every combatant starts at the flat rulebook value, so this
-        needs no new field); an undamaged leader has nothing to beg
-        about, a documented no-effect rather than an oversight. Only
-        monsters intelligent enough to understand a plea can grant mercy
-        -- reuses ``MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER`` (Phase 187)
-        directly, defaulting to ``ANIMAL`` (zero mercy) for any species
-        missing from that table, same "can't grant it" treatment as a
-        species explicitly mapped there. A successful plea ends the
-        Search exactly like a successful Flee.
+        """Beg [BE] -- ``Desktop/SE+SC.md`` SS40/43 (Phase 749) supersedes
+        the old Phase 241 project-original framing: a real, disassembled
+        mercy formula now exists, keyed on the guardian's own ``Alignment``
+        (``Feature.guardian_alignment``) vs. the begging leader's own
+        (``LeaderState.alignment``), not monster intelligence -- see
+        ``turn/encounter.py resolve_beg_for_mercy()``'s own docstring for
+        the formula and its worked-example cross-check. Only meaningful
+        once the leader has already taken damage this same encounter
+        (``leader_combatant.hit_points < CHARACTER_HIT_POINTS`` -- every
+        combatant starts at the flat rulebook value, so this needs no new
+        field; an undamaged leader has nothing to beg about, a documented
+        no-effect rather than an oversight); this precondition is
+        untouched by the new document, which is silent on Beg's own
+        availability gate. A successful plea ends the Search exactly like
+        a successful Flee (independently reconfirmed by SS40/43).
         """
 
         if leader_combatant.hit_points >= CHARACTER_HIT_POINTS:
             return None  # undamaged -- nothing to beg about yet
-        tier = MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER.get(
-            feature.guardian_monster, MirrorImageIntelligenceTier.ANIMAL
-        )
-        if resolve_beg_for_mercy(tier, rng):
+        if resolve_beg_for_mercy(feature.guardian_alignment, leader.alignment, rng):
             intimidated, undeterred = _resolve_guardian_pacification()
             return SearchExecutionResult(
                 accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated, guardian_undeterred=undeterred

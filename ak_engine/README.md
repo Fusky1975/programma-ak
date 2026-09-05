@@ -30822,7 +30822,7 @@ follow-up request after the original 431-435 plan shipped.
   Test count: 6348 -> 6357 (net +9). This closes backlog item #2 in
   full (both the `Inv_Bonus` and `Racial_Tax` halves).
 
-- **Phase 748 (current)**: closes two real, previously entirely
+- **Phase 748**: closes two real, previously entirely
   unmodeled gaps found while chasing backlog item #3's own Scout
   success-chance question -- `Desktop/FDISCKNGFN.md` (user-supplied
   disassembly, 2026-09-05, CERTO throughout) doesn't resolve that
@@ -30865,6 +30865,97 @@ follow-up request after the original 431-435 plan shipped.
   1}`) -- updated, not silenced. Backlog item #3's own original question
   (Scout's missing success percentage for Cast-only/Beg-only/Say-only/
   bare-Scout plans) remains exactly as open as before.
+
+- **Phase 749 (current)**: `Desktop/SE+SC.md` (user-supplied disassembly,
+  2026-09-05, v3.0) covers SEARCH/SCOUT and, in a new Part IV, personal
+  combat against monsters. Most of it independently reconfirms mechanics
+  already shipped in Phases 616-623/748; two genuinely new, tractable
+  findings are wired in here.
+
+  1. **BE (Beg)'s real mercy formula** (SS40, raw `AK.OVR
+     0x1C8A8-0x1C9BF`, CERTO) supersedes `turn/encounter.py
+     BEG_MERCY_CHANCE`/`resolve_beg_for_mercy()` (Phase 241), which was
+     explicit project-original placeholder: "No Pascal source and no
+     rulebook text survive for this tactic... designed collaboratively
+     with the user," keyed on monster intelligence tier. The real,
+     disassembled formula is alignment-based instead: `threshold = 20 *
+     abs(6 - A) - 15 * abs(A - H)` (`A`/`H` = `ALIGNMENT_ORDINAL` of the
+     one begged and the beggar, `6` = Hellish/Anti-Holy, the same
+     `FULFILL_HELLISH_REFERENCE_ORDINAL` this file already defines for
+     an unrelated formula), `mercy <=> IRand100 < threshold`. Verified
+     by hand against every one of SS40's own worked examples
+     (Heavenly/Heavenly=100%, Worldly/Worldly=60%, Evil/Evil=20%,
+     Hellish/anything except zero distance->0%, Undead/Undead=20%,
+     Mechanical/Mechanical=40%) -- all match exactly, with zero ordinal
+     remapping against this project's own already-real `Alignment`/
+     `ALIGNMENT_ORDINAL`. New `mercy_chance()`, replacing the old
+     per-tier dict; `turn/search_execution.py _resolve_beg()` now calls
+     `resolve_beg_for_mercy(feature.guardian_alignment, leader.alignment,
+     rng)` instead of looking up a monster-species intelligence tier.
+     Only consumer confirmed via grep -- `challenge_execution.py`/
+     `pursue_execution.py` never wire `Maneuver.BEG` at all. The
+     "only meaningful once damaged"/"succeeds like Flee" design points
+     are untouched (the new document doesn't contradict either, and
+     independently reconfirms the latter).
+
+  2. **Scout's own terrain-King title crediting** (SS25, common to both
+     `fdisc`-promotion routines `0x11371`/`0x114FF`, CERTO). Every
+     successful Scout promotion -- 1->2 ("sees the object") *and* 2->3
+     ("understands the power") -- separately calls `Inc_Tit(ldr,
+     30+terrain, +1)`, crediting the *same* 6 terrain-King royal titles
+     (`Office.PLAINS_KING`..`SEA_KING`) `turn/move_execution.py
+     record_kingdom_exploration()` already credits from Explore results
+     (Phase 630) -- confirmed by an exact office-id match (30-35). A
+     second, independent trigger for the identical counters, not wired
+     from the Scout side until now. New public `turn/move_execution.py
+     credit_terrain_king_title(leader, terrain)` (extracted from that
+     function's own prior inline block, pure refactor there), called
+     from a new pair of gates in `turn/search_execution.py
+     _apply_scout()`: the first credit fires unconditionally whenever
+     `current_level < 2` (matches `0x114FF`'s own unconditional call
+     for *any* outcome, even a `PNone` Feature or a failed Steal/Flee-
+     only attempt); the second fires only when `current_level < 3`
+     **and** `event.power is not Power.PNONE` (the real `0x11371`
+     promotion is never reached at all for a `PNone` Feature -- crediting
+     it there would be a real overcount; note this does NOT touch
+     `discovered_by_kingdom`'s own value, which still jumps straight to
+     3 for a `PNone` "discovered" Feature, an already-shipped Phase 616
+     simplification left exactly as-is -- only the second *merit* credit
+     is gated). Both gates need a real registered province to read a
+     terrain from; no province, no credit ("no data, no guess").
+
+  **Deliberately NOT attempted, flagged for a future phase**: tracing
+  SS7 (`Plan_Intent`, the real function deciding Scout's own
+  "guaranteed vs. probabilistic" split) found its actual Pascal `case`
+  has no arm at all for `CBeg`, falling back unconditionally to
+  `CMelee` (guaranteed) for anything unclassified -- suggesting Beg-
+  only/Cast-only-with-a-non-exempt-spell/non-terminal-Say/bare-Scout-
+  only plans may all be real *guaranteed* discoveries in the true
+  engine, not "genuinely unresolved" as this project's own Phase 274
+  `SCOUT_GUARANTEED_MANEUVERS`/early-`return` classification currently
+  claims. A real, separate, likely-consequential gap in already-shipped
+  logic -- not investigated or fixed this phase, since it's entangled
+  with the Scout outcome-level model in general and needs its own
+  dedicated pass. Also deliberately not attempted: SE+SC.md's own finer
+  3-level Scout outcome model (Real48 0.33/0.67 thresholds, the
+  `Min(1,outcome)` access-denied clamp) and Part IV's personal-combat
+  hit-chance/damage formulas, both of which look materially different
+  from this project's own already-shipped, heavily-tested combat engine
+  (`turn/encounter.py`'s flat `MELEE_HIT_CHANCE`/multiplier system) --
+  reconciling either would mean auditing/rewriting a large, currently
+  correct-per-its-own-sourcing system against a second, differently-
+  shaped source, a real, much larger, separate decision this phase does
+  not make. (SE+SC.md's own `FLEE_CHANCE` table by monster speed
+  independently matches this project's own already-shipped table
+  almost verbatim -- a cross-confirmation, not a conflict, needing no
+  change.)
+
+  Test count: 6365 -> 6374 (net +9). Full suite verified green
+  (unchanged, 6365) before touching a single test; exactly 1 pre-
+  existing test needed a real fix (`test_execute_search_beg_animal_
+  tier_monster_never_succeeds`, repointed from a since-removed
+  intelligence-tier concept to a real always-0%-mercy alignment pairing),
+  confirmed via the standing non-breaking run first, not assumed.
 
 ## Setup
 

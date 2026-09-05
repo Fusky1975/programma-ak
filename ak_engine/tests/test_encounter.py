@@ -177,7 +177,7 @@ from ak_engine.turn.encounter import (
     monster_talk_reply_eligible,
     resolve_talk_reaction,
     select_monster_talk_reply,
-    BEG_MERCY_CHANCE,
+    mercy_chance,
     resolve_beg_for_mercy,
     FULFILL_COMMON_BONUS,
     FULFILL_UNRECORDED_ALIGNMENT_FALLBACK,
@@ -2823,38 +2823,54 @@ def test_select_monster_talk_reply_returns_none_when_nothing_is_eligible(monkeyp
     assert select_monster_talk_reply(Monster.ROC, random.Random(1)) is None
 
 
-# -- Phase 241: Beg --
+# -- Phase 241/749: Beg --
+#
+# Phase 749 (`Desktop/SE+SC.md` SS40) replaced the old Phase 241
+# project-original per-intelligence-tier table with the real,
+# disassembled alignment-based formula -- these tests are the worked
+# examples from that document's own SS40 table, cross-checked by hand.
 
 
-def test_beg_mercy_chance_covers_all_six_tiers():
-    assert BEG_MERCY_CHANCE.keys() == set(MirrorImageIntelligenceTier)
+def test_mercy_chance_heavenly_beggar_before_heavenly_target_is_certain():
+    assert mercy_chance(Alignment.DIVINE, Alignment.DIVINE) == pytest.approx(1.00)
 
 
-def test_beg_mercy_chance_animal_and_mechanical_are_zero():
-    # Confirmed by the user: only monsters with sufficient intelligence can
-    # even understand a plea -- Animal/Mechanical can't grant mercy at all.
-    assert BEG_MERCY_CHANCE[MirrorImageIntelligenceTier.ANIMAL] == 0.0
-    assert BEG_MERCY_CHANCE[MirrorImageIntelligenceTier.MECHANICAL] == 0.0
+def test_mercy_chance_worldly_beggar_before_worldly_target():
+    assert mercy_chance(Alignment.NEUTRAL, Alignment.NEUTRAL) == pytest.approx(0.60)
 
 
-def test_beg_mercy_chance_increases_with_intelligence():
-    assert (
-        BEG_MERCY_CHANCE[MirrorImageIntelligenceTier.LOW_HUMAN]
-        < BEG_MERCY_CHANCE[MirrorImageIntelligenceTier.MEDIUM_HUMAN]
-        < BEG_MERCY_CHANCE[MirrorImageIntelligenceTier.HIGH_HUMAN]
-        < BEG_MERCY_CHANCE[MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN]
-    )
+def test_mercy_chance_evil_beggar_before_evil_target():
+    assert mercy_chance(Alignment.EVIL, Alignment.EVIL) == pytest.approx(0.20)
+
+
+def test_mercy_chance_undead_beggar_before_undead_target():
+    assert mercy_chance(Alignment.UNDEAD, Alignment.UNDEAD) == pytest.approx(0.20)
+
+
+def test_mercy_chance_mechanical_beggar_before_mechanical_target():
+    assert mercy_chance(Alignment.MECHANICAL, Alignment.MECHANICAL) == pytest.approx(0.40)
+
+
+def test_mercy_chance_hellish_target_never_grants_mercy_except_at_zero_distance():
+    # A Hellish/Anti-Holy target's own base term is always 0 -- any real
+    # alignment distance to the beggar drives the threshold negative,
+    # clamped to 0%; zero distance (both Anti-Holy) also lands on 0%.
+    assert mercy_chance(Alignment.ANTI_HOLY, Alignment.DIVINE) == pytest.approx(0.0)
+    assert mercy_chance(Alignment.ANTI_HOLY, Alignment.ANTI_HOLY) == pytest.approx(0.0)
+
+
+def test_mercy_chance_unrecorded_alignments_fall_back_to_neutral():
+    assert mercy_chance(None, None) == pytest.approx(mercy_chance(Alignment.NEUTRAL, Alignment.NEUTRAL))
 
 
 def test_resolve_beg_for_mercy_boundary():
-    tier = MirrorImageIntelligenceTier.HIGH_HUMAN
-    chance = BEG_MERCY_CHANCE[tier]
-    assert resolve_beg_for_mercy(tier, ScriptedRandom([chance - 0.01])) is True
-    assert resolve_beg_for_mercy(tier, ScriptedRandom([chance])) is False
+    chance = mercy_chance(Alignment.NEUTRAL, Alignment.NEUTRAL)
+    assert resolve_beg_for_mercy(Alignment.NEUTRAL, Alignment.NEUTRAL, ScriptedRandom([chance - 0.01])) is True
+    assert resolve_beg_for_mercy(Alignment.NEUTRAL, Alignment.NEUTRAL, ScriptedRandom([chance])) is False
 
 
-def test_resolve_beg_for_mercy_animal_never_succeeds():
-    assert resolve_beg_for_mercy(MirrorImageIntelligenceTier.ANIMAL, ScriptedRandom([0.0])) is False
+def test_resolve_beg_for_mercy_hellish_target_never_succeeds():
+    assert resolve_beg_for_mercy(Alignment.ANTI_HOLY, Alignment.DIVINE, ScriptedRandom([0.0])) is False
 
 
 # -- Phase 258/525: Fulfill --
