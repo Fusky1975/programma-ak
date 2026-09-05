@@ -30957,7 +30957,7 @@ follow-up request after the original 431-435 plan shipped.
   intelligence-tier concept to a real always-0%-mercy alignment pairing),
   confirmed via the standing non-breaking run first, not assumed.
 
-- **Phase 750 (current)**: closes the first of Phase 749's own two
+- **Phase 750**: closes the first of Phase 749's own two
   deliberately-deferred findings -- the `Plan_Intent`/`CBeg` gap in
   `_apply_scout()`'s own discovery-gating logic (`SCOUT_GUARANTEED_
   MANEUVERS`, Phase 274). Investigating it directly found a ready,
@@ -31014,6 +31014,72 @@ follow-up request after the original 431-435 plan shipped.
   of which this project's binary `discovered`/level-jump model
   distinguishes today. Part IV's own personal-combat formula set also
   remains a separate, not-attempted reconciliation.
+
+- **Phase 751 (current)**: closes Phase 749's own second deferred
+  finding -- the real 3-outcome Scout model (SS9-11, CERTO) plus the
+  access-denied clamp (SS9.5, RICOSTRUITO byte-observable, user-
+  confirmed interpretation after two design iterations).
+
+  **The 3-outcome model**: the real engine computes an `esito` (1, 2,
+  or 3), not a bare discovered/not boolean. Esito 1 (a probabilistic
+  miss): object only, `fdisc` capped at 2, no power attempt. Esito 2
+  (a probabilistic hit, or any guaranteed-intent plan with exactly one
+  Scout order): the full description shows and `fdisc` reaches 3 in
+  the same Search -- even starting fresh from level 1, both the 1->2
+  and 2->3 promotions fire, crediting both real terrain-title points
+  (SS25: "esito 2 partendo da fdisc=1 può eseguire entrambe le
+  promozioni... e assegnare due punti"). Esito 3 (a guaranteed-intent
+  plan with 2+ Scout orders, "an authentic blind acceptance"): the
+  power is used WITHOUT ever showing the full description -- `fdisc`
+  caps at `max(current, 2)`, never reaching 3 this way, and only the
+  first terrain-title credit applies (SS10.4/25: "promuove soltanto a
+  2... poi usa il potere senza promuovere a 3"). New `SCOUT_OUTCOME_
+  PARTIAL`/`FULL`/`BLIND_USE` constants; `_apply_scout()`'s own
+  terrain-title crediting (Phase 749) updated to gate the second point
+  on `outcome == SCOUT_OUTCOME_FULL` specifically, not just "any
+  discovery" -- the real `0x11371` promotion never runs for esito 3's
+  own "blind use" branch (`0x12AB0` instead, confirmed not an
+  `Inc_Tit`-calling routine).
+
+  **The access-denied clamp -- resolved in two iterations, not one.**
+  SS9.5's own real condition ("if the guardian survived and no real
+  access was granted, `outcome := Min(1, outcome)`") has no surviving
+  Pascal name or exact trigger formula (SS21). The first drafted
+  interpretation read "access" as *only* a combat win or a successful
+  Talk/Fulfill deal, applied uniformly to every branch -- but empirical
+  testing immediately surfaced a real contradiction: it made a plain,
+  uncaught Steal-and-Scout (no combat at all) *always* clamp to level
+  1, directly contradicting the plain rulebook text this entire
+  mechanic is built on since Phase 274 ("if you Steal and Scout, there
+  is a 33% chance of not finding out" -- implying the other 67% already
+  works without any combat). Corrected, final reading (user-confirmed):
+  for a Flee- or Steal-classified intent, the tactic's own probabilistic
+  roll above *is* the access check -- no separate clamp applies there
+  at all. The clamp only ever reduces the *guaranteed*-intent branch
+  (`Maneuver.TALK`/`MELEE`, including `plan_intent()`'s own
+  unconditional fallback): there, "access" means the character actually
+  won outright -- a combat victory, or a successful Talk/Fulfill deal,
+  both already captured uniformly by `SearchExecutionResult.winner ==
+  "leader"` (Phase 258). A Talk-only/Give-only/Beg-only/bare-Scout-only
+  plan that never actually wins anything now correctly clamps to the
+  partial level -- a real, intuitive tightening (examining a feature
+  you never genuinely engaged only gets a partial glimpse) that
+  doesn't touch the Flee/Steal branches at all. A guardian already
+  `looted` bypasses the clamp entirely regardless of intent, matching
+  the guardian-dead override (Phase 750).
+
+  Test count: 6378 -> 6381 (net +3, plus 4 pre-existing tests corrected
+  in place). Full suite verified green (unchanged, 6378) before
+  touching a single test; the empirical blast radius (6 failures on the
+  first, later-corrected clamp interpretation; 4 failures on the final,
+  corrected one) was measured directly rather than assumed at each
+  step, and the first interpretation's own real contradiction with the
+  Phase 274 rulebook quote was caught by that same empirical run, not
+  by inspection. This closes SE+SC.md's own SEARCH/SCOUT investigation
+  in full. Part IV's own personal-combat hit-chance/damage/protection
+  formula set (materially different in shape from this project's own
+  already-shipped `MELEE_HIT_CHANCE`/multiplier combat engine) remains
+  a separate, not-attempted reconciliation for a future session.
 
 ## Setup
 

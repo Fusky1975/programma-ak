@@ -4598,13 +4598,17 @@ def test_execute_search_scout_counts_every_scout_tactic_in_the_plan():
     assert result.scout_orders_given == 2
 
 
-def test_execute_search_scout_only_plan_is_also_a_guaranteed_full_discovery():
+def test_execute_search_scout_only_plan_classifies_as_guaranteed_intent_but_wins_nothing():
     # Phase 750 (`Desktop/SE+SC.md` SS7): `plan_intent()`'s own real
     # Pascal `case` has no arm for a bare Scout at all (a transparent
     # no-op, exactly like its own `CScout` branch) and its final
-    # fallback is unconditionally `CMelee` -- so a Scout-only plan is a
-    # real, guaranteed discovery, not "genuinely unresolved" the way
-    # this project read it from Phase 274 through Phase 749.
+    # fallback is unconditionally `CMelee` -- so a Scout-only plan
+    # classifies as guaranteed-intent, not "genuinely unresolved" the
+    # way this project read it from Phase 274 through Phase 749.
+    # Phase 751: guaranteed-intent alone isn't enough, though -- there
+    # is no real Melee/Talk tactic here to actually WIN anything
+    # (`result.winner` stays `None`), so SS9.5's own access-denied
+    # clamp reduces this to a partial reveal, not a full one.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
     request = _scout_request(1, Maneuver.SCOUT)
@@ -4612,7 +4616,7 @@ def test_execute_search_scout_only_plan_is_also_a_guaranteed_full_discovery():
     result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))  # the monster's own hit_points roll
 
     assert result.scout_orders_given == 1
-    assert state.features[1].discovery_level(1) == 3
+    assert state.features[1].discovery_level(1) == 2
 
 
 def test_execute_search_scout_flee_before_melee_stays_probabilistic_not_guaranteed():
@@ -4635,30 +4639,35 @@ def test_execute_search_scout_flee_before_melee_stays_probabilistic_not_guarante
     assert feature.discovery_level(1) == 2  # partial only -- the probabilistic roll missed
 
 
-def test_execute_search_scout_give_only_plan_is_a_guaranteed_full_discovery():
+def test_execute_search_scout_give_only_plan_classifies_as_guaranteed_intent_but_wins_nothing():
     # Phase 750: `Maneuver.GIVE` shares `plan_intent()`'s own `CTalk`
     # bucket with Talk/Fulfill -- Phase 274's own guaranteed set missed
-    # it entirely.
+    # it entirely. Phase 751: still no real winner here (`GIVE` alone
+    # never dispatches a real Talk-style deal), so the access-denied
+    # clamp still reduces this to a partial reveal.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
     request = _scout_request(1, Maneuver.GIVE, Maneuver.SCOUT)
 
     result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
 
-    assert state.features[1].discovery_level(1) == 3
+    assert state.features[1].discovery_level(1) == 2
 
 
-def test_execute_search_scout_beg_only_plan_is_also_a_guaranteed_full_discovery():
+def test_execute_search_scout_beg_only_plan_classifies_as_guaranteed_intent_but_wins_nothing():
     # Phase 750: `CBeg` has no arm at all in the real `Plan_Intent()`
     # case statement -- it's a silent no-op, same as Scout, so the
-    # walk falls through to the unconditional `CMelee` fallback.
+    # walk falls through to the unconditional `CMelee` fallback. Phase
+    # 751: the leader starts undamaged, so `_resolve_beg()`'s own
+    # precondition never even fires -- no real winner, clamped to
+    # partial.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
     request = _scout_request(1, Maneuver.BEG, Maneuver.SCOUT)
 
     result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
 
-    assert state.features[1].discovery_level(1) == 3
+    assert state.features[1].discovery_level(1) == 2
 
 
 def test_execute_search_scout_already_looted_guardian_forces_guaranteed_over_flee():
@@ -4677,6 +4686,43 @@ def test_execute_search_scout_already_looted_guardian_forces_guaranteed_over_fle
     # A roll that would fail the ordinary 33%-chance Flee-led branch --
     # proves the looted-guardian override bypasses it entirely.
     _apply_scout(state, LEADER_ID, request, result, ScriptedRandom([0.9]))
+
+    assert feature.discovery_level(1) == 3
+
+
+def test_execute_search_scout_already_looted_guardian_still_caps_at_2_with_2_orders():
+    # Phase 751: even with the guardian already dead, esito still
+    # depends on `scout_count` (SS11's own matrix rows 1/2) -- 2+
+    # Scout orders is still "blind use", capping `fdisc` at the
+    # partial level even though the guardian-dead override bypasses
+    # the intent classification and the access-denied clamp entirely.
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE, looted=True
+    )
+    state.add_feature(feature)
+    request = _scout_request(1, Maneuver.SCOUT, Maneuver.SCOUT)
+    result = SearchExecutionResult(accepted=True)
+
+    _apply_scout(state, LEADER_ID, request, result, ScriptedRandom([]))
+
+    assert feature.discovery_level(1) == 2
+
+
+def test_execute_search_scout_talk_intent_with_a_real_deal_reaches_full_discovery():
+    # Phase 751: `winner == "leader"` also covers a successful Talk/
+    # Fulfill deal, not just a combat win (Phase 258's own established
+    # convention) -- proving the access-grant check isn't combat-only.
+    # `_apply_scout()` called directly with a hand-built result, since
+    # this only needs to prove the classification, not a real Talk
+    # resolution end to end.
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    request = _scout_request(1, Maneuver.TALK, Maneuver.SCOUT)
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, winner="leader")
+
+    _apply_scout(state, LEADER_ID, request, result, ScriptedRandom([]))
 
     assert feature.discovery_level(1) == 3
 
@@ -4757,6 +4803,29 @@ def test_execute_search_scout_first_discovery_with_a_real_power_credits_both_ter
     # Starting from level 1, a single Scout that reaches full discovery
     # of a real-Power feature crosses both 1->2 and 2->3 -- two points.
     assert state.leaders[LEADER_ID].merit_tally.plains_explorations == 2
+
+
+def test_execute_search_scout_blind_use_with_2_orders_credits_only_the_first_terrain_point():
+    # Phase 751: 2+ Scout orders on a real-power feature is esito 3
+    # ("blind use") -- the real `0x11371` promotion (which the SECOND
+    # terrain credit is tied to) never runs in this branch, so only the
+    # unconditional first credit fires, even though the power itself
+    # gets applied and `fdisc` still moves from 1 to 2.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.MELEE, Maneuver.SCOUT, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee, patch(
+        "ak_engine.turn.search_execution.derive_feature_event",
+        return_value=FeaturePowerEvent(power=Power.NEW_SEX, magic_feature=MagicFeature.NONE),
+    ):
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.5]))
+
+    assert state.features[1].discovery_level(1) == 2
+    assert state.leaders[LEADER_ID].merit_tally.plains_explorations == 1
 
 
 def test_execute_search_scout_second_visit_credits_only_the_second_terrain_point():
@@ -4924,7 +4993,11 @@ def test_execute_search_scout_full_discovery_applies_a_tractable_feature_power()
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
-    assert state.features[5].discovery_level(1) == 3
+    # Phase 751: 2 Scout orders on a guaranteed-intent, real-combat-win
+    # plan is exactly SS10.4's own "blind use" esito 3 -- the power is
+    # applied WITHOUT ever showing the full description, so `fdisc`
+    # caps at the partial level here, never reaching 3 this way.
+    assert state.features[5].discovery_level(1) == 2
     assert result.feature_power_outcome is not None
     assert result.feature_power_outcome.power is Power.UP_SKILL
     # UP_SKILL's own roll is genuinely probabilistic (skill=0, aptitude=0
@@ -4999,6 +5072,10 @@ def test_execute_search_scout_cast_spell_success_casts_flood_on_the_provinces_ow
     assert result.feature_power_outcome.applied is True
     assert result.feature_power_outcome.cast_spell is Spell.FLOOD
     assert state.provinces[LOCATION].effective_terrain() is Terrain.SEA
+    # Phase 751: 2 Scout orders is esito 3, "blind use" -- the power is
+    # applied, but the full description never runs, so `fdisc` caps at
+    # the partial level here instead of reaching 3.
+    assert state.features[7].discovery_level(1) == 2
 
 
 def test_execute_search_scout_cast_spell_success_casts_oratory_on_the_scouting_leader():

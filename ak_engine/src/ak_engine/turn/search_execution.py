@@ -832,6 +832,20 @@ SCOUT_FLEE_ONLY_SUCCESS_CHANCE = 1.0 - 0.67  # "if you Flee and Scout, this chan
 SCOUT_PARTIAL_DISCOVERY_LEVEL = 2
 SCOUT_FULL_DISCOVERY_LEVEL = 3  # "an attempt will be made to discover" -- no stated failure chance, read as guaranteed
 
+# Phase 751 (`Desktop/SE+SC.md` SS9-11): the real engine's own 3-value
+# "esito" -- see `_apply_scout()`'s own Phase 751 docstring addendum for
+# the full derivation. `SCOUT_OUTCOME_PARTIAL`=1 (object only, never a
+# power attempt), `SCOUT_OUTCOME_FULL`=2 (full description, `fdisc`
+# reaches 3 in this same Search, power attempted unless a cost/consent
+# gate refuses), `SCOUT_OUTCOME_BLIND_USE`=3 (2+ Scout orders on a
+# guaranteed-intent plan: the power is attempted WITHOUT ever showing
+# the full description, `fdisc` caps at `max(current, SCOUT_PARTIAL_
+# DISCOVERY_LEVEL)`). Named to match this project's own "outcome ==
+# SCOUT_OUTCOME_FULL" readability, not the raw 1/2/3 the source uses.
+SCOUT_OUTCOME_PARTIAL = 1
+SCOUT_OUTCOME_FULL = 2
+SCOUT_OUTCOME_BLIND_USE = 3
+
 
 def _leader_combatant(state: GameState, leader: LeaderState) -> Combatant:
     """Same construction as ``challenge_execution.py``'s own private helper (Phase 50),
@@ -1236,6 +1250,58 @@ def _apply_scout(
     Flee-led plan against an already-dead guardian is guaranteed) --
     checked first, before consulting the plan's own intent at all.
 
+    **Phase 751 -- the real 3-outcome model (SS9-11, CERTO) and the
+    access-denied clamp (SS9.5, RICOSTRUITO byte-observable, user-
+    confirmed interpretation)**. The real engine computes a numeric
+    ``esito`` (1, 2, or 3), not a bare discovered/not boolean:
+
+    - **esito 1** (a probabilistic *miss*, Flee/Steal-intent only, or a
+      forced clamp -- see below): the object alone becomes known
+      (``fdisc`` -> max 2), no power ever attempted.
+    - **esito 2** (a probabilistic *hit*, OR any guaranteed-intent plan
+      with exactly one Scout tactic): the FULL description is shown and
+      ``fdisc`` reaches 3 *in the same Search* -- even starting fresh
+      from level 1, both the 1->2 and 2->3 promotions fire (SS25's own
+      "esito 2 partendo da fdisc=1 può eseguire entrambe le promozioni
+      ... e assegnare due punti" -- both real terrain-title credits
+      apply here, not just one).
+    - **esito 3** (a guaranteed-intent plan with 2+ Scout tactics, "an
+      authentic blind acceptance"): the power is used WITHOUT ever
+      showing the full description -- ``fdisc`` caps at ``max(current,
+      2)``, never reaching 3 this way (SS10.4/25: "promuove soltanto a
+      2 e assegna un punto, poi usa il potere senza promuovere a 3").
+      Only the FIRST terrain-title credit applies here.
+
+    **The access-denied clamp** (SS9.5): "if the guardian survived and
+    no real access was granted, `outcome := Min(1, outcome)`" -- the
+    real Pascal condition this reads (a single boolean byte in the
+    encounter frame) has no surviving name or exact trigger formula
+    (SS21: "il nome Pascal originale resta ignoto"). **User-confirmed
+    interpretation, not derived from source, resolved in two passes**:
+    the first draft read "access" as *only* a combat win or a
+    successful Talk/Fulfill deal -- but that directly contradicted the
+    plain rulebook text this whole mechanic is built on ([5.8]: "if you
+    Steal and Scout, there is a 33% chance of not finding out," which
+    only makes sense if a plain, uncaught Steal -- no combat, no deal --
+    already grants the *other* 67% a real reveal). **Final, corrected
+    reading**: for a Flee- or Steal-classified intent, the clamp doesn't
+    apply separately at all -- the tactic's own probabilistic roll
+    above (33%/67%) already *is* the access check, one shared roll for
+    both questions. The clamp only ever reduces the *guaranteed*-intent
+    branch (``Maneuver.TALK``/``MELEE`` per ``plan_intent()``, including
+    its own unconditional fallback): there, "access" means the
+    character actually won outright -- a combat victory, or a
+    successful Talk/Fulfill deal, both of which ``SearchExecutionResult.
+    winner == "leader"`` already captures uniformly (Phase 258). A
+    Talk-only/Give-only/Beg-only/bare-Scout-only plan that never
+    actually wins anything (nothing to fight, nothing granted) now
+    correctly clamps to the partial level, not a guaranteed full reveal
+    -- a real, intuitive tightening: examining a feature you never
+    genuinely engaged only gets you a partial glimpse. A guardian
+    already ``looted`` bypasses this clamp entirely regardless of
+    intent (SS9.5's own ``fstate[fn]<>Dead`` guard, matching the
+    guardian-dead override above).
+
     A dead leader can't scout anything afterward -- skipped outright
     when ``result.leader_killed``. Also skipped for a kingdomless
     (independent Hero) leader: discovery is tracked per-``kingdom_id``
@@ -1265,21 +1331,32 @@ def _apply_scout(
     if feature.looted:
         # SS9.2: a guardian already dead (including one killed during
         # this very encounter, resolved before this function ever runs)
-        # forces a guaranteed discovery unconditionally -- checked before
-        # consulting the plan's own real intent at all.
-        discovered = True
+        # bypasses both the intent classification AND the access-denied
+        # clamp below -- only `scout_count` still decides esito 2 vs 3.
+        outcome = SCOUT_OUTCOME_BLIND_USE if scout_count >= 2 else SCOUT_OUTCOME_FULL
     else:
         intent = plan_intent(request.tactics, state)
         if intent is Maneuver.FLEE:
-            discovered = rng.random() < SCOUT_FLEE_ONLY_SUCCESS_CHANCE
+            # The Flee-led roll IS the access check here -- no separate
+            # clamp (see docstring: this is the corrected reading, not
+            # the first draft's blanket combat/Talk-only interpretation).
+            outcome = SCOUT_OUTCOME_FULL if rng.random() < SCOUT_FLEE_ONLY_SUCCESS_CHANCE else SCOUT_OUTCOME_PARTIAL
         elif intent is Maneuver.STEAL:
-            discovered = rng.random() < SCOUT_STEAL_ONLY_SUCCESS_CHANCE
+            outcome = SCOUT_OUTCOME_FULL if rng.random() < SCOUT_STEAL_ONLY_SUCCESS_CHANCE else SCOUT_OUTCOME_PARTIAL
+        elif result.winner == "leader":
+            outcome = SCOUT_OUTCOME_BLIND_USE if scout_count >= 2 else SCOUT_OUTCOME_FULL
         else:
-            discovered = True
+            # SS9.5: guaranteed-intent plan that never actually won
+            # anything (no fight to win, no deal struck) -- Min(1, outcome).
+            outcome = SCOUT_OUTCOME_PARTIAL
 
     current_level = feature.discovery_level(leader.kingdom_id)
-    new_level = SCOUT_FULL_DISCOVERY_LEVEL if discovered else max(current_level, SCOUT_PARTIAL_DISCOVERY_LEVEL)
+    if outcome == SCOUT_OUTCOME_FULL:
+        new_level = SCOUT_FULL_DISCOVERY_LEVEL
+    else:  # SCOUT_OUTCOME_PARTIAL or SCOUT_OUTCOME_BLIND_USE both cap at the partial level
+        new_level = max(current_level, SCOUT_PARTIAL_DISCOVERY_LEVEL)
     feature.discovered_by_kingdom[leader.kingdom_id] = new_level
+    discovered = outcome != SCOUT_OUTCOME_PARTIAL
 
     # Phase 749 (`Desktop/SE+SC.md` SS25/12.1, CERTO): the same two
     # routines that promote `fdisc` in the real engine (`0x114FF` for
@@ -1288,17 +1365,18 @@ def _apply_scout(
     # credit_terrain_king_title()`) -- a second, independent trigger for
     # the exact counters Explore already credits (Phase 630). The first
     # credit is unconditional (matches `0x114FF`'s own unconditional
-    # `PNone` short-circuit, and still fires on a *failed* Steal/Flee-
-    # only attempt, since `new_level` is already >= 2 either way). The
-    # second is gated on a real `Power` existing (`event.power is not
-    # Power.PNONE`): the real `0x11371` promotion is never reached at
-    # all for a `PNone` Feature, so crediting it there would be a real
-    # overcount -- note this does NOT change `discovered_by_kingdom`'s
-    # own value, which still jumps straight to 3 for a `PNone` Feature
-    # on a "discovered" attempt (an already-shipped Phase 616
-    # simplification, untouched here); only the second *merit* credit is
-    # gated. Both credits need a real registered province to read a
-    # terrain from -- `None` (no data) means no credit, not a guess.
+    # `PNone` short-circuit, and still fires on a partial-outcome
+    # attempt, since `new_level` is already >= 2 either way). The second
+    # (Phase 751) is gated on `outcome == SCOUT_OUTCOME_FULL` specifically
+    # -- the real `0x11371` promotion only ever runs for esito 2, never
+    # for esito 3's own "blind use" (`SCOUT_OUTCOME_BLIND_USE`, which
+    # routes through `0x12AB0` instead, confirmed not an `Inc_Tit`-
+    # calling routine) -- plus a real `Power` existing (`event.power is
+    # not Power.PNONE`): the real `0x11371` promotion is never reached
+    # at all for a `PNone` Feature, so crediting it there would be a
+    # real overcount. Both credits need a real registered province to
+    # read a terrain from -- `None` (no data) means no credit, not a
+    # guess.
     province = state.provinces.get(feature.coord)
     if province is not None and current_level < SCOUT_PARTIAL_DISCOVERY_LEVEL:
         credit_terrain_king_title(leader, province.effective_terrain())
@@ -1311,7 +1389,7 @@ def _apply_scout(
     # none) reaches `derive_feature_event()` with nothing to resolve.
     if discovered:
         event = derive_feature_event(feature, state=state)
-        if province is not None and current_level < SCOUT_FULL_DISCOVERY_LEVEL and event.power is not Power.PNONE:
+        if province is not None and outcome == SCOUT_OUTCOME_FULL and current_level < SCOUT_FULL_DISCOVERY_LEVEL and event.power is not Power.PNONE:
             credit_terrain_king_title(leader, province.effective_terrain())
         if event.power in TRACTABLE_POWERS or event.power in TERRAIN_SPELL_POWERS or event.power is Power.CHANCE:
             # Phase 620/621: CAST_SPELL/ANS_PRAYER land here too --
