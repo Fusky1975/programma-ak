@@ -618,6 +618,65 @@ def test_execute_move_failed_conquest_does_not_trigger_wandering_mercenary_follo
     assert state.armies[301].location == ORIGIN
 
 
+# -- Phase 754: `Desktop/MOVE.md` section 21.3 -- foreign Illusory Fog entry --
+
+
+def test_execute_move_into_a_foreign_fogged_province_flags_the_entry():
+    state = base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
+    state.provinces[TARGET].illusory_fog_active = True
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10)
+
+    assert result.entered_foreign_illusory_fog is True
+
+
+def test_execute_move_into_a_foreign_unfogged_province_does_not_flag_the_entry():
+    state = base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10)
+
+    assert result.entered_foreign_illusory_fog is False
+
+
+def test_execute_move_into_ones_own_fogged_province_does_not_flag_the_entry():
+    # The real trigger only fires when the leader's own Kingdom differs
+    # from the destination's real owner -- entering a fogged province
+    # you already own isn't "foreign territory."
+    state = base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.provinces[TARGET].illusory_fog_active = True
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10)
+
+    assert result.entered_foreign_illusory_fog is False
+
+
+def test_execute_move_without_a_leader_id_does_not_flag_a_fogged_entry():
+    # No real leader on record to attribute the observation to.
+    state = base_state()
+    state.provinces[TARGET].illusory_fog_active = True
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
+
+    assert result.entered_foreign_illusory_fog is False
+
+
+def test_execute_move_failed_conquest_does_not_flag_a_fogged_entry():
+    state = base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
+    state.provinces[TARGET].illusory_fog_active = True
+    state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET))
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.99, 0.99, 0.99, 0.99])
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10, rng=rng)
+
+    assert result.moved is False
+    assert result.entered_foreign_illusory_fog is False
+
+
 def test_move_triggers_battle_and_conquest_relocates_the_attacker():
     state = base_state()
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))

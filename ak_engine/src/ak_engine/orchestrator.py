@@ -56,6 +56,7 @@ from ak_engine.report.turn_report import (
     record_battle_narratives,
     record_battle_world_events,
     record_blackmail_narratives,
+    record_illusory_fog_foreign_entry_world_events,
     record_move_world_events,
     record_plague_spread_world_events,
     record_spell_world_events,
@@ -283,6 +284,7 @@ def process_turn(
     record_spell_world_events(state, results, rng, board_width=board_width)
     record_plague_spread_world_events(state, results, rng)
     record_move_world_events(state, results, rng)
+    record_illusory_fog_foreign_entry_world_events(state, results, rng)
     record_uncontested_conquest_world_events(state, results, rng)
 
     letter_reports = {

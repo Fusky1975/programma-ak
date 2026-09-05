@@ -230,6 +230,39 @@ genuinely-blocked `AWANDFR`/`AWANDTO`/`LWANDFR`/`LWANDTO` cluster, which
 narrates a mercenary's own *unprompted* self-relocation, a different
 mechanic); mechanism only, matching this project's own repeated
 "mechanic now, narration only when a real source exists" precedent.
+
+**Foreign Illusory Fog entry note (Phase 754).** `MOVE.md` section 21.3
+disassembles `AK.EXE` raw `0xB31A-0xB54A`, run only when the leader's
+own Kingdom genuinely differs from the destination's real owner, and
+names three bit-field-gated consequences. Two are deliberately NOT
+built here: the `0700h` terrain-reveal note (`_LSeeI=3043`) has a real,
+confirmed trigger but **no surviving English text anywhere** -- not in
+`MOVE.md`, not previously transcribed by this project -- so building it
+would mean inventing wording this project's own "no source, no guess"
+convention forbids; the `0800h` race/army-type reveal (`_PFiteAs=7026`,
+real text quoted in `MOVE.md`) belongs to `AdvancedAbility.ENHANCED_
+ILLUSORY_TERRAIN`'s own still-unbuilt 67/33 blend (`turn/strength.py`'s
+own Phase 724 addendum already defers this ability in full -- adding
+just its narration ahead of the mechanic it describes would be
+backwards). The third, `1000h`'s own Illusory Fog note, **is built**:
+real text is quoted directly in `MOVE.md` ("@ was magically/
+mysteriously shrouded in/clouded by a vast/disorienting phantasmal/
+illusory fog/mist which slowed down/delayed and confused/disoriented
+all/any air/flying units/armies"), and the underlying mechanic (Phase
+651's own Illusory Fog movement surcharge) is already live. The
+document's own "contains wings OR the owner differs" trigger reduces to
+an unconditional fire inside this already-foreign-owner-gated branch
+(the second disjunct is always true there) -- modeled as firing on
+every such entry, not scoped to which army types the mover brought.
+"Foreign" is evaluated against the destination's own owner *before*
+this same call's own uncontested-conquest effect can transfer it --
+walking into an empty enemy province you're about to conquer still
+counts as entering foreign territory, matching a real-time observation
+made upon arrival, not a retroactive one made after the province has
+already changed hands.
+`MoveExecutionResult.entered_foreign_illusory_fog` carries the flag;
+`report/turn_report.py record_illusory_fog_foreign_entry_world_events()`
+is the real, wired consumer.
 """
 
 from __future__ import annotations
@@ -458,6 +491,13 @@ class MoveExecutionResult:
     # armies are relocated but never change ownership; observability
     # for tests -- no report-layer narration is wired yet.
     followed_mercenary_army_ids: list[int] = field(default_factory=list)
+    # Phase 754: `Desktop/MOVE.md` section 21.3 -- `True` when this Move
+    # genuinely landed the leader in a foreign-owned province that is
+    # currently under an active Illusory Fog (`_SANote` for `C_IF=56`,
+    # real text quoted in this module's own Phase 754 addendum). See
+    # `report/turn_report.py record_illusory_fog_foreign_entry_world_
+    # events()` for the real, wired consumer.
+    entered_foreign_illusory_fog: bool = False
 
 
 def _classify_hex_ownership(state: GameState, kingdom_id: int, coord: HexCoord) -> HexOwnershipTier:
@@ -1223,6 +1263,13 @@ def execute_move(
     target_province = state.provinces.get(actual_target)
     if target_province is None:
         raise ValueError(f"no province data for {actual_target}")
+    # Phase 754: snapshotted *before* an uncontested-conquest branch
+    # below can overwrite `target_province.owner_kingdom_id` -- "foreign
+    # territory" (MOVE.md section 21.3) means whoever owned it at the
+    # moment of entry, not whoever owns it after this same call's own
+    # conquest effect (see `entered_foreign_illusory_fog`'s own
+    # computation near the end of this function).
+    target_owner_before_move = target_province.owner_kingdom_id
 
     origin_province = state.provinces.get(current)
     origin_contested_by_mover = origin_province is not None and origin_province.contested_by_kingdom_id == kingdom_id
@@ -1455,6 +1502,25 @@ def execute_move(
             state, current, actual_target, origin_province, target_province
         )
 
+    # Phase 754: `Desktop/MOVE.md` section 21.3 -- raw `0xB31A-0xB54A`
+    # runs only when the leader's own Kingdom genuinely differs from the
+    # destination's real owner; its own `1000h` bit-field branch fires
+    # this note (real text, `_SANote` for `C_IF=56`) whenever that
+    # foreign province is under an active Illusory Fog. Modeled as
+    # firing unconditionally on that entry, independent of the moving
+    # contingent's own army composition -- the document's own "contains
+    # wings OR the owner differs" phrasing is a disjunction where the
+    # second disjunct is already guaranteed true by the surrounding
+    # foreign-owner gate, so it reduces to "always" inside this branch,
+    # not a real additional restriction to reproduce.
+    entered_foreign_illusory_fog = bool(
+        moved
+        and leader_id is not None
+        and target_owner_before_move is not None
+        and target_owner_before_move != kingdom_id
+        and target_province.illusory_fog_active
+    )
+
     return MoveExecutionResult(
         moved=moved,
         battle_report=battle_report,
@@ -1467,4 +1533,5 @@ def execute_move(
         wind_walking=wind_walking,
         boarded_army_ids=boarded_army_ids,
         followed_mercenary_army_ids=followed_mercenary_army_ids,
+        entered_foreign_illusory_fog=entered_foreign_illusory_fog,
     )

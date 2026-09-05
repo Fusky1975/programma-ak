@@ -31193,12 +31193,37 @@ follow-up request after the original 431-435 plan shipped.
      orchestrator.py _combat_ability_for_terrain()`, a different ability
      pair, same shape). New `_party_effective_unite_level()` replaces
      `_party_march_level()` in `fight_multi_attacker_battle()`.
-  Test count: 6381 -> 6385 (net +4). Full suite verified green
-  (unchanged, 6381) before touching a single test; every existing
-  Phase-746 test needed rewriting for the corrected mechanism (expected,
-  confirmed by running first, not assumed), while every March-level
-  test in `test_battle_orchestrator.py` stayed unaffected (the table
-  itself didn't change, only which ability's level feeds it).
+  3. **New: foreign Illusory Fog entry note** (`MOVE.md` section 21.3,
+     `AK.EXE` raw `0xB31A-0xB54A`, run only when the leader's own
+     Kingdom genuinely differs from the destination's real owner). Of
+     the section's own three bit-field-gated consequences, only one is
+     buildable now: the `0700h` terrain-reveal note (`_LSeeI=3043`) has
+     a confirmed trigger but **no surviving English text anywhere**, so
+     it's deliberately not built (inventing wording would break this
+     project's own "no source, no guess" convention); the `0800h`
+     race/army-type reveal (`_PFiteAs=7026`, real text quoted in
+     `MOVE.md`) belongs to `AdvancedAbility.ENHANCED_ILLUSORY_TERRAIN`'s
+     own still-unbuilt 67/33 blend (Phase 724 already defers the whole
+     ability) -- narrating an effect ahead of the mechanic that produces
+     it would be backwards. The third, `1000h`'s own Illusory Fog note,
+     has both a real, quoted text ("@ was magically/mysteriously
+     shrouded in/clouded by a vast/disorienting phantasmal/illusory
+     fog/mist which slowed down/delayed and confused/disoriented
+     all/any air/flying units/armies") and an already-live underlying
+     mechanic (Phase 651's own Illusory Fog movement surcharge) -- built
+     as `MoveExecutionResult.entered_foreign_illusory_fog` (snapshotted
+     against the destination's *pre-conquest* owner, so walking into an
+     empty enemy province you're about to conquer still counts as
+     entering foreign territory) and `report/turn_report.py record_
+     illusory_fog_foreign_entry_world_events()`.
+  Test count: 6381 -> 6394 (net +13: +4 for items 1-2, +9 for item 3).
+  Full suite verified green (unchanged, 6381) before touching a single
+  test; every existing Phase-746 test needed rewriting for the
+  corrected mechanism (expected, confirmed by running first, not
+  assumed), while every March-level test in `test_battle_orchestrator.py`
+  stayed unaffected (the table itself didn't change, only which
+  ability's level feeds it) and every existing Move/GIR test stayed
+  unaffected by the additive Illusory Fog note.
 
 ## Setup
 

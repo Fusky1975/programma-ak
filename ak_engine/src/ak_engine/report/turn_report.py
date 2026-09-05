@@ -12835,6 +12835,18 @@ _FLY_MOVE_TEMPLATE = "< flew/Rrode_>_flying_armies into/Rover_to @."
 # direct Pascal transcriptions, not fixture-derived).
 _WIND_WALK_MOVE_TEMPLATE = "< rode_the_Mystic_Winds/Rwind-walked into/Rover @."
 
+# `Desktop/MOVE.md` section 21.3, verbatim -- the real `_SANote` for
+# `C_IF=56` (Illusory Fog's own Advanced-Ability note), fired when a
+# foreign general's Move lands in a province currently under Illusory
+# Fog (Phase 651). See `turn/move_execution.py`'s own Phase 754
+# addendum for the full trigger reasoning and the two sibling notices
+# (`_LSeeI`/`_PFiteAs`) deliberately NOT built alongside this one.
+_ILLUSORY_FOG_FOREIGN_ENTRY_TEMPLATE = (
+    "@ was magically/Rmysteriously shrouded_in/Rclouded_by a vast/Rdisorienting "
+    "phantasmal/Rillusory fog/Rmist which slowed_down/Rdelayed and "
+    "confused/Rdisoriented all/Rany air/Rflying units/Rarmies."
+)
+
 
 def render_fly_move_world_event(character_name: str, province_name: str, rng: random.Random) -> str:
     """Renders `SAY.PAS` `_LFly`'s own notice for a Move -- see the
@@ -12858,6 +12870,16 @@ def render_wind_walk_move_world_event(character_name: str, province_name: str, r
 
     values = {"<": character_name, "@": province_name}
     return render(_WIND_WALK_MOVE_TEMPLATE, values, rng=rng)
+
+
+def render_illusory_fog_foreign_entry_note(province_name: str, rng: random.Random) -> str:
+    """Renders `_SANote` for `C_IF=56` -- see `_ILLUSORY_FOG_FOREIGN_
+    ENTRY_TEMPLATE`'s own module-level comment for the real trigger
+    (`MoveExecutionResult.entered_foreign_illusory_fog`) and sourcing.
+    """
+
+    values = {"@": province_name}
+    return render(_ILLUSORY_FOG_FOREIGN_ENTRY_TEMPLATE, values, rng=rng)
 
 
 # Phase 670 -- `SAY.PAS` `_LFRaid`/`_LFThun` (`Desktop/THUNDERBIRD.md`
@@ -13043,6 +13065,37 @@ def record_move_world_events(state: GameState, results: list[PhaseDispatchResult
             line = render_fly_move_world_event(leader.name, province_name, rng)
         else:
             continue
+        state.record_world_event(new_location, [prefix + line])
+
+
+def record_illusory_fog_foreign_entry_world_events(
+    state: GameState, results: list[PhaseDispatchResult], rng: random.Random
+) -> None:
+    """Populates ``state.world_events`` from every Move that genuinely
+    landed a leader in a foreign-owned province currently under an
+    active Illusory Fog (``MoveExecutionResult.entered_foreign_
+    illusory_fog``, Phase 754 -- see ``turn/move_execution.py``'s own
+    Phase 754 addendum for the real `_SANote` trigger and sourcing).
+
+    Duck-types ``result.moved``/``result.new_location``/``result.
+    entered_foreign_illusory_fog`` the same way ``record_move_world_
+    events()`` does right above -- only ``MoveExecutionResult`` ever
+    carries the last of those three, so ``turn/turn_processor.py``'s
+    own separate ``MultiAttackerMoveResult`` path is naturally excluded
+    (documented narrower scope, matching Phase 634's own precedent, not
+    an oversight).
+    """
+
+    for entry in results:
+        result = entry.result
+        if not getattr(result, "moved", None) or not getattr(result, "entered_foreign_illusory_fog", False):
+            continue
+        new_location = getattr(result, "new_location", None)
+        if new_location is None:
+            continue
+        province_name = _province_label(state, new_location)
+        prefix = _season_phrase_for_phase_label(entry.phase_label)
+        line = render_illusory_fog_foreign_entry_note(province_name, rng)
         state.record_world_event(new_location, [prefix + line])
 
 

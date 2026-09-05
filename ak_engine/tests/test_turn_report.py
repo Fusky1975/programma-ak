@@ -132,6 +132,7 @@ from ak_engine.report.turn_report import (
     record_battle_narratives,
     record_battle_world_events,
     record_blackmail_narratives,
+    record_illusory_fog_foreign_entry_world_events,
     record_move_world_events,
     record_plague_spread_world_events,
     record_spell_world_events,
@@ -143,6 +144,7 @@ from ak_engine.report.turn_report import (
     render_flood_world_event,
     render_fly_move_world_event,
     render_illus_terrain_world_event,
+    render_illusory_fog_foreign_entry_note,
     render_plague_world_event,
     render_scar_terrain_cast_notice,
     render_scar_terrain_fite,
@@ -11905,7 +11907,9 @@ def test_render_fly_move_world_event_renders_the_lfly_template():
     assert line == "Tlazolteotl flew into Waterford."
 
 
-def _fake_move_result(moved: bool, new_location: HexCoord | None, *, wind_walking: bool = False):
+def _fake_move_result(
+    moved: bool, new_location: HexCoord | None, *, wind_walking: bool = False, entered_foreign_illusory_fog: bool = False
+):
     class _FakeMoveResult:
         pass
 
@@ -11913,6 +11917,7 @@ def _fake_move_result(moved: bool, new_location: HexCoord | None, *, wind_walkin
     result.moved = moved
     result.new_location = new_location
     result.wind_walking = wind_walking
+    result.entered_foreign_illusory_fog = entered_foreign_illusory_fog
     return result
 
 
@@ -12031,6 +12036,64 @@ def test_record_move_world_events_wind_walking_takes_priority_over_the_overfligh
     assert len(state.world_events) == 1
     assert "rode the Mystic Winds" in state.world_events[0].lines[0]
     assert "flew" not in state.world_events[0].lines[0]
+
+
+# -- Phase 754: `Desktop/MOVE.md` section 21.3 -- foreign Illusory Fog entry --
+
+
+def test_render_illusory_fog_foreign_entry_note_renders_the_template():
+    rng = ScriptedRandom([0.1] * 15)
+
+    line = render_illusory_fog_foreign_entry_note("Waterford", rng)
+
+    assert line.startswith("Waterford was ")
+    assert line.endswith(".")
+    assert "fog" in line or "mist" in line
+
+
+def test_record_illusory_fog_foreign_entry_world_events_records_when_flagged():
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Tlazolteotl", battle_coord))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_move_result(True, battle_coord, entered_foreign_illusory_fog=True), error=None,
+        )
+    ]
+
+    record_illusory_fog_foreign_entry_world_events(state, results, ScriptedRandom([0.1] * 15))
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].lines[0].startswith("In late summer, Border Fort was ")
+
+
+def test_record_illusory_fog_foreign_entry_world_events_skips_when_not_flagged():
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Tlazolteotl", battle_coord))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_move_result(True, battle_coord, entered_foreign_illusory_fog=False), error=None,
+        )
+    ]
+
+    record_illusory_fog_foreign_entry_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
+def test_record_illusory_fog_foreign_entry_world_events_skips_a_result_that_did_not_move():
+    state, battle_coord, _watcher_coord = _gir_state()
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_move_result(False, None, entered_foreign_illusory_fog=True), error=None,
+        )
+    ]
+
+    record_illusory_fog_foreign_entry_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
 
 
 # -- Phase 410: record_uncontested_conquest_world_events() --------------
