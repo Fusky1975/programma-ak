@@ -30866,7 +30866,7 @@ follow-up request after the original 431-435 plan shipped.
   (Scout's missing success percentage for Cast-only/Beg-only/Say-only/
   bare-Scout plans) remains exactly as open as before.
 
-- **Phase 749 (current)**: `Desktop/SE+SC.md` (user-supplied disassembly,
+- **Phase 749**: `Desktop/SE+SC.md` (user-supplied disassembly,
   2026-09-05, v3.0) covers SEARCH/SCOUT and, in a new Part IV, personal
   combat against monsters. Most of it independently reconfirms mechanics
   already shipped in Phases 616-623/748; two genuinely new, tractable
@@ -30956,6 +30956,64 @@ follow-up request after the original 431-435 plan shipped.
   tier_monster_never_succeeds`, repointed from a since-removed
   intelligence-tier concept to a real always-0%-mercy alignment pairing),
   confirmed via the standing non-breaking run first, not assumed.
+
+- **Phase 750 (current)**: closes the first of Phase 749's own two
+  deliberately-deferred findings -- the `Plan_Intent`/`CBeg` gap in
+  `_apply_scout()`'s own discovery-gating logic (`SCOUT_GUARANTEED_
+  MANEUVERS`, Phase 274). Investigating it directly found a ready,
+  already-tested reuse: `turn/sep_decode.py plan_intent()` (Phase 659)
+  is already a byte-for-byte port of the exact same `RUMORS.PAS Plan_
+  Intent()` function `Desktop/SE+SC.md` SS7 independently recovers, just
+  never wired into Search's own Scout classification (it was built for
+  the unrelated Special Encounter Plan Duel trigger). Reused directly
+  rather than reimplemented -- `_apply_scout()` now calls `plan_intent
+  (request.tactics, state)` and uses its real first-match-wins result:
+  `Maneuver.FLEE` -> the documented 33% chance, `Maneuver.STEAL` -> the
+  documented 67% chance, everything else (including its own
+  unconditional `CMelee` fallback) -> guaranteed, no roll.
+
+  This fixes two real, independent bugs in the old set-membership
+  reading, not just closes a "genuinely unresolved" gap:
+  1. **Priority order.** The old check was "does a guaranteed maneuver
+     (Talk/Fulfill/Melee/Shoot) appear *anywhere* in the plan" -- a
+     `[Flee, Melee]` plan read as guaranteed, when the real engine
+     resolves Flee first and never even reaches Melee. `plan_intent()`'s
+     own ordered walk fixes this outright.
+  2. **Missing `Give`.** `Maneuver.GIVE` shares `Plan_Intent()`'s own
+     `CTalk` bucket with Talk/Fulfill (guaranteed) -- the old set never
+     included it, so a Give-only+Scout plan silently found nothing.
+
+  It also means there is, in fact, no "genuinely unresolved, no effect"
+  bucket in the real engine at all: `plan_intent()`'s own unconditional
+  `CMelee` fallback makes Beg-only, Cast-only (a non-exempt spell),
+  Use_MI-only (a non-exempt wand), and even a bare Scout-only plan all
+  real guaranteed discoveries, not left unresolved the way this project
+  read [5.8]'s own text from Phase 274 through Phase 749.
+
+  One further real wrinkle from the same source section (SS9.2): a
+  guardian already dead (`Feature.looted`, including one killed during
+  this very encounter -- `_apply_scout()` always runs after combat
+  resolution) forces a guaranteed discovery unconditionally, even
+  against a genuinely Flee-led plan -- checked first, before consulting
+  the plan's own classified intent at all.
+
+  `SCOUT_GUARANTEED_MANEUVERS` removed (fully superseded, zero other
+  consumers). Test count: 6374 -> 6378 (net +4: 1 renamed/re-asserted,
+  4 new). Full suite verified green (unchanged, 6374) before touching a
+  single test; exactly 1 pre-existing test needed a real fix (a bare-
+  Scout-only plan used to assert "genuinely unresolved" -- now correctly
+  asserts a guaranteed full discovery), confirmed via the standing non-
+  breaking run first, not assumed. Phase 749's own *second* deferred
+  finding remains open for a future session: SE+SC.md's own finer
+  3-level Scout outcome model -- the guaranteed branch really splits
+  into "esito 2" (scout_count==1, `fdisc` capped at 2/full description
+  only if not gated behind PayUp/DrainSkill/DrainCourage) vs. "esito 3"
+  (scout_count>=2, may use the power without the full description at
+  all), and the `Min(1,outcome)` clamp that limits a *live, un-consented*
+  guardian's own encounter to level 1 regardless of scout_count -- none
+  of which this project's binary `discovered`/level-jump model
+  distinguishes today. Part IV's own personal-combat formula set also
+  remains a separate, not-attempted reconciliation.
 
 ## Setup
 

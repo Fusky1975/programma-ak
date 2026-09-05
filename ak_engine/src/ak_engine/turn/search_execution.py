@@ -327,18 +327,29 @@ mechanic" is now corrected below.
   return sites. A dead leader can't Scout anything (not stated
   explicitly, but structurally obvious).
 
-  **Success-chance gating, read directly from [5.8]'s own text**: "an
-  attempt will be made to discover" when the plan "calls for Talking,
-  Fulfilling, or Attacking" -- Melee and Fire Arrow are this project's
-  own two real "Attacking" Encounter Plan tactics, so both qualify.
-  That branch states no failure chance, so it's read as guaranteed.
-  "If you use some other type of tactical plan, you may be told that
-  the Special is there, but not find out what it does" -- only two
-  named exceptions give an actual percentage: Steal (33% chance of not
-  even that) and Flee (67%). A plan matching neither the guaranteed
-  branch nor one of these two named exceptions (a bare Scout, or
-  Give+Scout only) is left genuinely unresolved -- unsourced, not
-  guessed.
+  **Success-chance gating -- Phase 274's own set-membership reading
+  superseded by Phase 750 (`Desktop/SE+SC.md` SS7/SS9, CERTO)**: [5.8]'s
+  own text ("an attempt will be made to discover" for Talk/Fulfill/
+  Attacking; Steal 33%-miss; Flee 67%-miss; "some other type of
+  tactical plan... told it is there, but not find out what it does" for
+  everything else) turns out to be the exact same real classification
+  `turn/sep_decode.py plan_intent()` already ports byte-for-byte from
+  ``RUMORS.PAS Plan_Intent()`` for an unrelated purpose (the Special
+  Encounter Plan Duel trigger) -- reused directly here rather than
+  reimplemented. `plan_intent()` walks the tactic list in real first-
+  match-wins order (not "does X appear anywhere in the plan", Phase
+  274's own bug -- a `[Flee, Melee]` plan used to read as guaranteed);
+  its own unconditional `CMelee` fallback means there is, in fact, no
+  "genuinely unresolved" bucket in the real engine at all -- a bare
+  Scout, Give-only, Beg-only (`CBeg` has no case arm at all, a silent
+  no-op just like Scout), or a Cast/Use_MI-only plan with a non-exempt
+  spell/item are ALL real guaranteed discoveries. Only a plan actually
+  led by Flee or Steal (per `plan_intent()`'s own real semantics) stays
+  probabilistic, at the named percentages above. A guardian already
+  dead (`Feature.looted`, including one killed during this very
+  encounter) forces a guaranteed discovery unconditionally, regardless
+  of the plan's own classified intent -- checked first, in `_apply_
+  scout()` below.
 
   **Only the discovery *level* is modeled**
   (``Feature.discovered_by_kingdom``, real since Phase 75/242): the
@@ -644,6 +655,7 @@ from ak_engine.turn.monster_raids import (
 from ak_engine.turn.move_execution import credit_terrain_king_title
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
+from ak_engine.turn.sep_decode import plan_intent
 
 # Desktop/MOSTRI con statistiche.txt footnote (*): "The Troll regenerates
 # 1 hit point every combat round." See turn/encounter.py's own Phase 155
@@ -810,8 +822,9 @@ def _resolve_cast_disruption(pending_cast: SearchTactic | None, damage: int, rng
 SEARCH_USE_MI_WAND_SKILL_LEVEL = 2
 
 # Rulebook [5.8] Scout -- module docstring's own Phase 274 addendum has the
-# full quote and reasoning behind every constant below.
-SCOUT_GUARANTEED_MANEUVERS = frozenset({Maneuver.TALK, Maneuver.FULFILL, Maneuver.MELEE, Maneuver.SHOOT})
+# full quote and reasoning behind the constants below. Phase 750 removed
+# `SCOUT_GUARANTEED_MANEUVERS` (the old set-membership guess) in favor of
+# `turn/sep_decode.py plan_intent()`'s own real, tested classification.
 SCOUT_STEAL_ONLY_SUCCESS_CHANCE = 1.0 - 0.33  # "if you Steal and Scout, there is a 33% chance of not finding out"
 SCOUT_FLEE_ONLY_SUCCESS_CHANCE = 1.0 - 0.67  # "if you Flee and Scout, this chance is 67%"
 # "you may be told that the Special is there, but not find out what it
@@ -1186,23 +1199,42 @@ def _apply_scout(
     another branch inside the main tactic walk above, and needs its own
     post-processing pass in ``execute_search()`` instead.
 
-    **The success/failure split**, using ``request.tactics`` as a whole
-    (not just position, since the rulebook says position never matters):
-    a plan containing Talk, Fulfill, Melee, or Shoot ("Attacking" reads
-    as [3.12]'s own combat-intent tactics, ``challenge_execution.py
-    has_combat_intent()``'s own precedent) is a guaranteed reveal, no
-    roll. Otherwise a bare Steal is 67%, a bare Flee is 33% -- the
-    rulebook's own two named examples, both literal two-tactic plans
-    ("Steal and Scout" / "Flee and Scout"); a plan with both and neither
-    a guaranteed tactic resolves against Steal's own 67% first (the
-    rulebook lists Steal first, and both tactics still "match one of the
-    two named exceptions", just not disambiguated further). Every other
-    combination the rulebook doesn't literally name (Cast-only, Beg-only,
-    Say-only, or a bare Scout) matches *neither* the guaranteed branch
-    nor either named exception -- left genuinely unresolved (no
-    discovery-level change at all, not even a downgrade-safe partial),
-    per this project's own standing "no source, no guess" convention,
-    rather than inventing a percentage the rulebook never gave.
+    **The success/failure split -- Phase 750 (``Desktop/SE+SC.md`` SS7/
+    SS9, CERTO)**: superseded Phase 274's own set-membership guess
+    (which combos count as "guaranteed") with a direct reuse of ``turn/
+    sep_decode.py plan_intent()`` -- the exact real ``RUMORS.PAS Plan_
+    Intent()`` function, already ported and tested for the Special
+    Encounter Plan's own Duel-trigger classification, and provably the
+    *same* real function Scout's own outcome dispatch consults (SS9.3-
+    9.4's own worked branches match this function's own real cases
+    exactly: ``Maneuver.FLEE`` -> the documented 33%, ``Maneuver.STEAL``
+    -> the documented 67%, everything else -- ``Maneuver.TALK``/
+    ``MELEE``, and critically also the function's own unconditional
+    ``CMelee`` fallback -- guaranteed, no roll). ``plan_intent()`` walks
+    the tactic list in real first-match-wins order (not "does X appear
+    anywhere", Phase 274's own bug: a plan like ``[Flee, Melee]`` used
+    to read as guaranteed via the old set-membership check, when the
+    real engine resolves Flee first and never even reaches Melee),
+    correctly folds ``Give``/a terminal-only ``Say`` into the same
+    guaranteed bucket as Talk/Fulfill (Phase 274 missed ``Give``
+    entirely), and -- since its own final fallback is unconditionally
+    ``CMelee`` -- means a Cast-only (non-exempt spell), Use_MI-only
+    (non-exempt wand), Beg-only, or even a bare Scout-only plan are ALL
+    real guaranteed discoveries in the true engine, not "genuinely
+    unresolved" as this project claimed from Phase 274 through Phase
+    749. There is, in fact, no "genuinely unresolved, no effect" bucket
+    at all in the real engine -- every Search with a real Scout tactic
+    resolves to either a probabilistic (Flee/Steal-led) or a guaranteed
+    discovery.
+
+    One further real wrinkle, also directly from SS9.2: a guardian
+    already dead (``Feature.looted`` -- ``fstate[fn]=Dead``, including
+    a guardian killed *during this same encounter*, since ``_apply_
+    scout()`` always runs after combat resolution) forces a guaranteed
+    discovery unconditionally, regardless of what the plan's own real
+    ``plan_intent()`` would otherwise resolve to (even a genuinely
+    Flee-led plan against an already-dead guardian is guaranteed) --
+    checked first, before consulting the plan's own intent at all.
 
     A dead leader can't scout anything afterward -- skipped outright
     when ``result.leader_killed``. Also skipped for a kingdomless
@@ -1230,32 +1262,20 @@ def _apply_scout(
     if leader is None or feature is None or leader.kingdom_id is None:
         return
 
-    maneuvers = {tactic.maneuver for tactic in request.tactics}
-    if maneuvers & SCOUT_GUARANTEED_MANEUVERS:
+    if feature.looted:
+        # SS9.2: a guardian already dead (including one killed during
+        # this very encounter, resolved before this function ever runs)
+        # forces a guaranteed discovery unconditionally -- checked before
+        # consulting the plan's own real intent at all.
         discovered = True
-    elif Maneuver.STEAL in maneuvers:
-        discovered = rng.random() < SCOUT_STEAL_ONLY_SUCCESS_CHANCE
-    elif Maneuver.FLEE in maneuvers:
-        discovered = rng.random() < SCOUT_FLEE_ONLY_SUCCESS_CHANCE
     else:
-        # Matches neither the guaranteed branch nor either of the
-        # rulebook's two named exceptions (Cast-only, Beg-only, a bare
-        # Scout, ...) -- genuinely unresolved by the source, so this
-        # attempt has no effect at all rather than guessing a percentage.
-        #
-        # Phase 749 flag, not acted on: `Desktop/SE+SC.md` SS7 recovers
-        # `Plan_Intent()`'s real Pascal `case` statement, which has no
-        # arm at all for `CBeg` and falls back unconditionally to
-        # `CMelee` (a *guaranteed* discovery) for anything it doesn't
-        # otherwise classify -- Beg-only, Cast-only with a non-exempt
-        # spell, non-terminal Say, and even a bare Scout-only plan all
-        # appear to reduce to `CMelee`, not to "genuinely unresolved" as
-        # this classification claims. A real, separate discrepancy in
-        # this project's own Phase 274 discovery-gating logic, not
-        # investigated or fixed here -- see that same document's SS25
-        # note in `credit_terrain_king_title()`'s own call sites below
-        # for why this phase deliberately stops short of a full rewrite.
-        return
+        intent = plan_intent(request.tactics, state)
+        if intent is Maneuver.FLEE:
+            discovered = rng.random() < SCOUT_FLEE_ONLY_SUCCESS_CHANCE
+        elif intent is Maneuver.STEAL:
+            discovered = rng.random() < SCOUT_STEAL_ONLY_SUCCESS_CHANCE
+        else:
+            discovered = True
 
     current_level = feature.discovery_level(leader.kingdom_id)
     new_level = SCOUT_FULL_DISCOVERY_LEVEL if discovered else max(current_level, SCOUT_PARTIAL_DISCOVERY_LEVEL)

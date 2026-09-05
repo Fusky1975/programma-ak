@@ -45,6 +45,7 @@ from ak_engine.turn.search_execution import (
     TROLL_REGENERATION_PER_COMBAT_ROUND,
     WEAK_TEMPER_FLEE_CHANCE_BONUS,
     SearchExecutionResult,
+    _apply_scout,
     _leader_combatant,
     _register_search_target_known,
     _resolve_cast_disruption,
@@ -4597,11 +4598,13 @@ def test_execute_search_scout_counts_every_scout_tactic_in_the_plan():
     assert result.scout_orders_given == 2
 
 
-def test_execute_search_scout_with_only_unnamed_tactics_is_genuinely_unresolved():
-    # A bare Scout (or Cast/Beg/Say + Scout) matches neither [5.8]'s
-    # guaranteed branch nor either of its two named exceptions (Steal,
-    # Flee) -- no source gives a percentage for this case, so it must
-    # have no effect at all, not a guessed-at reveal.
+def test_execute_search_scout_only_plan_is_also_a_guaranteed_full_discovery():
+    # Phase 750 (`Desktop/SE+SC.md` SS7): `plan_intent()`'s own real
+    # Pascal `case` has no arm for a bare Scout at all (a transparent
+    # no-op, exactly like its own `CScout` branch) and its final
+    # fallback is unconditionally `CMelee` -- so a Scout-only plan is a
+    # real, guaranteed discovery, not "genuinely unresolved" the way
+    # this project read it from Phase 274 through Phase 749.
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
     request = _scout_request(1, Maneuver.SCOUT)
@@ -4609,10 +4612,73 @@ def test_execute_search_scout_with_only_unnamed_tactics_is_genuinely_unresolved(
     result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))  # the monster's own hit_points roll
 
     assert result.scout_orders_given == 1
-    # Phase 748: the bare-existence registration still fires (it's
-    # independent of Scout's own tactics-based reveal) -- only the
-    # Scout-driven level 2/3 bump stays genuinely unresolved here.
-    assert state.features[1].discovered_by_kingdom == {1: 1}
+    assert state.features[1].discovery_level(1) == 3
+
+
+def test_execute_search_scout_flee_before_melee_stays_probabilistic_not_guaranteed():
+    # Phase 750: the real `plan_intent()` walks the tactic list in order
+    # and stops at the FIRST decisive tactic -- Flee resolves the intent
+    # before Melee is ever reached, so this plan is still probabilistic
+    # (33%), not guaranteed the way Phase 274's own "does Melee appear
+    # ANYWHERE in the plan" set-membership check used to read it. Calls
+    # `_apply_scout()` directly (mirroring `_register_search_target_
+    # known()`'s own established direct-test convention) to isolate the
+    # classification from real Flee/Melee combat resolution.
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    request = _scout_request(1, Maneuver.FLEE, Maneuver.MELEE, Maneuver.SCOUT)
+    result = SearchExecutionResult(accepted=True)
+
+    _apply_scout(state, LEADER_ID, request, result, ScriptedRandom([0.9]))  # a miss on Scout's own 33%-chance roll
+
+    assert feature.discovery_level(1) == 2  # partial only -- the probabilistic roll missed
+
+
+def test_execute_search_scout_give_only_plan_is_a_guaranteed_full_discovery():
+    # Phase 750: `Maneuver.GIVE` shares `plan_intent()`'s own `CTalk`
+    # bucket with Talk/Fulfill -- Phase 274's own guaranteed set missed
+    # it entirely.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.GIVE, Maneuver.SCOUT)
+
+    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert state.features[1].discovery_level(1) == 3
+
+
+def test_execute_search_scout_beg_only_plan_is_also_a_guaranteed_full_discovery():
+    # Phase 750: `CBeg` has no arm at all in the real `Plan_Intent()`
+    # case statement -- it's a silent no-op, same as Scout, so the
+    # walk falls through to the unconditional `CMelee` fallback.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    request = _scout_request(1, Maneuver.BEG, Maneuver.SCOUT)
+
+    result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert state.features[1].discovery_level(1) == 3
+
+
+def test_execute_search_scout_already_looted_guardian_forces_guaranteed_over_flee():
+    # SS9.2: a guardian already dead forces a guaranteed discovery
+    # unconditionally, even for a genuinely Flee-led plan that would
+    # otherwise only have a 33% chance. Direct `_apply_scout()` call,
+    # same isolation reasoning as the priority-order test above.
+    state = _state_with_leader()
+    feature = Feature(
+        feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE, looted=True
+    )
+    state.add_feature(feature)
+    request = _scout_request(1, Maneuver.FLEE, Maneuver.SCOUT)
+    result = SearchExecutionResult(accepted=True)
+
+    # A roll that would fail the ordinary 33%-chance Flee-led branch --
+    # proves the looted-guardian override bypasses it entirely.
+    _apply_scout(state, LEADER_ID, request, result, ScriptedRandom([0.9]))
+
+    assert feature.discovery_level(1) == 3
 
 
 def test_execute_search_scout_with_melee_in_plan_is_a_guaranteed_full_discovery():
