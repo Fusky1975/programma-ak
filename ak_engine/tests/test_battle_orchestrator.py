@@ -3759,6 +3759,52 @@ def test_fight_multi_attacker_battle_mixed_eagle_and_land_party_keeps_march_skil
     assert len(battles) == 1  # united -- the real March-4 skill still applies
 
 
+def test_fight_multi_attacker_battle_looks_up_naval_skill_for_a_sea_invasion():
+    # Phase 754 (`Desktop/MOVE.md` sections 5.3/6.4): when the invaded
+    # province is Sea, the joining party's own Naval skill (not March)
+    # drives the same MARCH TABLE lookup -- same shape as the March-skill
+    # test above, but FIELD is Sea and leader 20 holds Naval-4 instead.
+    state = build_state(attacker_quality=Quality.GREEN, defender_quality=Quality.ELITE)
+    state.provinces[FIELD].terrain = Terrain.SEA
+    state.armies[201].army_type = ArmyType.HVY_CAVALRY
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.GREEN, FIELD))
+    state.add_leader(
+        LeaderState(20, kingdom_id=1, name="Sailor", location=HexCoord(9, 9), skills=_skills_with(Ability.NAVAL, 4, 9))
+    )
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5)),
+        MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102], origin_province=HexCoord(9, 9)),
+    ]
+    rng = ScriptedRandom([0.5] + [0.5] * 40, choice_indices=[0] * 40)
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 1  # united, thanks to leader 20's own real Naval-4 skill
+
+
+def test_fight_multi_attacker_battle_sea_invasion_ignores_march_skill():
+    # The flip side of the test above: a leader with a real March-4 skill
+    # but no Naval skill gets the table's own floor (0) for a Sea
+    # invasion, not his unrelated land skill -- proves the ability choice
+    # is real, not just "either skill drives the same table."
+    state = build_state(attacker_quality=Quality.GREEN, defender_quality=Quality.ELITE)
+    state.provinces[FIELD].terrain = Terrain.SEA
+    state.armies[201].army_type = ArmyType.HVY_CAVALRY
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.GREEN, FIELD))
+    state.add_leader(
+        LeaderState(20, kingdom_id=1, name="Marcher", location=HexCoord(9, 9), skills=_skills_with(Ability.MARCH, 4, 9))
+    )
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5)),
+        MultiAttackerParty(leader_id=20, kingdom_id=1, army_ids=[102], origin_province=HexCoord(9, 9)),
+    ]
+    rng = ScriptedRandom([0.5] + [0.5] * 40, choice_indices=[0] * 40)
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 2  # not united -- March-4 doesn't apply to a Sea invasion
+
+
 def test_fight_multi_attacker_battle_claims_province_for_largest_contingent_kingdom():
     state = build_state()
     state.add_kingdom(KingdomState(3, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))

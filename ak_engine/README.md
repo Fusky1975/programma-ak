@@ -31099,7 +31099,7 @@ follow-up request after the original 431-435 plan shipped.
   CHANCE = 0.50`/`MELEE_DAMAGE_RANGE = (1, 6)` stay exactly as they are,
   untouched, unless new evidence surfaces.
 
-- **Phase 752 (current)**: a fresh codebase survey (an Explore agent
+- **Phase 752**: a fresh codebase survey (an Explore agent
   audit, focused specifically on stale "known-gap" docstring claims per
   this project's own most common recurring finding type) found 4
   independently-verified stale claims, all comment-only, no behavior
@@ -31133,6 +31133,72 @@ follow-up request after the original 431-435 plan shipped.
 
   Full suite unchanged (6381) -- confirmed comment-only, no test
   updates needed.
+
+- **Phase 753**: `Desktop/MOVE.md` (user-supplied, 2026-09-05, a
+  disassembly-level dossier on the `MOVE`/`LMove` command) quotes the
+  real Pascal source for the LMOVE province-number encoding directly --
+  `REPORTS.PAS`: `lobjects[phase] := x * XMULT + y`; `SAY.PAS`: `_px :=
+  _prov DIV XMULT; _py := _prov MOD XMULT`. This confirms `turn/hex_
+  numbering.py`'s own "quotient/remainder against one multiplier" shape
+  is a real, sourced mechanism (CERTO), not just an empirical fit, with
+  the two axes swapped relative to this module's own naming (Pascal's
+  multiplied `x` = this module's `y`; Pascal's `XMULT` = this module's
+  `board_width`). `MOVE.md` explicitly declines to give `XMULT`'s own
+  numeric value ("a build/map constant, not to be fixed at 10/20/100"),
+  so `EMPIRICAL_AK3_BOARD_WIDTH = 10` remains exactly that -- a real,
+  corroborated measurement, not a universal constant. Board height,
+  row-parity, and the +170 sentinel jump remain open. Docstring-only,
+  no behavior change.
+
+- **Phase 754**: two further findings from the same `Desktop/MOVE.md`,
+  both real corrections/extensions to already-shipped code, chosen
+  directly by the user from a 3-option AskUserQuestion:
+  1. **Wandering Mercenaries (Phase 746) was built from the right rule
+     but the wrong disassembly-level mechanism**, since at the time only
+     `Desktop/MS/ADDEND.AK [3.6]`'s own prose survived -- implemented as
+     a project-original 50% coin flip per mercenary army, absorbed
+     (ownership transferred) at the general's own *destination*.
+     `MOVE.md` section 18.8-18.9 disassembles the real routine
+     (`AK.EXE Apply_Move`, raw `0x3AF78-0x3B05D`) directly and corrects
+     all three load-bearing points: (a) the routine re-examines armies
+     remaining **at the origin** the general departs, not the
+     destination; (b) it's **deterministic**, not probabilistic -- a
+     mercenary follows iff it has positive movement points and passes
+     the same Fleet/Mermen/Whale transport-legality any ordinary army
+     would need (`find_transport_illegality()`, Phase 737, reused
+     directly), **and** at least one army of the general's own main
+     contingent still has positive movement points too ("the general's
+     mere presence is not enough" -- an armyless leader no longer
+     triggers this at all, correcting Phase 746's own opposite
+     assumption); (c) **ownership never changes** -- the mercenary is
+     relocated and pays the base per-hex movement cost (`1`, not the
+     caller's own possibly-surcharged `cost`) through the same
+     primitives an ordinary army uses, but stays genuinely mercenary.
+     `resolve_wandering_mercenary_absorption()` -> `resolve_wandering_
+     mercenary_following()` (new signature, no `rng`/`kingdom_id`/
+     `leader_id`); `MoveExecutionResult.absorbed_mercenary_army_ids` ->
+     `followed_mercenary_army_ids`.
+  2. **Closes backlog item #9 (Naval's own "unite for battle" table) at
+     ALTA confidence, not CERTO**: `turn/multiple_contingents.py`'s own
+     docstring already documented [4.13]'s Naval-analogue text as
+     lacking any numeric table. `MOVE.md` section 5.3 presents one table
+     titled "March e Naval" carrying both the speed-bonus columns and
+     the "Unione contingenti" percentage column together, and section
+     6.4 states directly "probabilità e distanza dipendono anche da
+     March/Naval" -- strong enough to model Naval as driving the exact
+     same `MARCH_UNITE_CHANCE` table when the invasion crosses water,
+     using the same Sea-at-either-endpoint dichotomy `MOVE.md` section
+     21.5 independently confirms for Move's own unrelated experience-
+     credit dispatch (mirrored already in this project by `turn/battle_
+     orchestrator.py _combat_ability_for_terrain()`, a different ability
+     pair, same shape). New `_party_effective_unite_level()` replaces
+     `_party_march_level()` in `fight_multi_attacker_battle()`.
+  Test count: 6381 -> 6385 (net +4). Full suite verified green
+  (unchanged, 6381) before touching a single test; every existing
+  Phase-746 test needed rewriting for the corrected mechanism (expected,
+  confirmed by running first, not assumed), while every March-level
+  test in `test_battle_orchestrator.py` stayed unaffected (the table
+  itself didn't change, only which ability's level feeds it).
 
 ## Setup
 

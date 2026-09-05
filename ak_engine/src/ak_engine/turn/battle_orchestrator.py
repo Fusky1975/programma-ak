@@ -2815,20 +2815,36 @@ def fight_multi_attacker_battle(
     # Dragon Wing gets 0 too -- "not affected by March ability" at all,
     # not just excluded from the movement-bonus half (Phase 523) --
     # `is_march_immune_party()`'s own docstring for the full sourcing.
-    def _party_march_level(party: MultiAttackerParty) -> int:
+    #
+    # Phase 754: `Desktop/MOVE.md` sections 5.3/6.4 (see `multiple_
+    # contingents.py`'s own Phase 754 addendum for the full account)
+    # supply the missing Naval half at ALTA confidence -- when the
+    # invasion crosses water (either endpoint's own `effective_terrain()`
+    # is Sea), the party's own Naval skill level drives the same MARCH
+    # TABLE lookup instead of March. Mirrors this exact file's own
+    # `_combat_ability_for_terrain()` -- terrain decides which ability
+    # applies, same shape, different ability pair ([6.3] Tactical/Naval
+    # there, [4.12]/[4.13] March/Naval here).
+    def _party_effective_unite_level(party: MultiAttackerParty) -> int:
         army_types = [state.armies[aid].army_type for aid in party.army_ids if aid in state.armies]
         if is_march_immune_party(army_types):
             return 0
         if party.leader_id not in state.leaders:
             return 0
-        return effective_skill_level(state, state.leaders[party.leader_id], Ability.MARCH)
+        origin = state.provinces.get(party.origin_province)
+        target = state.provinces.get(province_coord)
+        is_sea_move = (origin is not None and origin.effective_terrain() is Terrain.SEA) or (
+            target is not None and target.effective_terrain() is Terrain.SEA
+        )
+        ability = Ability.NAVAL if is_sea_move else Ability.MARCH
+        return effective_skill_level(state, state.leaders[party.leader_id], ability)
 
     attackers = [
         Attacker(
             leader_id=p.leader_id,
             kingdom_id=p.kingdom_id,
             origin_province=p.origin_province,
-            march_level=_party_march_level(p),
+            march_level=_party_effective_unite_level(p),
         )
         for p in parties
     ]

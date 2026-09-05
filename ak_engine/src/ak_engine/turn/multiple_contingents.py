@@ -56,14 +56,25 @@ already use (e.g. ``PERSONAL_COMBAT_SPELL_LEVEL_CAP``).
 
 **Naval's own analogous bonus** ([4.13]: "when invading a province, the
 character has a better chance of joining with another character... in a
-manner similar to March ability") has no numeric table of its own in
-either source -- left unmodeled, the same "confirmed mechanic, no
-sourced magnitude" treatment this project gives every other such gap.
-``Attacker.march_level`` is read unconditionally regardless of whether
-the invasion was a land or sea move; a caller invading by sea still
-supplies their own March level (typically 0, since it's irrelevant to
-them), which is the documented, conservative fallback rather than
-inventing a Naval-keyed table.
+manner similar to March ability") had no numeric table of its own in
+either source -- **Phase 754, `Desktop/MOVE.md`, closes this at ALTA
+confidence, not CERTO**: section 5.3 presents one table titled "March e
+Naval" carrying both the speed-bonus columns and the "Unione
+contingenti" percentage column together, and section 6.4 states
+directly "probabilità e distanza dipendono anche da March/Naval" --
+strong enough to model Naval as driving this exact same table, not a
+separate one, when the invasion crosses water. No disassembly isolates
+a dedicated Naval-only unite-chance routine (hence ALTA, not a literal
+quote) -- the same terrain dichotomy is independently confirmed for an
+adjacent, disassembled mechanism in the same document (`MOVE.md`
+section 21.5: Move's own post-move experience credit picks `Naval` vs
+`March` on `Terrain(origin)=Sea or Terrain(destination)=Sea`, exactly
+mirroring this project's own `turn/battle_orchestrator.py
+_combat_ability_for_terrain()`). ``Attacker.march_level`` itself is
+unchanged -- ``fight_multi_attacker_battle()``'s own caller now resolves
+whichever ability applies (March or Naval) and passes *that* level in;
+this module has no terrain/ability-choice logic of its own, by design
+(it only ever consumes one integer "unite level").
 
 **Eagles/Dragons' own carve-out** ("not affected by March ability",
 Regolamento AK.txt's own "TABELLA DELLA MARCIA" addendum, word-for-
@@ -135,10 +146,12 @@ class Attacker:
     leader_id: int
     kingdom_id: int
     origin_province: HexCoord
-    # Phase 307: the attacker's own effective March ability level -- see
-    # module docstring for why this attacker's own level (not the other
-    # side's) drives their own chance of uniting. Defaults to 0 (the
-    # table's own floor) for any caller that doesn't look one up.
+    # Phase 307: the attacker's own effective March (or, since Phase
+    # 754, Naval when the invasion crosses water -- see module docstring)
+    # ability level -- see module docstring for why this attacker's own
+    # level (not the other side's) drives their own chance of uniting.
+    # Defaults to 0 (the table's own floor) for any caller that doesn't
+    # look one up.
     march_level: int = 0
 
 

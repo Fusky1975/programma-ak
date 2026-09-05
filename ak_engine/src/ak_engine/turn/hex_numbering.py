@@ -1,12 +1,25 @@
 """Decoding the raw "hex/feature number" used in move files for Move-order targets.
 
-**This is an empirical inference from real game data, not a sourced
-rule.** Player move-submission files (e.g. `AK3__T1.K1`) encode an LMOVE
-phase's target as a single integer (`PlanPhase.obj`) -- e.g. `P0 : 0 104
-0` targets hex number 104. Nothing in the rulebook or the available
-Pascal source explains this encoding (it would have lived in the missing
-main turn-processor, like hex adjacency itself -- see
-`turn/movement.py`).
+**Phase 753 (`Desktop/MOVE.md`, 2026-09-05): the formula's own shape is
+now CERTO, not just empirically inferred.** This user-supplied
+disassembly quotes the real Pascal source directly -- `REPORTS.PAS`:
+``lobjects[phase] := x * XMULT + y`` (encode); `SAY.PAS`: ``_px := _prov
+DIV XMULT; _py := _prov MOD XMULT`` (decode). This is exactly the
+"quotient/remainder against one multiplier" shape already implemented
+below, with the two axes swapped relative to this module's own naming:
+Pascal's multiplied term (``x``) is this module's ``y`` (the ``//``
+side), Pascal's remainder term (``y``) is this module's ``x`` (the ``%``
+side), and Pascal's ``XMULT`` is this module's ``board_width`` --  a
+pure labeling difference, not a formula difference. `MOVE.md` is
+explicit that ``XMULT`` "is a build/map constant... not to be fixed at
+10, 20, or 100 in a remake" -- it does not supply a numeric value, so
+the ``EMPIRICAL_AK3_BOARD_WIDTH = 10`` measurement below remains exactly
+that: a real, well-corroborated measurement for this project's own AK3
+sample data, now with a confirmed real mechanism behind it, not a
+universal constant. What follows is that original empirical derivation,
+kept for its own methodological value (a real per-turn adjacency cross-
+check, useful evidence a future reader can re-verify independently of
+this new source).
 
 To recover it, every consecutive pair of LMOVE targets within a leader's
 *final* plan segment across all 10 `AK3__T*.K1` files was decoded under
@@ -43,7 +56,8 @@ AK3 adjacency pairs, i.e. AK3 move files are NOT report-style province
 numbers. Recorded here so this plausible-looking hypothesis isn't
 re-tried.
 
-Unresolved even under this hypothesis:
+Unresolved even after `MOVE.md` (none of the three is addressed there --
+it confirms the formula's shape, not these per-map specifics):
 - The exact board height (real data includes y values past 17, taller
   than `turn/movement.py`'s `NORMAL_MAP_BOUNDS` height of 15 -- this
   game series evidently used a different, narrower-but-taller board than
