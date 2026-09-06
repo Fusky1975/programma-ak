@@ -4690,20 +4690,27 @@ def describe_valhalla_visit_announcement(
 
     Scans ``results`` for the real ``"gate-angel-visit"`` sentinel
     ``PhaseDispatchResult`` that function appends (``result`` is the
-    freshly-spawned visitor's own real ``LeaderState``) -- at most one
-    real match per turn, since only one Kingdom can win Gate Angel's own
-    contention per turn. Returns ``[]`` when no such sentinel exists at
-    all, when it belongs to a *different* Kingdom, or when this Kingdom
-    has no living King on record to name in the sentence (can't narrate
-    "X was visited" with no X) -- otherwise the real announcement
-    sentence followed by ``render_valhalla_visitor_rules()``'s own real
-    VALINT.X2 explanation lines, both folded into the caller's own
-    ACTION REPORT rather than a new, unconfirmed section (see `compose_
-    letter_report()`'s own Phase 678 addendum for why).
+    freshly-spawned visitor's own real ``LeaderState``), or -- Phase
+    756 -- the ``"valhalla-visit"`` sentinel ``turn/valhalla_execution.py
+    finalize_ordinary_valhalla_visit()`` appends for the real, automatic
+    per-turn visit independent of Gate Angel. Both are the identical
+    real-world event (a Valhalla visitor arrived) narrated identically;
+    only the trigger differs, and this composer doesn't need to know
+    which one fired. At most one real match per turn either way, since
+    ``VALHALLA.txt`` rule 2 ("solo un visitatore... a turno") is enforced
+    upstream: at most one of the two sentinels is ever appended in a
+    single turn. Returns ``[]`` when no such sentinel exists at all,
+    when it belongs to a *different* Kingdom, or when this Kingdom has
+    no living King on record to name in the sentence (can't narrate "X
+    was visited" with no X) -- otherwise the real announcement sentence
+    followed by ``render_valhalla_visitor_rules()``'s own real VALINT.X2
+    explanation lines, both folded into the caller's own ACTION REPORT
+    rather than a new, unconfirmed section (see `compose_letter_report()`'s
+    own Phase 678 addendum for why).
     """
 
     for entry in results:
-        if entry.phase_label != "gate-angel-visit" or not isinstance(entry.result, LeaderState):
+        if entry.phase_label not in ("gate-angel-visit", "valhalla-visit") or not isinstance(entry.result, LeaderState):
             continue
         visitor = entry.result
         if visitor.kingdom_id != kingdom_id:

@@ -245,6 +245,16 @@ visitor is spawned, one sentinel ``PhaseDispatchResult`` is appended
 not-tied-to-a-real-plan-segment convention ``_dispatch_contested_rebattles``
 already uses for "forced-rebattle". No result is appended when no Gate
 Angel cast succeeded this turn.
+
+**Phase 756**: when no Gate Angel cast succeeded this turn,
+``turn/valhalla_execution.py finalize_ordinary_valhalla_visit()`` is
+tried next, in the same tail spot -- the real, ``Desktop/VALHALLA.txt``
+rule-1-sourced automatic visit every alignment receives once every 5
+turns, independent of any spell. A visit spawned this way appends the
+same shape of sentinel, with ``phase_label="valhalla-visit"`` instead
+(a distinct label, since it wasn't spell-triggered). Both sentinel
+labels are handled identically by ``report/turn_report.py describe_
+valhalla_visit_announcement()``.
 """
 
 from __future__ import annotations
@@ -305,7 +315,11 @@ from ak_engine.turn.monster_raids import age_all_feature_guardians, maybe_dissip
 from ak_engine.turn.tax_base import apply_turn_revenue
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail
-from ak_engine.turn.valhalla_execution import finalize_gate_angel_visit, process_valhalla_departure
+from ak_engine.turn.valhalla_execution import (
+    finalize_gate_angel_visit,
+    finalize_ordinary_valhalla_visit,
+    process_valhalla_departure,
+)
 
 PHASE_LABELS = ("P0", "P1", "P2", "P3", "P4")
 
@@ -652,6 +666,24 @@ def run_turn(
                 error=None,
             )
         )
+    else:
+        # Phase 756: the ordinary, per-turn automatic visit -- only ever
+        # reached when Gate Angel didn't already claim this turn's one
+        # visit. A distinct sentinel label ("valhalla-visit", not
+        # "gate-angel-visit") since this spawn wasn't spell-triggered --
+        # see turn/valhalla_execution.py's own Phase 756 addendum.
+        visitor = finalize_ordinary_valhalla_visit(state, rng, board_width=board_width)
+        if visitor is not None:
+            results.append(
+                PhaseDispatchResult(
+                    leader_id=visitor.leader_id,
+                    segment_index=-1,
+                    phase_label="valhalla-visit",
+                    action=None,
+                    result=visitor,
+                    error=None,
+                )
+            )
 
     # Phase 548: the departing visitor's own army hand-off/item transfer
     # -- see turn/valhalla_execution.py process_valhalla_departure()'s

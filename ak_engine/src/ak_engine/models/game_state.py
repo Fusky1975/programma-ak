@@ -396,6 +396,15 @@ class KingdomState:
     # created while either is still set). See `turn/blackmail.py`.
     pending_blackmail: BlackmailClaim | None = None
     active_blackmail: BlackmailClaim | None = None
+    # Phase 756 (`Desktop/AKGEN 0xEB8A.md`): the real, persistent per-King
+    # Valhalla visit/selection counter (GW `m_values[B+0]`, "il contatore
+    # delle visite/selezioni di Valhalla per Re"). Incremented by either
+    # visit-trigger path (Gate Angel or the ordinary rotation) whenever
+    # this Kingdom's own King is the one selected -- consulted by `turn/
+    # valhalla_execution.py select_ordinary_valhalla_recipient()`'s own
+    # `score(k) = (IRand AND 1023) - 1024*visits(k)` formula, where a
+    # King with fewer visits always outscores one with more.
+    valhalla_visit_count: int = 0
 
 
 @dataclass(slots=True)
@@ -1411,6 +1420,14 @@ class GameState:
     # authoritative.
     last_gate_angel_turn: int | None = None
     last_gate_angel_kingdom: int | None = None
+    # Phase 756 -- `Desktop/AKGEN 0xEB8A.md`'s own confirmed "eccetto il
+    # destinatario della visita precedente" exclusion: the Kingdom that
+    # received the *immediately preceding* Valhalla visit, whichever of
+    # the two trigger paths (Gate Angel or the ordinary rotation) spawned
+    # it. Consulted by `turn/valhalla_execution.py select_ordinary_
+    # valhalla_recipient()` to exclude that Kingdom from this turn's own
+    # candidate pool -- see that module's own Phase 756 addendum.
+    last_valhalla_visited_kingdom_id: int | None = None
     # Which of the 5 GATE_ANGEL_ELIGIBLE_ALIGNMENTS have already had
     # their turn in the current 5-turn rotation cycle -- cleared once
     # all 5 have been used.

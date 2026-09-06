@@ -34,10 +34,30 @@ from ak_engine.turn.turn_processor import (
     _apply_werebeast_transformations,
     _replenish_turn_scoped_state,
     build_missed_deadline_turn_leaders,
-    run_turn,
+    run_turn as _run_turn_unfiltered,
 )
 
 from _helpers import ScriptedRandom
+
+
+def run_turn(*args, **kwargs):
+    """Phase 756: the automatic per-turn Valhalla visit is now truly
+    unconditional (fires whenever no Gate Angel cast claimed this turn's
+    one visit, which is every pre-existing fixture in this file, since
+    none of them cast it) -- an orthogonal, always-on mechanic that would
+    otherwise force every one of this file's ~90 `run_turn()` call sites
+    to individually account for an unrelated new "valhalla-visit"
+    sentinel *and* its own real RNG consumption (which would shift the
+    exact scripted-value sequence every `ScriptedRandom`-based test in
+    this file relies on, for a mechanic none of them are about).
+    Neutralized here by default via a scoped monkey-patch to a no-op;
+    tests that specifically exercise the automatic visit itself call
+    `_run_turn_unfiltered` directly instead (see the dedicated Phase 756
+    section near the bottom of this file).
+    """
+
+    with patch("ak_engine.turn.turn_processor.finalize_ordinary_valhalla_visit", return_value=None):
+        return _run_turn_unfiltered(*args, **kwargs)
 
 BOARD_WIDTH = 10
 ORIGIN = HexCoord(1, 1)
@@ -1916,6 +1936,24 @@ def test_run_turn_produces_no_gate_angel_result_when_no_leader_casts_it():
 
     assert not [r for r in results if r.phase_label == "gate-angel-visit"]
     assert VALHALLA_VISITOR_LEADER_ID not in state.leaders
+
+
+def test_run_turn_ordinary_valhalla_visit_fires_with_no_gate_angel_caster_anywhere():
+    # Phase 756: uses _run_turn_unfiltered directly (not this file's own
+    # run_turn() wrapper, which neutralizes the ordinary visit for every
+    # other test in this file) -- the one dedicated end-to-end proof that
+    # a real turn, with nobody anywhere casting Gate Angel, still produces
+    # a real "valhalla-visit" sentinel via turn_processor.py's own wiring.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(3, 3)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="King", location=HexCoord(3, 3), is_king=True))
+
+    results = _run_turn_unfiltered([], state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    visit_results = [r for r in results if r.phase_label == "valhalla-visit"]
+    assert len(visit_results) == 1
+    assert visit_results[0].result.kingdom_id == 1
+    assert not [r for r in results if r.phase_label == "gate-angel-visit"]
 
 
 # ---------------------------------------------------------------------------

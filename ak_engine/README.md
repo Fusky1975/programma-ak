@@ -31281,6 +31281,70 @@ follow-up request after the original 431-435 plan shipped.
   (unchanged, 6394) before touching a single test. This closes backlog
   item #5 in full.
 
+- **Phase 756**: continuing the same `Desktop/AKGEN 0xEB8A.md`
+  investigation past Phase 755, its Valhalla section describes an
+  "ordinary" per-turn recipient rotation feeding the same `viskng`
+  variable Gate Angel's own "exception" overrides. Re-checking this
+  project's own original `Desktop/VALHALLA.txt` confirmed it's real and
+  spell-independent: "Ciascun allineamento da Buono a Malvagio...
+  riceverà una visita una volta ogni cinque turni" -- an unconditional,
+  automatic, per-turn guarantee. Before this phase, `turn/valhalla_
+  execution.py finalize_gate_angel_visit()` was the *only* spawn path
+  wired into `run_turn()`, gated entirely on a successful Gate Angel
+  cast -- a game with no Gate Angel caster anywhere would never see a
+  single Valhalla visit, contradicting the rulebook's own guarantee.
+  `turn/cast_execution.py _gate_angel_due_alignment()` already
+  implemented the exact right rotation-mask algorithm (Phase 195/386),
+  but only ever ran lazily from an actual cast attempt -- promoted to a
+  public `gate_angel_due_alignment()` and now also called unconditionally
+  once per turn from the new path (idempotent, so no double-advance/
+  extra draw when Gate Angel is also cast). New `select_ordinary_
+  valhalla_recipient()` implements the real per-King score formula the
+  new document supplies (`score(k) = (IRand AND 1023) - 1024 * visits(k)`,
+  a King with fewer visits always outscoring one with more, ties to the
+  lower Kingdom id), backed by a new persistent `KingdomState.valhalla_
+  visit_count` (the real GW `m_values[B+0]` field) and `GameState.last_
+  valhalla_visited_kingdom_id`. New `select_valhalla_fallback_recipient()`
+  realizes the source's own "`IRand MOD king_count`" fallback -- resolved
+  in `VALHALLA.txt` rule 5's favor (a documented rulebook-over-
+  disassembly choice) to still exclude Divine/Undead Kings, since the
+  rulebook states plainly they "non ricevono visite dal Vahlalla." New
+  `finalize_ordinary_valhalla_visit()`, wired into `run_turn()` right
+  after the existing Gate-Angel path, only when that path didn't already
+  claim the turn's one visit (`VALHALLA.txt` rule 2). Both paths now
+  share the same hero-materialization body (`_spawn_valhalla_visitor()`,
+  extracted from `finalize_gate_angel_visit()`, pure refactor) and the
+  same "last visited"/"visit count" bookkeeping. `report/turn_report.py
+  describe_valhalla_visit_announcement()` recognizes a new distinct
+  `"valhalla-visit"` sentinel label alongside the existing
+  `"gate-angel-visit"` one, narrating both identically (same real text,
+  no new template).
+
+  A real, wide test blast radius was found and addressed directly, not
+  worked around: since the automatic visit now fires on essentially
+  every real turn with at least one Kingdom of a rotation-eligible
+  alignment (i.e. almost every existing fixture), ~35 pre-existing
+  `test_turn_processor.py`/`test_orchestrator.py` tests -- all about
+  unrelated dispatch/orchestration mechanics -- broke on the new
+  sentinel and its own real RNG consumption. Fixed by a scoped
+  `unittest.mock.patch` on `finalize_ordinary_valhalla_visit` inside a
+  local `run_turn()`/`process_turn()` wrapper in each of those two test
+  files (neutralizing the orthogonal mechanic for tests that aren't
+  about it), while 2 genuinely-stale "no Gate Angel caster means no
+  visitor at all" assertions and the mechanism's own new dedicated
+  end-to-end test still exercise the real, unpatched behavior directly.
+  Also switched the new formula's own `IRand`-realization from
+  `rng.randrange()` to `int(rng.random() * N)`, since `randrange()`'s
+  `_randbelow` fallback can consume an unpredictable number of
+  `.random()` calls on a `random()`-only-overriding class (this
+  project's own `ScriptedRandom`), matching the "ordinary `random.
+  Random` reduction" convention already used everywhere else in `turn/`.
+
+  Test count: 6400 -> 6415 (net +15). Full suite verified green
+  (unchanged, 6400) before touching a single test; the ~35-test
+  regression was measured empirically, not assumed, before choosing the
+  patch-based fix.
+
 ## Setup
 
 ```

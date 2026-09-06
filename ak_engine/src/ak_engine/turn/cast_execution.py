@@ -3107,16 +3107,16 @@ def _execute_hide_feature(
     return CastExecutionResult(request, applied=True)
 
 
-def _gate_angel_due_alignment(state: GameState, rng: random.Random) -> Alignment:
+def gate_angel_due_alignment(state: GameState, rng: random.Random) -> Alignment:
     """The VALHALLA rotation (Phase 195, user-supplied): "Ciascun
     allineamento da Buono a Malvagio... riceverà una visita una volta
     ogni cinque turni" -- lazily determines (and caches, once per
     ``turn_number``) which of the 5 ``GATE_ANGEL_ELIGIBLE_ALIGNMENTS``
-    is due a visit this turn, the first time any Gate Angel cast is
-    attempted that turn. Once all 5 have been used in the current
-    5-turn cycle, the cycle resets and all 5 become eligible again --
-    exactly the user's own worked example (turn 0 Druid, turn 1 picks
-    from the remaining 4, ..., turn 5 restarts).
+    is due a visit this turn, the first time this function is called
+    that turn. Once all 5 have been used in the current 5-turn cycle,
+    the cycle resets and all 5 become eligible again -- exactly the
+    user's own worked example (turn 0 Druid, turn 1 picks from the
+    remaining 4, ..., turn 5 restarts).
 
     **Phase 386 correction**: AKGEN's own confirmed
     ``recipient_selection.alignment_rotation`` gives this same "pick
@@ -3129,6 +3129,18 @@ def _gate_angel_due_alignment(state: GameState, rng: random.Random) -> Alignment
     boundary" -- the cycle now force-resets on that turn-count boundary
     regardless of how many alignments have actually been visited (e.g. a
     turn with no Gate Angel cast at all still advances the boundary).
+
+    **Phase 756 -- promoted from a private, Gate-Angel-only helper to a
+    public one.** `Desktop/AKGEN 0xEB8A.md` confirms this rotation runs
+    *every turn*, independent of any spell -- previously this function
+    was only ever called lazily from `_execute_gate_angel()`, so a game
+    with no Gate Angel caster would never advance (or even compute) the
+    rotation at all. `turn/valhalla_execution.py finalize_ordinary_
+    valhalla_visit()` now also calls this once per turn unconditionally
+    (idempotent thanks to the ``gate_angel_due_alignment_turn`` cache
+    above, so calling it twice in the same turn -- once from a real Gate
+    Angel cast, once from that end-of-turn call -- costs no extra `rng`
+    draw and picks no different alignment).
     """
 
     if state.gate_angel_due_alignment_turn == state.turn_number:
@@ -3197,7 +3209,7 @@ def _execute_gate_angel(
     caster = state.leaders[leader_id]
     kingdom = state.kingdoms[kingdom_id]
 
-    due_alignment = _gate_angel_due_alignment(state, rng)
+    due_alignment = gate_angel_due_alignment(state, rng)
     if _gate_angel_clamped_alignment(kingdom.alignment) is not due_alignment:
         return CastExecutionResult(request, applied=False, reason="not this alignment's turn for a Valhalla visit")
 

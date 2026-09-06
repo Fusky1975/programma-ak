@@ -13,13 +13,24 @@ from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
-from ak_engine.orchestrator import process_turn
+from ak_engine.orchestrator import process_turn as _process_turn_unfiltered
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.emperor_election import ElectionCallOutcome
 
 from _helpers import ScriptedRandom
 
 BOARD_WIDTH = 10
+
+
+def process_turn(*args, **kwargs):
+    """Phase 756: neutralizes the automatic per-turn Valhalla visit's own
+    real RNG consumption for this file's own orchestration-focused tests
+    (office holders, elections, standings, missed deadlines -- none of
+    them about Valhalla) -- same rationale/technique as `tests/test_turn_
+    processor.py`'s own identical wrapper."""
+
+    with patch("ak_engine.turn.turn_processor.finalize_ordinary_valhalla_visit", return_value=None):
+        return _process_turn_unfiltered(*args, **kwargs)
 
 
 def _wait_leader(leader_id: int, name: str) -> Leader:

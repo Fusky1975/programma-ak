@@ -12,13 +12,17 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID, ValhallaHero
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.cast_execution import GATE_ANGEL_ELIGIBLE_ALIGNMENTS
 from ak_engine.turn.valhalla_execution import (
     VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE,
     VALHALLA_VISITOR_RULES_TEMPLATE,
     VALHALLA_VISITOR_RULES_UNREACHABLE_DEADLINE_LINE,
     _select_visitor_template,
     finalize_gate_angel_visit,
+    finalize_ordinary_valhalla_visit,
     process_valhalla_departure,
+    select_ordinary_valhalla_recipient,
+    select_valhalla_fallback_recipient,
 )
 
 from _helpers import ScriptedRandom
@@ -424,3 +428,161 @@ def test_valhalla_visitor_rules_unreachable_deadline_line_is_kept_but_separate()
         "If you miss the turn deadline, [1 will disappear and your orders for [ will be voided."
     )
     assert VALHALLA_VISITOR_RULES_UNREACHABLE_DEADLINE_LINE not in VALHALLA_VISITOR_RULES_TEMPLATE
+
+
+# -- Phase 756: the ordinary, per-turn automatic Valhalla visit --------------
+
+
+def test_valhalla_visit_count_and_last_visited_kingdom_default_correctly():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HOME))
+    assert state.kingdoms[1].valhalla_visit_count == 0
+    assert state.last_valhalla_visited_kingdom_id is None
+
+
+def _kingdom_only_state(*kingdoms):
+    state = GameState()
+    for kingdom_id, alignment in kingdoms:
+        state.add_kingdom(KingdomState(kingdom_id, f"K{kingdom_id}", Race.HUMAN, alignment, HexCoord(kingdom_id, kingdom_id)))
+    return state
+
+
+def test_finalize_gate_angel_visit_also_records_last_visited_and_visit_count():
+    state = _state_with_winner()
+    rng = ScriptedRandom([])
+
+    visitor = finalize_gate_angel_visit(state, rng)
+
+    assert visitor is not None
+    assert state.last_valhalla_visited_kingdom_id == 1
+    assert state.kingdoms[1].valhalla_visit_count == 1
+
+
+def test_select_ordinary_valhalla_recipient_prefers_the_king_with_fewer_visits():
+    # The 1024-point-band property: a lower visit_count always wins,
+    # regardless of its own drawn roll, as long as the higher-visit-count
+    # King's own roll can't close a 1024-point gap.
+    state = _kingdom_only_state((1, Alignment.GOOD), (2, Alignment.GOOD))
+    state.kingdoms[2].valhalla_visit_count = 1
+    # Kingdom 1's own roll (scripted low) still beats kingdom 2's (scripted
+    # near-max), since kingdom 2 starts 1024 points behind.
+    rng = ScriptedRandom([0.0, 0.999])
+
+    winner = select_ordinary_valhalla_recipient(state, Alignment.GOOD, rng)
+
+    assert winner == 1
+
+
+def test_select_ordinary_valhalla_recipient_breaks_an_exact_tie_toward_the_lower_id():
+    state = _kingdom_only_state((1, Alignment.GOOD), (2, Alignment.GOOD))
+    # Same visit_count (0) and the same scripted roll for both -> a real tie.
+    rng = ScriptedRandom([0.5, 0.5])
+
+    winner = select_ordinary_valhalla_recipient(state, Alignment.GOOD, rng)
+
+    assert winner == 1
+
+
+def test_select_ordinary_valhalla_recipient_excludes_the_previous_visits_recipient():
+    state = _kingdom_only_state((1, Alignment.GOOD), (2, Alignment.GOOD))
+    state.last_valhalla_visited_kingdom_id = 1
+    # Only kingdom 2 is a real candidate; its own roll is the only draw.
+    rng = ScriptedRandom([0.1])
+
+    winner = select_ordinary_valhalla_recipient(state, Alignment.GOOD, rng)
+
+    assert winner == 2
+
+
+def test_select_ordinary_valhalla_recipient_returns_none_with_no_real_candidate():
+    # No Kingdom of this alignment at all.
+    state = _kingdom_only_state((1, Alignment.EVIL))
+    assert select_ordinary_valhalla_recipient(state, Alignment.GOOD, ScriptedRandom([])) is None
+
+    # The only Kingdom of this alignment is the excluded previous recipient.
+    state2 = _kingdom_only_state((1, Alignment.GOOD))
+    state2.last_valhalla_visited_kingdom_id = 1
+    assert select_ordinary_valhalla_recipient(state2, Alignment.GOOD, ScriptedRandom([])) is None
+
+
+def test_select_valhalla_fallback_recipient_never_picks_divine_or_undead():
+    state = _kingdom_only_state((1, Alignment.DIVINE), (2, Alignment.UNDEAD), (3, Alignment.EVIL))
+    for _ in range(20):
+        assert select_valhalla_fallback_recipient(state, random.Random()) == 3
+
+
+def test_select_valhalla_fallback_recipient_is_uniform_among_eligible_kingdoms():
+    state = _kingdom_only_state((1, Alignment.GOOD), (2, Alignment.EVIL))
+    # index 0 -> kingdom 1, index 1 -> kingdom 2 (sorted candidate order).
+    assert select_valhalla_fallback_recipient(state, ScriptedRandom([0.0])) == 1
+    assert select_valhalla_fallback_recipient(state, ScriptedRandom([0.99])) == 2
+
+
+def test_select_valhalla_fallback_recipient_returns_none_with_no_eligible_kingdom():
+    state = _kingdom_only_state((1, Alignment.DIVINE))
+    assert select_valhalla_fallback_recipient(state, ScriptedRandom([])) is None
+
+
+def test_finalize_ordinary_valhalla_visit_returns_none_when_gate_angel_already_visited():
+    state = _state_with_winner()
+
+    result = finalize_ordinary_valhalla_visit(state, ScriptedRandom([]))
+
+    assert result is None
+
+
+def test_finalize_ordinary_valhalla_visit_spawns_a_real_visitor_with_no_gate_angel_cast():
+    state = _kingdom_only_state((1, Alignment.GOOD))
+    state.add_leader(LeaderState(1, 1, "King Foo", KING_LOCATION, is_king=True))
+    # [0] -> GOOD is due this turn (GATE_ANGEL_ELIGIBLE_ALIGNMENTS[0]).
+    # Turn 1 (the GameState default) -> _select_visitor_template() needs
+    # no further draw (turns 1-5 always pick the roster's own last record).
+    rng = ScriptedRandom([0.0], choice_indices=[0])
+
+    visitor = finalize_ordinary_valhalla_visit(state, rng)
+
+    assert visitor is not None
+    assert visitor.kingdom_id == 1
+    assert state.leaders[VALHALLA_VISITOR_LEADER_ID] is visitor
+    assert state.last_valhalla_visited_kingdom_id == 1
+    assert state.kingdoms[1].valhalla_visit_count == 1
+
+
+def test_finalize_ordinary_valhalla_visit_falls_back_when_the_due_alignment_has_no_king():
+    # Only a NEUTRAL Kingdom exists; whichever of the 5 alignments comes up
+    # due, the ordinary selector finds no GOOD/DRUID/etc. candidate and the
+    # fallback still finds the one real, rotation-eligible Kingdom.
+    state = _kingdom_only_state((1, Alignment.NEUTRAL))
+    state.add_leader(LeaderState(1, 1, "King Bar", KING_LOCATION, is_king=True))
+    rng = ScriptedRandom([0.0], choice_indices=[0])  # [0] -> GOOD due, no GOOD kingdom
+
+    visitor = finalize_ordinary_valhalla_visit(state, rng)
+
+    assert visitor is not None
+    assert visitor.kingdom_id == 1
+
+
+def test_gate_angel_due_alignment_advances_every_turn_with_no_gate_angel_caster_anywhere():
+    # Desktop/VALHALLA.txt's own worked example, but driven entirely by
+    # finalize_ordinary_valhalla_visit() -- proving the rotation itself
+    # genuinely advances turn to turn even though nothing in this test
+    # ever calls _execute_gate_angel(). Deliberately stays within turns
+    # 1-3 (avoiding the real, already-confirmed `turn_number % 5 == 4`
+    # force-reset boundary -- see test_cast_execution.py's own "also
+    # resets on the turn mod 5 equals 4 boundary" test -- which can make
+    # a *partial* 5-turn window legitimately repeat an alignment; that's
+    # real, pre-existing behavior, not something this test re-litigates).
+    state = _kingdom_only_state(*((kingdom_id, alignment) for kingdom_id, alignment in enumerate(GATE_ANGEL_ELIGIBLE_ALIGNMENTS, start=1)))
+    for kingdom_id, _ in enumerate(GATE_ANGEL_ELIGIBLE_ALIGNMENTS, start=1):
+        state.add_leader(LeaderState(kingdom_id, kingdom_id, f"King{kingdom_id}", HexCoord(kingdom_id, kingdom_id), is_king=True))
+
+    seen_alignments = []
+    for turn in (1, 2, 3):
+        state.turn_number = turn
+        visitor = finalize_ordinary_valhalla_visit(state, random.Random(turn))
+        assert visitor is not None
+        seen_alignments.append(state.gate_angel_due_alignment)
+
+    # No repeats within this partial, reset-boundary-free window -- proof
+    # the rotation genuinely advances turn to turn on its own.
+    assert len(seen_alignments) == len(set(seen_alignments))

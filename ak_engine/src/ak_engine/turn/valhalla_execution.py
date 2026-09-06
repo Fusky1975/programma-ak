@@ -11,6 +11,27 @@ that winner is truly final (i.e. every leader's Cast phase has been
 dispatched for the turn), pick a real hero from ``models/valhalla.py
 VALHALLA_ROSTER`` and materialize it as a genuine ``LeaderState``.
 
+**Phase 756 -- the ordinary, per-turn automatic visit (independent of
+Gate Angel).** ``Desktop/AKGEN 0xEB8A.md`` (2026-09-06) and this
+project's own ``Desktop/VALHALLA.txt`` rule 1 both confirm the real
+mechanic is broader than "Gate Angel produces a visitor": *every* turn,
+regardless of any spell being cast, one Kingdom of the turn's own due
+alignment receives a visit -- "Ciascun allineamento da Buono a
+Malvagio... riceverà una visita una volta ogni cinque turni." Before
+this phase, ``finalize_gate_angel_visit()`` below was the *only* spawn
+path wired into ``turn/turn_processor.py run_turn()``, gated entirely
+on a successful Gate Angel cast -- a game with no Gate Angel caster
+anywhere would never see a single Valhalla visit, contradicting this
+unconditional guarantee. ``finalize_ordinary_valhalla_visit()`` (new
+this phase) is the second, independent trigger: it runs whenever the
+Gate-Angel path didn't already claim this turn's one visit
+(``VALHALLA.txt`` rule 2, "solo un visitatore... a turno"), using the
+real per-King selection formula the new document supplies (``select_
+ordinary_valhalla_recipient()``). Both paths share the same hero-
+materialization body (``_spawn_valhalla_visitor()``, extracted this
+phase) and the same "last visited"/"visit count" bookkeeping
+(``_record_valhalla_visit()``) -- see each function's own docstring.
+
 **Wired into ``turn/turn_processor.py``'s own ``run_turn()`` as of
 Phase 199** (its own "GATE ANGEL / VALHALLA VISIT" docstring section):
 ``finalize_gate_angel_visit()`` below is called exactly once per turn,
@@ -130,6 +151,7 @@ from ak_engine.models.valhalla import (
     ValhallaHero,
     _valhalla_stay_phase_count,
 )
+from ak_engine.turn.cast_execution import GATE_ANGEL_ELIGIBLE_ALIGNMENTS, gate_angel_due_alignment
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 
 # HostAK/TP/PROSE/GOOD.X2 (and identically, EVIL.X2) choice 1's own real
@@ -234,43 +256,39 @@ def _select_visitor_template(
     return roster[index]
 
 
-def finalize_gate_angel_visit(state: GameState, rng: random.Random, *, board_width: int = NORMAL_MAP_BOUNDS[0]) -> LeaderState | None:
-    """Spawns this turn's Valhalla visitor, if Gate Angel produced one.
+def _spawn_valhalla_visitor(
+    state: GameState, kingdom_id: int, alignment: Alignment, rng: random.Random, board_width: int
+) -> LeaderState | None:
+    """Materializes a real Valhalla visitor for ``kingdom_id``, drawn
+    from ``alignment``'s own roster -- the shared hero-synthesis body
+    both real trigger paths use (Gate Angel and, since Phase 756, the
+    ordinary per-turn rotation). Returns ``None`` (defensively; shouldn't
+    happen once all 5 ``turn/cast_execution.py GATE_ANGEL_ELIGIBLE_
+    ALIGNMENTS`` have a real roster, as they now do) if ``alignment``'s
+    own roster is empty.
 
-    Returns ``None`` (no state mutation at all) when no Gate Angel cast
-    succeeded this turn, or (defensively; shouldn't happen once all 5
-    ``turn/cast_execution.py GATE_ANGEL_ELIGIBLE_ALIGNMENTS`` have a
-    real roster, as they now do) the winning turn's due alignment has
-    no roster entries.
-
-    **Phase 548 bug fix**: this function used to overwrite ``state.
-    leaders[VALHALLA_VISITOR_LEADER_ID]`` unconditionally -- if a prior
-    visitor was still present (their own ``valhalla_active_turn`` hasn't
-    been reached/processed yet this same turn), their identity was
-    silently clobbered while any items/armies still referencing leader
-    199 kept pointing at it, now misattributed to the new hero. A stale
-    occupant is now sent through ``process_valhalla_departure()`` first
-    -- the same army hand-off/item transfer a normal on-schedule
-    departure gets -- before the new hero is ever assigned.
-    ``board_width`` defaults to the normal board's own width (every
-    existing caller/test) since departure processing only needs it for
-    the adjacent-province leg of that hand-off chain.
+    **Phase 548 bug fix** (pre-dates the Phase 756 extraction): this
+    function used to overwrite ``state.leaders[VALHALLA_VISITOR_LEADER_
+    ID]`` unconditionally -- if a prior visitor was still present (their
+    own ``valhalla_active_turn`` hasn't been reached/processed yet this
+    same turn), their identity was silently clobbered while any items/
+    armies still referencing leader 199 kept pointing at it, now
+    misattributed to the new hero. A stale occupant is now sent through
+    ``process_valhalla_departure()`` first -- the same army hand-off/
+    item transfer a normal on-schedule departure gets -- before the new
+    hero is ever assigned. ``board_width`` is required here (not
+    defaulted) since both real callers already have a real value in
+    scope.
     """
 
-    if state.last_gate_angel_turn != state.turn_number:
-        return None
-    kingdom_id = state.last_gate_angel_kingdom
-    if kingdom_id is None:
-        return None
-
-    roster = VALHALLA_ROSTER.get(state.gate_angel_due_alignment, ())
+    roster = VALHALLA_ROSTER.get(alignment, ())
     if not roster:
         return None
 
     if VALHALLA_VISITOR_LEADER_ID in state.leaders:
         process_valhalla_departure(state, board_width=board_width)
 
-    template = _select_visitor_template(state, state.gate_angel_due_alignment, roster, rng)
+    template = _select_visitor_template(state, alignment, roster, rng)
 
     kingdom = state.kingdoms[kingdom_id]
     king = next(
@@ -304,6 +322,152 @@ def finalize_gate_angel_visit(state: GameState, rng: random.Random, *, board_wid
         item = state.add_item(template.fixed_item, owner_leader_id=visitor.leader_id)
         visitor.valhalla_fixed_item_id = item.item_id
 
+    return visitor
+
+
+def _record_valhalla_visit(state: GameState, kingdom_id: int) -> None:
+    """Phase 756 -- updates the shared "last visited"/"visit count"
+    state both trigger paths feed, right after a real spawn. The GW
+    field this reuses (``m_values[B+0]``) is one counter shared across
+    both trigger types -- see module docstring's own Phase 756 addendum
+    for why a Gate-Angel-triggered visit counts here too."""
+
+    state.last_valhalla_visited_kingdom_id = kingdom_id
+    state.kingdoms[kingdom_id].valhalla_visit_count += 1
+
+
+def finalize_gate_angel_visit(state: GameState, rng: random.Random, *, board_width: int = NORMAL_MAP_BOUNDS[0]) -> LeaderState | None:
+    """Spawns this turn's Valhalla visitor, if Gate Angel produced one.
+
+    Returns ``None`` (no state mutation at all) when no Gate Angel cast
+    succeeded this turn, or (see ``_spawn_valhalla_visitor()``'s own
+    docstring) the winning turn's due alignment has no roster entries.
+    ``board_width`` defaults to the normal board's own width (every
+    existing caller/test) since departure processing only needs it for
+    the adjacent-province leg of that hand-off chain.
+    """
+
+    if state.last_gate_angel_turn != state.turn_number:
+        return None
+    kingdom_id = state.last_gate_angel_kingdom
+    if kingdom_id is None:
+        return None
+
+    visitor = _spawn_valhalla_visitor(state, kingdom_id, state.gate_angel_due_alignment, rng, board_width)
+    if visitor is not None:
+        _record_valhalla_visit(state, kingdom_id)
+    return visitor
+
+
+def select_ordinary_valhalla_recipient(state: GameState, alignment: Alignment, rng: random.Random) -> int | None:
+    """`Desktop/AKGEN 0xEB8A.md`'s own confirmed per-King selection
+    within the turn's due ``alignment`` (Phase 756): for every Kingdom of
+    that alignment except ``state.last_valhalla_visited_kingdom_id`` (the
+    immediately preceding visit's own recipient),
+
+        score(k) = (IRand AND 1023) - 1024 * kingdom.valhalla_visit_count
+
+    realized here as ``int(rng.random() * 1024) - 1024 * ...`` (the same
+    "ordinary ``random.Random`` reduction matching the Pascal formula's
+    statistical shape" convention every other ``turn/``-scoped formula
+    in this project already uses -- a plain ``.random()`` scale rather
+    than ``rng.randrange()``, whose own ``_randbelow`` fallback can
+    consume a variable, not-easily-predictable number of ``.random()``
+    calls on a class that overrides ``random()`` but not
+    ``getrandbits()``, exactly this project's own ``ScriptedRandom``). The 1024-point-wide bands never
+    overlap, so a King with strictly fewer visits always outscores one
+    with more -- this is a real priority order, not just a statistical
+    lean. Ties (same visit count, same drawn value) go to the **lower**
+    ``kingdom_id`` -- realized by only replacing the running best on a
+    *strict* ``>``, iterating candidates in ascending id order, matching
+    the source's own confirmed ``>``-comparison behavior exactly.
+
+    Returns ``None`` when no candidate remains (no Kingdom of this
+    alignment at all, or the only one is excluded) -- the caller falls
+    back to ``select_valhalla_fallback_recipient()``.
+    """
+
+    best_kingdom_id: int | None = None
+    best_score: int | None = None
+    for kingdom in sorted(state.kingdoms.values(), key=lambda k: k.kingdom_id):
+        if kingdom.alignment is not alignment or kingdom.kingdom_id == state.last_valhalla_visited_kingdom_id:
+            continue
+        score = int(rng.random() * 1024) - 1024 * kingdom.valhalla_visit_count
+        if best_score is None or score > best_score:
+            best_score = score
+            best_kingdom_id = kingdom.kingdom_id
+    return best_kingdom_id
+
+
+def select_valhalla_fallback_recipient(state: GameState, rng: random.Random) -> int | None:
+    """The source's own confirmed fallback, "``viskng = IRand MOD king_
+    count``", reached when ``select_ordinary_valhalla_recipient()``
+    finds no candidate at all (Phase 756).
+
+    **A documented, rulebook-over-disassembly interpretation, not a
+    literal port**: the source's own pseudocode ignores alignment
+    entirely at this point, which read literally could select a
+    Divine/Undead King -- but this project's own primary source,
+    ``Desktop/VALHALLA.txt`` rule 5, states plainly "I re Non-Morti e
+    Divini... non ricevono visite dal Vahlalla" (do not receive
+    visits). Resolved in the rulebook's favor: this still draws only
+    from Kingdoms whose alignment is one of the 5 rotation-eligible
+    ones (``GATE_ANGEL_ELIGIBLE_ALIGNMENTS``), uniformly, just without
+    the per-King score/repeat-ban filters -- not literally any Kingdom
+    in the game.
+
+    Returns ``None`` only if no such Kingdom exists at all (e.g. an
+    empty test fixture).
+    """
+
+    candidates = sorted(k.kingdom_id for k in state.kingdoms.values() if k.alignment in GATE_ANGEL_ELIGIBLE_ALIGNMENTS)
+    if not candidates:
+        return None
+    return candidates[int(rng.random() * len(candidates))]
+
+
+def finalize_ordinary_valhalla_visit(
+    state: GameState, rng: random.Random, *, board_width: int = NORMAL_MAP_BOUNDS[0]
+) -> LeaderState | None:
+    """Phase 756 -- the ordinary, per-turn automatic Valhalla visit,
+    independent of Gate Angel. ``Desktop/VALHALLA.txt`` rule 1: "Ciascun
+    allineamento da Buono a Malvagio... riceverà una visita una volta
+    ogni cinque turni" -- an unconditional, per-turn guarantee, not
+    contingent on anyone casting the secret Gate Angel spell.
+
+    **"Only one visitor per turn" (``VALHALLA.txt`` rule 2)**: returns
+    ``None`` immediately if a Gate-Angel-triggered visit already
+    happened this turn (``state.last_gate_angel_turn == state.turn_
+    number``) -- Gate Angel's own forced pick always wins over the
+    ordinary rotation for that turn; this function is only ever the one
+    that actually spawns a visitor when nobody cast Gate Angel.
+
+    Calling ``gate_angel_due_alignment()`` here (idempotent, cached per
+    ``turn_number``) is what guarantees the rotation itself advances
+    even in a turn with zero Gate Angel casts anywhere in the game --
+    see that function's own Phase 756 addendum.
+    """
+
+    if state.last_gate_angel_turn == state.turn_number:
+        return None
+
+    alignment = gate_angel_due_alignment(state, rng)
+    kingdom_id = select_ordinary_valhalla_recipient(state, alignment, rng)
+    if kingdom_id is None:
+        kingdom_id = select_valhalla_fallback_recipient(state, rng)
+        if kingdom_id is None:
+            return None
+        fallback_alignment = state.kingdoms[kingdom_id].alignment
+        if fallback_alignment in GATE_ANGEL_ELIGIBLE_ALIGNMENTS:
+            # The source's own confirmed detail: the fallback still marks
+            # the *actually drawn* King's own real alignment as used this
+            # cycle, not the turn's own originally-due one.
+            state.gate_angel_cycle_visited.add(fallback_alignment)
+        alignment = fallback_alignment
+
+    visitor = _spawn_valhalla_visitor(state, kingdom_id, alignment, rng, board_width)
+    if visitor is not None:
+        _record_valhalla_visit(state, kingdom_id)
     return visitor
 
 

@@ -4107,6 +4107,28 @@ def test_describe_valhalla_visit_announcement_renders_announcement_and_rules():
     assert lines[1:] == render_valhalla_visitor_rules("Quintilian", ScriptedRandom([]))
 
 
+def test_describe_valhalla_visit_announcement_recognizes_the_ordinary_valhalla_visit_sentinel():
+    # Phase 756: the automatic per-turn visit (independent of Gate Angel)
+    # appends a "valhalla-visit" sentinel instead of "gate-angel-visit" --
+    # this composer narrates it identically, no new template needed.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    visitor = LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Quintilian", HexCoord(0, 0))
+    state.add_leader(visitor)
+    results = [
+        PhaseDispatchResult(
+            leader_id=visitor.leader_id, segment_index=-1, phase_label="valhalla-visit", action=None,
+            result=visitor, error=None,
+        )
+    ]
+
+    lines = describe_valhalla_visit_announcement(results, state, 1, ScriptedRandom([]))
+
+    assert lines[0] == render_valhalla_visit_announcement("Aldric", "Quintilian", ScriptedRandom([]))
+    assert lines[1:] == render_valhalla_visitor_rules("Quintilian", ScriptedRandom([]))
+
+
 def test_describe_valhalla_visit_announcement_ignores_a_different_kingdoms_visitor():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
