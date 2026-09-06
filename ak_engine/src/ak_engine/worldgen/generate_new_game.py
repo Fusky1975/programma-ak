@@ -36,7 +36,9 @@ this project has a real, sourced formula for:
    coordinate) rather than interleaved with placement's own attempts,
    since ``special_race_placement.py`` already made ``recompute_tax()``
    a standalone caller-invoked step, not part of ``place_special_race()``
-   itself.
+   itself. **Phase 755**: ``recompute_tax()`` now also threads the
+   placed race through, so a Whales/Mermish province recomputed here
+   correctly picks up the real ``sea_race_tax_bonus()`` (+1/+2).
 5. King Home placement: for each caller-supplied ``KingSetup``,
    ``worldgen.leader_placement.king_home_effects()`` (Phase 357)
    overwrites the Home province's owner/tax/race and the King leader's
@@ -480,9 +482,9 @@ def generate_new_game(
         else:
             tax_grid[coord] = ordinary_land_tax(terrain, rng)
 
-    for placed_coords in special_race_placements.values():
+    for race, placed_coords in special_race_placements.items():
         for coord in placed_coords:
-            tax_grid[coord] = recompute_tax(coord, grid[coord], grid, bounds, bounds.height - 1, rng)
+            tax_grid[coord] = recompute_tax(coord, grid[coord], grid, bounds, bounds.height - 1, rng, race)
 
     for king in kings:
         home_coord = home_coord_by_king[king.leader_id]

@@ -31225,6 +31225,62 @@ follow-up request after the original 431-435 plan shipped.
   ability's level feeds it) and every existing Move/GIR test stayed
   unaffected by the additive Illusory Fog note.
 
+- **Phase 755**: `Desktop/AKGEN 0xEB8A.md` (user-supplied, 2026-09-06, a
+  disassembly-level dossier targeting `AKGEN.EXE`'s own province-tax
+  routine, raw `0xEB8A-0xF277`) closes backlog item #5's own "true-Sea
+  geometry_bonuses" mystery -- and **overturns the earlier reading in
+  the process**: the "+1/+2" bonus an earlier catalog attributed to
+  "two special neighbor configurations" is not geometric at all. The
+  real mechanism (raw `0xF05E-0xF12A`, calling `Mod_PRace` at raw
+  `0x4A65B`) applies the bonus *after* the true-Sea tax roll, based on
+  the province's own **race**: `Race.WHALES` gets `+1`, `Race.MERMISH`
+  gets `+2`, never for an island. The compiled binary needs `Mod_PRace`
+  to reconstruct Whale-vs-Merman from a shared legacy race code, but
+  this project's own `models/race.py` already stores them as two
+  distinct values, so `province_tax.sea_race_tax_bonus()` is a direct
+  lookup -- wired into `worldgen/special_race_placement.py
+  recompute_tax()` (now threading the placed race through) and its one
+  real caller in `worldgen/generate_new_game.py`. The same document
+  also fully resolves the `island_or_alternate_terrain` formula
+  (already a separately-flagged, still-open item since Phase 723): both
+  real call sites normalize an island's `effective_terrain` to `pt2`
+  *before* the tax `case` runs, so it uses a single draw --
+  `1 + trunc(U*M[pt2])` -- not the two-draw formula an earlier catalog
+  guessed (a genuine two-draw branch exists in the binary but is
+  confirmed dead code, unreachable by either real caller). Shipped as a
+  new, tested `island_tax()` primitive, still deliberately unwired (no
+  `pt2` input exists at world-*generation* time -- the same, unchanged
+  blocker Phase 723 already documented for world-*loading*).
+
+  The same document also disassembles the exact address this project's
+  own `IRAND_RANGE = 32768` constant was sourced from (raw
+  `0x53E70-0x53EA6`) and reads it as `32000` instead, backed by literal
+  register values for the Real48 divisor -- independently re-derived
+  and verified by hand this session (byte-level Real48 decoding, not
+  just trusted). **Investigated and explicitly rejected**: switching
+  `IRAND_RANGE` to 32000 breaks `worldgen/special_ability_level_
+  schedule.py`'s own existing byte-for-byte cross-check against the
+  real `GW900` save file's confirmed `spabord` table, which only
+  reproduces exactly under 32768. Kept at 32768; the register-level
+  decoding is real and internally sound, but the two source documents'
+  address citations may not actually refer to the same physical
+  routine despite matching hex digits -- flagged as a genuine,
+  unresolved discrepancy, not silently dropped.
+
+  A fourth finding -- `0xEB8A` also seeds a province's own recruit-type
+  slots via `0B57:9CD8`, including a real probability table for
+  placing a Fleet in the second slot of an ordinary Sea province,
+  weighted by the same `effective_sea_neighbors` already computed for
+  tax -- is a genuinely separate, larger mechanism (no "which army type
+  goes in a province's ordinary recruit slots" pipeline exists yet;
+  `worldgen/initial_armies.py` already flags its own land-side sibling
+  gap the same way) and was **not attempted this phase**, recorded as a
+  fresh, flagged backlog item instead.
+
+  Test count: 6394 -> 6400 (net +6). Full suite verified green
+  (unchanged, 6394) before touching a single test. This closes backlog
+  item #5 in full.
+
 ## Setup
 
 ```

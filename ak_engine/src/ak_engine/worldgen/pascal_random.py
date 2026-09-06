@@ -20,17 +20,51 @@ hero_talents_and_aptitudes.rng`` in the source JSON):
   (not a value this project invented or guessed).
 - ``IRand`` (the game's own custom "give me an integer" wrapper, not
   Pascal's built-in parameterized ``Random(n)``): steps the state once,
-  then returns ``trunc(Random * 32768)`` where ``Random`` is the
+  then returns ``trunc(Random * IRAND_RANGE)`` where ``Random`` is the
   state's own real-valued interpretation (``RandSeed / 2**32``) *after*
   that step -- i.e. every ``IRand`` call both advances and consumes the
   generator, matching every other real ``random.Random``-based RNG
   already used throughout this project (nothing here is peeked without
   being consumed). Every real caller quoted in the source further
-  reduces this 0..32767 value with its own ``mod``/``AND`` (e.g.
-  ``IRand mod 60`` for monster proposal, ``IRand AND 7`` for the
-  recruit-slot gate) -- ``irand()`` below returns the raw 0..32767
-  value; callers apply their own reduction, matching the source's own
-  layering rather than baking a single caller's reduction in here.
+  reduces this value with its own ``mod``/``AND`` (e.g. ``IRand mod 60``
+  for monster proposal, ``IRand AND 7`` for the recruit-slot gate) --
+  ``irand()`` below returns the raw ``0..IRAND_RANGE-1`` value; callers
+  apply their own reduction, matching the source's own layering rather
+  than baking a single caller's reduction in here.
+- **Phase 755 investigation (kept at 32768, not changed)**: ``Desktop/
+  AKGEN 0xEB8A.md`` (2026-09-06) disassembles what it presents as this
+  same shared ``IRand`` helper at the *identical* address
+  (``AKGEN_embedded_catalogs.json.txt``'s own ``hero_talents_and_
+  aptitudes.rng`` entry gives ``IRand_file_offset = 0x53E70``; the new
+  document gives ``raw 0x53E70-0x53EA6``) and reads the register values
+  loading the Real48 divisor as ``(CX,SI,DI) = (008Fh,0000h,7A00h)``,
+  which decode (Turbo Pascal Real48: a biased-129 exponent byte plus a
+  39-bit mantissa with an implicit leading ``1``) to exactly ``32000.0``,
+  not ``32768.0`` -- independently re-derived and verified by hand this
+  session (``CX``'s low byte ``0x8F`` = exponent 143 -> base
+  ``2**14 = 16384``; ``32000/16384 = 1.953125``, whose fractional part
+  encodes to mantissa top byte ``0x7A``, an exact match for ``DI``'s
+  high byte; a bare power of two like ``32768`` would need an all-zero
+  mantissa instead, as this same document's own ``2.0`` example
+  confirms). **This byte-level decoding is internally sound, but
+  contradicts real, existing evidence and was NOT applied**:
+  ``worldgen/special_ability_level_schedule.py`` already has a
+  byte-for-byte cross-check against the real ``GW900`` save file's own
+  confirmed ``spabord`` table (``test_build_magic_ability_level_
+  schedule_matches_the_real_game_900_example_exactly``), built on this
+  exact ``irand()`` default -- switching ``IRAND_RANGE`` to 32000 breaks
+  that empirical, ground-truth match, while 32768 reproduces it exactly.
+  Between a hand-decoded register value from an unvalidated document and
+  a working byte-exact match against a real historical game file, the
+  latter wins: ``IRAND_RANGE`` stays ``32768``. This may mean the two
+  documents' address citations don't actually refer to the same physical
+  routine despite matching hex digits (a plausible mislabeling between a
+  raw/linear address and a segment:offset one), or that ``AKGEN.EXE``
+  genuinely has more than one ``IRand``-shaped helper. Flagged as a
+  real, unresolved discrepancy for a future investigation, not silently
+  dropped -- do not change this constant again without either a second,
+  independent confirmation of ``32000`` or an explanation for why the
+  ``GW900`` schedule still matches under it.
 
 **What's deliberately NOT implemented here**: the real startup seed
 (DOS ``INT 21h``/``AH=2Ch`` clock words -- hour/minute/second/
@@ -64,6 +98,10 @@ MODULUS = 2**32
 MULTIPLIER = 134775813
 INCREMENT = 1
 IRAND_RANGE = 32768
+# Phase 755 -- `Desktop/AKGEN 0xEB8A.md` proposed correcting this to 32000
+# (see the module docstring's own "Phase 755 investigation" paragraph
+# above) -- investigated and NOT applied: it breaks the real, byte-exact
+# GW900 cross-check in `special_ability_level_schedule.py`. Kept at 32768.
 # Phase 679 -- `Desktop/NOARMY.md`'s own targeted disassembly of `AK.EXE`'s
 # resident `IRand` (`35EB:11D4`, a separate executable/address from the
 # `AKGEN.EXE` disassembly `IRAND_RANGE` above is sourced from) confirms a
@@ -104,7 +142,9 @@ class PascalRandom:
         (e.g. ``irand() % 60`` for a 1-in-60 monster draw) -- this
         function does not apply any caller-specific reduction itself.
         Defaults to ``IRAND_RANGE`` (32768, `AKGEN.EXE`'s own confirmed
-        constant); pass ``irand_range=AK_RUNTIME_IRAND_RANGE`` for an
+        constant -- Phase 755 investigated a 32000 correction and
+        rejected it, see that constant's own comment above); pass
+        ``irand_range=AK_RUNTIME_IRAND_RANGE`` for an
         `AK.EXE`-side mechanic instead -- see that constant's own
         Phase 679 comment above for why the two are genuinely different,
         not a bug in either.

@@ -42,13 +42,18 @@ First phase of the pipeline-integration sub-plan. Source:
   terrain isn't eligible for this race. ``ATTEMPT_CAP = 3000`` matches
   the source's own declared "approx" cap.
 - ``recompute_tax()``: "on_accept: overwrite prace and recompute tax"
-  -- since Phase 356's own confirmed tax formulas are purely
-  terrain-driven (never race-driven), "recomputing" a province's tax
-  after a special-race overwrite is exactly a fresh call to whichever
-  of `province_tax.py`'s own confirmed formulas already matches that
-  coordinate's (unchanged) terrain -- `true_sea_tax()` for Sea,
-  `ordinary_land_tax()` otherwise. No new tax formula is introduced
-  here; this function is a thin, direct reuse of Phase 356's own work.
+  -- a fresh call to whichever of `province_tax.py`'s own confirmed
+  formulas already matches that coordinate's (unchanged) terrain --
+  `true_sea_tax()` for Sea, `ordinary_land_tax()` otherwise. **Phase
+  755 correction**: the tax formulas are *not* purely terrain-driven
+  after all -- `Desktop/AKGEN 0xEB8A.md` resolves backlog item #5's own
+  true-Sea "+1/+2" mystery as a real, race-driven bonus
+  (`province_tax.sea_race_tax_bonus()`, `Mod_PRace`), applied here for
+  exactly the two races this function ever recomputes onto Sea terrain
+  (Whales/Mermish -- the only two `SPECIAL_RACE_TERRAIN` entries that
+  ever include `Terrain.SEA`). This function threads the race being
+  placed straight into the bonus lookup; every other race stays
+  unaffected, non-race-driven, as before.
 
 **Deliberately NOT implemented here**: the exact spatial *order* in
 which multiple simultaneous acceptance attempts might interleave
@@ -82,6 +87,7 @@ from ak_engine.worldgen.province_tax import (
     coast_score,
     compute_edge_score,
     ordinary_land_tax,
+    sea_race_tax_bonus,
     true_sea_tax,
 )
 
@@ -213,12 +219,19 @@ def recompute_tax(
     bounds: MapBounds,
     bottom_y: int,
     rng: PascalRandom,
+    race: Race,
 ) -> int:
-    """"on_accept: ... recompute tax" -- reuses Phase 356's own confirmed terrain-driven formulas."""
+    """"on_accept: ... recompute tax" -- reuses `province_tax.py`'s own confirmed formulas.
+
+    ``race`` is the special race just placed at ``coord`` -- required
+    (not defaulted) since every real caller already knows it. Only
+    feeds ``sea_race_tax_bonus()`` when ``terrain`` is Sea (Phase 755);
+    every other race/terrain combination is unaffected.
+    """
 
     if terrain is Terrain.SEA:
         coast = coast_score(coord, grid, bounds)
         is_edge_row = coord.y in (0, bounds.height - 1)
         edge = compute_edge_score(coast, is_edge_row, rng)
-        return true_sea_tax(edge, rng)
+        return true_sea_tax(edge, rng) + sea_race_tax_bonus(race)
     return ordinary_land_tax(terrain, rng)

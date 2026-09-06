@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.race import Race
 from ak_engine.turn.movement import MapBounds
 from ak_engine.worldgen.pascal_random import PascalRandom
 from ak_engine.worldgen.province_tax import (
@@ -11,7 +12,9 @@ from ak_engine.worldgen.province_tax import (
     ORDINARY_LAND_MAX,
     coast_score,
     compute_edge_score,
+    island_tax,
     ordinary_land_tax,
+    sea_race_tax_bonus,
     true_sea_tax,
 )
 
@@ -70,7 +73,8 @@ def test_compute_edge_score_scales_on_edge_rows():
 
 def test_true_sea_tax_high_coast_matches_the_combined_worked_probability():
     # 10% branch contributes 1/5 chance of landing on 1; 90% branch is a
-    # direct IRand<7000 Bernoulli(7000/32768) for tax==1.
+    # direct IRand<7000 Bernoulli(7000/32768) for tax==1. Phase 755
+    # investigated a 32000 base and rejected it (see pascal_random.py).
     expected_p_one = 0.10 * (1 / 5) + 0.90 * (7000 / 32768)
     rng = PascalRandom(seed=6)
     n = 200_000
@@ -100,4 +104,37 @@ def test_true_sea_tax_low_coast_matches_independent_reimplementation():
     rng_b = PascalRandom(seed=8)
     actual = Counter(true_sea_tax(edge_score, rng_a) for _ in range(n))
     expected = Counter(reference(rng_b) for _ in range(n))
+    assert actual == expected
+
+
+def test_sea_race_tax_bonus_whales_and_mermish_only():
+    assert sea_race_tax_bonus(Race.WHALES) == 1
+    assert sea_race_tax_bonus(Race.MERMISH) == 2
+    assert sea_race_tax_bonus(None) == 0
+    for race in Race:
+        if race in (Race.WHALES, Race.MERMISH):
+            continue
+        assert sea_race_tax_bonus(race) == 0
+
+
+def test_island_tax_stays_within_1_to_m_for_every_ordinary_land_terrain():
+    rng = PascalRandom(seed=9)
+    for terrain, max_tax in ORDINARY_LAND_MAX.items():
+        for _ in range(3000):
+            tax = island_tax(terrain, rng)
+            assert 1 <= tax <= max_tax
+
+
+def test_island_tax_matches_ordinary_land_tax_shape_before_the_low_floor():
+    # island_tax() is the same "1 + trunc(U*M)" draw ordinary_land_tax()
+    # starts from, just without the low-floor bump (never sourced for
+    # islands) -- so its raw distribution should match a direct
+    # "1 + trunc(U*M)" reimplementation exactly, same RNG stream.
+    terrain = Terrain.FOREST
+    max_tax = ORDINARY_LAND_MAX[terrain]
+    n = 20_000
+    rng_a = PascalRandom(seed=10)
+    rng_b = PascalRandom(seed=10)
+    actual = Counter(island_tax(terrain, rng_a) for _ in range(n))
+    expected = Counter(1 + int(rng_b.random() * max_tax) for _ in range(n))
     assert actual == expected

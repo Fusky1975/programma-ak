@@ -4,6 +4,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.movement import MapBounds
 from ak_engine.worldgen.pascal_random import PascalRandom
+from ak_engine.worldgen.province_tax import ORDINARY_LAND_MAX
 from ak_engine.worldgen.special_race_placement import (
     ATTEMPT_CAP,
     OLD_RULES_MULTIPLIER,
@@ -183,12 +184,15 @@ def test_place_all_special_races_places_up_to_each_races_confirmed_quota():
 
 
 def test_recompute_tax_dispatches_to_true_sea_for_sea_terrain():
+    # Dragons never carries a sea_race_tax_bonus, so the range stays the
+    # bare true_sea_tax() range -- the bonus itself is tested separately
+    # below.
     rng = PascalRandom(seed=10)
     bounds = MapBounds(5, 5)
     grid = _uniform_grid(5, 5, Terrain.SEA)
     coord = HexCoord(2, 2)
     for _ in range(200):
-        tax = recompute_tax(coord, Terrain.SEA, grid, bounds, bottom_y=4, rng=rng)
+        tax = recompute_tax(coord, Terrain.SEA, grid, bounds, bottom_y=4, rng=rng, race=Race.DRAGONS)
         assert 0 <= tax <= 6
 
 
@@ -198,8 +202,43 @@ def test_recompute_tax_dispatches_to_ordinary_land_for_land_terrain():
     grid = _uniform_grid(5, 5, Terrain.DESERT)
     coord = HexCoord(2, 2)
     for _ in range(200):
-        tax = recompute_tax(coord, Terrain.DESERT, grid, bounds, bottom_y=4, rng=rng)
+        tax = recompute_tax(coord, Terrain.DESERT, grid, bounds, bottom_y=4, rng=rng, race=Race.DRAGONS)
         assert 1 <= tax <= 2
+
+
+def test_recompute_tax_adds_the_whales_bonus_on_sea_terrain():
+    # Phase 755: Mod_PRace's real +1/+2 bonus, threaded through the race
+    # actually being placed -- see province_tax.sea_race_tax_bonus().
+    rng = PascalRandom(seed=12)
+    bounds = MapBounds(5, 5)
+    grid = _uniform_grid(5, 5, Terrain.SEA)
+    coord = HexCoord(2, 2)
+    for _ in range(200):
+        tax = recompute_tax(coord, Terrain.SEA, grid, bounds, bottom_y=4, rng=rng, race=Race.WHALES)
+        assert 1 <= tax <= 7
+
+
+def test_recompute_tax_adds_the_mermish_bonus_on_sea_terrain():
+    rng = PascalRandom(seed=13)
+    bounds = MapBounds(5, 5)
+    grid = _uniform_grid(5, 5, Terrain.SEA)
+    coord = HexCoord(2, 2)
+    for _ in range(200):
+        tax = recompute_tax(coord, Terrain.SEA, grid, bounds, bottom_y=4, rng=rng, race=Race.MERMISH)
+        assert 2 <= tax <= 8
+
+
+def test_recompute_tax_gives_mermish_no_bonus_on_the_coastal_jungle_special_case():
+    # The Merman coastal-Jungle placement is not Sea terrain, so it
+    # dispatches to ordinary_land_tax() -- the real routine's own
+    # pterr=Sea/pt2=noterr gate never applies here, matching the source.
+    rng = PascalRandom(seed=14)
+    bounds = MapBounds(5, 5)
+    grid = _uniform_grid(5, 5, Terrain.JUNGLE)
+    coord = HexCoord(2, 2)
+    for _ in range(200):
+        tax = recompute_tax(coord, Terrain.JUNGLE, grid, bounds, bottom_y=4, rng=rng, race=Race.MERMISH)
+        assert 1 <= tax <= ORDINARY_LAND_MAX[Terrain.JUNGLE]
 
 
 def test_attempt_cap_is_the_confirmed_3000():
