@@ -108,13 +108,21 @@ comatose practicer's credit mutation before the caller ever gets a
 chance to gate it, since the group resolver runs before that gate is
 even checked (it needs everyone's frozen pre-attempt skill first).
 
-**The magic-item override is not modeled**: "if one character has
-higher skill only because of a magic item, both characters have only a
-10% chance" can't be evaluated since this project tracks no per-leader
-magic-item inventory or skill modifiers at all (the same gap already
-flagged wherever magic items come up elsewhere in this project, e.g.
-``turn/strength.py``'s quality-modifier list). Every comparison here
-uses ``LeaderState.skills``' raw current level, unconditionally.
+**The "(unmodified by magic items)" clause is already satisfied, not a
+remaining gap** -- stale as of Phase 534 (``turn/discovery_effects.py
+ability_bonus_from_items()``/``effective_skill_level()``, item-derived
+skill bonuses), which this section predates. Re-checked directly: every
+comparison in this module (``execute_practice()``'s solo path,
+``execute_practice_group()``'s pairs/triples) reads ``LeaderState.
+skills.pair_for_ability()`` -- the raw stored table value -- and never
+``effective_skill_level()``. So "one character has a higher skill in
+the ability (unmodified by magic items)" is already true by
+construction: Practice's own tie/lower comparison was never item-
+inclusive in the first place, needing no special-cased override to
+strip a magic-item bonus back out. This is unrelated to ``turn/
+strength.py``'s own, genuinely different "no magic-item quality
+modifier" gap (a *combat*-strength concept, not a skill-comparison
+one).
 
 **Two abilities need special handling** per the rulebook, and this
 phase's scope for each:

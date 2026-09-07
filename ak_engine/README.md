@@ -31381,6 +31381,22 @@ follow-up request after the original 431-435 plan shipped.
   Test count: 6415 -> 6423 (net +8). Full suite verified green
   (unchanged, 6415) before touching a single test.
 
+- **Phase 758**: comment-only, no behavior change. `turn/practice_
+  execution.py`'s own module docstring still called rulebook [3.13]'s
+  "(unmodified by magic items he possesses)" clause unmodeled, claiming
+  it "can't be evaluated since this project tracks no per-leader
+  magic-item inventory." Stale since Phase 534 (`turn/discovery_
+  effects.py ability_bonus_from_items()`/`effective_skill_level()`),
+  which this section predates. Re-checked directly: `execute_practice()`
+  and `execute_practice_group()` both compare `LeaderState.skills.
+  pair_for_ability()` -- the raw stored table value -- never
+  `effective_skill_level()`, so the "unmodified by magic items" rule
+  was already satisfied by construction the whole time, needing no
+  special-cased override to strip an item bonus back out. Docstring
+  corrected to say so, distinguishing this from `turn/strength.py`'s
+  own genuinely separate, still-open "no magic-item quality modifier"
+  combat gap. Full suite unchanged (6423).
+
 ## Setup
 
 ```
