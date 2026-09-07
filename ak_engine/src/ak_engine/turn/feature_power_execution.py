@@ -27,16 +27,17 @@ phase's own 9 powers only ever reach `PC_NONE`/`PAY_UP`/`SAME_ALIGN`/
 `DRAIN_COURAGE` in practice (confirmed by checking `POWER_CONDITION_
 PAIRS` for exactly these 9 keys).
 
-**`MAP_PROV` deliberately excluded from this phase's own "tractable"
-bucket, despite being scoped in there originally**: the real effect
-("reveal 3-5 unknown lands, their inhabitants, location and ruler")
-needs a per-Kingdom "which provinces are currently known" tracking
-concept -- confirmed absent anywhere in this project (`GameState`'s own
-`kingdoms_met`/`kingdoms_met_since` track diplomatic contact only,
-nothing at the province level; `ProvinceState.owner_kingdom_id` is
-ownership, not a visibility/knowledge flag). Wiring `MAP_PROV` for real
-needs that tracking concept built first -- left for a later phase
-rather than inventing one here.
+**`MAP_PROV` was deliberately excluded from this phase's own
+"tractable" bucket, despite being scoped in there originally**: the
+real effect ("reveal 3-5 unknown lands, their inhabitants, location and
+ruler") needed a per-Kingdom "which provinces are currently known"
+tracking concept -- confirmed absent anywhere in this project at the
+time (`GameState`'s own `kingdoms_met`/`kingdoms_met_since` track
+diplomatic contact only, nothing at the province level; `ProvinceState.
+owner_kingdom_id` is ownership, not a visibility/knowledge flag).
+**Closed as of Phase 623** -- see this module's own Phase 623 addendum
+below for the tracking concept and the wired effect; every real `Power`
+is now wired, nothing left deliberately excluded any more.
 
 **`SAGE_DISC`'s own selection is a documented simplification, not a
 guess**: the source says "privilegiando il valore/difficoltà minore

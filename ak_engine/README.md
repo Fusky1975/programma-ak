@@ -31397,6 +31397,29 @@ follow-up request after the original 431-435 plan shipped.
   own genuinely separate, still-open "no magic-item quality modifier"
   combat gap. Full suite unchanged (6423).
 
+- **Phase 759**: a thirty-sixth fresh survey found 2 more stale
+  docstrings, both comment-only, no behavior change. `turn/
+  initiative.py`'s own module docstring claimed a magic-item-derived
+  ability bonus "has no consumer or source anywhere in this project (no
+  item field, no formula)" for Character Initiative's own "più tutti
+  gli aumenti derivanti dal possesso di oggetti magici" clause -- stale
+  since Phase 534: `character_initiative()` already sums `effective_
+  skill_level()` over every `Ability`, and that function already folds
+  in `ability_bonus_from_items()` alongside the Discovery bonus, so the
+  magic-item half was already reaching the sum for free. `turn/
+  feature_power_execution.py`'s own Phase 616 addendum still called
+  `MAP_PROV` "deliberately excluded... left for a later phase" for lack
+  of a "known provinces" tracking concept -- stale since Phase 623,
+  documented ~100 lines later in the same file's own addendum
+  ("Every real `Power` is now wired"), just never pruned from the
+  opening paragraph. A third candidate (`render_generic_encounter()`,
+  ENCO.X, zero production callers) was investigated and left open,
+  genuinely ambiguous whether it belongs to the already-confirmed-
+  permanently-blocked SS12 social-outcome tree (Phase 709) or is a
+  separate, real wiring gap -- not picked up this round, same "no
+  source, no guess" stance as `render_challenge_search()`. Full suite
+  unchanged (6423).
+
 ## Setup
 
 ```

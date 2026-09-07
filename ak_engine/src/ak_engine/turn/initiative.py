@@ -27,13 +27,16 @@ conoscenza speciali"**: "conoscenza speciali" (special knowledge) is
 this project's own already-established term for Discoveries --
 `turn/discovery_effects.py effective_skill_level()` already folds
 Discovery-derived ability bonuses into every per-ability read, so
-summing that function over every `Ability` picks those up for free. A
-magic-item-derived ability bonus, by contrast, has no consumer or
-source anywhere in this project (no item field, no formula) -- the same
-"confirmed mechanic, no sourced magnitude" gap this project already
-leaves open elsewhere (e.g. Naval's own March-like union bonus,
-`turn/multiple_contingents.py`'s own docstring) -- so it's left out
-rather than guessed at.
+summing that function over every `Ability` picks those up for free.
+**Stale as of Phase 759 -- the same is true of the magic-item half**:
+this paragraph used to claim "no item field, no formula" existed for a
+magic-item-derived ability bonus, predating Phase 534's `ability_bonus_
+from_items()` (`M_Skill`'s own "+1 per copy held" formula, already
+folded into `effective_skill_level()` alongside the Discovery bonus,
+both capped together at `MAX_SKILL_LEVEL`). Both halves of "oggetti
+magici e conoscenza speciali" therefore already reach this module's own
+sum for free, through the one shared function -- nothing further to
+wire.
 """
 
 from __future__ import annotations
