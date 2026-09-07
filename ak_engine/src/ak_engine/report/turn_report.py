@@ -308,18 +308,45 @@ alongside it, deliberately left out of scope**: `SAY.PAS`'s own
 `_LGreet` are plain, non-`.X`-sourced `Say(...)` calls describing what
 happens *after* the RWENC.X opening (declining to fight, exchanging
 tips, hearing rumors of a Feature, sharing a drink, ...), and
-`_LEnc`/`_LSafe`/`_LPEnc` dispatch their own sibling `.X` files
-(`enco.x`, `safpat.x`, `patenc.x`) for closely related encounter
-variants (`_LPEnc` sets `randlevel:= 2` instead of RWENC's `1`,
-suggesting a distinct danger-level tier). Modeling that whole outcome
-tree is a real, standalone follow-up phase, not attempted here.
+`_LSafe`/`_LPEnc` dispatch their own sibling `.X` files (`safpat.x`,
+`patenc.x`) for closely related encounter variants (`_LPEnc` sets
+`randlevel:= 2` instead of RWENC's `1`, suggesting a distinct
+danger-level tier). Modeling that whole outcome tree is a real,
+standalone follow-up phase, not attempted here -- **Phase 707-709
+(`Desktop/CASUALENCOUNTER.md`) later confirmed this whole system's own
+complete real dispatcher directly** (`Random_Encounter`'s own `SAY.PAS`
+block: `_LNoRand`/`_LREnc`/`_LSafe`/`_LWEnc`/`_LPEnc`/`_LPass`/
+`_LBefr`/`_LNice`/`_LGreet`/`_LEncEnd`), wired into `turn/random_
+encounter_execution.py`/`describe_random_encounter()`; the 8-code
+`_LTricks`/`_LDense`/`_LDona`/`_LHear` sub-tree's own selection formula
+(`approach_score`) was investigated there directly and found genuinely
+unrecoverable -- a permanent, not deferred, gap (see `models/local_
+encounter.py`'s own module docstring, which now holds this whole
+sub-tree's confirmed vocabulary).
 
 **Phase 107 addendum -- the three sibling `.X` files themselves.**
 `ENCO.X`, `SAFPAT.X` and `PATENC.X`, all confirmed real via `SAY.PAS`'s
 own dispatch:
 
 - `ENCO.X` (header `"1 1"`) is `_LEnc: FD('enco',S_Adv,1)` -- the
-  simplest possible encounter opening, a single template.
+  simplest possible encounter opening, a single template. **Phase 760
+  correction**: unlike its two siblings below, `_LEnc` does NOT appear
+  anywhere in `CASUALENCOUNTER.md`'s own complete, independently-
+  disassembled dispatcher enumeration for `Random_Encounter` (section
+  16.1) -- only `_LSafe`/`_LWEnc`/`_LPEnc`/`_LEncEnd` do, alongside the
+  8-code social-outcome sub-tree. So `_LEnc` is very likely dispatched
+  from a genuinely different, still-unidentified real trigger point,
+  not this project's own random-encounter mechanism at all -- grouping
+  it with `_LSafe`/`_LPEnc` above was this phase's own original,
+  pattern-matched guess (same naming convention, similar prose), made
+  before `CASUALENCOUNTER.md`'s later ground-truth disassembly existed
+  to check it against. `render_generic_encounter()` therefore stays
+  real, sourced, and render-tested but genuinely unwired -- the same
+  "confirmed content, unconfirmed trigger" category as `render_
+  challenge_search()` (`ENCATT.X`) below, not a stale claim to simply
+  go fix, and not part of the permanently-blocked 8-code sub-tree
+  either (that's a different, already-settled non-recoverability, not
+  this function's own situation).
 - `SAFPAT.X` (header `"3 1"`) is `_LSafe: FD('safpat',S_Adv,1)` --
   getting caught but then released (a convincing official seal, an
   impressed judge, not actually being on a wanted list).
@@ -7719,6 +7746,14 @@ _ENCO_TEMPLATES: list[str] = [
 def render_generic_encounter(character_name: str, other_name: str, rng: random.Random) -> str:
     """Renders ENCO.X's sentence -- the simplest encounter opening, a
     single template with no real variation to pick from.
+
+    Real and render-tested, but genuinely unwired -- no confirmed
+    trigger anywhere in the available source (Phase 760 correction:
+    despite the naming/prose resemblance, `CASUALENCOUNTER.md`'s own
+    complete disassembly of `Random_Encounter`'s dispatcher does NOT
+    include `_LEnc` -- see the module docstring's own Phase 107
+    addendum). Not part of that mechanism's own permanently-blocked
+    8-code social sub-tree either; a genuinely separate open question.
     """
 
     variant = pick_variant(_ENCO_TEMPLATES, rng)

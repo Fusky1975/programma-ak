@@ -31420,6 +31420,28 @@ follow-up request after the original 431-435 plan shipped.
   source, no guess" stance as `render_challenge_search()`. Full suite
   unchanged (6423).
 
+- **Phase 760**: resolved Phase 759's own open question about
+  `render_generic_encounter()` (`ENCO.X`/`_LEnc`) directly, at the
+  user's request. Re-read `Desktop/CASUALENCOUNTER.md`'s own section
+  16.1 -- the complete, independently-disassembled `SAY.PAS` dispatcher
+  block for `Random_Encounter` -- and confirmed `_LEnc` does **not**
+  appear in it anywhere, unlike its two siblings `_LSafe`/`_LPEnc`,
+  which do. So `_LEnc` isn't part of this project's random-encounter
+  mechanism (Phase 707-709) at all, and isn't part of that mechanism's
+  own permanently-blocked 8-code social sub-tree either (`models/
+  local_encounter.py`) -- both were real possibilities this session
+  raised and has now ruled out. It's dispatched from a genuinely
+  different, still-unidentified real trigger point; the earlier Phase
+  107 docstring's own grouping of `_LEnc` alongside `_LSafe`/`_LPEnc`
+  (based on naming/prose resemblance) predates `CASUALENCOUNTER.md`'s
+  later ground-truth disassembly and turned out to be a guess, not a
+  confirmed fact -- corrected. `render_generic_encounter()` itself
+  stays real, sourced, and render-tested, but genuinely unwired, in the
+  same "confirmed content, unconfirmed trigger" category as `render_
+  challenge_search()` -- not a stale claim to fix, a real open question
+  to leave open. Comment-only, no behavior change. Full suite unchanged
+  (6423).
+
 ## Setup
 
 ```
