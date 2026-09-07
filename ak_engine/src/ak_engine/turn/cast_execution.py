@@ -229,7 +229,18 @@ table (Phase 128) -- each granted once a caster reaches skill 5+ in its
 base ``Ability`` (``AdvancedAbility``'s own skill-5-and-up mechanic),
 and none of them had any ``SPNOTE.X2``/rulebook text anywhere in this
 project's archive until the user began supplying each one's own rule
-text directly, one at a time.
+text directly, one at a time. **Phase 761**: the 5 of these 10 that are
+Action-Cast spells -- Gate Angel, Scar Terrain, Mystic Winds, Locate
+Object, Illusory Fog -- now actually enforce this same skill-5+ "does
+the caster even know this spell" gate in ``_roll_cast_success()``
+(``SECRET_ACTION_SPELLS``/``SECRET_ACTION_SPELL_KNOWN_ABILITY_LEVEL``);
+the other 5, Personal-Combat spells (Illusory Hero, Words of Healing,
+Gate Demon, Lava Pool, Augur Combat), get the identical gate in
+``turn/search_execution.py``/``turn/challenge_execution.py``. Before
+this phase, only Illusory Hero and Words of Healing were ever actually
+gated -- the other 8 could be cast by a caster of any skill level 1+,
+a real, uncaught correctness gap this project's own docstrings had
+mischaracterized as already-uniform for years.
 
 - **Gate Angel** (``AdvancedAbility.GATE_ANGEL_SPELL``, ``Ability.WHITE``,
   Phase 194, corrected Phase 195) -- the user's own quoted rule text
@@ -1299,6 +1310,26 @@ def _consume_action_cast_slot(state: GameState, leader_id: int, ability: Ability
     return True
 
 
+# Phase 761: the 5 secret Action-Cast spells (Gate Angel, Scar Terrain,
+# Mystic Winds, Locate Object, Illusory Fog) never had the same
+# secret-spell skill-5+ eligibility gate `turn/search_execution.py`/
+# `turn/challenge_execution.py` already enforce for their own secret
+# Personal-Combat spells (Illusory Hero, Words of Healing, and, as of
+# this same phase, Gate Demon/Lava Pool/Augur Combat) -- `models/
+# advanced_ability.py`'s own module docstring confirms the identical
+# "reaching skill level 5... awards one Advanced Ability" mechanic
+# applies uniformly to all 10 secret spells, this project just never
+# circled back to wire the other 5. A caster below this threshold
+# simply doesn't know the spell yet: no roll, no action-cast slot spent
+# (checked before ``_consume_action_cast_slot`` below, same "ineligible
+# means nothing happened at all" ordering as the ordinary ``level < 1``
+# check right above it).
+SECRET_ACTION_SPELL_KNOWN_ABILITY_LEVEL = 5
+SECRET_ACTION_SPELLS = frozenset(
+    {Spell.GATE_ANGEL, Spell.SCAR_TERRAIN, Spell.MYSTIC_WINDS, Spell.LOCATE_OBJECT, Spell.ILLUS_FOG}
+)
+
+
 def _roll_cast_success(
     state: GameState,
     caster: LeaderState,
@@ -1349,6 +1380,8 @@ def _roll_cast_success(
     level = effective_skill_level(state, caster, ability)
     if level < 1:
         return False, "insufficient skill"
+    if spell in SECRET_ACTION_SPELLS and level < SECRET_ACTION_SPELL_KNOWN_ABILITY_LEVEL:
+        return False, "spell not yet known"
 
     if not _consume_action_cast_slot(state, caster.leader_id, ability, level):
         return False, "no action-cast slots remaining this turn for this ability"

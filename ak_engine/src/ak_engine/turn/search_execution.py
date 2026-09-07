@@ -676,6 +676,22 @@ ILLUS_HERO_KNOWN_ABILITY_LEVEL = 5
 # Phase 200 addendum.
 WORDS_OF_HEALING_KNOWN_ABILITY_LEVEL = 5
 
+# Phase 761: the identical secret-spell skill-5+ gate, for the 3
+# remaining secret Personal-Combat spells this module dispatches --
+# `models/advanced_ability.py`'s own module docstring confirms the same
+# "reaching skill level 5... awards one Advanced Ability... that can be
+# gained only once" mechanic applies uniformly to all 10 secret spells
+# (`AdvancedAbility.GATE_DEMON_SPELL`/`LAVA_POOL_SPELL`/`AUGUR_COMBAT_
+# SPELL`, `Ability.NECROMANCY`/`ELEMENTAL`/`PSYCHIC` respectively, same
+# as their own `ability` resolution just above) -- Illusory Hero/Words
+# of Healing were never a special case, just the first two wired.
+# Checked unconditionally regardless of caster, matching Illusory Hero/
+# Words of Healing's own exact shape -- see the real check's own
+# comment below for why a monster caster is unaffected in practice.
+GATE_DEMON_KNOWN_ABILITY_LEVEL = 5
+LAVA_POOL_KNOWN_ABILITY_LEVEL = 5
+AUGUR_COMBAT_KNOWN_ABILITY_LEVEL = 5
+
 # Rulebook [5.6] Flee, transcribed verbatim -- see this module's own
 # docstring addendum and models/monster.py's own [5.6] quote.
 FLEE_CHANCE: dict[MonsterSpeed, float] = {
@@ -1860,6 +1876,22 @@ def _resolve_search_encounter(
         if spell is Spell.ILLUS_HERO and level < ILLUS_HERO_KNOWN_ABILITY_LEVEL:
             return None
         if spell is Spell.HEAL and level < WORDS_OF_HEALING_KNOWN_ABILITY_LEVEL:
+            return None
+        # Phase 761: the same secret-spell skill-5+ gate for the other 3
+        # secret Personal-Combat spells this module dispatches -- checked
+        # unconditionally regardless of caster, matching Illusory Hero/
+        # Words of Healing's own exact shape above (and, like Words of
+        # Healing's own real ``MONSTER_MAGIC_ABILITIES`` data, no real
+        # monster in that table reaches level 5 for any Ability -- a
+        # monster genuinely can't cast any of these today, the same as
+        # Words of Healing already was; a synthetic ``patch.dict`` test
+        # fixture is how this project already exercises that hypothetical
+        # path, see this module's own test suite).
+        if spell is Spell.GATE_DEMON and level < GATE_DEMON_KNOWN_ABILITY_LEVEL:
+            return None
+        if spell is Spell.LAVA_POOL and level < LAVA_POOL_KNOWN_ABILITY_LEVEL:
+            return None
+        if spell is Spell.AUGUR_COMBAT and level < AUGUR_COMBAT_KNOWN_ABILITY_LEVEL:
             return None
 
         # Phase 732: a wand-cast (`forced_level` set) is [3.11]'s own

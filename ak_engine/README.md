@@ -31442,6 +31442,39 @@ follow-up request after the original 431-435 plan shipped.
   to leave open. Comment-only, no behavior change. Full suite unchanged
   (6423).
 
+- **Phase 761**: a real correctness gap found by a thirty-seventh fresh
+  survey. `models/advanced_ability.py`'s own module docstring confirms
+  all 10 "secret" spells (ordinals 25-34) are granted only once a
+  caster reaches skill 5+ in the granting Ability -- but only 2 of them
+  (Illusory Hero, Words of Healing) ever actually enforced that gate.
+  The other 8 -- Gate Demon/Lava Pool/Augur Combat (Personal-Combat,
+  `turn/search_execution.py`/`turn/challenge_execution.py`) and Gate
+  Angel/Scar Terrain/Mystic Winds/Locate Object/Illusory Fog (Action-
+  Cast, `turn/cast_execution.py _roll_cast_success()`) -- could be cast
+  by a caster of any skill level 1+, a real, uncaught gap this
+  project's own docstrings had mischaracterized as already-uniform.
+  Fixed by mirroring the existing `ILLUS_HERO_KNOWN_ABILITY_LEVEL`/
+  `WORDS_OF_HEALING_KNOWN_ABILITY_LEVEL` pattern exactly for the other
+  8, checked unconditionally regardless of caster (leader or monster) --
+  matching Words of Healing's own precedent rather than inventing a new
+  leader-only carve-out (an earlier draft of this fix scoped the check
+  to leader casters only, reasoning that a monster's own `MONSTER_
+  MAGIC_ABILITIES` level has nothing to do with the Practice/Advanced-
+  Ability pool-draw mechanic; reverted once it was confirmed Words of
+  Healing's own already-shipped gate makes the identical trade-off --
+  no real monster ever reaches skill 5 in that table either, so
+  consistency with established precedent won over the new reasoning).
+  Empirically measured an 11-test blast radius before touching a single
+  test, all leader-cast fixtures missing the now-required skill (fixed
+  by raising their scripted skill to 5) plus 2 monster-caster tests
+  needing the same `patch.dict(MONSTER_MAGIC_ABILITIES, ...)` synthetic-
+  boost technique the pre-existing Words-of-Healing monster test already
+  established. New tests added for all 8 spells' own level-gate
+  boundary, plus one confirming a wand-triggered Illusory Fog cast still
+  bypasses the gate entirely ([3.11]'s own "always successful" rule).
+  Test count: 6423 -> 6437 (net +14). Full suite verified green
+  (unchanged, 6423) before touching a single test.
+
 ## Setup
 
 ```

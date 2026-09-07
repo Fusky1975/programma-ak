@@ -383,6 +383,14 @@ _COMBAT_MANEUVERS = frozenset({Maneuver.MELEE, Maneuver.SHOOT})
 ILLUS_HERO_KNOWN_ABILITY_LEVEL = 5
 WORDS_OF_HEALING_KNOWN_ABILITY_LEVEL = 5
 
+# Phase 761: the identical gate for the other 3 secret Personal-Combat
+# spells this module dispatches -- see `turn/search_execution.py`'s own
+# Phase 761 addendum for the full reasoning (this file never had them
+# gated at all, only Illusory Hero/Words of Healing above).
+GATE_DEMON_KNOWN_ABILITY_LEVEL = 5
+LAVA_POOL_KNOWN_ABILITY_LEVEL = 5
+AUGUR_COMBAT_KNOWN_ABILITY_LEVEL = 5
+
 # Office.NECRO_MAGE's own Imp familiar (Phase 666, `models/office.py
 # OFFICE_TITLE_DESCRIPTION`): "25% magic resistance, meaning that 25% of
 # the spells cast against <2 will fail."
@@ -786,6 +794,18 @@ def _resolve_personal_combat_cast(
     elif spell is Spell.HEAL:
         level = effective_skill_level(state, caster_leader, ability)
         if level < WORDS_OF_HEALING_KNOWN_ABILITY_LEVEL:
+            return None
+    elif spell is Spell.GATE_DEMON:
+        level = effective_skill_level(state, caster_leader, ability)
+        if level < GATE_DEMON_KNOWN_ABILITY_LEVEL:
+            return None
+    elif spell is Spell.LAVA_POOL:
+        level = effective_skill_level(state, caster_leader, ability)
+        if level < LAVA_POOL_KNOWN_ABILITY_LEVEL:
+            return None
+    elif spell is Spell.AUGUR_COMBAT:
+        level = effective_skill_level(state, caster_leader, ability)
+        if level < AUGUR_COMBAT_KNOWN_ABILITY_LEVEL:
             return None
     else:
         level = effective_skill_level(state, caster_leader, ability)

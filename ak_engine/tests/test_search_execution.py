@@ -2913,8 +2913,28 @@ def test_execute_search_cast_illusory_hero_turns_on_master_false_when_alignments
 # -- Phase 214: Gate Demon / Lava Pool ----------------------------------------
 
 
+def _gate_demon_known_skills() -> SkillTable:
+    # Phase 761: Gate Demon is a secret spell, requiring skill 5+ in its
+    # granting Ability.NECROMANCY -- see search_execution.py's own Phase
+    # 761 addendum.
+    raw = [0] * 30
+    raw[Ability.NECROMANCY.value * 2] = 5
+    raw[Ability.NECROMANCY.value * 2 + 1] = 9
+    return SkillTable(raw_values=raw)
+
+
+def _lava_pool_known_skills() -> SkillTable:
+    # Phase 761: Lava Pool is a secret spell, requiring skill 5+ in its
+    # granting Ability.ELEMENTAL -- see search_execution.py's own Phase
+    # 761 addendum.
+    raw = [0] * 30
+    raw[Ability.ELEMENTAL.value * 2] = 5
+    raw[Ability.ELEMENTAL.value * 2 + 1] = 9
+    return SkillTable(raw_values=raw)
+
+
 def test_execute_search_cast_gate_demon_refusal_only_rolled_for_eligible_alignment():
-    state = _state_with_leader()
+    state = _state_with_leader(skills=_gate_demon_known_skills())
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _cast_request(1, Spell.GATE_DEMON)
 
@@ -2951,7 +2971,7 @@ def test_execute_search_cast_gate_demon_refusal_prevents_the_demon_duel():
 
 
 def test_execute_search_cast_gate_demon_win_credits_the_caster():
-    state = _state_with_leader()
+    state = _state_with_leader(skills=_gate_demon_known_skills())
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _cast_request(1, Spell.GATE_DEMON)
 
@@ -2967,7 +2987,7 @@ def test_execute_search_cast_gate_demon_win_credits_the_caster():
 
 
 def test_execute_search_cast_gate_demon_loss_lets_the_plan_continue():
-    state = _state_with_leader()
+    state = _state_with_leader(skills=_gate_demon_known_skills())
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _cast_request(1, Spell.GATE_DEMON, Maneuver.MELEE)
 
@@ -3022,7 +3042,7 @@ def test_execute_search_cast_lava_pool_immune_species_has_no_effect():
 
 
 def test_execute_search_cast_lava_pool_uses_the_monster_targets_own_speed():
-    state = _state_with_leader()
+    state = _state_with_leader(skills=_lava_pool_known_skills())
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _cast_request(1, Spell.LAVA_POOL)
 
@@ -3052,7 +3072,7 @@ def test_execute_search_cast_lava_pool_escape_has_no_effect():
 
 
 def test_execute_search_cast_lava_pool_failed_escape_kills_instantly():
-    state = _state_with_leader()
+    state = _state_with_leader(skills=_lava_pool_known_skills())
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _cast_request(1, Spell.LAVA_POOL)
 
@@ -3076,10 +3096,19 @@ def test_execute_search_cast_lava_pool_on_a_leader_target_defaults_to_medium_spe
     request = _melee_request(1)
     monster_plan = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.LAVA_POOL.value),)
 
+    # Phase 761: Lava Pool now requires skill 5+ in its granting Ability
+    # (checked unconditionally, same as Words of Healing's own identical
+    # gate) -- no real monster ever reaches that in MONSTER_MAGIC_
+    # ABILITIES, so this synthetic fixture boosts one, mirroring test_
+    # execute_search_cast_words_of_healing_monster_caster_heals_to_its_
+    # own_starting_hit_points's own established pattern for the same
+    # situation.
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.search_execution.resolve_lava_pool_escape", return_value=True
     ) as mock_escape, patch(
         "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan
+    ), patch.dict(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.ARCHER: {Ability.ELEMENTAL: 5}}
     ), patch(
         "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
     ):
@@ -3101,10 +3130,17 @@ def test_execute_search_cast_augur_combat_monster_caster_has_no_effect():
     request = _melee_request(1)
     monster_plan = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.AUGUR_COMBAT.value),)
 
+    # Phase 761: Augur Combat now requires skill 5+ too (checked
+    # unconditionally, same as Words of Healing's own identical gate) --
+    # boosted here so this test still exercises the *intended* code path
+    # under test (the downstream "not caster_is_leader" no-op), not the
+    # new skill gate itself.
     with patch(
         "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
     ) as mock_roll, patch(
         "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan
+    ), patch.dict(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.ARCHER: {Ability.PSYCHIC: 5}}
     ), patch("ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)):
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
@@ -3315,6 +3351,80 @@ def test_execute_search_cast_words_of_healing_level_gate_blocks_low_white_skill(
 
     assert not mock_cast_roll.called
     assert not mock_heal.called
+    assert mock_melee.called  # falls through to the plan's own Melee tactic
+
+
+# -- Phase 761: the same skill-5+ gate for Gate Demon/Lava Pool/Augur Combat ---
+
+
+def test_execute_search_cast_gate_demon_level_gate_blocks_low_necromancy_skill():
+    leader = _skilled_leader(Ability.NECROMANCY, 4)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_DEMON, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_cast_roll, patch(
+        "ak_engine.turn.search_execution.roll_gate_demon_type"
+    ) as mock_demon_type, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_cast_roll.called
+    assert not mock_demon_type.called
+    assert mock_melee.called  # falls through to the plan's own Melee tactic
+
+
+def test_execute_search_cast_gate_demon_level_gate_allows_exactly_level_5():
+    leader = _skilled_leader(Ability.NECROMANCY, 5)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_DEMON)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_alignment", return_value=Alignment.GOOD
+    ), patch("ak_engine.turn.search_execution.roll_gate_demon_type", return_value=Monster.ARCHER) as mock_demon_type, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ):
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_demon_type.called
+
+
+def test_execute_search_cast_lava_pool_level_gate_blocks_low_elemental_skill():
+    leader = _skilled_leader(Ability.ELEMENTAL, 4)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.LAVA_POOL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_cast_roll, patch(
+        "ak_engine.turn.search_execution.resolve_lava_pool_escape"
+    ) as mock_escape, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_cast_roll.called
+    assert not mock_escape.called
+    assert mock_melee.called  # falls through to the plan's own Melee tactic
+
+
+def test_execute_search_cast_augur_combat_level_gate_blocks_low_psychic_skill():
+    leader = _skilled_leader(Ability.PSYCHIC, 4)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.AUGUR_COMBAT, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_cast_roll, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_cast_roll.called
+    assert mock_melee.called  # falls through to the plan's own Melee tactic
     assert mock_melee.called
 
 

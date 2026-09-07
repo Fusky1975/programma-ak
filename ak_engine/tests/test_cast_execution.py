@@ -3434,6 +3434,110 @@ def test_illusory_fog_strength_unchanged_when_not_affected():
 
 
 # ---------------------------------------------------------------------------
+# Phase 761: the secret-spell skill-5+ "does the caster even know this
+# spell" gate, for the 5 secret Action-Cast spells (Gate Angel, Scar
+# Terrain, Mystic Winds, Locate Object, Illusory Fog) -- previously
+# enforced nowhere; every one of these 5 could be cast by a caster of
+# any skill level 1+. Each test below reuses an already-passing
+# existing fixture for that spell, changing only the caster's own
+# skill in the granting Ability.
+# ---------------------------------------------------------------------------
+
+
+def test_gate_angel_level_gate_blocks_low_white_skill():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 4)
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+    rng = ScriptedRandom([], choice_indices=[0])  # GOOD due -- matches kingdom 1
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "spell not yet known"
+
+
+def test_gate_angel_level_gate_allows_exactly_level_5():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.WHITE, 5)
+    request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
+    # GOOD due (matches kingdom 1); a real (non-None) skill now reaches
+    # the real success roll (0.0, always clears the chance) instead of
+    # the "skills is None" bypass, and a successful cast then triggers
+    # Add_Experience's own gain draw (Phase 460, 2 more values).
+    rng = ScriptedRandom([0.0, 0.5, 0.5], choice_indices=[0])
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+
+
+def test_scar_terrain_level_gate_blocks_low_necromancy_skill():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.NECROMANCY, 4)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.SCAR_TERRAIN, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "spell not yet known"
+    assert state.provinces[LOCATION].scar_terrain_gold_reduction == 0
+
+
+def test_mystic_winds_level_gate_blocks_low_elemental_skill():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ELEMENTAL, 4)
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION, movement_points=0, commanded_by=CASTER_ID))
+    request = CastRequest(spell=Spell.MYSTIC_WINDS, target=CASTER_ID)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "spell not yet known"
+    assert state.leaders[CASTER_ID].mystic_winds_active is False
+
+
+def test_locate_object_level_gate_blocks_low_psychic_skill():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.PSYCHIC, 4)
+    request = CastRequest(spell=Spell.LOCATE_OBJECT, target=1)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "spell not yet known"
+
+
+def test_illusory_fog_level_gate_blocks_low_illusion_skill():
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ILLUSION, 4)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.ILLUS_FOG, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "spell not yet known"
+    assert state.provinces[LOCATION].illusory_fog_active is False
+
+
+def test_illusory_fog_level_gate_does_not_affect_wand_triggered_casts():
+    # [3.11]: a wand-triggered cast is always successful, bypassing every
+    # skill check (including this one) -- the same "wand bypasses
+    # everything" convention _roll_cast_success()'s own ordinary
+    # `level < 1` check already established.
+    state = build_state()
+    state.leaders[CASTER_ID].skills = _skills_with(Ability.ILLUSION, 0)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.ILLUS_FOG, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, wand_skill_level=1)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].illusory_fog_active is True
+
+
+# ---------------------------------------------------------------------------
 # Add_Experience wiring for spell-school casts (Phase 460) --
 # AKGEN_reverse_engineering_report (2).md SS3.3's spell-school row
 # ---------------------------------------------------------------------------

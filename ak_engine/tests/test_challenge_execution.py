@@ -1019,7 +1019,7 @@ def test_execute_challenge_cast_augur_combat_not_blocked_by_target_anti_magic_am
     # check even when the target holds the matching Anti-Psychic Amulet.
     state = _base_state()
     caster = LeaderState(
-        1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 2, 9), temper=Temper.CAUTIOUS
+        1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9), temper=Temper.CAUTIOUS
     )
     state.add_leader(caster)
     state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
@@ -1196,6 +1196,59 @@ def test_execute_challenge_cast_words_of_healing_level_gate_blocks_low_white_ski
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.WHITE, 4, 9)))
     state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 9, 9)))
     request = _cast_request(2, Spell.HEAL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert not mock_roll.called
+    assert mock_melee.called
+
+
+# -- Phase 761: the same skill-5+ gate for Gate Demon/Lava Pool/Augur Combat ---
+
+
+def test_execute_challenge_cast_gate_demon_level_gate_blocks_low_necromancy_skill():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 9, 9)))
+    request = _cast_request(2, Spell.GATE_DEMON, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll, patch(
+        "ak_engine.turn.challenge_execution.roll_gate_demon_type"
+    ) as mock_demon_type, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert not mock_roll.called
+    assert not mock_demon_type.called
+    assert mock_melee.called
+
+
+def test_execute_challenge_cast_lava_pool_level_gate_blocks_low_elemental_skill():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ELEMENTAL, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 9, 9)))
+    request = _cast_request(2, Spell.LAVA_POOL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll, patch(
+        "ak_engine.turn.challenge_execution.resolve_lava_pool_escape"
+    ) as mock_escape, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert not mock_roll.called
+    assert not mock_escape.called
+    assert mock_melee.called
+
+
+def test_execute_challenge_cast_augur_combat_level_gate_blocks_low_psychic_skill():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 9, 9)))
+    request = _cast_request(2, Spell.AUGUR_COMBAT, Maneuver.MELEE)
 
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll, patch(
         "ak_engine.turn.challenge_execution.resolve_melee_duel"
@@ -1399,7 +1452,7 @@ def test_execute_challenge_cast_invisibility_target_holding_crystal_of_true_seei
 
 def test_execute_challenge_cast_gate_demon_summons_and_the_demon_wins():
     state = _base_state()
-    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 5, 9)))
     state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.GOOD))
     request = _cast_request(2, Spell.GATE_DEMON)
 
@@ -1435,7 +1488,7 @@ def test_execute_challenge_cast_psychic_blast_bonus_attacks_can_finish_the_targe
 def test_augur_combat_cast_first_shirks_and_flees_on_a_simulated_loss():
     state = _base_state()
     caster_leader = LeaderState(
-        1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9), temper=Temper.COWARDLY
+        1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9), temper=Temper.COWARDLY
     )
     target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
     state.add_leader(caster_leader)
@@ -1463,7 +1516,7 @@ def test_augur_combat_cast_later_flee_succeeds():
     # never reached -- the "cast later" branch returns before any roll.
     state = _base_state()
     caster_leader = LeaderState(
-        1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9), temper=Temper.COWARDLY
+        1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9), temper=Temper.COWARDLY
     )
     target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
     state.add_leader(caster_leader)
@@ -1493,7 +1546,7 @@ def test_augur_combat_cast_later_flee_succeeds():
 def test_augur_combat_cast_later_flee_fails_falls_through():
     state = _base_state()
     caster_leader = LeaderState(
-        1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9), temper=Temper.COWARDLY
+        1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 5, 9), temper=Temper.COWARDLY
     )
     target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
     state.add_leader(caster_leader)
