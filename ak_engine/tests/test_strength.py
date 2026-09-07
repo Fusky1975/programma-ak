@@ -428,6 +428,70 @@ def test_illusory_terrain_nests_around_is_island_rather_than_flattening_a_three_
     assert nested != flattened_average
 
 
+# -- Enhanced Illusory Terrain (Phase 757) ----------------------------------
+
+
+def test_illusory_terrain_enhanced_widens_the_blend_to_33_67():
+    # Same Phalanx/Plains/Sea inputs as the base 50/50 test above:
+    # real=4, illusory=1.5. AdvancedAbility.ENHANCED_ILLUSORY_TERRAIN's
+    # own text ("affected 67% by the illusory terrain, instead of 50%")
+    # -> 4*0.33 + 1.5*0.67 = 2.325.
+    enhanced = compute_effective_strength(
+        ArmyType.PHALANX,
+        Race.HUMAN,
+        Quality.AVERAGE,
+        Terrain.PLAINS,
+        illusory_terrain=Terrain.SEA,
+        illusory_terrain_enhanced=True,
+    )
+    assert enhanced == pytest.approx(2.325 * int(Quality.AVERAGE))
+    base_blend = compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, illusory_terrain=Terrain.SEA
+    )
+    assert enhanced != base_blend
+
+
+def test_illusory_terrain_enhanced_false_by_default_matches_the_50_50_blend():
+    without_param = compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, illusory_terrain=Terrain.SEA
+    )
+    explicit_false = compute_effective_strength(
+        ArmyType.PHALANX,
+        Race.HUMAN,
+        Quality.AVERAGE,
+        Terrain.PLAINS,
+        illusory_terrain=Terrain.SEA,
+        illusory_terrain_enhanced=False,
+    )
+    assert without_param == explicit_false
+
+
+def test_illusory_terrain_enhanced_is_a_no_op_without_illusory_terrain():
+    # illusory_terrain_enhanced has nothing to widen when there's no
+    # illusion at all -- must not accidentally apply a 33/67 self-blend.
+    ordinary = compute_effective_strength(ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    enhanced_without_illusion = compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, illusory_terrain_enhanced=True
+    )
+    assert enhanced_without_illusion == ordinary
+
+
+def test_illusory_terrain_enhanced_nests_around_is_island_the_same_way_the_base_blend_does():
+    # Only the illusory side's own weight changes -- the real side is
+    # still the full is_island land/Sea average (land=4, sea=1.5 -> 2.75),
+    # not reduced to a single pass. -> 2.75*0.33 + 1.5*0.67 = 1.9125.
+    nested_enhanced = compute_effective_strength(
+        ArmyType.PHALANX,
+        Race.HUMAN,
+        Quality.AVERAGE,
+        Terrain.PLAINS,
+        is_island=True,
+        illusory_terrain=Terrain.SEA,
+        illusory_terrain_enhanced=True,
+    )
+    assert nested_enhanced == pytest.approx(1.9125 * int(Quality.AVERAGE))
+
+
 # -- Phase 351: cross-validation against the confirmed AK.EXE/AK.OVR ------
 # battle_engine.column_resolution.confirmed_multipliers and
 # battle_engine.special_events tables -- the exploration_max: 1.25 data

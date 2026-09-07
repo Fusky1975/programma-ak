@@ -168,6 +168,27 @@ def test_army_peacetime_strength_reaches_through_illusory_terrain():
     assert illusory != ordinary
 
 
+def test_army_peacetime_strength_reaches_through_illusory_terrain_enhanced():
+    # Phase 757: ProvinceState.illusory_terrain_enhanced widens the same
+    # blend from 50/50 to 33/67 -- reaches army_peacetime_strength() the
+    # same way illusory_terrain itself already does, above.
+    state = _state()
+    state.provinces[FIELD].illusory_terrain = Terrain.SEA
+    state.provinces[FIELD].illusory_terrain_enhanced = True
+    army = ArmyState(1, 1, ArmyType.PHALANX, Quality.AVERAGE, FIELD)
+    state.add_army(army)
+
+    enhanced = army_peacetime_strength(state, army, Ability.TACTICAL)
+
+    state_base = _state()
+    state_base.provinces[FIELD].illusory_terrain = Terrain.SEA
+    army_base = ArmyState(1, 1, ArmyType.PHALANX, Quality.AVERAGE, FIELD)
+    state_base.add_army(army_base)
+    base_blend = army_peacetime_strength(state_base, army_base, Ability.TACTICAL)
+
+    assert enhanced != base_blend
+
+
 def test_race_leadership_treasure_covers_the_four_humanoid_races():
     # Phase 285: this table moved to models/treasure.py so turn/
     # battle_orchestrator.py could share it too, without a circular

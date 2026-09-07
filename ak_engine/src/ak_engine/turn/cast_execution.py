@@ -2328,6 +2328,17 @@ def _execute_illus_terrain(
     real/illusory combat strength (``turn/strength.py compute_effective_
     strength()``'s own ``illusory_terrain`` parameter) are both wired as
     of Phase 724.
+
+    **Phase 757**: also records whether the caster held ``Advanced
+    Ability.ENHANCED_ILLUSORY_TERRAIN`` (``ProvinceState.illusory_
+    terrain_enhanced``) -- that ability's own text ("armies fighting
+    there will have their strength affected 67% by the illusory terrain,
+    instead of 50%") widens ``compute_effective_strength()``'s own blend,
+    see that function's Phase 757 addendum. The ability's own other
+    clause ("another player... will also see a randomly generated race
+    and army type") is a report/observer-visibility effect, not a combat
+    one -- deliberately not attempted here, matching the base spell's own
+    still-project-original "who currently believes the illusion" gap.
     """
 
     caster = state.leaders[leader_id]
@@ -2344,6 +2355,7 @@ def _execute_illus_terrain(
         return CastExecutionResult(request, applied=False, reason=reason)
 
     province.illusory_terrain = request.terrain
+    province.illusory_terrain_enhanced = AdvancedAbility.ENHANCED_ILLUSORY_TERRAIN in caster.advanced_abilities
     return CastExecutionResult(request, applied=True)
 
 
@@ -2363,6 +2375,7 @@ def maybe_dissolve_illusory_terrain(province: ProvinceState, rng: random.Random)
         return
     if rng.random() < ILLUSORY_TERRAIN_DISSOLVE_CHANCE:
         province.illusory_terrain = None
+        province.illusory_terrain_enhanced = False
 
 
 def _execute_illus_armies(

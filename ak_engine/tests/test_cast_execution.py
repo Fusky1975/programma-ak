@@ -1822,6 +1822,19 @@ def test_illus_terrain_records_the_fake_terrain_on_the_province():
 
     assert result.applied is True
     assert state.provinces[LOCATION].illusory_terrain is Terrain.FOREST
+    assert state.provinces[LOCATION].illusory_terrain_enhanced is False
+
+
+def test_illus_terrain_records_enhanced_when_caster_holds_the_advanced_ability():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.leaders[CASTER_ID].advanced_abilities.add(AdvancedAbility.ENHANCED_ILLUSORY_TERRAIN)
+    request = CastRequest(spell=Spell.ILLUS_TERRAIN, target=_target(LOCATION), terrain=Terrain.FOREST)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert state.provinces[LOCATION].illusory_terrain_enhanced is True
 
 
 def test_illus_terrain_fails_without_a_fake_terrain_specified():
@@ -1844,11 +1857,14 @@ def test_maybe_dissolve_illusory_terrain_is_a_no_op_when_no_illusion_is_active()
 
 
 def test_maybe_dissolve_illusory_terrain_clears_the_illusion_on_a_scripted_hit():
-    province = ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, illusory_terrain=Terrain.SEA)
+    province = ProvinceState(
+        LOCATION, Terrain.PLAINS, Race.HUMAN, illusory_terrain=Terrain.SEA, illusory_terrain_enhanced=True
+    )
 
     maybe_dissolve_illusory_terrain(province, ScriptedRandom([0.1]))
 
     assert province.illusory_terrain is None
+    assert province.illusory_terrain_enhanced is False
 
 
 def test_maybe_dissolve_illusory_terrain_leaves_the_illusion_untouched_on_a_scripted_miss():

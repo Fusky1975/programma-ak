@@ -97,7 +97,11 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   parameter blends real/illusory combat strength for a unit that enters
   (rulebook [4.23.1]), and `turn/cast_execution.py maybe_dissolve_
   illusory_terrain()` clears this field on a real 15%/turn roll, called
-  once per turn from `turn/turn_processor.py run_turn()`.
+  once per turn from `turn/turn_processor.py run_turn()`. As of **Phase
+  757**, `ProvinceState.illusory_terrain_enhanced` records whether the
+  casting Illusionist held `AdvancedAbility.ENHANCED_ILLUSORY_TERRAIN`,
+  widening that same blend from 50/50 to 33/67 -- see this field's own
+  docstring and `compute_effective_strength()`'s Phase 757 addendum.
 - ``LeaderState.phantasmal_armies_level`` (Phantasmal Armies): unlike
   the three fields above, this one *is* wired into a real consumer the
   same phase it's added -- see ``turn/strength.py
@@ -1057,6 +1061,14 @@ class ProvinceState:
     tax_modifier_percent: int = 0
     # Illusory Terrain (Phase 59) -- see module docstring.
     illusory_terrain: Terrain | None = None
+    # AdvancedAbility.ENHANCED_ILLUSORY_TERRAIN (Phase 757) -- whether the
+    # caster who set `illusory_terrain` above held this ability, which
+    # widens the real/illusory combat-strength blend from 50/50 to 33/67
+    # (see `turn/strength.py compute_effective_strength()`'s own Phase 757
+    # addendum). Meaningless when `illusory_terrain is None`; cleared
+    # alongside it by `turn/cast_execution.py maybe_dissolve_illusory_
+    # terrain()` and overwritten by any fresh Illusory Terrain cast.
+    illusory_terrain_enhanced: bool = False
     # Per-kingdom exploration progress (Phase 69) -- see module docstring.
     # Distinct from `explored_percent` above (a single shared scalar,
     # unable to answer "how much has *this* kingdom explored" for the

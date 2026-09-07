@@ -151,6 +151,7 @@ def army_peacetime_strength(state: GameState, army: ArmyState, ability: Ability)
     terrain = province.effective_terrain() if province is not None else Terrain.PLAINS
     is_island = province.is_island if province is not None else False
     illusory_terrain = province.illusory_terrain if province is not None else None
+    illusory_terrain_enhanced = province.illusory_terrain_enhanced if province is not None else False
     army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race)
     quality = compute_army_modified_quality(state, army)
 
@@ -162,5 +163,5 @@ def army_peacetime_strength(state: GameState, army: ArmyState, ability: Ability)
 
     return compute_effective_strength(
         army.army_type, army_race, quality, terrain, combat_ability_level=ability_level, is_island=is_island,
-        illusory_terrain=illusory_terrain,
+        illusory_terrain=illusory_terrain, illusory_terrain_enhanced=illusory_terrain_enhanced,
     )

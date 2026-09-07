@@ -14,32 +14,35 @@ existed anywhere in this project.
 
 **This module is primitives only** -- every function here is pure (reads
 ``GameState``/``LeaderState``/``ActionPlan`` but never mutates them,
-consumes only the caller-supplied ``rng``) and **nothing here is wired
-into turn dispatch yet**. Matches this project's own established
-"primitives now, wiring later" precedent (Feature->Power Phase 616 vs.
-622/623; the Special Encounter Plan roadmap's own Phase A/659 vs.
-B/669). Two real, still-open follow-ups, not attempted here:
+consumes only the caller-supplied ``rng``). Matches this project's own
+established "primitives now, wiring later" precedent (Feature->Power
+Phase 616 vs. 622/623; the Special Encounter Plan roadmap's own Phase
+A/659 vs. B/669). The two follow-ups originally sketched here are both
+long since resolved:
 
-- **Phase 708**: wiring these primitives into ``turn/plan_dispatch.py
-  run_leader_plan()``'s own per-phase loop for the 5 real action types,
-  a lightweight ephemeral synthetic-monster representation (the real
-  game's own ``maxfeatures+256`` sentinel Feature slot has no
-  precedent anywhere in this codebase -- every ``Feature`` here is a
-  real, ``GameState.features``-indexed, serialized entity), and
-  combat-engine integration (a leader driven by their own real Special
-  Encounter Plan vs. a bare ``Monster`` driven by its own generated
-  tactic plan -- no single existing engine resolves that combination
-  today; ``turn/challenge_execution.py resolve_challenge_combat()``
-  only knows decoded ``SearchTactic`` lists on both sides, and
-  ``turn/search_execution.py``'s own monster-plan generator always
-  requires a real, persisted ``Feature``). This is also where Sense
-  Danger Talent's own "random encounters" clause finally closes.
-- **Phase 709**: the full pre-combat outcome tree (``approach_score``,
-  the 8 named branches -- pass-by/befriend/teach-a-skill/donate-gold/
-  reveal-a-feature/nice-chat/friendly-greeting) and report-layer
-  wiring, including the already-built-but-unwired ``report/turn_
-  report.py render_wandering_encounter()``/``render_patrol_release()``/
-  ``render_patrol_encounter()`` (Phase 106/107).
+- **Phase 708** wired these primitives into ``turn/plan_dispatch.py
+  run_leader_plan()``'s own per-phase loop for the 5 real action types
+  (``turn/random_encounter_execution.py dispatch_random_encounter_
+  after_phase()``), built the lightweight ephemeral synthetic-monster
+  representation (``monster_combatant()``, no real ``Feature`` needed),
+  and closed the combat-engine integration question directly: a leader
+  driven by their own real ``LeaderState.special_encounter_plan`` vs. a
+  bare, passive ``Combatant`` opponent, reusing ``turn/challenge_
+  execution.py resolve_challenge_combat()`` unchanged (see that
+  module's own docstring for the full reasoning). This is also where
+  Sense Danger Talent's own "random encounters" clause closed.
+- **Phase 709** wired ``report/turn_report.py describe_random_
+  encounter()`` (calling ``render_wandering_encounter()``/``render_
+  patrol_release()``/``render_patrol_encounter()``, Phase 106/107, into
+  real production narration) and investigated the full pre-combat
+  outcome tree (``approach_score``, the 8 named branches --
+  pass-by/befriend/teach-a-skill/donate-gold/reveal-a-feature/nice-
+  chat/friendly-greeting) directly. That tree is **not** modeled --
+  the document itself gives no recoverable selection formula for it,
+  a permanently genuinely-blocked gap, not a deferred one. Every
+  encounter that isn't safely resolved via patrol diplomacy or Sense
+  Danger therefore still goes straight to combat, more often than the
+  real game would -- a real, permanent, documented simplification.
 
 **Two genuinely unrecoverable Pascal internals, user-confirmed
 directly rather than guessed** (the document's own field/variable

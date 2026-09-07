@@ -31345,6 +31345,42 @@ follow-up request after the original 431-435 plan shipped.
   regression was measured empirically, not assumed, before choosing the
   patch-based fix.
 
+- **Phase 757**: a fresh codebase survey (this session, after a third
+  full checklist pass through `Desktop/AKGEN 0xEB8A.md` closed that
+  document in full with zero further gaps) found `AdvancedAbility.
+  ENHANCED_ILLUSORY_TERRAIN`'s own real text -- "armies fighting there
+  will have their strength affected 67% by the illusory terrain,
+  instead of 50%" -- was never wired, flagged as a deliberate, separate
+  follow-up in `turn/strength.py`'s own Phase 724 addendum. New
+  `ProvinceState.illusory_terrain_enhanced: bool`, set by `turn/
+  cast_execution.py _execute_illus_terrain()` from whether the caster
+  held the ability, cleared alongside `illusory_terrain` by `maybe_
+  dissolve_illusory_terrain()`. `compute_effective_strength()` gains an
+  `illusory_terrain_enhanced` parameter and a new `ENHANCED_ILLUSORY_
+  TERRAIN_BLEND_WEIGHT = 0.67` constant, widening the existing real/
+  illusory blend from an even split to 33% real / 67% illusory when
+  set. Threaded through the same 8 real call sites Phase 724 already
+  established for `illusory_terrain` itself (`turn/army_quality.py
+  army_peacetime_strength()`; `turn/battle_orchestrator.py fight_
+  battle()`'s two `_build_battle_units()` calls, two `_apply_monster_
+  summoning_aid()` calls, and two `_apply_pursuit()` calls) -- a purely
+  mechanical, parallel addition alongside the already-proven `illusory_
+  terrain` parameter, no new call sites. The ability's own other clause
+  (an outside observer sees a randomly generated race and army type) is
+  a report/observer-visibility effect, not a combat one, and stays
+  unmodeled -- documented explicitly, matching the base spell's own
+  still-project-original "who currently believes the illusion" gap.
+
+  Also closed, same session: two stale docstrings in `turn/random_
+  encounter.py`/`turn/random_encounter_execution.py` still framed
+  Phase 708/709's own report-layer wiring and the SS12 pre-combat
+  social-outcome tree as future work -- both phases shipped long ago;
+  the tree itself was investigated and found permanently unrecoverable
+  (no source formula survives), not merely deferred. Comment-only.
+
+  Test count: 6415 -> 6423 (net +8). Full suite verified green
+  (unchanged, 6415) before touching a single test.
+
 ## Setup
 
 ```

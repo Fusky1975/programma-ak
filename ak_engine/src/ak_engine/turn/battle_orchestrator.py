@@ -347,6 +347,7 @@ def _build_battle_units(
     opponent_kingdom_ids: frozenset[int] = frozenset(),
     is_island: bool = False,
     illusory_terrain: Terrain | None = None,
+    illusory_terrain_enhanced: bool = False,
     duellist_side: bool = False,
     alignment_king_office: Office | None = None,
     explorer_find_water: bool = False,
@@ -760,6 +761,7 @@ def _build_battle_units(
             illusory_fog_affected=illusory_fog_affected,
             is_island=is_island,
             illusory_terrain=illusory_terrain,
+            illusory_terrain_enhanced=illusory_terrain_enhanced,
             adapt_tactics_to_terrain=adapt_tactics_to_terrain,
         )
         duellist_bonus_if_selected = None
@@ -788,6 +790,7 @@ def _build_battle_units(
                 illusory_fog_affected=illusory_fog_affected,
                 is_island=is_island,
                 illusory_terrain=illusory_terrain,
+                illusory_terrain_enhanced=illusory_terrain_enhanced,
                 adapt_tactics_to_terrain=adapt_tactics_to_terrain,
             )
             bonus = fanatic_strength - strength
@@ -1629,6 +1632,7 @@ def _apply_pursuit(
     *,
     is_island: bool = False,
     illusory_terrain: Terrain | None = None,
+    illusory_terrain_enhanced: bool = False,
 ) -> set[int]:
     """Rulebook [7.3]: chase down some of a clean-swept, retreating loser's armies before they escape.
 
@@ -1636,11 +1640,12 @@ def _apply_pursuit(
     from ``state`` and recorded on ``report``) -- callers should skip
     ``_retreat_or_disband`` for those.
 
-    ``is_island`` (Phase 282)/``illusory_terrain`` (Phase 724): the same
-    province-level facts `fight_battle()` already resolved for the main
-    battle itself, passed through unchanged so a retreating army's own
-    strength during the chase honors them too -- see `turn/strength.py
-    compute_effective_strength()`'s own docstring.
+    ``is_island`` (Phase 282)/``illusory_terrain``+``illusory_terrain_
+    enhanced`` (Phase 724/757): the same province-level facts
+    `fight_battle()` already resolved for the main battle itself, passed
+    through unchanged so a retreating army's own strength during the
+    chase honors them too -- see `turn/strength.py compute_effective_
+    strength()`'s own docstring.
     """
 
     retreating_units = []
@@ -1649,7 +1654,7 @@ def _apply_pursuit(
         pursued_quality = Quality(max(int(Quality.DEPLETED), int(army.quality) - 1))
         strength = compute_effective_strength(
             army.army_type, kingdom.race, pursued_quality, terrain, is_defender=True, is_island=is_island,
-            illusory_terrain=illusory_terrain,
+            illusory_terrain=illusory_terrain, illusory_terrain_enhanced=illusory_terrain_enhanced,
         )
         retreating_units.append(BattleUnit(army.army_type, strength, source_id=army.army_id))
 
@@ -1980,6 +1985,7 @@ def _apply_monster_summoning_aid(
     opponent_kingdom_ids: frozenset[int],
     is_island: bool,
     illusory_terrain: Terrain | None = None,
+    illusory_terrain_enhanced: bool = False,
     rng: random.Random,
     explorer_find_water: bool = False,
 ) -> None:
@@ -2061,6 +2067,7 @@ def _apply_monster_summoning_aid(
                     own_explored_percent=own_explored_percent,
                     is_island=is_island,
                     illusory_terrain=illusory_terrain,
+                    illusory_terrain_enhanced=illusory_terrain_enhanced,
                 )
                 units.append(BattleUnit(matching_army_type, strength, source_id=army.army_id))
             else:
@@ -2073,6 +2080,7 @@ def _apply_monster_summoning_aid(
                         own_explored_percent=own_explored_percent,
                         opponent_kingdom_ids=opponent_kingdom_ids, is_island=is_island,
                         illusory_terrain=illusory_terrain,
+                        illusory_terrain_enhanced=illusory_terrain_enhanced,
                         explorer_find_water=explorer_find_water,
                     )
                 )
@@ -2269,8 +2277,12 @@ def fight_battle(
     # Illusory Terrain (Phase 724) -- see turn/strength.py compute_
     # effective_strength()'s own docstring for the real/illusory blend
     # this feeds. Rulebook [4.23.1]; None (no effect) unless a real spell
-    # cast set it.
+    # cast set it. illusory_terrain_enhanced (Phase 757) widens that same
+    # blend from 50/50 to 33/67 when the caster held AdvancedAbility.
+    # ENHANCED_ILLUSORY_TERRAIN -- meaningless (never read) when
+    # illusory_terrain is None.
     illusory_terrain = province.illusory_terrain
+    illusory_terrain_enhanced = province.illusory_terrain_enhanced
 
     ability = _combat_ability_for_terrain(terrain)
     attacker_commander = _select_side_commander(attacker_armies, state, ability, allow_garrison_fallback=False)
@@ -2369,6 +2381,7 @@ def fight_battle(
         own_explored_percent=attacker_explored,
         opponent_kingdom_ids=defender_kingdom_ids, is_island=is_island,
         illusory_terrain=illusory_terrain,
+        illusory_terrain_enhanced=illusory_terrain_enhanced,
         duellist_side=attacker_is_duellist_side,
         alignment_king_office=attacker_alignment_king_office,
         explorer_find_water=attacker_find_water,
@@ -2380,6 +2393,7 @@ def fight_battle(
         own_explored_percent=defender_explored,
         opponent_kingdom_ids=attacker_kingdom_ids, is_island=is_island,
         illusory_terrain=illusory_terrain,
+        illusory_terrain_enhanced=illusory_terrain_enhanced,
         duellist_side=defender_is_duellist_side,
         alignment_king_office=defender_alignment_king_office,
         explorer_find_water=defender_find_water,
@@ -2397,7 +2411,8 @@ def fight_battle(
         combat_ability_mastery_bonus=attacker_mastery_bonus,
         apply_fanaticism=apply_fanaticism, own_explored_percent=attacker_explored,
         opponent_kingdom_ids=defender_kingdom_ids,
-        is_island=is_island, illusory_terrain=illusory_terrain, rng=rng,
+        is_island=is_island, illusory_terrain=illusory_terrain,
+        illusory_terrain_enhanced=illusory_terrain_enhanced, rng=rng,
         explorer_find_water=attacker_find_water,
     )
     _apply_monster_summoning_aid(
@@ -2406,7 +2421,8 @@ def fight_battle(
         combat_ability_mastery_bonus=defender_mastery_bonus,
         apply_fanaticism=apply_fanaticism, own_explored_percent=defender_explored,
         opponent_kingdom_ids=attacker_kingdom_ids,
-        is_island=is_island, illusory_terrain=illusory_terrain, rng=rng,
+        is_island=is_island, illusory_terrain=illusory_terrain,
+        illusory_terrain_enhanced=illusory_terrain_enhanced, rng=rng,
         explorer_find_water=defender_find_water,
     )
 
@@ -2571,13 +2587,13 @@ def fight_battle(
     if attacker_clean_swept and loser_retreats:
         attacker_pursuit_destroyed = _apply_pursuit(
             attacker_armies, defender_units, state, terrain, report, rng, is_island=is_island,
-            illusory_terrain=illusory_terrain,
+            illusory_terrain=illusory_terrain, illusory_terrain_enhanced=illusory_terrain_enhanced,
         )
     defender_pursuit_destroyed: set[int] = set()
     if defender_clean_swept and loser_retreats:
         defender_pursuit_destroyed = _apply_pursuit(
             defender_armies, attacker_units, state, terrain, report, rng, is_island=is_island,
-            illusory_terrain=illusory_terrain,
+            illusory_terrain=illusory_terrain, illusory_terrain_enhanced=illusory_terrain_enhanced,
         )
 
     for army in attacker_armies:

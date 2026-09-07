@@ -43,18 +43,21 @@ fixed 100% (not the ordinary 50%) because the opponent is synthetic --
 the document's own text: "Per un incontro casuale l'ultima condizione
 è sempre vera... Sense Danger evita il combattimento al 100%."
 
-**Deliberately deferred to Phase 709, not silently skipped**: the
-document's own SS12 pre-combat social-outcome decision tree
-(``approach_score`` and the 8 named branches -- pass-by/befriend/
-teach-a-skill/donate-gold/reveal-a-feature/nice-chat/friendly-
-greeting) is not modeled here. **This means every encounter that
-isn't safely resolved via patrol diplomacy or Sense Danger currently
-goes straight to combat** -- more often than the real game would.
-Phase 709 will insert the real `approach_score` gate between the
-Sense-Danger check and the combat call, and will wire report-layer
-narration (including the already-built-but-unwired `report/turn_
-report.py render_wandering_encounter()`/`render_patrol_release()`/
-`render_patrol_encounter()`, Phase 106/107).
+**Permanently deferred, not silently skipped**: the document's own
+SS12 pre-combat social-outcome decision tree (`approach_score` and the
+8 named branches -- pass-by/befriend/teach-a-skill/donate-gold/reveal-
+a-feature/nice-chat/friendly-greeting) is not modeled here. Phase 709
+investigated inserting the real `approach_score` gate between the
+Sense-Danger check and the combat call and found no recoverable
+selection formula survives for it anywhere in the source -- a
+permanently genuinely-blocked gap, not a deferred one. **This means
+every encounter that isn't safely resolved via patrol diplomacy or
+Sense Danger goes straight to combat** -- more often than the real
+game would, a real, permanent, documented simplification. Report-layer
+narration (`report/turn_report.py describe_random_encounter()`,
+calling `render_wandering_encounter()`/`render_patrol_release()`/
+`render_patrol_encounter()`, Phase 106/107) was wired in full by Phase
+709.
 
 **Death handling** mirrors `challenge_execution.py execute_challenge()`'s
 own established pattern: `resolve_challenge_combat()` itself never

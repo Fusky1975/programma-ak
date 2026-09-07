@@ -873,6 +873,47 @@ def test_fight_battle_reads_province_illusory_terrain_into_strength():
     )
 
 
+def test_fight_battle_reads_province_illusory_terrain_enhanced_into_strength():
+    # Phase 757: ProvinceState.illusory_terrain_enhanced widens the same
+    # blend fight_battle() already wires from 50/50 to 33/67. HVY_CAVALRY:
+    # real Plains 5, illusory Sea 2 -> base blend 3.5, enhanced blend
+    # 5*0.33 + 2*0.67 = 2.99, genuinely different from both.
+    state_base = build_state()
+    state_base.provinces[FIELD].illusory_terrain = Terrain.SEA
+    state_enhanced = build_state()
+    state_enhanced.provinces[FIELD].illusory_terrain = Terrain.SEA
+    state_enhanced.provinces[FIELD].illusory_terrain_enhanced = True
+
+    report_base = fight_battle(state_base, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=random.Random(3))
+    report_enhanced = fight_battle(state_enhanced, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=random.Random(3))
+
+    assert report_enhanced.battle_result.columns[0].attacker_strength == pytest.approx(
+        report_base.battle_result.columns[0].attacker_strength * 2.99 / 3.5
+    )
+
+
+def test_build_battle_units_applies_illusory_terrain_enhanced_blend():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    army = ArmyState(101, 1, ArmyType.PHALANX, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+
+    base_blend = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        illusory_terrain=Terrain.SEA,
+    )
+    enhanced = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        illusory_terrain=Terrain.SEA, illusory_terrain_enhanced=True,
+    )
+
+    assert enhanced[0].effective_strength != base_blend[0].effective_strength
+    assert enhanced[0].effective_strength == compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS,
+        illusory_terrain=Terrain.SEA, illusory_terrain_enhanced=True,
+    )
+
+
 def test_build_battle_units_applies_illusory_terrain_blend():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))

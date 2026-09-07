@@ -61,9 +61,11 @@ other army type, a deliberate difference, not an oversight. A separate
 new 15%/turn dissolve roll (``turn/cast_execution.py maybe_dissolve_
 illusory_terrain()``) clears the illusion at the same real-turn
 boundary Hide Feature's own dissipation roll already uses. ``Advanced
-Ability.ENHANCED_ILLUSORY_TERRAIN``'s own 67/33 blend ratio (instead of
-the base 50/50 built here) stays a deliberate, separate follow-up --
-not attempted this phase.
+Ability.ENHANCED_ILLUSORY_TERRAIN``'s own 67/33 blend ratio -- **wired
+as of Phase 757**, see ``compute_effective_strength()``'s own
+``illusory_terrain_enhanced`` parameter docstring. That ability's other
+clause (a random race/army-type shown to an outside observer) is a
+report-layer effect, not a combat one, and stays unmodeled.
 
 **Island provinces (Phase 282, ``is_island``)** -- a different kind of
 blended-terrain averaging from Illusory Terrain's, and NOT part of the
@@ -181,6 +183,13 @@ TITLE_FANATICISM_CHANCE: dict[Office, float] = {
 MAX_EXPLORATION_ADVANTAGE_PER_POINT = 0.0025
 TACTICAL_BONUS_PER_LEVEL = 0.20
 PHANTASMAL_ARMIES_BONUS_PER_LEVEL = 0.15
+
+# Phase 757: AdvancedAbility.ENHANCED_ILLUSORY_TERRAIN's own real text --
+# "armies fighting there will have their strength affected 67% by the
+# illusory terrain, instead of 50%" -- the illusory side's own share of
+# compute_effective_strength()'s Illusory Terrain blend when the caster
+# held this ability (the real side gets the complementary 33%).
+ENHANCED_ILLUSORY_TERRAIN_BLEND_WEIGHT = 0.67
 
 # Phase 512: ``models/advanced_ability.py``'s own module docstring --
 # "for each of the 15 Ability categories, reaching skill level 5...
@@ -461,6 +470,7 @@ def compute_effective_strength(
     illusory_fog_affected: bool = False,
     is_island: bool = False,
     illusory_terrain: Terrain | None = None,
+    illusory_terrain_enhanced: bool = False,
     adapt_tactics_to_terrain: bool = False,
 ) -> float:
     """Full effective-strength pipeline, in the rulebook's documented order.
@@ -506,6 +516,18 @@ def compute_effective_strength(
     ``is_island``. Defaults to ``None`` (no effect) for every pre-Phase-
     724 caller, unaffected.
 
+    **Enhanced Illusory Terrain** (Phase 757, ``illusory_terrain_
+    enhanced``): ``AdvancedAbility.ENHANCED_ILLUSORY_TERRAIN``'s own
+    text -- "armies fighting there will have their strength affected
+    67% by the illusory terrain, instead of 50%" -- widens the blend
+    above from an even split to ``ENHANCED_ILLUSORY_TERRAIN_BLEND_
+    WEIGHT`` (0.67) on the illusory side / 0.33 on the real side.
+    Meaningless when ``illusory_terrain is None`` (no blend to widen);
+    defaults to ``False`` (the base 50/50 split) for every pre-Phase-757
+    caller, unaffected. The ability's own other clause (a random race/
+    army-type illusion shown to an outside observer) is a report-layer
+    effect, not a combat one -- not modeled here.
+
     **Race-matching legendary leadership item** (Phase 279/285,
     ``race_item_bonus``): passed straight through to ``modified_
     quality()``'s own parameter of the same name -- see that function's
@@ -539,7 +561,8 @@ def compute_effective_strength(
             army_type, race, illusory_terrain, is_defender=is_defender, base_strength_override=base_strength_override,
             adapt_tactics_to_terrain=adapt_tactics_to_terrain,
         )
-        strength = (real_strength + illusory_strength) / 2
+        illusory_weight = ENHANCED_ILLUSORY_TERRAIN_BLEND_WEIGHT if illusory_terrain_enhanced else 0.5
+        strength = real_strength * (1.0 - illusory_weight) + illusory_strength * illusory_weight
     else:
         strength = real_strength
 
