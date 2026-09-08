@@ -135,9 +135,11 @@ from ak_engine.models.treasure import Treasure
 
 
 class AdvancedAbility(IntEnum):
-    """89 Advanced Abilities, grouped by the 15 ``Ability`` categories
-    in the exact order the source excerpt presents them. Ordinals are
-    this project's own assignment (the excerpt has no numbering) --
+    """89 Advanced Abilities from the source excerpt, grouped by the 15
+    ``Ability`` categories in the exact order it presents them, plus one
+    project-original member (``MARCH_CAVALRY_TRUE_MASTERY``, Phase 768 --
+    appended out of category order, see its own comment above). Ordinals
+    are this project's own assignment (the excerpt has no numbering) --
     stable within this module, not meaningful outside it.
     """
 
@@ -260,6 +262,25 @@ class AdvancedAbility(IntEnum):
     ILLUSORY_FOG_SPELL = 87
     ILLUSORY_HERO_SPELL = 88
 
+    # March (MA) -- Cavalry's own 3rd stacking tier (Phase 768). Appended
+    # here with a fresh ordinal rather than renumbering the March (MA)
+    # block above -- ordinals are this project's own assignment, never
+    # serialized/compared anywhere (see this class's own docstring), so
+    # an out-of-sequence ordinal costs nothing. `Desktop/PROGRAMMA
+    # AK/MARCH.md` (a disassembly-level pass) confirms AKGEN's own real
+    # `spabord` template for March grants the Cavalry-effect ID three
+    # times (not twice, unlike Infantry) -- no literal 3rd-tier catalog
+    # text survives in `Desktop/PROGRAMMA AK/ABILITÀ SOPRA IL LIVELLO 4
+    # OK.txt` (the source for every other member's own text), but that
+    # same file's own Archery entry shows the identical "one real ID
+    # granted 3 times, 3 progressively-named entries" shape ("ARCHERY
+    # FREE ATTACK" / "... MASTERY" / "... TRUE MASTERY") -- a real,
+    # same-document precedent. User-confirmed directly to add this tier
+    # with clearly-labeled project-original text (see its own dict
+    # entries below), mirroring Melee Mastery/True Mastery's own
+    # established "self-contained total per tier" convention.
+    MARCH_CAVALRY_TRUE_MASTERY = 89
+
 
 # The random-draw pool per Ability category, in source order.
 ADVANCED_ABILITY_POOL: dict[Ability, tuple[AdvancedAbility, ...]] = {
@@ -277,6 +298,10 @@ ADVANCED_ABILITY_POOL: dict[Ability, tuple[AdvancedAbility, ...]] = {
         AdvancedAbility.MARCH_INFANTRY,
         AdvancedAbility.MARCH_CAVALRY_MASTERY,
         AdvancedAbility.MARCH_INFANTRY_MASTERY,
+        # Phase 768: the real 6th slot MARCH.md's own byte-level template
+        # confirms (Cavalry's own 3rd occurrence) -- see this member's
+        # own comment on the enum above for the full sourcing.
+        AdvancedAbility.MARCH_CAVALRY_TRUE_MASTERY,
     ),
     Ability.NAVAL: (
         AdvancedAbility.NAVAL_LONG_DEFEND,
@@ -394,6 +419,10 @@ ADVANCED_ABILITY_INTRO: dict[Ability, str] = {
         "army strength is discontinued. Instead, you gain one of "
         "these abilities at random (that can be gained only once)."
     ),
+    # Phase 768: this intro text is quoted verbatim and left unchanged --
+    # `MARCH_CAVALRY_TRUE_MASTERY`'s own real 6th-slot status is a
+    # disassembly finding (`Desktop/PROGRAMMA AK/MARCH.md`), not
+    # something this catalog's own surviving text describes.
     Ability.MARCH: (
         'At level 5 and up the "Ability Level 4" on the March Table '
         "is used, and the usual increases in army speed on land are "
@@ -511,6 +540,7 @@ ADVANCED_ABILITY_NAME: dict[AdvancedAbility, str] = {
     AdvancedAbility.MARCH_INFANTRY: "March Infantry",
     AdvancedAbility.MARCH_CAVALRY_MASTERY: "March Cavalry Mastery",
     AdvancedAbility.MARCH_INFANTRY_MASTERY: "March Infantry Mastery",
+    AdvancedAbility.MARCH_CAVALRY_TRUE_MASTERY: "March Cavalry True Mastery",
     AdvancedAbility.NAVAL_LONG_DEFEND: "Naval Long Defend",
     AdvancedAbility.NAVAL_MASTERY_10: "Naval Mastery",
     AdvancedAbility.NAVAL_MASTERY_GREAT_15: "Naval Mastery Great",
@@ -606,6 +636,7 @@ ADVANCED_ABILITY_TAGLINE: dict[AdvancedAbility, str] = {
     AdvancedAbility.MARCH_INFANTRY: "Extra Move for Infantry",
     AdvancedAbility.MARCH_CAVALRY_MASTERY: "Extra Move for Cavalry",
     AdvancedAbility.MARCH_INFANTRY_MASTERY: "Extra Move for Infantry",
+    AdvancedAbility.MARCH_CAVALRY_TRUE_MASTERY: "Extra Move for Cavalry",
     AdvancedAbility.NAVAL_LONG_DEFEND: "2-Hex Defense Range",
     AdvancedAbility.NAVAL_MASTERY_10: "10% Naval Bonus",
     AdvancedAbility.NAVAL_MASTERY_GREAT_15: "15% Naval Bonus",
@@ -742,6 +773,15 @@ ADVANCED_ABILITY_DESCRIPTION: dict[AdvancedAbility, str] = {
     AdvancedAbility.MARCH_INFANTRY_MASTERY: (
         "The character adds one more to the movement rate of land "
         "armies which start with 1-2 movement points."
+    ),
+    # Phase 768: project-original text, clearly labeled -- no 3rd-tier
+    # catalog entry survives for March Cavalry (see this ability's own
+    # comment on the `AdvancedAbility` enum above for the full sourcing
+    # and the Archery-precedent/user-confirmation this text is based
+    # on). Mirrors MARCH_CAVALRY_MASTERY's own "adds one more" phrasing.
+    AdvancedAbility.MARCH_CAVALRY_TRUE_MASTERY: (
+        "The character adds yet one more to the movement rate of land "
+        "armies which start with 3 or more movement points."
     ),
     AdvancedAbility.NAVAL_LONG_DEFEND: (
         'The "Long Naval Defend" ability increases the range for the '

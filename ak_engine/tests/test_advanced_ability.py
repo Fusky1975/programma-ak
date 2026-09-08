@@ -19,8 +19,10 @@ from ak_engine.models.monster import Monster
 from ak_engine.models.treasure import Treasure
 
 
-def test_advanced_ability_has_89_members():
-    assert len(list(AdvancedAbility)) == 89
+def test_advanced_ability_has_90_members():
+    # 89 from the source excerpt + MARCH_CAVALRY_TRUE_MASTERY (Phase
+    # 768, project-original, see its own comment on the enum).
+    assert len(list(AdvancedAbility)) == 90
 
 
 def test_advanced_ability_pool_covers_all_15_ability_categories():
@@ -29,7 +31,7 @@ def test_advanced_ability_pool_covers_all_15_ability_categories():
 
 def test_advanced_ability_pool_covers_every_member_exactly_once():
     all_pool_members = [m for pool in ADVANCED_ABILITY_POOL.values() for m in pool]
-    assert len(all_pool_members) == 89
+    assert len(all_pool_members) == 90
     assert set(all_pool_members) == set(AdvancedAbility)
 
 
@@ -53,10 +55,14 @@ def test_pool_sizes_vary_and_thievery_has_the_largest_pool():
     # Pool sizes are not uniformly 5 (one per level 5-9) -- Thievery's
     # own pool of 8 candidates is the largest, confirming a character
     # can never gain every possible Advanced Ability in that category.
+    # March's own pool is 6, not 5 (Phase 768) -- the 6th slot is
+    # MARCH_CAVALRY_TRUE_MASTERY, a project-original member confirmed
+    # by MARCH.md's own byte-level template, not from the source
+    # excerpt's own text (see that member's own comment on the enum).
     sizes = {ability: len(pool) for ability, pool in ADVANCED_ABILITY_POOL.items()}
     assert sizes[Ability.THIEF] == 8
     assert max(sizes.values()) == 8
-    assert sizes[Ability.MARCH] == 5
+    assert sizes[Ability.MARCH] == 6
     assert sizes[Ability.SAGE] == 5
 
 
@@ -71,6 +77,21 @@ def test_advanced_ability_verbatim_samples():
         "The chance for a unit to increase in quality when Practicing "
         "Tactics (or Naval) is increased by 100% (example: an Average "
         "unit now has a 10% chance to improve per phase)."
+    )
+
+
+def test_march_cavalry_true_mastery_is_the_pools_own_real_6th_slot():
+    # Phase 768: MARCH.md's own confirmed byte-level template order --
+    # Flood, Cavalry, Infantry, Cavalry Mastery, Infantry Mastery,
+    # Cavalry True Mastery -- and the tier's own project-original text.
+    pool = ADVANCED_ABILITY_POOL[Ability.MARCH]
+    assert pool[-1] is AdvancedAbility.MARCH_CAVALRY_TRUE_MASTERY
+    assert len(pool) == 6
+    assert ADVANCED_ABILITY_NAME[AdvancedAbility.MARCH_CAVALRY_TRUE_MASTERY] == "March Cavalry True Mastery"
+    assert ADVANCED_ABILITY_TAGLINE[AdvancedAbility.MARCH_CAVALRY_TRUE_MASTERY] == "Extra Move for Cavalry"
+    assert ADVANCED_ABILITY_DESCRIPTION[AdvancedAbility.MARCH_CAVALRY_TRUE_MASTERY] == (
+        "The character adds yet one more to the movement rate of land "
+        "armies which start with 3 or more movement points."
     )
 
 

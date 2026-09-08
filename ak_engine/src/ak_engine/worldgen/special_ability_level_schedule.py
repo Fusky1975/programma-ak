@@ -79,12 +79,16 @@ bare strings, confirmed unambiguous by this 1:1 meaning-match.
 **Deliberately still out of scope**:
 
 - ``Ability.MARCH`` itself: confirmed to use ``dest=s`` (no RNG at all,
-  a pure identity mapping), but this project's own ``ADVANCED_ABILITY_
-  POOL[Ability.MARCH]`` has only 5 real candidates (not 6) and its own
-  ordering was never confirmed to match the real ``spabord`` template
-  order the way ``magic_templates`` was -- so March's own concrete
-  level-by-level result isn't built here, only its zero RNG cost is
-  accounted for (trivially -- it simply isn't run at all).
+  a pure identity mapping). **Phase 768 update**: ``ADVANCED_ABILITY_
+  POOL[Ability.MARCH]`` now has the real 6 candidates in the confirmed
+  real order (`Desktop/PROGRAMMA AK/MARCH.md`'s own byte-level template,
+  raw ``0x604FA-0x604FF = 08 07 06 07 06 07``) -- Flood, Cavalry,
+  Infantry, Cavalry Mastery, Infantry Mastery, Cavalry True Mastery.
+  This module still doesn't build a concrete per-level March schedule,
+  though -- how ``AdvancedAbility`` grants actually reach a live leader
+  at *runtime* (as opposed to this module's own narrower world-gen-
+  byte-fidelity scope) remains a separate, unresolved question, not
+  attempted here.
 - ``TACTICAL``/``NAVAL``/``ARCHERY``/``MELEE`` (ordinals 0, 2, 3, 4) and
   ``DRUID``/``THIEF``/``EXPLORER``/``SPY``/``SAGE`` (ordinals 10-14):
   their own real template content isn't in the available material.

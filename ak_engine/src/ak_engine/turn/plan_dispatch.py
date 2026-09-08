@@ -587,6 +587,11 @@ def dispatch_phase(
     has_march_cavalry_mastery = (
         leader is not None and AdvancedAbility.MARCH_CAVALRY_MASTERY in leader.advanced_abilities
     )
+    # Phase 768: same real-possession pattern, for Cavalry's own 3rd
+    # stacking tier.
+    has_march_cavalry_true_mastery = (
+        leader is not None and AdvancedAbility.MARCH_CAVALRY_TRUE_MASTERY in leader.advanced_abilities
+    )
     has_march_infantry = leader is not None and AdvancedAbility.MARCH_INFANTRY in leader.advanced_abilities
     has_march_infantry_mastery = (
         leader is not None and AdvancedAbility.MARCH_INFANTRY_MASTERY in leader.advanced_abilities
@@ -629,6 +634,7 @@ def dispatch_phase(
             has_find_mines=has_find_mines,
             has_march_cavalry=has_march_cavalry,
             has_march_cavalry_mastery=has_march_cavalry_mastery,
+            has_march_cavalry_true_mastery=has_march_cavalry_true_mastery,
             has_march_infantry=has_march_infantry,
             has_march_infantry_mastery=has_march_infantry_mastery,
             has_march_through_floods=has_march_through_floods,

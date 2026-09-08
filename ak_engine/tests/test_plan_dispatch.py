@@ -283,6 +283,25 @@ def test_dispatch_lmove_wires_march_cavalry_from_the_leaders_own_advanced_abilit
     assert state.armies[army_id].march_bonus_applied_this_turn is True
 
 
+def test_dispatch_lmove_wires_march_cavalry_true_mastery_from_the_leaders_own_advanced_ability():
+    # Phase 768: same real-possession pattern as MARCH_CAVALRY's own
+    # sibling test above, for Cavalry's own 3rd stacking tier -- the
+    # army's own movement pool (5, already >= the Cavalry band) gets a
+    # full +3, not the +1/+2 a lower tier would grant.
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    state.leaders[LEADER_ID].advanced_abilities.add(AdvancedAbility.MARCH_CAVALRY_TRUE_MASTERY)
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert state.armies[army_id].march_bonus_applied_this_turn is True
+    # 5 (start) + 3 (Cavalry True Mastery) - 2 (base move + uncontested
+    # conquest) == 6.
+    assert state.armies[army_id].movement_points == 6
+
+
 def test_dispatch_lmove_wires_march_through_floods_from_the_leaders_own_advanced_ability():
     # Phase 693: dispatch_phase() derives has_march_through_floods the
     # same real-possession pattern as the other March members -- a land
@@ -530,7 +549,11 @@ def test_dispatch_lmove_also_rolls_rumor_generation_for_a_nearby_feature():
 
     # trigger roll 0.0 < 0.20 -> succeeds; candidate choice index 0; content
     # roll (guardian-only feature) is skipped; is_true roll 0.0 -> True.
-    rng = ScriptedRandom([0.0, 0.0], choice_indices=[0])
+    # Phase 768: trailing 0.5, 0.5 account for execute_move()'s own
+    # Move-triggered March/Naval experience credit, consumed inside
+    # execute_move() -- called by dispatch_phase() *after* its own
+    # rumor-generation hook already rolled the two values above.
+    rng = ScriptedRandom([0.0, 0.0, 0.5, 0.5], choice_indices=[0])
     dispatch_phase(
         phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH, rng=rng
     )

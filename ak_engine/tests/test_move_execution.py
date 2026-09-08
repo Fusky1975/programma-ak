@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.enums import Ability
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
@@ -17,6 +18,8 @@ from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.move_execution import (
     MARCH_ABILITY_BONUS,
     MARCH_MASTERY_ABILITY_BONUS,
+    MARCH_TRUE_MASTERY_ABILITY_BONUS,
+    MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS,
     TransportIllegalMoveError,
     execute_move,
     find_transport_illegality,
@@ -739,7 +742,9 @@ def test_execute_move_wind_walking_survives_a_battle_the_same_move_triggers():
     state.armies[101].quality = Quality.ELITE
     state.armies[101].commanded_by = 1  # so fight_battle() sees leader 1 as genuinely involved
     # Phase 744: 2 leading 0.9s account for the per-army Fanaticism roll.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99])
+    # Phase 768: trailing 0.5, 0.5 account for the Move-triggered March/
+    # Naval experience credit's own triangular-formula draw.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99, 0.5, 0.5])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=rng)
 
@@ -1069,6 +1074,27 @@ def test_march_movement_point_bonus_cavalry_mastery_is_the_total_not_additive():
     assert march_movement_point_bonus(3, has_march_cavalry_mastery=True) == MARCH_MASTERY_ABILITY_BONUS
 
 
+def test_march_movement_point_bonus_cavalry_true_mastery_is_the_total_not_additive():
+    # Phase 768: the real 3rd stacking tier -- +3 total, not +1 on top
+    # of Mastery's own +2.
+    assert march_movement_point_bonus(3, has_march_cavalry_true_mastery=True) == MARCH_TRUE_MASTERY_ABILITY_BONUS
+
+
+def test_march_movement_point_bonus_cavalry_true_mastery_takes_precedence():
+    # Mirrors turn/encounter.py melee_mastery_damage_bonus()'s own
+    # "True Mastery checked first" defensive ordering -- a leader only
+    # ever holds one Advanced Ability per category in practice, but the
+    # precedence must still be correct if more than one flag is set.
+    assert (
+        march_movement_point_bonus(3, has_march_cavalry=True, has_march_cavalry_mastery=True, has_march_cavalry_true_mastery=True)
+        == MARCH_TRUE_MASTERY_ABILITY_BONUS
+    )
+
+
+def test_march_movement_point_bonus_cavalry_true_mastery_below_the_band_is_zero():
+    assert march_movement_point_bonus(2, has_march_cavalry_true_mastery=True) == 0
+
+
 def test_march_movement_point_bonus_infantry_band():
     assert march_movement_point_bonus(1, has_march_infantry=True) == MARCH_ABILITY_BONUS
     assert march_movement_point_bonus(2, has_march_infantry=True) == MARCH_ABILITY_BONUS
@@ -1128,6 +1154,19 @@ def test_execute_move_gives_no_march_bonus_to_a_sea_army_type():
     assert state.armies[101].march_bonus_applied_this_turn is False
 
 
+def test_execute_move_grants_march_cavalry_true_mastery_bonus():
+    # Phase 768: end-to-end -- +3 (True Mastery) on top of the move's
+    # own base cost, mirroring test_execute_move_grants_march_cavalry_
+    # bonus_before_deducting_cost()'s own shape exactly.
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.armies[101].army_type = ArmyType.HVY_CAVALRY
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_cavalry_true_mastery=True)
+
+    assert state.armies[101].movement_points == 3 + MARCH_TRUE_MASTERY_ABILITY_BONUS - 1
+
+
 def test_execute_move_gives_no_march_bonus_without_the_ability():
     state = base_state()
     state.provinces[TARGET].owner_kingdom_id = 1
@@ -1136,6 +1175,127 @@ def test_execute_move_gives_no_march_bonus_without_the_ability():
 
     assert state.armies[101].movement_points == 2
     assert state.armies[101].march_bonus_applied_this_turn is False
+
+
+# -- Phase 768: Move-triggered March/Naval experience credit ---------------
+
+
+def _state_with_leader_and_army(army_type: ArmyType = ArmyType.BOWMEN) -> GameState:
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1  # no battle/conquest -- moved is True either way
+    state.add_leader(LeaderState(1, 1, "Mover", ORIGIN))
+    state.armies[101].army_type = army_type
+    state.armies[101].commanded_by = 1
+    return state
+
+
+def test_execute_move_credits_march_experience_for_a_land_move():
+    state = _state_with_leader_and_army()
+
+    with patch("ak_engine.turn.move_execution.add_experience") as mock_add_experience:
+        execute_move(
+            state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=ScriptedRandom([0.5, 0.5])
+        )
+
+    mock_add_experience.assert_called_once_with(state.leaders[1], Ability.MARCH, MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS, ANY)
+
+
+def test_execute_move_credits_naval_experience_when_the_destination_is_sea():
+    state = _state_with_leader_and_army(ArmyType.FLEET)
+    state.provinces[TARGET].terrain = Terrain.SEA
+
+    with patch("ak_engine.turn.move_execution.add_experience") as mock_add_experience:
+        execute_move(
+            state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=ScriptedRandom([0.5, 0.5])
+        )
+
+    mock_add_experience.assert_called_once_with(state.leaders[1], Ability.NAVAL, MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS, ANY)
+
+
+def test_execute_move_credits_naval_experience_when_the_origin_is_sea():
+    state = _state_with_leader_and_army(ArmyType.FLEET)
+    state.provinces[ORIGIN].terrain = Terrain.SEA
+    state.armies[101].location = ORIGIN
+
+    with patch("ak_engine.turn.move_execution.add_experience") as mock_add_experience:
+        execute_move(
+            state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=ScriptedRandom([0.5, 0.5])
+        )
+
+    mock_add_experience.assert_called_once_with(state.leaders[1], Ability.NAVAL, MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS, ANY)
+
+
+def test_execute_move_credits_nothing_for_a_majority_air_force():
+    # 2 Dragon Wings out of 3 armies -> 2*2 >= 3 -- excluded, matching
+    # the same test this module's own _LFly narration branch uses.
+    state = _state_with_leader_and_army(ArmyType.DRAGON_WING)
+    state.add_army(ArmyState(102, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, ORIGIN, movement_points=3, commanded_by=1))
+    state.add_army(ArmyState(103, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3, commanded_by=1))
+
+    with patch("ak_engine.turn.move_execution.add_experience") as mock_add_experience:
+        execute_move(
+            state, kingdom_id=1, army_ids=[101, 102, 103], target=TARGET, leader_id=1, rng=ScriptedRandom([])
+        )
+
+    mock_add_experience.assert_not_called()
+
+
+def test_execute_move_credits_experience_for_a_minority_air_mixed_force():
+    # 1 Dragon Wing out of 3 -> 2*1 &lt; 3 -- not majority-air, so the roll
+    # still fires (for the mover as a whole, using the land/Sea terrain
+    # check -- neither terrain here is Sea, so March).
+    state = _state_with_leader_and_army(ArmyType.DRAGON_WING)
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3, commanded_by=1))
+    state.add_army(ArmyState(103, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3, commanded_by=1))
+
+    with patch("ak_engine.turn.move_execution.add_experience") as mock_add_experience:
+        execute_move(
+            state, kingdom_id=1, army_ids=[101, 102, 103], target=TARGET, leader_id=1, rng=ScriptedRandom([0.5, 0.5])
+        )
+
+    mock_add_experience.assert_called_once_with(state.leaders[1], Ability.MARCH, MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS, ANY)
+
+
+def test_execute_move_credits_nothing_when_the_leader_is_armyless():
+    state = _state_with_leader_and_army()
+
+    with patch("ak_engine.turn.move_execution.add_experience") as mock_add_experience:
+        execute_move(state, kingdom_id=1, army_ids=[], target=TARGET, leader_id=1, rng=ScriptedRandom([]))
+
+    mock_add_experience.assert_not_called()
+
+
+def test_execute_move_credits_nothing_without_a_leader():
+    state = _state_with_leader_and_army()
+
+    with patch("ak_engine.turn.move_execution.add_experience") as mock_add_experience:
+        execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=ScriptedRandom([]))
+
+    mock_add_experience.assert_not_called()
+
+
+def test_execute_move_credits_nothing_when_a_chase_step_stops_without_moving():
+    # Mirrors test_stopped_chasing_when_no_closer_neighbor_exists()'s own
+    # fixture shape exactly (only the origin province registered, so no
+    # candidate neighbor is ever geometrically closer to the far target)
+    # plus a real leader/army. moved=False -- the gate on `moved` must
+    # exclude this case.
+    state = GameState()
+    isolated_origin = HexCoord(0, 0)
+    unreachable_target = HexCoord(-5, -5)
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, isolated_origin))
+    state.add_province(ProvinceState(isolated_origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, 1, "Mover", isolated_origin))
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, isolated_origin, movement_points=3, commanded_by=1))
+
+    with patch("ak_engine.turn.move_execution.add_experience") as mock_add_experience:
+        result = execute_move(
+            state, kingdom_id=1, army_ids=[101], target=unreachable_target, leader_id=1, rng=ScriptedRandom([])
+        )
+
+    assert result.stopped_chasing is True
+    assert result.moved is False
+    mock_add_experience.assert_not_called()
 
 
 # -- Phase 651: Illusory Fog's own movement surcharge --
@@ -1605,6 +1765,36 @@ def test_execute_move_naval_hug_coastline_no_split_when_no_stragglers_remain():
     assert result.straggler_result is None
     assert state.armies[101].location == HUG_TARGET
     assert state.armies[102].location == HUG_TARGET
+
+
+def test_execute_move_straggler_recursive_call_does_not_double_credit_move_experience():
+    # Phase 768: the Phase 763 straggler recursive call passes
+    # leader_id=None -- naturally excluded from the new Move-experience
+    # credit, so the one outer, real leader-driven call is the only one
+    # that ever fires it, even though execute_move() runs twice here.
+    state = _hug_state()
+    state.add_leader(LeaderState(1, 1, "General", HUG_ORIGIN))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+    state.add_army(ArmyState(103, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+    state.add_army(ArmyState(104, 1, ArmyType.FLEET, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+
+    with patch("ak_engine.turn.move_execution.add_experience") as mock_add_experience:
+        result = execute_move(
+            state,
+            kingdom_id=1,
+            army_ids=[101, 102, 103, 104],
+            target=HUG_TARGET,
+            leader_id=1,
+            has_naval_hug_coastline=True,
+            auto_board=True,
+            rng=ScriptedRandom([0.5, 0.5]),
+        )
+
+    assert result.straggler_result is not None  # confirms the recursive call really ran
+    # Both HUG_ORIGIN and HUG_TARGET are land (Plains) -- the shared
+    # coastal Sea hex is a separate, third coordinate, never the actual
+    # origin/destination checked here -- so this credits March, not Naval.
+    mock_add_experience.assert_called_once_with(state.leaders[1], Ability.MARCH, MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS, ANY)
 
 
 # -- Phase 715: Fleet/Whale cargo-capacity subsystem, Phase B -- auto_board --

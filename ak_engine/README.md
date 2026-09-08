@@ -31619,6 +31619,62 @@ follow-up request after the original 431-435 plan shipped.
   recover from. Test count: 6458 -> 6462 (net +4). Full suite verified
   green (unchanged, 6458) before touching a single test.
 
+- **Phase 768 -- MARCH.md: Move-triggered March/Naval XP + March
+  Cavalry's real 3rd stacking tier.** User-supplied disassembly-level
+  reverse-engineering document (`Desktop/PROGRAMMA AK/MARCH.md`, 28
+  sections, 3 internal revisions) targeting `ForcedMarch`, planned via
+  `EnterPlanMode` per this project's own standing rule for new reverse-
+  engineering reports. Most of the document independently *confirms*
+  mechanics already correct (the MARCH TABLE formula, March's own "not
+  shuffled" `spabord` exception, initiative's `Total_Skill + 2*M_Skill
+  (March)` weighting, the aggregate Contingent-Unity percentage table)
+  -- untouched here. Two real findings picked up: (1) `AK.EXE:0xB5CF-
+  0xB65C` (section 11): a Move with real armies tries a March/Naval
+  experience credit, base "10", when the moving force isn't majority-
+  air -- Naval if origin or destination terrain is Sea, else March. The
+  document calls this helper "Try_Experience," distinct from "Add_
+  Experience," but cites the *same* address (`104A:1877`) `turn/
+  experience.py`'s own docstring already gives for `Add_Experience` --
+  treated as the identical, already-wired routine (Phase 456/686's own
+  `add_experience()`), not a second mechanic. Wired into `execute_move()`
+  right before its own return, gated on `moved` (faithful to the real
+  engine's own per-phase re-dispatch, since Phase 632's own persistent-
+  chase continuation already re-invokes this function once per phase
+  for an ongoing chase) rather than "once per player order." (2) AKGEN's
+  own real `spabord` template for March (raw `0x604FA-0x604FF = 08 07
+  06 07 06 07`, section 21) grants the Cavalry-effect ID three times
+  (not twice, unlike Infantry) -- confirmed by direct disassembly of
+  `SA_Num`, a real per-occurrence counter. A genuine source conflict was
+  found and put to the user directly (not auto-resolved, per this
+  project's own standing policy): the canonical rulebook catalog
+  (`Desktop/PROGRAMMA AK/ABILITÀ SOPRA IL LIVELLO 4 OK.txt`, already the
+  source for every other member's text) lists only 5 March abilities,
+  no "Cavalry True Mastery" -- but that same file's own Archery entry
+  shows the identical "one ID granted 3 times, 3 progressively-named
+  entries" shape ("ARCHERY FREE ATTACK" / "... MASTERY" / "... TRUE
+  MASTERY"), a real, same-document precedent. **User confirmed directly
+  (AskUserQuestion): add the 3rd tier.** New `AdvancedAbility.MARCH_
+  CAVALRY_TRUE_MASTERY` (appended ordinal 89, not renumbered in place --
+  ordinals are never serialized/compared anywhere in this project),
+  clearly-labeled project-original description text, `march_movement_
+  point_bonus()` gains a `has_march_cavalry_true_mastery` parameter
+  returning a self-contained `+3` (mirroring Melee Mastery/True Mastery's
+  own established convention, Phase 517), threaded through `execute_
+  move()`'s one real call site (including its own Phase 763 straggler
+  recursive self-call) and `turn/plan_dispatch.py`'s LMOVE dispatch.
+  Deliberately out of scope, recorded as a real, genuinely-blocked
+  backlog item: sections 26/27's own deterministic per-army admission
+  test for Contingent Unity (`AK.OVR:0x257C-0x2834`, plus its real
+  `_LSlow` "failed to arrive at the battle" narration) -- thoroughly
+  reverse-engineered but never verified end-to-end under a debugger, and
+  dependent on exact internal leader/army/province numbering this
+  project's own port has no guarantee of matching; the existing
+  aggregate `MARCH_UNITE_CHANCE` table already reproduces the same
+  manual-documented percentages. Test count: 6462 -> 6477 (net +15).
+  Full suite verified green (unchanged, 6462) before touching a single
+  test; 2 pre-existing tests needed 2 more scripted RNG values each for
+  the new `add_experience()` draws, found and fixed empirically.
+
 ## Setup
 
 ```

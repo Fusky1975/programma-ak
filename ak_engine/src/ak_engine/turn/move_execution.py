@@ -272,6 +272,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from ak_engine.models.army_type import ARMY_TABLE, OVERFLIGHT_AIR, SEA_ARMY_TYPES, ArmyType, is_land_army
+from ak_engine.models.enums import Ability
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, ArmyState, GameState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
@@ -281,6 +282,7 @@ from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle, mysti
 from ak_engine.turn.cast_execution import ILLUSORY_FOG_EXTRA_MOVEMENT_COST, is_illusory_fog_affected_air_unit
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError, is_illegal_move_from_contested
+from ak_engine.turn.experience import add_experience
 from ak_engine.turn.exploration import ExploreResult, discover_features, resolve_explore, resolve_find_mines
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction, board_army, cargo_aboard, disembark_army
@@ -298,10 +300,31 @@ from ak_engine.turn.movement import (
 # Phase 521: AdvancedAbility.MARCH_CAVALRY/_INFANTRY (+ Mastery tiers) --
 # see module docstring's own Phase 521 addendum for the full sourced
 # quotes and the split between what's modeled here and what isn't.
+#
+# Phase 768: `Desktop/PROGRAMMA AK/MARCH.md` (a disassembly-level
+# reverse-engineering pass) confirms AKGEN's own real `spabord` template
+# for March (raw `0x604FA-0x604FF = 08 07 06 07 06 07`, levels 5-10)
+# grants the Cavalry-effect ID (7) THREE times (levels 6, 8, 10) but the
+# Infantry-effect ID (6) only twice (levels 7, 9) -- confirmed by direct
+# disassembly of `SA_Num`, a real per-occurrence *counter*, not a
+# boolean `Has_SA` wrapper. Our existing 2-tier Infantry model (+1/+2)
+# already matches its own real 2-copy count exactly; Cavalry needed a
+# 3rd, self-contained tier (+3 total) to match its own real 3-copy
+# count. No literal 3rd-tier catalog text survives for this in `Desktop/
+# PROGRAMMA AK/ABILITÀ SOPRA IL LIVELLO 4 OK.txt` (the canonical
+# rulebook catalog this whole module's text is built from) -- but that
+# same file's own Archery entry shows the identical "one real ID
+# granted 3 times, 3 progressively-named catalog entries" shape ("ARCHERY
+# FREE ATTACK" / "... MASTERY" / "... TRUE MASTERY"), a real, same-
+# document precedent for this exact mechanic. User-confirmed directly
+# (AskUserQuestion) to add the 3rd tier with clearly-labeled project-
+# original text, mirroring Melee Mastery/True Mastery's own established
+# "self-contained total effect per tier" convention (Phase 517).
 MARCH_CAVALRY_MIN_MOVEMENT_POINTS = 3
 MARCH_INFANTRY_MOVEMENT_POINTS_RANGE = (1, 2)
 MARCH_ABILITY_BONUS = 1
 MARCH_MASTERY_ABILITY_BONUS = 2
+MARCH_TRUE_MASTERY_ABILITY_BONUS = 3
 
 
 def march_movement_point_bonus(
@@ -309,21 +332,27 @@ def march_movement_point_bonus(
     *,
     has_march_cavalry: bool = False,
     has_march_cavalry_mastery: bool = False,
+    has_march_cavalry_true_mastery: bool = False,
     has_march_infantry: bool = False,
     has_march_infantry_mastery: bool = False,
 ) -> int:
     """The flat movement-point bonus a land army qualifies for right now.
 
     ``current_movement_points`` is the army's own pool *before* this
-    bonus -- Cavalry/Cavalry Mastery only ever apply at 3+, Infantry/
-    Infantry Mastery only at 1-2 (rulebook's own two disjoint bands). A
-    leader only ever holds one Advanced Ability per category (Phase
-    128), so the Mastery tier's own kwarg is read as the ability's
-    total, self-contained effect (+2), not "+1 on top of the base tier
-    you don't hold" -- the same convention Melee Mastery/True Mastery
-    (Phase 517) already established.
+    bonus -- Cavalry/Cavalry Mastery/Cavalry True Mastery only ever
+    apply at 3+, Infantry/Infantry Mastery only at 1-2 (rulebook's own
+    two disjoint bands). A leader only ever holds one Advanced Ability
+    per category (Phase 128), so each tier's own kwarg is read as the
+    ability's total, self-contained effect (+1/+2/+3), not additive on
+    top of a lower tier you don't hold -- the same convention Melee
+    Mastery/True Mastery (Phase 517) already established. Cavalry alone
+    gets a 3rd tier (Phase 768) -- Infantry's real template only ever
+    grants its own effect ID twice, already fully covered by the
+    existing two tiers.
     """
 
+    if has_march_cavalry_true_mastery and current_movement_points >= MARCH_CAVALRY_MIN_MOVEMENT_POINTS:
+        return MARCH_TRUE_MASTERY_ABILITY_BONUS
     if has_march_cavalry_mastery and current_movement_points >= MARCH_CAVALRY_MIN_MOVEMENT_POINTS:
         return MARCH_MASTERY_ABILITY_BONUS
     if has_march_cavalry and current_movement_points >= MARCH_CAVALRY_MIN_MOVEMENT_POINTS:
@@ -1069,6 +1098,18 @@ def find_transport_illegality(
     return None
 
 
+# Phase 768: `Desktop/PROGRAMMA AK/MARCH.md` section 11, `AK.EXE:0xB5CF-
+# 0xB65C` -- a Move with armies tries a real March/Naval experience
+# credit, base "10", once per qualifying call (see `execute_move()`'s
+# own Phase 768 addendum for the full gating/sourcing). The document
+# names this helper "Try_Experience," at address `104A:1877` -- the
+# *exact same* address `turn/experience.py`'s own docstring already
+# cites for `Add_Experience` (Phase 456, already wired for Melee/
+# Archery, Phase 686). Treated as the identical, already-proven
+# routine/call-convention rather than a second, unrelated mechanic.
+MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS = 10
+
+
 def execute_move(
     state: GameState,
     kingdom_id: int,
@@ -1084,6 +1125,7 @@ def execute_move(
     has_find_mines: bool = False,
     has_march_cavalry: bool = False,
     has_march_cavalry_mastery: bool = False,
+    has_march_cavalry_true_mastery: bool = False,
     has_march_infantry: bool = False,
     has_march_infantry_mastery: bool = False,
     has_march_through_floods: bool = False,
@@ -1280,6 +1322,36 @@ def execute_move(
     moves a land army onto Sea terrain unassisted stays unaffected;
     only ``turn/plan_dispatch.py dispatch_phase()``'s own real LMOVE
     dispatch passes ``True``.
+
+    **Phase 768 -- Move-triggered March/Naval experience credit,
+    `Desktop/PROGRAMMA AK/MARCH.md` section 11.** `AK.EXE:0xB5CF-
+    0xB65C`: a Move made with real armies tries `Add_Experience(leader,
+    Naval, 10)` when origin *or* destination terrain is Sea, else
+    `Add_Experience(leader, ForcedMarch, 10)` -- excluding a majority-
+    air-or-air-transportable force (the same test this module's own
+    Phase 634 addendum already cites for the `_LFly` narration branch).
+    The document itself names this helper "Try_Experience," distinct
+    from "Add_Experience" -- but it cites the *exact same* address,
+    `104A:1877`, `turn/experience.py`'s own docstring already gives for
+    `Add_Experience` (Phase 456). Treated as the identical, already-
+    wired routine (`add_experience()`, the same call convention Melee/
+    Archery already use, Phase 686), not a second, separately-gated
+    percent-chance mechanic. Gated on `moved` (this call's own real
+    hex-step) rather than on "one whole player order" -- faithful to
+    the real engine's own architecture, since Move dispatch is always
+    per-phase here too (Phase 632's own persistent-chase re-dispatch
+    confirms this project's port and the original share that same
+    shape), so a multi-phase chase's own repeated real hex-steps each
+    trying this roll independently is the correct behavior, not an
+    over-count. The Phase 763 straggler recursive call above passes
+    `leader_id=None`, so it's naturally excluded, no special-casing
+    needed. Deliberately out of scope: the multi-attacker LMOVE
+    dispatch path (`turn/turn_processor.py
+    _dispatch_multi_attacker_lmove()`) doesn't call this function at
+    all (a separate `resolve_move()`/`fight_multi_attacker_battle()`
+    path, Phase 754) -- this credit stays scoped to this function's own
+    real callers, the same boundary several earlier Move-feature phases
+    already accepted for that separate dispatch path.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -1373,6 +1445,7 @@ def execute_move(
             has_find_mines=has_find_mines,
             has_march_cavalry=has_march_cavalry,
             has_march_cavalry_mastery=has_march_cavalry_mastery,
+            has_march_cavalry_true_mastery=has_march_cavalry_true_mastery,
             has_march_infantry=has_march_infantry,
             has_march_infantry_mastery=has_march_infantry_mastery,
             has_march_through_floods=has_march_through_floods,
@@ -1607,6 +1680,7 @@ def execute_move(
                     army.movement_points,
                     has_march_cavalry=has_march_cavalry,
                     has_march_cavalry_mastery=has_march_cavalry_mastery,
+                    has_march_cavalry_true_mastery=has_march_cavalry_true_mastery,
                     has_march_infantry=has_march_infantry,
                     has_march_infantry_mastery=has_march_infantry_mastery,
                 )
@@ -1690,6 +1764,31 @@ def execute_move(
         and target_owner_before_move != kingdom_id
         and target_province.illusory_fog_active
     )
+
+    # Phase 768: Move-triggered March/Naval experience credit -- see
+    # `MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS`'s own citation above and
+    # this function's own Phase 768 addendum for the full gating. Gated
+    # on `moved` (this call's own real hex-step), a real leader
+    # commanding at least one army in this same move, and excluding a
+    # majority-air-or-air-transportable force (the identical test this
+    # module's own Phase 634 addendum already attributes to the `_LFly`/
+    # wind-walking narration branch) -- reproduces the real engine's own
+    # per-phase re-dispatch faithfully rather than under/over-counting a
+    # multi-phase chase. The Phase 763 straggler recursive call above
+    # passes `leader_id=None`, so it's excluded here with no special
+    # casing needed. `rng` is never actually `None` here -- the top of
+    # this function already substitutes a fresh `random.Random()` for a
+    # caller that omits it.
+    if moved and leader_id is not None and armies:
+        air_count = sum(1 for army in armies if army.army_type in OVERFLIGHT_AIR)
+        if 2 * air_count < len(armies):
+            mover_leader = state.leaders.get(leader_id)
+            if mover_leader is not None:
+                is_sea_move = (origin_province is not None and origin_province.effective_terrain() is Terrain.SEA) or (
+                    target_province is not None and target_province.effective_terrain() is Terrain.SEA
+                )
+                move_experience_ability = Ability.NAVAL if is_sea_move else Ability.MARCH
+                add_experience(mover_leader, move_experience_ability, MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS, rng)
 
     return MoveExecutionResult(
         moved=moved,
