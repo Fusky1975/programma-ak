@@ -2789,7 +2789,13 @@ class Combatant:
     blocked_from_cast_and_archery: bool = False
     # Phase 209 -- free, unanswered Melee swings this combatant has banked
     # from a successful Psychic Blast or Ice Suspension cast, consumed by
-    # `turn/search_execution.py` immediately after the CAST tactic resolves.
+    # `turn/search_execution.py`/`turn/challenge_execution.py _consume_
+    # bonus_attacks()` immediately after the CAST tactic resolves. Phase
+    # 767: a landed Psychic Flail hit's own 50% stun chance (`apply_
+    # weapon_on_hit_effects()`) feeds this exact same counter -- drained
+    # by `resolve_one_melee_round()` itself, within the same round, for
+    # the Melee-vs-Melee case (see that function's own Phase 767 addendum;
+    # `resolve_reactive_melee_swing()` deliberately still doesn't drain it).
     bonus_unanswered_attacks: int = 0
     # Phase 284 -- multiplies the chance THIS combatant lands a hit (the
     # attacker-side counterpart to defensive_hit_multiplier above) --
@@ -3135,20 +3141,27 @@ PSYCHIC_FLAIL_STUN_CHANCE = 0.50
 # Phase 740 -- report-layer narration for Shadow Sword's/Flaming
 # Scimitar's own on-hit procs (`report/turn_report.py render_shadow_
 # sword_drain()`/`render_flaming_scimitar_proc()`, Phase 588, sourced
-# and render-tested but never called from anywhere until now). Deliberately
-# excludes Psychic Flail's own stun: a dedicated investigation this phase
-# found `Combatant.bonus_unanswered_attacks` (what Psychic Flail sets) is
-# only ever *consumed* right after a CAST tactic resolves (`turn/
-# challenge_execution.py`/`turn/search_execution.py _consume_bonus_
-# attacks()`, built for Psychic Blast/Ice Suspension) -- an ordinary
-# Melee-only duel with no Cast tactics at all has no consumption point
-# for it, so a Psychic-Flail-triggered stun may never actually manifest
-# as extra attacks there. Narrating STUN.X/RECSTUN.X convincingly needs
-# that real mechanical question resolved first (does a pure-Melee stun
-# need its own consumption point, and what "recovers" it), not just a
-# render call -- flagged as a real, separate follow-up, not attempted
-# here.
-WeaponOnHitProc = Literal["shadow_sword_drain", "flaming_scimitar_instakill"]
+# and render-tested but never called from anywhere until now).
+#
+# **Phase 767** -- Psychic Flail's own stun joins them as a third,
+# narratable proc. The real mechanical gap this comment used to flag
+# (`Combatant.bonus_unanswered_attacks`, what a successful Flail stun
+# sets, was only ever *consumed* right after a CAST tactic resolves --
+# `turn/challenge_execution.py`/`turn/search_execution.py _consume_
+# bonus_attacks()`, built for Psychic Blast/Ice Suspension -- so an
+# ordinary Melee-only duel had no consumption point for it at all) is
+# now closed: `resolve_one_melee_round()` (below) drains it directly,
+# within the very round that triggered it, for every real Melee-vs-
+# Melee caller in this project (both the atomic `resolve_melee_duel()`
+# and every round-stepped engine funnel through that one function).
+# **Deliberately still out of scope**: `resolve_reactive_melee_swing()`
+# (one side meleeing, the other casting) can still set the counter via
+# its own `apply_weapon_on_hit_effects()` call, but nothing drains it
+# there -- "stunning the opponent for one round" has no sourced meaning
+# when the opponent wasn't going to swing back anyway (they're
+# casting), and inventing a stun-vs-cast interaction rule would be a
+# real, unsourced guess this project's own standard doesn't support.
+WeaponOnHitProc = Literal["shadow_sword_drain", "flaming_scimitar_instakill", "psychic_flail_stun"]
 
 
 def apply_weapon_on_hit_effects(
@@ -3177,11 +3190,13 @@ def apply_weapon_on_hit_effects(
     stat-block total.
 
     Phase 740: the return value (``None`` for every pre-Phase-740
-    caller, since none of them capture it) reports which of the two
+    caller, since none of them capture it) reports which of the
     narratable procs above fired, if any, for real callers to attach to
-    their own ``MeleeSwing``/``ReactiveMeleeSwingResult`` -- Psychic
-    Flail's own stun still applies mechanically (unchanged) but is
-    never reported this way, see this constant block's own addendum.
+    their own ``MeleeSwing``/``ReactiveMeleeSwingResult``. Phase 767:
+    Psychic Flail's own stun is now one of them too -- its own real
+    effect (``attacker.bonus_unanswered_attacks += 1``) is unchanged,
+    but the caller finds out via the return value now, the same as the
+    other two, rather than having to notice the counter changed.
     """
 
     if damage_dealt <= 0:
@@ -3198,6 +3213,7 @@ def apply_weapon_on_hit_effects(
     elif weapon is Treasure.WEAPON_4:  # Psychic Flail
         if rng.random() < PSYCHIC_FLAIL_STUN_CHANCE:
             attacker.bonus_unanswered_attacks += 1
+            return "psychic_flail_stun"
     return None
 
 
@@ -3541,6 +3557,22 @@ def resolve_one_melee_round(
     encounter setup step (Furia/Intimidazione/Slancio/Schivare), left to
     the caller to run exactly once before the first round, not on every
     round.
+
+    Phase 767: right after an attacker's own regular swing, if it left
+    the defender still standing, any ``bonus_unanswered_attacks`` that
+    swing's own weapon proc (Psychic Flail's stun) just banked are
+    resolved immediately, within this same round -- one-sided bonus
+    swings against the same defender, no counter-swing, mirroring
+    ``turn/challenge_execution.py``/``turn/search_execution.py``'s own
+    established ``_consume_bonus_attacks()`` shape (same roll formula,
+    no re-triggered weapon proc on the bonus swing itself). Since
+    ``resolve_melee_duel()`` is only ever a loop around this function,
+    the fix reaches every atomic AND round-stepped Melee caller in this
+    project at once. A pre-existing counter value from a Psychic Blast/
+    Ice Suspension cast is never observable here -- both of those are
+    always drained by their own caller's immediate ``_consume_bonus_
+    attacks()`` call before any Melee round can run, so this is a
+    provable no-op for every case except a fresh Psychic Flail proc.
     """
 
     skill_a, skill_b = effective_melee_skill(a), effective_melee_skill(b)
@@ -3577,6 +3609,26 @@ def resolve_one_melee_round(
             outcome.result = EncounterCombatResult(winner=("a" if defender is b else "b"), rounds=round_number)
             outcome.swings = tuple(swings)
             return outcome
+        # Phase 767 -- Psychic Flail's own stun, drained immediately: see
+        # this function's own docstring addendum above.
+        while attacker.bonus_unanswered_attacks > 0:
+            attacker.bonus_unanswered_attacks -= 1
+            bonus_raw_damage = roll_melee_attack(
+                rng,
+                damage_range=attacker.melee_damage_range,
+                hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
+            )
+            bonus_damage = _melee_landed_damage(bonus_raw_damage, attacker, defender)
+            defender.hit_points -= bonus_damage
+            swings.append(MeleeSwing(attacker=attacker_side, hit=bonus_raw_damage > 0, damage=bonus_damage))
+            if attacker is a:
+                outcome.damage_dealt_to_b += bonus_damage
+            else:
+                outcome.damage_dealt_to_a += bonus_damage
+            if defender.hit_points <= 0:
+                outcome.result = EncounterCombatResult(winner=("a" if defender is b else "b"), rounds=round_number)
+                outcome.swings = tuple(swings)
+                return outcome
     _apply_end_of_round_regeneration(a, b, round_number)
     outcome.swings = tuple(swings)
     return outcome

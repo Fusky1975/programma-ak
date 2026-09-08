@@ -2775,6 +2775,14 @@ def test_render_weapon_proc_line_flaming_scimitar_instakill():
     assert result == "the Flaming Scimitar released a fireball which imploded inside Borin."
 
 
+def test_render_weapon_proc_line_psychic_flail_stun():
+    # Phase 767: attributed to the *defender* (Borin), not the Flail's
+    # own wielder (Aldric) -- the one actually stunned.
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    result = render_weapon_proc_line("psychic_flail_stun", "Aldric", "Borin", None, rng)
+    assert result == "Borin stood stunned, unable to regain Borin's senses."
+
+
 def test_render_weapon_proc_line_returns_none_for_no_proc():
     rng = ScriptedRandom([])
     assert render_weapon_proc_line(None, "Aldric", "Borin", None, rng) is None

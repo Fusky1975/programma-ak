@@ -31583,6 +31583,42 @@ follow-up request after the original 431-435 plan shipped.
   the hop group). Test count: 6450 -> 6458 (net +8). Full suite
   verified green (unchanged, 6450) before touching a single test.
 
+- **Phase 767 -- Psychic Flail's stun actually manifests in pure-Melee
+  combat.** User-requested directly ("affronta lo Psychic Flail
+  stun"), closing a gap self-flagged since Phase 536/740 and re-
+  flagged at the 30th/31st/40th surveys without ever being picked up.
+  `models/treasure.py`'s own sourced text: "Each time it hits, it has
+  a 50% chance of stunning the opponent for one round." `apply_weapon_
+  on_hit_effects()` already rolled this and banked it into `Combatant.
+  bonus_unanswered_attacks` -- the same counter Psychic Blast's/Ice
+  Suspension's own CAST-triggered stuns use -- but nothing ever drained
+  it in a pure-Melee context: `_consume_bonus_attacks()` (the only code
+  that ever turns the counter into a real extra swing) fires only
+  immediately after a CAST tactic resolves, so a Flail-triggered stun
+  during an ordinary Melee duel -- the overwhelming majority of real
+  combat -- had zero mechanical effect. Fixed at the one real root:
+  `turn/encounter.py resolve_one_melee_round()` now drains the counter
+  itself, within the same round, right after the triggering swing --
+  since `resolve_melee_duel()` is only ever a loop around that one
+  function, and every round-stepped engine in the project (Challenge/
+  Pursue, Search) calls it directly too, this single change closes the
+  gap for every real caller at once, with a provable zero blast radius
+  for every existing test (confirmed empirically: the counter is only
+  ever non-zero via this new Flail path, or via a CAST branch that
+  already fully drains it before any Melee round can see it). `apply_
+  weapon_on_hit_effects()` now returns `"psychic_flail_stun"` as a
+  third narratable `WeaponOnHitProc`, reusing the already-built,
+  already-tested `render_stunned()` (STUN.X, Phase 588, never called
+  from anywhere until now) for the first time. Deliberately still out
+  of scope, documented not silently dropped: `resolve_reactive_melee_
+  swing()` (one side casting) never drains the counter either -- "stunning
+  the opponent" has no sourced meaning when the opponent wasn't going
+  to swing back anyway, and `render_stun_recovery()` (RECSTUN.X) stays
+  unwired, since this architecture resolves a stun's own bonus attacks
+  synchronously with no separate "still stunned next round" state to
+  recover from. Test count: 6458 -> 6462 (net +4). Full suite verified
+  green (unchanged, 6458) before touching a single test.
+
 ## Setup
 
 ```

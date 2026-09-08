@@ -3789,10 +3789,10 @@ def test_apply_weapon_on_hit_effects_psychic_flail_stuns_below_the_chance_thresh
     # "si somma a Psychic Blast invece di sostituirlo" -- same
     # bonus_unanswered_attacks counter Psychic Blast's own stun feeds.
     assert attacker.bonus_unanswered_attacks == 1
-    # Phase 740: deliberately not reported as a narratable proc -- see
-    # this function's own Phase 740 addendum for why (bonus_unanswered_
-    # attacks has no real consumption point outside a Cast tactic).
-    assert result is None
+    # Phase 767: now reported as a narratable proc too, same as Shadow
+    # Sword/Flaming Scimitar -- resolve_one_melee_round() drains the
+    # counter it just set, immediately, within the same round.
+    assert result == "psychic_flail_stun"
 
 
 def test_apply_weapon_on_hit_effects_psychic_flail_does_not_stun_above_the_chance_threshold():
@@ -3831,3 +3831,69 @@ def test_resolve_reactive_melee_swing_shadow_sword_proc_heals_the_attacker():
     assert attacker.hit_points == 5 + (result.damage // 2)
     assert result.weapon_proc == "shadow_sword_drain"  # Phase 740
     assert result.weapon_proc_hit_points == attacker.hit_points
+
+
+# -- Phase 767: Psychic Flail's stun actually grants a bonus swing --
+
+
+def test_resolve_one_melee_round_psychic_flail_stun_grants_a_bonus_swing_within_the_same_round():
+    attacker = Combatant("A", melee_skill=5, equipped_weapon=Treasure.WEAPON_4, hit_points=CHARACTER_HIT_POINTS)
+    defender = Combatant("B", melee_skill=0, hit_points=100)
+    # A's hit roll, A's damage roll, the Psychic Flail stun roll (succeeds,
+    # below the 50% threshold), the bonus swing's own hit roll, the bonus
+    # swing's own damage roll, then B's regular swing (missed).
+    rng = ScriptedRandom([0.1, 0.5, 0.1, 0.1, 0.5, 0.9])
+
+    outcome = resolve_one_melee_round(attacker, defender, rng, round_number=1)
+
+    assert outcome.result is None  # defender's high HP keeps the round from being decisive
+    assert attacker.bonus_unanswered_attacks == 0  # drained, not left banked
+    # A's regular swing, A's bonus swing, B's (missed) regular swing.
+    assert len(outcome.swings) == 3
+    assert outcome.swings[0].attacker == "a"
+    assert outcome.swings[0].weapon_proc == "psychic_flail_stun"
+    assert outcome.swings[1].attacker == "a"
+    assert outcome.swings[1].weapon_proc is None  # the bonus swing never re-triggers its own proc
+    assert outcome.swings[2].attacker == "b"
+    assert outcome.swings[2].hit is False
+    # Both of A's swings (regular + bonus) accumulate onto the same total.
+    assert outcome.damage_dealt_to_b == outcome.swings[0].damage + outcome.swings[1].damage
+    assert outcome.damage_dealt_to_a == 0
+    assert outcome.a_attacked is True
+    assert outcome.b_attacked is True
+
+
+def test_resolve_one_melee_round_psychic_flail_bonus_swing_can_itself_end_the_round():
+    attacker = Combatant("A", melee_skill=5, equipped_weapon=Treasure.WEAPON_4, hit_points=CHARACTER_HIT_POINTS)
+    defender = Combatant("B", melee_skill=0, hit_points=2)
+    # A's hit roll (hits), A's damage roll (1 -- leaves defender at 1 HP,
+    # not yet dead), the Psychic Flail stun roll (succeeds), the bonus
+    # swing's own hit roll (hits), the bonus swing's own damage roll (1
+    # -- exactly enough to finish the defender off). Proves the bonus
+    # swing itself can be the decisive blow, not just pad an already-
+    # lethal regular swing.
+    rng = ScriptedRandom([0.1, 0.0, 0.1, 0.1, 0.0])
+
+    outcome = resolve_one_melee_round(attacker, defender, rng, round_number=1)
+
+    assert outcome.result is not None
+    assert outcome.result.winner == "a"
+    assert defender.hit_points <= 0
+    assert len(outcome.swings) == 2
+    assert outcome.swings[0].weapon_proc == "psychic_flail_stun"
+    assert outcome.swings[1].hit is True
+    assert outcome.swings[1].weapon_proc is None  # the bonus swing never re-triggers its own proc
+
+
+def test_resolve_melee_duel_reaches_through_to_the_atomic_wrapper():
+    # Phase 767: resolve_melee_duel() is only ever a loop around
+    # resolve_one_melee_round(), so the same fix applies here with zero
+    # separate code -- proven end-to-end rather than assumed.
+    attacker = Combatant("A", melee_skill=5, equipped_weapon=Treasure.WEAPON_4, hit_points=CHARACTER_HIT_POINTS)
+    defender = Combatant("B", melee_skill=0, hit_points=2)
+    rng = ScriptedRandom([0.1, 0.0, 0.1, 0.1, 0.0])
+
+    result = resolve_melee_duel(attacker, defender, rng)
+
+    assert result.winner == "a"
+    assert any(swing.weapon_proc == "psychic_flail_stun" for swing in result.melee_swings)

@@ -4086,24 +4086,30 @@ def render_shadow_sword_drain(wielder_name: str, opponent_name: str, new_hit_poi
 # weapon effect" check, reused by every real `melee_swings` consumer
 # below (Kill Enemy's own Berserk retaliation, Challenge/Pursue,
 # Patrol, Random Encounter, Search) rather than duplicating the same
-# two-branch dispatch five times. Psychic Flail's own stun is
-# deliberately not one of the two branches -- see `turn/encounter.py`'s
-# own Phase 740 addendum (right above `WeaponOnHitProc`) for why.
+# dispatch five times. **Phase 767**: Psychic Flail's own stun is now a
+# third branch -- `turn/encounter.py`'s own Phase 767 addendum resolved
+# the real mechanical question (does a pure-Melee stun need its own
+# consumption point) that previously kept this one out; rendered via
+# `render_stunned()` (STUN.X, Phase 588, built and tested but never
+# called from anywhere until now), attributed to the *defender* -- the
+# one actually stunned -- not the Flail's own wielder.
 def render_weapon_proc_line(
     proc: str | None, attacker_name: str, defender_name: str, attacker_hit_points: int | None, rng: random.Random
 ) -> str | None:
     """Renders the one extra sentence a landed Melee swing's own weapon
     proc adds, if any (``swing.weapon_proc``/``swing.weapon_proc_hit_
     points``, ``turn/encounter.py apply_weapon_on_hit_effects()``).
-    ``None`` for every swing that didn't proc one of the two narratable
-    weapons (the overwhelming majority of swings) or that wasn't even a
-    landed hit.
+    ``None`` for every swing that didn't proc one of the three
+    narratable weapons (the overwhelming majority of swings) or that
+    wasn't even a landed hit.
     """
 
     if proc == "shadow_sword_drain":
         return render_shadow_sword_drain(attacker_name, defender_name, attacker_hit_points, rng)
     if proc == "flaming_scimitar_instakill":
         return render_flaming_scimitar_proc(defender_name, rng)
+    if proc == "psychic_flail_stun":
+        return render_stunned(defender_name, rng)
     return None
 
 
@@ -4121,7 +4127,13 @@ _RECSTUN_TEMPLATES: list[str] = [
 
 def render_stun_recovery(character_name: str, rng: random.Random) -> str:
     """Renders RECSTUN.X's sentence for recovering from a stunned state
-    (Phase 588).
+    (Phase 588). Deliberately still unwired -- Phase 767 closed Psychic
+    Flail's own real stun mechanic (`turn/encounter.py resolve_one_
+    melee_round()`), but that architecture resolves a stun's own bonus
+    attacks synchronously, within the same round call that triggered
+    it, so there is no separate "still stunned going into the next
+    round" state anywhere for this sentence to describe recovering
+    from. See `render_stunned()`'s own Phase 767 addendum.
     """
 
     variant = pick_variant(_RECSTUN_TEMPLATES, rng)
@@ -4146,6 +4158,13 @@ def render_stunned(character_name: str, rng: random.Random, *, is_sea: bool = Fa
     """Renders STUN.X's sentence for being in a stunned state (Phase
     588). ``is_sea`` (Phase 74) resolves the "/S" marker three variants
     carry.
+
+    Phase 767: wired for the first time, via ``render_weapon_proc_
+    line()``'s new third branch -- Psychic Flail's own stun proc,
+    ``character_name`` being the *defender* who got stunned, not the
+    Flail's own wielder. ``render_stun_recovery()``'s own RECSTUN.X
+    sibling stays unwired -- see that function's own Phase 767 addendum
+    for why.
     """
 
     variant = pick_variant(_STUN_TEMPLATES, rng)
