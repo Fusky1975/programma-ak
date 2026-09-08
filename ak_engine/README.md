@@ -31542,6 +31542,22 @@ follow-up request after the original 431-435 plan shipped.
   one `plan_dispatch.py` wiring test). Full suite verified green
   (unchanged, 6439) before touching a single test.
 
+- **Phase 765 (comment-only, no behavior change).** A fortieth fresh
+  Explore-agent codebase survey found one stale known-gap claim:
+  `turn/aspy_execution.py`'s own module docstring still said "rendering
+  it into English sentences is a natural, still-open follow-up, not
+  attempted here" -- stale since Phase 115/213/400, which built and
+  wired `report/turn_report.py describe_aspy()` into `describe_turn_
+  results()`'s own real `ActionCode.ASPY` branch. Corrected to state the
+  closure directly. Full suite unchanged (6450) -- confirmed comment-only.
+  Two real, concrete candidates were also surfaced and deliberately not
+  picked up this round: `MoveExecutionResult.straggler_result` (Phase
+  763) has zero consumer in `plan_dispatch.py`/`report/turn_report.py`
+  yet; the Psychic Flail stun proc (`bonus_unanswered_attacks`, `turn/
+  encounter.py`) has no consumption point reachable from a pure-Melee
+  duel (only from a CAST-tactic-triggered walk), already self-flagged at
+  Phase 740 and re-flagged at the 30th/31st surveys.
+
 ## Setup
 
 ```

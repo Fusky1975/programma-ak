@@ -14,7 +14,9 @@ that was written, but Phases 58/61 now give this project exactly that --
 first real consumer. This module only builds the *data* a spy report
 needs (mirroring the "data first, prose later" split those two phases
 already established for battle outcomes and spells); rendering it into
-English sentences is a natural, still-open follow-up, not attempted here.
+English sentences was that natural follow-up -- closed since ``report/
+turn_report.py describe_aspy()`` (Phase 115/213/400), wired into
+``describe_turn_results()``'s own real ``ActionCode.ASPY`` branch.
 
 **"A character may only Spy on a province he is actually in"** is read
 literally: this module always reports on the caster's own current
