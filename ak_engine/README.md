@@ -31475,6 +31475,20 @@ follow-up request after the original 431-435 plan shipped.
   Test count: 6423 -> 6437 (net +14). Full suite verified green
   (unchanged, 6423) before touching a single test.
 
+- **Phase 762 (comment-only, no behavior change).** A thirty-ninth fresh
+  Explore-agent codebase survey found one stale known-gap claim:
+  `turn/move_execution.py execute_move()`'s own docstring still said,
+  right at its own chase-handling paragraph, "see this module's own
+  docstring for the full behavior and what's still not wired in
+  (multi-phase persistence)" -- but that very module docstring already
+  states plainly, a few sections above, "Cross-phase persistence --
+  closed, Phase 632." The inner reference was never updated once Phase
+  632 actually built the fix (`turn/turn_processor.py run_turn()`'s own
+  "PERSISTENT MOVE CHASE" continuation, reusing the Pursue/Trail
+  persistence mechanism). Corrected to state plainly that persistence
+  is closed, citing Phase 632 directly instead of implying an open gap.
+  Full suite unchanged (6437) -- confirmed comment-only.
+
 ## Setup
 
 ```

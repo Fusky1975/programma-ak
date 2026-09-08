@@ -1129,7 +1129,10 @@ def execute_move(
     ``target`` is computed and resolved instead, and
     ``MoveExecutionResult.reached_target``/``stopped_chasing`` report
     how it went -- see this module's own docstring for the full
-    behavior and what's still not wired in (multi-phase persistence).
+    behavior, including its own multi-phase persistence (closed,
+    Phase 632 -- ``turn/turn_processor.py run_turn()`` now carries an
+    unresolved chase across subsequent phases the same way Pursue/
+    Trail's own persistence does).
 
     Phase 521: ``has_march_cavalry``/``has_march_cavalry_mastery``/
     ``has_march_infantry``/``has_march_infantry_mastery`` (default
