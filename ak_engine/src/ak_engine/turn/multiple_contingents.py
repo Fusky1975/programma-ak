@@ -30,9 +30,13 @@ separate", but a dedicated table exists in both available sources --
     non-adjacent provinces."
 
 ``MARCH_UNITE_CHANCE`` below models only the "Contingents Unify %" half
-of this table -- the "Extra moves for..." half is [4.12]'s own separate
-land-movement-range bonus (`turn/movement.py`'s own hex-distance budget),
-a distinct, still-unmodeled gap this phase doesn't attempt to close.
+of this table. The "Extra moves for..." half -- [4.12]'s own separate
+raw-skill-level army-movement bonus -- was a distinct, still-unmodeled
+gap through Phase 307; **closed as of Phase 764**, see `turn/move_
+execution.py march_table_extra_movement()` for the real implementation
+(applied per-army inside `execute_move()`, stacking with the unrelated
+Advanced-Ability-gated `march_movement_point_bonus()` right next to it
+there -- two genuinely different sourced mechanics, not a duplicate).
 
 **Whose March level applies, and what "distance" means, when the table
 itself only ever describes one character's own advantage**: [4.12]'s

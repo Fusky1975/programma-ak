@@ -323,6 +323,27 @@ def test_dispatch_lmove_wires_naval_skill_level_from_the_leaders_own_naval_abili
     assert state.armies[army_id].naval_bonus_applied_this_turn is True
 
 
+def test_dispatch_lmove_wires_march_skill_level_from_the_leaders_own_march_ability():
+    # Phase 764: dispatch_phase() derives march_skill_level from the
+    # leader's own real effective_skill_level(Ability.MARCH) -- a land
+    # army gets [4.12] MARCH TABLE's own raw-skill-level bonus applied
+    # before this move's own cost is deducted.
+    origin = HexCoord(3, 9)
+    target = HexCoord(4, 9)
+    state, army_id = _state_with_army(origin, {target: Terrain.PLAINS})
+    state.armies[army_id] = ArmyState(
+        army_id, 1, ArmyType.BOWMEN, Quality.AVERAGE, origin, movement_points=5, commanded_by=LEADER_ID
+    )
+    raw_values = [0] * 30
+    raw_values[Ability.MARCH.value * 2] = 2  # skill level 2 -- Speed 1-2 column gives +1
+    state.leaders[LEADER_ID].skills = SkillTable(raw_values=raw_values)
+    phase = PlanPhase(label="P0", action=ActionCode.LMOVE, obj=94, extra=[0])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], board_width=BOARD_WIDTH)
+
+    assert state.armies[army_id].march_table_bonus_applied_this_turn is True
+
+
 def test_dispatch_lmove_enforces_transport_legality():
     # Phase 737: dispatch_phase()'s own real LMOVE branch passes
     # enforce_transport_legality=True into execute_move() -- an

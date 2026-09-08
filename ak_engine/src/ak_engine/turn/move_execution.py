@@ -374,6 +374,53 @@ def naval_movement_point_bonus(naval_skill_level: int) -> int:
     return max(0, naval_skill_level)
 
 
+# Phase 764: [4.12] MARCH TABLE's own "Extra moves for..." columns (Ability
+# Level 0-4) -- see turn/multiple_contingents.py's own module docstring for
+# the full table, word-for-word identical in both available sources
+# (`RULES.AK [4.12]`/Regolamento AK.txt's "TABELLA DELLA MARCIA"). Closes
+# the half that same docstring flagged, since Phase 307, as "a distinct,
+# still-unmodeled gap this phase doesn't attempt to close." Independently
+# corroborated: `AKGEN_reverse_engineering_report (3).md` SS99's own
+# disassembled `MovementBonus()` names a real `MarchBonus(army_id, leader)`
+# call for exactly this land-army branch (the Naval sibling right above,
+# `naval_movement_point_bonus()`, is the *other* branch of that same
+# routine) -- its own body was never expanded in that document, but its
+# existence confirms this is a real, single, per-army movement formula the
+# compiled engine already computes, not an invented mechanic.
+MARCH_TABLE_EXTRA_MOVES_SLOW: tuple[int, ...] = (0, 0, 1, 1, 2)  # Speed 1-2
+MARCH_TABLE_EXTRA_MOVES_FAST: tuple[int, ...] = (0, 1, 1, 2, 2)  # Speed 3+
+MARCH_TABLE_MAX_LEVEL = len(MARCH_TABLE_EXTRA_MOVES_SLOW) - 1
+MARCH_TABLE_FAST_SPEED_THRESHOLD = 3
+
+
+def march_table_extra_movement(march_skill_level: int, army_speed: int) -> int:
+    """The MARCH TABLE's own base, raw-skill-level movement bonus.
+
+    Genuinely distinct from, and stacks with, ``march_movement_point_
+    bonus()``'s own separate Advanced-Ability-gated bonus (`MARCH_
+    CAVALRY`/`_INFANTRY` + Mastery tiers, `models/advanced_ability.py`):
+    this one is the base table every character gets from their own raw
+    ``Ability.MARCH`` skill level (0 included -- no Advanced Ability
+    needed at all), the other is a flat, separately-sourced bonus only
+    for a leader who's been granted one specific Advanced Ability.
+    ``march_skill_level`` is clamped to the table's own last known row
+    (4) for anything higher -- the same "clamp to the last known value"
+    convention ``turn/multiple_contingents.py``'s own sibling docstring
+    already established for a real distance past that table's own known
+    range. ``army_speed`` picks the column (``models/army_type.py
+    ARMY_TABLE[army_type].speed`` -- 1-2 vs. 3+); a caller with no real
+    speed on hand for a given ``ArmyType`` (the handful of members with
+    no ``ARMY_TABLE`` entry at all) should pass a value ``<= 2`` --
+    the smaller-or-equal "Speed 1-2" column, matching this project's own
+    established "missing data never over-grants" fallback convention
+    (``_boarding_priority_tier()``'s own precedent).
+    """
+
+    level = max(0, min(MARCH_TABLE_MAX_LEVEL, march_skill_level))
+    table = MARCH_TABLE_EXTRA_MOVES_FAST if army_speed >= MARCH_TABLE_FAST_SPEED_THRESHOLD else MARCH_TABLE_EXTRA_MOVES_SLOW
+    return table[level]
+
+
 def _naval_hug_coastline_move_is_legal(
     state: GameState, origin: HexCoord, target: HexCoord, bounds: MapBounds
 ) -> bool:
@@ -411,23 +458,37 @@ def _naval_hug_coastline_move_is_legal(
     **Phase 720 -- the priority-allocation rule itself is now reused
     directly** (it's the identical rule already built and tested as
     ``turn/move_execution.py _auto_board_transport_group()``/
-    ``_boarding_priority_tier()``, Phase 715) **via an all-or-nothing
-    simplification, user-confirmed**: this function's own caller
-    (``execute_move()``'s ``is_hug_coastline_hop``) now grants the whole
-    group the hop together only when *every* land-type army present
-    ends up boarded (``ArmyState.transported_by is not None``, read
-    straight off whatever boarding the same call's own earlier ``auto_
-    board`` pass already performed -- no separate/duplicate boarding
-    logic here); if even one land army is left without a carrier slot,
-    the shortcut is denied for the entire group, exactly as before this
-    phase. **Deliberately still not modeled**: the real engine's own
-    "un-boarded stragglers still travel separately, by the ordinary
-    route, while the rest hops" split -- doing that faithfully would
-    need ``MoveExecutionResult`` to represent more than one outcome for
-    a single ``execute_move()`` call (today it has one ``new_location``
-    for the whole group), a real architectural change touching ``report/
-    turn_report.py``/``turn/plan_dispatch.py`` too, judged out of scope
-    for this phase.
+    ``_boarding_priority_tier()``, Phase 715): this function's own caller
+    (``execute_move()``'s ``is_hug_coastline_hop``) grants the coastal
+    shortcut to the boarded/carrier portion of a mixed group whenever
+    *that* portion is legal for it (``ArmyState.transported_by is not
+    None``, read straight off whatever boarding the same call's own
+    earlier ``auto_board`` pass already performed -- no separate/
+    duplicate boarding logic here).
+
+    **Phase 763 -- the real "un-boarded stragglers still travel
+    separately, by the ordinary route, while the rest hops" split is now
+    modeled too.** Closing the gap this docstring used to flag needed
+    exactly the architectural change anticipated at Phase 720: a second,
+    genuinely independent ``MoveExecutionResult`` -- see
+    ``MoveExecutionResult.straggler_result``'s own docstring. The caller
+    (``execute_move()``) carves any unboarded land army out of the
+    moving group *before* deciding ``is_hug_coastline_hop`` at all, so by
+    the time that flag is computed the group it's evaluated against
+    already has no stragglers left in it -- the all-or-nothing framing
+    from Phase 720 above now describes the *narrowed* hop-only group,
+    not the original order as submitted. The stragglers get their own,
+    separate ``execute_move()`` call (``has_naval_hug_coastline=False``,
+    the ordinary one-hex chase step toward the same ultimate target,
+    exactly what any non-adjacent mover already gets without this
+    ability) -- no leader travels with them, a documented modeling
+    choice (the acting leader is assumed to travel with the hop group),
+    not a fact this project's own sources confirm either way. Report-
+    layer narration for a real split move (``report/turn_report.py``)
+    and ``turn/plan_dispatch.py``'s own awareness of the second result
+    remain untouched -- ``straggler_result`` is populated and tested at
+    the mechanism level, with no consumer yet, matching this project's
+    own repeated "primitive now, narration later" precedent.
     """
 
     origin_province = state.provinces.get(origin)
@@ -498,6 +559,21 @@ class MoveExecutionResult:
     # `report/turn_report.py record_illusory_fog_foreign_entry_world_
     # events()` for the real, wired consumer.
     entered_foreign_illusory_fog: bool = False
+    # Phase 763 -- Naval Hug Coastline's own real "unboarded stragglers
+    # split" (see `_naval_hug_coastline_move_is_legal()`'s own Phase 720
+    # addendum for the sourced dossier text this closes). `None` unless
+    # this exact call resolved a genuinely mixed group -- a Fleet/Whale
+    # carrying only some of the accompanying land armies -- in which case
+    # this is the separate, real `MoveExecutionResult` for whichever land
+    # armies didn't get a carrier slot, produced by a recursive call that
+    # sends them toward the same ultimate `target` by the ordinary route
+    # (a ``has_naval_hug_coastline=False`` chase step) while the boarded/
+    # carrier portion above takes the coastal shortcut directly. The
+    # straggler group never has its own leader (the acting leader is
+    # modeled as traveling with the hop group -- a documented modeling
+    # choice, not a sourced fact either way) and never re-runs boarding
+    # or contested-move/transport-legality checks a second time.
+    straggler_result: MoveExecutionResult | None = None
 
 
 def _classify_hex_ownership(state: GameState, kingdom_id: int, coord: HexCoord) -> HexOwnershipTier:
@@ -1001,6 +1077,7 @@ def execute_move(
     has_march_infantry: bool = False,
     has_march_infantry_mastery: bool = False,
     has_march_through_floods: bool = False,
+    march_skill_level: int = 0,
     naval_skill_level: int = 0,
     has_naval_hug_coastline: bool = False,
     auto_board: bool = False,
@@ -1042,6 +1119,16 @@ def execute_move(
     originally left land-eligible here too, since no source at the time
     narrowed the wording to exclude them -- **corrected in Phase 523**,
     see that addendum below.
+
+    **Phase 764 -- [4.12] MARCH TABLE's own separate, raw-skill-level
+    movement bonus, closing `turn/multiple_contingents.py`'s own
+    long-flagged "a distinct, still-unmodeled gap" note.** See
+    `march_table_extra_movement()`'s own docstring for the full sourcing
+    and why it's genuinely distinct from (and stacks with) the Advanced-
+    Ability-gated bonus this Phase 521 addendum describes above -- this
+    one applies to every land army from its own commander's raw
+    `Ability.MARCH` skill level, `0` included, gated on `ArmyState.
+    march_table_bonus_applied_this_turn` the same once-per-gameturn way.
 
     **Phase 693 -- `AdvancedAbility.MARCH_THROUGH_FLOODS`, closing the
     stale blocker directly above (kept for history, corrected here).**
@@ -1225,22 +1312,80 @@ def execute_move(
     wind_walking = leader_snapshot is not None and leader_snapshot.mystic_winds_active
 
     bounds = MapBounds(*NORMAL_MAP_BOUNDS)
-    # Phase 720: a mixed stack (a sea-going carrier present alongside
-    # land units) still qualifies for the whole-group hop when every
-    # land-type army in it ended up boarded by the auto_board pass
-    # above (SS106's own capacity-allocation rule, all-or-nothing --
-    # see _naval_hug_coastline_move_is_legal()'s own Phase 720
-    # addendum). A pure land stack has no army needing transported_by
-    # at all, so this is vacuously satisfied, unchanged from before.
-    is_hug_coastline_hop = (
+    # Phase 720/763: whether the shortcut is even geometrically/ability-
+    # wise on the table at all, independent of this group's own boarding
+    # composition -- reused below both to decide the split (Phase 763)
+    # and to gate the final `is_hug_coastline_hop` flag.
+    hug_coastline_geometrically_eligible = (
         has_naval_hug_coastline
         and current != target
         and not is_adjacent(current, target, bounds)
-        and (
-            not any(army.army_type in SEA_ARMY_TYPES for army in armies)
-            or all(army.transported_by is not None for army in armies if is_land_army(army.army_type))
-        )
         and _naval_hug_coastline_move_is_legal(state, current, target, bounds)
+    )
+    # Phase 763: SS106's own "unboarded stragglers still travel
+    # separately, by the ordinary route" split -- see
+    # _naval_hug_coastline_move_is_legal()'s own Phase 763 addendum. Only
+    # a genuinely mixed stack (a real carrier present) can strand a land
+    # army at all; a pure land stack either takes the shortcut in full or
+    # (if geometrically ineligible) falls through to the ordinary
+    # whole-group chase below, unaffected by any of this.
+    straggler_ids: list[int] = []
+    if hug_coastline_geometrically_eligible and any(army.army_type in SEA_ARMY_TYPES for army in armies):
+        straggler_ids = [
+            army.army_id
+            for army in armies
+            if is_land_army(army.army_type)
+            and not (army.transported_by is not None and army.transported_by in army_ids)
+        ]
+    straggler_result: MoveExecutionResult | None = None
+    if straggler_ids:
+        # The boarded/carrier portion (below) takes the coastal shortcut
+        # directly to `target`; the stragglers get their own real,
+        # independent resolution toward the same ultimate `target` --
+        # ordinarily a one-hex chase step, exactly what this same
+        # function already gives any non-adjacent mover once
+        # `has_naval_hug_coastline` is off. No leader travels with them
+        # (the acting leader is modeled as staying with the hop group --
+        # a documented modeling choice, not a sourced fact either way),
+        # and boarding/contested-move/transport-legality were already
+        # resolved once, above, for the whole original group.
+        straggler_result = execute_move(
+            state,
+            kingdom_id,
+            straggler_ids,
+            target,
+            leader_id=None,
+            explorer_skill=explorer_skill,
+            loser_retreats=loser_retreats,
+            rng=rng,
+            has_military_maps=has_military_maps,
+            has_difficult_terrain=has_difficult_terrain,
+            has_find_mines=has_find_mines,
+            has_march_cavalry=has_march_cavalry,
+            has_march_cavalry_mastery=has_march_cavalry_mastery,
+            has_march_infantry=has_march_infantry,
+            has_march_infantry_mastery=has_march_infantry_mastery,
+            has_march_through_floods=has_march_through_floods,
+            march_skill_level=march_skill_level,
+            naval_skill_level=naval_skill_level,
+            has_naval_hug_coastline=False,
+            auto_board=False,
+            enforce_transport_legality=enforce_transport_legality,
+        )
+        army_ids = [army_id for army_id in army_ids if army_id not in straggler_ids]
+        armies = [state.armies[army_id] for army_id in army_ids]
+
+    # Phase 720: a mixed stack (a sea-going carrier present alongside
+    # land units) still qualifies for the whole-group hop when every
+    # land-type army in it ended up boarded by the auto_board pass
+    # above (SS106's own capacity-allocation rule) -- guaranteed true by
+    # construction for the narrowed `armies` once Phase 763's own split
+    # above has already carved the unboarded stragglers out of it. A
+    # pure land stack has no army needing transported_by at all, so this
+    # is vacuously satisfied, unchanged from before.
+    is_hug_coastline_hop = hug_coastline_geometrically_eligible and (
+        not any(army.army_type in SEA_ARMY_TYPES for army in armies)
+        or all(army.transported_by is not None for army in armies if is_land_army(army.army_type))
     )
     if current != target and not is_adjacent(current, target, bounds) and not is_hug_coastline_hop:
         next_hex = step_toward_non_adjacent_target(
@@ -1463,6 +1608,18 @@ def execute_move(
                 if naval_bonus:
                     army.movement_points += naval_bonus
                     army.naval_bonus_applied_this_turn = True
+            # Phase 764: [4.12] MARCH TABLE's own separate, raw-skill-level
+            # bonus -- stacks with march_movement_point_bonus() above, see
+            # march_table_extra_movement()'s own docstring for why the two
+            # are genuinely distinct, separately-sourced mechanics.
+            if not army.march_table_bonus_applied_this_turn and is_land_army(army.army_type):
+                army_stats = ARMY_TABLE.get(army.army_type)
+                table_bonus = march_table_extra_movement(
+                    march_skill_level, army_stats.speed if army_stats is not None else 1
+                )
+                if table_bonus:
+                    army.movement_points += table_bonus
+                    army.march_table_bonus_applied_this_turn = True
             army.movement_points -= cost
             if fog_affected_move and is_illusory_fog_affected_air_unit(army.army_type, mystic_winds_active_for(army, state)):
                 army.movement_points -= ILLUSORY_FOG_EXTRA_MOVEMENT_COST
@@ -1537,4 +1694,5 @@ def execute_move(
         boarded_army_ids=boarded_army_ids,
         followed_mercenary_army_ids=followed_mercenary_army_ids,
         entered_foreign_illusory_fog=entered_foreign_illusory_fog,
+        straggler_result=straggler_result,
     )

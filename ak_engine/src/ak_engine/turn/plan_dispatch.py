@@ -594,6 +594,12 @@ def dispatch_phase(
     # addendum for why Naval's movement bonus is a plain function of raw
     # skill rather than a gated Advanced Ability.
     naval_skill_level = effective_skill_level(state, leader, Ability.NAVAL) if leader is not None else 0
+    # Phase 764: same real-effective-skill-level pattern, for [4.12] MARCH
+    # TABLE's own separate, raw-skill-level movement bonus -- see
+    # move_execution.py's own Phase 764 addendum (march_table_extra_
+    # movement()) for why this is distinct from the Advanced-Ability-gated
+    # has_march_cavalry/_infantry flags above.
+    march_skill_level = effective_skill_level(state, leader, Ability.MARCH) if leader is not None else 0
     # Phase 524: same real-possession pattern, for Naval Hug Coastline.
     has_naval_hug_coastline = leader is not None and AdvancedAbility.NAVAL_HUG_COASTLINE in leader.advanced_abilities
     # Phase 715: same real-possession pattern, for the Fleet/Whale
@@ -621,6 +627,7 @@ def dispatch_phase(
             has_march_infantry=has_march_infantry,
             has_march_infantry_mastery=has_march_infantry_mastery,
             has_march_through_floods=has_march_through_floods,
+            march_skill_level=march_skill_level,
             naval_skill_level=naval_skill_level,
             has_naval_hug_coastline=has_naval_hug_coastline,
             auto_board=True,

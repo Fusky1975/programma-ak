@@ -874,6 +874,7 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         army.movement_points = ARMY_TABLE[army.army_type].speed
         army.march_bonus_applied_this_turn = False
         army.naval_bonus_applied_this_turn = False
+        army.march_table_bonus_applied_this_turn = False
         army.unhireable_this_turn = False
     for province in state.provinces.values():
         province.recruited_this_turn = {}

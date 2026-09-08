@@ -31489,6 +31489,59 @@ follow-up request after the original 431-435 plan shipped.
   is closed, citing Phase 632 directly instead of implying an open gap.
   Full suite unchanged (6437) -- confirmed comment-only.
 
+- **Phase 763 -- Naval Hug Coastline's real "unboarded stragglers"
+  split.** User-requested directly ("affronta lo split di Naval Hug
+  Coastline"), closing a gap Phase 720 deliberately left open: its own
+  all-or-nothing simplification granted the coastal shortcut to a mixed
+  Fleet+land-army stack only when *every* land army got a carrier slot,
+  denying the whole group otherwise. The real dossier (`AKGEN_reverse_
+  engineering_report (3).md` SS106) says the boarded/carrier portion
+  should still take the shortcut while any unboarded land army travels
+  separately, by the ordinary route -- exactly the architectural change
+  Phase 720's own docstring anticipated ("`MoveExecutionResult` would
+  need to represent more than one outcome for a single call"). New
+  `MoveExecutionResult.straggler_result: MoveExecutionResult | None` --
+  `execute_move()` now carves any unboarded land army out of a mixed
+  group *before* deciding `is_hug_coastline_hop` at all, then gives the
+  stragglers their own, separate, recursive `execute_move()` call toward
+  the same ultimate target (`has_naval_hug_coastline=False`, an ordinary
+  one-hex chase step). The acting leader is modeled as staying with the
+  hop group -- a documented modeling choice, not a fact any source
+  confirms either way. Rewrote the one pre-existing test that asserted
+  the old all-or-nothing denial (now a real, expected behavior change)
+  and added 2 more covering the split/no-split/leader-placement cases.
+  Report-layer narration for a real split move and `plan_dispatch.py`'s
+  own awareness of the second result stay unwired -- mechanism only,
+  matching this project's "primitive now, narration later" precedent.
+  Test count: 6437 -> 6439 (net +2). Full suite verified green
+  (unchanged, 6437) before touching a single test.
+
+- **Phase 764 -- [4.12] MARCH TABLE's own raw-skill-level movement
+  bonus.** User-requested directly ("metti a posto la tabella di
+  MARCH") after a survey flagged `turn/multiple_contingents.py`'s own
+  long-standing note (Phase 307) that the MARCH TABLE's "Extra moves
+  for..." column (Ability Level 0-4, two columns by unit speed) was "a
+  distinct, still-unmodeled gap this phase doesn't attempt to close" --
+  confirmed still genuinely open, not stale: it's a real, separate
+  mechanic from the already-wired `march_movement_point_bonus()`
+  (`AdvancedAbility.MARCH_CAVALRY`/`_INFANTRY`, a flat bonus gated on
+  holding a specific granted ability), sourced instead from the raw
+  rulebook table every character gets from their own March skill level,
+  0 included. Independently corroborated: `AKGEN_reverse_engineering_
+  report (3).md` SS99's own disassembled `MovementBonus()` names a real
+  `MarchBonus(army_id, leader)` call for exactly this branch (never
+  expanded in that document, but its existence confirms a real, single
+  compiled formula exists, not an invented mechanic). New `turn/move_
+  execution.py march_table_extra_movement()`, a new `ArmyState.march_
+  table_bonus_applied_this_turn` flag (mirrors the two existing sibling
+  flags exactly, same once-per-gameturn gating, reset at the same turn
+  boundary), and a new `march_skill_level` parameter threaded through
+  `execute_move()`/`dispatch_phase()`'s real LMOVE branch the same way
+  `naval_skill_level` already is. Stacks with (doesn't replace) the
+  Advanced-Ability-gated bonus. Test count: 6439 -> 6450 (net +11, incl.
+  one `plan_dispatch.py` wiring test). Full suite verified green
+  (unchanged, 6439) before touching a single test.
+
 ## Setup
 
 ```

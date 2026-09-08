@@ -477,6 +477,15 @@ class ArmyState:
     # Phase 523 addendum. Reset the same way and at the same point as
     # `march_bonus_applied_this_turn` above.
     naval_bonus_applied_this_turn: bool = False
+    # Phase 764: the sibling of `march_bonus_applied_this_turn` above for
+    # [4.12] MARCH TABLE's own separate, raw-skill-level "Extra moves
+    # for..." bonus (`turn/move_execution.py march_table_extra_
+    # movement()`) -- a distinct, base rulebook mechanic every character
+    # gets from their own March skill level (0 included, no Advanced
+    # Ability needed), stacking with `march_bonus_applied_this_turn`'s
+    # own Advanced-Ability-gated bonus, not replacing it. Reset the same
+    # way and at the same point as the two flags above.
+    march_table_bonus_applied_this_turn: bool = False
     # Phase 714 -- Fleet/Whale cargo-capacity subsystem: the carrying
     # Fleet/Whale's own `army_id`, or `None` if this army isn't
     # currently boarded on anything. Mirrors `commanded_by`'s own

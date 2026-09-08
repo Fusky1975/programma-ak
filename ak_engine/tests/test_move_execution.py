@@ -22,6 +22,7 @@ from ak_engine.turn.move_execution import (
     find_transport_illegality,
     is_flooded_province,
     march_movement_point_bonus,
+    march_table_extra_movement,
     naval_movement_point_bonus,
     record_kingdom_exploration,
     resolve_wandering_mercenary_following,
@@ -1338,11 +1339,14 @@ def test_execute_move_gives_no_naval_or_march_bonus_to_an_air_unit():
     state.provinces[TARGET].owner_kingdom_id = 1
     state.armies[101] = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, ORIGIN, movement_points=3)
 
-    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_cavalry=True, naval_skill_level=3)
+    execute_move(
+        state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_cavalry=True, naval_skill_level=3, march_skill_level=4
+    )
 
     assert state.armies[101].movement_points == 2
     assert state.armies[101].march_bonus_applied_this_turn is False
     assert state.armies[101].naval_bonus_applied_this_turn is False
+    assert state.armies[101].march_table_bonus_applied_this_turn is False
 
 
 def test_execute_move_gives_no_naval_bonus_without_skill():
@@ -1354,6 +1358,108 @@ def test_execute_move_gives_no_naval_bonus_without_skill():
 
     assert state.armies[101].movement_points == 2
     assert state.armies[101].naval_bonus_applied_this_turn is False
+
+
+# -- Phase 764: [4.12] MARCH TABLE's own raw-skill-level movement bonus --
+
+
+def test_march_table_extra_movement_slow_column():
+    assert march_table_extra_movement(0, army_speed=2) == 0
+    assert march_table_extra_movement(1, army_speed=2) == 0
+    assert march_table_extra_movement(2, army_speed=2) == 1
+    assert march_table_extra_movement(3, army_speed=2) == 1
+    assert march_table_extra_movement(4, army_speed=2) == 2
+
+
+def test_march_table_extra_movement_fast_column():
+    assert march_table_extra_movement(0, army_speed=3) == 0
+    assert march_table_extra_movement(1, army_speed=3) == 1
+    assert march_table_extra_movement(2, army_speed=3) == 1
+    assert march_table_extra_movement(3, army_speed=3) == 2
+    assert march_table_extra_movement(4, army_speed=3) == 2
+
+
+def test_march_table_extra_movement_clamps_above_the_known_range():
+    assert march_table_extra_movement(9, army_speed=2) == march_table_extra_movement(4, army_speed=2)
+    assert march_table_extra_movement(9, army_speed=3) == march_table_extra_movement(4, army_speed=3)
+
+
+def test_march_table_extra_movement_clamps_negative_input_to_zero():
+    assert march_table_extra_movement(-3, army_speed=2) == 0
+
+
+def test_execute_move_grants_march_table_bonus_before_deducting_cost():
+    # Bowmen (speed 2, base_state()'s own default army) -- Speed 1-2
+    # column, level 2 gives +1.
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, march_skill_level=2)
+
+    # 3 (start) + 1 (bonus) - 1 (cost) == 3
+    assert state.armies[101].movement_points == 3
+    assert state.armies[101].march_table_bonus_applied_this_turn is True
+
+
+def test_execute_move_march_table_bonus_uses_the_fast_column_for_speed_3_plus():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.armies[101] = ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.AVERAGE, ORIGIN, movement_points=3)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, march_skill_level=1)
+
+    # 3 (start) + 1 (fast-column bonus at level 1) - 1 (cost) == 3
+    assert state.armies[101].movement_points == 3
+    assert state.armies[101].march_table_bonus_applied_this_turn is True
+
+
+def test_execute_move_gives_no_march_table_bonus_at_skill_level_0():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, march_skill_level=0)
+
+    assert state.armies[101].movement_points == 2
+    assert state.armies[101].march_table_bonus_applied_this_turn is False
+
+
+def test_execute_move_gives_no_march_table_bonus_to_a_sea_army_type():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.armies[101] = ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=2)
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, march_skill_level=4)
+
+    assert state.armies[101].march_table_bonus_applied_this_turn is False
+
+
+def test_execute_move_does_not_regrant_march_table_bonus_within_the_same_turn():
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+
+    execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, march_skill_level=2)
+    after_first_move = state.armies[101].movement_points
+    execute_move(state, kingdom_id=1, army_ids=[101], target=ORIGIN, march_skill_level=2)
+
+    assert state.armies[101].movement_points == after_first_move - 1
+
+
+def test_execute_move_march_table_bonus_stacks_with_the_advanced_ability_bonus():
+    # Bowmen at exactly 1 movement point (Infantry's own qualifying band
+    # for march_movement_point_bonus()) plus a real march_skill_level --
+    # both distinct, separately-sourced bonuses apply to the same move.
+    state = base_state()
+    state.provinces[TARGET].owner_kingdom_id = 1
+    state.armies[101] = ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=1)
+
+    execute_move(
+        state, kingdom_id=1, army_ids=[101], target=TARGET, has_march_infantry=True, march_skill_level=4
+    )
+
+    # 1 (start) + 1 (Infantry Advanced Ability) + 2 (table, level 4, slow column) - 1 (cost) == 3
+    assert state.armies[101].movement_points == 3
+    assert state.armies[101].march_bonus_applied_this_turn is True
+    assert state.armies[101].march_table_bonus_applied_this_turn is True
 
 
 # -- Phase 524: Naval Hug Coastline --
@@ -1431,23 +1537,74 @@ def test_execute_move_naval_hug_coastline_grants_the_hop_when_the_fleet_can_carr
     assert state.armies[101].transported_by == 102
 
 
-def test_execute_move_naval_hug_coastline_still_withheld_when_the_fleet_cannot_carry_every_land_army():
-    # 3 Bowmen exceed FLEET_INFANTRY_CAPACITY=2 -- 2 board, 1 doesn't --
-    # the all-or-nothing rule denies the shortcut to the entire group,
-    # including the 2 that did board.
+def test_execute_move_naval_hug_coastline_splits_unboarded_stragglers_when_the_fleet_cannot_carry_every_land_army():
+    # Phase 763: 3 Bowmen exceed FLEET_INFANTRY_CAPACITY=2 -- 2 board (101,
+    # 102, lowest army ids first), 1 doesn't (103). The boarded pair plus
+    # the Fleet itself take the coastal shortcut together; the unboarded
+    # straggler travels separately, by the ordinary route (a chase step,
+    # since HUG_TARGET isn't adjacent to HUG_ORIGIN) -- this supersedes the
+    # old, pre-Phase-763 all-or-nothing denial of the whole group.
     state = _hug_state()
     state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
     state.add_army(ArmyState(103, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
     state.add_army(ArmyState(104, 1, ArmyType.FLEET, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
 
-    execute_move(
+    result = execute_move(
         state, kingdom_id=1, army_ids=[101, 102, 103, 104], target=HUG_TARGET, has_naval_hug_coastline=True, auto_board=True
     )
 
-    assert state.armies[101].location != HUG_TARGET
-    assert state.armies[102].location != HUG_TARGET
+    assert state.armies[101].location == HUG_TARGET
+    assert state.armies[102].location == HUG_TARGET
+    assert state.armies[104].location == HUG_TARGET
     assert state.armies[103].location != HUG_TARGET
-    assert state.armies[104].location != HUG_TARGET
+
+    assert result.straggler_result is not None
+    assert result.straggler_result.moved is True
+    assert result.straggler_result.reached_target is False
+
+
+def test_execute_move_naval_hug_coastline_split_leader_travels_with_the_hop_group():
+    # Phase 763: the acting leader is modeled as staying with the boarded/
+    # carrier portion of a split -- a documented modeling choice, not a
+    # sourced fact -- so the leader's own location ends up at HUG_TARGET
+    # even though one accompanying army (103, exceeding FLEET_INFANTRY_
+    # CAPACITY=2) is left behind as a straggler.
+    state = _hug_state()
+    state.add_leader(LeaderState(1, 1, "General", HUG_ORIGIN))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+    state.add_army(ArmyState(103, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+    state.add_army(ArmyState(104, 1, ArmyType.FLEET, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+
+    execute_move(
+        state,
+        kingdom_id=1,
+        army_ids=[101, 102, 103, 104],
+        target=HUG_TARGET,
+        leader_id=1,
+        has_naval_hug_coastline=True,
+        auto_board=True,
+    )
+
+    assert state.armies[101].location == HUG_TARGET
+    assert state.armies[102].location == HUG_TARGET
+    assert state.armies[104].location == HUG_TARGET
+    assert state.leaders[1].location == HUG_TARGET
+    assert state.armies[103].location != HUG_TARGET
+
+
+def test_execute_move_naval_hug_coastline_no_split_when_no_stragglers_remain():
+    # Non-regression: a fully-boarded mixed group (Phase 720's own
+    # already-tested case) never populates straggler_result at all.
+    state = _hug_state()
+    state.add_army(ArmyState(102, 1, ArmyType.FLEET, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+
+    result = execute_move(
+        state, kingdom_id=1, army_ids=[101, 102], target=HUG_TARGET, has_naval_hug_coastline=True, auto_board=True
+    )
+
+    assert result.straggler_result is None
+    assert state.armies[101].location == HUG_TARGET
+    assert state.armies[102].location == HUG_TARGET
 
 
 # -- Phase 715: Fleet/Whale cargo-capacity subsystem, Phase B -- auto_board --
