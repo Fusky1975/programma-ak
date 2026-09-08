@@ -31,7 +31,9 @@ from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.turn_processor import (
     MultiAttackerMoveResult,
     TurnLeader,
+    _ActiveMoveChase,
     _apply_werebeast_transformations,
+    _continue_active_move_chases,
     _replenish_turn_scoped_state,
     build_missed_deadline_turn_leaders,
     run_turn as _run_turn_unfiltered,
@@ -1507,6 +1509,42 @@ def test_run_turn_move_chase_that_stops_does_not_preempt_the_next_phase():
     p1_entry = by_label[(10, "P1")]
     assert p1_entry.segment_index == 0  # ordinary dispatch, not a continuation
     assert p1_entry.action is ActionCode.WAIT
+
+
+def test_continue_active_move_chases_appends_a_straggler_sentinel():
+    # Phase 766: mirrors run_leader_plan()'s own identical addendum --
+    # a chase-continuation LMOVE can trigger the Naval Hug Coastline
+    # stragglers split too. dispatch_phase() itself is mocked here (the
+    # split mechanism is already exhaustively tested at the
+    # execute_move()/plan_dispatch.py level) to isolate this function's
+    # own real job: turning `straggler_result` into a second sentinel.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(3, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Mover", location=HexCoord(3, 9)))
+    straggler_result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1, new_location=HexCoord(9, 9)
+    )
+    scripted_result = MoveExecutionResult(
+        moved=True,
+        battle_report=None,
+        exploration=None,
+        movement_points_spent=1,
+        new_location=HexCoord(4, 9),
+        reached_target=True,
+        straggler_result=straggler_result,
+    )
+    active_move_chases = {10: _ActiveMoveChase(kingdom_id=1, target=HexCoord(4, 9))}
+
+    with patch("ak_engine.turn.turn_processor.dispatch_phase", return_value=scripted_result):
+        results = _continue_active_move_chases(active_move_chases, "P1", state, BOARD_WIDTH, 0, random.Random(1))
+
+    assert [r.phase_label for r in results] == ["P1", "P1"]
+    sentinel = results[1]
+    assert sentinel.segment_index == -1
+    assert sentinel.action is None
+    assert sentinel.result is straggler_result
+    assert 10 not in active_move_chases  # reached_target=True -> chase resolved
 
 
 def test_run_turn_pursue_with_no_target_is_not_registered_for_continuation():

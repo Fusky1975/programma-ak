@@ -1256,6 +1256,11 @@ def _continue_active_move_chases(
             dispatch_result = PhaseDispatchResult(leader_id, -1, label, phase.action, None, exc)
             result = None
         results.append(dispatch_result)
+        # Phase 766 -- mirrors run_leader_plan()'s own identical Phase 766
+        # addendum: a chase-continuation LMOVE can trigger the Naval Hug
+        # Coastline stragglers split too, so it needs the same sentinel.
+        if isinstance(result, MoveExecutionResult) and result.straggler_result is not None:
+            results.append(PhaseDispatchResult(leader_id, -1, label, None, result.straggler_result, None))
         still_chasing = isinstance(result, MoveExecutionResult) and not result.reached_target and not result.stopped_chasing
         if not still_chasing:
             del active_move_chases[leader_id]

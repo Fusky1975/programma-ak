@@ -5917,6 +5917,50 @@ def describe_move(
     return render_march(character_name, province_name, province_number, rng, is_sea=is_sea)
 
 
+# Phase 766 -- **project-original text, explicitly authorized by the
+# user.** No Pascal source describes this scenario at all: Naval Hug
+# Coastline's own "unboarded stragglers travel separately" split
+# (`turn/move_execution.py`'s own Phase 763 addendum) is a real, sourced
+# *mechanism* (`AKGEN_reverse_engineering_report (3).md` SS106), but the
+# split itself was assembled this session from that dossier's own prose
+# description, not recovered from any surviving ``SAY.PAS``/``.X2``
+# template -- there is no real English sentence anywhere in this
+# project's corpus for "a leaderless detachment arrived separately."
+# Per this project's own standing convention for a confirmed-unsourced
+# gap (see memory), the user chose to author a short, clearly-labeled
+# sentence rather than leave the event unnarrated. Attributed to the
+# *ordering* leader's own troops (``>``, "X's"), not to the leader
+# personally -- the leader is modeled as staying with the boarded/
+# carrier portion of the split, never with the stragglers themselves.
+NAVAL_HUG_COASTLINE_STRAGGLERS_TEMPLATE = "> troops, left behind for lack of transport, arrived separately at @."
+
+
+def render_naval_hug_coastline_stragglers_arrived(character_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders the Phase 766 project-original sentence above. ``>`` is
+    the ordering leader's own possessive, ``@`` the stragglers' own real
+    arrival province -- both already-established markers, reused here,
+    not a new marker convention.
+    """
+
+    values = {">": f"{character_name}'s", "@": province_name}
+    return render(NAVAL_HUG_COASTLINE_STRAGGLERS_TEMPLATE, values, rng=rng)
+
+
+def describe_naval_hug_coastline_stragglers(
+    result: MoveExecutionResult, state: GameState, *, character_name: str, rng: random.Random
+) -> str | None:
+    """Mirrors ``describe_move()``'s own "no sentence for a Move that
+    didn't actually relocate anyone" rule -- ``None`` when the straggler
+    group never reached anywhere this phase (e.g. stopped chasing, no
+    legal step available).
+    """
+
+    if not result.moved or result.new_location is None:
+        return None
+    province_name = _province_label(state, result.new_location)
+    return render_naval_hug_coastline_stragglers_arrived(character_name, province_name, rng)
+
+
 # HostAK/TP/PROSE/ALLY.X -- a successful Ally proposal. See module
 # docstring's Phase 116 addendum.
 _ALLY_TEMPLATES: list[str] = [
@@ -7292,6 +7336,17 @@ def describe_turn_results(
             if line is not None:
                 lines.append(line)
             lines.extend(describe_cargo_boarded(entry.result, state, character_name=caster_name, rng=rng))
+            continue
+        elif entry.action is None and isinstance(entry.result, MoveExecutionResult):
+            # Phase 766: the Naval Hug Coastline stragglers sentinel
+            # (`turn/plan_dispatch.py run_leader_plan()`'s own Phase 766
+            # addendum) -- matched by `isinstance` alone, the same
+            # convention the random-encounter sentinel right above
+            # already established, since no other `action=None` sentinel
+            # in this project ever carries a bare `MoveExecutionResult`.
+            line = describe_naval_hug_coastline_stragglers(entry.result, state, character_name=caster_name, rng=rng)
+            if line is not None:
+                lines.append(line)
             continue
         else:
             continue

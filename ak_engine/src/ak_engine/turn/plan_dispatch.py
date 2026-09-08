@@ -385,7 +385,12 @@ from ak_engine.turn.exploration import SOCIETY_MAPS_EXPLORE_COUNT_RANGE, receive
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
 from ak_engine.turn.hire_pay import RARE_ALIGNMENT_EXCEPTION_PAY, required_pay, roll_rare_alignment_exception
-from ak_engine.turn.move_execution import execute_move, record_kingdom_exploration, reveal_adjacent_provinces
+from ak_engine.turn.move_execution import (
+    MoveExecutionResult,
+    execute_move,
+    record_kingdom_exploration,
+    reveal_adjacent_provinces,
+)
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.practice_decode import decode_practice_phase
@@ -1321,6 +1326,25 @@ def run_leader_plan(
             except Exception as exc:  # noqa: BLE001 -- intentionally broad, see docstring
                 results.append(PhaseDispatchResult(leader.leader_id, segment_index, label, phase.action, None, exc))
                 continue
+
+            # Phase 766 -- Naval Hug Coastline's own real "unboarded
+            # stragglers" split (Phase 763) produces a second, genuinely
+            # independent `MoveExecutionResult` that `execute_move()`
+            # itself has no way to surface on its own (it returns exactly
+            # one result per call). Appended here as its own sentinel
+            # `PhaseDispatchResult` -- `segment_index=-1`/`action=None`,
+            # the same convention the random-encounter sentinel right
+            # below already established -- so every existing consumer
+            # that scans `results` for real consequences (battle
+            # narration via `_battle_reports_from_results()`, which
+            # duck-types any `.battle_report` attribute) picks up the
+            # stragglers' own battle/exploration/conquest for free, with
+            # zero changes needed to that machinery. See `report/
+            # turn_report.py describe_naval_hug_coastline_stragglers()`
+            # for the one new, explicitly project-original narration line
+            # this session adds on top of that free reuse.
+            if isinstance(result, MoveExecutionResult) and result.straggler_result is not None:
+                results.append(PhaseDispatchResult(leader.leader_id, -1, label, None, result.straggler_result, None))
 
             # Phase 708 -- CASUALENCOUNTER.md's own random-encounter roll,
             # attempted right after this phase's own ordinary dispatch,

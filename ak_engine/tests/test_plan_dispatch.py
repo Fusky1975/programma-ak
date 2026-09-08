@@ -2017,6 +2017,49 @@ def test_run_leader_plan_skips_the_random_encounter_hook_when_rng_is_none():
     assert [r.phase_label for r in results] == ["P0"]
 
 
+# -- Phase 766: Naval Hug Coastline stragglers sentinel --
+
+
+def test_run_leader_plan_appends_a_straggler_sentinel_when_a_hug_coastline_move_splits():
+    leader, state = _wanderer_leader_and_state()
+    straggler_result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1, new_location=HexCoord(9, 9)
+    )
+    scripted_result = MoveExecutionResult(
+        moved=True,
+        battle_report=None,
+        exploration=None,
+        movement_points_spent=1,
+        new_location=HexCoord(4, 9),
+        straggler_result=straggler_result,
+    )
+
+    with patch("ak_engine.turn.plan_dispatch.dispatch_phase", return_value=scripted_result), patch(
+        "ak_engine.turn.plan_dispatch.dispatch_random_encounter_after_phase", return_value=None
+    ):
+        results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert [r.phase_label for r in results] == ["P0", "P0"]
+    sentinel = results[1]
+    assert sentinel.segment_index == -1
+    assert sentinel.action is None
+    assert sentinel.result is straggler_result
+
+
+def test_run_leader_plan_appends_no_straggler_sentinel_for_an_ordinary_move():
+    leader, state = _wanderer_leader_and_state()
+    scripted_result = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1, new_location=HexCoord(4, 9)
+    )
+
+    with patch("ak_engine.turn.plan_dispatch.dispatch_phase", return_value=scripted_result), patch(
+        "ak_engine.turn.plan_dispatch.dispatch_random_encounter_after_phase", return_value=None
+    ):
+        results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert [r.phase_label for r in results] == ["P0"]
+
+
 # -- Phase 547: Valhalla visitor phase/Practice cap --
 
 

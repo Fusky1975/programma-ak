@@ -483,12 +483,20 @@ def _naval_hug_coastline_move_is_legal(
     exactly what any non-adjacent mover already gets without this
     ability) -- no leader travels with them, a documented modeling
     choice (the acting leader is assumed to travel with the hop group),
-    not a fact this project's own sources confirm either way. Report-
-    layer narration for a real split move (``report/turn_report.py``)
-    and ``turn/plan_dispatch.py``'s own awareness of the second result
-    remain untouched -- ``straggler_result`` is populated and tested at
-    the mechanism level, with no consumer yet, matching this project's
-    own repeated "primitive now, narration later" precedent.
+    not a fact this project's own sources confirm either way.
+
+    **Phase 766 -- wired.** `turn/plan_dispatch.py run_leader_plan()`/
+    `turn/turn_processor.py _continue_active_move_chases()` both now
+    append `straggler_result` as its own sentinel `PhaseDispatchResult`
+    (`segment_index=-1`, `action=None`), so every existing report-layer
+    consumer that scans `results` for real consequences (`_battle_
+    reports_from_results()`'s own `.battle_report` duck-typing) picks up
+    the stragglers' own battle/exploration/conquest for free. `report/
+    turn_report.py describe_naval_hug_coastline_stragglers()` adds the
+    one genuinely new piece -- a project-original arrival sentence,
+    explicitly user-authorized (no Pascal source describes this
+    scenario at all, since the split itself was built this session, not
+    recovered from disassembly).
     """
 
     origin_province = state.provinces.get(origin)
@@ -572,7 +580,9 @@ class MoveExecutionResult:
     # straggler group never has its own leader (the acting leader is
     # modeled as traveling with the hop group -- a documented modeling
     # choice, not a sourced fact either way) and never re-runs boarding
-    # or contested-move/transport-legality checks a second time.
+    # or contested-move/transport-legality checks a second time. Phase
+    # 766: wired into the report layer via a sentinel PhaseDispatchResult
+    # -- see `_naval_hug_coastline_move_is_legal()`'s own Phase 766 note.
     straggler_result: MoveExecutionResult | None = None
 
 

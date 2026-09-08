@@ -114,6 +114,7 @@ from ak_engine.report.turn_report import (
     describe_disband,
     describe_leave,
     describe_move,
+    describe_naval_hug_coastline_stragglers,
     describe_transport_illegal_move,
     describe_pick_up,
     describe_practice,
@@ -228,6 +229,7 @@ from ak_engine.report.turn_report import (
     render_skeletal_army_dug_grave,
     render_sunk_cargo,
     render_march,
+    render_naval_hug_coastline_stragglers_arrived,
     render_pickup_unit,
     render_recruit_unit,
     render_recruit_hired_mercenary,
@@ -2035,6 +2037,46 @@ def test_describe_move_returns_none_without_new_location():
         _move_result(new_location=None), state, character_name="Arthur", board_width=20, rng=ScriptedRandom([])
     )
     assert line is None
+
+
+# -- Phase 766: Naval Hug Coastline stragglers' own arrival narration --
+
+
+def test_render_naval_hug_coastline_stragglers_arrived():
+    line = render_naval_hug_coastline_stragglers_arrived("Arthur", "Numenor", ScriptedRandom([]))
+    assert line == "Arthur's troops, left behind for lack of transport, arrived separately at Numenor."
+
+
+def test_describe_naval_hug_coastline_stragglers_renders_when_moved():
+    state = _leave_state()
+    line = describe_naval_hug_coastline_stragglers(_move_result(), state, character_name="Arthur", rng=ScriptedRandom([]))
+    assert line == "Arthur's troops, left behind for lack of transport, arrived separately at Numenor."
+
+
+def test_describe_naval_hug_coastline_stragglers_returns_none_when_not_moved():
+    state = _leave_state()
+    line = describe_naval_hug_coastline_stragglers(
+        _move_result(moved=False), state, character_name="Arthur", rng=ScriptedRandom([])
+    )
+    assert line is None
+
+
+def test_describe_naval_hug_coastline_stragglers_returns_none_without_new_location():
+    state = _leave_state()
+    line = describe_naval_hug_coastline_stragglers(
+        _move_result(new_location=None), state, character_name="Arthur", rng=ScriptedRandom([])
+    )
+    assert line is None
+
+
+def test_describe_turn_results_renders_the_stragglers_sentinel():
+    # The sentinel is matched purely by isinstance(entry.result,
+    # MoveExecutionResult) with action=None -- proves describe_turn_
+    # results() reaches the new branch, not just the composer directly.
+    state = _leave_state()
+    entry = PhaseDispatchResult(1, -1, "P0", None, _move_result(), None)
+    lines = describe_turn_results([entry], state, ScriptedRandom([]), board_width=20)
+    assert lines == ["Arthur's troops, left behind for lack of transport, arrived separately at Numenor."]
 
 
 # -- Phase 736: render_cargo_boarded/describe_cargo_boarded, render_sunk_cargo/record_sunk_cargo_world_events --

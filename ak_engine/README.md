@@ -31558,6 +31558,31 @@ follow-up request after the original 431-435 plan shipped.
   duel (only from a CAST-tactic-triggered walk), already self-flagged at
   Phase 740 and re-flagged at the 30th/31st surveys.
 
+- **Phase 766 -- Naval Hug Coastline stragglers: report-layer narration
+  + `plan_dispatch.py`/`turn_processor.py` wiring.** User-picked
+  directly, closing the exact "no consumer yet" gap Phase 763/765
+  flagged. `turn/plan_dispatch.py run_leader_plan()` and `turn/
+  turn_processor.py _continue_active_move_chases()` both now turn a
+  real `MoveExecutionResult.straggler_result` into its own sentinel
+  `PhaseDispatchResult` (`segment_index=-1`, `action=None`, the same
+  convention the Phase 708 random-encounter sentinel already
+  established) -- for free, this makes every existing report-layer
+  consumer that scans `results` for real consequences (battle narration
+  via `_battle_reports_from_results()`'s own `.battle_report` duck-
+  typing) pick up the stragglers' own battle/exploration/conquest with
+  zero further changes. No real Pascal source describes a sentence for
+  "a leaderless detachment arrived separately" (the split mechanism
+  itself was assembled this session from a dossier's prose, not
+  recovered from any surviving template) -- **user-confirmed directly**:
+  author a short, clearly-labeled project-original sentence rather than
+  leave the event unnarrated or attribute it to the leader as if they
+  personally traveled. New `report/turn_report.py render_naval_hug_
+  coastline_stragglers_arrived()`/`describe_naval_hug_coastline_
+  stragglers()`, attributed to the ordering leader's own troops ("X's
+  troops..."), not to the leader personally (modeled as staying with
+  the hop group). Test count: 6450 -> 6458 (net +8). Full suite
+  verified green (unchanged, 6450) before touching a single test.
+
 ## Setup
 
 ```
