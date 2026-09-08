@@ -106,6 +106,17 @@ def test_leader_moving_alone_does_not_conquer():
 
     assert result.conquered is False
     assert state.provinces[TARGET].owner_kingdom_id == 2
+    # Phase 769: MARCH.md section 12's own `CountArmies(leader) <= 0`
+    # dispatcher condition -- the real report-layer consumer.
+    assert result.moved_without_armies is True
+
+
+def test_moving_with_armies_is_not_moved_without_armies():
+    state = base_state()
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.moved_without_armies is False
 
 
 def test_uncontested_move_applies_partial_exploration():

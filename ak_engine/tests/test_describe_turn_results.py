@@ -399,7 +399,13 @@ def test_describe_turn_results_renders_defend_reinforcement():
 
     lines = describe_turn_results(results, state, ScriptedRandom([0.0, 0.0]))
 
-    assert lines == ["Aldric, responsible for the defense of Numenor, learned of an enemy attack on Gondor."]
+    # Phase 769: _LHearInv (learning of the attack) + _LCMarch (the
+    # actual march-in to defend), both real sentences for this one
+    # atomic reinforcement event.
+    assert lines == [
+        "Aldric, responsible for the defense of Numenor, learned of an enemy attack on Gondor.",
+        "Aldric marched into Gondor from Numenor to defend Gondor against its would-be conquerors.",
+    ]
 
 
 def test_describe_turn_results_renders_move():

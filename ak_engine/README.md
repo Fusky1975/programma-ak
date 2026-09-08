@@ -31675,6 +31675,41 @@ follow-up request after the original 431-435 plan shipped.
   test; 2 pre-existing tests needed 2 more scripted RNG values each for
   the new `add_experience()` draws, found and fixed empirically.
 
+- **Phase 769 -- MARCH.md's MOVE narration dispatcher: `_LMove`
+  (TRAV.X) and `_LCMarch` (defensive march-in), the last 2 real gaps
+  in section 12's `_LWWalk`/`_LMove`/`_LFly`/`_LCMarch`/`_LMarch` chain.**
+  User-requested directly ("c'è altro che possiamo usare del file
+  MARCH?"). `_LWWalk`/`_LFly` were already wired (Phase 634); `_LMarch`
+  (the generic army-flavored fallback, MARCH.X) was already correctly
+  wired too, but as an *unconditional* renderer for every completed
+  Move -- meaning an armyless personal Move (`CountArmies(leader) <=
+  0`, `_LMove`'s own real dispatcher condition) also rendered MARCH.X's
+  own "...with your {formidable} command/forces..." text, which was
+  never a faithful sentence for a leader traveling alone. `PROSE/TRAV.X`
+  (4 real variants: "travelled to"/"rode/sailed into"/"moved into"/
+  "journeyed/cruised over to") had never been transcribed into the
+  codebase at all. New `MoveExecutionResult.moved_without_armies`
+  (snapshotted from this call's own pre-straggler-split `army_ids` at
+  the top of `execute_move()`), new `render_travel()`, and `describe_
+  move()` now checks it before falling through to `render_march()`.
+  Separately, `_LCMarch` (SAY.PAS:480-483, "< marched into @ from ^S
+  to defend @ against its would-be conquerors.") already had a fully
+  built, correctly-sourced renderer (`render_defensive_march()`, Phase
+  120) that was simply never called -- the real Defend-reinforcement
+  event instead narrated only `_LHearInv` ("learned of an enemy
+  attack..."), a different, earlier real narrative moment per MARCH.md's
+  own section 24.3. Since this project's own `_apply_defend_
+  reinforcements()` collapses "learn of the attack" and "relocate to
+  cover it" into one atomic step, `describe_defend_reinforcement()` now
+  renders *both* real sentences for that one event, in that order --
+  `render_defensive_march()`'s own marker mapping (`@`=destination,
+  `^S`=origin) is the reverse of `render_defend_reinforcement()`'s
+  (`@`=origin, `^S`=destination), confirmed and wired correctly. Test
+  count: 6477 -> 6485 (net +8). Full suite verified green (unchanged,
+  6477) before touching a single test; 2 pre-existing tests needed
+  their own exact-output assertions updated for the new 2nd sentence
+  (a real, intended behavior change, not a regression).
+
 ## Setup
 
 ```

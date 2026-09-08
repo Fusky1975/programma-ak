@@ -613,6 +613,13 @@ class MoveExecutionResult:
     # 766: wired into the report layer via a sentinel PhaseDispatchResult
     # -- see `_naval_hug_coastline_move_is_legal()`'s own Phase 766 note.
     straggler_result: MoveExecutionResult | None = None
+    # Phase 769: MARCH.md section 12's own real dispatcher condition,
+    # `CountArmies(leader) <= 0` -- `True` when this specific call's own
+    # (pre-straggler-split) `army_ids` was empty, i.e. the leader moved
+    # alone. Snapshotted at the top of `execute_move()`, not re-derived
+    # from post-move state -- see `report/turn_report.py describe_move()`'s
+    # own Phase 769 addendum for the real consumer (`_LMove`/TRAV.X).
+    moved_without_armies: bool = False
 
 
 def _classify_hex_ownership(state: GameState, kingdom_id: int, coord: HexCoord) -> HexOwnershipTier:
@@ -1352,6 +1359,12 @@ def execute_move(
     path, Phase 754) -- this credit stays scoped to this function's own
     real callers, the same boundary several earlier Move-feature phases
     already accepted for that separate dispatch path.
+
+    **Phase 769 -- `MoveExecutionResult.moved_without_armies`,
+    MARCH.md section 12's own `CountArmies(leader) <= 0` dispatcher
+    condition.** Snapshotted from this call's own (pre-straggler-split)
+    `army_ids` right at the top of this function -- see that field's
+    own docstring for the real consumer.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -1359,6 +1372,7 @@ def execute_move(
         raise ValueError("no armies and no leader given -- nothing to move")
 
     armies = [state.armies[army_id] for army_id in army_ids]
+    moved_without_armies = not armies
     if armies:
         current = armies[0].location
         if any(army.location != current for army in armies):
@@ -1804,4 +1818,5 @@ def execute_move(
         followed_mercenary_army_ids=followed_mercenary_army_ids,
         entered_foreign_illusory_fog=entered_foreign_illusory_fog,
         straggler_result=straggler_result,
+        moved_without_armies=moved_without_armies,
     )

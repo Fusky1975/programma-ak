@@ -5864,7 +5864,8 @@ def describe_defend(state: GameState, *, leader_name: str, province: ProvinceSta
     ``_ADefend`` (which armies actually got left/committed as
     reinforcement, via a ``^L=`` list marker -- an ambiguous trigger not
     confirmed to correspond to any data this project currently derives).
-    ``_LHearInv`` (a covered leader learning of a distant attack) is
+    ``_LHearInv`` (a covered leader learning of a distant attack) and
+    ``_LCMarch`` (the actual march-in to defend, Phase 769) are both
     narrated separately by ``describe_defend_reinforcement()`` below
     (Phase 422), once real per-leader reinforcement outcome data became
     available via ``turn/turn_processor.py``'s ``DefendReinforcement``.
@@ -5895,25 +5896,42 @@ def render_defend_reinforcement(
 
 def describe_defend_reinforcement(
     result: DefendReinforcement, state: GameState, *, defender_name: str, rng: random.Random
-) -> str:
-    """Assembles the ``_LHearInv`` sentence for a real Defend reinforcement
-    (Phase 422) -- ``result.origin`` is ``@`` (the defender's own province,
-    where they were standing by), ``result.target`` is ``^S`` (the invaded
-    province they relocated to cover), both resolved via ``turn/
-    turn_processor.py _apply_defend_reinforcements()``'s real outcome data.
+) -> list[str]:
+    """Assembles both real sentences for a Defend reinforcement (Phase
+    422, extended Phase 769) -- ``_LHearInv`` (learning of the attack)
+    and ``_LCMarch`` (the actual march-in to defend). MARCH.md section
+    24.3 confirms these describe genuinely distinct real moments
+    (learning, deciding, arriving) that the source itself never
+    requires emitting together -- but this project's own single,
+    atomic ``_apply_defend_reinforcements()`` step already collapses
+    "learn of the attack" and "relocate to cover it" into one event, so
+    both sourced sentences are rendered for it, in that narrative
+    order. ``render_defensive_march()`` (Phase 120, real text, never
+    called until now) needs the *opposite* marker mapping from
+    ``render_defend_reinforcement()``: its own ``@`` is the destination
+    ("marched into @"), ``^S`` the origin -- the reverse of ``_LHearInv``'s
+    ``@``=origin/``^S``=target.
+
+    ``result.origin`` is the defender's own province, where they were
+    standing by; ``result.target`` is the invaded province they
+    relocated to cover -- both resolved via ``turn/turn_processor.py
+    _apply_defend_reinforcements()``'s real outcome data.
     """
 
     origin_name = _province_label(state, result.origin)
     target_name = _province_label(state, result.target)
-    return render_defend_reinforcement(defender_name, origin_name, target_name, rng)
+    return [
+        render_defend_reinforcement(defender_name, origin_name, target_name, rng),
+        render_defensive_march(defender_name, target_name, origin_name, rng),
+    ]
 
 
 def describe_move(
     result: MoveExecutionResult, state: GameState, *, character_name: str, board_width: int, rng: random.Random
 ) -> str | None:
-    """Assembles MARCH.X's sentence for a completed Move (Phase 421),
-    wiring the already-built ``render_march()`` (Phase 104) into a real
-    caller for the first time -- it existed but was never reached from
+    """Assembles the completed-Move sentence (Phase 421), wiring the
+    already-built ``render_march()`` (Phase 104) into a real caller for
+    the first time -- it existed but was never reached from
     ``describe_turn_results()``, the same kind of gap Phase 214 already
     closed for Trade.
 
@@ -5925,14 +5943,22 @@ def describe_move(
     ``province_number`` is ``PROSE.TXT``'s own ``^P`` marker, the same
     ``str(encode_hex_number(...))`` convention ``describe_rumor()``'s
     own Phase 247 precedent already established.
+
+    **Phase 769**: an armyless personal Move (``result.moved_without_
+    armies``, MARCH.md section 12's own ``CountArmies(leader) <= 0``
+    dispatcher branch) renders TRAV.X's own ``render_travel()`` instead
+    of MARCH.X -- the army-flavored MARCH.X text was never a faithful
+    sentence for a leader traveling alone.
     """
 
     if not result.moved or result.new_location is None:
         return None
     province = state.provinces.get(result.new_location)
     province_name = _province_label(state, result.new_location)
-    province_number = str(encode_hex_number(result.new_location, board_width))
     is_sea = province is not None and province.effective_terrain() is Terrain.SEA
+    if result.moved_without_armies:
+        return render_travel(character_name, province_name, rng, is_sea=is_sea)
+    province_number = str(encode_hex_number(result.new_location, board_width))
     return render_march(character_name, province_name, province_number, rng, is_sea=is_sea)
 
 
@@ -6176,6 +6202,31 @@ def render_will(deceased_name: str, rng: random.Random) -> str:
     return render(WILL_TEMPLATE, values, rng=rng)
 
 
+# HostAK/TP/PROSE/TRAV.X -- Phase 769, MARCH.md section 12/22's own
+# `_LMove` branch: an armyless personal Move (`CountArmies(leader) <=
+# 0`), checked *before* the army-flavored MARCH.X text below -- a
+# leader traveling alone never had a "command/forces" to march with, so
+# MARCH.X's own text ("...with your {formidable} command/forces...")
+# was never a faithful sentence for this case. No `>` marker (no army
+# to possessive-name) and no `^P` (province-number) marker either --
+# TRAV.X's own real template is strictly `<`/`@` plus the `/S` Sea
+# variant, verified against the document's own verbatim transcription.
+_TRAV_TEMPLATES: list[str] = [
+    "< travelled to @.",
+    "< rode/Ssailed into @.",
+    "< moved into @.",
+    "< journeyed/Scruised_over to @.",
+]
+
+
+def render_travel(character_name: str, province_name: str, rng: random.Random, *, is_sea: bool = False) -> str:
+    """Renders TRAV.X's sentence for an armyless personal Move."""
+
+    variant = pick_variant(_TRAV_TEMPLATES, rng)
+    values = {"<": character_name, "@": province_name}
+    return render(variant, values, rng=rng, is_sea=is_sea)
+
+
 # HostAK/TP/PROSE/MARCH.X -- the Move action's own report line. See
 # module docstring's Phase 104 addendum for why this uses pick_variant
 # (a small `dex` value, RUMORS.PAS FD's own per-character-seed pseudo-
@@ -6214,7 +6265,8 @@ def render_march(
 # HostAK/TP/SAY.PAS _LCMarch -- a single, real, hardcoded template (no
 # file), a defensive Move (reinforcing a threatened province), distinct
 # from the regular Move narrative above. See module docstring's Phase
-# 120 addendum.
+# 120 addendum. Wired (Phase 769) into `describe_defend_reinforcement()`
+# alongside `_LHearInv` -- see that function's own Phase 769 addendum.
 DEFENSIVE_MARCH_TEMPLATE = "< marched into @ from ^S to defend @ against its would-be conquerors."
 
 
@@ -7327,7 +7379,7 @@ def describe_turn_results(
             # segment_index=-1) turn_processor.py appends for events with no
             # real originating PlanPhase this turn, same convention as the
             # "gate-angel-visit"/"forced-rebattle" sentinels.
-            lines.append(describe_defend_reinforcement(entry.result, state, defender_name=caster_name, rng=rng))
+            lines.extend(describe_defend_reinforcement(entry.result, state, defender_name=caster_name, rng=rng))
             continue
         elif isinstance(entry.result, GuildAssassinationOutcome):
             # Phase 614: another sentinel PhaseDispatchResult (leader_id

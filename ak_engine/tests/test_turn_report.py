@@ -229,6 +229,7 @@ from ak_engine.report.turn_report import (
     render_skeletal_army_dug_grave,
     render_sunk_cargo,
     render_march,
+    render_travel,
     render_naval_hug_coastline_stragglers_arrived,
     render_pickup_unit,
     render_recruit_unit,
@@ -1512,6 +1513,39 @@ def test_render_march_resolves_optional_block_and_choice_marker():
     assert result == "Arthur moved into Numenor 0304 with Arthur's high-spirited army."
 
 
+# -- Phase 769: render_travel (TRAV.X, an armyless personal Move) --
+
+
+def test_render_travel_first_variant():
+    rng = ScriptedRandom([], choice_indices=[0])
+    result = render_travel("Arthur", "Numenor", rng)
+    assert result == "Arthur travelled to Numenor."
+
+
+def test_render_travel_second_variant_resolves_sea_marker():
+    rng = ScriptedRandom([], choice_indices=[1])
+    result = render_travel("Arthur", "Numenor", rng, is_sea=True)
+    assert result == "Arthur sailed into Numenor."
+
+
+def test_render_travel_second_variant_land():
+    rng = ScriptedRandom([], choice_indices=[1])
+    result = render_travel("Arthur", "Numenor", rng)
+    assert result == "Arthur rode into Numenor."
+
+
+def test_render_travel_third_variant():
+    rng = ScriptedRandom([], choice_indices=[2])
+    result = render_travel("Arthur", "Numenor", rng)
+    assert result == "Arthur moved into Numenor."
+
+
+def test_render_travel_fourth_variant_resolves_sea_marker():
+    rng = ScriptedRandom([], choice_indices=[3])
+    result = render_travel("Arthur", "Numenor", rng, is_sea=True)
+    assert result == "Arthur cruised over to Numenor."
+
+
 # -- Phase 419: render_recruit_unit (RECRUIT.X) + describe_recruit --
 
 
@@ -1993,21 +2027,30 @@ def test_describe_defend_reinforcement_resolves_origin_and_target_names():
     state.add_province(ProvinceState(HexCoord(4, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Gondor"))
     result = DefendReinforcement(origin=HexCoord(3, 9), target=HexCoord(4, 9))
 
-    line = describe_defend_reinforcement(result, state, defender_name="Arthur", rng=ScriptedRandom([0.0, 0.0]))
+    lines = describe_defend_reinforcement(result, state, defender_name="Arthur", rng=ScriptedRandom([0.0, 0.0]))
 
-    assert line == "Arthur, responsible for the defense of Numenor, learned of an enemy attack on Gondor."
+    # Phase 769: _LHearInv + _LCMarch, both real sentences for this one
+    # atomic reinforcement event -- see describe_defend_reinforcement()'s
+    # own Phase 769 addendum for the marker-mapping reasoning.
+    assert lines == [
+        "Arthur, responsible for the defense of Numenor, learned of an enemy attack on Gondor.",
+        "Arthur marched into Gondor from Numenor to defend Gondor against its would-be conquerors.",
+    ]
 
 
 # -- Phase 421: describe_move (MARCH.X, wiring render_march() for the first time) --
 
 
-def _move_result(*, moved: bool = True, new_location: HexCoord | None = HexCoord(3, 9)) -> MoveExecutionResult:
+def _move_result(
+    *, moved: bool = True, new_location: HexCoord | None = HexCoord(3, 9), moved_without_armies: bool = False
+) -> MoveExecutionResult:
     return MoveExecutionResult(
         moved=moved,
         battle_report=None,
         exploration=None,
         movement_points_spent=1,
         new_location=new_location,
+        moved_without_armies=moved_without_armies,
     )
 
 
@@ -2023,6 +2066,26 @@ def test_describe_move_resolves_sea_marker_from_terrain():
     rng = ScriptedRandom([0.1, 0.1], choice_indices=[0])
     line = describe_move(_move_result(), state, character_name="Arthur", board_width=20, rng=rng)
     assert line == "Arthur sailed into Numenor 183 with Arthur's command."
+
+
+def test_describe_move_renders_travel_when_moved_without_armies():
+    # Phase 769: an armyless personal Move renders TRAV.X, not MARCH.X's
+    # own army-flavored text.
+    state = _leave_state(terrain=Terrain.PLAINS)
+    rng = ScriptedRandom([], choice_indices=[0])
+    line = describe_move(
+        _move_result(moved_without_armies=True), state, character_name="Arthur", board_width=20, rng=rng
+    )
+    assert line == "Arthur travelled to Numenor."
+
+
+def test_describe_move_travel_resolves_sea_marker_from_terrain():
+    state = _leave_state(terrain=Terrain.SEA)
+    rng = ScriptedRandom([], choice_indices=[1])
+    line = describe_move(
+        _move_result(moved_without_armies=True), state, character_name="Arthur", board_width=20, rng=rng
+    )
+    assert line == "Arthur sailed into Numenor."
 
 
 def test_describe_move_returns_none_when_not_moved():
