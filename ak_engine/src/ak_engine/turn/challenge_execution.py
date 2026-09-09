@@ -1139,7 +1139,7 @@ def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, rng: random
     return None
 
 
-def _apply_successful_theft(state: GameState, thief: LeaderState, victim: LeaderState, rng: random.Random) -> None:
+def _apply_successful_theft(state: GameState, thief: LeaderState, victim: LeaderState, rng: random.Random) -> list[int]:
     """The theft's own tangible effect -- Phase 305, superseded by
     Phase 506's own full item-scan-with-decay (``turn/encounter.py``'s
     own Phase 506 addendum, ``steal_character_item_transfer_chance()``):
@@ -1177,6 +1177,11 @@ def _apply_successful_theft(state: GameState, thief: LeaderState, victim: Leader
     why this specific success branch (not Practice's own Banditry/
     Piracy side effects) is the real, non-Practice-triggered "qualifying
     theft event" this base-15 call site refers to.
+
+    **Phase 777**: returns the real item ids actually transferred (in
+    shuffle order, possibly empty) -- backlog #19's own STEAL-family
+    narration (`report/turn_report.py describe_steal()`) needs to know
+    what was stolen, not just that the attempt succeeded.
     """
 
     thief.merit_tally.successful_thefts += 1
@@ -1190,11 +1195,14 @@ def _apply_successful_theft(state: GameState, thief: LeaderState, victim: Leader
         j = int(rng.random() * (i + 1))
         items[i], items[j] = items[j], items[i]
     items_already_stolen = 0
+    stolen_item_ids: list[int] = []
     for item in items:
         if resolve_steal_character_item_transfer(items_already_stolen, rng):
             state.transfer_item(item.item_id, thief.leader_id)
             items_already_stolen += 1
+            stolen_item_ids.append(item.item_id)
     add_experience(thief, Ability.THIEF, 15, rng)
+    return stolen_item_ids
 
 
 def _apply_treasury_raid(state: GameState, thief: LeaderState, king: LeaderState, rng: random.Random) -> int:
@@ -1229,25 +1237,28 @@ def _resolve_steal_tactic(
     target_leader: LeaderState | None,
     state: GameState,
     rng: random.Random,
-) -> tuple[str, int]:
+) -> tuple[str, int, list[int]]:
     """Steal [ST], rulebook [5.5] -- Phase 305, superseded by Phase 506
     with the real disassembly-sourced success/evasion formulas (see
     ``turn/encounter.py``'s own Phase 506 addendum) and a ransom-formula
     fix. See module docstring's own Phase 305 addendum for the full
     quoted rulebook text and the reasoning behind every branch below.
 
-    Returns a ``(outcome, gold_raided)`` pair. ``outcome`` is
-    ``"success"`` (theft applied, plan continues), ``"evaded"`` (failed
-    but not caught, plan continues), ``"executed"`` (thief killed
-    outright, no combat), ``"ransom"`` (King-thief captured by a King or
-    an army-commanding Hero, nobody dies -- Phase 526 extended this
-    beyond King-vs-King specifically, see module docstring's own Phase
-    526 addendum), ``"combat"`` (caller must resolve a forced personal-
-    combat encounter at a freshly-rolled range), or ``"unresolved"`` (a
-    garrison commander with no ``LeaderState``, below -- the one
-    remaining case no sourced branch covers). ``gold_raided`` (Phase
-    702) is non-zero only for a successful ``AdvancedAbility.THIEF_
-    TREASURY_RAIDS`` raid against a foreign King -- see below.
+    Returns an ``(outcome, gold_raided, stolen_item_ids)`` triple.
+    ``outcome`` is ``"success"`` (theft applied, plan continues),
+    ``"evaded"`` (failed but not caught, plan continues), ``"executed"``
+    (thief killed outright, no combat), ``"ransom"`` (King-thief
+    captured by a King or an army-commanding Hero, nobody dies -- Phase
+    526 extended this beyond King-vs-King specifically, see module
+    docstring's own Phase 526 addendum), ``"combat"`` (caller must
+    resolve a forced personal-combat encounter at a freshly-rolled
+    range), or ``"unresolved"`` (a garrison commander with no
+    ``LeaderState``, below -- the one remaining case no sourced branch
+    covers). ``gold_raided`` (Phase 702) is non-zero only for a
+    successful ``AdvancedAbility.THIEF_TREASURY_RAIDS`` raid against a
+    foreign King -- see below. ``stolen_item_ids`` (Phase 777) is the
+    real item ids `_apply_successful_theft()` actually transferred --
+    non-empty only for an ordinary (non-Treasury-Raid) ``"success"``.
 
     A garrison commander (``caster_leader``/``target_leader`` is
     ``None``, Phase 291's own Duel reuse) can neither attempt nor be a
@@ -1256,7 +1267,7 @@ def _resolve_steal_tactic(
     """
 
     if caster_leader is None or target_leader is None:
-        return "unresolved", 0
+        return "unresolved", 0, []
 
     level = effective_skill_level(state, caster_leader, Ability.THIEF)
     target_leads_army = bool(state.armies_commanded_by(target_leader.leader_id))
@@ -1292,16 +1303,16 @@ def _resolve_steal_tactic(
         treasury_raid_guard_multiplier=treasury_raid_guard_multiplier,
     ):
         if is_treasury_raid:
-            return "success", _apply_treasury_raid(state, caster_leader, target_leader, rng)
-        _apply_successful_theft(state, caster_leader, target_leader, rng)
-        return "success", 0
+            return "success", _apply_treasury_raid(state, caster_leader, target_leader, rng), []
+        stolen_item_ids = _apply_successful_theft(state, caster_leader, target_leader, rng)
+        return "success", 0, stolen_item_ids
     if resolve_steal_evasion(level, rng):
-        return "evaded", 0
+        return "evaded", 0, []
 
     if not target_leads_army_or_is_king:
-        return "combat", 0
+        return "combat", 0, []
     if not caster_leader.is_king:
-        return "executed", 0
+        return "executed", 0, []
     # Phase 526: AKGEN_reverse_engineering_report (3).md SS42's own capture
     # table/pseudocode pays ransom to "LKing(victim)" whenever the victim
     # is king_or_army_leader -- no separate branch for a King thief caught
@@ -1309,13 +1320,13 @@ def _resolve_steal_tactic(
     # docstring's own Phase 526 addendum for the full sourcing.
     thief_kingdom = state.kingdoms.get(caster_leader.kingdom_id) if caster_leader.kingdom_id is not None else None
     if thief_kingdom is None or thief_kingdom.treasury <= 0:
-        return "executed", 0
+        return "executed", 0, []
     ransom = steal_ransom_amount(thief_kingdom.treasury)
     thief_kingdom.treasury -= ransom
     victim_kingdom = state.kingdoms.get(target_leader.kingdom_id) if target_leader.kingdom_id is not None else None
     if victim_kingdom is not None:
         victim_kingdom.treasury += ransom
-    return "ransom", 0
+    return "ransom", 0, []
 
 
 @dataclass(slots=True)
@@ -1338,6 +1349,12 @@ class ChallengeCombatOutcome:
     # treasury_raid()`'s own docstring for why this replaces, not adds
     # to, an ordinary item theft.
     gold_raided: int = 0
+    # Phase 777: the real item ids `_apply_successful_theft()` actually
+    # transferred -- non-empty only for an ordinary (non-Treasury-Raid)
+    # successful Steal. Backlog #19's own STEAL-family narration
+    # (`report/turn_report.py describe_steal()`) needs this to know what
+    # was stolen, not just that the attempt succeeded.
+    stolen_item_ids: list[int] = field(default_factory=list)
     # Phase 417: per-shot/per-swing combat detail, mirroring `turn/
     # search_execution.py SearchExecutionResult`'s own `fire_arrow_shots`/
     # `melee_swings` fields (Phase 175/415/416) -- accumulated across
@@ -1681,6 +1698,10 @@ def resolve_challenge_combat(
     # Phase 702: non-zero only for a successful Treasury Raid -- see
     # `ChallengeCombatOutcome.gold_raided`'s own Phase 702 addendum.
     gold_raided: int = 0
+    # Phase 777: the real item ids transferred by an ordinary (non-
+    # Treasury-Raid) successful Steal -- see `ChallengeCombatOutcome.
+    # stolen_item_ids`'s own Phase 777 addendum.
+    stolen_item_ids: list[int] = []
     # Phase 417: accumulated across every real combat call site below,
     # regardless of whether that particular call ended the encounter --
     # mirrors `turn/search_execution.py`'s own `fire_arrow_shots`/
@@ -1698,6 +1719,7 @@ def resolve_challenge_combat(
             steal_outcome=steal_outcome,
             steal_capture_range=steal_capture_range,
             gold_raided=gold_raided,
+            stolen_item_ids=list(stolen_item_ids),
             fire_arrow_shots=tuple(fire_arrow_shots),
             melee_swings=tuple(melee_swings),
         )
@@ -1981,7 +2003,9 @@ def resolve_challenge_combat(
                     return _outcome(winner=target_outcome)
             continue
         if tactic.maneuver is Maneuver.STEAL:
-            steal_outcome, gold_raided = _resolve_steal_tactic(caster_leader, caster, target_leader, state, rng)
+            steal_outcome, gold_raided, stolen_item_ids = _resolve_steal_tactic(
+                caster_leader, caster, target_leader, state, rng
+            )
             if steal_outcome == "executed":
                 return _outcome(winner="b")
             if steal_outcome == "combat":
@@ -2042,6 +2066,11 @@ class ChallengeExecutionResult:
     # zero only for a successful `AdvancedAbility.THIEF_TREASURY_RAIDS`
     # raid against a foreign King.
     gold_raided: int = 0
+    # Phase 777: copied straight from `ChallengeCombatOutcome` -- the
+    # real item ids an ordinary (non-Treasury-Raid) successful Steal
+    # actually transferred, for `report/turn_report.py describe_steal()`
+    # to narrate.
+    stolen_item_ids: list[int] = field(default_factory=list)
     # Phase 313: item ids transferred from the loser to the winner via
     # `turn/encounter.py loot_defeated_leader()` -- [5.9]'s "looting a
     # vanquished foe's treasure, magic items changing hands". Empty (not
@@ -2324,6 +2353,7 @@ def execute_challenge(
             steal_outcome=combat_result.steal_outcome,
             steal_capture_range=combat_result.steal_capture_range,
             gold_raided=combat_result.gold_raided,
+            stolen_item_ids=combat_result.stolen_item_ids,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
         )
@@ -2334,6 +2364,7 @@ def execute_challenge(
             steal_outcome=combat_result.steal_outcome,
             steal_capture_range=combat_result.steal_capture_range,
             gold_raided=combat_result.gold_raided,
+            stolen_item_ids=combat_result.stolen_item_ids,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
         )
@@ -2365,6 +2396,7 @@ def execute_challenge(
         steal_outcome=combat_result.steal_outcome,
         steal_capture_range=combat_result.steal_capture_range,
         gold_raided=combat_result.gold_raided,
+        stolen_item_ids=combat_result.stolen_item_ids,
         fire_arrow_shots=combat_result.fire_arrow_shots,
         melee_swings=combat_result.melee_swings,
     )

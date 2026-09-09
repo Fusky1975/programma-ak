@@ -322,6 +322,11 @@ class PursueExecutionResult:
     # against a foreign King, set for the armyless-combat branch only,
     # which shares that module's combat core directly.
     gold_raided: int = 0
+    # Phase 777: same field/reason as `turn/challenge_execution.py
+    # ChallengeExecutionResult`'s own Phase 777 addendum -- the real item
+    # ids an ordinary (non-Treasury-Raid) successful Steal actually
+    # transferred, set for the armyless-combat branch only.
+    stolen_item_ids: list[int] = field(default_factory=list)
     # Phase 313: same field/reason as `turn/challenge_execution.py
     # ChallengeExecutionResult`'s own Phase 313 addendum -- set for the
     # armyless-combat branch only, which shares that module's combat core
@@ -504,6 +509,7 @@ def execute_pursue(
             steal_outcome=combat_result.steal_outcome,
             steal_capture_range=combat_result.steal_capture_range,
             gold_raided=combat_result.gold_raided,
+            stolen_item_ids=combat_result.stolen_item_ids,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
             guessed_distance=guessed_distance,
@@ -515,6 +521,7 @@ def execute_pursue(
             steal_outcome=combat_result.steal_outcome,
             steal_capture_range=combat_result.steal_capture_range,
             gold_raided=combat_result.gold_raided,
+            stolen_item_ids=combat_result.stolen_item_ids,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
             guessed_distance=guessed_distance,
@@ -538,6 +545,7 @@ def execute_pursue(
         steal_outcome=combat_result.steal_outcome,
         steal_capture_range=combat_result.steal_capture_range,
         gold_raided=combat_result.gold_raided,
+        stolen_item_ids=combat_result.stolen_item_ids,
         fire_arrow_shots=combat_result.fire_arrow_shots,
         melee_swings=combat_result.melee_swings,
         guessed_distance=guessed_distance,

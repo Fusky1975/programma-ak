@@ -6358,6 +6358,7 @@ def describe_encounter_combat(
     b_name: str,
     rng: random.Random,
     is_sea: bool = False,
+    state: GameState | None = None,
 ) -> list[str]:
     """Phase 417: the personal-combat narration Challenge's and Pursue's
     own armyless-duel case have had zero narration for since either was
@@ -6397,17 +6398,26 @@ def describe_encounter_combat(
     generic closing beat, sourced (`SAY.PAS:429-432 _LDies`) as firing
     for *any* real leader death right after its own cause-specific
     sentence, the same shared-trailer role `_LSucc` fills for
-    succession. `a_leader_id` resolves which of `a_name`/`b_name` is the loser from
-    `result.loser_leader_id` -- `resolve_challenge_combat()`'s own "a" is
-    always the challenger/pursuer, "b" always the target, so `a_name`/
-    `b_name` here must be supplied in that same order.
+    succession, then (Phase 777, backlog #19) the SPOILS prose cluster
+    when the loser was actually looted -- the natural closing beat right
+    after the death itself is narrated. `a_leader_id` resolves which of
+    `a_name`/`b_name` is the loser from `result.loser_leader_id` --
+    `resolve_challenge_combat()`'s own "a" is always the challenger/
+    pursuer, "b" always the target, so `a_name`/`b_name` here must be
+    supplied in that same order.
+
+    ``state`` (Phase 777) is only needed to resolve `result.stolen_
+    item_ids`/`result.looted_item_ids` into real display names for the
+    STEAL/SPOILS sub-lines above -- omitted (`None`), those two lines
+    simply don't render, the same "no data, no guess" fallback `_item_
+    display_names()` itself already documents.
     """
 
     if not result.combat_occurred:
         return []
 
     lines: list[str] = []
-    steal_line = describe_steal(result, thief_name=a_name, victim_name=b_name, rng=rng)
+    steal_line = describe_steal(result, thief_name=a_name, victim_name=b_name, rng=rng, state=state)
     if steal_line is not None:
         lines.append(steal_line)
 
@@ -6436,8 +6446,17 @@ def describe_encounter_combat(
 
     if result.loser_killed:
         loser_name = a_name if result.loser_leader_id == a_leader_id else b_name
+        winner_name = b_name if loser_name == a_name else a_name
         lines.append(render_mortally_wounded(loser_name, rng, is_sea=is_sea))
         lines.append(render_character_death(loser_name, rng))
+        if result.looted_item_ids:
+            item_names = _item_display_names(state, result.looted_item_ids)
+            if len(item_names) == 1:
+                lines.append(render_treasure_spoils_from_corpse(winner_name, loser_name, rng))
+            elif len(item_names) >= 2:
+                lines.append(
+                    render_group_spoils_from_corpse(winner_name, loser_name, item_names, rng, is_sea=is_sea)
+                )
 
     return lines
 
@@ -6627,6 +6646,7 @@ def describe_challenge(
     target_name: str,
     rng: random.Random,
     is_sea: bool = False,
+    state: GameState | None = None,
 ) -> list[str]:
     """Assembles Challenge's own turn-report lines from an already-computed
     ``ChallengeExecutionResult`` (``turn/challenge_execution.py
@@ -6653,6 +6673,7 @@ def describe_challenge(
         b_name=target_name,
         rng=rng,
         is_sea=is_sea,
+        state=state,
     )
 
 
@@ -7221,6 +7242,7 @@ def describe_turn_results(
                     b_name=target_name,
                     rng=rng,
                     is_sea=is_sea,
+                    state=state,
                 )
             )
             continue
@@ -7260,6 +7282,7 @@ def describe_turn_results(
                     target_name=target_name,
                     rng=rng,
                     is_sea=is_sea,
+                    state=state,
                 )
             )
             continue
@@ -7788,12 +7811,31 @@ _STEAL_CAPTURE_RANGE_SUFFIX: dict[CombatRange, str] = {
 }
 
 
+def _item_display_names(state: GameState | None, item_ids: list[int]) -> list[str]:
+    """Phase 777: resolves a list of real item ids into their own
+    ``TREASURE_NAME`` display strings, in order, silently skipping any id
+    that no longer resolves (a defensive, "no data, no guess" fallback --
+    every real caller only ever passes ids it just populated itself) and
+    returning ``[]`` outright when ``state`` isn't available.
+    """
+
+    if state is None:
+        return []
+    names = []
+    for item_id in item_ids:
+        item = state.items.get(item_id)
+        if item is not None:
+            names.append(TREASURE_NAME[item.treasure])
+    return names
+
+
 def describe_steal(
     result: ChallengeExecutionResult | PursueExecutionResult,
     *,
     thief_name: str,
     victim_name: str,
     rng: random.Random,
+    state: GameState | None = None,
 ) -> str | None:
     """Assembles the Steal sub-event narrative from an already-computed
     ``ChallengeExecutionResult`` (``turn/challenge_execution.py
@@ -7820,13 +7862,26 @@ def describe_steal(
       treasury. ``victim_name`` is the *catcher* here (the King who was
       almost robbed), ``thief_name`` the one who paid -- matching that
       renderer's own ``catcher_name``/``thief_name`` parameter order.
-    - ``"success"``/``"evaded"``/``"executed"``/``"unresolved"``/``None``
-      all have no sourced narrative template of their own (a clean gold
-      or item theft was never given prose in any available source, and
-      no sourced text describes a Hero's own execution or a genuinely
-      unresolved capture) -- returns ``None``, the same "no source, no
-      guess" convention every other ``describe_*`` composer in this
-      module already follows for its own undocumented failure reasons.
+    - ``"success"`` (Phase 777, backlog #19) -> the STEAL prose cluster
+      (``_GMSTEAL_TEMPLATES``/``_TMSTEAL_TEMPLATES``, Phase 590) --
+      dispatched purely on ``len(result.stolen_item_ids)``: exactly 1
+      item uses ``render_treasure_theft_tense()`` (the single-named-
+      Treasure family), 2+ uses ``render_group_theft_tense()`` (the
+      ``^L\\``-list family); 0 items (an empty-handed success, or a
+      Treasury Raid's own gold-not-items branch) renders nothing, same
+      "no source, no guess" stance as every other undocumented case
+      below. **User-confirmed directly (2026-09-09)**: always the M
+      ("tense") variant, never the L (victim-referencing) one -- neither
+      is textually or mechanically more correct than the other (no
+      discriminator survives in any source for this family at all), so
+      no coin-flip is used either; the simpler, unconditional M-only
+      choice was picked instead.
+    - ``"evaded"``/``"executed"``/``"unresolved"``/``None`` all have no
+      sourced narrative template of their own (no sourced text describes
+      a Hero's own execution or a genuinely unresolved capture) --
+      returns ``None``, the same "no source, no guess" convention every
+      other ``describe_*`` composer in this module already follows for
+      its own undocumented failure reasons.
     """
 
     if result.steal_outcome == "ransom":
@@ -7834,6 +7889,13 @@ def describe_steal(
     if result.steal_outcome == "combat" and result.steal_capture_range is not None:
         range_suffix = _STEAL_CAPTURE_RANGE_SUFFIX[result.steal_capture_range]
         return render_sneak_detected(thief_name, victim_name, range_suffix, rng)
+    if result.steal_outcome == "success" and result.stolen_item_ids:
+        item_names = _item_display_names(state, result.stolen_item_ids)
+        if not item_names:
+            return None
+        if len(item_names) == 1:
+            return render_treasure_theft_tense(thief_name, rng)
+        return render_group_theft_tense(thief_name, item_names, rng)
     return None
 
 

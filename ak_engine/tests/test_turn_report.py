@@ -3536,6 +3536,57 @@ def test_describe_steal_also_accepts_a_pursue_execution_result():
     assert "Aldric" in line and "Borin" in line
 
 
+# -- describe_steal STEAL-family narration (Phase 777, backlog #19) --------
+
+
+def _state_with_items(*treasures: Treasure) -> tuple[GameState, list[int]]:
+    state = GameState()
+    item_ids = []
+    for i, treasure in enumerate(treasures):
+        item = state.add_item(treasure, owner_leader_id=None)
+        item_ids.append(item.item_id)
+    return state, item_ids
+
+
+def test_describe_steal_success_with_one_item_renders_the_treasure_theft_line():
+    state, item_ids = _state_with_items(Treasure.ABILITY_TACTICAL)
+    result = ChallengeExecutionResult(accepted=True, combat_occurred=True, steal_outcome="success", stolen_item_ids=item_ids)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    line = describe_steal(result, thief_name="Aldric", victim_name="Borin", rng=rng, state=state)
+
+    assert line == "Aldric caressed the treasure fondly."
+
+
+def test_describe_steal_success_with_two_items_renders_the_group_theft_line():
+    state, item_ids = _state_with_items(Treasure.ABILITY_TACTICAL, Treasure.ABILITY_MELEE)
+    result = ChallengeExecutionResult(accepted=True, combat_occurred=True, steal_outcome="success", stolen_item_ids=item_ids)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    line = describe_steal(result, thief_name="Aldric", victim_name="Borin", rng=rng, state=state)
+
+    assert line is not None
+    assert line.startswith("with hands as soft as a zephyr, Aldric carefully pilfered the ")
+    assert TREASURE_NAME[Treasure.ABILITY_TACTICAL] in line
+    assert TREASURE_NAME[Treasure.ABILITY_MELEE] in line
+
+
+def test_describe_steal_success_with_no_stolen_items_renders_nothing():
+    result = ChallengeExecutionResult(accepted=True, combat_occurred=True, steal_outcome="success", stolen_item_ids=[])
+    rng = ScriptedRandom([])
+
+    assert describe_steal(result, thief_name="Aldric", victim_name="Borin", rng=rng) is None
+
+
+def test_describe_steal_success_with_no_state_renders_nothing():
+    # A real caller always threads `state`, but the defensive fallback
+    # (no data, no guess) should never crash or guess names either.
+    result = ChallengeExecutionResult(accepted=True, combat_occurred=True, steal_outcome="success", stolen_item_ids=[7])
+    rng = ScriptedRandom([])
+
+    assert describe_steal(result, thief_name="Aldric", victim_name="Borin", rng=rng, state=None) is None
+
+
 # -- describe_encounter_combat / describe_challenge (Phase 417) -------------
 
 
@@ -3593,6 +3644,82 @@ def test_describe_encounter_combat_narrates_the_mortal_wound_line_for_the_loser(
         "Borin was mortally wounded.",
         "and so it was that Borin met Borin's unseemly end.",
     ]
+
+
+def test_describe_encounter_combat_narrates_the_spoils_line_with_one_looted_item():
+    state, item_ids = _state_with_items(Treasure.ABILITY_TACTICAL)
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        winner_leader_id=1,
+        loser_leader_id=2,
+        loser_killed=True,
+        looted_item_ids=item_ids,
+    )
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0])
+
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
+
+    assert lines == [
+        "Borin was mortally wounded.",
+        "and so it was that Borin met Borin's unseemly end.",
+        "Aldric looked with satisfaction at the remains of Borin.",
+    ]
+
+
+def test_describe_encounter_combat_narrates_the_spoils_line_with_two_looted_items_and_threads_is_sea():
+    for is_sea, verb in ((False, "walked"), (True, "swam")):
+        state, item_ids = _state_with_items(Treasure.ABILITY_TACTICAL, Treasure.ABILITY_MELEE)
+        result = ChallengeExecutionResult(
+            accepted=True,
+            combat_occurred=True,
+            winner_leader_id=1,
+            loser_leader_id=2,
+            loser_killed=True,
+            looted_item_ids=item_ids,
+        )
+        rng = ScriptedRandom([0.9] * 20, choice_indices=[0, 0, 0])
+
+        lines = describe_encounter_combat(
+            result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state, is_sea=is_sea
+        )
+
+        assert lines[2] == f"Aldric {verb} over to a mound of treasure and secured the Standard of Command and Bracelets of Swordsmanship."
+
+
+def test_describe_encounter_combat_omits_the_spoils_line_when_nothing_was_looted():
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        winner_leader_id=1,
+        loser_leader_id=2,
+        loser_killed=True,
+        looted_item_ids=[],
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+
+    assert lines == [
+        "Borin was mortally wounded.",
+        "and so it was that Borin met Borin's unseemly end.",
+    ]
+
+
+def test_describe_encounter_combat_omits_the_spoils_line_when_the_loser_wasnt_killed():
+    # Should never happen in real dispatch (looted_item_ids is only ever
+    # populated alongside loser_killed=True), but proves the gate is
+    # real, not accidental.
+    state, item_ids = _state_with_items(Treasure.ABILITY_TACTICAL)
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        loser_killed=False,
+        looted_item_ids=item_ids,
+    )
+    rng = ScriptedRandom([])
+
+    assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state) == []
 
 
 def test_describe_encounter_combat_narrates_the_steal_line_first():
@@ -4337,6 +4464,37 @@ def test_describe_challenge_delegates_to_describe_encounter_combat():
     lines = describe_challenge(result, challenger_leader_id=1, challenger_name="Aldric", target_name="Borin", rng=rng)
 
     assert lines == ["Aldric Attacked Borin and inflicted 3 damage points."]
+
+
+def test_describe_challenge_threads_state_through_to_the_steal_and_spoils_narration():
+    # Phase 777: `describe_challenge()`'s own new `state` parameter must
+    # reach both `describe_steal()` (STEAL family) and the SPOILS branch
+    # inside `describe_encounter_combat()` -- proven end to end here,
+    # not just at the shared function's own unit-test level.
+    state, stolen_ids = _state_with_items(Treasure.ABILITY_TACTICAL)
+    steal_result = ChallengeExecutionResult(
+        accepted=True, combat_occurred=True, steal_outcome="success", stolen_item_ids=stolen_ids
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    steal_lines = describe_challenge(
+        steal_result, challenger_leader_id=1, challenger_name="Aldric", target_name="Borin", rng=rng, state=state
+    )
+    assert steal_lines == ["Aldric caressed the treasure fondly."]
+
+    spoils_state, looted_ids = _state_with_items(Treasure.ABILITY_MELEE)
+    spoils_result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        winner_leader_id=1,
+        loser_leader_id=2,
+        loser_killed=True,
+        looted_item_ids=looted_ids,
+    )
+    rng2 = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0])
+    spoils_lines = describe_challenge(
+        spoils_result, challenger_leader_id=1, challenger_name="Aldric", target_name="Borin", rng=rng2, state=spoils_state
+    )
+    assert spoils_lines[-1] == "Aldric looked with satisfaction at the remains of Borin."
 
 
 # -- ASpy report body (Phase 115) --------------------------------------------

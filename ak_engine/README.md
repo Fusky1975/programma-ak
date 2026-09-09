@@ -31952,6 +31952,55 @@ follow-up request after the original 431-435 plan shipped.
   either half to plug into. Test count: 6503 -> 6506 (net +3). Full
   suite verified green (unchanged, 6503) before touching a single test.
 
+- **Phase 777 -- backlog item #19, the Loot/Steal L/M prose cluster
+  (`describe_steal()`'s own "success" outcome + post-combat corpse
+  spoils).** User-requested directly ("Continua col #19, la narrazione
+  Loot/Steal"). `report/turn_report.py describe_steal()`'s own
+  `"success"` outcome had no sourced narrative at all -- `_apply_
+  successful_theft()` (`turn/challenge_execution.py`) already resolved
+  a real per-item transfer loop but discarded which items actually
+  moved -- and a fully separate mechanic, post-combat corpse looting
+  (`looted_item_ids`/`loser_killed`), had never been narrated despite
+  8 real, sourced, already-built-and-tested `report/turn_report.py`
+  templates sitting unused (the STEAL family, `_GMSTEAL_TEMPLATES`/
+  `_TMSTEAL_TEMPLATES`, and the SPOILS family, `_GMSPOILS_TEMPLATES`/
+  `_TMSPOILS_TEMPLATES`, both Phase 590). Confirmed directly, not
+  assumed: `looted_item_ids` is populated ONLY alongside `loser_killed=
+  True` in every real combat module (Challenge, Pursue, and Search's
+  own separate guardian-loot path always kills the guardian too) --
+  the SPOILS family's own "L" (survivor) variant is structurally
+  unreachable in this project's current data model, a genuine dead
+  branch, not a missing wiring gap. Three genuinely unsourced design
+  questions were resolved directly with the user via `AskUserQuestion`
+  before implementing: (1) the STEAL family's own L/M split has no
+  textual or game-state discriminator at all -- **always render the M
+  ("tense") variant**, no coin-flip; (2) the SPOILS family's confirmed-
+  unreachable L variant is **left entirely unwired** (no dispatch, no
+  tests) rather than built for a branch that can never fire; (3) the
+  G_ (list, `^L\` marker) vs. T_ (single named item) template-family
+  dispatch, which has no data-type discriminator since every
+  `ItemInstance` already carries a real `Treasure`, is **by item
+  count** -- exactly 1 item uses the T_ family, 2+ uses the G_ family,
+  0 items renders nothing. `_apply_successful_theft()` now returns the
+  real transferred item ids; `_resolve_steal_tactic()` widened its own
+  `(outcome, gold_raided)` return to a 3-tuple with `stolen_item_ids`,
+  threaded through `ChallengeCombatOutcome`/`ChallengeExecutionResult`/
+  `PursueExecutionResult` the identical way `gold_raided` (Phase 702)
+  already is. `describe_steal()` gained a new `"success"` branch and a
+  new `state: GameState | None = None` parameter (to resolve item
+  names via `TREASURE_NAME`); `describe_encounter_combat()` gained the
+  SPOILS narration right after the existing death lines (`loser_
+  killed` + `looted_item_ids`), reusing its own already-real `is_sea`
+  parameter for the M-variant's own `/S` marker, plus the same new
+  `state` parameter, threaded through `describe_challenge()` and both
+  real `describe_turn_results()` call sites (`ActionCode.PURSUE`/
+  `ActionCode.CHALLENGE`). Test count: 6506 -> 6516 (net +10). Full
+  suite verified green (unchanged, 6506) before touching a single
+  test -- a provable no-op, since the new `state` parameter defaults
+  to `None` (reproducing every existing caller unchanged) and no
+  existing fixture scripts a real `"success"` Steal with real items or
+  a real post-combat loot case reaching either composer.
+
 ## Setup
 
 ```

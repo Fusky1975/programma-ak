@@ -1116,3 +1116,25 @@ def test_execute_pursue_treasury_raid_gold_reaches_through_the_shared_function()
         result = execute_pursue(state, 1, _melee_request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]), mutual_encounter=True)
 
     assert result.gold_raided == 250
+
+
+# -- Phase 777: stolen_item_ids (via the shared function) --------------------
+
+
+def test_execute_pursue_stolen_item_ids_reaches_through_the_shared_function():
+    # Mirrors test_execute_pursue_treasury_raid_gold_reaches_through_the_
+    # shared_function() above exactly, proving turn/challenge_execution.py
+    # resolve_challenge_combat()'s new stolen_item_ids field (backlog #19)
+    # reaches PursueExecutionResult unchanged through the armyless case's
+    # shared combat core.
+    state = _base_state()
+    pursuer = LeaderState(1, kingdom_id=1, name="Thief", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Victim", location=FIELD)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+
+    with patch("ak_engine.turn.pursue_execution.resolve_challenge_combat") as mock_resolve:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner=None, stolen_item_ids=[42])
+        result = execute_pursue(state, 1, _melee_request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]), mutual_encounter=True)
+
+    assert result.stolen_item_ids == [42]
