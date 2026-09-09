@@ -364,6 +364,30 @@ class UnpaidBlackmailPenalty:
 
 
 @dataclass(slots=True)
+class MaintenanceResult:
+    """One kingdom's own outcome of a `turn/expenses.py apply_turn_
+    maintenance()` call -- moved here from that module (Phase 771) to
+    avoid a `models/` -> `turn/` circular import, the identical
+    precedent already set for `RaidEvent` (`models/feature.py`, Phase
+    670) and `UnpaidBlackmailPenalty` above (Phase 741); `turn/
+    expenses.py` imports this back, so every existing `from ak_engine.
+    turn.expenses import MaintenanceResult` caller is unaffected.
+
+    Phase 527 replaces the old bare debited-amount `int` with this so a
+    caller can also see which Heroes deserted or stayed unpaid-but-loyal
+    ("standby") this turn -- see `apply_turn_maintenance()`'s own
+    docstring for the full mechanic. `debited` is army maintenance plus
+    whichever Heroes were actually paid -- lower than `compute_expected_
+    expenses()` whenever a desertion or standby occurred, since those
+    Heroes' own pay was never subtracted.
+    """
+
+    debited: int
+    deserted_leader_ids: list[int] = field(default_factory=list)
+    standby_leader_ids: list[int] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class KingdomState:
     kingdom_id: int
     name: str
@@ -1378,6 +1402,16 @@ class GameState:
     # revenue."). A kingdom_id absent here means `apply_turn_revenue()`
     # never ran against this `GameState` -- no line renders, not a guess.
     turn_revenue_credited: dict[int, int] = field(default_factory=dict)
+    # Phase 771 -- this turn's own real per-kingdom `MaintenanceResult`
+    # (army maintenance plus every Hero actually paid, plus who
+    # deserted/stood by unpaid), overwritten once per turn by `turn/
+    # expenses.py apply_turn_maintenance()`'s own returned dict -- same
+    # convention as `turn_revenue_credited` above. Read directly by
+    # `report/turn_report.py describe_finances_report()` to narrate
+    # `_LLCosts`/`_LACosts`. A kingdom_id absent here means `apply_turn_
+    # maintenance()` never ran against this `GameState` -- no line
+    # renders, not a guess.
+    turn_maintenance_by_kingdom: dict[int, MaintenanceResult] = field(default_factory=dict)
     kingdoms: dict[int, KingdomState] = field(default_factory=dict)
     provinces: dict[HexCoord, ProvinceState] = field(default_factory=dict)
     armies: dict[int, ArmyState] = field(default_factory=dict)

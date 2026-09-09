@@ -214,6 +214,10 @@ def test_apply_turn_maintenance_debits_treasury_by_expected_expenses():
     assert result[1].standby_leader_ids == []
     assert result[2].debited == 0
     assert state.kingdoms[1].treasury == 97
+    # Phase 771: the returned dict is also persisted onto `state`, the
+    # same convention `apply_turn_revenue()` already established for
+    # `state.turn_revenue_credited`.
+    assert state.turn_maintenance_by_kingdom == result
 
 
 def test_apply_turn_maintenance_covers_every_kingdom_independently():

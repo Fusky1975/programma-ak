@@ -809,17 +809,19 @@ kingdom receives -- the first narrative in this module tied to
 
 - `_LFinance: Say('here is the financial report for <''s kingdom:
   ',S_Red)` -- the section's opening clause.
-  `render_finance_report_opening()`.
+  `render_finance_report_opening()`. **Phase 771** wires this in, right
+  after `_FINANCES_OPENING`.
 - `_LRev: Say('this turn, the Kingdom collected # gold in
   revenue.',S_Red)` -- `#` is `PROSE.TXT`'s own numeric marker (same
   convention as `render_attack_hit()`, Phase 112).
   `render_finance_revenue()`. **Phase 747** wires this into
   `describe_finances_report()` for real, using `state.turn_revenue_
-  credited`'s own now-correct final total (`Desktop/INVBONUS.md`) -- the
-  other four renderers below stay dormant, no confirmed real position
-  for any of them either.
+  credited`'s own now-correct final total (`Desktop/INVBONUS.md`).
 - `_LLCosts: Say('# gold was expended to finance our
   leaders.',S_Red)` -- leader upkeep cost. `render_finance_leader_costs()`.
+  **Phase 771** wires this in, using `state.turn_maintenance_by_kingdom`
+  (`turn/expenses.py apply_turn_maintenance()`'s own now-persisted
+  result).
 - `_AUnpaid: Say('unfortunately, #% of your Majesty''s armies had to
   go without pay.',S_Red)` -- `#%` is the same `#` marker, here a
   percentage rather than a gold amount; this project has no source for
@@ -828,17 +830,29 @@ kingdom receives -- the first narrative in this module tied to
   caller decides whether to call it at all, the same
   caller-decides-inclusion stance `render_attack_devastating_hit()`
   (Phase 112) already established for its own conditional sentence.
-  `render_finance_unpaid_armies()`.
+  `render_finance_unpaid_armies()`. **Still dormant as of Phase 771**:
+  `turn/expenses.py`'s own docstring confirms army maintenance is paid
+  as one unconditional, unclamped lump sum -- no source describes armies
+  going unpaid in this project's own model, so this sentence has no
+  real trigger to gate on.
 - `_LACosts: Say('# gold was expended to maintain our
   armies.',S_Red)` -- army upkeep cost. `render_finance_army_costs()`.
+  **Phase 771** wires this in alongside `_LLCosts`, from `turn/
+  expenses.py compute_army_maintenance()` directly.
 - `_LTreas: Say('< was left with # gold in the treasury.',S_Red)` --
   the closing balance, ties directly to `KingdomState.treasury`'s own
-  post-turn value. `render_finance_treasury()`.
+  post-turn value. `render_finance_treasury()`. **Phase 771** wires
+  this in as the section's very last line.
 
 No source stitches these five into one combined sentence -- `SAY.PAS`
 dispatches each as its own `Say()` call in sequence, so each is its
 own renderer here too, matching the plain sequential-report shape
-already established for `render_spy_*()` (Phase 115).
+already established for `render_spy_*()` (Phase 115). Phase 771's own
+placement of the four newly-wired sentences (`_LFinance` right after
+`_FINANCES_OPENING`; `_LLCosts`/`_LACosts` right after `_LRev`, before
+`Expected Expenses`; `_LTreas` as the section's final line) is a
+documented, reasonable interpretation, not a proven fact -- see
+`describe_finances_report()`'s own docstring for the full reasoning.
 
 **Phase 125 addendum -- Assassination narrative.** `RUMORS.PAS` groups
 `_AKill = 3367`, `_ASeek = 3368`, `_AFail = 3369` contiguously
@@ -1346,7 +1360,12 @@ from ak_engine.turn.leader_visibility import known_mercenary, leader_location_kn
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance_wrapped
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 from ak_engine.turn.discovery_effects import effective_skill_level, emperor_holds_arcanes_valor_unification
-from ak_engine.turn.expenses import MaintenanceResult, compute_expected_expenses, leader_pay
+from ak_engine.turn.expenses import (
+    MaintenanceResult,
+    compute_army_maintenance,
+    compute_expected_expenses,
+    leader_pay,
+)
 from ak_engine.turn.valhalla_execution import VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE, VALHALLA_VISITOR_RULES_TEMPLATE
 from ak_engine.turn.office_holder import (
     ALL_OFFICES,
@@ -9855,18 +9874,48 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
     blackmail explanatory lines and before `Expected Expenses`, using
     `state.turn_revenue_credited`'s own real, final per-kingdom total
     (`turn/tax_base.py apply_turn_revenue()`) -- omitted entirely when
-    that `GameState` never ran `apply_turn_revenue()`. The other four
-    real `SAY.PAS` financial-narrative renderers this same module's own
-    `_LFinance`/`_LRev`/... addendum names (`_LFinance`/`_LLCosts`/
-    `_AUnpaid`/`_LACosts`/`_LTreas`) stay dormant, a separate follow-up.
+    that `GameState` never ran `apply_turn_revenue()`.
+
+    **Phase 771 wires three of the four remaining dormant `SAY.PAS`
+    financial-narrative renderers** (`_LFinance`/`_LLCosts`/`_LACosts`/
+    `_LTreas`, Phase 124's own addendum): `render_finance_report_
+    opening()` right after `_FINANCES_OPENING` (a second, `SAY.PAS`-
+    sourced framing sentence naming the King/Kingdom, following the
+    `REPORTS.PAS`-sourced one, before any figures); `render_finance_
+    leader_costs()`/`render_finance_army_costs()` right after the
+    existing `_LRev` line and before `Expected Expenses` -- continuing
+    the "revenue narrated, now costs narrated, then the fixed Expected-
+    Expenses summary line" flow `_LRev` already established -- gated on
+    `state.turn_maintenance_by_kingdom` (Phase 771, `turn/expenses.py
+    apply_turn_maintenance()`'s own now-persisted result) having a real
+    entry for this kingdom, the identical "omitted entirely when never
+    ran" convention `_LRev` already uses; `render_finance_treasury()` as
+    the section's very last line, after the Discoveries-of-the-Sages
+    list -- the natural closing statement of the financial narrative,
+    mirroring how `_LRev` was placed as the closing statement of the
+    revenue half. No source stitches these five `SAY.PAS` sentences into
+    one fixed sequence (Phase 124's own note), so this placement is a
+    documented, reasonable interpretation, not a proven fact.
+
+    `_AUnpaid` (the fifth dormant renderer, "...armies had to go without
+    pay") stays deliberately unwired: `turn/expenses.py`'s own docstring
+    already confirms army maintenance is paid as one unconditional lump
+    sum with no source describing armies going unpaid -- no real trigger
+    exists for this sentence in the current model. `describe_
+    desertions()` (Phase 599, also dormant, needs a real `Maintenance
+    Result` this phase's own persistence now supplies) stays unwired too
+    -- it needs its own separate decision about which report section a
+    Hero's desertion narrative belongs in, not just a data-source fix.
     """
 
     kingdom = state.kingdoms[kingdom_id]
     rng = rng if rng is not None else random.Random()
+    king_name = _leader_name(state, _king_leader_id(state, kingdom_id)) or kingdom.name
 
     lines = [
         "FINANCES",
         _FINANCES_OPENING,
+        render_finance_report_opening(king_name, rng),
         f"Gold in treasury: {kingdom.treasury:>3}",
     ]
     evilking_holder = resolve_office_holder(state, Office.EVIL_KING)
@@ -9896,6 +9945,11 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
         lines.append(render_blackmail_penalty(penalty.amount, penalty.blackmailer_kingdom_id, rng))
     if kingdom_id in state.turn_revenue_credited:
         lines.append(render_finance_revenue(state.turn_revenue_credited[kingdom_id], rng))
+    maintenance = state.turn_maintenance_by_kingdom.get(kingdom_id)
+    if maintenance is not None:
+        army_cost = compute_army_maintenance(state, kingdom_id)
+        lines.append(render_finance_leader_costs(maintenance.debited - army_cost, rng))
+        lines.append(render_finance_army_costs(army_cost, rng))
     lines.append(f"Expected Expenses: {compute_expected_expenses(state, kingdom_id):>3}")
     lines.append(_FINANCES_DISCOVERIES_INTRO)
     if kingdom.discoveries:
@@ -9909,6 +9963,7 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
                 lines.append(_discovery_exchange_line("Sent to", sent_to))
     else:
         lines.append(_FINANCES_NONE_AT_PRESENT)
+    lines.append(render_finance_treasury(king_name, kingdom.treasury, rng))
     return lines
 
 

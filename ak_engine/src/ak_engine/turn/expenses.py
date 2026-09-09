@@ -131,10 +131,8 @@ describes armies deserting for unpaid ``ACost``.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
-
 from ak_engine.models.army_type import ARMY_TABLE
-from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.game_state import GameState, LeaderState, MaintenanceResult
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.hire_pay import hero_liking, required_pay
 
@@ -194,23 +192,6 @@ def compute_expected_expenses(state: GameState, kingdom_id: int) -> int:
     return compute_army_maintenance(state, kingdom_id) + compute_leader_maintenance(state, kingdom_id)
 
 
-@dataclass(slots=True)
-class MaintenanceResult:
-    """One kingdom's own outcome of an ``apply_turn_maintenance()`` call --
-    Phase 527 replaces the old bare debited-amount ``int`` with this so a
-    caller can also see which Heroes deserted or stayed unpaid-but-loyal
-    ("standby") this turn, per the module docstring's own Phase 527
-    addendum. ``debited`` is army maintenance plus whichever Heroes were
-    actually paid -- lower than ``compute_expected_expenses()`` whenever a
-    desertion or standby occurred, since those Heroes' own pay was never
-    subtracted.
-    """
-
-    debited: int
-    deserted_leader_ids: list[int] = field(default_factory=list)
-    standby_leader_ids: list[int] = field(default_factory=list)
-
-
 def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -> dict[int, MaintenanceResult]:
     """Debits every kingdom's own per-turn upkeep from its treasury, once per
     turn -- see module docstring's Phase 404 section for the original
@@ -224,7 +205,13 @@ def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -
     can no longer cover rolls for desertion/standby (``hero_liking()``
     plus a fresh ``(IRand and 3) - 2`` roll) instead of being paid.
 
-    Returns one ``MaintenanceResult`` per kingdom, keyed by ``kingdom_id``.
+    Returns one ``MaintenanceResult`` per kingdom, keyed by ``kingdom_id``
+    -- and (Phase 771, mirroring ``turn/tax_base.py apply_turn_revenue()``'s
+    own ``state.turn_revenue_credited`` convention) also stores that same
+    dict onto ``state.turn_maintenance_by_kingdom``, so `report/turn_
+    report.py describe_finances_report()` can narrate `_LLCosts`/
+    `_LACosts` without this function's own return value having to be
+    threaded through the call chain.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -271,4 +258,5 @@ def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -
         results[kingdom_id] = MaintenanceResult(
             debited=debited, deserted_leader_ids=deserted, standby_leader_ids=standby
         )
+    state.turn_maintenance_by_kingdom = results
     return results

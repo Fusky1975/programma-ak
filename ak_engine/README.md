@@ -31758,6 +31758,52 @@ follow-up request after the original 431-435 plan shipped.
   from home (`HexCoord(9, 9)`, this test file's own existing
   convention for exactly this situation).
 
+- **Phase 771 -- wire the 4 dormant FINANCES `SAY.PAS` renderers
+  (`_LFinance`/`_LLCosts`/`_LACosts`/`_LTreas`).** A 42nd fresh
+  codebase survey found this as its own top candidate: Phase 124's own
+  module docstring names five real, sourced `SAY.PAS`/`RUMORS.PAS`
+  financial-narrative templates ("the complete end-of-turn financial
+  summary every kingdom receives"), but Phase 747 wired only `_LRev`
+  in, explicitly leaving `_LFinance`/`_LLCosts`/`_AUnpaid`/`_LACosts`/
+  `_LTreas` dormant -- confirmed by grep, zero production callers for
+  any of the four. Three needed no invented magnitude at all:
+  `_LFinance` ("here is the financial report for X's kingdom") just
+  needs a King/Kingdom display name; `_LACosts` ("# gold was expended
+  to maintain our armies") is `turn/expenses.py compute_army_
+  maintenance()` directly; `_LTreas` ("X was left with # gold in the
+  treasury") is `KingdomState.treasury`'s own already-available value.
+  The fourth, `_LLCosts` ("# gold was expended to finance our
+  leaders"), needed `MaintenanceResult.debited − compute_army_
+  maintenance(...)` -- but `turn/turn_processor.py`'s own real call to
+  `apply_turn_maintenance()` discards its returned dict entirely, the
+  identical "computed then discarded" bug Phase 747 itself fixed for
+  revenue. Fixed the same way: `apply_turn_maintenance()` now also
+  stores its own result onto `state.turn_maintenance_by_kingdom`
+  (mirroring `state.turn_revenue_credited`'s exact convention);
+  `MaintenanceResult` moved from `turn/expenses.py` into `models/
+  game_state.py` (next to `UnpaidBlackmailPenalty`) to avoid the
+  resulting circular import, the identical precedent Phase 670 already
+  set for `RaidEvent`. Placement (no source stitches these five
+  sentences into one fixed sequence, Phase 124's own note) is a
+  documented interpretation: `_LFinance` right after the existing
+  `_FINANCES_OPENING`; `_LLCosts`/`_LACosts` right after the existing
+  `_LRev` line and before `Expected Expenses`, continuing that same
+  "revenue narrated, now costs narrated" flow; `_LTreas` as the
+  section's very last line, mirroring how `_LRev` closes the revenue
+  half. `_AUnpaid` (armies going unpaid) stays deliberately unwired --
+  `turn/expenses.py`'s own docstring confirms army maintenance is one
+  unconditional, unclamped lump sum with no source describing an
+  unpaid-army consequence, so this sentence has no real trigger.
+  `describe_desertions()` (Phase 599, also dormant, also needing a real
+  `MaintenanceResult`) stays unwired too -- it needs its own separate
+  decision about which report section a Hero's desertion narrative
+  belongs in, not just a data-source fix. Test count: 6489 -> 6495
+  (net +6). Full suite verified green (unchanged, 6489) before
+  touching a single test; 18 pre-existing `describe_finances_report()`/
+  `compose_letter_report()` tests needed their own exact-line-index/
+  slice assertions updated for the two new always-present lines, found
+  and fixed by running the suite first, not assumed.
+
 ## Setup
 
 ```
