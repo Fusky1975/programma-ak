@@ -118,6 +118,7 @@ from ak_engine.report.turn_report import (
     describe_transport_illegal_move,
     describe_pick_up,
     describe_practice,
+    describe_sage_discovery,
     describe_pursue,
     describe_recruit,
     describe_rumor,
@@ -4643,6 +4644,85 @@ def test_render_sage_no_discovery_right_branch():
     rng = ScriptedRandom([0.9] * 4)
     result = render_sage_no_discovery("Aldric", rng)
     assert result == "Aldric invented nothing worthy of note in Aldric's sagely experiments."
+
+
+# -- describe_sage_discovery (Phase 772) ---------------------------------
+
+
+def test_describe_sage_discovery_empty_for_a_non_sage_ability():
+    result = PracticeExecutionResult(ability=Ability.MELEE, device_discovered=True, discovery_granted=Discovery.COMPASS)
+    lines = describe_sage_discovery(result, character_name="Aldric", rng=ScriptedRandom([0.1] * 4))
+    assert lines == []
+
+
+def test_describe_sage_discovery_renders_the_success_line_when_a_discovery_was_granted():
+    result = PracticeExecutionResult(ability=Ability.SAGE, device_discovered=True, discovery_granted=Discovery.COMPASS)
+    lines = describe_sage_discovery(result, character_name="Aldric", rng=ScriptedRandom([0.1] * 4))
+    assert lines == [render_sage_discovery("Aldric", Discovery.COMPASS, ScriptedRandom([0.1] * 4))]
+
+
+def test_describe_sage_discovery_renders_the_failure_line_when_no_roll_succeeded():
+    result = PracticeExecutionResult(ability=Ability.SAGE, device_discovered=False, discovery_granted=None)
+    lines = describe_sage_discovery(result, character_name="Aldric", rng=ScriptedRandom([0.1, 0.1, 0.1, 0.9]))
+    assert lines == [render_sage_no_discovery("Aldric", ScriptedRandom([0.1, 0.1, 0.1, 0.9]))]
+
+
+def test_describe_sage_discovery_renders_the_failure_line_even_when_the_roll_succeeded_but_nothing_was_granted():
+    # PracticeExecutionResult's own documented edge case: device_discovered
+    # can be True (the roll succeeded) with discovery_granted still None
+    # (a kingdomless leader, or a kingdom that already owns all 64) --
+    # there's no real Discovery to plug into the success template, so this
+    # must render the failure line, not the success one, proving the
+    # gate is discovery_granted, not the raw device_discovered flag.
+    result = PracticeExecutionResult(ability=Ability.SAGE, device_discovered=True, discovery_granted=None)
+    lines = describe_sage_discovery(result, character_name="Aldric", rng=ScriptedRandom([0.1, 0.1, 0.1, 0.9]))
+    assert lines == [render_sage_no_discovery("Aldric", ScriptedRandom([0.1, 0.1, 0.1, 0.9]))]
+
+
+def _sage_practice_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    return state
+
+
+def test_describe_turn_results_practice_renders_only_the_discovery_line_when_describe_practice_has_none():
+    # An aptitude-only rise has no sourced narrative of its own
+    # (describe_practice()'s own docstring), so this proves the Sage
+    # discovery line still appears alone, not silently swallowed by the
+    # main line being None.
+    state = _sage_practice_state()
+    result = PracticeExecutionResult(
+        ability=Ability.SAGE, skill_rose=False, aptitude_rose=True, new_skill=3, new_aptitude=6,
+        discovery_granted=Discovery.COMPASS,
+    )
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.PRACTICE, result=result, error=None)
+    ]
+    rng = ScriptedRandom([0.1] * 10)
+
+    lines = describe_turn_results(entries, state, rng, ability_names={Ability.SAGE: "Sageness"})
+
+    assert lines == [render_sage_discovery("Aldric", Discovery.COMPASS, ScriptedRandom([0.1] * 10))]
+
+
+def test_describe_turn_results_practice_renders_both_lines_in_order_when_both_are_real():
+    state = _sage_practice_state()
+    result = PracticeExecutionResult(
+        ability=Ability.SAGE, skill_rose=False, new_skill=9, new_aptitude=5,
+        discovery_granted=Discovery.COMPASS,
+    )
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.PRACTICE, result=result, error=None)
+    ]
+    rng = ScriptedRandom([0.1] * 10)
+
+    lines = describe_turn_results(entries, state, rng, ability_names={Ability.SAGE: "Sageness"})
+
+    assert lines == [
+        "Aldric practiced Sageness even though Aldric had already reached the maximum skill level.",
+        render_sage_discovery("Aldric", Discovery.COMPASS, ScriptedRandom([0.1] * 10)),
+    ]
 
 
 # -- describe_practice (integration, Phase 144) --

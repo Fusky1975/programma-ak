@@ -31804,6 +31804,42 @@ follow-up request after the original 431-435 plan shipped.
   slice assertions updated for the two new always-present lines, found
   and fixed by running the suite first, not assumed.
 
+- **Phase 772 -- wire Sage device-discovery narration into `describe_
+  turn_results()`.** A 43rd fresh codebase survey found this candidate:
+  rulebook [4.3.1] ("Practicing Sageness, a level-4 character averages
+  one discovery per turn") drives an independent roll `turn/practice_
+  execution.py` already computes on every Sage Practice attempt
+  (`_roll_sage_device_discovery()`, Phase 171/266/448), and `report/
+  turn_report.py` already has both real, byte-sourced templates fully
+  built and tested (`render_sage_discovery()`/`render_sage_no_
+  discovery()`, DISCOV.X's `_LDisc`/`_LNoDisc`) -- but `describe_
+  practice()`, the only composer narrating a `PracticeExecutionResult`,
+  never read `device_discovered`/`discovery_granted` at all, confirmed
+  by grep to have zero production callers for either renderer. The
+  reason was already documented honestly, not silently dropped: the
+  discovery roll is independent of the skill-rise roll `describe_
+  practice()`'s own single-line return already prioritizes between, so
+  one Practice attempt can need two separate narrated lines. Fixed by
+  mirroring an exact existing precedent in the same composer (Phase
+  612's `ActionCode.CAST` branch: a single-line composer, then `lines.
+  extend()` a sibling composer for an independent co-occurring event)
+  -- new `describe_sage_discovery()`, wired alongside `describe_
+  practice()` in the `ActionCode.PRACTICE` branch, `describe_practice()`
+  itself untouched. Gated on `discovery_granted is not None`, not the
+  raw `device_discovered` flag: `PracticeExecutionResult`'s own
+  docstring documents a real case where the roll succeeds but nothing
+  could be granted (a kingdomless leader, or a kingdom that already
+  owns all 64 Discoveries) -- there's no real Discovery to name in that
+  case, so the failure line is the only one that can honestly render.
+  Also fixes a stale claim found along the way: `turn/experience.py`
+  still said "Tactical, March, Naval, Explorer, and Sage remain
+  genuinely unwired" for `Add_Experience` credit -- stale since Phase
+  768 wired March/Naval; only Tactical/Explorer/Sage are still open.
+  Test count: 6495 -> 6501 (net +6). Full suite verified green
+  (unchanged, 6495) before touching a single test -- a provable no-op
+  for the entire existing suite, since nothing exercised this dispatch
+  branch with real data before.
+
 ## Setup
 
 ```

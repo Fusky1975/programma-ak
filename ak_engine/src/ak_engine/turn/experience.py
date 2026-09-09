@@ -73,11 +73,13 @@ considerably larger follow-up." Since then: Spy (Phase 458/461), Thief
 (Phase 457), Druid, and all 5 spell schools (Phase 460, ``turn/cast_
 execution.py _award_cast_experience()``) were wired; Phase 686 adds
 Melee and Archery (both sourced with a clean, unambiguous base of 10 --
-see that phase's own README entry for the 6 real call sites). Tactical,
-March, Naval, Explorer, and Sage remain genuinely unwired -- SS3.3's
-own table marks all 5 "variabile"/"contestuale," not a clean fixed
-value the way Melee/Archery/Thief/the spell schools have, so they stay
-a real, separate, still-open item.
+see that phase's own README entry for the 6 real call sites); Phase
+768 (``MARCH.md`` SS11) adds March and Naval, credited from a
+successful Move (``turn/move_execution.py``). Tactical, Explorer, and
+Sage remain genuinely unwired -- SS3.3's own table marks all three
+"variabile"/"contestuale," not a clean fixed value the way Melee/
+Archery/Thief/the spell schools/March/Naval have, so they stay a real,
+separate, still-open item.
 
 **Also deliberately out of scope**: any Royal-Heir/comatose eligibility
 gating -- ``turn/practice_execution.py execute_practice()`` applies

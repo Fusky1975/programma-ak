@@ -7137,6 +7137,13 @@ def describe_turn_results(
             if ability_name is None:
                 continue
             line = describe_practice(entry.result, character_name=caster_name, ability_name=ability_name, rng=rng)
+            if line is not None:
+                lines.append(line)
+            # Phase 772: the Sage device-discovery roll is independent of
+            # the skill-rise outcome `line` above already narrates -- can
+            # co-occur with any of `describe_practice()`'s own branches.
+            lines.extend(describe_sage_discovery(entry.result, character_name=caster_name, rng=rng))
+            continue
         elif entry.action is ActionCode.CAST and isinstance(entry.result, CastExecutionResult):
             spell = entry.result.request.spell
             if spell not in _AUTO_RESOLVABLE_CAST_TARGET_SPELLS:
@@ -7586,16 +7593,10 @@ def describe_practice(
 # then a lone consonant-initial noun phrase needing an article is
 # exactly what `^A` (Phase 118's own auto a/an marker, e.g. "^A
 # dungeon") produces, so `^A` is restored there rather than left as a
-# raw double space or a silently invented literal "a". Standalone, not
-# yet wired into describe_practice()'s single-line-per-entry dispatch:
-# the device-discovery roll is independent of ("on top of, not instead
-# of") the ordinary skill-rise roll describe_practice() already
-# prioritizes between, so a call with both outcomes true would need an
-# unsourced priority decision between two genuinely-narratable sourced
-# templates -- left to a real composer-wiring phase rather than guessed
-# at here, the same "renderer exists, full wiring later" precedent
-# already used for render_wandering_encounter (Phase 106) and others
-# before their own eventual composer wiring.
+# raw double space or a silently invented literal "a". **Phase 772**
+# wires this in via a new sibling composer, `describe_sage_discovery()`
+# below -- see that function's own docstring for the wiring shape and
+# the `discovery_granted`-not-`device_discovered` gating reasoning.
 _DISCOVERY_TEMPLATE = "in > sagely researches, < discovered ^A fabulous invention called the !"
 
 
@@ -7608,8 +7609,8 @@ def render_sage_discovery(character_name: str, discovery: Discovery, rng: random
 
 # SAY.PAS `_LNoDisc` -- Sage's device-discovery failure line (the same
 # report code slot DISCOV.X's own success line occupies, `_LDisc`, sits
-# right next to). See render_sage_discovery()'s own docstring for why
-# this isn't yet wired into describe_practice() either.
+# right next to). **Phase 772** wires this in alongside `render_sage_
+# discovery()` -- see `describe_sage_discovery()`'s own docstring below.
 _NO_DISCOVERY_TEMPLATE = "< discovered/Rinvented nothing {valuable/Rworthy_of_note }in > sagely researches/Rexperiments."
 
 
@@ -7619,6 +7620,41 @@ def render_sage_no_discovery(character_name: str, rng: random.Random) -> str:
 
     values = {"<": character_name, ">": f"{character_name}'s"}
     return render(_NO_DISCOVERY_TEMPLATE, values, rng=rng)
+
+
+def describe_sage_discovery(
+    result: PracticeExecutionResult, *, character_name: str, rng: random.Random
+) -> list[str]:
+    """Assembles the Sage device-discovery line for a Practice attempt
+    (Phase 772), a sibling composer to ``describe_practice()`` rather
+    than a fourth branch inside it -- the device-discovery roll is
+    independent of ("on top of, not instead of") the ordinary skill-rise
+    roll that composer already prioritizes between, so a single
+    ``PracticeExecutionResult`` can need both its own line *and* this
+    one. Mirrors the exact "single-line composer, then `lines.extend()`
+    a sibling composer for an independent co-occurring event" shape
+    already established for ``ActionCode.CAST`` (Phase 612, `describe_
+    kill_enemy_berserk_retaliation()`) in `describe_turn_results()`.
+
+    `[]` for any ability other than ``Ability.SAGE`` -- ``device_
+    discovered``/``discovery_granted`` are only ever populated for that
+    one ability (see `turn/practice_execution.py`'s own field
+    docstrings). Gated on ``discovery_granted is not None``, not the
+    raw ``device_discovered`` flag: `render_sage_discovery()`'s own
+    template needs a real ``Discovery`` to name, and `Practice
+    ExecutionResult`'s own docstring already documents a real case
+    where the roll succeeds (``device_discovered=True``) but nothing
+    could actually be granted (a kingdomless leader, or a kingdom that
+    already owns all 64) -- there is nothing to plug into the success
+    template in that case, so `_LNoDisc` is the only line that can
+    honestly render, regardless of the internal roll's own outcome.
+    """
+
+    if result.ability is not Ability.SAGE:
+        return []
+    if result.discovery_granted is not None:
+        return [render_sage_discovery(character_name, result.discovery_granted, rng)]
+    return [render_sage_no_discovery(character_name, rng)]
 
 
 # HostAK/TP/SAY.PAS _ADishK -- a real entry made of two separate
