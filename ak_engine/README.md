@@ -32046,6 +32046,32 @@ follow-up request after the original 431-435 plan shipped.
   6524 (net +8). Full suite verified green (unchanged, 6516) before
   touching a single test.
 
+- **Phase 779 -- backlog item #12, comment-only.** User-requested
+  directly ("continua con il #12"). `turn/challenge_execution.py`'s
+  own docstring flagged an unresolved ambiguity: does the English
+  [3.12] "restricted encounter" Steal-halving clause describe the same
+  rule as the Italian [5.5] target-leads-an-army halving, or would the
+  two genuinely stack? Resolved by re-reading a source already cited
+  two sections above in the same docstring -- `AKGEN_reverse_
+  engineering_report (3).md` SS35's own sentence immediately preceding
+  the compiled success formula states plainly that the ordinary
+  encounter-acceptance restrictions "don't block Steal outright, but
+  leave a malus: against a King or an army-leading Hero, the chance is
+  halved," and the compiled formula itself (`AK.OVR:0x1AADA-0x1AB94`)
+  has exactly one halving term in its divisor -- no second, independent
+  term for "the plan also carries combat tactics" exists in it. Cross-
+  checked against the full Italian [3.12] text (`Regolamento AK.txt`
+  lines 771-787): "questi incontri 'limitati'" ("these 'restricted'
+  encounters") is the rulebook's own paraphrase for precisely the
+  encounters where the King/Hero acceptance restrictions apply in the
+  first place (i.e. targeting a King or an army-leading Hero), not a
+  separate condition tied to the plan's own tactic composition. The
+  two clauses are the same rule; `target_leads_army_or_is_king`
+  (already wired since Phase 305/506) already implements both at once
+  correctly -- no code change needed, comment-only. Full suite verified
+  unchanged (6524) before and after. This closes backlog item #12 in
+  full.
+
 ## Setup
 
 ```

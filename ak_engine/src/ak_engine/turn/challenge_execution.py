@@ -1592,18 +1592,32 @@ def resolve_challenge_combat(
     ``LeaderState`` to read from at all), a structurally different,
     still-genuinely-unaddressed situation.
 
-    **Not addressed here**: [3.12]'s own English-only clause ("If the
-    Steal tactic is used in such a restricted encounter, the chance of
-    success is halved") describes a second, textually distinct halving
-    condition (tied to whether the encounter plan also carries combat
-    tactics/personal-combat spells, triggering the King/Hero acceptance
-    restrictions) from the Italian [5.5] target-leads-an-army halving
-    already wired above. Whether the two describe the same underlying
-    condition from different angles, or would genuinely stack, isn't
-    resolved by either source read literally -- flagged here rather than
-    guessed at, the same "confirmed but unresolved" treatment this
-    project already gives Mirror-Image's double-dissipation rule and
-    Ice Suspension's item-seizure mechanic.
+    **Resolved (backlog #12, closed 2026-09-10, comment-only)**:
+    [3.12]'s own English-only clause ("If the Steal tactic is used in
+    such a restricted encounter, the chance of success is halved") and
+    the Italian [5.5] target-leads-an-army halving are **the same rule**,
+    not two independently stacking halvings -- confirmed by the exact
+    same dossier already cited above for the success formula itself
+    (``AKGEN_reverse_engineering_report (3).md`` SS35, the sentence
+    immediately preceding the compiled formula): "Le normali
+    restrizioni di incontro non impediscono il furto, ma lasciano un
+    malus: contro un Re o contro un Eroe che conduce un esercito la
+    probabilita' viene dimezzata" (the ordinary encounter-acceptance
+    restrictions don't block Steal outright, but leave a malus --
+    against a King or an army-leading Hero, the chance is halved). The
+    compiled formula itself (``AK.OVR:0x1AADA-0x1AB94``, quoted in full
+    two sections above) has exactly one halving term in its own
+    divisor (``H``, "1 against a King/army-leading Hero, 0 otherwise")
+    -- no second, independent term for "the plan also carries combat
+    tactics" exists anywhere in it. Re-reading the full Italian [3.12]
+    text directly (``Regolamento AK.txt`` lines 771-787) confirms why:
+    "questi incontri 'limitati'" ("these 'restricted' encounters") is
+    the rulebook's own paraphrase for exactly the encounters where the
+    King/Hero acceptance restrictions apply in the first place -- i.e.
+    targeting a King or an army-leading Hero -- not a separate condition
+    about the plan's own tactic composition. ``target_leads_army_or_
+    is_king`` (already wired above, unchanged by this fix) is already
+    the complete, correct implementation of both clauses at once.
 
     **Not wired for Search's own monster-target case** -- ``turn/
     search_execution.py _resolve_steal()`` keeps its own, narrower
