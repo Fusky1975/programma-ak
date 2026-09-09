@@ -2079,12 +2079,32 @@ def _execute_flood(
     wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Rulebook [4.24.1]: "can only be cast on the non-mountain land province you're in,
-    or one adjacent to it, turning it into Sea." The secondary "land
-    units trapped there" effect is deliberately not modeled: this
-    project has no first-class "is this a land unit" classification
-    (only per-``ArmyType`` favorable/adverse terrain lists), and flying
-    units' status under this specific rule is genuinely ambiguous in the
-    rulebook text -- left for a later phase rather than guessed.
+    or one adjacent to it, turning it into Sea."
+
+    **Stale as of Phase 693/737**: this docstring used to say the
+    secondary "land units trapped there" effect was "deliberately not
+    modeled," on two premises that are both false today. First, "flying
+    units' status under this specific rule" isn't ambiguous at all --
+    `Regolamento AK.txt` [4.24.1] states it plainly: "Tutte le unità
+    militari di terra che si trovano nella provincia restano bloccate
+    per il resto del turno. Nessuna unità militare di terra può entrare
+    in quella provincia. I movimenti e i trasporti per mare e per aria
+    sono indenni dall'incantesimo." (Land units already there are stuck
+    for the rest of the turn; no land unit may enter; sea and air
+    movement are unaffected by the spell.) Second, this project has had
+    a first-class "is this a land unit" classification since Phase
+    521/523 (`models/army_type.py is_land_army()`). The mechanic itself
+    is fully wired: `turn/move_execution.py is_flooded_province()`/
+    `_land_crossing_blocked()`/`find_transport_illegality()` (Phase 693,
+    reinforced by Phase 737's own sea-transport legality gate) treat a
+    Flood-overridden province exactly like Sea for ordinary land armies
+    (blocking both entry and exit) unless the caster's own
+    `AdvancedAbility.MARCH_THROUGH_FLOODS` excuses it -- and
+    `OVERFLIGHT_AIR` units are explicitly exempted there, matching
+    "indenni... per l'aria" exactly. `move_execution.py`'s own Phase 693
+    addendum already corrects an earlier stale note about this same
+    feature in that module; this sibling note, living in a different
+    module, was simply never cross-referenced and updated to match.
     """
 
     caster = state.leaders[leader_id]

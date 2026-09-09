@@ -31899,6 +31899,29 @@ follow-up request after the original 431-435 plan shipped.
   unwired, left untouched. No behavior change; full suite verified
   unchanged (6503) before and after.
 
+- **Phase 775 -- comment-only, the oldest stale known-gap claim found
+  in this project's history to date.** A 46th fresh codebase survey
+  found `turn/cast_execution.py _execute_flood()`'s own docstring
+  (Phase 59, ~715 phases stale) still claiming Flood's own "land units
+  trapped there" effect was "deliberately not modeled," on two
+  premises both false today: `Regolamento AK.txt` [4.24.1] is not
+  ambiguous about flying units at all ("I movimenti e i trasporti per
+  mare e per aria sono indenni dall'incantesimo" -- sea and air
+  movement are unaffected), and this project has had a first-class
+  "is this a land unit" classification since Phase 521/523 (`models/
+  army_type.py is_land_army()`). The mechanic itself has been fully
+  wired since Phase 693 (reinforced by Phase 737): `turn/move_
+  execution.py is_flooded_province()`/`_land_crossing_blocked()`/
+  `find_transport_illegality()` block ordinary land armies from a
+  Flood-overridden province exactly like Sea, excused only by
+  `AdvancedAbility.MARCH_THROUGH_FLOODS`, with `OVERFLIGHT_AIR` units
+  explicitly exempted -- an exact match to the sourced text.
+  `move_execution.py`'s own Phase 693 addendum already corrects an
+  earlier stale note about this same feature living in that same
+  module; this sibling note, in a different module, was never cross-
+  referenced and updated. No behavior change; full suite verified
+  unchanged (6503) before and after.
+
 ## Setup
 
 ```
