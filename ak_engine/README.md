@@ -31840,6 +31840,39 @@ follow-up request after the original 431-435 plan shipped.
   for the entire existing suite, since nothing exercised this dispatch
   branch with real data before.
 
+- **Phase 773 -- Crystal of True Seeing's own Illusory Terrain immunity
+  clause.** A 44th fresh codebase survey found this candidate: `models/
+  treasure.py TREASURE_DESCRIPTION[AMULET_ANTI_ILLUSION]`'s own real
+  text names four clauses ("unaffected by ... Invisibility, Illusory
+  Terrain and Hide Feature... Illusory Armies has only half its normal
+  effect... on the opposite side"), but only Invisibility-immunity and
+  Illusory-Armies-halving were ever wired. Hide Feature turned out to
+  already be closed (Phase 540, `turn/exploration.py has_true_seeing()`)
+  -- `turn/discovery_effects.py holder_is_immune_to_spell()`'s own
+  docstring just never got updated to say so, a free stale-claim fix.
+  Illusory Terrain was genuinely still open: since Phase 724, `turn/
+  battle_orchestrator.py _build_battle_units()` already threads a real
+  `illusory_terrain` blend into every unit's own strength, applied
+  identically to both sides with no check at all for the Crystal. Fixed
+  by mirroring the exact existing precedent two lines above in the same
+  function (`opponent_owns_crystal_of_true_seeing`, the Illusory-Armies
+  clause) with the mirror-image scope: a new `own_side_owns_crystal_of_
+  true_seeing` check (any leader of *this* side's own kingdom(s) holding
+  the item, present or not, matching the sibling clause's own already-
+  shipped resolution style) overrides `illusory_terrain` to `None` for
+  that side only, so its units fight at the real terrain's own strength
+  with no illusory averaging. Deliberately scoped no wider than the
+  sibling clause already is: `_apply_pursuit()`'s own retreating-army
+  strength and the ARMIES report's peacetime "Modified Quality" display
+  stay untouched, matching where that precedent already drew the line
+  rather than widening past it. `_apply_monster_summoning_aid()`'s own
+  player-led-army call into `_build_battle_units()` inherits the fix for
+  free, the same way it already inherits the Illusory-Armies check.
+  Test count: 6501 -> 6503 (net +2). Full suite verified green
+  (unchanged, 6501) before touching a single test -- a provable no-op,
+  since nothing previously checked the Crystal against Illusory Terrain
+  at all.
+
 ## Setup
 
 ```

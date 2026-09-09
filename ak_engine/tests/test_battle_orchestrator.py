@@ -934,6 +934,49 @@ def test_build_battle_units_applies_illusory_terrain_blend():
     )
 
 
+def test_build_battle_units_crystal_of_true_seeing_holder_ignores_own_sides_illusory_terrain():
+    # Phase 773: "the possessor of the Crystal is unaffected by ...
+    # Illusory Terrain" -- any leader of the army's own kingdom holding
+    # the Crystal (not necessarily the commander) suppresses the blend
+    # for that whole side, fighting at the real terrain's own strength.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Seersland", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Seer", location=FIELD))
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=1)
+    army = ArmyState(101, 1, ArmyType.PHALANX, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        illusory_terrain=Terrain.SEA,
+    )
+
+    assert units[0].effective_strength == compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS
+    )
+
+
+def test_build_battle_units_crystal_of_true_seeing_on_the_opponent_side_does_not_suppress_the_blend():
+    # The Crystal only protects its own holder's side -- an opponent
+    # holding it must not suppress this side's own illusory blend.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Illusia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Seersland", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(8, 8)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Seer", location=FIELD))
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=2)
+    army = ArmyState(101, 1, ArmyType.PHALANX, Quality.AVERAGE, location=FIELD)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        illusory_terrain=Terrain.SEA, opponent_kingdom_ids=frozenset({2}),
+    )
+
+    assert units[0].effective_strength == compute_effective_strength(
+        ArmyType.PHALANX, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, illusory_terrain=Terrain.SEA
+    )
+
+
 def test_build_battle_units_applies_is_island_blend():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home_province=HexCoord(9, 9)))

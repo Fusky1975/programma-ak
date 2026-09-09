@@ -557,6 +557,26 @@ def _build_battle_units(
     blend it runs. Defaults to ``None``, unaffected, for every pre-
     Phase-724 caller.
 
+    **Crystal of True Seeing's own Illusory Terrain immunity** (Phase
+    773, ``models/treasure.py TREASURE_DESCRIPTION[AMULET_ANTI_
+    ILLUSION]``): "The possessor of the Crystal is unaffected by the
+    spells of ... Illusory Terrain" -- the mirror-image scope of
+    ``opponent_owns_crystal_of_true_seeing`` just below (that one asks
+    whether the *opponent* holds it, for Illusory Armies' own halving;
+    this one asks whether *this side* holds it, since the text protects
+    the holder's own side from being fooled by the illusion, not the
+    opponent's). Resolved once per side-build-call, the same "any
+    leader whose kingdom_id matches, present or not, mirroring the
+    already-shipped Illusory-Armies precedent's own scope" convention
+    -- see ``own_side_owns_crystal_of_true_seeing`` below. When a match
+    is found, ``illusory_terrain`` is overridden to ``None`` for every
+    unit on this side, so they fight at the real terrain's own strength
+    only, with no illusory blend at all. Deliberately scoped no wider
+    than the sibling Illusory-Armies clause already is: `_apply_
+    pursuit()`'s own retreating-army strength and `turn/army_quality.py`'s
+    peacetime "Modified Quality" display are both untouched, matching
+    that clause's own existing boundary rather than widening past it.
+
     **Duellist / "Captain of the Musketeers"** (Phase 471, AKGEN_reverse_
     engineering_report (2).md SS17.7, ``duellist_side``): "Quando il
     titolare è comandante supremo in battaglia, una sua unità casuale
@@ -667,6 +687,17 @@ def _build_battle_units(
         and any(item.treasure is Treasure.AMULET_ANTI_ILLUSION for item in state.items_held_by(leader.leader_id))
         for leader in state.leaders.values()
     )
+    # Phase 773: the mirror-image scope of the check above -- "unaffected
+    # by the spells of ... Illusory Terrain" protects the Crystal-
+    # holder's own side, not the opponent's. See this function's own
+    # Phase 773 docstring addendum.
+    own_kingdom_ids = frozenset(army.kingdom_id for army in armies if army.kingdom_id is not None)
+    own_side_owns_crystal_of_true_seeing = any(
+        leader.kingdom_id in own_kingdom_ids
+        and any(item.treasure is Treasure.AMULET_ANTI_ILLUSION for item in state.items_held_by(leader.leader_id))
+        for leader in state.leaders.values()
+    )
+    effective_illusory_terrain = None if own_side_owns_crystal_of_true_seeing else illusory_terrain
 
     # Phase 390: memoized per office actually queried this call, since
     # resolve_office_holder() re-derives merit points across every
@@ -760,7 +791,7 @@ def _build_battle_units(
             own_explored_percent=own_explored_percent,
             illusory_fog_affected=illusory_fog_affected,
             is_island=is_island,
-            illusory_terrain=illusory_terrain,
+            illusory_terrain=effective_illusory_terrain,
             illusory_terrain_enhanced=illusory_terrain_enhanced,
             adapt_tactics_to_terrain=adapt_tactics_to_terrain,
         )
@@ -789,7 +820,7 @@ def _build_battle_units(
                 own_explored_percent=own_explored_percent,
                 illusory_fog_affected=illusory_fog_affected,
                 is_island=is_island,
-                illusory_terrain=illusory_terrain,
+                illusory_terrain=effective_illusory_terrain,
                 illusory_terrain_enhanced=illusory_terrain_enhanced,
                 adapt_tactics_to_terrain=adapt_tactics_to_terrain,
             )

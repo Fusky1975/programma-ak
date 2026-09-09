@@ -166,18 +166,21 @@ def holder_is_immune_to_spell(state: GameState, target_leader_id: int, spell: Sp
     branches, right alongside their existing ``AdvancedAbility.
     WITCHSIGHT_TALENT`` carve-out. Illusory Terrain and Hide Feature are
     also in the amulet's blocked set (the dossier's "sees through"
-    wording covers all three), but neither has a real consumer yet to
-    wire the check into -- both are pure ``cast_execution.py`` province-
-    state writes with "no consuming Explore/Search discovery-roll reads it
-    yet" already documented on ``_execute_illus_terrain``/``_execute_
-    hide_feature`` themselves (this predates Phase 532; see those
-    functions' own docstrings). ``holder_is_immune_to_spell()`` already
-    returns the right answer for both spells the moment such a consumer
-    exists -- no further change needed here when it does. Phantasmal
-    Armies is deliberately absent from the amulet's blocked set -- SS8
-    point 3 treats it as a separate, battle-wide strength-bonus halving,
-    not a personal spell immunity; see ``turn/battle_orchestrator.py``'s
-    own Phase 532 addendum for that half.
+    wording covers all three) -- both are now closed too, though neither
+    goes through this function directly (this project's own Illusory-
+    Terrain/Hide-Feature consumers have no single "target leader" the
+    way Invisibility's leader-vs-leader check does, so each resolves the
+    amulet check its own way): **Hide Feature** closed since Phase 540
+    (``turn/exploration.py has_true_seeing()`` bypasses ``Feature.
+    magically_hidden`` for a Crystal-holding kingdom); **Illusory
+    Terrain** closed by Phase 773 (``turn/battle_orchestrator.py
+    _build_battle_units()``'s own ``own_side_owns_crystal_of_true_
+    seeing`` check, overriding that side's own ``illusory_terrain``
+    parameter to ``None``). Phantasmal Armies is deliberately absent
+    from the amulet's blocked set -- SS8 point 3 treats it as a
+    separate, battle-wide strength-bonus halving, not a personal spell
+    immunity; see ``turn/battle_orchestrator.py``'s own Phase 532
+    addendum for that half.
     """
 
     for amulet, blocked in AMULET_BLOCKED_SPELLS.items():
