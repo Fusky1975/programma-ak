@@ -360,6 +360,17 @@ class ElectionResult:
     # Empty for the world_total<=0 early return (no real ballots to
     # show for a vote that couldn't even be evaluated).
     ballots: dict[int, int]
+    # Phase 778: copied straight from `GameState.election_pending_
+    # alignment_trigger` by `process_election_turn()` itself, right
+    # before that field is cleared -- neither `tally_emperor_vote()`
+    # nor `resolve_emperor_election()` otherwise needs this, so it's
+    # not threaded as a parameter, mirroring the `ballots` field's own
+    # Phase 656 precedent for a value only the orchestrating function
+    # has access to at the right moment. `None` when the pending vote
+    # was scheduled by King-request weight alone, with no alignment
+    # bloc trigger -- see `GameState.election_pending_alignment_
+    # trigger`'s own docstring for the full sourcing.
+    alignment_trigger: Alignment | None = None
 
 
 def tally_emperor_vote(state: GameState, ballots: dict[int, int], current_turn: int) -> ElectionResult:
@@ -664,14 +675,24 @@ def process_election_turn(
       value that isn't a real Kingdom id is an abstention either way).
       `election_pending_turn` is cleared regardless of the vote's own
       outcome (a vote being *held* ends the pending state, win, loss, or
-      no quorum).
+      no quorum). Phase 778: `state.election_pending_alignment_trigger`
+      (whichever ordinary Alignment's own bloc triggered this vote's own
+      scheduling, if any) is copied onto the returned `ElectionResult.
+      alignment_trigger` right before it's cleared alongside `election_
+      pending_turn` -- report/turn_report.py describe_election_status_
+      report()`'s own real REPORTS.PAS notice needs it at exactly this
+      moment, since it would otherwise be gone by report-generation
+      time.
     - **Otherwise**: evaluate whether this turn crowns someone outright
       or schedules a vote for `current_turn + 1`
       (`evaluate_election_call()`), using each Kingdom's own `kprevgold`
       as a request toggle this time (`KingdomMoveHeader.is_vote_turn()`).
       An immediate coronation sets `state.emperor_kingdom_id` directly
       (no vote to hold, so nothing gets scheduled); a scheduled election
-      sets `state.election_pending_turn = current_turn + 1`.
+      sets `state.election_pending_turn = current_turn + 1` and (Phase
+      778) `state.election_pending_alignment_trigger = outcome.
+      alignment_trigger` alongside it -- see that field's own docstring
+      for the full sourcing.
     """
 
     if state.election_pending_turn == current_turn:
@@ -681,7 +702,9 @@ def process_election_turn(
             if header.kprevgold in state.kingdoms
         }
         result = resolve_emperor_election(state, ballots, current_turn)
+        result.alignment_trigger = state.election_pending_alignment_trigger
         state.election_pending_turn = None
+        state.election_pending_alignment_trigger = None
         return result
 
     requesting_kingdom_ids = {
@@ -693,4 +716,5 @@ def process_election_turn(
         state.last_emperor_vote_turn = current_turn
     elif outcome.election_scheduled_next_turn:
         state.election_pending_turn = current_turn + 1
+        state.election_pending_alignment_trigger = outcome.alignment_trigger
     return outcome

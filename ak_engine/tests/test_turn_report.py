@@ -10922,6 +10922,72 @@ def test_describe_election_status_report_omits_alignment_line_when_world_total_i
     assert not any("controls" in line for line in lines)
 
 
+# -- Phase 778: describe_election_status_report()'s alignment-bloc-trigger notice --
+
+
+def test_describe_election_status_report_alignment_bloc_trigger_renders_both_lines():
+    state = _armies_state()
+    state.provinces[HexCoord(0, 0)].tax = 10
+    state.kingdoms[1].alignment = Alignment.GOOD  # sole Kingdom -> 100% GOOD bloc share
+    outcome = ElectionResult(
+        elected_emperor_kingdom_id=None, votes_by_candidate={}, total_votes_cast=0, ballots={}, alignment_trigger=Alignment.GOOD
+    )
+
+    lines = describe_election_status_report(state, 1, outcome)
+
+    assert "The Good alignment controls 100% of the world's votes." in lines
+    assert "Consquently, a vote for World Emperor will be held this turn." in lines
+
+
+def test_describe_election_status_report_alignment_bloc_trigger_omits_the_controls_line_once_the_share_has_shrunk():
+    # The alignment was the real trigger at scheduling time, but its own
+    # *current* bloc share has since dropped below 55% by tally time --
+    # the real IF alperc[alvote] >= 55 gate silently drops just this one
+    # sentence, not the "vote will be held" line.
+    state = _armies_state()
+    state.provinces[HexCoord(0, 0)].tax = 40
+    state.kingdoms[1].alignment = Alignment.GOOD
+    state.add_kingdom(KingdomState(2, "Farland", Race.HUMAN, Alignment.EVIL, HexCoord(1, 1)))
+    state.add_province(ProvinceState(HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, tax=60))
+    outcome = ElectionResult(
+        elected_emperor_kingdom_id=None, votes_by_candidate={}, total_votes_cast=0, ballots={}, alignment_trigger=Alignment.GOOD
+    )
+
+    lines = describe_election_status_report(state, 1, outcome)
+
+    # The sibling "This Kingdom's own alignment vote share" notice (a
+    # different template, "now controls") still renders unconditionally
+    # -- only the trigger-specific "alignment controls X%." sentence
+    # (no "now") is gated on the 55% threshold.
+    assert not any(line.startswith("The Good alignment controls") for line in lines)
+    assert "Consquently, a vote for World Emperor will be held this turn." in lines
+
+
+def test_describe_election_status_report_alignment_bloc_trigger_none_still_renders_the_vote_held_line():
+    # A vote scheduled by King-request weight alone, no alignment bloc.
+    state = _armies_state()
+    outcome = ElectionResult(
+        elected_emperor_kingdom_id=None, votes_by_candidate={}, total_votes_cast=0, ballots={}, alignment_trigger=None
+    )
+
+    lines = describe_election_status_report(state, 1, outcome)
+
+    assert lines == ["ELECTION STATUS", "Consquently, a vote for World Emperor will be held this turn."]
+
+
+def test_describe_election_status_report_no_vote_held_line_without_a_real_tally():
+    state = _armies_state()
+
+    assert describe_election_status_report(state, 1, None) == []
+
+    call_outcome = ElectionCallOutcome(
+        world_total=10, immediate_coronation_kingdom_id=None, callers_qualify=False, alignment_trigger=Alignment.GOOD
+    )
+    lines = describe_election_status_report(state, 1, call_outcome)
+
+    assert not any("will be held" in line for line in lines)
+
+
 # -- Phase 656: describe_election_report() -- ELECTION REPORT --
 
 
@@ -11039,6 +11105,25 @@ def test_compose_letter_report_includes_election_status_section():
     lines = compose_letter_report([], state, 1, ScriptedRandom([]))
 
     assert "ELECTION STATUS" in lines
+
+
+def test_compose_letter_report_threads_election_outcome_to_the_status_section_too():
+    # Phase 778: election_outcome reaches describe_election_status_
+    # report(), not just describe_election_report() -- proven end to
+    # end via compose_letter_report()'s own real call site.
+    state = _armies_state()
+    state.provinces[HexCoord(0, 0)].tax = 10
+    outcome = ElectionResult(
+        elected_emperor_kingdom_id=None,
+        votes_by_candidate={},
+        total_votes_cast=0,
+        ballots={},
+        alignment_trigger=None,
+    )
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]), election_outcome=outcome)
+
+    assert "Consquently, a vote for World Emperor will be held this turn." in lines
 
 
 def test_compose_letter_report_includes_final_standings_once_emperor_elected():

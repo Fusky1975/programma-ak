@@ -32001,6 +32001,51 @@ follow-up request after the original 431-435 plan shipped.
   existing fixture scripts a real `"success"` Steal with real items or
   a real post-combat loot case reaching either composer.
 
+- **Phase 778 -- backlog item #16, election-alignment persistence +
+  REPORTS.PAS's real alignment-bloc-trigger notice.** User-requested
+  directly ("continua con il #16"). Extracted the real `Programma
+  Pascal.zip HostAK/TP/REPORTS.PAS` source directly (lines 1937-1965):
+  a "The `<alignment>` alignment controls `<percent>`% of the world's
+  votes... Consquently, a vote for World Emperor will be held this
+  turn" notice, printed only `IF req_vote = Vote_Turn` (the real tally
+  turn), indexed by a global `alvote` whose own assignment site
+  doesn't survive in any of the 14 available `.PAS` files. Resolved by
+  direct architectural inference rather than a disassembly (confirmed
+  ALTA, not CERTO, confidence): `turn/emperor_election.py evaluate_
+  election_call()` -- the function that computes the real `alvote`
+  equivalent fresh (`_alignment_auto_trigger()`, already explicitly
+  named as "report SS13.6's own `alvote` sentinel mechanic" in that
+  function's own pre-existing docstring) -- is only ever invoked in
+  `process_election_turn()`'s own *scheduling* branch, never on the
+  tally turn itself, so a real trigger alignment can only ever reach
+  this notice by being carried forward from whichever earlier turn
+  scheduled the vote. New `GameState.election_pending_alignment_
+  trigger`, persisted alongside `election_pending_turn` at scheduling
+  time, copied onto a new `ElectionResult.alignment_trigger` field by
+  `process_election_turn()` itself right before the pending state is
+  cleared at tally time (mirrors `ElectionResult.ballots`'s own Phase
+  656 precedent for a value only the orchestrating function has access
+  to at the right moment). `describe_election_status_report()` gained
+  the same `election_outcome` parameter its sibling `describe_election_
+  report()` already receives (no new plumbing at the orchestration
+  layer) -- the "controls X%" line renders only when the persisted
+  alignment's own *current* bloc share is still `>= 55%` (a bloc that
+  has since shrunk by tally time silently loses just this one
+  sentence, matching the real source's own independent gate), while
+  the "vote will be held" line is unconditional whenever a real tally
+  happened at all. The real source's own typo ("Consquently") was kept
+  verbatim, matching this project's established "preserve every real
+  byte" precedent. **User-confirmed directly, after the distinction was
+  raised**: this notice has zero effect on the election's own outcome
+  or the elected Emperor's own alignment (already modeled separately,
+  unrelated) -- it's pure report narration explaining *why* a vote is
+  happening, implemented to the same "real, sourced text" standard as
+  every other report notice. The companion "Kings owning X%..." notice
+  stays explicitly out of scope (needs `kingdom_headers` threading, a
+  materially larger, separate plumbing change). Test count: 6516 ->
+  6524 (net +8). Full suite verified green (unchanged, 6516) before
+  touching a single test.
+
 ## Setup
 
 ```

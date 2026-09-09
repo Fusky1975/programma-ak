@@ -623,6 +623,33 @@ def test_process_election_turn_callers_schedule_next_turns_vote():
     assert outcome.election_scheduled_next_turn is True
     assert state.election_pending_turn == 6
     assert state.emperor_kingdom_id is None
+    # No alignment bloc triggered this one -- callers' own weight alone.
+    assert outcome.alignment_trigger is None
+    assert state.election_pending_alignment_trigger is None
+
+
+def test_process_election_turn_persists_the_alignment_trigger_when_scheduling():
+    # Phase 778: mirrors test_evaluate_election_call_alignment_bloc_
+    # alone_triggers_next_turns_election()'s own fixture -- every
+    # individual Kingdom stays below threshold, but the two GOOD
+    # Kingdoms combined clear it, scheduling next turn's election
+    # through the alignment path alone.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "A", Race.HUMAN, Alignment.GOOD, HOME))
+    state.add_kingdom(KingdomState(2, "B", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_kingdom(KingdomState(3, "C", Race.HUMAN, Alignment.EVIL, HexCoord(2, 2)))
+    state.add_kingdom(KingdomState(4, "D", Race.HUMAN, Alignment.PAGAN, HexCoord(3, 3)))
+    state.add_kingdom(KingdomState(5, "E", Race.HUMAN, Alignment.GOOD, HexCoord(4, 4)))
+    for kid, coord in [(1, HOME), (2, HexCoord(1, 1)), (3, HexCoord(2, 2)), (4, HexCoord(3, 3)), (5, HexCoord(4, 4))]:
+        give_tax(state, kid, coord, 20)
+    headers = {kid: _header() for kid in (1, 2, 3, 4, 5)}  # nobody explicitly requested a vote
+
+    outcome = process_election_turn(state, headers, current_turn=30)
+
+    assert isinstance(outcome, ElectionCallOutcome)
+    assert outcome.alignment_trigger == Alignment.GOOD
+    assert state.election_pending_turn == 31
+    assert state.election_pending_alignment_trigger == Alignment.GOOD
 
 
 def test_process_election_turn_tallies_a_pending_votes_own_ballots():
@@ -638,6 +665,36 @@ def test_process_election_turn_tallies_a_pending_votes_own_ballots():
     assert result.elected_emperor_kingdom_id == 1
     assert state.emperor_kingdom_id == 1
     assert state.election_pending_turn is None
+
+
+def test_process_election_turn_copies_the_persisted_alignment_trigger_onto_the_tally_result():
+    # Phase 778: the value persisted at scheduling time must survive
+    # onto the returned ElectionResult before GameState clears it --
+    # otherwise the report layer would have nothing to read by the
+    # time compose_letter_report() runs.
+    state = make_state()
+    state.election_pending_turn = 6
+    state.election_pending_alignment_trigger = Alignment.GOOD
+    give_tax(state, 1, HexCoord(0, 0), 60)
+    give_tax(state, 2, HexCoord(1, 1), 40)
+    headers = {1: _header(kprevgold=1), 2: _header(kprevgold=1)}
+
+    result = process_election_turn(state, headers, current_turn=6)
+
+    assert result.alignment_trigger == Alignment.GOOD
+    assert state.election_pending_alignment_trigger is None
+
+
+def test_process_election_turn_tally_with_no_persisted_trigger_returns_none():
+    state = make_state()
+    state.election_pending_turn = 6
+    give_tax(state, 1, HexCoord(0, 0), 60)
+    give_tax(state, 2, HexCoord(1, 1), 40)
+    headers = {1: _header(kprevgold=1), 2: _header(kprevgold=1)}
+
+    result = process_election_turn(state, headers, current_turn=6)
+
+    assert result.alignment_trigger is None
 
 
 def test_process_election_turn_treats_an_invalid_candidate_as_abstention():

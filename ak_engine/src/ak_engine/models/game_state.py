@@ -1538,6 +1538,28 @@ class GameState:
     # regardless of its own outcome, same as `Refresh_Moves`'s own
     # per-Kingdom `kprevgold` reset described in report SS12.2).
     election_pending_turn: int | None = None
+    # Phase 778: this project's own reading of the real Pascal `alvote`
+    # global (report SS13.6, `REPORTS.PAS`'s own alignment-bloc-trigger
+    # notice, "The <alignment> alignment controls <percent>% of the
+    # world's votes... a vote will be held this turn") -- the ordinary
+    # Alignment whose own world-power bloc actually triggered `election_
+    # pending_turn` being scheduled, if any (`None` when the vote was
+    # scheduled by King-request weight alone, matching `turn/emperor_
+    # election.py _alignment_auto_trigger()`'s own "still Mechanical"
+    # `None` return). No assignment site for `alvote` survives in any of
+    # the 14 available `.PAS` files -- this field's own existence is an
+    # architectural inference, not a disassembly: `evaluate_election_
+    # call()` (the function that computes the trigger fresh) is only
+    # ever invoked in `process_election_turn()`'s own *scheduling*
+    # branch, never its *tally* branch (`election_pending_turn ==
+    # current_turn`, the real `req_vote = Vote_Turn` condition this
+    # notice's own real `IF` gates on) -- so a real `alvote` value can
+    # only ever reach that later turn's own report by being carried
+    # forward, exactly the way `election_pending_turn` itself already
+    # is. Same lifecycle as that field: set alongside it when a vote is
+    # scheduled, cleared alongside it once tallied (see `process_
+    # election_turn()`'s own Phase 778 addendum).
+    election_pending_alignment_trigger: Alignment | None = None
     # GENERAL INTELLIGENCE REPORT's own raw material (Phase 231) -- see
     # WorldEvent's own docstring. Populated by a caller (``report/
     # turn_report.py record_battle_world_events()`` today, the one real

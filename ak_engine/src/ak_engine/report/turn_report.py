@@ -11627,14 +11627,15 @@ def describe_election_report(
     formula. Revisit if a future source clarifies what "Neutral
     Characters" tax base means in this project's own data model.
 
-    **Explicitly deferred, not attempted this phase**: the two
-    adjacent notices (`REPORTS.PAS:1937-1965`, the caller-percentage
-    and alignment-bloc-trigger notices) stay out of scope -- both need
-    `evaluate_election_call()`'s own internally-computed-and-discarded
-    percentages, and the alignment-bloc one additionally has a genuine,
-    unresolved design question (does the real engine remember the
-    specific triggering alignment across the turn boundary, or
-    recompute it fresh?) with no surviving source either way.
+    **Explicitly deferred, not attempted this phase**: the caller-
+    percentage notice (`REPORTS.PAS:1937-1944`) stays out of scope --
+    it needs `evaluate_election_call()`'s own internally-computed-and-
+    discarded percentage plus `kingdom_headers`, neither available to
+    this composer. The adjacent alignment-bloc-trigger notice (`REPORTS.
+    PAS:1945-1965`) is now wired -- see `describe_election_status_
+    report()`'s own Phase 778 addendum for the full "does the real
+    engine remember the specific triggering alignment across the turn
+    boundary" resolution (an architectural inference, not a disassembly).
     """
 
     if not isinstance(election_outcome, ElectionResult):
@@ -12367,30 +12368,38 @@ def describe_final_standings_report(state: GameState) -> list[str]:
 # STANDINGS_HEADER`/ALIGNMENT REDUCTION above (real data, invented
 # framing, since the real source has no separate section header for
 # this text either -- it's just more of the same giant `Pray_Report`
-# procedure's own tail end). Both pieces below are pure `GameState`
-# recomputations -- no `TurnOutcome.election_outcome` threading needed.
+# procedure's own tail end).
 _ELECTION_STATUS_HEADER = "ELECTION STATUS"
 _ELECTION_THRESHOLD_HINT_TEMPLATE = "Note: it requires only {percent}% of world taxbase to become Emperor next turn."
 _ALIGNMENT_VOTE_SHARE_TEMPLATE = (
     "The {alignment} alignment now controls {percent}% of the world's votes (taxbase + (5 x office/treasure points))."
 )
+# Phase 778: REPORTS.PAS:1945-1965's own alignment-bloc-trigger notice,
+# transcribed verbatim -- including the real source's own typo
+# ("Consquently") deliberately preserved, matching this project's
+# established "preserve every real byte" precedent for source anomalies
+# (e.g. the GMSPOILS.X 3-choice anomaly, Phase 580/584's own kept
+# mislabelings) rather than silently correcting it.
+_ALIGNMENT_BLOC_TRIGGER_TEMPLATE = "The {alignment} alignment controls {percent}% of the world's votes."
+_ELECTION_VOTE_HELD_TEMPLATE = "Consquently, a vote for World Emperor will be held this turn."
 
 
-def describe_election_status_report(state: GameState, kingdom_id: int) -> list[str]:
-    """Assembles the project-original "ELECTION STATUS" section -- two
-    real notices from `REPORTS.PAS Pray_Report`'s own tail end,
-    verified directly against source, neither needing `TurnOutcome.
-    election_outcome` at all (both are pure per-turn `GameState`
-    recomputations, the same "no stored byte, recomputed on demand"
-    shape this project's own Feature->Power `Set_Event` formulas
-    already use).
+def describe_election_status_report(
+    state: GameState, kingdom_id: int, election_outcome: "ElectionResult | ElectionCallOutcome | None" = None
+) -> list[str]:
+    """Assembles the project-original "ELECTION STATUS" section -- three
+    real notices from `REPORTS.PAS Pray_Report`'s own tail end, verified
+    directly against source.
 
     **Decaying threshold hint** (`REPORTS.PAS:1924-1936`): shown only
     pre-election (`state.emperor_kingdom_id is None`) and only once
     `turn/emperor_election.py election_threshold_percent(state.
     turn_number)` has actually decayed below the base 55% (the real
     source's own `IF reqperc < 55` gate) -- a public, already-exported
-    function, no new plumbing.
+    function, no new plumbing. Needs no `election_outcome` at all -- a
+    pure per-turn `GameState` recomputation, the same "no stored byte,
+    recomputed on demand" shape this project's own Feature->Power
+    `Set_Event` formulas already use.
 
     **This Kingdom's own alignment vote share** (`REPORTS.PAS:
     1967-1985`): shown every turn regardless of election status, using
@@ -12408,21 +12417,53 @@ def describe_election_status_report(state: GameState, kingdom_id: int) -> list[s
     Kingdom whose own Alignment isn't one of the 8 ordinary ones this
     function keys (Mechanical/Special, never produced by this project's
     own `KingdomState` data in practice) or when `V_world` is 0 (no
-    kingdoms/no vote weight at all).
+    kingdoms/no vote weight at all). Likewise needs no `election_
+    outcome`.
 
-    **Explicitly deferred, not attempted this phase** (see
-    `project_third_survey_2026_08_27` memory for the full account):
-    the caller-percentage notice and the alignment-bloc-trigger/"a vote
-    will be held this turn" notice both need percentages `turn/
-    emperor_election.py evaluate_election_call()` computes and discards
-    today, and the latter additionally needs its own identity carried
-    forward across a full turn boundary -- neither is guessable from
-    what `GameState` currently persists. The real Pascal `catchup`
+    **Alignment-bloc-trigger notice** (`REPORTS.PAS:1945-1965`, Phase
+    778, backlog #16 -- purely report narration, no effect on the
+    election's own outcome or the elected Emperor's own alignment):
+    real Pascal `IF req_vote = Vote_Turn` -- shown only on the exact
+    turn a vote is actually tallied, i.e. only when `election_outcome`
+    is a real `ElectionResult` (`process_election_turn()`'s own tally
+    branch, the one place this can ever be true). Confirmed via direct
+    architectural inference, not a disassembly (`GameState.election_
+    pending_alignment_trigger`'s own docstring has the full reasoning):
+    `evaluate_election_call()` -- the function that computes the real
+    Pascal `alvote` global fresh -- is only ever invoked in `process_
+    election_turn()`'s own *scheduling* branch, never on the tally turn
+    itself, so a real trigger alignment can only reach this notice by
+    being carried forward from whichever earlier turn scheduled the
+    vote; `ElectionResult.alignment_trigger` is exactly that persisted
+    value, copied on at tally time before `GameState` clears it. When
+    `alignment_trigger is not None`, the "controls X%" line renders only
+    if that alignment's own *current* bloc share is still `>= 55`% (the
+    real `IF alperc[alvote] >= 55` gate -- the trigger's own identity
+    persists, but its share is re-read fresh every turn, so a bloc that
+    has since shrunk below threshold by tally time silently loses just
+    this one sentence, not the vote itself). The "a vote... will be held
+    this turn" line is unconditional whenever a real tally happened at
+    all, whether triggered by an alignment bloc or by King-request
+    weight alone -- matching the real source's own independent gating
+    of the two lines.
+
+    **Explicitly deferred, not attempted this phase**: the caller-
+    percentage notice (`REPORTS.PAS:1937-1944`, "Note: Kings owning X%
+    of the world's tax base called for an election.") needs `kingdom_
+    headers` (which Kings requested a vote *this* turn) -- data that's
+    never stored on `GameState` and is discarded right after `process_
+    election_turn()` returns; wiring it needs a materially larger
+    plumbing change (threading `kingdom_headers` through to the report
+    layer), a real, separate, still-open item. The real Pascal `catchup`
     ("this report is being regenerated for an already-passed turn")
     gates this whole block in the source; `ak_engine` has no `catchup`
     concept anywhere, so it's treated as always `False` (every turn
     this project processes is, by construction, a fresh on-time turn),
-    a documented simplification, not a guess.
+    a documented simplification, not a guess. The real `(gamevers>=4 or
+    ...)`/French/Russian branches stay out of scope too, matching the
+    exact same simplification already applied to the alignment-vote-
+    share notice above (Phase 652) -- treated as always-true/English-
+    only, no new gating.
     """
 
     lines: list[str] = []
@@ -12434,11 +12475,19 @@ def describe_election_status_report(state: GameState, kingdom_id: int) -> list[s
 
     alignment = state.kingdoms[kingdom_id].alignment
     bloc_weights = alignment_bloc_vote_weights(state)
+    world_total = sum(kingdom_election_vote_weight(state, kid) for kid in state.kingdoms)
     if alignment in bloc_weights:
-        world_total = sum(kingdom_election_vote_weight(state, kid) for kid in state.kingdoms)
         if world_total > 0:
             percent = round(bloc_weights[alignment] / world_total * 100)
             lines.append(_ALIGNMENT_VOTE_SHARE_TEMPLATE.format(alignment=alignment.value, percent=percent))
+
+    if isinstance(election_outcome, ElectionResult):
+        trigger = election_outcome.alignment_trigger
+        if trigger is not None and world_total > 0:
+            trigger_percent = round(bloc_weights.get(trigger, 0) / world_total * 100)
+            if trigger_percent >= 55:
+                lines.append(_ALIGNMENT_BLOC_TRIGGER_TEMPLATE.format(alignment=trigger.value, percent=trigger_percent))
+        lines.append(_ELECTION_VOTE_HELD_TEMPLATE)
 
     if not lines:
         return []
@@ -14054,7 +14103,7 @@ def compose_letter_report(
     if final_standings_lines:
         _emit_section(final_standings_lines[0], final_standings_lines[1:])
 
-    election_status_lines = describe_election_status_report(state, kingdom_id)
+    election_status_lines = describe_election_status_report(state, kingdom_id, election_outcome)
     if election_status_lines:
         _emit_section(election_status_lines[0], election_status_lines[1:])
 
