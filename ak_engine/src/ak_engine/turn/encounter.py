@@ -267,11 +267,15 @@ directly -- these pure functions just take a `target_is_undead_or_
 anti_holy: bool` flag rather than reaching into `GameState` themselves.
 
 **Not wired into `turn/search_execution.py`'s combat resolution this
-phase either**, for the same reason as Phase 179's own primitives: this
-is the first of an unknown-sized set of Personal-Combat spells the user
+phase**, for the same reason as Phase 179's own primitives: this is
+the first of an unknown-sized set of Personal-Combat spells the user
 is walking through "nelle prossime sessioni" (across future sessions) --
 wiring a real `CAST`-tactic combat engine before more of that set is
 known would mean redesigning it repeatedly as each new spell arrives.
+**Stale as of a later phase**: a real `CAST`-tactic engine was in fact
+built once the full spell set was known -- `holy_symbol_hit_chance()`/
+`roll_holy_symbol_undead_damage()` are both real, wired call sites in
+`turn/challenge_execution.py`/`turn/search_execution.py` today.
 
 **Phase 181 addendum -- Holy Symbol's talent + the level-4 cap on every
 Personal-Combat spell.** Quoted in full: "E' un incantesimo legato al
@@ -350,8 +354,11 @@ this exact same victim effect) doesn't take that flag at all, by
 design -- only `target_is_immune` (Undead or Mechanical) suppresses it.
 
 **Not wired into `turn/search_execution.py`'s combat resolution this
-phase either**, for the same reason as Holy Symbol (Phase 180): more
+phase**, for the same reason as Holy Symbol (Phase 180): more
 Personal-Combat spells are still to come across future sessions.
+**Stale as of a later phase**: `spiritwrack_melee_damage_reduction()`
+is a real, wired call site in `turn/challenge_execution.py`/`turn/
+search_execution.py` today, alongside Holy Symbol.
 
 **Phase 183 addendum -- Charm [CH]'s Personal-Combat effect, tied to
 Ability.PSYCHIC (PS), project-original (user-supplied).** Charm is the
@@ -379,11 +386,17 @@ here at all -- `PERSONAL_COMBAT_SPELL_LEVEL_CAP` (Phase 181) doesn't
 apply to Charm's combat effect, unlike Holy Symbol/Spiritwrack.
 
 **Not wired into `turn/search_execution.py`'s combat resolution this
-phase either**, same reason as every other Personal-Combat spell above
--- and the narration itself ("(eroe o mostro) incanta...") belongs in
+phase**, same reason as every other Personal-Combat spell above -- and
+the narration itself ("(eroe o mostro) incanta...") belongs in
 `report/turn_report.py` alongside `render_flee_failure()` when a real
 CAST-tactic engine exists to call it, not in this module (which never
-renders prose).
+renders prose). **Stale as of a later phase**: both `turn/challenge_
+execution.py` and `turn/search_execution.py` now dispatch `Spell.CHARM`
+directly to a guaranteed `fled=True` outcome ("the caster flees, same
+outcome as a successful `Maneuver.FLEE`"), the exact mechanic this
+constant names -- implemented as an unconditional branch at the real
+call site rather than by referencing `CHARM_FLEE_ALWAYS_SUCCEEDS`
+itself.
 
 **Two further confirmed Charm facts, both about the Action-Cast form,
 documented in `turn/cast_execution.py _execute_charm`'s own docstring
@@ -408,9 +421,14 @@ regardless of the caster's own Psychic level, so
 `roll_psychic_blast_stun_rounds()` is the entire mechanic: one uniform
 roll in `PSYCHIC_BLAST_STUN_ROUNDS_RANGE = (2, 5)`. What a caller does
 with the returned round count (extra Melee swings? a stun status the
-opponent can't act during?) is left to a future tactic-walk engine --
+opponent can't act during?) is left to a future tactic-walk engine,
 same "not wired into `turn/search_execution.py` yet" scoping as every
-other Personal-Combat spell above.
+other Personal-Combat spell above -- **stale as of a later phase**:
+`roll_psychic_blast_stun_rounds()` is a real, wired call site in
+`turn/challenge_execution.py`/`turn/search_execution.py` today,
+crediting the returned round count onto `Combatant.bonus_unanswered_
+attacks` (the same "extra Melee swings" reading this addendum itself
+already anticipated).
 
 **Phase 185 addendum -- Telekinetic Storm [TE], tied to Ability.
 PSYCHIC (PS), project-original (user-supplied).** Quoted in full:
@@ -500,8 +518,8 @@ slays the fallen illusionist. If the illusion loses, the caster
 automatically finishes off the mentally-slain monster and claims the
 treasure."
 
-**The full outcome tree, for reference (not executed by this phase --
-see below for why):**
+**The full outcome tree** (now fully executed by `resolve_mirror_image_
+duel()`, Phase 210 -- see below):
 
 1. Each round, roll disbelief (base % by the *opponent's own*
    intelligence tier, minus `min(15%*IL_level, 60%)`).
@@ -525,24 +543,23 @@ see below for why):**
    - Illusion wins (caster fails) -> the illusion fades, the real
      monster revives, and it slays the caster.
 
-**What this phase actually models**: the two disbelief-chance formulas
+**What this phase itself models**: the two disbelief-chance formulas
 only (`MirrorImageIntelligenceTier`, `MIRROR_IMAGE_DISBELIEF_BASE_
 CHANCE`, `mirror_image_disbelief_chance()`, `resolve_mirror_image_
 disbelief()`, and the Stage-2 `MIRROR_IMAGE_MASTER_DISBELIEF_BASE_
 CHANCE`) -- these are the same "clean, testable primitive" shape every
-other spell in this file already uses. **Not modeled**: the actual
-duel resolution (illusion-vs-opponent, then caster-vs-illusion) and
-the round-by-round state transitions between the three outcome
-branches above. Both duels *could* reuse this module's own existing
-`Combatant`/`resolve_melee_duel()` (the illusion is explicitly "an
-exact stat-copy of the opponent," so a cloned `Combatant` and a normal
-`resolve_melee_duel()` call would resolve it faithfully), but
-orchestrating the actual round-by-round disbelief-then-duel state
-machine is a new mini-engine this phase doesn't attempt to build --
-same "not wired into `turn/search_execution.py` yet" scoping as every
-Personal-Combat spell above, and the same reasoning Phase 179 gave for
-not building a general CAST-tactic engine before more spells were
-known.
+other spell in this file already uses. At the time this addendum was
+written, the actual duel resolution (illusion-vs-opponent, then
+caster-vs-illusion) and the round-by-round state transitions between
+the three outcome branches above were not modeled -- but both duels
+*do* reuse this module's own existing `Combatant`/`resolve_melee_
+duel()` machinery (the illusion is explicitly "an exact stat-copy of
+the opponent," so a cloned `Combatant` and a normal `resolve_melee_
+duel()` call resolve it faithfully), orchestrated by `resolve_mirror_
+image_duel()` (Phase 210, below) -- a real, wired call site in `turn/
+challenge_execution.py`/`turn/search_execution.py` today. **Stale as
+of Phase 210**: this addendum's own "not wired into `turn/search_
+execution.py` yet" framing.
 
 **The "double dissipation" rule** ("if another Mirror-Image spell is
 cast while the illusion is fighting, both illusions will dissipate")
@@ -1254,18 +1271,23 @@ Evil)."
    Building the illusion's own `Combatant` from that hero's stats is
    the same "clone a `Combatant` from a real stat source" pattern this
    module already leaves unbuilt for Gate Demon's own summoned monster
-   (Phase 202 addendum) -- no orchestration engine exists yet to
-   consume either clone.
-4. **The actual duel outcome tree is not modeled**, the same "clean,
-   testable primitives only" boundary as Mirror-Image's own three-stage
-   outcome tree above (disbelief -> duel -> possible Stage-2 duel) --
-   this spell only changes two of Mirror-Image's own numeric inputs
-   (the disbelief reduction and the master-disbelief precondition), it
-   doesn't add a new engine to execute.
+   (Phase 202 addendum) -- at the time this addendum was written, no
+   orchestration engine existed yet to consume either clone. **Stale
+   as of Phase 210**: `resolve_illusory_hero_duel()` (below) builds
+   exactly this clone from `hero`'s own stats and consumes it directly.
+4. **The actual duel outcome tree**, the same "clean, testable
+   primitives only" boundary as Mirror-Image's own three-stage outcome
+   tree above (disbelief -> duel -> possible Stage-2 duel) -- this
+   spell only changes two of Mirror-Image's own numeric inputs (the
+   disbelief reduction and the master-disbelief precondition), so it
+   reuses `resolve_mirror_image_duel()`'s own engine rather than adding
+   a new one -- see `resolve_illusory_hero_duel()` (Phase 210, below).
 
-**Not wired into `turn/search_execution.py`'s combat resolution this
-phase either**, same reason as every other Personal-Combat spell
-above.
+**Wired into `turn/search_execution.py`'s and `turn/challenge_
+execution.py`'s combat resolution as of Phase 210** -- both real,
+production call sites use `resolve_illusory_hero_duel()` directly.
+This addendum's own earlier "not wired... same reason as every other
+Personal-Combat spell above" framing is stale.
 
 **Phase 284 addendum -- the Temper Table's own melee mechanics ("Il
 Temperamento non influisce sul combattimento Melee", closed per the

@@ -31873,6 +31873,32 @@ follow-up request after the original 431-435 plan shipped.
   since nothing previously checked the Crystal against Illusory Terrain
   at all.
 
+- **Phase 774 -- comment-only, 8 stale known-gap claims corrected in
+  `turn/encounter.py`.** A 45th fresh codebase survey found this
+  cluster: the module's own Phase 180/182/183/184 addenda (Holy Symbol,
+  Spiritwrack, Charm, Psychic Blast) and its Phase 187/pre-210 addenda
+  (Mirror-Image Phantasm, Illusory Hero) all still say their own
+  Personal-Combat mechanic is "not wired into `turn/search_
+  execution.py`'s combat resolution" or "not modeled" -- stale since a
+  later phase (Phase 210 for the two duel state machines, an
+  unidentified earlier phase for the four single-formula spells)
+  actually wired each of them into real production call sites in both
+  `turn/challenge_execution.py` and `turn/search_execution.py`,
+  confirmed directly by grep + read for every one: `holy_symbol_hit_
+  chance()`/`roll_holy_symbol_undead_damage()`, `spiritwrack_melee_
+  damage_reduction()`, `roll_psychic_blast_stun_rounds()`, `Spell.CHARM`'s
+  own guaranteed-Flee dispatch, `resolve_mirror_image_duel()`, and
+  `resolve_illusory_hero_duel()` (the latter two are the exact two-stage
+  disbelief-then-duel state machines these addenda originally said
+  needed "a new mini-engine this phase doesn't attempt to build" --
+  that engine was in fact built, Phase 210, and is real production
+  code today). A real, correctly-still-open claim right next to this
+  cluster (Hand of Death's own `HAND_OF_DEATH_BLOCKS_CASTER_OTHER_
+  CASTS`/`_MELEE_ATTACK` flags, and Mirror-Image's own "double
+  dissipation" rule) was checked and confirmed genuinely still
+  unwired, left untouched. No behavior change; full suite verified
+  unchanged (6503) before and after.
+
 ## Setup
 
 ```
