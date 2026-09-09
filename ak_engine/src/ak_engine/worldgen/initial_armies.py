@@ -54,6 +54,29 @@ Sixth phase of the world-generation sub-plan. Source:
 - ``INITIAL_ARMY_QUALITY``: reuses this project's own pre-existing
   ``turn.combat.Quality.AVERAGE`` (value ``2``) -- confirms the
   source's own "Average (2)" exactly, zero new enum needed.
+- ``fleet_second_slot_chance()``/``fleet_second_slot_gate()`` (Phase
+  776, backlog item #22): ``Desktop/AKGEN 0xEB8A.md`` reveals a second
+  mechanism inside the same tax routine's own tail (``0xEB8A`` calls
+  ``0B57:9CD8``, raw ``0xF223-0xF243``, the real initializer of a
+  province's two recruit slots, ``pat[x,y,0..1]``) -- once ``second_
+  slot_gate()`` above has already decided a second unit exists at all,
+  a real Real48 table decides whether that unit specifically becomes a
+  Fleet (``ArmyType.FLEET``), indexed by the *same* ``effective_sea_
+  neighbors`` value ``worldgen/province_tax.py compute_edge_score()``
+  already computes (called ``edge_score`` there) -- "È essenziale
+  passare alla seconda routine lo stesso `effective_sea_neighbors` già
+  calcolato, senza ricontare i vicini o consumare un nuovo `Random` di
+  bordo," so this function takes that same int directly, no new
+  computation: ``{0: 0%, 1: 0%, 2: 50%, 3: 70%, 4: 100%, 5: 50%, 6:
+  70%}``. **Deliberately shipped as a standalone primitive, not wired
+  into ``generate_new_game.py``'s own pipeline** -- the exact same
+  status ``second_slot_gate()``/``ordinary_humanoid_budget()``/
+  ``draw_r4()`` immediately above already have, for the identical
+  reason: the land-side ``humanoid_first_slot`` table below remains
+  genuinely unsourced, so no ordinary-humanoid-province recruit-slot
+  pipeline exists yet for this to plug into either. See ``worldgen/
+  province_tax.py``'s own Phase 776 addendum for the sibling half of
+  this same finding.
 
 **Deliberately NOT implemented here**, each a genuine, separately
 documented gap:
@@ -130,6 +153,32 @@ def second_slot_gate(tax: int, rng: PascalRandom) -> bool:
     """"condition: tax > (IRand AND 7)"."""
 
     return tax > (rng.irand() & 7)
+
+
+# Phase 776 (backlog item #22): `Desktop/AKGEN 0xEB8A.md`'s own real
+# Real48 table for placing `ArmyType.FLEET` in a province's second
+# recruit slot -- see module docstring's own Phase 776 addendum for
+# the full sourcing, RNG-reuse note, and deliberately-unwired scope.
+FLEET_SECOND_SLOT_CHANCE: dict[int, float] = {0: 0.0, 1: 0.0, 2: 0.5, 3: 0.7, 4: 1.0, 5: 0.5, 6: 0.7}
+
+
+def fleet_second_slot_chance(effective_sea_neighbors: int) -> float:
+    """The real table above, keyed by the same ``effective_sea_neighbors``
+    (``edge_score``) value ``worldgen/province_tax.py compute_edge_
+    score()`` already computes -- reuse it, don't recompute it. Defaults
+    to ``0.0`` for any value outside the confirmed real ``0..6`` domain.
+    """
+
+    return FLEET_SECOND_SLOT_CHANCE.get(effective_sea_neighbors, 0.0)
+
+
+def fleet_second_slot_gate(effective_sea_neighbors: int, rng: PascalRandom) -> bool:
+    """Whether an already-gated second recruit slot (``second_slot_
+    gate()`` above) specifically becomes a Fleet, per ``fleet_second_
+    slot_chance()``.
+    """
+
+    return rng.random() < fleet_second_slot_chance(effective_sea_neighbors)
 
 
 # -- Initial army budgets ---------------------------------------------------

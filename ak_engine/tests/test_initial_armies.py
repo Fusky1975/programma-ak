@@ -6,12 +6,15 @@ from ak_engine.turn.combat import Quality
 from ak_engine.worldgen.initial_armies import (
     BEST_ATYPE,
     COMMANDER_NONE,
+    FLEET_SECOND_SLOT_CHANCE,
     INITIAL_ARMY_QUALITY,
     KING_HOME_BUDGET,
     MAX_ARMIES_PER_PROVINCE_PASS,
     NATIVE_ARMY_TYPE,
     build_initial_armies,
     draw_r4,
+    fleet_second_slot_chance,
+    fleet_second_slot_gate,
     flying_or_special_budget,
     home_first_slot,
     ordinary_humanoid_budget,
@@ -75,6 +78,30 @@ def test_second_slot_gate_probability_caps_at_tax_8():
     assert second_slot_gate_probability(8) == 1.0
     assert second_slot_gate_probability(20) == 1.0
     assert second_slot_gate_probability(0) == 0.0
+
+
+def test_fleet_second_slot_chance_matches_the_real_table():
+    assert fleet_second_slot_chance(0) == 0.0
+    assert fleet_second_slot_chance(1) == 0.0
+    assert fleet_second_slot_chance(2) == 0.5
+    assert fleet_second_slot_chance(3) == 0.7
+    assert fleet_second_slot_chance(4) == 1.0
+    assert fleet_second_slot_chance(5) == 0.5
+    assert fleet_second_slot_chance(6) == 0.7
+
+
+def test_fleet_second_slot_chance_defaults_to_zero_outside_the_real_domain():
+    assert fleet_second_slot_chance(-1) == 0.0
+    assert fleet_second_slot_chance(7) == 0.0
+
+
+def test_fleet_second_slot_gate_matches_the_hand_derived_probability():
+    rng = PascalRandom(seed=4)
+    n = 100_000
+    for effective_sea_neighbors in FLEET_SECOND_SLOT_CHANCE:
+        successes = sum(1 for _ in range(n) if fleet_second_slot_gate(effective_sea_neighbors, rng))
+        expected = fleet_second_slot_chance(effective_sea_neighbors)
+        assert abs(successes / n - expected) < 0.01
 
 
 def test_draw_r4_stays_within_1_to_4():

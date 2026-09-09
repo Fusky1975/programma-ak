@@ -100,17 +100,22 @@ documented gap:
   this is a human game-master UI action during map setup, not part of
   automatic generation; this project has no interactive placement
   step to hang it on.
-- Recruit-slot ("`pat`") seeding for ordinary Sea provinces: ``Desktop/
-  AKGEN 0xEB8A.md`` reveals that the same tax routine also calls
-  ``0B57:9CD8`` (with the already-computed ``effective_sea_neighbors``)
-  to seed the province's own two recruit slots, including a real
-  probability table (0%/0%/50%/70%/100%/50%/70% for ``effective_sea_
-  neighbors=0..6``) for placing a Fleet in the second slot. This is a
-  genuinely separate, larger mechanism -- ``worldgen/initial_armies.py``
-  already flags its own land-side sibling gap (the terrain-weighted
-  infantry table for the *first* slot) as separately unsourced/
-  unbuildable; building only the Sea half here would leave an
-  inconsistent, half-finished pipeline. Not attempted this phase.
+- Recruit-slot ("`pat`") seeding for ordinary Sea provinces:
+  **partially closed, Phase 776**. ``Desktop/AKGEN 0xEB8A.md`` reveals
+  that the same tax routine also calls ``0B57:9CD8`` (with the already-
+  computed ``effective_sea_neighbors``) to seed the province's own two
+  recruit slots, including a real probability table (0%/0%/50%/70%/
+  100%/50%/70% for ``effective_sea_neighbors=0..6``) for placing a
+  Fleet in the second slot -- now a real, tested primitive,
+  ``worldgen/initial_armies.py fleet_second_slot_chance()``/``_gate()``,
+  reusing the exact same ``effective_sea_neighbors``/``edge_score``
+  value ``compute_edge_score()`` above already computes. **The land-
+  side sibling gap remains exactly as open as before**:
+  ``initial_armies.py``'s own "terrain-weighted infantry" first-slot
+  table is still unsourced/unbuildable, so no full recruit-slot
+  pipeline exists yet for either half to plug into -- the user
+  confirmed directly (2026-09-09) to ship the Sea-side primitive alone
+  rather than wait for the missing land-side table.
 
 The special-race tax recompute (Phase 355's own note that special-race
 placement would need to "recompute the accepted province tax") is

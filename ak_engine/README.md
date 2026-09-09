@@ -31922,6 +31922,36 @@ follow-up request after the original 431-435 plan shipped.
   referenced and updated. No behavior change; full suite verified
   unchanged (6503) before and after.
 
+- **Phase 776 -- backlog item #22, Fleet-in-second-recruit-slot
+  probability (Sea half only).** User-requested directly, picking this
+  item from `project_genuinely_blocked_backlog_2026_08_29.md` and
+  explicitly choosing to ship the Sea-side primitive alone rather than
+  wait for the still-missing land-side table. `Desktop/AKGEN 0xEB8A.md`
+  (already the source for Phase 755's `sea_race_tax_bonus()`/
+  `island_tax()`) reveals a real second mechanism in the same tax
+  routine's own tail: after computing a province's tax, `0xEB8A` calls
+  `0B57:9CD8`, the real initializer of a province's two recruit slots,
+  passing the *same*, already-computed `effective_sea_neighbors` value
+  ("È essenziale passare alla seconda routine lo stesso `effective_sea_
+  neighbors` già calcolato... senza consumare un nuovo `Random`"). For
+  an ordinary humanoid province, once `second_slot_gate()` (Phase 358)
+  has already decided a second recruit unit exists at all, a real
+  Real48 table decides whether that unit specifically becomes a Fleet:
+  `{0: 0%, 1: 0%, 2: 50%, 3: 70%, 4: 100%, 5: 50%, 6: 70%}`, indexed by
+  `effective_sea_neighbors`. New `worldgen/initial_armies.py
+  fleet_second_slot_chance()`/`fleet_second_slot_gate()`, reusing the
+  exact same `effective_sea_neighbors`/`edge_score` value `worldgen/
+  province_tax.py compute_edge_score()` already computes -- no new
+  computation, no separate roll for the neighbor count itself. Shipped
+  as a standalone, tested primitive, deliberately not wired into
+  `generate_new_game.py`'s own pipeline -- the exact same status
+  `second_slot_gate()`/`ordinary_humanoid_budget()`/`draw_r4()`
+  immediately above it already have, since the land-side "terrain-
+  weighted infantry" first-slot table remains genuinely unsourced, so
+  no ordinary-humanoid-province recruit-slot pipeline exists yet for
+  either half to plug into. Test count: 6503 -> 6506 (net +3). Full
+  suite verified green (unchanged, 6503) before touching a single test.
+
 ## Setup
 
 ```
