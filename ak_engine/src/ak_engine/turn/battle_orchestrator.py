@@ -2541,22 +2541,12 @@ def fight_battle(
         unit.source_id: unit.led_by_insufficient_druid for unit in (*attacker_units, *defender_units)
     }
 
-    # Tactical Wargames Mastery (Advanced Ability, Phase 513): see
-    # turn/aftermath.py roll_quality_change()'s own Phase 513 addendum --
-    # this side's own army's commanding leader (not necessarily the
-    # side's Supreme Commander, since the ability's own description
-    # names no such restriction) holds the ability. Resolved once here,
-    # the same per-army dict shape as led_by_insufficient_druid_by_
-    # army_id above, so every quality-change call site below can read it
-    # without a second state.leaders lookup.
-    wargames_mastery_by_army_id = {
-        army.army_id: (
-            army.commanded_by is not None
-            and (leader := state.leaders.get(army.commanded_by)) is not None
-            and AdvancedAbility.TACTICAL_WARGAMES_MASTERY in leader.advanced_abilities
-        )
-        for army in (*attacker_armies, *defender_armies)
-    }
+    # Phase 770: `wargames_mastery_by_army_id` (Phase 513) removed from
+    # here -- AdvancedAbility.TACTICAL_WARGAMES_MASTERY was mis-wired to
+    # this post-battle quality-change roll; the ability's own real text
+    # ("when Practicing Tactics (or Naval)") belongs to `turn/practice_
+    # execution.py`'s own quality-training mechanic instead. See `turn/
+    # aftermath.py roll_quality_change()`'s own Phase 770 addendum.
 
     # Phase 371: real, confirmed per-column direct destruction (turn/
     # combat.py direct_destruction_probability, Phase 347/348) -- see
@@ -2602,12 +2592,11 @@ def fight_battle(
         led_by_insufficient_druid = led_by_insufficient_druid_by_army_id.get(army.army_id, False)
         formation_divisor = formation_divisor_by_army_id.get(army.army_id, FORMATION_DIVISOR["front"])
         score = score_by_army_id.get(army.army_id, 0)
-        wargames_mastery = wargames_mastery_by_army_id.get(army.army_id, False)
         if battle_result.winner == "attacker":
             old_quality = army.quality
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid,
-                formation_divisor=formation_divisor, score=score, wargames_mastery=wargames_mastery,
+                formation_divisor=formation_divisor, score=score,
             )
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
         elif attacker_clean_swept and _whale_forced_retreat_applies(army, terrain):
@@ -2646,7 +2635,7 @@ def fight_battle(
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=False, retreated=False,
                 led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
-                score=score, wargames_mastery=wargames_mastery,
+                score=score,
             )
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
 
@@ -2656,12 +2645,11 @@ def fight_battle(
         led_by_insufficient_druid = led_by_insufficient_druid_by_army_id.get(army.army_id, False)
         formation_divisor = formation_divisor_by_army_id.get(army.army_id, FORMATION_DIVISOR["front"])
         score = score_by_army_id.get(army.army_id, 0)
-        wargames_mastery = wargames_mastery_by_army_id.get(army.army_id, False)
         if battle_result.winner == "defender":
             old_quality = army.quality
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=True, led_by_insufficient_druid=led_by_insufficient_druid,
-                formation_divisor=formation_divisor, score=score, wargames_mastery=wargames_mastery,
+                formation_divisor=formation_divisor, score=score,
             )
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
         elif defender_clean_swept and _whale_forced_retreat_applies(army, terrain):
@@ -2697,7 +2685,7 @@ def fight_battle(
             army.quality = roll_quality_change(
                 army.quality, rng, is_winner=False, retreated=False,
                 led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
-                score=score, wargames_mastery=wargames_mastery,
+                score=score,
             )
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
 

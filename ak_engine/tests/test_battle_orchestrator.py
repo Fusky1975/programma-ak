@@ -4216,7 +4216,6 @@ def test_fight_battle_winning_army_led_by_insufficient_druid_passes_the_penalty_
     # docstring), threaded alongside formation_divisor now.
     mock_roll.assert_called_once_with(
         Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True, formation_divisor=1, score=1,
-        wargames_mastery=False,
     )
 
 

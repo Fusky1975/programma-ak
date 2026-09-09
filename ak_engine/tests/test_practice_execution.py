@@ -26,6 +26,7 @@ from ak_engine.turn.practice_execution import (
     SUPER_SAGE_ABILITIES,
     SUPER_SAGE_UNIVERSITY_BONUS,
     TACTICAL_TRAINING_CHANCE,
+    TACTICAL_WARGAMES_MASTERY_MULTIPLIER,
     PracticeExecutionResult,
     _improved_training_multiplier,
     _maybe_grant_advanced_ability,
@@ -35,6 +36,7 @@ from ak_engine.turn.practice_execution import (
     _roll_sage_device_discovery,
     _select_discovery_to_grant,
     _teacher_aptitude_bonus,
+    _wargames_mastery_multiplier,
     execute_practice,
     execute_practice_group,
     execute_practice_tactical,
@@ -693,6 +695,110 @@ def test_execute_practice_tactical_group_requires_at_least_two_leaders_via_execu
 
     with pytest.raises(ValueError):
         execute_practice_group(state, [1], Ability.TACTICAL, rng=ScriptedRandom([]))
+
+
+# -- Phase 770: AdvancedAbility.TACTICAL_WARGAMES_MASTERY, corrected from
+# turn/aftermath.py's own post-battle mechanic to this one -- see this
+# module's own Phase 770 addendum for the numeric proof. -----------------
+
+
+def test_wargames_mastery_multiplier_no_ability_held():
+    state = _state_with_leader(skills=None)
+    assert _wargames_mastery_multiplier(state, leader_id=1) == 1.0
+
+
+def test_wargames_mastery_multiplier_ability_held():
+    state = _state_with_leader(skills=None)
+    state.leaders[1].advanced_abilities.add(AdvancedAbility.TACTICAL_WARGAMES_MASTERY)
+    assert _wargames_mastery_multiplier(state, leader_id=1) == TACTICAL_WARGAMES_MASTERY_MULTIPLIER
+
+
+def test_wargames_mastery_multiplier_unknown_leader_id():
+    state = _state_with_leader(skills=None)
+    assert _wargames_mastery_multiplier(state, leader_id=999) == 1.0
+
+
+def _away_army(army_id: int, quality: Quality, *, commanded_by: int | None = 1) -> ArmyState:
+    # Deliberately NOT at LOCATION (the fixture Kingdom's own home
+    # province) -- turn/army_quality.py compute_army_modified_quality()
+    # gives a real "at home" quality bonus that can push a VETERAN army
+    # up to CRACK, accidentally making it a real PRAETOR office
+    # candidate and contaminating _improved_training_multiplier() with
+    # an unintended 2.0 in these Wargames-Mastery-only isolation tests
+    # -- the same class of test contamination Phase 633 already
+    # documented for an unrelated mechanic. HexCoord(9, 9) mirrors this
+    # same file's own existing "away from home" convention (line ~1337).
+    return ArmyState(army_id, 1, ArmyType.BOWMEN, quality, HexCoord(9, 9), commanded_by=commanded_by)
+
+
+def test_execute_practice_tactical_wargames_mastery_doubles_the_sourced_chance():
+    # The ability's own worked example, exactly: "an Average unit now
+    # has a 10% chance to improve" -- 0.05 doubled. 0.06 fails the base
+    # chance but succeeds the doubled one, proving the multiplier
+    # actually reaches rng.random(), not just computed and discarded.
+    state = _state_with_leader(skills=None)
+    state.leaders[1].advanced_abilities.add(AdvancedAbility.TACTICAL_WARGAMES_MASTERY)
+    state.add_army(_away_army(1, Quality.AVERAGE))
+    state.add_army(_away_army(2, Quality.VETERAN))
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.06]))
+
+    assert trained == (1,)
+    assert state.armies[1].quality is Quality.VETERAN
+
+
+def test_execute_practice_tactical_without_wargames_mastery_stays_at_the_base_chance():
+    state = _state_with_leader(skills=None)
+    state.add_army(_away_army(1, Quality.AVERAGE))
+    state.add_army(_away_army(2, Quality.VETERAN))
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.06]))
+
+    assert trained == ()
+    assert state.armies[1].quality is Quality.AVERAGE
+
+
+def test_execute_practice_tactical_group_wargames_mastery_is_resolved_per_practicing_leader():
+    # Leader 1 holds the ability, leader 2 doesn't -- only leader 1's own
+    # Average army gets the doubled chance; leader 2's identical army,
+    # pooled alongside it, stays at the base (unmastered) chance. A
+    # shared Veteran army (leader 1's own) inspires both Average armies
+    # without itself being eligible to roll (no army above Veteran in
+    # the pool), so it never consumes a scripted value.
+    state = _state_with_leaders(1, 2)
+    state.leaders[1].advanced_abilities.add(AdvancedAbility.TACTICAL_WARGAMES_MASTERY)
+    state.add_army(_away_army(10, Quality.AVERAGE, commanded_by=1))
+    state.add_army(_away_army(11, Quality.VETERAN, commanded_by=1))
+    state.add_army(_away_army(20, Quality.AVERAGE, commanded_by=2))
+
+    trained_by_leader = execute_practice_tactical_group(state, [1, 2], rng=ScriptedRandom([0.06, 0.06]))
+
+    assert trained_by_leader[1] == (10,)  # 0.06 < 0.10 (doubled) -- trained
+    assert trained_by_leader[2] == ()  # 0.06 >= 0.05 (base) -- not trained
+    assert state.armies[10].quality is Quality.VETERAN
+    assert state.armies[11].quality is Quality.VETERAN  # never rolled, no inspiring army above it
+    assert state.armies[20].quality is Quality.AVERAGE
+
+
+def test_execute_practice_tactical_wargames_mastery_composes_with_improved_training():
+    # Both multipliers on the same army: GREEN's own base chance (0.25)
+    # * Improved Training's AIR_FORCE-matching bonus (2.0) * Wargames
+    # Mastery (2.0) = 1.0 exactly -- a real, single combined cap, not
+    # two independent min(1.0, ...) calls that could each stay below 1.
+    # A roll of 0.999 would fail either bonus alone but succeeds once
+    # both are genuinely multiplied together.
+    state = _state_with_leader(skills=_max_druid_skills())
+    state.leaders[1].advanced_abilities.add(AdvancedAbility.TACTICAL_WARGAMES_MASTERY)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    holder = ArmyState(900, 1, ArmyType.DRAGON_WING, Quality.ELITE, LOCATION, commanded_by=1)
+    trainee = ArmyState(1, 1, ArmyType.EAGLE_WING, Quality.GREEN, LOCATION, commanded_by=1)
+    state.add_army(holder)
+    state.add_army(trainee)
+
+    trained = execute_practice_tactical(state, leader_id=1, rng=ScriptedRandom([0.999]))
+
+    assert trained == (1,)
+    assert state.armies[1].quality is Quality.AVERAGE
 
 
 # -- Phase 644: Practice Naval reaches the identical [6.1] mechanic --

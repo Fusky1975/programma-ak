@@ -154,7 +154,6 @@ def roll_quality_change(
     led_by_insufficient_druid: bool = False,
     formation_divisor: int = FORMATION_DIVISOR["front"],
     score: int = 0,
-    wargames_mastery: bool = False,
 ) -> Quality:
     """Roll this unit's post-battle quality change.
 
@@ -173,30 +172,28 @@ def roll_quality_change(
     project a per-unit merit score to compute (see this module's own
     docstring).
 
-    ``wargames_mastery`` (Advanced Ability, Phase 513): quoted directly
-    from ``models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION
-    [TACTICAL_WARGAMES_MASTERY]``: "The chance for a unit to increase in
-    quality when Practicing Tactics (or Naval) is increased by 100%
-    (example: an Average unit now has a 10% chance to improve per
-    phase)." -- read as this same post-battle improve-chance roll (the
-    rulebook's own only "chance for a unit to increase in quality"
-    mechanic this project models), doubled, capped at 1.0 (a
-    probability can't exceed certainty). Applied wherever ``improve_
-    chance`` is used below -- both the winner branch and the "didn't
-    retreat" mixed branch -- since the ability's own description names
-    no winner/loser distinction, unlike ``led_by_insufficient_druid``'s
-    own rulebook-specific framing. The caller (``turn/
-    battle_orchestrator.py``) resolves whether this unit's own commander
-    holds the ability, the same per-army convention as ``adapt_tactics_
-    to_terrain``. Defaults to ``False`` for every pre-Phase-513 caller.
+    **Phase 770 -- `wargames_mastery` removed, corrected elsewhere.**
+    Phase 513 added a `wargames_mastery` parameter here, doubling this
+    function's own improve chance for `AdvancedAbility.TACTICAL_
+    WARGAMES_MASTERY`, reasoning this was "the rulebook's own only
+    'chance for a unit to increase in quality' mechanic this project
+    models" -- already false when written. The ability's own real text
+    says "when **Practicing** Tactics (or Naval)," not "after a
+    battle," and its own worked example ("an Average unit now has a
+    10% chance") only matches doubling `turn/practice_execution.py
+    TACTICAL_TRAINING_CHANCE[Quality.AVERAGE] = 0.05` (-> 0.10) --
+    doubling *this* function's own post-battle Average chance (30%)
+    gives 60%, no match at all. The bonus now lives correctly in
+    `turn/practice_execution.py _wargames_mastery_multiplier()`,
+    consumed by `execute_practice_tactical()`/`_group()`. No source
+    supports doubling this post-battle mechanic at all -- removed
+    outright, not kept as a redundant/unsourced extra.
     """
 
     if is_winner:
         chance = improve_chance(quality, formation_divisor, score=score)
         if led_by_insufficient_druid:
             chance *= DRUID_LED_IMPROVE_MULTIPLIER.get(quality, 1.0)
-        if wargames_mastery:
-            chance = min(1.0, chance * 2.0)
         return _step(quality, 1) if rng.random() < chance else quality
 
     if retreated:
@@ -204,8 +201,6 @@ def roll_quality_change(
 
     decline = decline_chance(quality, formation_divisor)
     improve = improve_chance(quality, formation_divisor, score=score)
-    if wargames_mastery:
-        improve = min(1.0, improve * 2.0)
     roll = rng.random()
     if roll < decline / 2:
         return _step(quality, -1)

@@ -31710,6 +31710,54 @@ follow-up request after the original 431-435 plan shipped.
   their own exact-output assertions updated for the new 2nd sentence
   (a real, intended behavior change, not a regression).
 
+- **Phase 770 -- `AdvancedAbility.TACTICAL_WARGAMES_MASTERY` was wired
+  to the wrong "chance to increase in quality" mechanic.** A 41st fresh
+  codebase survey found a real, numerically-provable mis-wiring from
+  Phase 513 -- not a stale docstring, a genuine oversight from the
+  start. The ability's own real text: "The chance for a unit to
+  increase in quality when **Practicing** Tactics (or Naval) is
+  increased by 100% (example: an Average unit now has a 10% chance to
+  improve per phase)." Phase 513 wired it to `turn/aftermath.py roll_
+  quality_change()`'s own **post-battle** improve-chance roll (rulebook
+  [7.5]), reasoning this was "the only 'chance for a unit to increase
+  in quality' mechanic this project models" -- already false when
+  written. For a front-line Average unit, [7.5]'s own real formula
+  (Phase 350) gives 30%, doubled = 60%, no match to the ability's own
+  example at all. But `turn/practice_execution.py TACTICAL_TRAINING_
+  CHANCE[Quality.AVERAGE] = 0.05` (RULES.AK [6.1], Phase 167/263, the
+  mechanic *actually* triggered by Practicing Tactics or Naval),
+  doubled, gives exactly 10% -- an exact match. Removed `wargames_
+  mastery` entirely from `roll_quality_change()` (no source supports
+  doubling the post-battle mechanic at all) and its 4 call sites/dict
+  computation in `turn/battle_orchestrator.py fight_battle()`. New
+  `turn/practice_execution.py _wargames_mastery_multiplier()`, resolved
+  per practicing leader (a personal ability, not Kingdom- or army-
+  wide), composed multiplicatively with `_improved_training_
+  multiplier()`'s own per-army title bonus under one combined cap in
+  both `execute_practice_tactical()` (call-wide) and `execute_practice_
+  tactical_group()` (per-army, keyed by that army's own *practicing*
+  leader via `armies_by_leader`, not a single pool-wide flag -- one
+  co-practicer's own Mastery shouldn't boost another's armies). No new
+  parameter needed to thread through `execute_practice()`/`_group()`,
+  `plan_dispatch.py`, or `turn_processor.py` at all -- both tactical
+  functions already receive `state`+`leader_id(s)` directly and resolve
+  the ability internally, the same self-contained pattern `_improved_
+  training_multiplier()` (Phase 641) already established. Test count:
+  6485 -> 6489 (net +4: 3 tests deleted from `test_aftermath.py`, 7
+  added to `test_practice_execution.py`). Full suite verified green
+  (unchanged, 6485) before touching a single test; a real fixture-
+  contamination bug was found and fixed while writing the new
+  isolation tests, not assumed away: placing test armies at the
+  fixture Kingdom's own home province triggers a real "at home"
+  quality bonus (`turn/army_quality.py compute_army_modified_quality()`)
+  that can push a Veteran army up to Crack, accidentally making it a
+  real PRAETOR office candidate and contaminating `_improved_training_
+  multiplier()` with an unintended extra 2x -- the same class of test
+  contamination Phase 633 already documented for an unrelated
+  mechanic. Fixed by placing the new isolation tests' own armies away
+  from home (`HexCoord(9, 9)`, this test file's own existing
+  convention for exactly this situation).
+
 ## Setup
 
 ```

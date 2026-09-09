@@ -58,43 +58,6 @@ def test_druid_led_green_unit_has_reduced_improve_chance():
     assert druid_led == Quality.GREEN
 
 
-def test_wargames_mastery_doubles_the_winner_improve_chance():
-    # Phase 513: improve_chance(AVERAGE, front) = 60 >> max(0,2+1-2)
-    # = 60 >> 1 = 0.30; doubled by Tactical Wargames Mastery -> 0.60. A
-    # roll of 0.5 clears the doubled chance but not the unmodified one.
-    rng = random.Random()
-    rng.random = lambda: 0.5
-
-    unmodified = roll_quality_change(Quality.AVERAGE, rng, is_winner=True)
-    mastered = roll_quality_change(Quality.AVERAGE, rng, is_winner=True, wargames_mastery=True)
-
-    assert unmodified == Quality.AVERAGE
-    assert mastered == Quality.VETERAN
-
-
-def test_wargames_mastery_caps_the_doubled_chance_at_certainty():
-    # GREEN improve_chance(front) = 0.60 -- doubled would exceed 1.0
-    # without the min(1.0, ...) cap; a roll of 0.99 must still succeed.
-    rng = random.Random()
-    rng.random = lambda: 0.99
-    assert roll_quality_change(Quality.GREEN, rng, is_winner=True, wargames_mastery=True) == Quality.AVERAGE
-
-
-def test_wargames_mastery_applies_in_the_mixed_didnt_retreat_branch():
-    # decline(AVERAGE,front) = improve(AVERAGE,front) = 0.30 unmodified --
-    # bucket boundary at decline/2 + improve/2 = 0.30, vs decline/2 +
-    # (doubled improve)/2 = 0.45 once mastered. A roll of 0.35 lands in
-    # the "no change" gap unmastered but the improve bucket mastered.
-    rng = random.Random()
-    rng.random = lambda: 0.35
-
-    unmodified = roll_quality_change(Quality.AVERAGE, rng, is_winner=False, retreated=False)
-    mastered = roll_quality_change(Quality.AVERAGE, rng, is_winner=False, retreated=False, wargames_mastery=True)
-
-    assert unmodified == Quality.AVERAGE
-    assert mastered == Quality.VETERAN
-
-
 def test_loser_that_retreated_may_decline():
     rng = random.Random()
     rng.random = lambda: 0.0

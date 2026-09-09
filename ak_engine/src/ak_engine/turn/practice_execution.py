@@ -328,6 +328,15 @@ real birth province (``LeaderState.birth_x``/``birth_y``, Phase 505) --
 see that function's own Phase 699 addendum. Corrects an earlier
 survey's own "needs a new LeaderState field" verdict: the birth
 coordinate already existed, just never connected to this ability.
+
+**Phase 770 (`AdvancedAbility.TACTICAL_WARGAMES_MASTERY`)**: corrects a
+real mis-wiring from Phase 513, which doubled `turn/aftermath.py
+roll_quality_change()`'s own *post-battle* improve chance instead --
+the ability's own text says "when Practicing Tactics (or Naval)," and
+its own worked example (an Average unit's chance rising to 10%) only
+matches doubling `TACTICAL_TRAINING_CHANCE[Quality.AVERAGE] = 0.05`
+here, not that other mechanic's own 30% base. See `_wargames_mastery_
+multiplier()`'s own citation for the full numeric proof.
 """
 
 from __future__ import annotations
@@ -401,6 +410,41 @@ TACTICAL_TRAINING_CHANCE: dict[Quality, float] = {
     Quality.VETERAN: 0.01,
     Quality.CRACK: 0.002,
 }
+
+# Phase 770 -- `AdvancedAbility.TACTICAL_WARGAMES_MASTERY`'s own real
+# text (`models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION`):
+# "The chance for a unit to increase in quality when Practicing Tactics
+# (or Naval) is increased by 100% (example: an Average unit now has a
+# 10% chance to improve per phase)." Phase 513 mis-wired this to `turn/
+# aftermath.py roll_quality_change()`'s own *post-battle* improve
+# chance instead -- for a front-line Average unit that mechanic gives
+# 30% (Phase 350's own `60 >> max(0,quality+formation_divisor-2)`
+# formula), doubled = 60%, no match to the ability's own worked
+# example. Doubling *this* module's own `TACTICAL_TRAINING_CHANCE[
+# Quality.AVERAGE] = 0.05` gives exactly 0.10 -- an exact match, and
+# this mechanic really is triggered by Practicing Tactics or Naval
+# (`_ARMY_TRAINING_ABILITIES` below), the literal phrase in the
+# ability's own text. See `turn/aftermath.py roll_quality_change()`'s
+# own Phase 770 addendum for the removal on that side.
+TACTICAL_WARGAMES_MASTERY_MULTIPLIER = 2.0
+
+
+def _wargames_mastery_multiplier(state: GameState, leader_id: int) -> float:
+    """`TACTICAL_WARGAMES_MASTERY_MULTIPLIER` if the practicing leader
+    (``leader_id`` -- the one who issued this Practice order, not an
+    army's own commander) holds ``AdvancedAbility.TACTICAL_WARGAMES_
+    MASTERY``, else ``1.0``. A personal ability ("The chance... is
+    increased"), not a Kingdom- or army-wide one, so this is resolved
+    per practicing leader, composed multiplicatively with ``_improved_
+    training_multiplier()``'s own per-army title bonus at each call
+    site below (a single combined ``min(1.0, ...)`` cap).
+    """
+
+    leader = state.leaders.get(leader_id)
+    if leader is not None and AdvancedAbility.TACTICAL_WARGAMES_MASTERY in leader.advanced_abilities:
+        return TACTICAL_WARGAMES_MASTERY_MULTIPLIER
+    return 1.0
+
 
 # Phase 644 -- [6.1]'s own text: "può far pratica in Tattica o Navale
 # (entrambi i metodi avranno lo stesso effetto su tutti i tipi di
@@ -998,12 +1042,18 @@ def execute_practice_tactical(state: GameState, leader_id: int, rng: random.Rand
     tier -- see module docstring for the "train and inspire" condition
     and why the other three tier transitions aren't attempted. Returns
     the ids of every army that actually trained up.
+
+    Phase 770: ``leader_id``'s own ``AdvancedAbility.TACTICAL_WARGAMES_
+    MASTERY`` doubles every army's own chance this call (``_wargames_
+    mastery_multiplier()``), composed with ``_improved_training_
+    multiplier()``'s own per-army title bonus under one combined cap.
     """
 
     rng = rng if rng is not None else random.Random()
 
     armies = state.armies_commanded_by(leader_id)
     original_qualities = {army.army_id: army.quality for army in armies}
+    wargames_mastery_multiplier = _wargames_mastery_multiplier(state, leader_id)
 
     trained_army_ids: list[int] = []
     for army in armies:
@@ -1015,7 +1065,7 @@ def execute_practice_tactical(state: GameState, leader_id: int, rng: random.Rand
         )
         if not has_higher_quality_army:
             continue
-        chance = min(1.0, chance * _improved_training_multiplier(state, army, armies))
+        chance = min(1.0, chance * _improved_training_multiplier(state, army, armies) * wargames_mastery_multiplier)
         if rng.random() < chance:
             army.quality = Quality(army.quality + 1)
             trained_army_ids.append(army.army_id)
@@ -1043,6 +1093,12 @@ def execute_practice_tactical_group(
     trained_army_ids`` keeps the same "my own commanded armies that
     trained" shape the solo case already reports -- callers never see a
     pooled list mixing another leader's army ids into their own result.
+
+    Phase 770: each army's own chance is doubled only if *that army's
+    own practicing leader* (via ``armies_by_leader``, not the wider
+    pool) holds ``AdvancedAbility.TACTICAL_WARGAMES_MASTERY`` -- a
+    personal ability, not a pool-wide one, so one co-practicer's own
+    Mastery doesn't boost another co-practicer's armies.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -1050,6 +1106,12 @@ def execute_practice_tactical_group(
     armies_by_leader = {leader_id: state.armies_commanded_by(leader_id) for leader_id in leader_ids}
     pooled_armies = [army for armies in armies_by_leader.values() for army in armies]
     original_qualities = {army.army_id: army.quality for army in pooled_armies}
+    practicing_leader_id_by_army_id = {
+        army.army_id: leader_id for leader_id, armies in armies_by_leader.items() for army in armies
+    }
+    wargames_mastery_multiplier_by_leader_id = {
+        leader_id: _wargames_mastery_multiplier(state, leader_id) for leader_id in leader_ids
+    }
 
     trained_army_ids: set[int] = set()
     for army in pooled_armies:
@@ -1061,7 +1123,8 @@ def execute_practice_tactical_group(
         )
         if not has_higher_quality_army:
             continue
-        chance = min(1.0, chance * _improved_training_multiplier(state, army, pooled_armies))
+        wargames_mastery_multiplier = wargames_mastery_multiplier_by_leader_id[practicing_leader_id_by_army_id[army.army_id]]
+        chance = min(1.0, chance * _improved_training_multiplier(state, army, pooled_armies) * wargames_mastery_multiplier)
         if rng.random() < chance:
             army.quality = Quality(army.quality + 1)
             trained_army_ids.add(army.army_id)
