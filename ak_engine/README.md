@@ -32120,6 +32120,74 @@ follow-up request after the original 431-435 plan shipped.
   every fix confirmed a provable no-op individually, incrementally, not
   just at the end.
 
+- **Phase 781** -- MERCHERO.md (user-supplied disassembly dossier,
+  2026-09-10, CERTO-graded) closes backlog #20: the real resolver at
+  `AK.OVR:0xD6C5` that lets an unemployed Hero or a mercenary army
+  relocate on its own initiative between turns, independent of any
+  player order -- a mechanic previously confirmed to have real, sourced
+  report text (`render_mercenary_army_wanders_away/in()`/`render_
+  character_wanders_away/in()`, Phase 591) but zero underlying trigger/
+  probability/destination logic anywhere. A real byte-level conflict
+  between MERCHERO.md and SCAR.md over the shared hex-stepper's own
+  recursive-retry behavior was investigated and resolved before any
+  design work: both documents describe the identical real routine
+  correctly, and the already-shipped `_scar_terrain_step_hex()`
+  (`turn/cast_execution.py`) is externally equivalent to the real
+  function's behavior for every confirmed real caller -- no fix needed,
+  duplicated as-is into the new `_wander_step_hex()`. A second,
+  independent payoff: `Office.NEUTRAL_KING`'s own catalogued text
+  ("attract mercenaries") had 2 of its 3 clauses already wired (Phase
+  661/663) -- this phase closes the third by making it the real
+  attractor for the political direction filter. Three genuinely
+  unsourced design points were resolved directly with the user: no
+  `avoid_owner` tracking for mercenary armies at all (Heroes reuse
+  `LeaderState.birth_x`/`.birth_y` instead); the `DS:8B52` King-orders-
+  flag gate implemented faithfully; the armies-only quality-decay/
+  dissolution alternative branch attempted despite being under-
+  characterized even in the source document, an explicit documented
+  approximation.
+  New `turn/wandering_units.py`: `_wander_step_hex()`/`_roll_main_
+  direction()`/`_roll_step_direction()` (the real direction-roll
+  primitives), `_accept_wander_direction()` (the real political filter
+  -- avoid-owner harsh branch at 0.5%, attractor-proximity branch,
+  independent-vs-King-owned fallback branch), `_wander_density()`
+  (employed-only occupancy count), `_army_type_terrain_excluded()`
+  (Whales/Fleet/Mermen need Sea, Ents need land), `hero_eligible_for_
+  wander()`/`army_eligible_for_wander()` (kingdomless, no armies
+  commanded, real-race gate, King-orders-flag gate), `resolve_hero_
+  wander()` (up to 5 steps, a real continuation mask roll per land/sea,
+  the birth-coordinate-out-of-range case skipping the filter for the
+  very first pick only), `resolve_army_wander()` (movement-budget-gated,
+  no continuation roll -- purely "is the current province Sea"),
+  `maybe_decay_mercenary_quality()` (`Quality.DEPLETED` -> silent
+  removal, else a real per-tier demotion chance), and `resolve_
+  wandering()` (the once-per-turn dispatch: the real per-object initial-
+  access roll is drawn unconditionally for every independent Hero/
+  mercenary army, even ones the eligibility gates will reject, matching
+  MERCHERO's own RNG-fidelity warning; an eligible army whose roll fails
+  attempts the quality-decay branch instead of wandering).
+  `turn/turn_processor.py run_turn()` gained a new `_kingdom_submitted_
+  real_orders()` helper (the `DS:8B52` King-orders flag, collapsing
+  MERCHERO's own 4-row table to "does at least one leader of this King
+  have a real first action") and a new end-of-turn tail call to
+  `resolve_wandering()`, appending each real relocation as a
+  `"hero-wander"`/`"army-wander"` sentinel `PhaseDispatchResult`
+  (mirroring the existing `"gate-angel-visit"`/`"double-agent-report"`
+  convention). New `report/turn_report.py record_wandering_world_
+  events()` reuses the 4 already-built, already-tested renderers
+  directly -- a departure notice only when the origin province's own
+  owner is a real King, an arrival notice only when the final owner is
+  a real King *and* different from the origin. Test count: 6530 -> 6576
+  (net +46). Full suite verified green (unchanged, 6530) before writing
+  a single new test -- the whole mechanism is a provable no-op for
+  every pre-existing fixture, since none registers an independent Hero
+  or mercenary army in a `run_turn()`-level test. Deliberately out of
+  scope, per the plan: the `DS:C349` gate deciding whether the whole
+  mechanism fires at all this turn (modeled as always-true, matching
+  every other end-of-turn tail step); the exact identity of the B514
+  avoid-owner marker's own real write-site (irrelevant here since
+  armies get no avoid-owner at all); byte-exact DOS RNG replication.
+
 ## Setup
 
 ```

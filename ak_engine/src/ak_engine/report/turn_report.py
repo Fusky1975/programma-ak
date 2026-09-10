@@ -1367,6 +1367,7 @@ from ak_engine.turn.expenses import (
     leader_pay,
 )
 from ak_engine.turn.valhalla_execution import VALHALLA_VISIT_ANNOUNCEMENT_TEMPLATE, VALHALLA_VISITOR_RULES_TEMPLATE
+from ak_engine.turn.wandering_units import WanderRelocation
 from ak_engine.turn.office_holder import (
     ALL_OFFICES,
     ARMY_RANKED_OFFICES,
@@ -13515,6 +13516,78 @@ def record_uncontested_conquest_world_events(state: GameState, results: list[Pha
         prefix = _season_phrase_for_phase_label(entry.phase_label)
         line = render_uncontested_conquest(leader.name, province_name, rng, is_sea=is_sea)
         state.record_world_event(new_location, [prefix + line])
+
+
+def record_wandering_world_events(state: GameState, results: list[PhaseDispatchResult], rng: random.Random) -> None:
+    """Populates ``state.world_events`` (Phase 781) from every real
+    wandering relocation MERCHERO.md's own mechanism produced this turn
+    (``turn/wandering_units.py resolve_wandering()``) -- the sixth real
+    event *source* wired for GENERAL INTELLIGENCE REPORT, alongside
+    ``record_battle_world_events()``/``record_spell_world_events()``/
+    ``record_plague_spread_world_events()``/``record_move_world_events()``/
+    ``record_uncontested_conquest_world_events()``. Same "call once per
+    turn, before any ``compose_letter_report()`` call" contract as those.
+
+    Reuses ``render_character_wanders_away/in()``/``render_mercenary_
+    army_wanders_away/in()`` directly (Phase 591) -- a departure notice
+    only if the initial province's own owner is a real King, an arrival
+    notice only if the final owner is a real King *and* different from
+    the initial owner, matching MERCHERO section 7's own confirmed
+    text. Recognizes the two synthetic sentinel labels ``turn/turn_
+    processor.py run_turn()`` appends (``"hero-wander"``/``"army-
+    wander"``), mirroring every other synthetic-entry recorder here.
+
+    A mercenary army's own display name has no real owning Kingdom to
+    resolve a race from -- falls back to the army's own current
+    province's race (or ``Race.HUMAN`` with no province data at all),
+    the same ``MONSTROUS_ARMY_RACE``-else-fallback shape ``build_battle_
+    army_names()`` already uses for a comparable "no Kingdom" case.
+    """
+
+    for entry in results:
+        if entry.phase_label not in ("hero-wander", "army-wander"):
+            continue
+        relocation = entry.result
+        if not isinstance(relocation, WanderRelocation):
+            continue
+
+        origin_province = state.provinces.get(relocation.origin)
+        destination_province = state.provinces.get(relocation.destination)
+        origin_owner = origin_province.owner_kingdom_id if origin_province is not None else None
+        destination_owner = destination_province.owner_kingdom_id if destination_province is not None else None
+
+        if relocation.kind == "hero":
+            leader = state.leaders.get(relocation.entity_id)
+            if leader is None:
+                continue
+            entity_name = leader.name
+            away_fn, in_fn = render_character_wanders_away, render_character_wanders_in
+        else:
+            army = state.armies.get(relocation.entity_id)
+            if army is None:
+                continue
+            race = MONSTROUS_ARMY_RACE.get(
+                army.army_type, origin_province.race if origin_province is not None else Race.HUMAN
+            )
+            entity_name = make_army_name(army.army_id, army.army_type, race)
+            away_fn, in_fn = render_mercenary_army_wanders_away, render_mercenary_army_wanders_in
+
+        origin_name = _province_label(state, relocation.origin)
+        destination_name = _province_label(state, relocation.destination)
+
+        if origin_owner is not None and _king_leader_id(state, origin_owner) is not None:
+            is_sea = origin_province is not None and origin_province.effective_terrain() is Terrain.SEA
+            line = away_fn(entity_name, origin_name, destination_name, rng, is_sea=is_sea)
+            state.record_world_event(relocation.origin, [line])
+
+        if (
+            destination_owner is not None
+            and destination_owner != origin_owner
+            and _king_leader_id(state, destination_owner) is not None
+        ):
+            is_sea = destination_province is not None and destination_province.effective_terrain() is Terrain.SEA
+            line = in_fn(entity_name, origin_name, destination_name, rng, is_sea=is_sea)
+            state.record_world_event(relocation.destination, [line])
 
 
 _GENERAL_INTELLIGENCE_REPORT_HEADER = "GENERAL INTELLIGENCE REPORT"

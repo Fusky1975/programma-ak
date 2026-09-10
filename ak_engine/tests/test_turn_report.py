@@ -140,6 +140,7 @@ from ak_engine.report.turn_report import (
     record_spell_world_events,
     record_sunk_cargo_world_events,
     record_uncontested_conquest_world_events,
+    record_wandering_world_events,
     render_blackmail_demand,
     render_blackmail_penalty,
     render_bystander_spell_notice,
@@ -382,6 +383,7 @@ from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
 from ak_engine.turn.tax_base import compute_tax_base
+from ak_engine.turn.wandering_units import WanderRelocation
 from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalMoveError
@@ -12704,5 +12706,116 @@ def test_record_uncontested_conquest_world_events_skips_when_leader_missing():
     ]
 
     record_uncontested_conquest_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
+# -- Phase 781: record_wandering_world_events() --------------------------
+
+
+def _wandering_state():
+    origin = HexCoord(5, 5)
+    destination = HexCoord(6, 5)
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Origania", Race.HUMAN, Alignment.GOOD, origin))
+    state.add_kingdom(KingdomState(2, "Destinia", Race.HUMAN, Alignment.NEUTRAL, destination))
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Origin Fort"))
+    state.add_province(ProvinceState(destination, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, name="Destinia Keep"))
+    state.add_leader(LeaderState(90, 1, "King Origanus", origin, is_king=True))
+    state.add_leader(LeaderState(91, 2, "King Destinus", destination, is_king=True))
+    return state, origin, destination
+
+
+def _wander_result(kind: str, entity_id: int, origin: HexCoord, destination: HexCoord) -> PhaseDispatchResult:
+    return PhaseDispatchResult(
+        leader_id=entity_id,
+        segment_index=-1,
+        phase_label="hero-wander" if kind == "hero" else "army-wander",
+        action=None,
+        result=WanderRelocation(kind, entity_id, origin, destination),
+        error=None,
+    )
+
+
+def test_record_wandering_world_events_hero_records_departure_and_arrival():
+    state, origin, destination = _wandering_state()
+    state.add_leader(LeaderState(1, None, "Wanderer", destination))
+    results = [_wander_result("hero", 1, origin, destination)]
+
+    record_wandering_world_events(state, results, random.Random(1))
+
+    assert len(state.world_events) == 2
+    assert state.world_events[0].coord == origin
+    assert "Wanderer" in state.world_events[0].lines[0]
+    assert state.world_events[1].coord == destination
+    assert "Wanderer" in state.world_events[1].lines[0]
+
+
+def test_record_wandering_world_events_mercenary_army_records_departure_and_arrival():
+    state, origin, destination = _wandering_state()
+    state.add_army(ArmyState(300, None, ArmyType.BOWMEN, Quality.AVERAGE, destination))
+    results = [_wander_result("army", 300, origin, destination)]
+
+    record_wandering_world_events(state, results, random.Random(1))
+
+    assert len(state.world_events) == 2
+    assert state.world_events[0].coord == origin
+    assert state.world_events[1].coord == destination
+
+
+def test_record_wandering_world_events_no_departure_notice_when_origin_has_no_king():
+    state, origin, destination = _wandering_state()
+    state.leaders.pop(90)  # Origania now has no King on record
+    state.add_leader(LeaderState(1, None, "Wanderer", destination))
+    results = [_wander_result("hero", 1, origin, destination)]
+
+    record_wandering_world_events(state, results, random.Random(1))
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].coord == destination
+
+
+def test_record_wandering_world_events_no_arrival_notice_when_destination_owner_unchanged():
+    state, origin, destination = _wandering_state()
+    # Both provinces now belong to the same Kingdom -- no real "arrival
+    # in a different Kingdom's own territory" to announce.
+    state.provinces[destination].owner_kingdom_id = 1
+    state.add_leader(LeaderState(1, None, "Wanderer", destination))
+    results = [_wander_result("hero", 1, origin, destination)]
+
+    record_wandering_world_events(state, results, random.Random(1))
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].coord == origin
+
+
+def test_record_wandering_world_events_no_arrival_notice_when_destination_has_no_king():
+    state, origin, destination = _wandering_state()
+    state.leaders.pop(91)  # Destinia now has no King on record
+    state.add_leader(LeaderState(1, None, "Wanderer", destination))
+    results = [_wander_result("hero", 1, origin, destination)]
+
+    record_wandering_world_events(state, results, random.Random(1))
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].coord == origin
+
+
+def test_record_wandering_world_events_ignores_unrelated_entries():
+    state, origin, destination = _wandering_state()
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.WAIT, result=None, error=None)
+    ]
+
+    record_wandering_world_events(state, results, ScriptedRandom([]))
+
+    assert state.world_events == []
+
+
+def test_record_wandering_world_events_skips_when_entity_no_longer_exists():
+    state, origin, destination = _wandering_state()
+    results = [_wander_result("hero", 999, origin, destination)]
+
+    record_wandering_world_events(state, results, ScriptedRandom([]))
 
     assert state.world_events == []

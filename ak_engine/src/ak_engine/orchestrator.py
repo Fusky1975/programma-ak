@@ -62,6 +62,7 @@ from ak_engine.report.turn_report import (
     record_spell_world_events,
     record_sunk_cargo_world_events,
     record_uncontested_conquest_world_events,
+    record_wandering_world_events,
 )
 from ak_engine.turn.assassin_guild import resolve_pending_guild_assassination
 from ak_engine.turn.emperor_election import ElectionCallOutcome, ElectionResult, process_election_turn
@@ -294,6 +295,10 @@ def process_turn(
     record_move_world_events(state, results, rng)
     record_illusory_fog_foreign_entry_world_events(state, results, rng)
     record_uncontested_conquest_world_events(state, results, rng)
+    # Phase 781 -- same once-per-turn requirement as its siblings above;
+    # populates state.world_events from the wandering relocations `turn/
+    # turn_processor.py run_turn()`'s own end-of-turn tail appended.
+    record_wandering_world_events(state, results, rng)
 
     letter_reports = {
         kingdom_id: compose_letter_report(

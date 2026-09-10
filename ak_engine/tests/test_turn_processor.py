@@ -2356,3 +2356,121 @@ def test_run_turn_mutual_encounter_lets_the_targets_own_special_encounter_plan_d
     assert by_leader_with_sep[10].result.winner_leader_id == 20  # target's own leading Cast decided it instead
 
     assert state.provinces[ORIGIN].illusory_fog_active is False
+
+
+# -- Phase 781: MERCHERO.md's own autonomous wandering ----------------------
+
+
+from ak_engine.turn.turn_processor import _kingdom_submitted_real_orders
+from ak_engine.turn.wandering_units import WanderRelocation
+
+
+def test_kingdom_submitted_real_orders_true_when_any_leader_has_a_real_p0_action():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(11, kingdom_id=1, name="B", location=HexCoord(0, 0)))
+    p0_real = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    p0_none = PlanPhase(label="P0", action=ActionCode.NO_ACTION, obj=0, extra=[0])
+    leader_a = Leader(10, "A", ActionPlan(10, [PlanSegment(0, 0, (), {"P0": p0_none})]))
+    leader_b = Leader(11, "B", ActionPlan(11, [PlanSegment(0, 0, (), {"P0": p0_real})]))
+
+    result = _kingdom_submitted_real_orders([TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state)
+
+    assert result == {1: True}
+
+
+def test_kingdom_submitted_real_orders_false_when_every_leader_is_empty_or_absent():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(11, kingdom_id=1, name="B", location=HexCoord(0, 0)))
+    p0_none = PlanPhase(label="P0", action=ActionCode.NO_ACTION, obj=0, extra=[0])
+    leader_a = Leader(10, "A", ActionPlan(10, [PlanSegment(0, 0, (), {"P0": p0_none})]))
+    # leader 11 not present in turn_leaders at all this turn.
+
+    result = _kingdom_submitted_real_orders([TurnLeader(leader_a, 1)], state)
+
+    assert result == {1: False}
+
+
+def test_kingdom_submitted_real_orders_omits_a_kingdom_with_no_registered_leaders():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    result = _kingdom_submitted_real_orders([], state)
+    assert result == {}
+
+
+def test_run_turn_appends_wandering_relocations_as_sentinel_results():
+    state = _base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
+    relocation = WanderRelocation("hero", 55, ORIGIN, TARGET)
+    p0 = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    leader = Leader(10, "A", ActionPlan(10, [PlanSegment(0, 0, (), {"P0": p0})]))
+
+    with patch("ak_engine.turn.turn_processor.resolve_wandering", return_value=[relocation]):
+        results = run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    wander_entries = [r for r in results if r.phase_label == "hero-wander"]
+    assert len(wander_entries) == 1
+    assert wander_entries[0].leader_id == 55
+    assert wander_entries[0].result is relocation
+    assert wander_entries[0].action is None
+    assert wander_entries[0].segment_index == -1
+
+
+def test_run_turn_labels_an_army_relocation_distinctly_from_a_hero_one():
+    state = _base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
+    relocation = WanderRelocation("army", 301, ORIGIN, TARGET)
+    p0 = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    leader = Leader(10, "A", ActionPlan(10, [PlanSegment(0, 0, (), {"P0": p0})]))
+
+    with patch("ak_engine.turn.turn_processor.resolve_wandering", return_value=[relocation]):
+        results = run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    wander_entries = [r for r in results if r.phase_label == "army-wander"]
+    assert len(wander_entries) == 1
+    assert wander_entries[0].leader_id == 301
+    assert wander_entries[0].result is relocation
+
+
+def test_run_turn_end_to_end_hero_wander_and_king_orders_flag_gate():
+    # A real, unmocked end-to-end case: an independent Hero standing in
+    # Kingdom 1's own home province wanders under a favorable scripted
+    # roll sequence, and the same setup is genuinely blocked once
+    # Kingdom 1's own King submits no real order this turn.
+    state = GameState()
+    home = HexCoord(2, 2)
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.board_width = 5
+    state.board_height = 5
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="King", location=home, is_king=True))
+    state.add_leader(LeaderState(2, kingdom_id=None, name="Wanderer", location=home))
+
+    p0_real = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    king_leader = Leader(1, "King", ActionPlan(1, [PlanSegment(0, 0, (), {"P0": p0_real})]))
+
+    results = run_turn([TurnLeader(king_leader, 1)], state, board_width=5, rng=random.Random(3))
+
+    wander_entries = [r for r in results if r.phase_label == "hero-wander"]
+    assert len(wander_entries) == 1
+    assert wander_entries[0].leader_id == 2
+
+    # Same setup, but the King submits no real order this turn -- the
+    # orders-flag gate now genuinely blocks the wander outright.
+    state2 = GameState()
+    state2.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, home))
+    state2.board_width = 5
+    state2.board_height = 5
+    state2.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state2.add_leader(LeaderState(1, kingdom_id=1, name="King", location=home, is_king=True))
+    state2.add_leader(LeaderState(2, kingdom_id=None, name="Wanderer", location=home))
+    p0_none = PlanPhase(label="P0", action=ActionCode.NO_ACTION, obj=0, extra=[0])
+    king_leader_idle = Leader(1, "King", ActionPlan(1, [PlanSegment(0, 0, (), {"P0": p0_none})]))
+
+    results2 = run_turn([TurnLeader(king_leader_idle, 1)], state2, board_width=5, rng=random.Random(3))
+
+    assert [r for r in results2 if r.phase_label == "hero-wander"] == []
+    assert state2.leaders[2].location == home

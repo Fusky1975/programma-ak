@@ -313,6 +313,7 @@ from ak_engine.turn.sep_decode import decode_special_encounter_plan
 from ak_engine.turn.skeletal_decay import decompose_graveyard
 from ak_engine.turn.monster_raids import age_all_feature_guardians, maybe_dissipate_hidden_feature
 from ak_engine.turn.tax_base import apply_turn_revenue
+from ak_engine.turn.wandering_units import resolve_wandering
 from ak_engine.turn.trail_decode import decode_trail_phase
 from ak_engine.turn.trail_execution import TrailExecutionResult, advance_trail
 from ak_engine.turn.valhalla_execution import (
@@ -766,6 +767,24 @@ def run_turn(
                     error=None,
                 )
             )
+    # Phase 781: MERCHERO.md's own autonomous wandering of unemployed
+    # Heroes and mercenary armies (AK.OVR:0xD6C5, backlog #20) -- once
+    # per real turn, at this same "everything else has resolved" tail
+    # position, matching the confirmed real call-site timing (section
+    # 12.1: "phase counter already at 5"). The King-orders-flag gate is
+    # resolved once here and threaded into every eligibility check.
+    orders_flag = _kingdom_submitted_real_orders(turn_leaders, state)
+    for relocation in resolve_wandering(state, orders_flag, rng):
+        results.append(
+            PhaseDispatchResult(
+                leader_id=relocation.entity_id,
+                segment_index=-1,
+                phase_label="hero-wander" if relocation.kind == "hero" else "army-wander",
+                action=None,
+                result=relocation,
+                error=None,
+            )
+        )
     apply_turn_revenue(state, rng)
     apply_turn_maintenance(state, rng)
     # Phase 468: King of Cowards' own real per-turn temperament rise
@@ -798,6 +817,39 @@ def run_turn(
     state.turn_number += 1
 
     return results
+
+
+def _kingdom_submitted_real_orders(turn_leaders: list[TurnLeader], state: GameState) -> dict[int, bool]:
+    """``DS:8B52`` -- "did this King's own Kingdom submit any real order
+    this turn" (MERCHERO.md, Phase 781, user-confirmed to implement
+    faithfully). MERCHERO's own 4-row table (pending-vs-submitted
+    leaders) collapses to "does at least one leader of this King have a
+    real first action" -- the "mixed empty/non-empty" and "all
+    non-empty" rows both resolve ``True``, and only "none" or "all
+    empty" resolve ``False``.
+
+    Computed once, here, from data ``run_turn()`` already has in scope
+    -- ``turn_leaders`` (this turn's real submitted plans) and ``state.
+    leaders`` (every leader who currently belongs to a Kingdom).
+    """
+
+    turn_leader_by_id = {tl.leader.leader_id: tl for tl in turn_leaders}
+    kingdom_ids = {leader.kingdom_id for leader in state.leaders.values() if leader.kingdom_id is not None}
+    submitted_by_kingdom: dict[int, bool] = {}
+    for kingdom_id in kingdom_ids:
+        submitted = False
+        for leader_id, leader in state.leaders.items():
+            if leader.kingdom_id != kingdom_id:
+                continue
+            turn_leader = turn_leader_by_id.get(leader_id)
+            if turn_leader is None or not turn_leader.leader.plan.segments:
+                continue
+            phase0 = turn_leader.leader.plan.segments[0].phases.get("P0")
+            if phase0 is not None and phase0.action is not ActionCode.NO_ACTION:
+                submitted = True
+                break
+        submitted_by_kingdom[kingdom_id] = submitted
+    return submitted_by_kingdom
 
 
 def _revert_analytical_psychology_charms(state: GameState) -> None:
