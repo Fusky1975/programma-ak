@@ -152,7 +152,7 @@ from ak_engine.models.valhalla import (
     _valhalla_stay_phase_count,
 )
 from ak_engine.turn.cast_execution import GATE_ANGEL_ELIGIBLE_ALIGNMENTS, gate_angel_due_alignment
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
+from ak_engine.turn.movement import MapBounds, neighbors
 
 # HostAK/TP/PROSE/GOOD.X2 (and identically, EVIL.X2) choice 1's own real
 # template sentence, redacted of every real historical name/game number
@@ -336,16 +336,19 @@ def _record_valhalla_visit(state: GameState, kingdom_id: int) -> None:
     state.kingdoms[kingdom_id].valhalla_visit_count += 1
 
 
-def finalize_gate_angel_visit(state: GameState, rng: random.Random, *, board_width: int = NORMAL_MAP_BOUNDS[0]) -> LeaderState | None:
+def finalize_gate_angel_visit(state: GameState, rng: random.Random, *, board_width: int | None = None) -> LeaderState | None:
     """Spawns this turn's Valhalla visitor, if Gate Angel produced one.
 
     Returns ``None`` (no state mutation at all) when no Gate Angel cast
     succeeded this turn, or (see ``_spawn_valhalla_visitor()``'s own
     docstring) the winning turn's due alignment has no roster entries.
-    ``board_width`` defaults to the normal board's own width (every
-    existing caller/test) since departure processing only needs it for
-    the adjacent-province leg of that hand-off chain.
+    ``board_width`` (Phase 780, default ``None``) falls back to ``state.
+    board_width`` -- the real value the world was actually built at --
+    since departure processing only needs it for the adjacent-province
+    leg of that hand-off chain.
     """
+
+    board_width = board_width if board_width is not None else state.board_width
 
     if state.last_gate_angel_turn != state.turn_number:
         return None
@@ -427,7 +430,7 @@ def select_valhalla_fallback_recipient(state: GameState, rng: random.Random) -> 
 
 
 def finalize_ordinary_valhalla_visit(
-    state: GameState, rng: random.Random, *, board_width: int = NORMAL_MAP_BOUNDS[0]
+    state: GameState, rng: random.Random, *, board_width: int | None = None
 ) -> LeaderState | None:
     """Phase 756 -- the ordinary, per-turn automatic Valhalla visit,
     independent of Gate Angel. ``Desktop/VALHALLA.txt`` rule 1: "Ciascun
@@ -446,8 +449,12 @@ def finalize_ordinary_valhalla_visit(
     ``turn_number``) is what guarantees the rotation itself advances
     even in a turn with zero Gate Angel casts anywhere in the game --
     see that function's own Phase 756 addendum.
+
+    ``board_width`` (Phase 780, default ``None``) falls back to ``state.
+    board_width``.
     """
 
+    board_width = board_width if board_width is not None else state.board_width
     if state.last_gate_angel_turn == state.turn_number:
         return None
 
@@ -508,7 +515,7 @@ def _reassign_visitor_armies(state: GameState, kingdom_id: int, location, board_
             new_commander_id = co_located[0].leader_id
 
     if new_commander_id is None:
-        bounds = MapBounds(board_width, NORMAL_MAP_BOUNDS[1])
+        bounds = MapBounds(board_width, state.board_height)
         for neighbor_coord in neighbors(location, bounds):
             province = state.provinces.get(neighbor_coord)
             if province is None or province.owner_kingdom_id != kingdom_id:
@@ -531,7 +538,7 @@ def _reassign_visitor_armies(state: GameState, kingdom_id: int, location, board_
             army.commanded_by = None
 
 
-def process_valhalla_departure(state: GameState, *, board_width: int = NORMAL_MAP_BOUNDS[0]) -> None:
+def process_valhalla_departure(state: GameState, *, board_width: int | None = None) -> None:
     """Phase 548 -- resolves the Valhalla visitor's own departure, once
     their one active turn (``LeaderState.valhalla_active_turn``, Phase
     546) has passed. Called from ``run_turn()``'s own end-of-turn tail,
@@ -568,8 +575,12 @@ def process_valhalla_departure(state: GameState, *, board_width: int = NORMAL_MA
     the peaceful case (death doesn't release army command on its own --
     confirmed via ``GameState.remove_leader()``'s own docstring, which
     never touches ``ArmyState``).
+
+    ``board_width`` (Phase 780, default ``None``) falls back to ``state.
+    board_width``.
     """
 
+    board_width = board_width if board_width is not None else state.board_width
     visitor = state.leaders.get(VALHALLA_VISITOR_LEADER_ID)
     if visitor is not None and visitor.valhalla_active_turn == state.turn_number:
         _reassign_visitor_armies(state, visitor.kingdom_id, visitor.location, board_width)

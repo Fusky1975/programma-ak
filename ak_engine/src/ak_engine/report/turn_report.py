@@ -1357,7 +1357,7 @@ from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalM
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.imperial_intelligence import known_bordering_kingdom_tax_bases, known_bordering_kingdom_treasuries
 from ak_engine.turn.leader_visibility import known_mercenary, leader_location_known_to_kingdom
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance_wrapped
+from ak_engine.turn.movement import MapBounds, hex_distance_wrapped
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 from ak_engine.turn.discovery_effects import effective_skill_level, emperor_holds_arcanes_valor_unification
 from ak_engine.turn.expenses import (
@@ -9811,7 +9811,7 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
     allied_ids = [k for k in other_kingdom_ids if state.is_allied(kingdom_id, k)]
     neutral_ids = [k for k in other_kingdom_ids if not state.is_allied(kingdom_id, k)]
 
-    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    bounds = MapBounds(state.board_width, state.board_height)
     viewer_king_id = _king_leader_id(state, kingdom_id)
     known_tax: dict[int, int] = {}
     known_treasury: dict[int, int] = {}
@@ -12985,7 +12985,7 @@ def render_scar_terrain_fite(race_name: str, army_type_name: str, rng: random.Ra
 
 
 def record_spell_world_events(
-    state: GameState, results: list[PhaseDispatchResult], rng: random.Random, *, board_width: int = NORMAL_MAP_BOUNDS[0]
+    state: GameState, results: list[PhaseDispatchResult], rng: random.Random, *, board_width: int | None = None
 ) -> None:
     """Populates ``state.world_events`` (Phase 232, extended Phase 235)
     from every successful province-effect cast found in ``results`` --
@@ -13047,12 +13047,13 @@ def record_spell_world_events(
     entry's own ``phase_label`` -- see that function's own docstring.
     """
 
+    effective_board_width = board_width if board_width is not None else state.board_width
     for entry in results:
         result = entry.result
         if not isinstance(result, CastExecutionResult) or not result.applied:
             continue
         request = result.request
-        coord = decode_hex_number(request.target, board_width)
+        coord = decode_hex_number(request.target, effective_board_width)
         province = state.provinces.get(coord)
         if province is None:
             continue
@@ -13630,7 +13631,7 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
     the real section header appears in every real fixture file checked.
     """
 
-    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    bounds = MapBounds(state.board_width, state.board_height)
     groups: dict[int, list[str]] = {}
     order: list[int] = []
     for event in state.world_events:

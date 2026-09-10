@@ -391,7 +391,7 @@ from ak_engine.turn.move_execution import (
     record_kingdom_exploration,
     reveal_adjacent_provinces,
 )
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
+from ak_engine.turn.movement import MapBounds
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import PracticeExecutionResult, execute_practice
@@ -530,7 +530,7 @@ def dispatch_phase(
     leader_id: int,
     army_ids: list[int] | None = None,
     *,
-    board_width: int,
+    board_width: int | None = None,
     explorer_skill: int = 0,
     rng: random.Random | None = None,
 ):
@@ -546,8 +546,14 @@ def dispatch_phase(
     raises ``NonAdjacentMoveError`` as of Phase 85 -- ``execute_move``
     resolves it as a chase step instead; see that function's own
     docstring.
+
+    ``board_width`` (Phase 780, default ``None``) falls back to
+    ``state.board_width`` when omitted -- the real value the world was
+    actually built at, instead of always the wrong (Super-AK) constant
+    a few of this function's own branches used to fall back to silently.
     """
 
+    board_width = board_width if board_width is not None else state.board_width
     action = phase.action
     if action not in SUPPORTED_ACTIONS:
         label = action.name if isinstance(action, ActionCode) else repr(action)
@@ -675,7 +681,7 @@ def dispatch_phase(
             has_find_mines=has_find_mines,
             leader_id=leader_id,
         )
-        reveal_adjacent_provinces(state, province, kingdom_id, MapBounds(*NORMAL_MAP_BOUNDS))
+        reveal_adjacent_provinces(state, province, kingdom_id, MapBounds(board_width, state.board_height))
         result.discovered_features = exploration.discovered_features
         # Phase 256: Chancellor Merit Points ("+2 per Special Place
         # discovered first", turn/merit_points.py) -- a feature just
@@ -790,6 +796,8 @@ def _dispatch_aspy(
         state,
         leader_id,
         request,
+        board_width=state.board_width,
+        board_height=state.board_height,
         caster_has_detect_align=caster_has_detect_align,
         caster_holds_psychic_mage_office=caster_holds_psychic_mage_office,
         caster_has_druidic_animal_spies=caster_has_druidic_animal_spies,

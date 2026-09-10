@@ -1415,6 +1415,31 @@ def test_part_sea_fails_on_a_province_out_of_range():
     assert result.reason == "province not found or not in range"
 
 
+def test_part_sea_adjacency_check_uses_the_real_board_height():
+    # Phase 780: _resolve_province_target()'s own adjacency check used
+    # to hardcode NORMAL_MAP_BOUNDS[1] (15) for the height half of
+    # MapBounds regardless of state.board_height -- now it reads
+    # state.board_height directly. neighbors() never wraps around, it
+    # drops a candidate once MapBounds.contains() says it's out of
+    # range -- so a deliberately tiny board_height turns a real, one-
+    # hex-south neighbor into one that's only "in bounds" under the
+    # old, wrong height default.
+    state = build_state()
+    caster_location = HexCoord(3, 2)
+    state.leaders[CASTER_ID].location = caster_location
+    state.board_height = 3  # caster_location.y == board_height - 1: the true bottom edge
+    target = HexCoord(3, 3)  # one hex south -- real offset (0, 1) for an even y
+    state.add_province(ProvinceState(target, Terrain.SEA, Race.HUMAN))
+    request = CastRequest(spell=Spell.PART_SEA, target=_target(target))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    # Only "in bounds" under the old, wrong (30, 15) default -- under
+    # the real board_height=3 this target is genuinely off the map.
+    assert result.applied is False
+    assert result.reason == "province not found or not in range"
+
+
 def test_part_sea_succeeds_on_an_adjacent_province():
     state = build_state()
     bounds = MapBounds(*NORMAL_MAP_BOUNDS)

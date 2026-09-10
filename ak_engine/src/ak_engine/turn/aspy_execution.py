@@ -198,7 +198,7 @@ from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.intelligence_estimate import estimate_alignment, estimate_temper
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
+from ak_engine.turn.movement import MapBounds, neighbors
 from ak_engine.turn.practice_execution import SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL
 from ak_engine.turn.recruit import is_army_type_compatible_with_race
 from ak_engine.turn.spy_table import estimate_reported_value
@@ -315,8 +315,8 @@ def execute_aspy(
     leader_id: int,
     request: SpyProvinceRequest,  # noqa: ARG001 -- see module docstring: target_province isn't trusted
     *,
-    board_width: int = NORMAL_MAP_BOUNDS[0],
-    board_height: int = NORMAL_MAP_BOUNDS[1],
+    board_width: int | None = None,
+    board_height: int | None = None,
     caster_holds_psychic_mage_office: bool = False,
     caster_has_detect_align: bool = False,
     caster_has_druidic_animal_spies: bool = False,
@@ -345,6 +345,9 @@ def execute_aspy(
     and for offices held") is unrelated to this function -- see
     ``turn/trail_execution.py execute_trail()``'s own Phase 705
     addendum.
+
+    ``board_width``/``board_height`` (Phase 780, default ``None``) fall
+    back to ``state.board_width``/``.board_height``.
     """
 
     del request  # see module docstring
@@ -354,6 +357,8 @@ def execute_aspy(
     if province is None:
         return None
 
+    board_width = board_width if board_width is not None else state.board_width
+    board_height = board_height if board_height is not None else state.board_height
     bounds = MapBounds(board_width, board_height)
     adjacent_owners: dict[HexCoord, int | None] = {}
     adjacent_military_forces: dict[HexCoord, tuple[str, ...]] = {}

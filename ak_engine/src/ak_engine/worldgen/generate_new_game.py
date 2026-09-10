@@ -444,6 +444,13 @@ def generate_new_game(
 ) -> GameState:
     """Runs the full sourced pipeline in-place against ``game_state``, returning it."""
 
+    # Phase 780: record the real board size this world was actually built
+    # at, so downstream turn-engine code no longer has to fall back to
+    # `turn/movement.py NORMAL_MAP_BOUNDS` (confirmed the *Super-AK* size,
+    # `Regolamento AK.txt` 12.1) for a "normale" 18x9 game.
+    game_state.board_width = width
+    game_state.board_height = height
+
     king_count = len(kings)
     bounds = MapBounds(width, height)
     grid = generate_map(rng, width=width, height=height, king_count=king_count)

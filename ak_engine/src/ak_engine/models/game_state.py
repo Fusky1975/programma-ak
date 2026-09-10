@@ -1330,6 +1330,34 @@ class GameState:
     # bridge for yet), matching this field's own "nothing derives a
     # real value from parsed data" status, not a sourced default.
     game_number: int = 1
+    # Phase 780 -- the real dimensions of the world this ``GameState``
+    # represents. Before this phase, nothing on ``GameState`` recorded
+    # this at all: `worldgen/generate_new_game.py`/`parser/gw_world_
+    # bridge.py` (the two real "build a populated GameState" paths)
+    # each *know* the real width/height they built against but never
+    # stored it here, so every downstream consumer needing "how big is
+    # this world" fell back to `turn/movement.py NORMAL_MAP_BOUNDS`
+    # (30, 15) -- confirmed by `Regolamento AK.txt` 12.1 to be the
+    # *Super-AK* size ("La mappa comprende 30x15 province"), not the
+    # "normale" 18x9 default `worldgen/place_map.py DEFAULT_WIDTH/
+    # HEIGHT` and `parser/gw_world_bridge.py CONFIRMED_BOARD_HEIGHT`
+    # both already independently confirm. Defaults deliberately match
+    # `NORMAL_MAP_BOUNDS` (not the real 18x9 default) so every existing
+    # test/fixture that never sets these fields keeps its own current,
+    # already-established effective board size unchanged -- only a
+    # caller that explicitly sets a real value changes behavior. See
+    # `generate_new_game()`/`bridge_new_game_state()` for the two real
+    # writers, and `turn/movement.py`'s own corrected comment.
+    #
+    # Literal `30`/`15` here (not imported) rather than `turn/movement.py
+    # NORMAL_MAP_BOUNDS` directly -- `turn/movement.py` transitively
+    # imports `turn/exploration.py`, which imports `GameState` itself,
+    # so a direct import here is a real circular-import cycle. Small,
+    # duplicated constant, matching this project's own established
+    # "small, duplicated per-consumer" convention rather than
+    # restructuring the import graph for two literal ints.
+    board_width: int = 30
+    board_height: int = 15
     # Phase 538 -- the world header's own `gametyp` (`models/game_type.py
     # GameType`), needed to gate the Arcane's Valor artifacts (93-98,
     # AKGEN_reverse_engineering_report (4).md SS11) behind `GameType.

@@ -599,3 +599,14 @@ def test_apply_death_penalty_does_not_touch_royal_title_fields():
     dead = state.dead_leaders[1]
     assert dead.merit_tally.successful_thefts == 8
     assert dead.merit_tally.diplomatic_merit_points == 8.0
+
+
+def test_board_width_and_height_default_to_normal_map_bounds():
+    # Phase 780: the real value the world was actually built at is now
+    # tracked here, but every existing fixture that never sets it must
+    # keep exactly today's already-established effective board size --
+    # NORMAL_MAP_BOUNDS's own real value (30, 15), the Super-AK size,
+    # not "normale" 18x9 (see turn/movement.py's own corrected comment).
+    state = GameState()
+    assert state.board_width == 30
+    assert state.board_height == 15

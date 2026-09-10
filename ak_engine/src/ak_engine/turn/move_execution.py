@@ -287,7 +287,6 @@ from ak_engine.turn.exploration import ExploreResult, discover_features, resolve
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction, board_army, cargo_aboard, disembark_army
 from ak_engine.turn.movement import (
-    NORMAL_MAP_BOUNDS,
     HexOwnershipTier,
     MapBounds,
     is_adjacent,
@@ -1407,7 +1406,7 @@ def execute_move(
     leader_snapshot = state.leaders.get(leader_id) if leader_id is not None else None
     wind_walking = leader_snapshot is not None and leader_snapshot.mystic_winds_active
 
-    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    bounds = MapBounds(state.board_width, state.board_height)
     # Phase 720/763: whether the shortcut is even geometrically/ability-
     # wise on the table at all, independent of this group's own boarding
     # composition -- reused below both to decide the split (Phase 763)

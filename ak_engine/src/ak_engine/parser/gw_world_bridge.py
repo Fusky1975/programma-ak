@@ -398,6 +398,15 @@ def bridge_new_game_state(
             )
 
     state = GameState(turn_number=turn_number, kingdoms=kingdoms, leaders=leaders)
+    # Phase 780: record the real board size (column-major, so width is
+    # simply the record count divided by the confirmed height) so
+    # downstream turn-engine code no longer has to fall back to `turn/
+    # movement.py NORMAL_MAP_BOUNDS` (confirmed the *Super-AK* size,
+    # `Regolamento AK.txt` 12.1). Left at `GameState`'s own default when
+    # there are no province records to derive a real width from at all.
+    if province_records:
+        state.board_width = len(province_records) // height
+        state.board_height = height
 
     provinces = bridge_gw_world_provinces(province_records, height=height)
     resolved_owners = resolve_province_owners(provinces, province_records, state, height=height)

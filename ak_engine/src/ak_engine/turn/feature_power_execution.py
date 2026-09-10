@@ -948,6 +948,20 @@ def _resolve_terrain_spell(
     CHANCE`'s own `CastSpell` sub-branch -- same targeting logic
     applies unchanged, since none of that branch's own `rspell` table
     spells is `Kill_Enemy` either.
+
+    **Phase 780 audit note**: both `encode_hex_number(feature.coord,
+    NORMAL_MAP_BOUNDS[0])` below and the `execute_cast(...,
+    board_width=NORMAL_MAP_BOUNDS[0], ...)` call right after it are
+    deliberately left exactly as they were -- investigated directly, not
+    assumed safe. `execute_cast()`'s own `_resolve_province_target()`
+    decodes this exact `request.target` with whatever `board_width` it
+    receives; since both the encode here and that decode always use the
+    identical literal `NORMAL_MAP_BOUNDS[0]`, the round trip is self-
+    consistent and returns the exact coordinate encoded, regardless of
+    the real board size. Switching *either one* alone (e.g. to `state.
+    board_width`) without the other would break this round trip the
+    instant `state.board_width != NORMAL_MAP_BOUNDS[0]` -- left as a
+    matched pair on purpose.
     """
 
     leader = state.leaders[leader_id]

@@ -189,6 +189,34 @@ def test_dispatch_explore_uses_leader_location():
     assert state.leaders[LEADER_ID].merit_tally.plains_explorations == 1
 
 
+def test_dispatch_explore_reveal_adjacent_provinces_uses_the_real_board_size():
+    # Phase 780: dispatch_phase()'s own EXPLORE branch used to hardcode
+    # MapBounds(*NORMAL_MAP_BOUNDS) (30, 15) for reveal_adjacent_
+    # provinces() regardless of the real board_width this function
+    # already receives -- now it reads state.board_width/.board_height
+    # (via dispatch_phase()'s own board_width=None fallback) whenever
+    # board_width isn't explicitly overridden by the caller.
+    #
+    # neighbors() never wraps around -- it drops a candidate outright
+    # once it falls outside MapBounds.contains() -- so a deliberately
+    # tiny board_width makes a real, in-range-under-the-old-wrong-30-
+    # width "neighbor" fall correctly out of bounds instead.
+    location = HexCoord(2, 4)
+    state, army_id = _state_with_army(location, {HexCoord(1, 4): Terrain.PLAINS, HexCoord(3, 4): Terrain.DESERT})
+    state.board_width = 3  # location.x == board_width - 1: the true right edge
+    state.board_height = 15
+    phase = PlanPhase(label="P0", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[army_id], explorer_skill=1)
+
+    # (1, 4) is a real, in-bounds neighbor under the small board -> revealed.
+    assert state.provinces[HexCoord(1, 4)].known_to_kingdom(1)
+    # (3, 4) would only be "in bounds" under the old, wrong (30, 15)
+    # default -- under the real board_width=3 it's genuinely off the
+    # map, so it must NOT be revealed.
+    assert not state.provinces[HexCoord(3, 4)].known_to_kingdom(1)
+
+
 def test_dispatch_explore_wires_difficult_terrain_from_the_leaders_own_advanced_ability():
     # Phase 507: dispatch_phase() derives has_difficult_terrain from the
     # acting leader's own real AdvancedAbility possession -- Plains(50)

@@ -197,6 +197,18 @@ def test_every_king_gets_a_real_confirmed_id_and_kingdom():
     assert king_leader.skills is not None
 
 
+def test_bridge_new_game_state_records_the_real_board_size():
+    # Phase 780: 162 real province records / CONFIRMED_BOARD_HEIGHT (9)
+    # = 18 -- independently reconfirming the rulebook's own "normale"
+    # 18x9 default (Regolamento AK.txt 12.1) against real GW3 data, not
+    # the wrong Super-AK (30x15) constant every downstream turn-engine
+    # consumer used to fall back to.
+    state, _ = _bridge_fixture()
+
+    assert state.board_height == 9
+    assert state.board_width == 18
+
+
 def test_a_roster_matched_hero_gets_his_own_real_id_and_sex():
     # Phase 339: Guerin's own name is in models/hero_roster.py's fixed
     # 98-entry table (#18, confirmed independently many times over in

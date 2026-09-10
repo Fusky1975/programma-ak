@@ -80,7 +80,23 @@ from enum import IntEnum
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.exploration import ExploreResult, resolve_explore
 
-# Normal (non-Noble) map bounds, per CTBOTH.PAS `xcrange = 0..29`, `ycrange = 0..14`.
+# Phase 780 correction: despite this constant's own name (kept as-is --
+# widely referenced by this exact identifier -- but no longer described
+# as "Normal" below), (30, 15) is the confirmed **Super-AK** map size,
+# not the "normale" one. `Regolamento AK.txt` 12.1, quoted verbatim:
+# "La mappa comprende 30x15 province, rispetto al numero normale che e'
+# di 18x9." The real "normale" default (18, 9) is independently
+# confirmed twice elsewhere: `worldgen/place_map.py DEFAULT_WIDTH/
+# HEIGHT` (a 500-map Monte Carlo) and `parser/gw_world_bridge.py
+# CONFIRMED_BOARD_HEIGHT` against real `GW3__T1` data (162 records / 9
+# = 18). `CTBOTH.PAS`'s own `xcrange = 0..29`/`ycrange = 0..14` is real,
+# just describes the Super-AK variant, not this project's own default.
+# `GameState.board_width`/`.board_height` (Phase 780) are now the real
+# source of truth for a given world's own actual size -- every function
+# that used to fall back to this constant now falls back to those
+# fields instead; this tuple remains only `GameState`'s own default
+# value (so every pre-existing test/fixture that never sets the new
+# fields keeps its current, already-established effective board size).
 NORMAL_MAP_BOUNDS = (30, 15)
 
 

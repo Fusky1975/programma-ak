@@ -93,7 +93,6 @@ from ak_engine.models.treasure import (
 )
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult, execute_cast
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS
 from ak_engine.turn.use_mi_decode import UseMIRequest
 
 # TREASAB.X2: every one of the 20 wands' own label reads "Cast '<Spell>' at skill-2".
@@ -131,14 +130,18 @@ def execute_use_mi(
     request: UseMIRequest,
     rng: random.Random | None = None,
     *,
-    board_width: int = NORMAL_MAP_BOUNDS[0],
+    board_width: int | None = None,
 ) -> UseMIExecutionResult:
     """Apply a decoded Use_MI request to ``state``. See the module docstring for exactly
     which of the 113 ``Treasure`` ordinals this can resolve, and why the
     other 78 (all "operating automatically" per [5.9]) fail with a clear
     reason instead.
+
+    ``board_width`` (Phase 780, default ``None``) falls back to ``state.
+    board_width``.
     """
 
+    board_width = board_width if board_width is not None else state.board_width
     item = state.items.get(request.item_instance_id)
     if item is None:
         return UseMIExecutionResult(applied=False, reason="item not found")

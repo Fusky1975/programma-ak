@@ -57,6 +57,20 @@ def test_generate_new_game_populates_every_province():
         assert province.tax >= 0
 
 
+def test_generate_new_game_records_the_real_board_size_it_was_built_at():
+    # Phase 780: the real "normale" default (18x9) must land on the
+    # returned GameState itself, not just be used transiently to build
+    # the map -- see turn/movement.py NORMAL_MAP_BOUNDS's own corrected
+    # comment for why this used to matter (every downstream turn-engine
+    # consumer fell back to the wrong, Super-AK 30x15 constant instead).
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    assert result.board_width == DEFAULT_WIDTH
+    assert result.board_height == DEFAULT_HEIGHT
+
+
 def test_king_home_effects_are_applied_to_province_and_leader():
     game_state, kings = _setup()
     rng = PascalRandom(seed=2)

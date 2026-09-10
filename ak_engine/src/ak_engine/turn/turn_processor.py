@@ -302,7 +302,7 @@ from ak_engine.turn.move_execution import (
     record_kingdom_exploration,
     reveal_adjacent_provinces,
 )
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, resolve_move
+from ak_engine.turn.movement import MapBounds, resolve_move
 from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, apply_cravenest_temperament_escalation
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, dispatch_phase, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
@@ -390,7 +390,7 @@ def run_turn(
     turn_leaders: list[TurnLeader],
     state: GameState,
     *,
-    board_width: int,
+    board_width: int | None = None,
     explorer_skill: int = 0,
     rng: random.Random | None = None,
 ) -> list[PhaseDispatchResult]:
@@ -413,11 +413,23 @@ def run_turn(
     call to ``run_turn()`` is the one unambiguous "once per game turn"
     boundary this phase-by-phase loop offers; see each function's own
     module docstring for why it lives here rather than per-phase.
+
+    ``board_width`` (Phase 780, default ``None``) is now optional --
+    when omitted, falls back to ``state.board_width``, the real value
+    the world was actually built at (``worldgen/generate_new_game.py``/
+    ``parser/gw_world_bridge.py``). An explicit value still overrides it
+    (every existing caller that already supplies one keeps working
+    unchanged). ``state.board_height`` is used directly for this
+    function's own ``bounds`` -- before this phase there was no way to
+    supply a real height here at all; it was silently always
+    ``NORMAL_MAP_BOUNDS[1]`` (confirmed the *Super-AK* size, `Regolamento
+    AK.txt` 12.1, not the "normale" 18x9 default).
     """
 
     rng = rng if rng is not None else random.Random()
+    board_width = board_width if board_width is not None else state.board_width
     results: list[PhaseDispatchResult] = []
-    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    bounds = MapBounds(board_width, state.board_height)
     active_defends: dict[int, DefendCoverage] = {}  # defender leader_id -> origin + coverage area
     active_pursuits: dict[int, _ActivePursuit] = {}  # pursuer/trailer leader_id -> ongoing chase
     active_move_chases: dict[int, _ActiveMoveChase] = {}  # mover leader_id -> ongoing non-adjacent Move chase
@@ -736,7 +748,12 @@ def run_turn(
         if spy_province is None or spy_province.owner_kingdom_id != hiring_kingdom_id:
             continue
         double_agent_report = execute_aspy(
-            state, spy.leader_id, SpyProvinceRequest(target_province=0, unconfirmed_extra0=0), rng=rng
+            state,
+            spy.leader_id,
+            SpyProvinceRequest(target_province=0, unconfirmed_extra0=0),
+            board_width=state.board_width,
+            board_height=state.board_height,
+            rng=rng,
         )
         if double_agent_report is not None:
             results.append(
@@ -1123,7 +1140,15 @@ def _continue_active_pursuits(
         leader = state.leaders.get(leader_id)
         has_spy_super_sleuth = leader is not None and AdvancedAbility.SPY_SUPER_SLEUTH in leader.advanced_abilities
         if active.kind == "pursue":
-            result = advance_pursuit(state, leader_id, active.request, rng, has_spy_super_sleuth=has_spy_super_sleuth)
+            result = advance_pursuit(
+                state,
+                leader_id,
+                active.request,
+                rng,
+                has_spy_super_sleuth=has_spy_super_sleuth,
+                board_width=state.board_width,
+                board_height=state.board_height,
+            )
             action = ActionCode.PURSUE
             still_chasing = not result.caught_up and result.reason == _PURSUE_STILL_CHASING_REASON
         else:
@@ -1141,6 +1166,8 @@ def _continue_active_pursuits(
                 has_spy_super_sleuth=has_spy_super_sleuth,
                 caster_has_spy_expanded_spying=caster_has_spy_expanded_spying,
                 caster_has_spy_blackmail=caster_has_spy_blackmail,
+                board_width=state.board_width,
+                board_height=state.board_height,
             )
             action = ActionCode.TRAIL
             still_chasing = not result.spied_on and result.reason == _TRAIL_STILL_CHASING_REASON
@@ -1587,7 +1614,11 @@ def _dispatch_multi_attacker_lmove(
 ) -> list[PhaseDispatchResult]:
     results: list[PhaseDispatchResult] = []
     target_province = state.provinces.get(target)
-    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    # Phase 780: previously ignored the real `board_width` this function
+    # already receives from `run_turn()`, always using the wrong
+    # (Super-AK) constant for `resolve_move()`/`reveal_adjacent_
+    # provinces()` below.
+    bounds = MapBounds(board_width, state.board_height)
 
     parties: list[MultiAttackerParty] = []
     valid: list[tuple[TurnLeader, int, PlanPhase, list[int], HexCoord]] = []

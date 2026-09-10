@@ -187,7 +187,7 @@ from ak_engine.models.temper import Temper
 from ak_engine.turn.blackmail import maybe_detect_blackmail
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.experience import add_experience
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
+from ak_engine.turn.movement import MapBounds, hex_distance
 from ak_engine.turn.office_holder import resolve_all_office_holders
 from ak_engine.turn.pursue_execution import step_toward_target
 from ak_engine.turn.spy_table import pursue_catch_up_chance
@@ -385,8 +385,8 @@ def advance_trail(
     has_spy_super_sleuth: bool = False,
     caster_has_spy_expanded_spying: bool = False,
     caster_has_spy_blackmail: bool = False,
-    board_width: int = NORMAL_MAP_BOUNDS[0],
-    board_height: int = NORMAL_MAP_BOUNDS[1],
+    board_width: int | None = None,
+    board_height: int | None = None,
 ) -> TrailExecutionResult:
     """Resolve a further phase of an *already-ongoing* Trail: one
     ``turn/pursue_execution.py step_toward_target`` hex-step for the trailer
@@ -394,9 +394,14 @@ def advance_trail(
     ``execute_trail`` catch-up attempt at the new, shorter distance. See
     module docstring for what's not wired around this (mirrors
     ``advance_pursuit``'s own documented scope exactly).
+
+    ``board_width``/``board_height`` (Phase 780, default ``None``) fall
+    back to ``state.board_width``/``.board_height``.
     """
 
     rng = rng if rng is not None else random.Random()
+    board_width = board_width if board_width is not None else state.board_width
+    board_height = board_height if board_height is not None else state.board_height
 
     trailer = state.leaders.get(trailer_leader_id)
     target = state.leaders.get(request.target_character_id)

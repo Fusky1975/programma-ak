@@ -106,10 +106,10 @@ restriction). ``_resolve_province_target`` decodes it via
 ``turn/hex_numbering.py``'s empirically-derived scheme (Phase 11 -- not
 100% validated against real adjacency, see that module's own docstring)
 and enforces each spell's own same-or-adjacent rule. ``execute_cast``
-now takes an optional ``board_width`` (default: the standard 30-wide
-board, ``turn/movement.py NORMAL_MAP_BOUNDS``), the same value
-``turn/plan_dispatch.py`` already threads through for Move's own hex
-decoding.
+takes an optional ``board_width`` (Phase 780, default ``None`` -- falls
+back to ``state.board_width``, the real value the world was actually
+built at), the same value ``turn/plan_dispatch.py`` already threads
+through for Move's own hex decoding.
 
 **The success/failure roll (Phase 30, updated Phase 192)**: rulebook
 [3.10], "The chance that an action spell will succeed is 15% plus 15%
@@ -753,7 +753,7 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.hex_numbering import decode_hex_number
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, Direction, MapBounds, direction_between, is_adjacent, neighbor_in_direction
+from ak_engine.turn.movement import Direction, MapBounds, direction_between, is_adjacent, neighbor_in_direction
 from ak_engine.turn.office_holder import resolve_all_office_holders, resolve_office_holder
 
 ACTION_SPELL_BASE_CHANCE = 0.15
@@ -1051,7 +1051,7 @@ def execute_cast(
     request: CastRequest,
     rng: random.Random | None = None,
     *,
-    board_width: int = NORMAL_MAP_BOUNDS[0],
+    board_width: int | None = None,
     wand_skill_level: int | None = None,
 ) -> CastExecutionResult:
     """Apply a decoded Cast request to ``state``, for the spells this project can execute.
@@ -1074,9 +1074,15 @@ def execute_cast(
     guards against a stale/departed leader still sitting at id 199).
     Every province/item-targeted spell is untouched -- their own
     ``request.target`` never resolves to a leader id at all.
+
+    ``board_width`` (Phase 780, default ``None``) falls back to ``state.
+    board_width``; every internal use of the map's own height now reads
+    ``state.board_height`` directly instead of the wrong (Super-AK)
+    constant it silently used before this phase.
     """
 
     rng = rng if rng is not None else random.Random()
+    board_width = board_width if board_width is not None else state.board_width
     spell = request.spell
 
     if spell in CHARACTER_TARGET_SPELLS and spell is not Spell.RESURRECTION and request.target == VALHALLA_VISITOR_LEADER_ID:
@@ -1428,7 +1434,7 @@ def _resolve_province_target(state: GameState, caster: LeaderState, target_numbe
     if province is None:
         return None, None
     if require_adjacent and coord != caster.location:
-        bounds = MapBounds(board_width, NORMAL_MAP_BOUNDS[1])
+        bounds = MapBounds(board_width, state.board_height)
         if not is_adjacent(caster.location, coord, bounds):
             return None, None
     return coord, province
@@ -2296,7 +2302,7 @@ def _execute_earthquake(
         if direction is None:
             direction = rng.choice(list(Direction))
         level = _caster_level(state, caster, Ability.ELEMENTAL, wand_skill_level)
-        bounds = MapBounds(board_width, NORMAL_MAP_BOUNDS[1])
+        bounds = MapBounds(board_width, state.board_height)
         _propagate_tidal_wave(state, _coord, direction, TIDAL_WAVE_CHANCE_PER_LEVEL * level, bounds, rng)
         return CastExecutionResult(request, applied=True)
 
@@ -2941,7 +2947,7 @@ def apply_scar_terrain_collapse(state: GameState, coord: HexCoord, board_width: 
     if province.effective_terrain() is Terrain.SEA:
         return
 
-    board_height = NORMAL_MAP_BOUNDS[1]
+    board_height = state.board_height
     for _attempt in range(SCAR_TERRAIN_IMMIGRATION_ATTEMPTS):
         direction = 1 + int(rng.random() * 6)
         donor_coord = _scar_terrain_step_hex(coord, direction, board_width, board_height)

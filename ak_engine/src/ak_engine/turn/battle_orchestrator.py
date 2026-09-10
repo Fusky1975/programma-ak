@@ -214,7 +214,7 @@ from ak_engine.turn.encounter import (
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.initiative import character_initiative
 from ak_engine.turn.merit_points import battle_quality_points
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, neighbors
+from ak_engine.turn.movement import MapBounds, neighbors
 from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles, is_march_immune_party
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
@@ -2435,7 +2435,7 @@ def fight_battle(
     # units get the same terrain/ability/exploration treatment) and
     # before resolve_battle() runs -- see _apply_monster_summoning_aid's
     # own docstring.
-    monster_summoning_bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    monster_summoning_bounds = MapBounds(state.board_width, state.board_height)
     _apply_monster_summoning_aid(
         attacker_units, attacker_commander, state, province_coord, monster_summoning_bounds,
         is_defender=False, terrain=terrain, combat_ability_level=attacker_ability_level,
@@ -2631,14 +2631,14 @@ def fight_battle(
             )
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
         elif attacker_clean_swept and _whale_forced_retreat_applies(army, terrain):
-            bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+            bounds = MapBounds(state.board_width, state.board_height)
             destination = _whale_sea_retreat_destination(army, state, bounds)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
                 led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
             )
         elif attacker_clean_swept and loser_retreats:
-            bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+            bounds = MapBounds(state.board_width, state.board_height)
             if attacker_origin is not None:
                 destination = attacker_retreat_candidates(attacker_origin, bounds)[0]
             else:
@@ -2684,14 +2684,14 @@ def fight_battle(
             )
             report.quality_changes[army.army_id] = QualityChange(old=old_quality, new=army.quality)
         elif defender_clean_swept and _whale_forced_retreat_applies(army, terrain):
-            bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+            bounds = MapBounds(state.board_width, state.board_height)
             destination = _whale_sea_retreat_destination(army, state, bounds)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
                 led_by_insufficient_druid=led_by_insufficient_druid, formation_divisor=formation_divisor,
             )
         elif defender_clean_swept and loser_retreats:
-            bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+            bounds = MapBounds(state.board_width, state.board_height)
             friendly = state.friendly_provinces_for(army.kingdom_id) - {province_coord}
             destination = find_retreat_destination(army.location, bounds, friendly)
             _retreat_or_disband(

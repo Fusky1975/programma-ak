@@ -32072,6 +32072,54 @@ follow-up request after the original 431-435 plan shipped.
   unchanged (6524) before and after. This closes backlog item #12 in
   full.
 
+- **Phase 780** -- `GameState` learns its own real board size;
+  `turn/movement.py NORMAL_MAP_BOUNDS` stops being silently
+  mis-threaded/ignored across 14 files. User-supplied directly from
+  `Regolamento AK.txt` 12.1: "La mappa comprende 30x15 province,
+  rispetto al numero normale che e' di 18x9." `NORMAL_MAP_BOUNDS =
+  (30, 15)` -- despite its own comment "Normal (non-Noble) map bounds"
+  -- is the confirmed **Super-AK** size, not "normale," which
+  `worldgen/place_map.py DEFAULT_WIDTH/HEIGHT` (18/9, Monte-Carlo
+  confirmed) and `parser/gw_world_bridge.py CONFIRMED_BOARD_HEIGHT`
+  (real `GW3__T1` data: 162 records / 9 = 18) both already
+  independently get right. A full audit of all 14 files importing
+  `NORMAL_MAP_BOUNDS` found this wasn't just a naming problem:
+  `GameState` itself never recorded the real dimensions of the world
+  it represents, so most of the turn engine's own geometry (battle
+  retreats, monster-summoning-aid neighbor search, Hug Coastline,
+  Explore's own province-reveal, Emperor/Treasurer bordering-kingdom
+  intel, the General Intelligence Report's own visibility check, Spy
+  Province's adjacent-owner scan, Pursue/Trail's multi-phase chase
+  continuation, every province-targeted spell's adjacency check,
+  Valhalla's army hand-off) silently fell back to the wrong, Super-AK
+  constant instead. New `GameState.board_width`/`.board_height`
+  (defaulting to `NORMAL_MAP_BOUNDS`'s own real value, so every
+  existing test/fixture keeps its current effective board size
+  unchanged), set for real by the two "build a populated `GameState`"
+  paths (`worldgen/generate_new_game.py generate_new_game()`,
+  `parser/gw_world_bridge.py bridge_new_game_state()`). Every touched
+  function's own `board_width`/`board_height` parameter (where one
+  existed) relaxed from a baked-in literal default to `None`,
+  falling back to `state.board_width`/`.board_height` at call time --
+  and every internal call site that used to hardcode `MapBounds(*
+  NORMAL_MAP_BOUNDS)` regardless of an available real value (`turn/
+  turn_processor.py run_turn()`/`_dispatch_multi_attacker_lmove()`,
+  `turn/plan_dispatch.py dispatch_phase()`'s EXPLORE branch) now reads
+  `state.board_width`/`.board_height` directly. `turn/feature_power_
+  execution.py`'s own hardcoded use is a confirmed, documented
+  exception: an encode-then-immediately-decode round trip through the
+  identical literal value, self-consistent regardless of the real
+  board size -- switching only one half of that matched pair would
+  have introduced a real bug, so both halves were deliberately left
+  untouched. A real, separate, pre-existing limitation was found and
+  left unfixed (out of scope): `worldgen/generate_new_game.py`'s own
+  latitude-terrain-weight table only covers the default 18x9 height,
+  so it cannot actually generate a full Super-AK-sized (30x15) world
+  today regardless of this phase. Test count: 6524 -> 6530. Full suite
+  verified green (unchanged, 6524) before touching a single test --
+  every fix confirmed a provable no-op individually, incrementally, not
+  just at the end.
+
 ## Setup
 
 ```

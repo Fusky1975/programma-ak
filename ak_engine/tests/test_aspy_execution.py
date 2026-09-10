@@ -76,6 +76,30 @@ def test_execute_aspy_reports_adjacent_province_owners():
     assert report.adjacent_owners == {neighbor: 2}
 
 
+def test_execute_aspy_uses_the_real_board_size_not_the_super_ak_default():
+    # Phase 780: execute_aspy() used to fall back to NORMAL_MAP_BOUNDS
+    # (30, 15) -- the Super-AK size -- whenever board_width/board_height
+    # weren't explicitly overridden; now it falls back to state.board_
+    # width/.board_height instead. neighbors() never wraps around, it
+    # just drops a candidate once MapBounds.contains() says it's out of
+    # range -- so a deliberately tiny board_width turns a real neighbor
+    # offset into one that's only "in bounds" under the old, wrong
+    # default, proving state's own value is what's really consulted.
+    state = _state(leader_location=HexCoord(2, 9), home_province=HexCoord(2, 9))
+    state.board_width = 3  # leader_location.x == board_width - 1: the true right edge
+    state.board_height = 15
+    state.add_province(ProvinceState(HexCoord(1, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(HexCoord(3, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+
+    report = execute_aspy(state, LEADER_ID, _request())
+
+    # (1, 9) is a real, in-bounds neighbor under the small board.
+    assert report.adjacent_owners.get(HexCoord(1, 9)) == 2
+    # (3, 9) would only be "in bounds" under the old (30, 15) default --
+    # under the real board_width=3 it's genuinely off the map.
+    assert HexCoord(3, 9) not in report.adjacent_owners
+
+
 def test_execute_aspy_omits_unknown_neighboring_hexes():
     # Only (3, 9)'s own province is registered -- every neighboring hex is
     # unknown to this GameState, so adjacent_owners stays empty rather than

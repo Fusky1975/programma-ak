@@ -210,7 +210,7 @@ from ak_engine.turn.encounter import (
     weapon_offensive_hit_multiplier,
 )
 from ak_engine.turn.experience import add_experience
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance, neighbors
+from ak_engine.turn.movement import MapBounds, hex_distance, neighbors
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.sep_decode import target_uses_special_encounter_plan
 from ak_engine.turn.spy_table import pursue_catch_up_chance
@@ -580,8 +580,8 @@ def advance_pursuit(
     *,
     mutual_encounter: bool = False,
     has_spy_super_sleuth: bool = False,
-    board_width: int = NORMAL_MAP_BOUNDS[0],
-    board_height: int = NORMAL_MAP_BOUNDS[1],
+    board_width: int | None = None,
+    board_height: int | None = None,
 ) -> PursueExecutionResult:
     """Resolve a further phase of an *already-ongoing* Pursue: one ``step_toward_target``
     hex-step for the pursuer (and every army they command, moving together --
@@ -593,9 +593,14 @@ def advance_pursuit(
     phases and for not re-invoking ``execute_pursue`` itself for the same
     (already-advanced) pair -- see module docstring for what's not wired
     automatically yet.
+
+    ``board_width``/``board_height`` (Phase 780, default ``None``) fall
+    back to ``state.board_width``/``.board_height``.
     """
 
     rng = rng if rng is not None else random.Random()
+    board_width = board_width if board_width is not None else state.board_width
+    board_height = board_height if board_height is not None else state.board_height
 
     pursuer = state.leaders.get(pursuer_leader_id)
     target = state.leaders.get(request.target_character_id)

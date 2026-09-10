@@ -109,7 +109,7 @@ def process_turn(
     state: GameState,
     order_file_paths: list[Path],
     *,
-    board_width: int,
+    board_width: int | None = None,
     rng: random.Random | None = None,
 ) -> TurnOutcome:
     """Parses every ``.K1`` move file in ``order_file_paths``, syncs each
@@ -182,10 +182,18 @@ def process_turn(
     before any letter is composed). ``compose_letter_report()`` is then
     called once per ``state.kingdoms`` entry, producing ``TurnOutcome.
     letter_reports`` -- see module docstring's own Phase 608 addendum.
+
+    ``board_width`` (Phase 780, default ``None``) falls back to
+    ``state.board_width`` -- the real value the world was actually built
+    at (``worldgen/generate_new_game.py``/``parser/gw_world_bridge.py``)
+    -- when omitted, so a caller no longer has to separately track it
+    alongside ``state`` just to avoid every downstream fallback silently
+    defaulting to the wrong (Super-AK) constant.
     """
 
     if rng is None:
         rng = random.Random()
+    board_width = board_width if board_width is not None else state.board_width
 
     turn_leaders: list[TurnLeader] = []
     bridge_reports: dict[int, KingdomBridgeReport] = {}
