@@ -105,6 +105,31 @@ inventing an index scheme this project has no source for -- explicitly
 not attempted, per this project's standing sourcing discipline, rather
 than guessed.
 
+**Phase 782 addendum -- mostly closed, not by finding the missing main-
+program call sites (still don't exist), but because the user placed the
+actual raw `POWMSG.X2`/`PCOND.X2` files on the Desktop and every one of
+POWMSG.X2's 42 real message lines already has a byte-for-byte
+correspondence to an already-wired `Power`/`PowerCondition` outcome from
+Phases 616-623/688 -- the trigger *mapping* was solved twice over
+already by `Special Features.md`'s own section 9.4 table; what Phase 782
+adds is the verbatim primary text itself, closing the 4 generic
+`PowerCondition` refusal messages that were never rendered at all, a
+real DRAIN_SKILL-refusal mis-scoping bug (checked only inside `Power.
+GRANT_WISH`'s own branch, not power-agnostically), a confirmed one-word
+primary-source correction (`DN_SKILL_AT_LIMIT`: "aptitude," not
+"skill"), and `ORAC_POWER`'s own real "has armies" text (superseding an
+earlier project-original sentence). Three residual pieces are still
+genuinely open, not guessed: POWMSG.X2 line 19 (plausibly a CAST_SPELL/
+ANS_PRAYER-grants-Illusory-Terrain-specific success variant, unconfirmed,
+plus a brand-new `` ` `` marker this project's prose engine has never
+needed), line 31 (GRANT_WISH's own tutorial text, likely belonging to
+this project's still-unbuilt "fdisc tier 2" Feature-discovery narration),
+and line 43 (an unrelated Fulfill-flavored sentence with an unexplained
+`0x04` control byte). `PCOND.X2`'s own remaining 5 lines describe a
+Feature's power "terms" *before* an attempt -- a real, separate
+narration opportunity this project has no established report-layer
+placement for yet, left for a future phase.
+
 What *is* real and cleanly citable: the same `_EDesc`/`_MCond` block's
 neighboring `_NoMeet` procedure (~line 1266-1275), an inline (not
 `.X2`-sourced) `CASE fpowcon OF` dispatch with literal `Say(...)`

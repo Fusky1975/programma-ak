@@ -32188,6 +32188,64 @@ follow-up request after the original 431-435 plan shipped.
   avoid-owner marker's own real write-site (irrelevant here since
   armies get no avoid-owner at all); byte-exact DOS RNG replication.
 
+- **Phase 782** -- backlog #7: the raw `HostAK/TP/PROSE/POWMSG.X2`/
+  `PCOND.X2` files (user-supplied, placed on the Desktop) close most of
+  the Feature -> Power [5.8] message-trigger gap this project had
+  flagged as blocked since Phase 101 -- not by finding the missing
+  main-program call sites (still don't exist), but because every one of
+  POWMSG.X2's 42 real message lines already has a byte-for-byte
+  correspondence to an already-wired `Power`/`PowerCondition` outcome
+  from Phases 616-623/688; the trigger *mapping* was solved twice over
+  already, what this phase adds is the verbatim primary text itself.
+  Reading both files byte-precisely (not just as plain text -- several
+  messages embed literal Pascal marker control bytes, `0x0B` for `$K`/
+  `0x01` for `^A`, invisible in an ordinary text viewer) surfaced 4 real
+  findings: (1) the 4 generic `PowerCondition` refusal messages (King-
+  only/insufficient-gold/wrong-alignment/already-used-this-turn) were
+  never rendered at all -- `describe_feature_power_attempt()`'s own
+  docstring said so outright; now wired via a new `FeaturePowerAttempt
+  Result.condition_refused: PowerCondition | None` field (set only at
+  the one real `_apply_condition_gate()` refusal site) and a single,
+  power-agnostic dispatch checked before any per-power branch -- keyed
+  on this new enum field rather than the free-text `.reason` string, to
+  avoid a real collision with `Power.GAMBLE`'s own internal wager-
+  shortfall check, which independently produces the identical
+  "insufficient gold" string for an unrelated reason. (2) A genuine,
+  pre-existing mis-scoping bug: the already-correct `_POWMSG_DRAIN_
+  SKILL_REFUSED` (POWMSG.X2 line 39, wired since Phase 619) was checked
+  only inside `Power.GRANT_WISH`'s own branch, even though `DRAIN_SKILL`
+  can gate any power `POWER_CONDITION_PAIRS` names it for -- now covered
+  by the same generic dispatch. (3) A confirmed one-word primary-source
+  correction: `_POWMSG_DN_SKILL_AT_LIMIT` shipped as "drains your
+  skill," but POWMSG.X2 line 14 verbatim reads "drains your aptitude" --
+  a real source-level wording quirk (the same class as this project's
+  own "Consquently" typo/GMSPOILS.X anomaly precedents), corrected to
+  match the primary source exactly. (4) `Power.ORAC_POWER`'s own "has
+  armies" case had shipped a project-original sentence since Phase 619,
+  believing the real POWMSG id needed a General Intelligence Report
+  cross-reference this project has no composer for -- the real line 18
+  text needs no such thing (a plain pointer sentence), so it now
+  supersedes the invented one, matching this project's own Phase 672->
+  673 precedent (real text superseding project-original once a source
+  surfaces). `PCOND.X2` line 8 also supplied real text for the one
+  refusal that had never had any (`DRAIN_COURAGE`'s "A Coward may not
+  use this feature!"). Test count: 6576 -> 6587 (net +11). Full suite
+  verified green (unchanged, 6576) before touching a single test; the
+  two real regressions this phase's own behavior change caused (`ORAC_
+  POWER`'s old sentence, `GRANT_WISH`'s own now-redundant DRAIN_SKILL
+  check losing its direct field) were found and fixed via the standing
+  non-breaking run, not assumed. Explicitly investigated and left out
+  of scope, documented not guessed: POWMSG.X2 line 19 (plausibly a
+  CAST_SPELL/ANS_PRAYER-grants-Illusory-Terrain-specific success
+  variant, plus a brand-new `` ` `` marker this project's prose engine
+  has never needed), line 31 (GRANT_WISH's own tutorial text, likely
+  belonging to the still-unbuilt "fdisc tier 2" Feature-discovery
+  narration), line 43 (an unrelated Fulfill-flavored sentence with an
+  unexplained `0x04` control byte), and PCOND.X2's own remaining 5
+  lines (a Feature's power "terms," shown *before* an attempt -- a real,
+  separate narration opportunity with no established report-layer
+  placement yet).
+
 ## Setup
 
 ```

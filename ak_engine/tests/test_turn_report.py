@@ -28,7 +28,7 @@ from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.office import Office
-from ak_engine.models.power import Power
+from ak_engine.models.power import Power, PowerCondition
 from ak_engine.models.race import Race
 from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.sex import Sex
@@ -6795,11 +6795,114 @@ def test_describe_feature_power_attempt_new_sex_to_male():
     assert "I zap you from female to male" in line
 
 
-def test_describe_feature_power_attempt_condition_refusal_has_no_recovered_message():
-    # No POWMSG id recovered for _apply_condition_gate()'s own refusals
-    # (King-only/alignment/gameturn/gold/skill-drain) in this phase.
+def test_describe_feature_power_attempt_condition_refusal_without_condition_refused_falls_through():
+    # A refusal whose own `condition_refused` was never set (e.g. built
+    # directly rather than via `_apply_condition_gate()`) skips the new
+    # Phase 782 generic dispatch entirely and falls through to the
+    # per-power branch's own ordinary "applied=False" early return.
     outcome = FeaturePowerAttemptResult(power=Power.NEW_TEMP, applied=False, reason="wrong alignment", magic_feature=MagicFeature.POOL)
     assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
+
+
+# -- Phase 782: the 4 generic PowerCondition refusals, DRAIN_COURAGE,
+# and the DRAIN_SKILL mis-scoping fix (POWMSG.X2/PCOND.X2, backlog #7) --
+
+
+def test_describe_feature_power_attempt_need_king_refused_is_power_agnostic():
+    # MAGIC_FEATURE_NAME's own strings are raw, unresolved "<name>/F
+    # <alternate>" compound templates (models/magic_feature.py's own
+    # docstring) -- every existing test in this file avoids asserting
+    # exact text across the `$\\` substitution point for exactly this
+    # reason; this phase's new tests follow the same convention.
+    for power in (Power.NEW_TEMP, Power.MAP_FEAT):
+        outcome = FeaturePowerAttemptResult(
+            power=power, applied=False, reason="only a King may use this power", condition_refused=PowerCondition.NEED_KING,
+            magic_feature=MagicFeature.POOL,
+        )
+        line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+        assert line.startswith("Only a King may use the power of the ")
+
+
+def test_describe_feature_power_attempt_pay_up_refused_is_power_agnostic():
+    for power in (Power.NEW_RACE, Power.SAGE_DISC):
+        outcome = FeaturePowerAttemptResult(
+            power=power, applied=False, reason="insufficient gold", condition_refused=PowerCondition.PAY_UP,
+            magic_feature=MagicFeature.POOL,
+        )
+        line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+        assert line.startswith("Your Kingdom doesn't have enough gold to use the power of the ")
+
+
+def test_describe_feature_power_attempt_same_align_refused():
+    # The template's own "idiotic/Rmisguided" is a real /R word-choice
+    # marker -- assert only the stable text around both markers.
+    outcome = FeaturePowerAttemptResult(
+        power=Power.NEW_TEMP, applied=False, reason="wrong alignment", condition_refused=PowerCondition.SAME_ALIGN,
+        magic_feature=MagicFeature.POOL,
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line.startswith("A Kingdom of your ")
+    assert "alignment may not use the power of the " in line
+
+
+def test_describe_feature_power_attempt_g_turn_refused():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.UP_SKILL, applied=False, reason="already used this gameturn", condition_refused=PowerCondition.G_TURN,
+        magic_feature=MagicFeature.POOL,
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line.startswith("The power of the ")
+    assert line.endswith(" has already been used this turn, and cannot be used again until next turn.")
+
+
+def test_describe_feature_power_attempt_drain_skill_refused_reaches_a_power_other_than_grant_wish():
+    # Regression test for the real mis-scoping bug found this phase:
+    # _POWMSG_DRAIN_SKILL_REFUSED was only ever checked inside the
+    # Power.GRANT_WISH branch, even though DRAIN_SKILL can gate any
+    # power POWER_CONDITION_PAIRS names it for.
+    outcome = FeaturePowerAttemptResult(
+        power=Power.NEW_RACE, applied=False, reason="insufficient skill levels", condition_refused=PowerCondition.DRAIN_SKILL,
+        magic_feature=MagicFeature.POOL,
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert "thirst for wisdom" in line
+
+
+def test_describe_feature_power_attempt_drain_courage_refused():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.DN_APT, applied=False, reason="a Coward may not use this feature", condition_refused=PowerCondition.DRAIN_COURAGE,
+        magic_feature=MagicFeature.POOL,
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line == "A Coward may not use this feature!"
+
+
+def test_describe_feature_power_attempt_scout_consent_refusal_still_has_no_recovered_message():
+    # condition_refused IS set (a real condition-gate refusal), but the
+    # specific reason ("needs two Scout orders...") has no POWMSG.X2 id.
+    outcome = FeaturePowerAttemptResult(
+        power=Power.UP_SKILL,
+        applied=False,
+        reason="needs two Scout orders to accept these terms",
+        condition_refused=PowerCondition.PAY_UP,
+        magic_feature=MagicFeature.POOL,
+    )
+    assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
+
+
+# Note: `test_describe_feature_power_attempt_gamble_refused()` below
+# already proves Power.GAMBLE's own "insufficient gold" reason (set by
+# its own internal wager-shortfall check, condition_refused left at its
+# default None) is unaffected by the new generic PAY_UP dispatch above --
+# confirmed unchanged by the standing non-breaking run for this phase.
+
+
+def test_describe_feature_power_attempt_dn_skill_at_limit_matches_verbatim_source():
+    # POWMSG.X2 line 14 reads "aptitude," not "skill" -- a confirmed,
+    # byte-verified real-source wording quirk, corrected this phase.
+    outcome = FeaturePowerAttemptResult(power=Power.DN_SKILL, applied=True, at_limit=True, ability=Ability.MELEE, magic_feature=MagicFeature.POOL)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert "drains your aptitude in Meleeing" in line
 
 
 def test_describe_feature_power_attempt_chance_has_no_recovered_message():
@@ -6828,13 +6931,15 @@ def test_describe_feature_power_attempt_orac_align():
 
 
 def test_describe_feature_power_attempt_orac_power_with_armies():
+    # Phase 782: the real POWMSG.X2 line 18 text -- a plain pointer to
+    # the General Intelligence Report, not a literal army listing.
     state = _sa_state()
     state.add_army(
         ArmyState(army_id=1, kingdom_id=1, army_type=ArmyType.BOWMEN, quality=Quality.AVERAGE, location=HexCoord(1, 1), commanded_by=2)
     )
     outcome = FeaturePowerAttemptResult(power=Power.ORAC_POWER, applied=True, oracle_target_leader_id=2, oracle_armies=tuple(state.armies.values()))
     line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=state, character_name="King Testerman")
-    assert line == "Sir Roland commands 1 army: Bowmen."
+    assert line == "As an example, I will show you what Sir Roland is up to (see the General Intelligence Report)."
 
 
 def test_describe_feature_power_attempt_orac_power_no_armies():
@@ -6918,7 +7023,13 @@ def test_describe_feature_power_attempt_grant_wish_at_limit():
 
 
 def test_describe_feature_power_attempt_grant_wish_drain_skill_refused():
-    outcome = FeaturePowerAttemptResult(power=Power.GRANT_WISH, applied=False, reason="insufficient skill levels", magic_feature=MagicFeature.LAMP)
+    outcome = FeaturePowerAttemptResult(
+        power=Power.GRANT_WISH,
+        applied=False,
+        reason="insufficient skill levels",
+        condition_refused=PowerCondition.DRAIN_SKILL,
+        magic_feature=MagicFeature.LAMP,
+    )
     line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
     assert "thirst for wisdom" in line
 

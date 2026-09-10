@@ -140,6 +140,7 @@ def test_resolve_feature_power_attempt_pay_up_refuses_on_insufficient_gold():
     result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=2)
     assert result.applied is False
     assert result.reason == "insufficient gold"
+    assert result.condition_refused is PowerCondition.PAY_UP  # Phase 782
     assert state.kingdoms[1].treasury == 5
 
 
@@ -159,6 +160,7 @@ def test_resolve_feature_power_attempt_drain_courage_refuses_a_coward():
     result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=2)
     assert result.applied is False
     assert result.reason == "a Coward may not use this feature"
+    assert result.condition_refused is PowerCondition.DRAIN_COURAGE  # Phase 782
 
 
 # -- Phase 688: the two-Scout-orders consent gate (PCOND.X2) --
@@ -273,6 +275,43 @@ def test_resolve_feature_power_attempt_same_align_gates_on_alignment():
     result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
     assert result.applied is False
     assert result.reason == "wrong alignment"
+    assert result.condition_refused is PowerCondition.SAME_ALIGN  # Phase 782
+
+
+def test_resolve_feature_power_attempt_need_king_refuses_a_non_king():
+    from ak_engine.turn.feature_power_execution import FeaturePowerEvent
+
+    state = _state_with_leader(is_king=False)
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    event = FeaturePowerEvent(power=Power.NEW_TEMP, magic_feature=MagicFeature.LAMP, condition=PowerCondition.NEED_KING)
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+    assert result.applied is False
+    assert result.reason == "only a King may use this power"
+    assert result.condition_refused is PowerCondition.NEED_KING
+
+
+def test_resolve_feature_power_attempt_g_turn_refuses_a_repeat_use_the_same_turn():
+    from ak_engine.turn.feature_power_execution import FeaturePowerEvent
+
+    state = _state_with_leader()
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS, power_used_turn=state.turn_number)
+    event = FeaturePowerEvent(power=Power.NEW_TEMP, magic_feature=MagicFeature.LAMP, condition=PowerCondition.G_TURN)
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+    assert result.applied is False
+    assert result.reason == "already used this gameturn"
+    assert result.condition_refused is PowerCondition.G_TURN
+
+
+def test_resolve_feature_power_attempt_drain_skill_refuses_with_insufficient_skill_levels():
+    from ak_engine.turn.feature_power_execution import FeaturePowerEvent
+
+    state = _state_with_leader(skills=None)  # no skill data recorded at all
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    event = FeaturePowerEvent(power=Power.NEW_SEX, magic_feature=MagicFeature.LAMP, condition=PowerCondition.DRAIN_SKILL, cost=1)
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=2)
+    assert result.applied is False
+    assert result.reason == "insufficient skill levels"
+    assert result.condition_refused is PowerCondition.DRAIN_SKILL
 
 
 # -- resolve_feature_power_attempt(): the 9 tractable effects --

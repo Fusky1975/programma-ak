@@ -386,6 +386,16 @@ class FeaturePowerAttemptResult:
     power: Power
     applied: bool
     reason: str | None = None  # set when applied is False
+    # Phase 782: the real `PowerCondition` `_apply_condition_gate()`
+    # refused on -- `None` for every applied=True result AND for a
+    # `reason` set by power-specific logic that never touches the
+    # condition gate at all (e.g. `Power.GAMBLE`'s own internal wager-
+    # shortfall check, which independently produces the *same* "insufficient
+    # gold" string for an unrelated reason). `report/turn_report.py
+    # describe_feature_power_attempt()` dispatches its own generic
+    # condition-refusal templates on this field specifically, not on
+    # `.reason` alone, to avoid exactly that collision.
+    condition_refused: PowerCondition | None = None
     already_matched: bool = False  # NEW_TEMP/NEW_RACE's own real no-op (already that value)
     at_limit: bool = False  # UP_SKILL/UP_APT/DN_SKILL/DN_APT's own real no-op (already capped/floored)
     ability: Ability | None = None
@@ -557,7 +567,7 @@ def _resolve_feature_power_attempt_effect(
 
     refusal = _apply_condition_gate(state, leader_id, feature, event, rng, scout_orders_given=scout_orders_given)
     if refusal is not None:
-        return FeaturePowerAttemptResult(power=power, applied=False, reason=refusal)
+        return FeaturePowerAttemptResult(power=power, applied=False, reason=refusal, condition_refused=event.condition)
 
     if event.condition is PowerCondition.G_TURN:
         feature.power_used_turn = state.turn_number

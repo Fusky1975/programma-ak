@@ -2756,7 +2756,15 @@ _POWMSG_UP_SKILL_ROLL_FAILED = (
 _POWMSG_UP_APT_SUCCESS = (
     "{So }you need/Rwant more aptitude in ^?Very_well/RThen, I increase/Rimprove your aptitude in ^ by 1 level!"
 )
-_POWMSG_DN_SKILL_AT_LIMIT = "The $\\ drains your skill in ^, but I see you have no talent for ^, so go now in peace."
+# Phase 782: verbatim POWMSG.X2 line 14 reads "drains your aptitude in
+# ^" -- confirmed directly against the raw file's own bytes, not just
+# re-derived -- even though the surrounding wording ("no talent for ^")
+# reads as if it should say "skill" instead. A real, source-level
+# wording quirk (the same class as the "Consquently" typo/GMSPOILS.X's
+# 3-choice anomaly elsewhere in this project), preserved verbatim rather
+# than corrected -- this previously shipped as "drains your skill,"
+# sourced only from Special Features.md's own second-hand paraphrase.
+_POWMSG_DN_SKILL_AT_LIMIT = "The $\\ drains your aptitude in ^, but I see you have no talent for ^, so go now in peace."
 _POWMSG_DN_SKILL_SUCCESS = (
     "I see you are skilled in ^, that overrated/Robnoxious disability which has caused so many problems "
     "in this_province/Rthese_parts.But I can help solve that!"
@@ -2782,6 +2790,27 @@ _POWMSG_NEW_SEX_TO_MALE = (
     "Har {de }har har!!!"
 )
 
+# Phase 782: POWMSG.X2 lines 2-5, the 4 generic `PowerCondition` refusal
+# messages -- read directly from the raw file this time (previously only
+# available second-hand, if at all), byte-verified including the two
+# literal control-byte markers found elsewhere in the same file (this
+# block has none of its own). Power-agnostic: any `Power` can be refused
+# by any of these 4 conditions, so these are dispatched once, generically,
+# in `describe_feature_power_attempt()` -- not duplicated per-power.
+_POWMSG_NEED_KING_REFUSED = "Only a King may use the power of the $\\."
+_POWMSG_PAY_UP_REFUSED = "Your Kingdom doesn't have enough gold to use the power of the $\\."
+_POWMSG_SAME_ALIGN_REFUSED = "A Kingdom of your idiotic/Rmisguided alignment may not use the power of the $\\."
+_POWMSG_G_TURN_REFUSED = (
+    "The power of the $\\ has already been used this turn, and cannot be used again until next turn."
+)
+# Phase 782: `Desktop/PCOND.X2` line 8's own real text describes the
+# DRAIN_COURAGE condition's full "terms" (a separate narration point,
+# deliberately not attempted this phase -- see the plan file's own
+# Phase 782 Context section); this is the one clause extracted from it
+# that functions as a refusal-at-use-time message, the same role
+# POWMSG.X2's own 4 generic refusals above play for their conditions.
+_PCOND_DRAIN_COURAGE_REFUSED = "A Coward may not use this feature!"
+
 # Phase 619: POWMSG.X2 ids 21-37, the 5 Oracles/Recharge/Grant Wish/
 # Gamble's own real message text (Special Features.md section 9.4,
 # user-supplied 2026-08-22) -- same quoted-verbatim/`render()` pattern
@@ -2792,6 +2821,11 @@ _POWMSG_ORAC_ALIGN_SUCCESS = "[ is ^A $o character."
 _POWMSG_ORAC_POWER_NO_ARMIES = (
     "[ is {perhaps/RI_think }not a general/Rmilitary_man, for/Ras [ leads/Rcommands no armies/Rsoldiers."
 )
+# Phase 782: POWMSG.X2 line 18 -- confirmed, byte-verified, to need no
+# General Intelligence Report cross-reference at all (a plain pointer
+# sentence, not literal army data); supersedes the project-original
+# "commands N armies: ..." sentence Phase 619 shipped for lack of this.
+_POWMSG_ORAC_POWER_HAS_ARMIES = "As an example, I will show you what [ is up to (see the General Intelligence Report)."
 _POWMSG_ORAC_GOLD_SUCCESS = "[ has a treasury of # gold."
 _POWMSG_ORAC_OFFICE_SUCCESS = "The current holder of the office of $O is [ (#), who is loyal to $K's kingdom."
 _POWMSG_ORAC_TREAS_SUCCESS = "The treasure in the & is the \\."
@@ -2820,6 +2854,22 @@ _POWMSG_DRAIN_SKILL_REFUSED = (
 # id survives in the recovered 42.
 _POWMSG_CAST_SPELL_SUCCESS = "I give you the power to cast a ~ spell!"
 
+# Phase 782: dispatches on the exact, already-stable `.reason` strings
+# `turn/feature_power_execution.py _apply_condition_gate()` already
+# returns -- guarded by `outcome.condition_refused is not None` at the
+# one real call site below, so `Power.GAMBLE`'s own unrelated internal
+# "insufficient gold" wager-shortfall check (which never sets `condition_
+# refused`) can never collide with `PAY_UP`'s own identically-worded
+# reason here.
+_CONDITION_REFUSAL_TEMPLATES: dict[str, str] = {
+    "only a King may use this power": _POWMSG_NEED_KING_REFUSED,
+    "insufficient gold": _POWMSG_PAY_UP_REFUSED,
+    "wrong alignment": _POWMSG_SAME_ALIGN_REFUSED,
+    "already used this gameturn": _POWMSG_G_TURN_REFUSED,
+    "insufficient skill levels": _POWMSG_DRAIN_SKILL_REFUSED,
+    "a Coward may not use this feature": _PCOND_DRAIN_COURAGE_REFUSED,
+}
+
 
 def describe_feature_power_attempt(
     outcome: FeaturePowerAttemptResult,
@@ -2831,13 +2881,20 @@ def describe_feature_power_attempt(
     """Renders the one POWMSG.X2 sentence for a Scout's own Feature ->
     Power [5.8] outcome, wired into `describe_search()` right after the
     Scout discovery narration. Returns `None` whenever this phase has no
-    recovered POWMSG id for the specific outcome that occurred -- every
-    `_apply_condition_gate()` refusal (King/alignment/gameturn/gold/
-    skill-drain), UP_APT/MAP_FEAT/SAGE_DISC's own successful cases, and
-    "no skill data recorded" all fall through to `None` deliberately (see
-    each branch below and the module comment above these templates) --
-    not a bug, `describe_search()`'s own caller already treats `None` as
-    "nothing to add".
+    recovered POWMSG id for the specific outcome that occurred --
+    UP_APT/MAP_FEAT/SAGE_DISC's own successful cases and "no skill data
+    recorded" fall through to `None` deliberately (see each branch below
+    and the module comment above these templates) -- not a bug,
+    `describe_search()`'s own caller already treats `None` as "nothing
+    to add".
+
+    Phase 782: every `_apply_condition_gate()` refusal (King/alignment/
+    gameturn/gold/skill-drain/courage-drain) now renders real, verbatim
+    POWMSG.X2/PCOND.X2 text via `_CONDITION_REFUSAL_TEMPLATES`, checked
+    generically before any per-power branch below -- see that dict's own
+    docstring note. The one refusal still left unrendered is the Scout-
+    consent case ("needs two Scout orders to accept these terms") -- no
+    POWMSG.X2-specific text survives for it.
 
     Phase 619: the 8 SA-argument powers' own messages need to resolve
     other leaders'/kingdoms' own names, so this composer now takes
@@ -2855,6 +2912,21 @@ def describe_feature_power_attempt(
         values["^"] = ABILITY_NAME[outcome.ability]
     if character_name is not None:
         values["<"] = character_name
+
+    # Phase 782: the real, power-agnostic `_apply_condition_gate()`
+    # refusal messages (POWMSG.X2 lines 2-5/39, PCOND.X2 line 8's own
+    # DRAIN_COURAGE clause) -- checked once, before any per-power branch,
+    # since a refusal here can happen to ANY power `POWER_CONDITION_
+    # PAIRS` names for that condition, not just the one branch below that
+    # happens to also use this string for an unrelated reason (see
+    # `_CONDITION_REFUSAL_TEMPLATES`'s own docstring note on `Power.
+    # GAMBLE`). `condition_refused is None` for every successful attempt
+    # and for a refusal that never reached the condition gate at all.
+    if outcome.condition_refused is not None:
+        template = _CONDITION_REFUSAL_TEMPLATES.get(outcome.reason or "")
+        if template is not None:
+            return render(template, values, rng=rng)
+        return None  # Scout-consent refusal -- no recovered POWMSG id for that specific case
 
     if outcome.power is Power.NEW_TEMP:
         if not outcome.applied or outcome.new_temper is None:
@@ -2942,15 +3014,13 @@ def describe_feature_power_attempt(
         values["["] = target.name
         if not outcome.oracle_armies:
             return render(_POWMSG_ORAC_POWER_NO_ARMIES, values, rng=rng)
-        # No recovered POWMSG id for the has-armies case (id 16 points at
-        # a separate "General Intelligence Report" section this project
-        # has no composer for) -- a plain, project-original factual
-        # sentence instead of inventing that missing composer, same "no
-        # recovered id, narrate the fact plainly" stance as MAP_FEAT/
-        # SAGE_DISC's own successful reveals above.
-        army_types = ", ".join(ARMY_TYPE_NAME[army.army_type] for army in outcome.oracle_armies)
-        count = len(outcome.oracle_armies)
-        return f"{target.name} commands {count} arm{'y' if count == 1 else 'ies'}: {army_types}."
+        # Phase 782: the real POWMSG.X2 line 18 text -- a plain pointer
+        # to the General Intelligence Report, not a literal army listing
+        # -- confirmed against the raw file directly. Supersedes this
+        # branch's own earlier project-original "commands N armies: ..."
+        # sentence (Phase 619), which was invented only because that
+        # earlier phase believed no usable id survived for this case.
+        return render(_POWMSG_ORAC_POWER_HAS_ARMIES, values, rng=rng)
 
     if outcome.power is Power.ORAC_OFFICE:
         if not outcome.applied or outcome.oracle_office is None:
@@ -3016,8 +3086,9 @@ def describe_feature_power_attempt(
         return None
 
     if outcome.power is Power.GRANT_WISH:
-        if outcome.reason == "insufficient skill levels":
-            return render(_POWMSG_DRAIN_SKILL_REFUSED, values, rng=rng)
+        # Phase 782: the "insufficient skill levels" refusal is now
+        # handled generically above (any power, not just GrantWish) --
+        # reaching here at all means `outcome.applied` is True.
         if not outcome.applied or outcome.ability is None:
             return None
         if outcome.at_limit:
