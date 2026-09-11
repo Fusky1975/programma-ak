@@ -271,6 +271,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Literal
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.army_type import ARMY_TABLE, OVERFLIGHT_AIR, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.enums import Ability
 from ak_engine.models.feature import Feature
@@ -294,6 +295,7 @@ from ak_engine.turn.movement import (
     resolve_move,
     step_toward_non_adjacent_target,
 )
+from ak_engine.worldgen.naval_ability_level_schedule import build_naval_ability_level_schedule
 
 
 # Phase 521: AdvancedAbility.MARCH_CAVALRY/_INFANTRY (+ Mastery tiers) --
@@ -619,6 +621,16 @@ class MoveExecutionResult:
     # from post-move state -- see `report/turn_report.py describe_move()`'s
     # own Phase 769 addendum for the real consumer (`_LMove`/TRAV.X).
     moved_without_armies: bool = False
+    # Phase 787: the real, per-game `spabord[Naval]` schedule
+    # (`worldgen/naval_ability_level_schedule.py`) grants a Naval
+    # `AdvancedAbility` the moment this call's own Move-triggered Naval
+    # XP credit crosses one of the schedule's own real levels (5-10) --
+    # `None` unless that happened on this exact call. Observability for
+    # tests; mirrors `practice_execution.py PracticeExecutionResult.
+    # advanced_ability_granted`'s own shape. See this function's own
+    # Phase 787 addendum for why this is the only real, reachable
+    # trigger for a leader's own personal Naval skill to rise at all.
+    naval_advanced_ability_granted: AdvancedAbility | None = None
 
 
 def _classify_hex_ownership(state: GameState, kingdom_id: int, coord: HexCoord) -> HexOwnershipTier:
@@ -1792,6 +1804,7 @@ def execute_move(
     # casing needed. `rng` is never actually `None` here -- the top of
     # this function already substitutes a fresh `random.Random()` for a
     # caller that omits it.
+    naval_advanced_ability_granted: AdvancedAbility | None = None
     if moved and leader_id is not None and armies:
         air_count = sum(1 for army in armies if army.army_type in OVERFLIGHT_AIR)
         if 2 * air_count < len(armies):
@@ -1801,7 +1814,21 @@ def execute_move(
                     target_province is not None and target_province.effective_terrain() is Terrain.SEA
                 )
                 move_experience_ability = Ability.NAVAL if is_sea_move else Ability.MARCH
-                add_experience(mover_leader, move_experience_ability, MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS, rng)
+                outcome = add_experience(mover_leader, move_experience_ability, MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS, rng)
+                # Phase 787: since Phase 644, Practicing Naval no longer
+                # raises the leader's own personal Naval skill at all
+                # (routed to `execute_practice_tactical()` instead) --
+                # this Move-triggered credit is the ONLY real, reachable
+                # trigger for a Naval `AdvancedAbility` grant. See
+                # `worldgen/naval_ability_level_schedule.py`'s own module
+                # docstring for the real, empirically-verified schedule
+                # and its accepted `SA_Num`/`SA_Mod` under-count scope.
+                if move_experience_ability is Ability.NAVAL and outcome.skill_rose:
+                    naval_advanced_ability_granted = build_naval_ability_level_schedule(state.game_number).get(
+                        outcome.new_skill
+                    )
+                    if naval_advanced_ability_granted is not None:
+                        mover_leader.advanced_abilities.add(naval_advanced_ability_granted)
 
     return MoveExecutionResult(
         moved=moved,
@@ -1818,4 +1845,5 @@ def execute_move(
         entered_foreign_illusory_fog=entered_foreign_illusory_fog,
         straggler_result=straggler_result,
         moved_without_armies=moved_without_armies,
+        naval_advanced_ability_granted=naval_advanced_ability_granted,
     )

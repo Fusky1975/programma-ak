@@ -32341,6 +32341,73 @@ that comparison actually gates. Reverted in full; Phase 768's original
 code and tests stand unchanged, left as a genuinely open, unconfirmed
 question for a future source or a direct question to the user.
 
+- **Phase 787** -- `AKGEN_reverse_engineering_report (3).md`'s own
+  "Dossier aggiuntivo: talento NAVAL" (sections 104-105) supplies the
+  real per-game `spabord[Naval]` template (`[17, 13, 16, 13, 15, 13]` in
+  the document's own `SA.X2` ids -- `NAVAL_LONG_DEFEND, NAVAL_MASTERY_
+  GREAT_15, NAVAL_COMBINED_ARMS, NAVAL_MASTERY_GREAT_15, NAVAL_HUG_
+  COASTLINE, NAVAL_MASTERY_GREAT_15` in this project's own vocabulary)
+  and the `SA_Num`/`SA_Mod` duplicate-grant finding (a leader who unlocks
+  all 3 real `NAVAL_MASTERY_GREAT_15` slots gets a real +45% strength
+  bonus, not +15% -- contradicting `turn/battle_orchestrator.py
+  _mastery_bonus_for()`'s own `max()`-based "never stack" assumption).
+  The document's own claim that Naval "applies the same algorithm
+  already reconstructed for Explorer" was verified empirically, not
+  trusted on its word (the same claim was already shown wrong once for
+  the magic colleges) -- a small scratch script confirmed the cumulative-
+  tries/32000-IRand-range algorithm (not the reset-per-source/32768 style
+  used elsewhere in this project) reproduces both the GW3 and GW900
+  worked examples exactly; new `worldgen/naval_ability_level_schedule.py`
+  mirrors `explorer_ability_level_schedule.py`'s own shape. Runtime
+  wiring found a second, load-bearing correction while designing it, not
+  assumed from the start: the natural-seeming hook
+  (`turn/practice_execution.py _maybe_grant_advanced_ability()`, already
+  used for the 5 magic colleges + Explorer) turns out to be unreachable
+  for Naval -- since Phase 644, Practicing Naval routes to `execute_
+  practice_tactical()` and returns before ever reaching that call, so
+  Practicing Naval no longer raises personal Naval skill at all. The
+  *only* real, reachable trigger is `turn/move_execution.py`'s own
+  Phase 768 Move-triggered Naval XP credit -- its own `add_experience()`
+  return value (previously discarded) is now read, and a real skill
+  crossing grants the matching Advanced Ability from the new schedule
+  (new `MoveExecutionResult.naval_advanced_ability_granted`). Per the
+  user's own confirmed scope, ships the set-collapse under-count as a
+  documented, accepted limitation rather than attempting the larger
+  `advanced_abilities`-multiplicity data-model change the full fix would
+  need. Test count: 6590 -> 6599 (net +9). Full suite verified green
+  (unchanged, 6590) before touching a single test; every new test passed
+  on the first run.
+
+- **Phase 786** -- the same recon document's SS39.2 (already the source
+  for Phase 785's own amount formula) flags a second, distinct, already-
+  called-out manual-vs-binary discrepancy in the Treasury Raid guard
+  divisor: the real compiled formula is additive (`chance = min(95, raw
+  // (1 + H + G))`, `G` a raw per-King guard counter) and `G` is only
+  ever observed incrementing after a *successful* raid -- not Phase
+  702's own multiplicative `2**attempts` reading (chosen before this
+  binary evidence existed) incremented unconditionally before the roll,
+  which was itself the rulebook's own literal "the guard doubles...
+  success or failure alike" text. Per this project's own standing
+  "manual vs. AKGEN-report conflict -- ask the user" convention, asked
+  directly: user chose to follow the binary. `turn/encounter.py steal_
+  success_chance()`/`resolve_steal_attempt()`'s own `treasury_raid_
+  guard_multiplier: int = 1` (multiplicative) renamed to `treasury_raid_
+  guard_counter: int = 0` (additive); `turn/challenge_execution.py
+  _resolve_steal_tactic()`'s own unconditional pre-roll `2**attempts`
+  computation-and-increment replaced with a read-only pre-roll counter
+  read, incrementing only inside the existing `"success"` branch.
+  `models/game_state.py KingdomState.treasury_raid_attempts_this_turn`'s
+  own field/reset behavior is unchanged -- only its doc comment is
+  corrected to describe the real, additive, success-only-incrementing
+  counter. Test count: 6599 -> 6599 (net 0: a pure rename/reshape of 4
+  existing tests -- 2 in `tests/test_encounter.py`, 2 in `tests/test_
+  challenge_execution.py`, plus one comment-only fix in a 5th -- no new
+  coverage needed since the mechanism's own shape was already fully
+  exercised). Full suite verified green (unchanged, 6599) before
+  touching a single test; running the 2 affected files first surfaced
+  exactly the 2 expected failures, matching the design's own prediction
+  precisely.
+
 ## Setup
 
 ```

@@ -4559,9 +4559,17 @@ def resolve_illusory_hero_duel(
 # King or an army-leading Hero; P (SA_Mod, a generic percentage hook)
 # is confirmed 0 in ordinary play -- kept at 0 here since nothing
 # catalogued feeds it. R*G (Treasury Raiding's own active-flag times
-# its own per-King guard counter) is not modeled -- Treasury Raiding
-# needs a new per-King "guard counter" this project has no state for
-# yet, deferred to a later phase.
+# its own per-King guard counter) is now modeled directly as an
+# additive `treasury_raid_guard_counter` term in the divisor below --
+# see Phase 786 (`AKGEN_reverse_engineering_report (3).md` SS39.2),
+# which also resolves a real manual-vs-binary conflict on the guard's
+# own increment trigger: the manual says the guard doubles after ANY
+# attempt (success or failure), but the disassembled binary only shows
+# it incrementing after a *successful* raid. Per this project's own
+# standing "manual vs. AKGEN-report conflict -- ask the user" rule, the
+# user confirmed following the binary. This supersedes Phase 702's own
+# multiplicative `2 ** attempts` reading, chosen before this binary
+# evidence existed.
 #
 # The integer-division-then-cap order matters: the 95% cap applies
 # after raw // divisor, not before.
@@ -4591,19 +4599,22 @@ def steal_success_chance(
     is_invisible: bool = False,
     has_enhanced_invisibility: bool = False,
     target_leads_army_or_is_king: bool = False,
-    treasury_raid_guard_multiplier: int = 1,
+    treasury_raid_guard_counter: int = 0,
 ) -> float:
     """The thief's own real chance of a successful Steal attempt -- see
     module docstring's own Phase 506 addendum for the full formula and
     its source.
 
-    Phase 702 (``AdvancedAbility.THIEF_TREASURY_RAIDS``): "the guard is
-    doubled for that kingdom against further attempts in the same
-    turn and so further attempts in the same turn are halved in
-    probability" -- ``treasury_raid_guard_multiplier`` (default ``1``,
-    every pre-Phase-702 caller unaffected) is the caller-computed
-    ``2 ** attempts_already_made_this_turn`` factor, stacking on top of
-    the existing King/army-leader halving rather than replacing it.
+    Phase 786 (``AdvancedAbility.THIEF_TREASURY_RAIDS``, ``AKGEN_
+    reverse_engineering_report (3).md`` SS39.2): the real, disassembly-
+    confirmed divisor term for Treasury Raiding's own guard counter is
+    additive (``1 + H + G``), not multiplicative -- ``treasury_raid_
+    guard_counter`` (default ``0``, every pre-Phase-786 caller
+    unaffected) is the caller-supplied real per-King guard counter
+    ``G``, added directly alongside the existing King/army-leader
+    halving term ``H`` rather than multiplying the whole divisor.
+    Supersedes Phase 702's own ``treasury_raid_guard_multiplier``
+    (``2 ** attempts``), chosen before this binary evidence existed.
     """
 
     raw = 15 * (
@@ -4612,7 +4623,7 @@ def steal_success_chance(
         + int(has_thief_mastery)
         + int(is_invisible) * (1 + int(has_enhanced_invisibility))
     )
-    divisor = (1 + int(target_leads_army_or_is_king)) * treasury_raid_guard_multiplier
+    divisor = 1 + int(target_leads_army_or_is_king) + treasury_raid_guard_counter
     return min(STEAL_SUCCESS_MAX_CHANCE, (raw // divisor) / 100)
 
 
@@ -4624,7 +4635,7 @@ def resolve_steal_attempt(
     is_invisible: bool = False,
     has_enhanced_invisibility: bool = False,
     target_leads_army_or_is_king: bool = False,
-    treasury_raid_guard_multiplier: int = 1,
+    treasury_raid_guard_counter: int = 0,
 ) -> bool:
     return rng.random() < steal_success_chance(
         level,
@@ -4632,7 +4643,7 @@ def resolve_steal_attempt(
         is_invisible=is_invisible,
         has_enhanced_invisibility=has_enhanced_invisibility,
         target_leads_army_or_is_king=target_leads_army_or_is_king,
-        treasury_raid_guard_multiplier=treasury_raid_guard_multiplier,
+        treasury_raid_guard_counter=treasury_raid_guard_counter,
     )
 
 

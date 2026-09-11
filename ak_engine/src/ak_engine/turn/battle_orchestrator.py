@@ -1028,12 +1028,27 @@ def _combat_ability_for_terrain(terrain: Terrain) -> Ability:
 # from `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION`:
 # "The armies commanded by a character at a battle are increased in
 # strength by 10%/15%/20%. Note: this bonus cancels [the lower tier(s)]."
-# -- the three tiers of one category never stack (a leader can only ever
-# be granted one Mastery ability from the same pool anyway, per that
-# module's own "can be gained only once" wording), so only the highest
-# tier held applies. See `turn/strength.py TACTICAL_BONUS_LEVEL_CAP`'s
-# own docstring for why this bonus exists at all (the automatic +20%/
-# level scaling this project already modeled stops at level 4).
+# -- originally read as "the three tiers of one category never stack (a
+# leader can only ever be granted one Mastery ability from the same pool
+# anyway)", so only the highest tier held was made to apply via `max()`.
+#
+# **Phase 787: this assumption is now known to be false, at least for
+# Naval.** `AKGEN_reverse_engineering_report (3).md` SS104 confirms the
+# real engine's `SA_Num`/`SA_Mod` counts *every* spabord slot up to the
+# leader's own current skill level that holds a matching id and *sums*
+# `15 * count` for Naval Mastery -- so a leader who unlocks all 3 of the
+# real per-game Naval template's own `NAVAL_MASTERY_GREAT_15` slots (see
+# `worldgen/naval_ability_level_schedule.py`) gets a real +45% bonus, not
+# +15%. `LeaderState.advanced_abilities` being a plain `set` structurally
+# collapses 3 grants of the same member into one membership flag, so
+# `max()` here is a real, deliberately accepted under-count (at most
+# +15%/+20% delivered instead of up to +45%/+60%) -- not a correct
+# modeling choice, just the one this project's own data model can
+# support without a larger, separate change (tracking multiplicities and
+# summing instead of maxing), not attempted this phase. See `turn/strength.py
+# TACTICAL_BONUS_LEVEL_CAP`'s own docstring for why this bonus exists at
+# all (the automatic +20%/level scaling this project already modeled
+# stops at level 4).
 _MASTERY_BONUS_BY_ABILITY: dict[Ability, dict[AdvancedAbility, float]] = {
     Ability.TACTICAL: {
         AdvancedAbility.TACTICAL_MASTERY_20: 0.20,

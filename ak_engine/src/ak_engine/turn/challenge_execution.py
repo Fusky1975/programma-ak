@@ -1274,12 +1274,17 @@ def _resolve_steal_tactic(
     target_leads_army_or_is_king = target_leader.is_king or target_leads_army
     has_thief_mastery = bool(caster_leader.advanced_abilities & STEAL_THIEF_MASTERY_ABILITIES)
     has_enhanced_invisibility = AdvancedAbility.ENHANCED_INVISIBILITY in caster_leader.advanced_abilities
-    # Phase 702: AdvancedAbility.THIEF_TREASURY_RAIDS -- "targets the
-    # treasury of a foreign king." The guard-doubling deterrent ("in
-    # either case, the guard is doubled... against further attempts in
-    # the same turn") fires on every real Treasury Raid attempt,
-    # success or failure alike, so it's computed and the counter
-    # incremented before the roll, not just on a successful raid.
+    # Phase 702/786: AdvancedAbility.THIEF_TREASURY_RAIDS -- "targets the
+    # treasury of a foreign king." Phase 786 (`AKGEN_reverse_engineering_
+    # report (3).md` SS39.2, the same document already cited for Phase
+    # 785's own amount formula) found the real, disassembled binary only
+    # ever increments the guard counter after a SUCCESSFUL raid -- not
+    # "in either case, success or failure alike" the way the manual's own
+    # text (and Phase 702's own original reading of it) says. Per this
+    # project's own standing "manual vs. AKGEN-report conflict -- ask the
+    # user" rule, the user confirmed following the binary: the counter is
+    # only read here (no increment), and incremented only inside the
+    # `is_treasury_raid` success branch below.
     is_treasury_raid = (
         AdvancedAbility.THIEF_TREASURY_RAIDS in caster_leader.advanced_abilities
         and target_leader.is_king
@@ -1287,12 +1292,11 @@ def _resolve_steal_tactic(
         and caster_leader.kingdom_id is not None
         and target_leader.kingdom_id != caster_leader.kingdom_id
     )
-    treasury_raid_guard_multiplier = 1
+    treasury_raid_guard_counter = 0
     if is_treasury_raid:
         victim_kingdom = state.kingdoms.get(target_leader.kingdom_id)
         if victim_kingdom is not None:
-            treasury_raid_guard_multiplier = 2**victim_kingdom.treasury_raid_attempts_this_turn
-            victim_kingdom.treasury_raid_attempts_this_turn += 1
+            treasury_raid_guard_counter = victim_kingdom.treasury_raid_attempts_this_turn
     if resolve_steal_attempt(
         level,
         rng,
@@ -1300,9 +1304,12 @@ def _resolve_steal_tactic(
         is_invisible=caster.is_invisible,
         has_enhanced_invisibility=has_enhanced_invisibility,
         target_leads_army_or_is_king=target_leads_army_or_is_king,
-        treasury_raid_guard_multiplier=treasury_raid_guard_multiplier,
+        treasury_raid_guard_counter=treasury_raid_guard_counter,
     ):
         if is_treasury_raid:
+            victim_kingdom = state.kingdoms.get(target_leader.kingdom_id)
+            if victim_kingdom is not None:
+                victim_kingdom.treasury_raid_attempts_this_turn += 1
             return "success", _apply_treasury_raid(state, caster_leader, target_leader, rng), []
         stolen_item_ids = _apply_successful_theft(state, caster_leader, target_leader, rng)
         return "success", 0, stolen_item_ids

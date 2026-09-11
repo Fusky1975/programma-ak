@@ -402,15 +402,20 @@ class KingdomState:
     # `turn/practice_execution.py`'s own module docstring (Phase 266) for
     # how a Discovery gets added here.
     discoveries: set[Discovery] = field(default_factory=set)
-    # Phase 702 (AdvancedAbility.THIEF_TREASURY_RAIDS): "the guard is
-    # doubled for that kingdom against further attempts in the same
-    # turn" -- a per-turn counter of how many Treasury Raid attempts
-    # (successful or not) have already targeted this kingdom this turn,
-    # consulted by `turn/challenge_execution.py _resolve_steal_tactic()`
-    # to compute a cumulative `2 ** attempts` guard multiplier. Reset to
-    # 0 by `turn/turn_processor.py _replenish_turn_scoped_state()`
-    # (Phase 573), the same turn-boundary sweep every other "not auto-
-    # reset -- the caller's job" field in this project uses.
+    # Phase 702/786 (AdvancedAbility.THIEF_TREASURY_RAIDS): a per-turn
+    # counter of how many *successful* Treasury Raids have already
+    # targeted this kingdom this turn -- the real per-King guard counter
+    # `G`, `AKGEN_reverse_engineering_report (3).md` SS39.2, added
+    # directly (not `2 ** attempts`) to the success-chance divisor by
+    # `turn/encounter.py steal_success_chance()`. Phase 786 corrected
+    # this from Phase 702's own original reading ("incremented after any
+    # attempt, success or failure," the manual's own text) once the
+    # disassembled binary showed the real increment only ever fires
+    # after a successful raid -- the user confirmed following the
+    # binary. Reset to 0 by `turn/turn_processor.py _replenish_turn_
+    # scoped_state()` (Phase 573), the same turn-boundary sweep every
+    # other "not auto-reset -- the caller's job" field in this project
+    # uses.
     treasury_raid_attempts_this_turn: int = 0
     # Phase 713 (AdvancedAbility.SPY_BLACKMAIL): mirrors the real parsed
     # `GWKingExtension.pending_blackmailer_king_id`/`active_blackmailer_

@@ -4,11 +4,13 @@ from unittest.mock import ANY, patch
 
 import pytest
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
@@ -1307,6 +1309,62 @@ def test_execute_move_credits_nothing_when_a_chase_step_stops_without_moving():
     assert result.stopped_chasing is True
     assert result.moved is False
     mock_add_experience.assert_not_called()
+
+
+# -- Phase 787: Naval Advanced Ability level schedule + runtime wiring -----
+
+
+def test_execute_move_grants_a_naval_advanced_ability_when_the_real_credit_crosses_a_level():
+    # game_number defaults to 1 -- build_naval_ability_level_schedule(1)
+    # maps level 5 to NAVAL_LONG_DEFEND (confirmed directly).
+    state = _state_with_leader_and_army(ArmyType.FLEET)
+    state.provinces[TARGET].terrain = Terrain.SEA
+    leader = state.leaders[1]
+    leader.skills = SkillTable([0] * 30)
+    leader.skills.set_pair_for_ability(Ability.NAVAL, 4, 5)  # aptitude >= target skill -- gate always succeeds
+    leader.experience_credit = 95
+
+    # gain = round(10*(1+0.9-0.0)) = 19 -> new_credit = 114 >= 100 -> skill rises
+    result = execute_move(
+        state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=ScriptedRandom([0.9, 0.0, 0.5])
+    )
+
+    assert leader.skills.pair_for_ability(Ability.NAVAL) == (5, 5)
+    assert result.naval_advanced_ability_granted is AdvancedAbility.NAVAL_LONG_DEFEND
+    assert AdvancedAbility.NAVAL_LONG_DEFEND in leader.advanced_abilities
+
+
+def test_execute_move_grants_nothing_when_the_naval_credit_does_not_cross_a_level():
+    state = _state_with_leader_and_army(ArmyType.FLEET)
+    state.provinces[TARGET].terrain = Terrain.SEA
+    leader = state.leaders[1]
+
+    # gain = round(10*(1+0.5-0.5)) = 10 -> new_credit = 10, well below 100
+    result = execute_move(
+        state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=ScriptedRandom([0.5, 0.5])
+    )
+
+    assert result.naval_advanced_ability_granted is None
+    assert leader.advanced_abilities == set()
+
+
+def test_execute_move_a_march_credit_never_grants_a_naval_advanced_ability():
+    # A land move (no Sea terrain) credits Ability.MARCH, never NAVAL --
+    # even when the same scripted rise-crossing sequence is used, no
+    # Naval grant should ever be attempted.
+    state = _state_with_leader_and_army()
+    leader = state.leaders[1]
+    leader.skills = SkillTable([0] * 30)
+    leader.skills.set_pair_for_ability(Ability.MARCH, 4, 5)
+    leader.experience_credit = 95
+
+    result = execute_move(
+        state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=ScriptedRandom([0.9, 0.0, 0.5])
+    )
+
+    assert leader.skills.pair_for_ability(Ability.MARCH) == (5, 5)  # the real credit still rose
+    assert result.naval_advanced_ability_granted is None
+    assert leader.advanced_abilities == set()
 
 
 # -- Phase 651: Illusory Fog's own movement surcharge --

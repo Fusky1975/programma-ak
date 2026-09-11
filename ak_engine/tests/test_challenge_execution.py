@@ -3452,7 +3452,7 @@ def test_resolve_steal_tactic_treasury_raid_success_raids_gold_not_items():
     state.kingdoms[2].treasury = 1000
     item = state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=2)
 
-    # level 0 vs a King: raw=15, divisor=(1+1)*1=2 -> threshold 0.07;
+    # level 0 vs a King: raw=15, divisor=1+1+0=2 -> threshold 0.07;
     # 0.06 succeeds. Then treasury_raid_amount (0.5 -> round(500*0.625)=
     # 312, Phase 785) and Add_Experience's own trailing pair (0.5, 0.5).
     outcome, gold_raided, stolen_item_ids = _resolve_steal_tactic(
@@ -3467,7 +3467,7 @@ def test_resolve_steal_tactic_treasury_raid_success_raids_gold_not_items():
     assert state.kingdoms[2].treasury_raid_attempts_this_turn == 1
 
 
-def test_resolve_steal_tactic_treasury_raid_guard_multiplier_stacks_and_increments_on_failure_too():
+def test_resolve_steal_tactic_treasury_raid_guard_counter_only_increments_on_success():
     state = _base_state()
     thief = LeaderState(
         1, kingdom_id=1, name="Thief", location=FIELD, advanced_abilities={AdvancedAbility.THIEF_TREASURY_RAIDS}
@@ -3477,19 +3477,22 @@ def test_resolve_steal_tactic_treasury_raid_guard_multiplier_stacks_and_incremen
     state.add_leader(king)
     state.kingdoms[2].treasury = 1000
 
-    # First attempt: guard multiplier 1, threshold 0.07 -- 0.06 succeeds.
+    # First attempt: guard counter 0, divisor 1+1+0=2 -> threshold 0.07
+    # -- 0.06 succeeds, incrementing the counter.
     outcome1, gold1, _ = _resolve_steal_tactic(thief, _thief_combatant(), king, state, ScriptedRandom([0.06, 0.5, 0.5, 0.5]))
     assert outcome1 == "success"
     assert gold1 > 0
     assert state.kingdoms[2].treasury_raid_attempts_this_turn == 1
 
-    # Second attempt, same turn: guard multiplier now 2, divisor=(1+1)*2=4
-    # -> threshold 15//4/100 = 0.03. The same 0.06 roll that succeeded
-    # before now fails ("in either case" the guard still doubles).
+    # Second attempt, same turn: guard counter now 1, divisor 1+1+1=3 ->
+    # threshold 15//3/100 = 0.05. The same 0.06 roll that succeeded
+    # before now fails -- but a FAILED attempt no longer increments the
+    # counter (Phase 786's own real, binary-confirmed fix: only a
+    # successful raid does), so it stays at 1, not 2.
     outcome2, gold2, _ = _resolve_steal_tactic(thief, _thief_combatant(), king, state, ScriptedRandom([0.06, 0.5]))
     assert outcome2 == "executed"  # failed attempt, failed evasion, Hero thief vs. King
     assert gold2 == 0
-    assert state.kingdoms[2].treasury_raid_attempts_this_turn == 2
+    assert state.kingdoms[2].treasury_raid_attempts_this_turn == 1
 
 
 def test_resolve_steal_tactic_treasury_raid_not_triggered_for_a_same_kingdom_king():

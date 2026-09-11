@@ -89,12 +89,15 @@ bare strings, confirmed unambiguous by this 1:1 meaning-match.
   at *runtime* (as opposed to this module's own narrower world-gen-
   byte-fidelity scope) remains a separate, unresolved question, not
   attempted here.
-- ``TACTICAL``/``NAVAL``/``ARCHERY``/``MELEE`` (ordinals 0, 2, 3, 4) and
+- ``TACTICAL``/``ARCHERY``/``MELEE`` (ordinals 0, 3, 4) and
   ``DRUID``/``THIEF``/``EXPLORER``/``SPY``/``SAGE`` (ordinals 10-14):
   their own real template content isn't in the available material.
-  The first 4 are still correctly *consumed* (see above) since that's
-  needed to reach the magic colleges; the last 5 aren't touched at all
-  since nothing downstream of ``ILLUSION`` is needed here.
+  These are still correctly *consumed* (see above) since that's needed
+  to reach the magic colleges; the last 5 aren't touched at all since
+  nothing downstream of ``ILLUSION`` is needed here. **``NAVAL``
+  (ordinal 2) is no longer in this bucket** -- its own real template
+  content and build algorithm are now known, see
+  ``worldgen/naval_ability_level_schedule.py`` (Phase 787).
 """
 
 from __future__ import annotations

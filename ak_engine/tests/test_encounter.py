@@ -2523,24 +2523,25 @@ def test_resolve_steal_attempt_uses_the_success_chance():
     assert resolve_steal_attempt(1, rng) is False
 
 
-# -- Phase 702: AdvancedAbility.THIEF_TREASURY_RAIDS --
+# -- Phase 702/786: AdvancedAbility.THIEF_TREASURY_RAIDS --
 
 
-def test_steal_success_chance_treasury_raid_guard_multiplier_stacks_on_the_king_halving():
-    # level 4, H=1: raw = 75. Default multiplier=1 -> divisor 2 -> 0.37
-    # (the existing King halving alone, non-regression). multiplier=2 ->
-    # divisor 4 -> 75 // 4 = 18 -> 0.18. multiplier=4 -> divisor 8 ->
-    # 75 // 8 = 9 -> 0.09.
+def test_steal_success_chance_treasury_raid_guard_counter_adds_to_the_king_halving():
+    # level 4, H=1: raw = 75. counter=0 -> divisor 1+1+0=2 -> 0.37 (the
+    # existing King halving alone, non-regression). counter=1 -> divisor
+    # 1+1+1=3 -> 75 // 3 = 25 -> 0.25. counter=2 -> divisor 1+1+2=4 ->
+    # 75 // 4 = 18 -> 0.18. Additive, per the real SS39.2 formula --
+    # not the old `2 ** attempts` multiplicative reading (Phase 702).
     assert steal_success_chance(4, target_leads_army_or_is_king=True) == pytest.approx(0.37)
     assert steal_success_chance(
-        4, target_leads_army_or_is_king=True, treasury_raid_guard_multiplier=2
-    ) == pytest.approx(0.18)
+        4, target_leads_army_or_is_king=True, treasury_raid_guard_counter=1
+    ) == pytest.approx(0.25)
     assert steal_success_chance(
-        4, target_leads_army_or_is_king=True, treasury_raid_guard_multiplier=4
-    ) == pytest.approx(0.09)
+        4, target_leads_army_or_is_king=True, treasury_raid_guard_counter=2
+    ) == pytest.approx(0.18)
 
 
-def test_resolve_steal_attempt_treasury_raid_guard_multiplier_default_reproduces_existing_behavior():
+def test_resolve_steal_attempt_treasury_raid_guard_counter_default_reproduces_existing_behavior():
     rng = ScriptedRandom([0.29, 0.31])
     assert resolve_steal_attempt(1, rng) is True
     assert resolve_steal_attempt(1, rng) is False
