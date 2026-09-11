@@ -4638,15 +4638,21 @@ def resolve_steal_attempt(
 
 def treasury_raid_amount(treasury: int, rng: random.Random) -> int:
     """``AdvancedAbility.THIEF_TREASURY_RAIDS``: "the thief gets away
-    with up to half of the treasury" -- no exact formula survives, so
-    (per the user's own confirmed choice, Phase 702) this reads "up to
-    half" as a uniform random fraction between 0% and 50% of the
-    target kingdom's current treasury, the same "up to N" resolution
-    convention already used for ``Power.MAP_PROV``'s own ``3 + IRand %
-    3`` reveal count (Phase 623).
+    with up to half of the treasury".
+
+    Phase 785 -- `AKGEN_reverse_engineering_report (3).md` SS39.2 gives
+    the real compiled formula: ``B = treasury // 2``, ``amount = round(B
+    * (0.25 + 0.75 * U))`` for a uniform ``U`` in [0, 1) -- a real range
+    of 12.5% to 50% of the current treasury (average ~31.25%), not a
+    uniform 0%-50% draw. The rulebook's own "up to half" phrasing turns
+    out to be literal only as an upper bound; the floor is 12.5%, not
+    0%. Supersedes the Phase 702 guess this function's own docstring
+    used to describe here ("no exact formula survives... reads 'up to
+    half' as a uniform random fraction between 0% and 50%").
     """
 
-    return round(treasury * rng.random() * 0.5)
+    b = treasury // 2
+    return round(b * (0.25 + 0.75 * rng.random()))
 
 
 # The real evasion-after-failure formula, from AK.OVR:0x1AC3C-0x1AC88:

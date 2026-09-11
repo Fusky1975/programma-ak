@@ -3414,13 +3414,13 @@ def test_apply_treasury_raid_moves_gold_not_items():
     state.kingdoms[2].treasury = 1000
     item = state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=2)
 
-    # 0.5 -> treasury_raid_amount(1000, ...) = round(1000*0.5*0.5) = 250;
-    # trailing pair feeds Add_Experience's own spread.
+    # Phase 785: 0.5 -> treasury_raid_amount(1000, ...) = round(500*0.625)
+    # = 312; trailing pair feeds Add_Experience's own spread.
     amount = _apply_treasury_raid(state, thief, king, ScriptedRandom([0.5, 0.5, 0.5]))
 
-    assert amount == 250
-    assert state.kingdoms[2].treasury == 750
-    assert state.kingdoms[1].treasury == 250
+    assert amount == 312
+    assert state.kingdoms[2].treasury == 688
+    assert state.kingdoms[1].treasury == 312
     assert state.items[item.item_id].owner_leader_id == 2  # untouched -- gold, not items
     assert thief.merit_tally.successful_thefts == 1
 
@@ -3433,10 +3433,11 @@ def test_apply_treasury_raid_kingdomless_thief_keeps_the_gold_off_the_books():
     state.add_leader(king)
     state.kingdoms[2].treasury = 1000
 
+    # Phase 785: 0.5 -> treasury_raid_amount(1000, ...) = round(500*0.625) = 312.
     amount = _apply_treasury_raid(state, thief, king, ScriptedRandom([0.5, 0.5, 0.5]))
 
-    assert amount == 250
-    assert state.kingdoms[2].treasury == 750  # still deducted from the victim
+    assert amount == 312
+    assert state.kingdoms[2].treasury == 688  # still deducted from the victim
     assert state.kingdoms[1].treasury == 0  # nowhere for a kingdomless thief to bank it
 
 
@@ -3452,16 +3453,16 @@ def test_resolve_steal_tactic_treasury_raid_success_raids_gold_not_items():
     item = state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=2)
 
     # level 0 vs a King: raw=15, divisor=(1+1)*1=2 -> threshold 0.07;
-    # 0.06 succeeds. Then treasury_raid_amount (0.5) and Add_Experience's
-    # own trailing pair (0.5, 0.5).
+    # 0.06 succeeds. Then treasury_raid_amount (0.5 -> round(500*0.625)=
+    # 312, Phase 785) and Add_Experience's own trailing pair (0.5, 0.5).
     outcome, gold_raided, stolen_item_ids = _resolve_steal_tactic(
         thief, _thief_combatant(), king, state, ScriptedRandom([0.06, 0.5, 0.5, 0.5])
     )
 
     assert outcome == "success"
-    assert gold_raided == 250
+    assert gold_raided == 312
     assert stolen_item_ids == []
-    assert state.kingdoms[2].treasury == 750
+    assert state.kingdoms[2].treasury == 688
     assert state.items[item.item_id].owner_leader_id == 2  # not stolen -- gold replaces items here
     assert state.kingdoms[2].treasury_raid_attempts_this_turn == 1
 
@@ -3748,7 +3749,7 @@ def test_execute_challenge_treasury_raid_remote_co_location_via_still_owned_home
         result = execute_challenge(state, 1, _steal_request(2), rng=ScriptedRandom([0.06, 0.5, 0.5, 0.5]))
 
     assert result.accepted is True
-    assert result.gold_raided == 250
+    assert result.gold_raided == 312
 
 
 def test_execute_challenge_treasury_raid_remote_co_location_requires_the_ability():
@@ -3796,7 +3797,7 @@ def test_execute_challenge_treasury_raid_bypasses_the_king_refusal_even_when_co_
         result = execute_challenge(state, 1, _steal_request(2), rng=ScriptedRandom([0.06, 0.5, 0.5, 0.5]))
 
     assert result.accepted is True
-    assert result.gold_raided == 250
+    assert result.gold_raided == 312
 
 
 def test_execute_challenge_steal_only_plan_now_actually_attempts_the_steal():

@@ -32295,6 +32295,52 @@ follow-up request after the original 431-435 plan shipped.
   distinto" edge case (no valid distinct opponent refuses the Mirror-
   Image cast outright, `_LSpIneff`) -- a real, separate, smaller finding.
 
+- **Phase 785** -- `AKGEN_reverse_engineering_report (3).md` section
+  39.2 ("Treasury Raiding"), found by the same "under-mined document
+  sections" recon that produced Phase 783 (and a reverted Phase 784
+  attempt, see below), gives the exact compiled amount formula for
+  `AdvancedAbility.THIEF_TREASURY_RAIDS` (Phase 702, closed backlog
+  #11): `B = treasury // 2`, `amount = round(B * (0.25 + 0.75 * U))` for
+  a uniform `U` in `[0, 1)` -- a real range of 12.5% to 50% of the
+  current treasury (average ~31.25%), not the 0%-50% uniform draw Phase
+  702 shipped as an admitted guess (`treasury_raid_amount()`'s own
+  docstring already said plainly "no exact formula survives"). The
+  rulebook's own "up to half" phrasing turns out to be literal only as
+  an upper bound; the real floor is 12.5%, not 0%. Unlike the reverted
+  Phase 784 attempt, this finding has no competing "official table" to
+  contradict and no polarity ambiguity -- verified the new formula's own
+  real output range directly (`treasury=1000`: U=0.0 -> 125, U=0.5 ->
+  312, U=0.999 -> 500, exactly the stated band) before writing a single
+  test, not hand-derived and left unchecked. `turn/challenge_
+  execution.py`'s own separate, already-decided manual-vs-binary
+  conflict on the guard-counter's own increment-on-failure question
+  (Phase 702) is re-flagged by this same document section but adds no
+  new information -- left untouched. Full suite verified green
+  (unchanged, 6590) before touching a single test; 5 existing tests
+  across `tests/test_encounter.py`/`tests/test_challenge_execution.py`
+  needed their own hardcoded expected gold figure corrected from 250 to
+  312 (2 of the 5 call sites weren't caught by the first grep pass --
+  found by running the full affected files, not assumed complete from a
+  single search).
+
+**Phase 784, investigated and reverted, not shipped** -- while
+investigating the same recon's "flying over the sea can train Naval"
+finding (`AKGEN_reverse_engineering_report (3).md` SS110.1, cross-
+confirmed by `MOVE.md` section 11's own assembly/prose) as a possible
+polarity bug in Phase 768's Move-triggered March/Naval XP gate, flipping
+the condition broke 4 previously-passing tests representing the
+*textbook* case from `MOVE.md`'s own "official table" (an ordinary land
+Move, a pure-Fleet Move to Sea). Closer inspection showed the "corrected"
+reading couldn't even support its own textbook case (a pure Fleet has
+`air_count=0`, so the flipped condition would never fire for a Fleet
+Move at all) -- and `MOVE.md`'s own confidence section had already
+flagged this exact comparison as only "medio-alta" confidence. Two
+independent documents agreeing on an address range and a comparison
+operator is not the same as either of them being certain about what
+that comparison actually gates. Reverted in full; Phase 768's original
+code and tests stand unchanged, left as a genuinely open, unconfirmed
+question for a future source or a direct question to the user.
+
 ## Setup
 
 ```

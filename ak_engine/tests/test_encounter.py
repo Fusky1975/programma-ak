@@ -2546,11 +2546,12 @@ def test_resolve_steal_attempt_treasury_raid_guard_multiplier_default_reproduces
     assert resolve_steal_attempt(1, rng) is False
 
 
-def test_treasury_raid_amount_stays_within_up_to_half():
+def test_treasury_raid_amount_stays_within_12_5_to_50_percent():
+    # Phase 785: b = treasury // 2 = 500; amount = round(b * (0.25 + 0.75*U)).
     rng = ScriptedRandom([0.0, 0.5, 0.999])
-    assert treasury_raid_amount(1000, rng) == 0
-    assert treasury_raid_amount(1000, rng) == 250
-    assert treasury_raid_amount(1000, rng) == round(1000 * 0.999 * 0.5)
+    assert treasury_raid_amount(1000, rng) == 125  # floor: 12.5% of treasury
+    assert treasury_raid_amount(1000, rng) == 312
+    assert treasury_raid_amount(1000, rng) == round(500 * (0.25 + 0.75 * 0.999))  # ceiling: ~50%
 
 
 def test_steal_evasion_chance_base_and_per_level():
