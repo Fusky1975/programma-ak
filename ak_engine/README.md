@@ -32246,6 +32246,55 @@ follow-up request after the original 431-435 plan shipped.
   separate narration opportunity with no established report-layer
   placement yet).
 
+- **Phase 783** -- a leftover, previously-unseen image among the batch of
+  untracked reverse-engineering files (`Formula esatta del disbelief.png`,
+  Desktop root) turned out to show the literal compiled disbelief formula
+  for Mirror-Image Phantasm/Illusory Hero: `T = 20(I+1) + 25D + 25R -
+  15(Le+H)`, `P = clamp(T, 0, 100)%`. The same exact formula, with full
+  byte-address citations (`AK.OVR 0x1DC78-0x1DD6F`), already exists in
+  `AKGEN_reverse_engineering_report (2).md` SS21.2/21.4/21.7 -- a
+  document already partially mined (Phase 463 pulled only the Detect
+  Illusions `D` term from it). Reading section 21 in full and cross-
+  checking every term against the already-shipped Phase 187/208/210/463
+  code confirmed every Mirror-Image-only figure (both stages, with or
+  without Detect Illusions) already matches the sourced formula exactly
+  -- no bug there -- but found two real, fixed bugs specific to Illusory
+  Hero. (1) `illusory_hero_disbelief_chance()` used to clamp the base
+  Mirror-Image chance to [0,1] first, then subtract Illusory Hero's own
+  flat 15-point malus and clamp again -- a double clamp that under-
+  valued the true chance whenever the raw threshold exceeded 100% before
+  the malus (e.g. Divine/Superhuman intelligence at low caster skill
+  used to read 85% instead of the byte-verified 100%); fixed by
+  combining the level reduction and the Illusory Hero malus into one
+  subtraction before a single clamp, exactly matching the source's own
+  `T = ... - 15(Le+H)` shape. (2) `resolve_mirror_image_duel()`/`resolve_
+  illusory_hero_duel()`'s own `illusion` `Combatant` used to copy only 3
+  fields (`hit_points`, `melee_skill`, `melee_damage_range`) instead of
+  the full record SS21.2 confirms the real engine memcpy's wholesale
+  (178 bytes, explicitly naming already-active Invisibility/Holy Symbol
+  as examples of what carries over); fixed via `dataclasses.replace()`,
+  with `always_acts_first` explicitly reset to False afterward (a fresh
+  illusion is never the ILLUS_MAGE titleholder itself, regardless of
+  whether the source combatant holds that title). Since the pre-existing
+  hand-rolled Melee loop these two duels use (not the full `resolve_
+  melee_duel()` engine -- a deliberate, unchanged simplification) only
+  ever reads `melee_skill`/`melee_damage_range`/`always_acts_first`/
+  `damage_reduction` from a `Combatant`, this bug had one concrete
+  consequence before the fix: an opponent's own Imperial Defender armor
+  didn't protect their illusion. Also corrected a stale, adjacent claim
+  in the same docstring block that the illusion duels reuse `resolve_
+  melee_duel()` -- they never have, both always used their own small
+  loop. Test count: 6587 -> 6590 (net +3). Full suite verified green
+  (unchanged, 6587) before touching a single test; exactly one pre-
+  existing test (`test_illusory_hero_disbelief_chance_never_reaches_
+  100_percent`) needed correcting, since its own premise *was* the bug
+  being fixed -- found and confirmed via the standing non-breaking run,
+  not assumed. Explicitly deferred, not attempted: rewriting the illusion
+  duels' own hand-rolled Melee loop to use the full combat engine (a
+  separate, larger redesign question), and SS21.7's own "bersaglio non
+  distinto" edge case (no valid distinct opponent refuses the Mirror-
+  Image cast outright, `_LSpIneff`) -- a real, separate, smaller finding.
+
 ## Setup
 
 ```

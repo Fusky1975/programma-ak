@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from unittest.mock import patch
 
 import pytest
 
@@ -1899,13 +1900,20 @@ def test_illusory_hero_disbelief_chance_clamps_to_0_percent():
     assert illusory_hero_disbelief_chance(low_base, 10) == 0.0
 
 
-def test_illusory_hero_disbelief_chance_never_reaches_100_percent():
-    # Mirror-Image's own per-round chance is already clamped to 100%
-    # *before* Illusory Hero's flat -15% is applied, so the highest
-    # achievable chance here is 85%, never 100% -- unlike Mirror-Image
-    # itself, whose own Divine/Superhuman tier can hit 100% outright.
+def test_illusory_hero_disbelief_chance_can_still_reach_100_percent():
+    # Phase 783: the level reduction and Illusory Hero's own flat -15%
+    # combine into a single subtraction before ONE clamp (AKGEN_reverse_
+    # engineering_report (2).md SS21.4's own `T=20(I+1)+25D+25R-15(Le+H)`
+    # formula) -- so a high enough base chance can still hit 100% even
+    # after the Illusory Hero malus, unlike the earlier double-clamped
+    # version of this function (which capped Mirror-Image's own value at
+    # 100% first, then subtracted 15% from that, topping out at 85%).
     high_base = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[MirrorImageIntelligenceTier.DIVINE_OR_SUPERHUMAN]  # 120%
-    assert illusory_hero_disbelief_chance(high_base, 0) == pytest.approx(0.85)
+    assert illusory_hero_disbelief_chance(high_base, 0) == pytest.approx(1.0)
+    # At level 1 the raw threshold (120% - 15% level - 15% IH = 90%)
+    # never touches the clamp boundary either way, so this is unaffected
+    # by the fix -- kept here as the direct contrast case.
+    assert illusory_hero_disbelief_chance(high_base, 1) == pytest.approx(0.90)
 
 
 def test_resolve_illusory_hero_disbelief_zero_percent_never_consumes_a_roll():
@@ -2400,6 +2408,67 @@ def test_resolve_illusory_hero_duel_stage2_illusion_kills_the_caster():
 
     assert result.winner == "b"
     assert result.rounds == 2
+
+
+# -- Phase 783: full-record illusion copy (AKGEN_reverse_engineering_report (2).md SS21.2) --
+
+
+def test_resolve_mirror_image_duel_illusion_inherits_opponents_damage_reduction():
+    # Both combatants deal a fixed 6 damage and have damage_reduction=3
+    # of their own (opponent's is a real, pre-existing field; the
+    # illusion's own copy of it is the Phase 783 fix under test). Before
+    # the fix the illusion always defaulted to damage_reduction=0, so it
+    # would have died to the very first 6-damage hit (round 1) instead
+    # of surviving one hit (4 -> 1 hp) and only dying to the second
+    # (round 2) once its own inherited 3-point reduction is applied.
+    caster = Combatant("Caster", hit_points=10, melee_skill=0)
+    opponent = Combatant("Opponent", hit_points=4, melee_skill=1, melee_damage_range=(6, 6), damage_reduction=3)
+    rng = ScriptedRandom([0.9, 0.0, 0.0, 0.0, 0.0, 0.9, 0.0, 0.0])
+    # Tied melee_skill (illusion copies opponent's) means every round
+    # needs its own tie-break roll (0.9 -> opponent acts first); each
+    # guaranteed-hit Melee swing (0.0 < MELEE_HIT_CHANCE) consumes a
+    # second scripted value for its own `randint()` damage roll, even
+    # against a degenerate (6, 6) range -- verified directly, this
+    # Python build's `_randbelow` fallback always draws once regardless
+    # of range width.
+
+    result = resolve_mirror_image_duel(caster, opponent, MirrorImageIntelligenceTier.MECHANICAL, 2, rng)
+
+    assert result.winner is None
+    assert result.rounds == 2
+
+
+def test_resolve_mirror_image_duel_illusion_never_inherits_always_acts_first():
+    # `always_acts_first` (Office.ILLUS_MAGE's own perk) is the one field
+    # deliberately excluded from the Phase 783 full-record copy -- a
+    # fresh illusion is never the titleholder itself, even when it's a
+    # copy of an opponent who does hold that title.
+    caster = Combatant("Caster")
+    opponent = Combatant("Opponent", hit_points=0, always_acts_first=True)
+
+    with patch("ak_engine.turn.encounter._acts_first", return_value=True) as mock_acts_first:
+        result = resolve_mirror_image_duel(caster, opponent, MirrorImageIntelligenceTier.MECHANICAL, 2, ScriptedRandom([]))
+
+    mock_acts_first.assert_called_once()
+    assert mock_acts_first.call_args.kwargs["a_always_first"] is False  # the illusion
+    assert mock_acts_first.call_args.kwargs["b_always_first"] is True  # opponent's own real flag, preserved
+    assert result.winner is None  # opponent (and its illusion snapshot) started at 0 hp
+
+
+def test_resolve_illusory_hero_duel_illusion_never_inherits_always_acts_first():
+    caster = Combatant("Caster")
+    opponent = Combatant("Opponent", hit_points=0)
+    hero = Combatant("Hero", always_acts_first=True)
+
+    with patch("ak_engine.turn.encounter._acts_first", return_value=True) as mock_acts_first:
+        result = resolve_illusory_hero_duel(
+            caster, opponent, hero, MirrorImageIntelligenceTier.MECHANICAL, 2, ScriptedRandom([])
+        )
+
+    mock_acts_first.assert_called_once()
+    assert mock_acts_first.call_args.kwargs["a_always_first"] is False  # the illusion, even though hero itself holds it
+    assert mock_acts_first.call_args.kwargs["b_always_first"] is False  # opponent never set it
+    assert result.winner == "a"  # opponent started at 0 hp -- Stage 1 already won, turns_on_master defaults False
 
 
 # -- Phase 506: Steal, real disassembly-sourced formula --

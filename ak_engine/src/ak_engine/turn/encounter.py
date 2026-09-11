@@ -552,19 +552,63 @@ other spell in this file already uses. At the time this addendum was
 written, the actual duel resolution (illusion-vs-opponent, then
 caster-vs-illusion) and the round-by-round state transitions between
 the three outcome branches above were not modeled -- but both duels
-*do* reuse this module's own existing `Combatant`/`resolve_melee_
-duel()` machinery (the illusion is explicitly "an exact stat-copy of
-the opponent," so a cloned `Combatant` and a normal `resolve_melee_
-duel()` call resolve it faithfully), orchestrated by `resolve_mirror_
-image_duel()` (Phase 210, below) -- a real, wired call site in `turn/
-challenge_execution.py`/`turn/search_execution.py` today. **Stale as
-of Phase 210**: this addendum's own "not wired into `turn/search_
-execution.py` yet" framing.
+*do* reuse this module's own existing `Combatant` machinery (the
+illusion is explicitly "an exact stat-copy of the opponent," so a
+cloned `Combatant` resolves it faithfully), orchestrated by `resolve_
+mirror_image_duel()` (Phase 210, below) -- a real, wired call site in
+`turn/challenge_execution.py`/`turn/search_execution.py` today. **Stale
+as of Phase 210**: this addendum's own "not wired into `turn/search_
+execution.py` yet" framing. **Also stale, corrected here**: the "a
+normal `resolve_melee_duel()` call resolve it faithfully" claim --
+`resolve_mirror_image_duel()`/`resolve_illusory_hero_duel()` (below)
+each use their own small, hand-rolled per-round Melee loop (no hit-
+chance roll, no `offensive_hit_multiplier`/`defensive_hit_multiplier`/
+weapon procs -- only `melee_skill`, `melee_damage_range`, `always_acts_
+first`, and `damage_reduction` are ever consulted), never `resolve_
+melee_duel()`/`resolve_one_melee_round()` -- a deliberate, still-
+standing simplification (see Phase 783 addendum below), not a stale
+claim about *this* specific mechanism being unwired.
 
 **The "double dissipation" rule** ("if another Mirror-Image spell is
 cast while the illusion is fighting, both illusions will dissipate")
 is likewise left as a documented fact only, not code -- it has no
 numeric magnitude to model and no consuming engine to hook into yet.
+
+**Phase 783 addendum -- `AKGEN_reverse_engineering_report (2).md`
+SS21.2/21.4/21.7 gives the real compiled disbelief formula and illusion-
+copy semantics in full, resolving two real bugs in the code above/below**
+(SS21.4's own `D` term had already been mined once, Phase 463, for
+`DETECT_ILLUSIONS_DISBELIEF_BONUS` -- this addendum is the first full
+read of the section). The real formula: `T = 20(I+1) + 25D + 25R -
+15(Le+H)`, `P = clamp(T, 0, 100)%` (`I`=intelligence ordinal, `D`=1 if
+the current disbeliever holds Detect Illusions, `R`=1 only in Stage 2,
+`Le`=min(effective Illusionist level, 4), `H`=0 for Mirror-Image, 1 for
+Illusory Hero). Every Mirror-Image-only figure (both stages, with or
+without Detect Illusions) already matched this formula exactly, hand-
+verified against SS21.4/21.5's own worked tables -- no bug there. Two
+real, fixed bugs: (1) `illusory_hero_disbelief_chance()` used to clamp
+the Mirror-Image value first, then subtract Illusory Hero's own `H`
+malus and clamp again -- a double clamp that under-valued the true
+chance whenever the raw threshold exceeded 100% before the malus (e.g.
+Divine/Superhuman intelligence at low caster skill used to read 85%
+instead of the correct 100%); fixed by combining the level reduction
+and the `H` malus into one subtraction before a single clamp. (2)
+`resolve_mirror_image_duel()`/`resolve_illusory_hero_duel()`'s own
+`illusion` `Combatant` used to copy only 3 fields (`hit_points`,
+`melee_skill`, `melee_damage_range`) instead of the full record SS21.2
+confirms the real engine memcpy's wholesale (178 bytes, "gli altri
+campi già materializzati... vengono copiati", explicitly naming already-
+active Invisibility/Holy Symbol as examples); fixed via `dataclasses.
+replace()`, with `always_acts_first` explicitly reset to False
+afterward (a fresh illusion is never the ILLUS_MAGE titleholder itself).
+Since the hand-rolled melee loop above only ever reads `damage_
+reduction` besides the 3 already-copied fields, this bug had one real
+consequence: an opponent/hero's own Imperial Defender armor didn't
+protect their illusion. Deliberately not attempted: rewriting the
+hand-rolled melee loop itself to use the full combat engine (a separate,
+larger redesign question), and SS21.7's own "bersaglio non distinto"
+edge case (no valid distinct opponent refuses the cast outright,
+`_LSpIneff`) -- a real, separate, smaller finding.
 
 **Cross-reference, not reuse**: `MirrorImageIntelligenceTier.ANIMAL`/
 `.MECHANICAL` happen to describe the same real-world categories
@@ -1593,7 +1637,7 @@ difference (no intermediate Bow-Range step exists in that engine).
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Literal
 
@@ -2111,13 +2155,27 @@ ILLUSORY_HERO_TURNS_ON_MASTER_BY_DEFAULT = False
 
 def illusory_hero_disbelief_chance(base_chance: float, caster_skill_level: int) -> float:
     """"similar to Mirror-Image Phantasm, except that 15% is subtracted from
-    the chance to disbelieve." Calls through to `mirror_image_disbelief_
-    chance()` for the base Mirror-Image formula, then subtracts one
-    further flat `ILLUSORY_HERO_DISBELIEF_REDUCTION`, clamped to [0%,
-    100%].
+    the chance to disbelieve."
+
+    Phase 783 -- `AKGEN_reverse_engineering_report (2).md` SS21.4 gives
+    the real compiled formula shared by both spells: `T = 20(I+1) + 25D
+    + 25R - 15(Le+H)`, `P = clamp(T, 0, 100)%`, where `H` (this spell's
+    own extra 15-point malus, 0 for Mirror-Image, 1 for Illusory Hero)
+    sits inside the SAME pre-clamp expression as `Le`'s per-level
+    reduction -- a single combined clamp, not two sequential ones. The
+    previous version of this function called through to `mirror_image_
+    disbelief_chance()` (which already clamps to [0,1]) and only then
+    subtracted `ILLUSORY_HERO_DISBELIEF_REDUCTION`, double-clamping and
+    under-valuing the true chance whenever the raw threshold exceeded
+    100% before the Illusory Hero malus was applied (e.g. Divine/
+    Superhuman intelligence at low caster skill used to read 85% instead
+    of the byte-verified 100%). Fixed here by combining the level
+    reduction and the Illusory Hero malus into one subtraction before a
+    single clamp.
     """
 
-    return max(0.0, min(1.0, mirror_image_disbelief_chance(base_chance, caster_skill_level) - ILLUSORY_HERO_DISBELIEF_REDUCTION))
+    reduction = min(MIRROR_IMAGE_DISBELIEF_REDUCTION_PER_LEVEL * caster_skill_level, MIRROR_IMAGE_DISBELIEF_REDUCTION_CAP)
+    return max(0.0, min(1.0, base_chance - reduction - ILLUSORY_HERO_DISBELIEF_REDUCTION))
 
 
 def resolve_illusory_hero_disbelief(base_chance: float, caster_skill_level: int, rng: random.Random) -> bool:
@@ -4249,16 +4307,22 @@ def resolve_mirror_image_duel(
     modeled as a hit-points change here).
     """
 
-    illusion = Combatant(
-        name=f"{opponent.name}'s Illusion",
-        hit_points=opponent.hit_points,
-        melee_skill=opponent.melee_skill,
-        melee_damage_range=opponent.melee_damage_range,
-    )
+    # Phase 783 -- `AKGEN_reverse_engineering_report (2).md` SS21.2
+    # confirms the real engine does a single 178-byte memcpy of the
+    # opponent's ENTIRE operational combat record, not just hit points/
+    # melee stats -- "gli altri campi già materializzati nel record di
+    # combattimento vengono copiati" (explicitly naming already-active
+    # Invisibility/Holy Symbol effects as examples). `dataclasses.
+    # replace()` reproduces this snapshot-at-cast-time copy for every
+    # field at once. The one field this project's own simplified melee
+    # loop below already consults besides `melee_skill`/`melee_damage_
+    # range` is `damage_reduction` (Imperial Defender's armor) -- before
+    # this phase, an opponent's own armor protection didn't carry over
+    # to their illusion, a real, not just cosmetic, gap.
+    illusion = replace(opponent, name=f"{opponent.name}'s Illusion", always_acts_first=False)
     # `illusion` is a fresh construct -- never the ILLUS_MAGE titleholder
-    # himself, so `always_acts_first` stays False on it regardless of who
-    # cast Mirror-Image Phantasm; `opponent`'s own field (Phase 665) is
-    # the only one that can realistically be set here.
+    # himself, so `always_acts_first` is explicitly reset to False above
+    # regardless of whether `opponent` (Phase 665) holds that title.
     base_chance = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[opponent_tier] + opponent_disbelief_bonus
     if opponent_has_detect_illusions:
         base_chance += DETECT_ILLUSIONS_DISBELIEF_BONUS
@@ -4406,12 +4470,14 @@ def resolve_illusory_hero_duel(
     illusion kills the caster instead.
     """
 
-    illusion = Combatant(
-        name=f"Illusory {hero.name}",
-        hit_points=CHARACTER_HIT_POINTS,
-        melee_skill=hero.melee_skill,
-        melee_damage_range=hero.melee_damage_range,
-    )
+    # Phase 783 -- same SS21.2 full-record-copy fix as `resolve_mirror_
+    # image_duel()` above, applied to `hero` (the current Valhalla
+    # visitor) instead of `opponent`; `hit_points` is still explicitly
+    # reset to full (an image, not a snapshot of the visitor's own
+    # current wounds) and `always_acts_first` explicitly reset to False
+    # (never the ILLUS_MAGE titleholder himself, regardless of whether
+    # the visiting hero happens to hold that title).
+    illusion = replace(hero, name=f"Illusory {hero.name}", hit_points=CHARACTER_HIT_POINTS, always_acts_first=False)
     base_chance = MIRROR_IMAGE_DISBELIEF_BASE_CHANCE[opponent_tier] + opponent_disbelief_bonus
     if opponent_has_detect_illusions:
         base_chance += DETECT_ILLUSIONS_DISBELIEF_BONUS
