@@ -203,7 +203,7 @@ from dataclasses import dataclass, field, replace
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.hero_roster import STANDARD_HERO_ID_BY_NAME, STANDARD_HERO_SEX_BY_NAME
 from ak_engine.models.map import HexCoord, Terrain
-from ak_engine.parser.gw_world import GWArmyRecord, GWLeaderRecord, GWProvinceRecord
+from ak_engine.parser.gw_world import DiplomaticRelation, GWArmyRecord, GWKingExtension, GWLeaderRecord, GWProvinceRecord
 
 # Rows per column, confirmed for GW3__T1 (see module docstring). 18
 # columns x 9 rows = 162, the confirmed real province count.
@@ -321,6 +321,7 @@ def bridge_new_game_state(
     turn_number: int = 1,
     height: int = CONFIRMED_BOARD_HEIGHT,
     hero_id_start: int = -1,
+    king_extensions: list[GWKingExtension] | None = None,
 ) -> tuple[GameState, NewGameStateReport]:
     """Builds a brand-new `GameState` directly from a single `GW3` file's
     own three already-parsed record lists -- see module docstring's
@@ -341,6 +342,38 @@ def bridge_new_game_state(
     `kingdom_id`); a row led by a still-synthetic-id Hero is left out
     and returned in the report instead of being bridged with a guessed
     owner.
+
+    **`king_extensions` (Phase 788, optional, default `None`)** --
+    `parser/gw_world.py GWKingExtension`/`parse_gw_king_extensions()`
+    (Phase 380) already parses every King's own treasury, Discovery set,
+    diplomatic history and Valhalla-visit count from the same world
+    file, but nothing threaded it into a bridged `GameState` until now.
+    Confirmed safe to correlate positionally: `parse_gw_king_extensions()`
+    scans the file for King-shaped records in the exact same order
+    `parse_gw_leaders()` does (Phase 330's own "the Nth King-shaped
+    record encountered is Kingdom N" finding), so `king_extensions[N]`
+    is always Kingdom N's own record -- the same file, same scan order,
+    same index. When given (and `len(king_extensions) > kingdom_id`),
+    a King's own bridged `KingdomState` gets its real `treasury`,
+    `discoveries` (the parsed `frozenset[Discovery]` copied into a
+    `set`), and `valhalla_visit_count` -- directly, no computation.
+    `GameState.kingdoms_met`/`allied_kingdoms` (both pair-based, not
+    per-Kingdom) are populated from `met_kings_bitmask` (a real "have
+    these two ever made contact" bit, independent of the *quality* of
+    the relation) and from `diplomatic_relations` respectively --
+    **alliance is bridged only when both sides' own recorded view of
+    each other is `DiplomaticRelation.ALLIED`**, a deliberately
+    conservative reading: `kallst` is a *directed*, per-King array (this
+    King's own view of every other King), so a one-sided value could be
+    a still-pending request rather than a real, accepted alliance --
+    requiring mutual agreement avoids bridging a pending request as if
+    it were the real thing. Every other `GWKingExtension` field
+    (`team_state`, blackmail state, `kpower`/`powperc`, standby, ...)
+    has no matching `GameState`/`KingdomState` concept to receive it yet
+    (this project models no "Team" relation at all, and a real
+    `BlackmailClaim` needs an `amount`/`spy_leader_id` neither `GW` field
+    supplies) -- left unbridged rather than guessed, same as every other
+    "no source, no guess" gap in this module.
     """
 
     kingdoms: dict[int, KingdomState] = {}
@@ -355,13 +388,19 @@ def bridge_new_game_state(
             king_id = record.kingdom_id
             assert king_id is not None  # a King's own kingdom_id is never None (Phase 330)
             king_ids.add(king_id)
-            kingdoms[king_id] = KingdomState(
+            kingdom = KingdomState(
                 kingdom_id=king_id,
                 name=record.name,
                 race=record.race,
                 alignment=record.alignment,
                 home_province=record.coord,
             )
+            if king_extensions is not None and king_id < len(king_extensions):
+                extension = king_extensions[king_id]
+                kingdom.treasury = extension.treasury
+                kingdom.discoveries = set(extension.discovered)
+                kingdom.valhalla_visit_count = extension.valhalla_visit_count
+            kingdoms[king_id] = kingdom
             leaders[king_id] = LeaderState(
                 leader_id=king_id,
                 kingdom_id=king_id,
@@ -398,6 +437,24 @@ def bridge_new_game_state(
             )
 
     state = GameState(turn_number=turn_number, kingdoms=kingdoms, leaders=leaders)
+
+    if king_extensions is not None:
+        for king_id, extension in enumerate(king_extensions):
+            if king_id not in kingdoms:
+                continue
+            for other_king_id, relation in enumerate(extension.diplomatic_relations):
+                if other_king_id == king_id or other_king_id not in kingdoms:
+                    continue
+                if extension.met_kings_bitmask & (1 << other_king_id):
+                    state.kingdoms_met.add(frozenset({king_id, other_king_id}))
+                if (
+                    relation is DiplomaticRelation.ALLIED
+                    and other_king_id < len(king_extensions)
+                    and king_id < len(king_extensions[other_king_id].diplomatic_relations)
+                    and king_extensions[other_king_id].diplomatic_relations[king_id] is DiplomaticRelation.ALLIED
+                ):
+                    state.allied_kingdoms.add(frozenset({king_id, other_king_id}))
+
     # Phase 780: record the real board size (column-major, so width is
     # simply the record count divided by the confirmed height) so
     # downstream turn-engine code no longer has to fall back to `turn/

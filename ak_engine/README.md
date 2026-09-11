@@ -32408,6 +32408,47 @@ question for a future source or a direct question to the user.
   exactly the 2 expected failures, matching the design's own prediction
   precisely.
 
+- **Phase 788** -- a full read-through of `AKGEN_reverse_engineering_
+  report (5).md`'s own Addenda 4.0/5.0/6.0 (SS50-99: the prose engine,
+  the complete `GW` save-file format, and the report generator's own
+  stateful, multi-pass architecture) found that material already
+  comprehensively implemented across dozens of prior phases (134, 288,
+  342-345, 376, 380, 561, 618, 624, 636-639, 656, 660, 711, 722), almost
+  certainly because the same underlying `AKGEN.EXE`/`AK.OVR` static
+  disassembly already fed most of them, even where those phases cite
+  the raw disassembly rather than this narrative document by section
+  number -- checked field-for-field, phase-for-phase, with no
+  discrepancy found anywhere. Exactly two small, previously-undone
+  residuals surfaced: (1) `parser/gw_world.py GWKingExtension` (Phase
+  380: treasury, Discovery set, diplomatic history, Valhalla-visit
+  count -- everything real SS71.1 describes) was fully parsed but never
+  threaded into `parser/gw_world_bridge.py bridge_new_game_state()`;
+  (2) the King's own 3 trailing text lines after the "M" administrative
+  block -- title/epithet/real-player-name (SS71.2, e.g. `"Lord"`/
+  `"Master of the s"`/`"Andrea Ferrigno"`, confirmed dynamic turn to
+  turn against the real `GW3__T1`/`T5` fixtures) -- were documented in
+  this module's own Phase 318 research notes but never given a
+  structured field. Both closed this phase: `GWKingExtension` gains
+  `title_prefix`/`title_suffix`/`player_name` (and `gw_world_writer.py
+  write_gw_king_extension()`'s own round trip now emits all 3, so
+  nothing regresses); `bridge_new_game_state()` gains an optional
+  `king_extensions: list[GWKingExtension] | None = None` parameter
+  (default preserves every existing caller/test unchanged) that, when
+  given, threads `treasury`/`discoveries`/`valhalla_visit_count`
+  straight onto each bridged King's own `KingdomState`, and populates
+  `GameState.kingdoms_met`/`allied_kingdoms` from `met_kings_bitmask`/
+  `diplomatic_relations` -- alliance bridged only when **both** Kings'
+  own recorded view of each other is `ALLIED` (a deliberately
+  conservative reading, since `kallst` is a directed per-King array and
+  a one-sided value could be a still-pending request; the real GW3
+  corpus happens to have no such one-sided case, so this exact property
+  is proven with a small synthetic fixture instead). `team_state` and
+  blackmail state (`active_blackmailer_king_id`/`pending_blackmailer_
+  king_id`) stay unbridged -- this project models no "Team" relation at
+  all, and a real `BlackmailClaim` needs an `amount`/`spy_leader_id`
+  neither `GW` field supplies. Test count: 6599 -> 6603 (net +4). Full
+  suite verified green (unchanged, 6599) before touching a single test.
+
 ## Setup
 
 ```

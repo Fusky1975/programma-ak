@@ -256,12 +256,18 @@ def write_gw_leader_record(record: GWLeaderRecord) -> str:
 
 
 def write_gw_king_extension(record: GWKingExtension) -> str:
-    """Writes a King's own Gender + trailing dynamic-state line -- the
-    exact inverse of `parse_gw_king_extensions`, in the confirmed field
-    order `GWKingExtension`'s own docstring (Phase 380) lays out. The
-    diplomatic-relations count is taken from `len(record.diplomatic_
-    relations)`, not passed separately, so this writer is self-
-    contained -- a round trip only requires the header's own
+    """Writes a King's own Gender + trailing dynamic-state line, plus
+    the 3 short-string title/epithet/player-name lines that always
+    immediately follow it (`GWKingExtension.title_prefix`/`title_
+    suffix`/`player_name`, SS71.2) -- the exact inverse of `parse_gw_
+    king_extensions`, in the confirmed field order `GWKingExtension`'s
+    own docstring (Phase 380) lays out. Returns all 4 lines joined by
+    `"\\n"` -- callers already join this module's own per-record output
+    with `"\\n".join(...)` elsewhere (see `tests/test_gw_world_writer.py`),
+    so embedding the newlines here keeps every one of those call sites
+    unchanged. The diplomatic-relations count is taken from `len(record.
+    diplomatic_relations)`, not passed separately, so this writer is
+    self-contained -- a round trip only requires the header's own
     `king_count` to already match that length (`parse_gw_king_
     extensions` itself derives the count from `GWHeader.king_count`, so
     a mismatched write there would fail on re-parse, the same
@@ -303,7 +309,8 @@ def write_gw_king_extension(record: GWKingExtension) -> str:
         *record.trailing_compatibility_zeros,
     ]
     gender_token = "M" if record.is_male else "F"
-    return " ".join((gender_token, *(str(value) for value in values)))
+    extension_line = " ".join((gender_token, *(str(value) for value in values)))
+    return "\n".join((extension_line, record.title_prefix, record.title_suffix, record.player_name))
 
 
 def write_gw_feature_record(record: GWFeatureRecord) -> str:

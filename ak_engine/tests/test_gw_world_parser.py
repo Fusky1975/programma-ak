@@ -635,6 +635,9 @@ def test_parses_the_real_t1_king_extension_for_babba_sissoko():
     assert babba.pending_blackmailer_king_id is None
     assert babba.power_percent == 100
     assert babba.trailing_compatibility_zeros == (0, 0, 0, 0, 0)
+    assert babba.title_prefix == "Lord"
+    assert babba.title_suffix == "Master of the s"
+    assert babba.player_name == "Andrea Ferrigno"
 
 
 def test_parses_the_real_t5_king_extension_showing_longitudinal_change():
@@ -660,6 +663,12 @@ def test_parses_the_real_t5_king_extension_showing_longitudinal_change():
     assert babba.active_blackmailer_king_id is None
     assert babba.pending_blackmailer_king_id is None
     assert babba.power_percent == 100
+    # title_suffix genuinely changes turn to turn (unlike the "always"
+    # fields above) -- "Master of the s" (T1) -> "Master orango" (T5),
+    # confirming this is dynamic per-turn state, not a static template.
+    assert babba.title_prefix == "Lord"
+    assert babba.title_suffix == "Master orango"
+    assert babba.player_name == "Andrea Ferrigno"
 
 
 def test_raises_gw_parse_error_on_malformed_king_extension_line(tmp_path: Path):
@@ -670,6 +679,23 @@ def test_raises_gw_parse_error_on_malformed_king_extension_line(tmp_path: Path):
     skill_line = " ".join(["0"] * 60)
     leader_header_line = "0 0 0 0 255 255 1 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0"
     bad.write_text(f"{header_line}\nTest King\n{skill_line}\n{leader_header_line}\nM 1 2 3\n", encoding="utf-8")
+
+    with pytest.raises(K1ParseError):
+        parse_gw_king_extensions(bad)
+
+
+def test_raises_gw_parse_error_when_the_title_lines_are_truncated(tmp_path: Path):
+    # A minimal synthetic file: header (king_count=1), one King-shaped
+    # leader record, a well-formed M-line (97 = 96+1 zeros, every zero
+    # index a valid enum ordinal), but the file ends right there --
+    # none of the 3 always-present title/epithet/player-name lines
+    # (SS71.2) exist at all.
+    bad = tmp_path / "truncated_before_title_lines"
+    header_line = "1 1 1 -1 0 0 0 0 17 0 8 3 3 1 1 2007 14 0 30 1 0 1 0 0 0 255 0 0 0 1 0 0 0"
+    skill_line = " ".join(["0"] * 60)
+    leader_header_line = "0 0 0 0 255 255 1 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0"
+    m_line = "M " + " ".join(["0"] * 97)
+    bad.write_text(f"{header_line}\nTest King\n{skill_line}\n{leader_header_line}\n{m_line}\n", encoding="utf-8")
 
     with pytest.raises(K1ParseError):
         parse_gw_king_extensions(bad)

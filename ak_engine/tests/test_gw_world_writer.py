@@ -290,6 +290,9 @@ def test_write_gw_king_extension_round_trips_a_synthetic_record_with_real_discov
         pending_blackmailer_king_id=None,
         power_percent=75,
         trailing_compatibility_zeros=(0, 0, 0, 0, 0),
+        title_prefix="Lord",
+        title_suffix="Master of the Realm",
+        player_name="Test Player",
     )
 
     text = "\n".join((write_gw_header(header), write_gw_leader_record(king), write_gw_king_extension(record)))

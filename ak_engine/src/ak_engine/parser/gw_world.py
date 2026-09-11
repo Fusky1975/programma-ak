@@ -1839,6 +1839,23 @@ class GWKingExtension:
     string (`" 0 0 0 0 0"`) the JSON calls certain to always be zero --
     stored rather than assumed so `write_gw_king_extension()` can
     reconstruct the line exactly either way.
+
+    **`title_prefix`/`title_suffix`/`player_name`** (`AKGEN_reverse_
+    engineering_report (5).md` SS71.2): three short-string lines
+    immediately following the gender + numeric tail above, one King
+    title/epithet/real-player-name -- e.g. `"Lord"` / `"Master of the
+    s"` (a real, independently-reproduced fixed-width truncation, not a
+    parsing artifact -- see this module's own Phase 318 addendum) /
+    `"Andrea Ferrigno"` for `GW3__T1`'s own Babba Sissoko. Confirmed
+    dynamic (Babba Sissoko's own `title_suffix` reads `"Master orango"`
+    by `GW3__T5`, four turns later) -- not a static per-King template.
+    Can be empty strings (7 of `GW3__T1`'s own 10 Kings have blank
+    `title_prefix`/`title_suffix`), never absent -- the line itself
+    always exists, even when its own content is `""`. Purely cosmetic
+    text this project has no report composer or `LeaderState` field to
+    render yet -- captured here as structured, round-trippable data
+    (closing a real, previously undone parsing gap), not wired any
+    further.
     """
 
     is_male: bool
@@ -1872,6 +1889,9 @@ class GWKingExtension:
     pending_blackmailer_king_id: int | None
     power_percent: int
     trailing_compatibility_zeros: tuple[int, int, int, int, int]
+    title_prefix: str
+    title_suffix: str
+    player_name: str
 
 
 _KING_SEND_METHOD_VALUES = {member.value for member in KingSendMethod}
@@ -1889,7 +1909,11 @@ def parse_gw_king_extensions(path: Path) -> list[GWKingExtension]:
     then reads the very next line, which must be `"M"` or `"F"`
     followed by exactly `96 + GWHeader.king_count` more integers (the
     JSON's own `numeric_count_rule`) -- confirmed exactly 106 tokens for
-    the real `GW3__T1`/`GW3__T5` fixtures (`king_count = 10`).
+    the real `GW3__T1`/`GW3__T5` fixtures (`king_count = 10`), then the
+    3 short-string lines right after it (title/epithet/player name, SS71.2
+    -- see `GWKingExtension`'s own docstring), raising if the file ends
+    before all 3 are present (a real, always-present triplet, even when
+    individually blank).
     """
 
     header = parse_gw_header(path)
@@ -1931,13 +1955,34 @@ def parse_gw_king_extensions(path: Path) -> list[GWKingExtension]:
                 line=m_line,
             )
 
-        records.append(_build_king_extension(m_tokens, king_count, line_number=i + 4))
+        if i + 6 >= len(lines):
+            raise GWParseError(
+                "expected 3 more lines (title prefix/suffix, player name) after a King's own extension line",
+                line_number=i + 5,
+                line=m_line,
+            )
+        title_prefix = lines[i + 4].strip()
+        title_suffix = lines[i + 5].strip()
+        player_name = lines[i + 6].strip()
+
+        records.append(
+            _build_king_extension(
+                m_tokens, king_count, title_prefix, title_suffix, player_name, line_number=i + 4
+            )
+        )
         i += 1
 
     return records
 
 
-def _build_king_extension(m_tokens: list[str], king_count: int, line_number: int) -> GWKingExtension:
+def _build_king_extension(
+    m_tokens: list[str],
+    king_count: int,
+    title_prefix: str,
+    title_suffix: str,
+    player_name: str,
+    line_number: int,
+) -> GWKingExtension:
     is_male = m_tokens[0] == "M"
     values = [int(token) for token in m_tokens[1:]]
 
@@ -2011,6 +2056,9 @@ def _build_king_extension(m_tokens: list[str], king_count: int, line_number: int
             values[b + 12],
             values[b + 13],
         ),
+        title_prefix=title_prefix,
+        title_suffix=title_suffix,
+        player_name=player_name,
     )
 
 

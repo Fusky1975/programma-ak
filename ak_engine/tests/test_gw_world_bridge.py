@@ -14,11 +14,21 @@ import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.sex import Sex
-from ak_engine.parser.gw_world import parse_gw_armies, parse_gw_leaders, parse_gw_world
+from ak_engine.parser.gw_world import (
+    DiplomaticRelation,
+    GWKingExtension,
+    KingSendMethod,
+    KingStandbyState,
+    parse_gw_armies,
+    parse_gw_king_extensions,
+    parse_gw_leaders,
+    parse_gw_world,
+)
 from ak_engine.parser.gw_world_bridge import (
     apply_confirmed_hero_ids,
     bridge_gw_world_provinces,
@@ -350,3 +360,110 @@ def test_apply_confirmed_hero_ids_reports_a_name_with_no_synthetic_match():
 
     assert applied.leaders_rekeyed == 0
     assert applied.not_found_names == ["Nobody Real"]
+
+
+# -- Phase 788: bridge_new_game_state(king_extensions=...) --------------
+
+
+def test_bridge_new_game_state_without_king_extensions_leaves_kingdom_defaults():
+    # Default (None, every pre-Phase-788 caller/test) -- no data isn't a
+    # guess, so every King stays at GameState's own real defaults.
+    state, _ = _bridge_fixture()
+
+    babba = state.kingdoms[0]
+    assert babba.treasury == 0
+    assert babba.discoveries == set()
+    assert babba.valhalla_visit_count == 0
+    assert state.kingdoms_met == set()
+    assert state.allied_kingdoms == set()
+
+
+def test_bridge_new_game_state_threads_real_king_extension_fields():
+    leader_records = parse_gw_leaders(FIXTURE.parent / "GW3__T5")
+    province_records = parse_gw_world(FIXTURE.parent / "GW3__T5")
+    army_records = parse_gw_armies(FIXTURE.parent / "GW3__T5")
+    king_extensions = parse_gw_king_extensions(FIXTURE.parent / "GW3__T5")
+
+    state, _ = bridge_new_game_state(
+        leader_records, province_records, army_records, king_extensions=king_extensions
+    )
+
+    babba = state.kingdoms[0]
+    assert babba.treasury == 15
+    assert babba.discoveries == set()  # real fixture: no Discovery owned yet by any King
+    assert babba.valhalla_visit_count == 0
+
+    # king0's own real met_kings_bitmask has bits 1, 8, 9 set -- every
+    # other King's own met_kings_bitmask also contributes real pairs,
+    # so this checks a subset, not exact equality.
+    assert {frozenset({0, 1}), frozenset({0, 8}), frozenset({0, 9})} <= state.kingdoms_met
+    # king0<->king1 and king0<->king9 both mutually record ALLIED for
+    # each other in this real fixture -- a genuine, symmetric alliance.
+    assert frozenset({0, 1}) in state.allied_kingdoms
+    assert frozenset({0, 9}) in state.allied_kingdoms
+    # king0 says NEUTRAL toward king2 (and king2 says NEUTRAL back) --
+    # never bridged as an alliance.
+    assert frozenset({0, 2}) not in state.allied_kingdoms
+
+
+def _synthetic_king_extension(*, diplomatic_relations: tuple[DiplomaticRelation, ...]) -> GWKingExtension:
+    return GWKingExtension(
+        is_male=True,
+        treasury=0,
+        alliance_requests_bitmask=0,
+        break_treaty_requests_bitmask=0,
+        account_number=0,
+        player_mode=0,
+        met_kings_bitmask=0,
+        send_method=KingSendMethod.COMPUSERVE,
+        election_request_or_previous_choice=0,
+        payment_percent=0,
+        miscellaneous_fee=0,
+        turn_funds_received=0,
+        consecutive_missed_turns=0,
+        standby_state=KingStandbyState.NO,
+        standby_max_percent=0,
+        prize_credit=0,
+        raw_administrative_flag=0,
+        moves_read_success=False,
+        order_interpreter_version=0,
+        diplomatic_relations=diplomatic_relations,
+        discovered=frozenset(),
+        valhalla_visit_count=0,
+        king_information_flags=0,
+        disk_delivery_flags=0,
+        king_power_or_votes_cast=0,
+        moves_insurance=False,
+        team_state=0,
+        active_blackmailer_king_id=None,
+        pending_blackmailer_king_id=None,
+        power_percent=0,
+        trailing_compatibility_zeros=(0, 0, 0, 0, 0),
+        title_prefix="",
+        title_suffix="",
+        player_name="",
+    )
+
+
+def test_bridge_new_game_state_never_bridges_a_one_sided_alliance_claim():
+    # A synthetic case, since the real GW3 corpus happens to have no
+    # one-sided ALLIED claim to test against directly (Phase 788's own
+    # research found every real ALLIED claim in the available fixtures
+    # is mutually reciprocated) -- king 0 claims ALLIED toward king 1,
+    # but king 1's own recorded view of king 0 is only NEUTRAL. `kallst`
+    # is a directed, per-King array (this King's own view of every
+    # other King), so a one-sided value could be a still-pending
+    # request rather than a real, accepted alliance.
+    leader_records = parse_gw_leaders(FIXTURE)
+    province_records = parse_gw_world(FIXTURE)
+    army_records = parse_gw_armies(FIXTURE)
+    king_extensions = [
+        _synthetic_king_extension(diplomatic_relations=(DiplomaticRelation.ALLIED, DiplomaticRelation.ALLIED)),
+        _synthetic_king_extension(diplomatic_relations=(DiplomaticRelation.NEUTRAL, DiplomaticRelation.ALLIED)),
+    ]
+
+    state, _ = bridge_new_game_state(
+        leader_records, province_records, army_records, king_extensions=king_extensions
+    )
+
+    assert frozenset({0, 1}) not in state.allied_kingdoms
