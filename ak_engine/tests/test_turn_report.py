@@ -8743,6 +8743,55 @@ def test_describe_finances_report_llcosts_reads_only_this_kingdoms_own_maintenan
     assert not any("expended to finance our leaders" in line for line in lines)
 
 
+def test_describe_finances_report_renders_a_desertion_line_when_maintenance_reports_one():
+    # Phase 791: describe_desertions() (Phase 599, dormant since built)
+    # is wired here for the first time -- a Hero's desertion is a real
+    # narrative consequence of this same kingdom's own MaintenanceResult.
+    state = _finances_state_with_owned_province()
+    state.add_leader(LeaderState(1, 1, "Borin", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(2, 1, "Aldric", HexCoord(0, 0)))
+    state.turn_maintenance_by_kingdom[1] = MaintenanceResult(debited=0, deserted_leader_ids=[2])
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    assert any("Aldric" in line and "Borin" in line for line in lines[5:])
+
+
+def test_describe_finances_report_omits_desertion_lines_when_none_occurred():
+    state = _finances_state_with_owned_province()
+    state.add_leader(LeaderState(1, 1, "Borin", HexCoord(0, 0), is_king=True))
+    state.turn_maintenance_by_kingdom[1] = MaintenanceResult(debited=0)
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    assert not any("quit the service" in line for line in lines)
+
+
+def test_describe_finances_report_desertion_line_sits_after_army_costs_and_before_expected_expenses():
+    state = _finances_state_with_owned_province()
+    state.add_leader(LeaderState(1, 1, "Borin", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(2, 1, "Aldric", HexCoord(0, 0)))
+    state.turn_maintenance_by_kingdom[1] = MaintenanceResult(debited=0, deserted_leader_ids=[2])
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    lacosts_index = lines.index("0 gold was expended to maintain our armies.")
+    desertion_index = next(i for i, line in enumerate(lines) if "Aldric" in line)
+    expenses_index = next(i for i, line in enumerate(lines) if line.startswith("Expected Expenses:"))
+    assert lacosts_index < desertion_index < expenses_index
+
+
+def test_describe_finances_report_desertion_reads_only_this_kingdoms_own_maintenance():
+    state = _finances_state_with_owned_province()
+    state.add_leader(LeaderState(1, 1, "Borin", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(2, 2, "Sneak", HexCoord(5, 5)))
+    state.turn_maintenance_by_kingdom[2] = MaintenanceResult(debited=0, deserted_leader_ids=[2])
+
+    lines = describe_finances_report(state, 1, random.Random(0))
+
+    assert not any("quit the service" in line for line in lines)
+
+
 # -- Phase 220: describe_provinces_report() -- the "PROVINCES" section --
 
 

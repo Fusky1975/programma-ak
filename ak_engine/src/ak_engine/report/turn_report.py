@@ -10137,11 +10137,21 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
     pay") stays deliberately unwired: `turn/expenses.py`'s own docstring
     already confirms army maintenance is paid as one unconditional lump
     sum with no source describing armies going unpaid -- no real trigger
-    exists for this sentence in the current model. `describe_
-    desertions()` (Phase 599, also dormant, needs a real `Maintenance
-    Result` this phase's own persistence now supplies) stays unwired too
-    -- it needs its own separate decision about which report section a
-    Hero's desertion narrative belongs in, not just a data-source fix.
+    exists for this sentence in the current model.
+
+    **Phase 791 wires the last dormant renderer, `describe_desertions()`**
+    (Phase 599, `LDESERT.X`/`SAY.PAS _LDesert`) -- right after the
+    leader/army-cost lines above, inside the same `state.turn_
+    maintenance_by_kingdom` gate, since a Hero's desertion is a direct
+    narrative consequence of *this exact* `MaintenanceResult`'s own
+    unpaid-pay roll (`turn/expenses.py apply_turn_maintenance()`'s own
+    Phase 527 mechanic) -- the natural place for it once that data is
+    already in scope, rather than a separate report section with no
+    equivalent already-flowing data to hook into. `king_name` is this
+    same composer's own already-resolved King display name -- correct
+    by construction, since `state.turn_maintenance_by_kingdom[kingdom_
+    id]`'s own `deserted_leader_ids` are, by definition, Heroes who just
+    left *this* Kingdom's own service.
     """
 
     kingdom = state.kingdoms[kingdom_id]
@@ -10186,6 +10196,7 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
         army_cost = compute_army_maintenance(state, kingdom_id)
         lines.append(render_finance_leader_costs(maintenance.debited - army_cost, rng))
         lines.append(render_finance_army_costs(army_cost, rng))
+        lines.extend(describe_desertions(maintenance, state, king_name=king_name, rng=rng))
     lines.append(f"Expected Expenses: {compute_expected_expenses(state, kingdom_id):>3}")
     lines.append(_FINANCES_DISCOVERIES_INTRO)
     if kingdom.discoveries:

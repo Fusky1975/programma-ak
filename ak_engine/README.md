@@ -32537,6 +32537,29 @@ question for a future source or a direct question to the user.
   WISH]`, so this phase does NOT close that separate, still-open
   residual. Test count: 6604 -> 6622 (net +18). Full suite verified
   green (unchanged, 6604) before touching a single test.
+- **Phase 791** -- wires `describe_desertions()` (Phase 599, `LDESERT.X`/
+  `SAY.PAS _LDesert`), the last dormant `SAY.PAS` financial-narrative
+  renderer flagged by the 42nd fresh codebase survey (2026-09-09) as a
+  real, clean candidate for a future phase -- found by re-scanning
+  `[[project_genuinely_blocked_backlog_2026_08_29]]`'s own list of
+  narrow, never-revisited residuals after Phase 790 closed backlog #7's
+  own last easily-tractable piece. `turn/expenses.py apply_turn_
+  maintenance()`'s own real per-Hero desertion roll (Phase 527,
+  `MaintenanceResult.deserted_leader_ids`) has been persisted onto
+  `state.turn_maintenance_by_kingdom` since Phase 771 specifically so
+  a future composer could read it without new plumbing -- that future
+  composer never arrived until now. Wired directly into `describe_
+  finances_report()`, right after the leader/army-cost lines Phase 771
+  already renders from that same `MaintenanceResult`, since a Hero's
+  desertion is a direct narrative consequence of *that exact* object's
+  own unpaid-pay roll -- the natural placement once the data is already
+  in scope, resolving the "which report section" design question the
+  42nd survey left open without inventing a new section or guessing at
+  an unsourced position. `_AUnpaid` (the one sibling renderer still
+  genuinely unmodeled -- no source describes an unpaid-army trigger in
+  this project's own lump-sum maintenance model) stays untouched. Test
+  count: 6622 -> 6626 (net +4). Full suite verified green (unchanged,
+  6622) before touching a single test.
 
 ## Setup
 
