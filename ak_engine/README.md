@@ -32448,6 +32448,47 @@ question for a future source or a direct question to the user.
   all, and a real `BlackmailClaim` needs an `amount`/`spy_leader_id`
   neither `GW` field supplies. Test count: 6599 -> 6603 (net +4). Full
   suite verified green (unchanged, 6599) before touching a single test.
+- **Phase 789** -- a systematic GW6-vs-GW3 field-by-field comparison
+  (user requested directly, "Fai il confronto sistematico GW6-vs-GW3
+  per il punto 13"), closing backlog item #13's own two remaining
+  halves and shipping one real bug fix in already-live code. (1) The
+  module's own Phase 318 "kingdom-level 33-field header line" addendum
+  is corrected: it's the same structure as the already-fully-decoded
+  `GWHeader` (33 integers, Phase 342), re-encountered before its own
+  file-level nature was confirmed -- not a second, separate structure
+  left to decode. (2) `GWLeaderRecord`'s own 25-token header line has 3
+  trailing tokens (`header_tokens[22:25]`) `_build_leader_record()`
+  silently drops -- confirmed fixed structural padding, not data, across
+  all 350 real leaders in 2 independent games (`GW3__T1` plus `GW6`'s
+  own 3 turns). (3) `GWHeader.raw_04`/`.setup_extra_1` stay genuinely
+  unconfirmed, now with a real negative result: both are constant
+  (`-1`, `0`) across 6 real snapshots including a real `GameType.EARTH`
+  game. (4) `GWArmyRecord.state`'s 4 disassembly-only values (`BOLD`/
+  `SOLD`/`LOSER`/`CALM`) are confirmed absent from a second, much larger
+  real corpus (`GW6`'s own 4 turns add ~1780 more army rows). (5) **The
+  main finding, a real fix**: Block B's `MonsterEngagementState.DEAD`
+  (astate ordinal 0) rows are real, historical dead armies, not a
+  "resting garrison"/unled template -- `death_or_transformation_marker`
+  (for a non-`250`/non-`251` value) is the literal real game-turn the
+  army died, confirmed exactly across 14 real turn snapshots in both
+  games (max marker in any turn-N snapshot is always N-1); `251` is a
+  separate, strictly append-only terminal/archival state (11 real GW3
+  transitions, zero losses); numbered-marker rows undergo real churn/
+  removal turn over turn (tracked via exact signature matching). Fixed
+  the real bug this reveals in already-shipped code: `parser/gw_world_
+  bridge.py bridge_new_game_state()` was bridging every DEAD-state Block
+  B row into `GameState.armies` as if it were a live, unowned garrison
+  unit -- now excluded outright (`dead_army_records_excluded` counted
+  in the new `NewGameStateReport` field, before the mercenary/commanded-
+  by branch chain, so it's a pure narrowing of existing logic). Two
+  real questions stay genuinely open, not resolved by this phase: the
+  exact removal-timing rule for a numbered-marker `DEAD` row, and
+  whether a removed row converts to `251` or is reused outright for an
+  unrelated new death. Test count: 6603 -> 6604 (net +1). Full suite
+  verified green (unchanged, 6603) before touching a single test;
+  confirmed the fix is a no-op for `GW3__T1` (zero real `DEAD` rows in
+  that fixture) and for the whole `GW3__T2`-`T12` end-to-end test suite
+  (none of those 11 files assert anything sensitive to army counts).
 
 ## Setup
 

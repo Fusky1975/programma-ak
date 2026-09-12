@@ -17,6 +17,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import MonsterEngagementState
 from ak_engine.models.race import Race
 from ak_engine.models.sex import Sex
 from ak_engine.parser.gw_world import (
@@ -276,7 +277,13 @@ def test_army_bridging_splits_mercenary_king_led_and_hero_led_correctly():
     state, report = _bridge_fixture()
 
     army_records = parse_gw_armies(FIXTURE)
-    assert report.armies_created + len(report.unresolved_army_records) == len(army_records)
+    assert (
+        report.armies_created + len(report.unresolved_army_records) + report.dead_army_records_excluded
+        == len(army_records)
+    )
+    # GW3__T1 (pre-turn-1) is confirmed to have zero DEAD rows -- the
+    # exclusion counter above should therefore be 0 for this fixture.
+    assert report.dead_army_records_excluded == 0
 
     # Phase 337's own confirmed mercenary count for this fixture -- every
     # one bridges to kingdom_id=None/commanded_by=None (not skipped, not
@@ -320,6 +327,48 @@ def test_army_bridging_splits_mercenary_king_led_and_hero_led_correctly():
     for record in report.unresolved_army_records:
         assert record.commanded_by_leader_id is not None
         assert record.commanded_by_leader_id not in state.leaders
+
+
+def test_bridge_new_game_state_excludes_dead_block_b_rows():
+    # Phase 789: a Block B row whose own `state` is `MonsterEngagementState.
+    # DEAD` is a real historical dead army, not a live/garrison unit --
+    # confirmed by cross-referencing GW6 against the full GW3__T1-T12
+    # corpus. `bridge_new_game_state()` must exclude it entirely: not
+    # bridged into `state.armies`, not added to `unresolved_army_records`
+    # either (the `continue` fires before that fallback branch), and
+    # counted in the report's own new `dead_army_records_excluded` field.
+    leader_records = parse_gw_leaders(FIXTURE)
+    province_records = parse_gw_world(FIXTURE)
+    army_records = parse_gw_armies(FIXTURE)
+
+    baseline_state, baseline_report = bridge_new_game_state(leader_records, province_records, army_records)
+    assert baseline_report.dead_army_records_excluded == 0
+
+    # GW3__T1 has zero real DEAD rows (confirmed) -- synthesize one from
+    # a real HIRED, uncommanded row (bridges as a live army today) so
+    # the fixture stays otherwise realistic and the exclusion has a real
+    # effect to prove.
+    hired_index = next(
+        i
+        for i, r in enumerate(army_records)
+        if r.state is MonsterEngagementState.HIRED and r.commanded_by_leader_id is None
+    )
+    dead_record = replace(army_records[hired_index], state=MonsterEngagementState.DEAD)
+    synthetic_records = list(army_records)
+    synthetic_records[hired_index] = dead_record
+
+    state, report = bridge_new_game_state(leader_records, province_records, synthetic_records)
+
+    assert report.dead_army_records_excluded == 1
+    assert (
+        report.armies_created + len(report.unresolved_army_records) + report.dead_army_records_excluded
+        == len(synthetic_records)
+    )
+    # Exactly one fewer live army was bridged than the unmodified baseline.
+    assert report.armies_created == baseline_report.armies_created - 1
+    assert len(state.armies) == len(baseline_state.armies) - 1
+    # The synthesized DEAD row was not shunted into unresolved_army_records.
+    assert dead_record not in report.unresolved_army_records
 
 
 def test_apply_confirmed_hero_ids_rekeys_and_recovers_his_own_armies():

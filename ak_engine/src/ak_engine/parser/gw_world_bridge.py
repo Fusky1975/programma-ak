@@ -203,6 +203,7 @@ from dataclasses import dataclass, field, replace
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.hero_roster import STANDARD_HERO_ID_BY_NAME, STANDARD_HERO_SEX_BY_NAME
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import MonsterEngagementState
 from ak_engine.parser.gw_world import DiplomaticRelation, GWArmyRecord, GWKingExtension, GWLeaderRecord, GWProvinceRecord
 
 # Rows per column, confirmed for GW3__T1 (see module docstring). 18
@@ -311,6 +312,20 @@ class NewGameStateReport:
     # Kept here so `apply_confirmed_hero_ids()` can retry them once a
     # real id is supplied for that specific Hero.
     unresolved_army_records: list[GWArmyRecord] = field(default_factory=list)
+    # Block B rows whose own `state` field is `MonsterEngagementState.
+    # DEAD` -- confirmed (Phase 789, cross-referencing `GW6` against the
+    # full `GW3__T1`-`T12` corpus) to be genuine historical dead armies,
+    # not live/garrison units: `death_or_transformation_marker` (for a
+    # non-250/non-251 value) is the literal real game-turn the army
+    # died, and `251` is a distinct, strictly append-only terminal/
+    # archival marker. These rows are excluded from `GameState.armies`
+    # entirely -- counted here rather than bridged with a guessed live
+    # state. See `parser/gw_world.py GWArmyRecord`'s own Phase 789
+    # addendum for the full finding, including the two still-open
+    # questions (the exact removal-timing rule for a numbered-marker
+    # row, and whether removal converts to `251` or frees the slot for
+    # reuse).
+    dead_army_records_excluded: int = 0
 
 
 def bridge_new_game_state(
@@ -341,7 +356,10 @@ def bridge_new_game_state(
     real id (King or roster-matched Hero, owner = that leader's own real
     `kingdom_id`); a row led by a still-synthetic-id Hero is left out
     and returned in the report instead of being bridged with a guessed
-    owner.
+    owner. A row whose own `state` is `MonsterEngagementState.DEAD` is
+    excluded entirely (Phase 789) -- confirmed a genuine historical dead
+    army, not a live/garrison unit; see `NewGameStateReport.dead_army_
+    records_excluded`'s own docstring for the full finding.
 
     **`king_extensions` (Phase 788, optional, default `None`)** --
     `parser/gw_world.py GWKingExtension`/`parse_gw_king_extensions()`
@@ -470,9 +488,13 @@ def bridge_new_game_state(
     state.provinces = provinces
 
     armies_created = 0
+    dead_army_records_excluded = 0
     unresolved_army_records: list[GWArmyRecord] = []
     for record in army_records:
         if record.army_type is None:
+            continue
+        if record.state is MonsterEngagementState.DEAD:
+            dead_army_records_excluded += 1
             continue
         if record.is_mercenary:
             owner_kingdom_id: int | None = None
@@ -517,6 +539,7 @@ def bridge_new_game_state(
         heroes_with_confirmed_id=heroes_with_confirmed_id,
         heroes_with_synthetic_id=heroes_with_synthetic_id,
         unresolved_army_records=unresolved_army_records,
+        dead_army_records_excluded=dead_army_records_excluded,
     )
     return state, report
 

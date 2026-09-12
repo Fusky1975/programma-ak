@@ -306,6 +306,21 @@ Heroes.
   then 22) rules that out** -- the real treasury is far smaller and
   doesn't grow anywhere near that fast. A cumulative-revenue-style
   running total is a plausible alternative, not confirmed.
+
+  **Phase 789 correction**: this "kingdom-level 33-field header line"
+  is not a separate, mostly-undeciphered structure at all -- it is the
+  same structure as this module's own already-fully-named `GWHeader`
+  (33 integers, Phase 342), re-encountered here before its own
+  file-level nature had been confirmed. Re-reading `GW3__T1`'s own raw
+  first few lines directly: line 1 IS `GWHeader`; line 2 is simply the
+  King's own *name* (`GWLeaderRecord.name`, confirmed by Phase 319's
+  own later correction that there is no separate Kingdom-name field).
+  Phase 318's own "position 3 is the turn number... positions 14/15/16
+  are day/month/year" claims are an exact, field-for-field match to
+  `GWHeader.game_turn`/`.due_day`/`.due_month`/`.due_year` (already
+  named, Phase 342) -- nobody ever circled back to correct this note
+  once that phase landed. There is no second, separate 33-field-per-
+  kingdom structure left to decode here.
 - **A real dynastic succession, independently confirmed**: by `T12`,
   Kingdom Babba Sissoko's own King is no longer Andrea Ferrigno/Uga-
   Buga Makumb but `"Brian Gruber"` (title `"Lord"`, epithet `"Master
@@ -1624,6 +1639,25 @@ class GWLeaderRecord:
       leader -- Kings themselves always start with every bit set
       (`1023` for 10 Kings), confirmed exactly in this project's own
       corpus.
+
+    **Phase 789 addendum -- the header line's own 3 trailing tokens
+    (`header_tokens[22:25]`) are fixed structural padding, not data.**
+    `_build_leader_record()` only ever reads `header_tokens[0:22]`
+    (`values[0]` through `values[21]`) into the 22 named fields above --
+    the last 3 of the line's 25 real tokens are silently dropped. Scanned
+    every leader block in `GW3__T1` (100 leaders) and `GW6`/`GW6__T2`/
+    `GW6__T3` (250 leaders each) directly against the raw text, bypassing
+    the dataclass entirely (which never exposed these 3 positions at
+    all): **all 350 real leaders, Kings and Heroes alike, across 2
+    independent games, read exactly `(0, 0, 0)`.** This matches this
+    project's own repeated "trailing literal, not a field" pattern (e.g.
+    the province record's own trailing `6`) -- fixed padding, closing the
+    "leader header past coordinate/id" half of backlog #13. `_build_
+    leader_record()` is deliberately NOT changed to validate/raise on a
+    non-`(0,0,0)` value here -- only 2 games' worth of evidence exists,
+    and a hard validation error on a hypothetical future game with a
+    genuinely different value would be a worse failure mode than
+    silently continuing to drop 3 already-confirmed-inert tokens.
     """
 
     name: str
@@ -2083,12 +2117,17 @@ class GWArmyRecord:
       values (`DEAD`=0, `HIRED`=1, `BOLD`=4, `SOLD`=5, `LOSER`=6,
       `CALM`=7) are exactly `models/monster.py MonsterEngagementState`'s
       own already-existing 8 members, in the same 0-7 order, confirmed
-      by name in the disassembly's own `state_enum` table. Only
-      `MERCENARY`/`ZOMBOID` (and, by the unled-row structural split
-      Phase 332/333 already found, plausibly `HIRED`/`DEAD`) have real
-      letter-text cross-checks; `BOLD`/`SOLD`/`LOSER`/`CALM` are typed
-      here on the disassembly's own authority, not independently
-      confirmed against a real fixture yet.
+      by name in the disassembly's own `state_enum` table. **Phase 789:
+      `DEAD` (ordinal 0) is now confirmed a real, historical dead army,
+      not a "plausibly `HIRED`/`DEAD`" split the way Phase 332/333 left
+      it** -- see the full finding under `death_or_transformation_
+      marker` below and `parser/gw_world_bridge.py bridge_new_game_
+      state()`'s own exclusion of these rows. `BOLD`/`SOLD`/`LOSER`/
+      `CALM` are confirmed absent from a much larger, 2-game real corpus
+      now (`GW6`'s own 4 turns add ~1780 more army rows on top of
+      `GW3`'s own 12-turn ~2100 -- zero occurrences of any of the 4 in
+      either game) -- a stronger absence than before, still not a
+      resolution.
     - `movement_points` (Pascal `AMP`, "certain" confidence): a signed
       byte, this army's own current movement points.
     - `death_or_transformation_marker` (Pascal `adie`, "certain_as_role"):
@@ -2096,7 +2135,23 @@ class GWArmyRecord:
       conversion to Weres/Werefolk, and other values are death-context
       codes including a `251` sentinel -- individual non-`250` codes
       aren't enumerated by the source, so this stays a raw `int` rather
-      than an enum.
+      than an enum. **Phase 789 finding**: for a non-`250`/non-`251`
+      value, this is confirmed to be the literal real game-turn the army
+      died -- exactly, zero exceptions, across 14 real turn snapshots
+      checked across both `GW3` and `GW6`: the maximum marker value
+      present in any turn-N snapshot is always exactly N-1. `251` is a
+      separate, strictly append-only terminal/archival state (tracked
+      turn-by-turn across all 11 `GW3` transitions, the `251`-marked
+      population only ever grows, never loses a single entry). Numbered-
+      marker rows DO get physically removed from Block B over time (real
+      churn, not just relabeling -- tracked exact signatures turn over
+      turn in `GW3`, e.g. 39 lost between `T9`->`T10`). **Two questions
+      remain genuinely open, not resolved by this phase**: the exact
+      removal-timing rule for a numbered-marker row (observed lifespans
+      vary, no clean formula found), and whether a removed numbered-
+      marker row converts to `251` or is reused outright for an
+      unrelated new death (the per-turn `251`-gained counts don't
+      cleanly match the same turn's numbered-marker-lost counts).
     - `plague_survival_count` ("certain_as_role"): positive values
       prevent a future plague death and allow a quality drop; the
       source's own observed role says it's incremented after surviving
@@ -2526,7 +2581,13 @@ class GWHeader:
     game_turn: int
     # Initialized to -1; feeds a `game_turn`-modulo-3 selection with a
     # special case for `GameType.EARTH`. Real role beyond that is
-    # unconfirmed -- kept raw rather than guessed.
+    # unconfirmed -- kept raw rather than guessed. Phase 789: checked
+    # directly across 6 real snapshots spanning 2 independent games
+    # (`GW3__T1` plus `GW6`/`GW6-1`/`GW6__T2`/`GW6__T3`/`GW6__T4`,
+    # `GW6` itself being a real `GameType.EARTH` game) -- reads exactly
+    # `-1` in every one. Still unconfirmed, not stale: no available real
+    # save ever shows it taking on a different value to derive a role
+    # from.
     raw_04: int
     setup_fee_cents: int
     treasure_count: int
@@ -2552,7 +2613,10 @@ class GWHeader:
     visiting_king: int | None
     max_feature_index: int | None
     # First extra setup parameter; legacy administrative role, still
-    # unnamed even in the static reverse engineering -- kept raw.
+    # unnamed even in the static reverse engineering -- kept raw. Phase
+    # 789: same 6-snapshot/2-game cross-check as `raw_04` above -- reads
+    # exactly `0` in every one, still unconfirmed, no counterexample
+    # available to try against.
     setup_extra_1: int | None
     office_merit_record_count: int | None
     office_state_table_present: int | None
