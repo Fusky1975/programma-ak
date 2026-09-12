@@ -38,6 +38,7 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.turn.feature_power_execution import FeaturePowerEvent
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
+from ak_engine.worldgen.internal_magical_locations import resolve_visible_location
 from ak_engine.turn.search_execution import (
     FLEE_CHANCE,
     INVISIBILITY_FLEE_CHANCE_BONUS,
@@ -4987,6 +4988,97 @@ def test_execute_search_scout_credits_nothing_without_a_registered_province():
         execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
 
     assert state.leaders[LEADER_ID].merit_tally.plains_explorations == 0
+
+
+def test_execute_search_scout_first_discovery_sets_magic_feature_discovered():
+    # Phase 790 (MAGFEAT.X2, Phase 96): the same `current_level <
+    # SCOUT_PARTIAL_DISCOVERY_LEVEL` crossing already used to credit a
+    # terrain-King title also sets `result.magic_feature_discovered`,
+    # unconditionally, independent of whether a province is registered
+    # or the Feature has a real Power at all -- the mocked `derive_
+    # feature_event()` return here proves the two are independent.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    feature = Feature(feature_id=5, coord=LOCATION, kind=FeatureType.TEMPLE, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    expected = resolve_visible_location(feature.kind, feature.feature_id, feature.coord.x)
+    request = _scout_request(5, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee, patch(
+        "ak_engine.turn.search_execution.derive_feature_event",
+        return_value=FeaturePowerEvent(power=Power.PNONE, magic_feature=MagicFeature.NONE),
+    ):
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert expected is not MagicFeature.NONE  # this fixture's own real crossing lands on a real feature
+    assert result.magic_feature_discovered is expected
+
+
+def test_execute_search_scout_first_discovery_can_land_on_magic_feature_none():
+    # F#0/Pyramid at x=3 (`Special Features.md` section 8) is the
+    # already-established "no power" fixture -- confirmed here to also
+    # be a real, meaningful `MagicFeature.NONE` crossing (odd feature_
+    # index+x parity forces NONE, `resolve_visible_location()`'s own
+    # Phase 616 addendum), not merely "no crossing happened".
+    state = _state_with_leader()
+    feature = Feature(feature_id=0, coord=LOCATION, kind=FeatureType.PYRAMID, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    assert resolve_visible_location(feature.kind, feature.feature_id, feature.coord.x) is MagicFeature.NONE
+    request = _scout_request(0, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert result.magic_feature_discovered is MagicFeature.NONE
+
+
+def test_execute_search_scout_no_crossing_leaves_magic_feature_discovered_none():
+    # Already at level 2 -- `current_level < SCOUT_PARTIAL_DISCOVERY_
+    # LEVEL` is False, so this Scout attempt never crosses at all, and
+    # `magic_feature_discovered` stays at its own `None` default.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
+    feature.discovered_by_kingdom[1] = 2  # already "sees the object"
+    state.add_feature(feature)
+    request = _scout_request(1, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee, patch(
+        "ak_engine.turn.search_execution.derive_feature_event",
+        return_value=FeaturePowerEvent(power=Power.NEW_SEX, magic_feature=MagicFeature.NONE),
+    ):
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5, 0.5]))
+
+    assert result.magic_feature_discovered is None
+
+
+def test_execute_search_scout_magic_feature_discovered_needs_no_registered_province():
+    # The terrain-King title credit still needs a real province (per
+    # the existing `test_execute_search_scout_credits_nothing_without_
+    # a_registered_province` case), but `magic_feature_discovered` does
+    # not -- `resolve_visible_location()` needs only the Feature's own
+    # kind/id/x, none of which come from `state.provinces`.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    feature = Feature(feature_id=5, coord=LOCATION, kind=FeatureType.TEMPLE, guardian_monster=Monster.GARGOYLE)
+    state.add_feature(feature)
+    expected = resolve_visible_location(feature.kind, feature.feature_id, feature.coord.x)
+    request = _scout_request(5, Maneuver.MELEE, Maneuver.SCOUT)
+
+    with patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee, patch(
+        "ak_engine.turn.search_execution.derive_feature_event",
+        return_value=FeaturePowerEvent(power=Power.PNONE, magic_feature=MagicFeature.NONE),
+    ):
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.5]))
+
+    assert result.magic_feature_discovered is expected
+    assert state.leaders[LEADER_ID].merit_tally.plains_explorations == 0  # no province, no title credit
 
 
 def test_execute_search_scout_steal_only_partial_discovery_on_the_documented_33_percent_miss():

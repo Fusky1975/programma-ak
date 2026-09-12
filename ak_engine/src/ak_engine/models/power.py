@@ -87,6 +87,20 @@ _EDesc: BEGIN
   transcribed as `^A` per `report/turn_report.py`'s own established
   source-notation convention for this exact byte.
 
+**Phase 790 addendum**: the `_EDesc` `needy` sentence quoted above
+(`"The $\\ needs more information to perform its power."`) is now
+wired -- `POWER_DESCRIPTION`'s own SA-argument-power half (the 5
+Oracles/Recharge/GrantWish/Gamble) fires alongside it whenever a Scout
+attempt reaches `turn/feature_power_execution.py resolve_feature_
+power_attempt()`'s own `reason == "no SA argument given"` refusal (see
+`report/turn_report.py describe_feature_power_needs_more_info()`).
+`CAST_SPELL_FEATURE_DESCRIPTION` (`SPDESC.X2`) stays exactly as unwired
+as before -- `CAST_SPELL`/`ANS_PRAYER` are resolved via a completely
+different, non-SA-argument branch (`TERRAIN_SPELL_POWERS`, auto-derived
+from `event.spell_parameter`) that can never reach this specific
+refusal, so its own conditional `SPDESC.X2` half is structurally
+unreachable through this trigger.
+
 **Phase 101 addendum -- `POWMSG.X2` investigated, found not to map
 cleanly, and abandoned; `SAY.PAS`'s own `_NoMeet` block used instead.**
 `HostAK/TP/PROSE/POWMSG.X2` (header `"50 1"`) was the original target for

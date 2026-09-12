@@ -32489,6 +32489,54 @@ question for a future source or a direct question to the user.
   confirmed the fix is a no-op for `GW3__T1` (zero real `DEAD` rows in
   that fixture) and for the whole `GW3__T2`-`T12` end-to-end test suite
   (none of those 11 files assert anything sensitive to army counts).
+- **Phase 790** -- two real, previously-unwired Feature->Power [5.8]
+  narration primitives, found while looking for the next backlog item
+  after Phase 789 closed #13: with #13 gone, every other remaining
+  genuinely-blocked backlog item (#4/#6/#8/#14/#15/#22's land half)
+  needs source material the user hasn't supplied, except backlog #7's
+  own leftover -- "PCOND.X2's own remaining 5 lines... a real, separate
+  narration opportunity with no established report-layer placement
+  yet." Re-investigating that "fdisc tier 2" gap directly (re-reading
+  `Desktop/PROGRAMMA AK/Special Features.md` section 6.2-6.3) surfaced
+  two smaller, tractable, already-half-built findings instead: (1)
+  `report/turn_report.py render_magic_feature_discovery()` (MAGFEAT.X2,
+  Phase 96) had zero production callers -- now fires from `describe_
+  search()` via a new `SearchExecutionResult.magic_feature_discovered`
+  field, set in `turn/search_execution.py _apply_scout()` at the exact
+  same `current_level < SCOUT_PARTIAL_DISCOVERY_LEVEL` crossing already
+  used to credit a terrain-King title (Phase 749/751), computed via
+  `worldgen/internal_magical_locations.py resolve_visible_location()`
+  -- unconditionally, independent of whether a province is registered
+  (unlike the terrain-title credit, which still needs one). (2) `models/
+  power.py POWER_DESCRIPTION` (FPDESC.X2, Phase 98) also had zero
+  consumers -- the real `SAY.PAS _EDesc` procedure's `needy` sentence
+  ("The $\\ needs more information to perform its power.") maps
+  precisely onto this project's own already-modeled `resolve_feature_
+  power_attempt()` refusal, `reason == "no SA argument given"`, which
+  fires for the 8 SA-argument powers (5 Oracles/Recharge/GrantWish/
+  Gamble) when a Scout attempt reaches them with no real `SA` tactic --
+  confirmed all 8 branches in `describe_feature_power_attempt()`
+  currently return `None` for this exact refusal, a real, silent gap.
+  New `describe_feature_power_needs_more_info()`, wired into `describe_
+  search()` right after the existing (often-empty) `describe_feature_
+  power_attempt()` line. `FeaturePowerAttemptResult.magic_feature` is
+  already unconditionally populated on this exact refusal path (`turn/
+  feature_power_execution.py:545`), so the `$\\` marker resolves
+  correctly with zero new plumbing; none of the 8 real descriptions use
+  any other marker. Deliberately investigated and left alone: the
+  ADVENTURE report's own fdisc-2/3 Special-column display (blocked on
+  the unresolved `/F`/`/S` alternate-name puzzle, Phase 92); `PCOND_
+  TEMPLATE`/`MCOND_TEMPLATE`/`POWER_CONDITION_REJECTION_MESSAGE` (no
+  additional confirmed trigger beyond what Phase 782 already shipped);
+  `CAST_SPELL_FEATURE_DESCRIPTION` (SPDESC.X2) -- `CAST_SPELL`/`ANS_
+  PRAYER` are resolved via a completely different, non-SA-argument
+  branch that can never reach this refusal, so its own conditional
+  SPDESC.X2 half stays structurally unreachable via this trigger;
+  POWMSG.X2 line 31's own GrantWish tutorial text -- confirmed by direct
+  comparison to be different wording from `POWER_DESCRIPTION[GRANT_
+  WISH]`, so this phase does NOT close that separate, still-open
+  residual. Test count: 6604 -> 6622 (net +18). Full suite verified
+  green (unchanged, 6604) before touching a single test.
 
 ## Setup
 

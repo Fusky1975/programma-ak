@@ -526,6 +526,7 @@ from ak_engine.models.advanced_ability import LAVA_POOL_IMMUNE_MONSTERS, Advance
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.monster import (
     DUEL_MERIT_MONSTERS,
     HAND_OF_DEATH_ANTI_HOLY_MONSTERS,
@@ -656,6 +657,7 @@ from ak_engine.turn.move_execution import credit_terrain_king_title
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchRequest, SearchTactic
 from ak_engine.turn.sep_decode import plan_intent
+from ak_engine.worldgen.internal_magical_locations import resolve_visible_location
 
 # Desktop/MOSTRI con statistiche.txt footnote (*): "The Troll regenerates
 # 1 hit point every combat round." See turn/encounter.py's own Phase 155
@@ -1002,6 +1004,18 @@ class SearchExecutionResult:
     # guardian took damage this encounter but no intimidation packet
     # ever succeeded, and it's still Bold. No state change.
     guardian_undeterred: bool = False
+    # Phase 790 (MAGFEAT.X2, Phase 96): the real magic-feature-discovery
+    # sentence's own trigger -- the exact `current_level <
+    # SCOUT_PARTIAL_DISCOVERY_LEVEL` crossing already used above to
+    # credit a terrain-King title (Phase 749/751), the moment a
+    # Kingdom's own `fdisc` first reaches 2. `resolve_visible_location()`
+    # gives the real, deterministic `MagicFeature` to narrate --
+    # `MagicFeature.NONE` is itself a real, meaningful value ("saw
+    # nothing special"); the outer `None` default means "no crossing
+    # occurred this call," independent of whether a province is
+    # registered (unlike the terrain-King credit, which still needs
+    # one). See `report/turn_report.py render_magic_feature_discovery()`.
+    magic_feature_discovered: MagicFeature | None = None
 
 
 def execute_search(
@@ -1402,8 +1416,10 @@ def _apply_scout(
     # read a terrain from -- `None` (no data) means no credit, not a
     # guess.
     province = state.provinces.get(feature.coord)
-    if province is not None and current_level < SCOUT_PARTIAL_DISCOVERY_LEVEL:
-        credit_terrain_king_title(leader, province.effective_terrain())
+    if current_level < SCOUT_PARTIAL_DISCOVERY_LEVEL:
+        result.magic_feature_discovered = resolve_visible_location(feature.kind, feature.feature_id, feature.coord.x)
+        if province is not None:
+            credit_terrain_king_title(leader, province.effective_terrain())
 
     # Phase 616: a full discovery is real "special function or event"
     # knowledge per the rulebook quote above -- resolve and apply the

@@ -178,6 +178,16 @@ names them), the same way Phases 91/92/95 found real data outside
   already-documented limitation carried forward, not silently
   mis-resolved.
 
+**Phase 790 addendum -- finally wired.** ``render_magic_feature_
+discovery()`` had zero production callers from Phase 96 through Phase
+789 -- now called from ``describe_search()`` at the exact real crossing
+already used to credit a terrain-King title (`turn/search_execution.py
+_apply_scout()`, `current_level < SCOUT_PARTIAL_DISCOVERY_LEVEL`, Phase
+749/751), via the new ``SearchExecutionResult.magic_feature_
+discovered`` field. The `$\\`-marker limitation above is unchanged and
+carried forward unresolved -- this phase does not attempt the F/S
+odd-even alternate-name puzzle.
+
 **Phase 104 addendum -- the Move action's own report line.**
 ``HostAK/TP/PROSE/MARCH.X`` (header ``"3 1"``), confirmed real via
 ``SAY.PAS``'s own ``_LMarch`` dispatch: ``FD('march',S_Admin,3)``. The
@@ -1305,7 +1315,7 @@ from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 from ak_engine.models.monster import MONSTER_DESCRIPTION, MONSTER_NAMES, Monster
 from ak_engine.models.office import OFFICE_MIN_POINTS, OFFICE_NAME, Office
-from ak_engine.models.power import Power
+from ak_engine.models.power import POWER_DESCRIPTION, Power
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
@@ -3146,6 +3156,47 @@ def describe_feature_power_attempt(
         return render(_POWMSG_CAST_SPELL_SUCCESS, values, rng=rng)
 
     return None
+
+
+# Phase 790 (POWMSG.X2 line 31 area / SAY.PAS `_EDesc`, quoted verbatim
+# in `models/power.py`'s own Phase 98 addendum): "The $\\ needs more
+# information to perform its power." -- the real `needy` sentence, fired
+# whenever a Scout attempt reaches one of the 8 `SA_ARGUMENT_POWERS`
+# with no real `SA` tactic (`resolve_feature_power_attempt()`'s own
+# `reason == "no SA argument given"` refusal, `turn/feature_power_
+# execution.py:585`). `CAST_SPELL`/`ANS_PRAYER` can never reach this
+# refusal (a different, non-SA-argument dispatch branch), so `SPDESC.X2`
+# stays unwired -- structurally unreachable via this trigger, not an
+# oversight.
+_POWER_NEEDS_MORE_INFO_TEMPLATE = "The $\\ needs more information to perform its power."
+
+
+def describe_feature_power_needs_more_info(outcome: FeaturePowerAttemptResult, rng: random.Random) -> list[str]:
+    """Renders the real `_EDesc` "needs more information" pair for a
+    Scout attempt against one of the 8 `SA_ARGUMENT_POWERS` with no real
+    `SA` tactic -- the `_POWER_NEEDS_MORE_INFO_TEMPLATE` sentence itself,
+    then `models/power.py POWER_DESCRIPTION[outcome.power]`'s own real
+    tutorial text (both real, verbatim `SAY.PAS`/`FPDESC.X2` sources).
+
+    A separate function from `describe_feature_power_attempt()` itself,
+    strictly additive -- that function's own `str | None` contract and
+    every existing caller/test stays untouched. `outcome.magic_feature`
+    is already unconditionally populated by `resolve_feature_power_
+    attempt()`'s own outer wrapper (including on this exact refusal
+    path), so the `$\\` marker resolves correctly with zero new
+    plumbing; none of the 8 real descriptions use any other marker.
+    """
+
+    if outcome.reason != "no SA argument given":
+        return []
+    values: dict[str, str] = {}
+    if outcome.magic_feature is not None:
+        values["$\\"] = MAGIC_FEATURE_NAME[outcome.magic_feature]
+    lines = [render(_POWER_NEEDS_MORE_INFO_TEMPLATE, values, rng=rng)]
+    description = POWER_DESCRIPTION.get(outcome.power)
+    if description is not None:
+        lines.append(render(description, values, rng=rng))
+    return lines
 
 
 # The 15 Spell members SPELL_CAST_ANNOUNCEMENT markers, per SPNOTE.X2's own
@@ -9701,6 +9752,14 @@ def describe_search(
         if result.guardian_undeterred:
             lines.append(render_guardian_undeterred(monster_name, province_name, rng))
 
+    # Phase 790 (MAGFEAT.X2, Phase 96): a real magic-feature-discovery
+    # crossing (see `SearchExecutionResult.magic_feature_discovered`'s
+    # own Phase 790 docstring), narrated right before any Feature->Power
+    # outcome below -- "found a magic item (or not)" precedes "here's
+    # what using it did/needs" in narrative order.
+    if result.magic_feature_discovered is not None:
+        lines.append(render_magic_feature_discovery(result.magic_feature_discovered, feature_name, character_name))
+
     # Phase 616: Scout's own Feature -> Power [5.8] outcome, narrated last
     # -- matches the rulebook's own "the computer will simply do your
     # Scout tactic after all other encounter tactics are completed"
@@ -9714,6 +9773,13 @@ def describe_search(
         )
         if power_line is not None:
             lines.append(power_line)
+        # Phase 790: the real `_EDesc` "needs more information" pair,
+        # for a Scout attempt reaching one of the 8 `SA_ARGUMENT_POWERS`
+        # with no real `SA` tactic -- independent of whatever (if
+        # anything) `describe_feature_power_attempt()` itself rendered
+        # above, since that composer's own contract already returns
+        # `None` for this exact refusal (no recovered POWMSG id there).
+        lines.extend(describe_feature_power_needs_more_info(result.feature_power_outcome, rng))
     return lines
 
 

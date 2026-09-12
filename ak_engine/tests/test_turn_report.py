@@ -123,6 +123,7 @@ from ak_engine.report.turn_report import (
     describe_recruit,
     describe_rumor,
     describe_feature_power_attempt,
+    describe_feature_power_needs_more_info,
     describe_search,
     _search_province_name,
     describe_steal,
@@ -7112,6 +7113,96 @@ def test_describe_search_appends_the_feature_power_line_when_present():
 def test_describe_search_omits_the_feature_power_line_when_none_recovered():
     outcome = FeaturePowerAttemptResult(power=Power.CHANCE, applied=False, reason="power not yet wired")
     result = SearchExecutionResult(accepted=True, combat_resolved=False, feature_power_outcome=outcome)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+# -- Phase 790: describe_feature_power_needs_more_info() (SAY.PAS `_EDesc` "needy") --
+
+
+@pytest.mark.parametrize(
+    "power",
+    [
+        Power.ORAC_ALIGN,
+        Power.ORAC_POWER,
+        Power.ORAC_OFFICE,
+        Power.ORAC_GOLD,
+        Power.ORAC_TREAS,
+        Power.RECHARGE,
+        Power.GRANT_WISH,
+        Power.GAMBLE,
+    ],
+)
+def test_describe_feature_power_needs_more_info_renders_both_lines_for_every_sa_argument_power(power):
+    outcome = FeaturePowerAttemptResult(power=power, applied=False, reason="no SA argument given", magic_feature=MagicFeature.POOL)
+    lines = describe_feature_power_needs_more_info(outcome, ScriptedRandom([0.1] * 4))
+    assert lines[0] == "The Pool/FStream needs more information to perform its power."
+    assert len(lines) == 2
+    assert "Pool/FStream" in lines[1]
+
+
+def test_describe_feature_power_needs_more_info_non_matching_reason_returns_nothing():
+    outcome = FeaturePowerAttemptResult(power=Power.ORAC_ALIGN, applied=True, reason=None, magic_feature=MagicFeature.POOL)
+    assert describe_feature_power_needs_more_info(outcome, ScriptedRandom([0.1] * 4)) == []
+
+
+def test_describe_feature_power_needs_more_info_wrong_power_reason_returns_nothing():
+    # A refusal with some other real reason string on a power outside
+    # SA_ARGUMENT_POWERS -- the exact reason text is what gates this,
+    # not the power itself, but this confirms an unrelated refusal
+    # never accidentally matches.
+    outcome = FeaturePowerAttemptResult(power=Power.UP_SKILL, applied=False, reason="insufficient gold")
+    assert describe_feature_power_needs_more_info(outcome, ScriptedRandom([0.1] * 4)) == []
+
+
+def test_describe_feature_power_needs_more_info_no_magic_feature_still_renders_gracefully():
+    outcome = FeaturePowerAttemptResult(power=Power.GRANT_WISH, applied=False, reason="no SA argument given", magic_feature=None)
+    lines = describe_feature_power_needs_more_info(outcome, ScriptedRandom([0.1] * 4))
+    assert lines[0] == "The $\\ needs more information to perform its power."
+    assert len(lines) == 2
+
+
+def test_describe_search_renders_magic_feature_discovery_before_the_feature_power_line():
+    power_outcome = FeaturePowerAttemptResult(power=Power.MAP_FEAT, applied=False, reason="no more features to reveal")
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=False, magic_feature_discovered=MagicFeature.POOL, feature_power_outcome=power_outcome
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "While scouting the Ancient Ruins, Aldric saw a Pool/FStream which seemed to be of a magical nature.",
+        "There are no more features to be told of in the provinces you have mapped.",
+    ]
+
+
+def test_describe_search_needs_more_info_refusal_renders_after_the_empty_power_line():
+    power_outcome = FeaturePowerAttemptResult(
+        power=Power.GRANT_WISH, applied=False, reason="no SA argument given", magic_feature=MagicFeature.POOL
+    )
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, feature_power_outcome=power_outcome)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    # describe_feature_power_attempt() itself renders nothing for this
+    # refusal (no recovered POWMSG id) -- both new lines still follow.
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "The Pool/FStream needs more information to perform its power.",
+        "The Pool/FStream will grant a minor Wish.When you scout it, you may increase any ability by one, "
+        "if your unmodified skill level is less than your aptitude (maximum 4).SA-y the ability number "
+        "(0=Tactics, 1=March etc., the order is shown in your Character List).",
+    ]
+
+
+def test_describe_search_no_feature_power_outcome_skips_needs_more_info_entirely():
+    result = SearchExecutionResult(accepted=True, combat_resolved=False)
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
 
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
