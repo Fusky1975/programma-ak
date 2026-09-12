@@ -80,6 +80,38 @@ it confirms the formula's shape, not these per-map specifics):
   elsewhere by other means); one shows a suspiciously round jump (differs
   by exactly 170) that might be a distinct sentinel/reset value rather
   than an ordinary hex number.
+
+**A second, independent game's real move files (2026-09-12): the formula's
+shape reproduces cleanly, but its own ``XMULT`` is confirmed NOT tied to
+the real board width -- not just "unconfirmed," now positively
+contradicted by a real, known-width board.** The user found `Desktop/
+PROGRAMMA AK/AK6__T1.K3` and `AK6__T2.K{3,7,12,16,17,22}` (7 real move
+files from game 6) alongside that game's own `GW6`/`GW6__T2..T4` world
+saves. `parse_gw_header()` on `GW6` gives `map_left_x=0, map_right_x=29,
+map_top_y=0, map_bottom_y=14` -- a real, ground-truth 30x15 board (the
+Super-AK size the rulebook names at [12.1], already independently
+confirmed as `NORMAL_MAP_BOUNDS` by Phase 780). Extracting every
+strictly-consecutive within-segment LMOVE pair from these 7 files via
+`parser/k1_moves.py` (15 pairs total) and sweeping `board_width` 2-60
+with `turn/movement.py hex_distance()` (the same "ignore bounds, ignore
+wraparound" adjacency check the AK3 sweep above used) finds **width 20
+scores 12/15 (80%)** -- decisively best, matching the AK3 sweep's own
+78-84% ceiling almost exactly -- while the *real* board width, 30,
+scores only 3/15 (20%, indistinguishable from chance). This is the same
+"quotient/remainder" formula (`MOVE.md`'s own `x*XMULT+y`) working
+correctly on a second, wholly independent game, but with an empirically
+different `XMULT` (20, not 10) that is *also* not the real board width
+(30) -- exactly mirroring AK3's own situation (empirical 10 vs. real 18,
+per `GW3__T1`'s 162 provinces / 9 height). Two independent games now
+each show `XMULT != real board width`, strongly reinforcing `MOVE.md`'s
+own warning that `XMULT` is "a build/map constant... not to be fixed at
+10, 20, or 100 in a remake" -- it is some other, still-unidentified
+per-build or per-game quantity, not the map's own visible dimensions.
+This does NOT resolve AK3's own board-height/parity questions above
+(game 6's board is a different size than game 3's, so its own width-20
+fit doesn't transfer) -- but it does mean a future "which real quantity
+is XMULT" investigation should not assume it will ever equal the real
+`map_right_x - map_left_x + 1`.
 """
 
 from __future__ import annotations

@@ -178,13 +178,39 @@ class SkillTable:
     ``(7, 6)`` by turn 8.
 
     The 31st (trailing) value's meaning is still unconfirmed -- constant
-    ``3`` across all 10 sample turns for this one Kingdom (never changes
-    turn-to-turn despite several skill/aptitude pairs shifting), consistent
-    with something fixed at character creation rather than a 16th ability
-    slot. A plausible but **unverified** guess is a race ordinal
-    (``CTBOTH.PAS``'s ``race`` enum has ``Orcish = 3``, and this Kingdom's
-    character names read as tribal/orcish flavor) -- not asserted as fact
-    since only one Kingdom's data is available to cross-check against.
+    per Kingdom across turns (never changes turn-to-turn despite several
+    skill/aptitude pairs shifting), consistent with something fixed at
+    character creation rather than a 16th ability slot.
+
+    **The earlier "race ordinal, probably Orcish" guess is now disproven
+    (2026-09-12), not just unverified.** A second real game's move files
+    (`Desktop/PROGRAMMA AK/AK6__T1.K3`/`AK6__T2.K{3,7,12,16,17,22}`, cross-
+    checked against that game's own `GW6` world save via `parse_gw_
+    leaders()`) gave 6 more real Kingdoms to check against, and a re-check
+    of the original AK3 sample's own real race (`GW3__T1`, previously
+    never actually looked up -- only guessed from character-name flavor)
+    found it is **Elven**, not Orcish. The 7 real (Kingdom, race,
+    alignment, trailing-value) tuples now on hand:
+
+    - Uga-Buga Makumb (AK3): Elven, Undead -> 3
+    - Josh the gentle (AK6 K3): Dwarven, Evil -> 3
+    - Piotr (AK6 K7): Elven, Neutral -> 2
+    - Haggis Wen Yen (AK6 K12): Dwarven, Pagan -> 3
+    - Dances (AK6 K16): Human, Neutral -> 2
+    - Medard (AK6 K17): Dwarven, Good -> 3
+    - Mercino (AK6 K22): Human, Druid -> 1
+
+    No single-field hypothesis tried survives all 7: race alone fails
+    (two Elven Kings give 3 and 2); alignment alone fails (three Dwarven
+    Kings with three different alignments -- Evil/Pagan/Good -- all give
+    3, and two Neutral Kings of different races both give 2, but a
+    race-ordinal-plus-one reading of "race" would need Elven to map to 2,
+    contradicting Uga-Buga Makumb's own 3); nor does raw skill-value sum,
+    max skill, or count of non-zero skills (checked directly, no clean
+    match). Genuinely still unconfirmed -- documented with real data
+    instead of a guess so a future attempt doesn't have to re-derive this
+    table from scratch, and doesn't retry the now-falsified race-ordinal
+    reading.
     """
 
     raw_values: list[int]
