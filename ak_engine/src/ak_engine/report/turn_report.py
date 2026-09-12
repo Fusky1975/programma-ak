@@ -6731,17 +6731,20 @@ def describe_random_encounter(
     return lines
 
 
-# HostAK/TP/PROSE/ENCATT.X -- very likely Challenge's own opening
-# sentence, "searching for the target" before whatever encounter/combat
-# follows (Phase 597). `SAY.PAS:677 _LChall: FD('encatt',S_PCom,9)` sits
-# in the same personal-combat outcome cluster as `_LSwing`/`_LFlee`/
-# `_LCow`/etc. (most already wired in this project), and `describe_
-# challenge()`'s own combat narration below has no "opening" beat of its
-# own -- but unlike Phase 595's `HIREMERC.X` (confirmed a real sibling
-# via adjacent `RUMORS.PAS` constants *and* an already-tracked model
-# field), nothing in the available `.PAS` corpus confirms `_LChall`
-# fires unconditionally on every Challenge, so `describe_challenge()`
-# itself is left unmodified -- sourced and render-tested, not wired.
+# HostAK/TP/PROSE/ENCATT.X -- Challenge's own opening sentence,
+# "searching for the target," before whatever encounter/combat follows
+# (Phase 597). `SAY.PAS:677 _LChall: FD('encatt',S_PCom,9)` sits in the
+# same personal-combat outcome cluster as `_LSwing`/`_LFlee`/`_LCow`/etc.
+# (most already wired in this project). **Phase 793**: `Desktop/LCHALL.md`
+# (2026-09-12, a disassembly of `ResolveChallenge`, `AK.EXE raw
+# 0xD68C-0xDAB3`) confirms directly, via static disassembly (`D795-D799`),
+# that `_LChall=3033` is written *unconditionally*, right after the two
+# participants' names are prepared (`PW2(actor,target+1280)`) and before
+# every restriction check that can refuse the encounter (self-target,
+# same-province, dead target, army/King restrictions, same-kingdom,
+# late-move) -- closing the previously-open question this module's own
+# note used to raise. Wired into `describe_challenge()` as its own
+# unconditional first line, regardless of outcome.
 _ENCATT_TEMPLATES: list[str] = [
     "< searched {all }throughout @ for {some sign of }[.",
     "< looked {around }for [ in @.",
@@ -6752,13 +6755,38 @@ _ENCATT_TEMPLATES: list[str] = [
 
 def render_challenge_search(searcher_name: str, target_name: str, province_name: str, rng: random.Random) -> str:
     """Renders ENCATT.X's sentence for searching a province for a
-    Challenge target (Phase 597) -- see the module comment above for why
-    it isn't wired into ``describe_challenge()``.
+    Challenge target (Phase 597) -- wired into `describe_challenge()`
+    since Phase 793 as its own unconditional opening line.
     """
 
     variant = pick_variant(_ENCATT_TEMPLATES, rng)
     values = {"<": searcher_name, "[": target_name, "@": province_name}
     return render(variant, values, rng=rng)
+
+
+# HostAK/TP/PROSE/SANOTE.X2 record 79 (`sa_lev[78]`, `78` = Assassinate's
+# own real ordinal per `CTBOTH.PAS`, already `models/advanced_ability.py
+# AdvancedAbility.SPY_ASSASSINATE`'s own citation) -- Phase 793,
+# `Desktop/LCHALL.md` section 9.2a, transcribed verbatim. LCHALL confirms
+# this fires right before the encounter engine runs (`DA01-DA09`), i.e.
+# after the ENCATT.X search line above and only once every restriction
+# check has already passed (`AdvancedAbility.SPY_ASSASSINATE`'s own
+# bypass, `is_encounter_accepted()`'s `has_spy_assassinate` early return,
+# Phase 698) -- the ability itself was already live and tested, only its
+# own accompanying sentence was never wired.
+_SANOTE_ASSASSINATE_TEMPLATE = (
+    "Using/Remploying > special/Radvanced Spy ability/Rtechnique of Assassination, "
+    "< got_close_to/Rstole_up_to [, without_being/Rnot seen/Rdetected{ by any bodyguards/Rguards}."
+)
+
+
+def render_assassinate_encounter_note(challenger_name: str, target_name: str, rng: random.Random) -> str:
+    """Renders `SANOTE.X2` record 79 (Phase 793) -- see the module
+    comment above for the real trigger/ordering this mirrors.
+    """
+
+    values = {"<": challenger_name, ">": f"{challenger_name}'s", "[": target_name}
+    return render(_SANOTE_ASSASSINATE_TEMPLATE, values, rng=rng)
 
 
 def describe_challenge(
@@ -6767,13 +6795,14 @@ def describe_challenge(
     challenger_leader_id: int,
     challenger_name: str,
     target_name: str,
+    province_name: str,
     rng: random.Random,
     is_sea: bool = False,
     state: GameState | None = None,
 ) -> list[str]:
     """Assembles Challenge's own turn-report lines from an already-computed
     ``ChallengeExecutionResult`` (``turn/challenge_execution.py
-    execute_challenge()``, Phase 50/290/292/305/306/417) -- Challenge's
+    execute_challenge()``, Phase 50/290/292/305/306/417/793) -- Challenge's
     own report presence, from zero: `describe_turn_results()` never had
     an ``ActionCode.CHALLENGE`` branch before this phase, since
     ``ChallengeExecutionResult`` had no ``request`` field for it to
@@ -6781,23 +6810,39 @@ def describe_challenge(
     417 addendum, mirroring ``PursueExecutionResult.request``'s own
     Phase 213 field).
 
-    A thin wrapper over ``describe_encounter_combat()`` (this module's
-    own shared Challenge/Pursue personal-combat narration) -- see that
-    function's own docstring for the full composition order and the
-    "no source, no guess" reasoning behind every case it renders nothing
-    for (a refused/peaceful encounter, a successful flee's own final
-    beat).
+    **Phase 793**: opens with ``render_challenge_search()`` (ENCATT.X),
+    unconditionally -- `Desktop/LCHALL.md` confirms the real `_LChall`
+    write happens before every restriction check, so this line renders
+    for every outcome, including a refusal. When the encounter was
+    accepted via `AdvancedAbility.SPY_ASSASSINATE`'s own bypass
+    (``result.used_spy_assassinate``), ``render_assassinate_encounter_
+    note()`` (SANOTE.X2 record 79) follows right after, matching the
+    real write order (search line, then the Assassinate note, then
+    whatever the encounter engine itself produces below).
+
+    The remaining lines are a thin wrapper over ``describe_encounter_
+    combat()`` (this module's own shared Challenge/Pursue personal-
+    combat narration) -- see that function's own docstring for the full
+    composition order and the "no source, no guess" reasoning behind
+    every case it renders nothing for (a refused/peaceful encounter, a
+    successful flee's own final beat).
     """
 
-    return describe_encounter_combat(
-        result,
-        a_leader_id=challenger_leader_id,
-        a_name=challenger_name,
-        b_name=target_name,
-        rng=rng,
-        is_sea=is_sea,
-        state=state,
+    lines = [render_challenge_search(challenger_name, target_name, province_name, rng)]
+    if result.used_spy_assassinate:
+        lines.append(render_assassinate_encounter_note(challenger_name, target_name, rng))
+    lines.extend(
+        describe_encounter_combat(
+            result,
+            a_leader_id=challenger_leader_id,
+            a_name=challenger_name,
+            b_name=target_name,
+            rng=rng,
+            is_sea=is_sea,
+            state=state,
+        )
     )
+    return lines
 
 
 def describe_trail(
@@ -7395,14 +7440,17 @@ def describe_turn_results(
             target_name = _leader_name(state, request.target_character_id)
             if target_name is None:
                 continue
-            province = state.provinces.get(_leader_location(state, entry.leader_id))
+            challenger_location = _leader_location(state, entry.leader_id)
+            province = state.provinces.get(challenger_location)
             is_sea = province is not None and province.effective_terrain() is Terrain.SEA
+            province_name = _province_label(state, challenger_location)
             lines.extend(
                 describe_challenge(
                     entry.result,
                     challenger_leader_id=entry.leader_id,
                     challenger_name=caster_name,
                     target_name=target_name,
+                    province_name=province_name,
                     rng=rng,
                     is_sea=is_sea,
                     state=state,

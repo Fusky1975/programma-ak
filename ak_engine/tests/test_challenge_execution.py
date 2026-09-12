@@ -40,6 +40,7 @@ from ak_engine.turn.challenge_execution import (
     execute_challenge,
     has_combat_intent,
     is_encounter_accepted,
+    king_challenge_evasion_applies,
     resolve_challenge_combat,
     target_evades_via_sense_danger,
 )
@@ -171,6 +172,70 @@ def test_armyless_hero_vs_hero_challenger_always_accepts_without_consuming_rng()
         rng=ScriptedRandom([]),  # any .random() call here would raise IndexError
     )
     assert accepted is True
+
+
+# -- Phase 793: king_evasion_applies overrides the plain 50% roll -------
+
+
+def test_king_evasion_applies_true_refuses_without_consuming_rng():
+    accepted = is_encounter_accepted(
+        target_is_king=False, target_leads_army=False, challenger_is_king=True, mutual_encounter=False,
+        rng=ScriptedRandom([]), king_evasion_applies=True,  # any .random() call here would raise IndexError
+    )
+    assert accepted is False
+
+
+def test_king_evasion_applies_false_accepts_without_consuming_rng():
+    accepted = is_encounter_accepted(
+        target_is_king=False, target_leads_army=False, challenger_is_king=True, mutual_encounter=False,
+        rng=ScriptedRandom([]), king_evasion_applies=False,  # any .random() call here would raise IndexError
+    )
+    assert accepted is True
+
+
+# -- Phase 793: king_challenge_evasion_applies() -- Desktop/LCHALL.md ---
+
+
+def _evasion_leaders(target_id: int) -> tuple[GameState, LeaderState, LeaderState]:
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD, is_king=True)
+    target = LeaderState(target_id, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    return state, challenger, target
+
+
+def test_king_challenge_evasion_applies_false_without_an_explicit_melee_tactic():
+    # turn_number(1) + target(3) + challenger(1) + 1 = 6, even -- parity
+    # alone would favor evasion, but no Melee tactic is present at all.
+    state, challenger, target = _evasion_leaders(3)
+
+    assert king_challenge_evasion_applies(state, challenger, target, _peaceful_request(3)) is False
+
+
+def test_king_challenge_evasion_applies_false_when_plan_intent_is_not_melee():
+    # An explicit Melee tactic is present, but Plan_Intent() stops at the
+    # earlier, decisive Talk tactic -- the classified intent isn't Melee.
+    state, challenger, target = _evasion_leaders(3)
+    request = ChallengeRequest(
+        target_character_id=3, unconfirmed_extra0=0, tactics=[SearchTactic(Maneuver.TALK), SearchTactic(Maneuver.MELEE)]
+    )
+
+    assert king_challenge_evasion_applies(state, challenger, target, request) is False
+
+
+def test_king_challenge_evasion_applies_true_when_parity_favors_evasion():
+    # turn_number(1) + target(3) + challenger(1) + 1 = 6, even.
+    state, challenger, target = _evasion_leaders(3)
+
+    assert king_challenge_evasion_applies(state, challenger, target, _melee_request(3)) is True
+
+
+def test_king_challenge_evasion_applies_false_when_parity_does_not_favor_evasion():
+    # turn_number(1) + target(2) + challenger(1) + 1 = 5, odd.
+    state, challenger, target = _evasion_leaders(2)
+
+    assert king_challenge_evasion_applies(state, challenger, target, _melee_request(2)) is False
 
 
 # -- Phase 698: AdvancedAbility.SPY_ASSASSINATE's own unconditional bypass --
@@ -600,6 +665,58 @@ def test_execute_challenge_hero_with_army_target_refused():
 
     assert result.accepted is False
     assert result.reason == "encounter refused"
+
+
+# -- Phase 793: king_evasion_applies wired end to end --------------------
+
+
+def test_execute_challenge_king_evasion_refuses_when_parity_favors_it_and_consumes_no_rng():
+    # turn_number(1) + target(3) + challenger(1) + 1 = 6, even -- and the
+    # plan carries an explicit Melee tactic, so Desktop/LCHALL.md's own
+    # deterministic gate applies. ScriptedRandom([]) proves this decision
+    # itself never rolls dice.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD, is_king=True))
+    state.add_leader(LeaderState(3, kingdom_id=2, name="Target", location=FIELD))
+
+    result = execute_challenge(state, 1, _melee_request(3), rng=ScriptedRandom([]))
+
+    assert result.accepted is False
+    assert result.reason == "encounter refused"
+
+
+def test_execute_challenge_king_evasion_accepts_when_parity_does_not_favor_it():
+    # turn_number(1) + target(2) + challenger(1) + 1 = 5, odd -- the gate
+    # doesn't apply this turn, so the encounter proceeds normally.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD, is_king=True))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+
+    with patch("ak_engine.turn.challenge_execution.resolve_challenge_combat") as mock_resolve:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner=None)
+        result = execute_challenge(state, 1, _melee_request(2), rng=ScriptedRandom([]))
+
+    assert result.accepted is True
+    assert result.combat_occurred is True
+    assert result.used_spy_assassinate is False
+
+
+def test_execute_challenge_spy_assassinate_bypasses_king_evasion_and_marks_the_result():
+    # Same ids as the refusal test above (parity would otherwise favor
+    # evasion) -- Assassinate bypasses it unconditionally, per Phase 698.
+    state = _base_state()
+    challenger = LeaderState(
+        1, kingdom_id=1, name="Challenger", location=FIELD, is_king=True, advanced_abilities={AdvancedAbility.SPY_ASSASSINATE}
+    )
+    state.add_leader(challenger)
+    state.add_leader(LeaderState(3, kingdom_id=2, name="Target", location=FIELD))
+
+    with patch("ak_engine.turn.challenge_execution.resolve_challenge_combat") as mock_resolve:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner=None)
+        result = execute_challenge(state, 1, _melee_request(3), rng=ScriptedRandom([]))
+
+    assert result.accepted is True
+    assert result.used_spy_assassinate is True
 
 
 # -- execute_challenge: combat resolution + loser removal ---------------

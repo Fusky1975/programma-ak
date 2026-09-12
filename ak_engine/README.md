@@ -32574,6 +32574,38 @@ question for a future source or a direct question to the user.
   detection channel; Clairvoyance is a deeper, independent one this
   masquerade was never meant to survive. `_stranger_descriptor()`'s own
   docstring updated to record the confirmed decision; no code change.
+- **Phase 793** -- `Desktop/LCHALL.md` (2026-09-12, a disassembly of
+  `ResolveChallenge`, `AK.EXE raw 0xD68C-0xDAB3`) closes a survey-35-
+  flagged item: `report/turn_report.py render_challenge_search()`
+  (ENCATT.X, Phase 597) had zero production callers because its own
+  module comment said "nothing... confirms `_LChall` fires
+  unconditionally on every Challenge." LCHALL.md confirms it directly
+  (`D795-D799`): the search sentence is written unconditionally, right
+  after the two participants' names are prepared, before every
+  restriction check that could refuse the encounter -- now wired into
+  `describe_challenge()` as its own unconditional first line, every
+  outcome. The same document resolved two more findings the user
+  confirmed to include: (1) the King-challenges-Hero "evade 50% of the
+  time" branch is a deterministic parity test in the real engine
+  (`((gameturn+target+actor+1) AND 1)=0`), gated on the challenger's
+  plan carrying an *explicit* Melee tactic whose overall `Plan_Intent()`
+  classification is also Melee -- `turn/challenge_execution.py king_
+  challenge_evasion_applies()` reuses `turn/sep_decode.py plan_intent()`
+  (Phase 659) directly; `is_encounter_accepted()`'s new `king_evasion_
+  applies` parameter defaults to `None` (the old `rng.random()<0.5`
+  roll), so `turn/patrol_execution.py`/`turn/pursue_execution.py` (also
+  callers) are unaffected -- LCHALL.md only resolves CHALLENGE's own
+  resolver. (2) `AdvancedAbility.SPY_ASSASSINATE`'s own real
+  accompanying sentence (`SANOTE.X2` record 79) was never wired --
+  `ChallengeExecutionResult.used_spy_assassinate` now records whenever
+  the encounter was accepted via that ability's own Phase 698 bypass,
+  and `describe_challenge()` renders it right after the search line.
+  Deliberately out of scope, flagged not guessed: the self-target
+  refusal (32586), the late-move gate (`DS:C349`), and the army-
+  restriction gate's own `Plan_Intent==CMelee` nuance -- all three real
+  findings in the same document, none selected for this phase. Test
+  count: 6626 -> 6641 (net +15). Full suite verified green (unchanged,
+  6626) before touching a single test.
 
 ## Setup
 

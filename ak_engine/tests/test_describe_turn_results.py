@@ -595,9 +595,14 @@ def test_describe_turn_results_renders_challenge_combat():
         PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CHALLENGE, result=result, error=None)
     ]
 
-    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0, 0]))
+    # Phase 793: one more choice_indices entry for the new, unconditional
+    # ENCATT.X opening line.
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0]))
 
-    assert lines == ["Aldric Fired an arrow at Borin and inflicted 5 damage points."]
+    assert lines == [
+        "Aldric searched throughout (0, 0) for Borin.",
+        "Aldric Fired an arrow at Borin and inflicted 5 damage points.",
+    ]
 
 
 def test_describe_turn_results_narrates_challenge_even_when_the_challenger_dies_in_it():
@@ -624,9 +629,12 @@ def test_describe_turn_results_narrates_challenge_even_when_the_challenger_dies_
         PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CHALLENGE, result=result, error=None)
     ]
 
-    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0]))
+    # Phase 793: one more choice_indices entry for the new, unconditional
+    # ENCATT.X opening line.
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0]))
 
     assert lines == [
+        "Aldric searched throughout (0, 0) for Borin.",
         "Borin assailed Aldric and inflicted 6 damage points.",
         "Aldric was mortally wounded.",
         "and so it was that Aldric met Aldric's unseemly end.",

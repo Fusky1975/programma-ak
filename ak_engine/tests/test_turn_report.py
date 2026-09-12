@@ -157,6 +157,7 @@ from ak_engine.report.turn_report import (
     render_already_allied,
     render_ally_proposed,
     render_ally_refused,
+    render_assassinate_encounter_note,
     render_assassination_attempt,
     render_assassination_failed,
     render_assassination_ordered,
@@ -4128,6 +4129,78 @@ def test_render_challenge_search_third_variant():
     assert result == "Aldric searched for Borin in the bars and whorehouses of Mongu."
 
 
+# -- SANOTE.X2 record 79, AdvancedAbility.SPY_ASSASSINATE (Phase 793) --
+
+
+def test_render_assassinate_encounter_note_first_wording():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_assassinate_encounter_note("Aldric", "Borin", rng)
+    assert result == "Using Aldric's special Spy ability of Assassination, Aldric got close to Borin, without being seen."
+
+
+def test_render_assassinate_encounter_note_alternate_wording_includes_the_optional_clause():
+    rng = ScriptedRandom([0.99] * 10)
+    result = render_assassinate_encounter_note("Aldric", "Borin", rng)
+    assert result == (
+        "employing Aldric's advanced Spy technique of Assassination, Aldric stole up to Borin, "
+        "not detected by any guards."
+    )
+
+
+# -- describe_challenge() -- Phase 793: ENCATT.X always opens, SANOTE.X2 --
+# record 79 follows only when the encounter was accepted via Assassinate
+
+
+def test_describe_challenge_encatt_line_opens_every_outcome():
+    # A refused encounter still gets the ENCATT.X search line -- Desktop/
+    # LCHALL.md confirms `_LChall` is written before every restriction
+    # check that could refuse the encounter.
+    refused = ChallengeExecutionResult(accepted=False, reason="encounter refused")
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_challenge(
+        refused, challenger_leader_id=1, challenger_name="Aldric", target_name="Borin", province_name="Mongu", rng=rng
+    )
+
+    assert lines == ["Aldric searched throughout Mongu for Borin."]
+
+
+def test_describe_challenge_encatt_line_opens_a_peaceful_encounter():
+    peaceful = ChallengeExecutionResult(accepted=True, combat_occurred=False)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_challenge(
+        peaceful, challenger_leader_id=1, challenger_name="Aldric", target_name="Borin", province_name="Mongu", rng=rng
+    )
+
+    assert lines == ["Aldric searched throughout Mongu for Borin."]
+
+
+def test_describe_challenge_assassinate_note_follows_the_search_line_when_used():
+    result = ChallengeExecutionResult(accepted=True, combat_occurred=False, used_spy_assassinate=True)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_challenge(
+        result, challenger_leader_id=1, challenger_name="Aldric", target_name="Borin", province_name="Mongu", rng=rng
+    )
+
+    assert lines == [
+        "Aldric searched throughout Mongu for Borin.",
+        "Using Aldric's special Spy ability of Assassination, Aldric got close to Borin, without being seen.",
+    ]
+
+
+def test_describe_challenge_never_renders_the_assassinate_note_when_unused():
+    result = ChallengeExecutionResult(accepted=True, combat_occurred=False, used_spy_assassinate=False)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_challenge(
+        result, challenger_leader_id=1, challenger_name="Aldric", target_name="Borin", province_name="Mongu", rng=rng
+    )
+
+    assert lines == ["Aldric searched throughout Mongu for Borin."]
+
+
 # -- DECQ.X/INCQ.X (Phase 598) --
 
 
@@ -4462,11 +4535,18 @@ def test_describe_challenge_delegates_to_describe_encounter_combat():
         combat_occurred=True,
         melee_swings=(MeleeSwing(attacker="a", hit=True, damage=3),),
     )
-    rng = ScriptedRandom([0.1] * 30, choice_indices=[8, 0])
+    # Phase 793: choice_indices[0] now picks the new, unconditional
+    # ENCATT.X opening line -- every other index shifts one to the right.
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 8, 0])
 
-    lines = describe_challenge(result, challenger_leader_id=1, challenger_name="Aldric", target_name="Borin", rng=rng)
+    lines = describe_challenge(
+        result, challenger_leader_id=1, challenger_name="Aldric", target_name="Borin", province_name="Capital City", rng=rng
+    )
 
-    assert lines == ["Aldric Attacked Borin and inflicted 3 damage points."]
+    assert lines == [
+        "Aldric searched throughout Capital City for Borin.",
+        "Aldric Attacked Borin and inflicted 3 damage points.",
+    ]
 
 
 def test_describe_challenge_threads_state_through_to_the_steal_and_spoils_narration():
@@ -4478,11 +4558,22 @@ def test_describe_challenge_threads_state_through_to_the_steal_and_spoils_narrat
     steal_result = ChallengeExecutionResult(
         accepted=True, combat_occurred=True, steal_outcome="success", stolen_item_ids=stolen_ids
     )
-    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+    # Phase 793: one more choice_indices entry for the new, unconditional
+    # ENCATT.X opening line.
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
     steal_lines = describe_challenge(
-        steal_result, challenger_leader_id=1, challenger_name="Aldric", target_name="Borin", rng=rng, state=state
+        steal_result,
+        challenger_leader_id=1,
+        challenger_name="Aldric",
+        target_name="Borin",
+        province_name="Capital City",
+        rng=rng,
+        state=state,
     )
-    assert steal_lines == ["Aldric caressed the treasure fondly."]
+    assert steal_lines == [
+        "Aldric searched throughout Capital City for Borin.",
+        "Aldric caressed the treasure fondly.",
+    ]
 
     spoils_state, looted_ids = _state_with_items(Treasure.ABILITY_MELEE)
     spoils_result = ChallengeExecutionResult(
@@ -4493,10 +4584,17 @@ def test_describe_challenge_threads_state_through_to_the_steal_and_spoils_narrat
         loser_killed=True,
         looted_item_ids=looted_ids,
     )
-    rng2 = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0])
+    rng2 = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0])
     spoils_lines = describe_challenge(
-        spoils_result, challenger_leader_id=1, challenger_name="Aldric", target_name="Borin", rng=rng2, state=spoils_state
+        spoils_result,
+        challenger_leader_id=1,
+        challenger_name="Aldric",
+        target_name="Borin",
+        province_name="Capital City",
+        rng=rng2,
+        state=spoils_state,
     )
+    assert spoils_lines[0] == "Aldric searched throughout Capital City for Borin."
     assert spoils_lines[-1] == "Aldric looked with satisfaction at the remains of Borin."
 
 
@@ -10726,7 +10824,9 @@ def test_compose_letter_report_narrates_a_non_king_leader_who_dies_this_turn():
         PhaseDispatchResult(leader_id=5, segment_index=0, phase_label="P0", action=ActionCode.CHALLENGE, result=result, error=None)
     ]
 
-    lines = compose_letter_report(results, state, 1, ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0]))
+    # Phase 793: one more choice_indices entry for the new, unconditional
+    # ENCATT.X opening line.
+    lines = compose_letter_report(results, state, 1, ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0, 0]))
 
     assert "From: Guerin" in lines
     assert "Borin assailed Guerin and inflicted 6 damage points." in lines

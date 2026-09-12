@@ -373,7 +373,7 @@ from ak_engine.turn.encounter import (
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.search_decode import SearchTactic
-from ak_engine.turn.sep_decode import sep_accepts_challenge, target_uses_special_encounter_plan
+from ak_engine.turn.sep_decode import plan_intent, sep_accepts_challenge, target_uses_special_encounter_plan
 
 _COMBAT_MANEUVERS = frozenset({Maneuver.MELEE, Maneuver.SHOOT})
 
@@ -576,6 +576,45 @@ def target_evades_via_sense_danger(state: GameState, target: LeaderState, challe
     return not sep_accepts_challenge(target_sep, state)
 
 
+def king_challenge_evasion_applies(
+    state: GameState, challenger: LeaderState, target: LeaderState, request: ChallengeRequest
+) -> bool:
+    """Phase 793 -- `Desktop/LCHALL.md` (a disassembly of `ResolveChallenge`,
+    `AK.EXE raw 0xD68C-0xDAB3`) shows [3.12]'s own "evade encounters from
+    Kings 50% of the time" is not a coin flip in the real engine
+    (`D89E-D8F4`). It's a deterministic alternation for this exact
+    ``(turn, actor, target)`` triple, reached only when the challenger's
+    own plan carries an *explicit* Melee tactic (`FindTacticPosition`,
+    which -- unlike `Plan_Intent`'s own `CShoot`-inclusive Melee
+    classification -- searches for `Maneuver.MELEE` specifically) whose
+    overall classified intent is *also* Melee (`Plan_Intent`, already
+    ported verbatim as `turn/sep_decode.py plan_intent()`, Phase 659):
+
+        ((gameturn + target + actor + 1) AND 1) = 0
+        AND FindTacticPosition(CMelee, plan) > 0
+        AND Plan_Intent(plan) = CMelee
+
+    Returns ``True`` iff the target evades (the encounter should be
+    refused) -- ``False`` means either the gate's own precondition
+    (explicit Melee + Melee intent) never applies, or it applies but the
+    parity doesn't favor evasion this turn; both cases fall through to
+    an accepted encounter, exactly like the real resolver's own "if
+    condition is false, keep going" control flow.
+
+    **Scoped to CHALLENGE only.** ``is_encounter_accepted()`` is also
+    called by `turn/patrol_execution.py`/`turn/pursue_execution.py`,
+    but LCHALL.md only resolves `ResolveChallenge`'s own resolver --
+    those two callers keep the rulebook's plain 50% roll until/unless a
+    comparable disassembly confirms they share this exact mechanism.
+    """
+
+    if not any(tactic.maneuver is Maneuver.MELEE for tactic in request.tactics):
+        return False
+    if plan_intent(request.tactics, state) is not Maneuver.MELEE:
+        return False
+    return (state.turn_number + target.leader_id + challenger.leader_id + 1) % 2 == 0
+
+
 def is_encounter_accepted(
     *,
     target_is_king: bool,
@@ -586,6 +625,7 @@ def is_encounter_accepted(
     has_spy_assassinate: bool = False,
     is_treasury_raid_attempt: bool = False,
     has_sense_danger_evasion: bool = False,
+    king_evasion_applies: bool | None = None,
 ) -> bool:
     """Rulebook [3.12]'s King/Hero acceptance decision tree -- see module docstring
     for the full quoted text this implements branch-for-branch.
@@ -630,6 +670,15 @@ def is_encounter_accepted(
     possession, the SEP's own Flee-first condition, and "unfriendly")
     is a single pre-combined eligibility flag, the same shape `is_
     treasury_raid_attempt` already established.
+
+    Phase 793 -- `king_evasion_applies` (computed by the caller via
+    `king_challenge_evasion_applies()`, CHALLENGE-only) replaces the
+    plain 50% roll below with `Desktop/LCHALL.md`'s own confirmed
+    deterministic formula when supplied. Left `None` (the default),
+    every existing caller keeps the rulebook's own literal roll
+    unchanged -- see `king_challenge_evasion_applies()`'s own docstring
+    for why `turn/patrol_execution.py`/`turn/pursue_execution.py` stay
+    on the old behavior.
     """
 
     if has_spy_assassinate or is_treasury_raid_attempt:
@@ -639,6 +688,8 @@ def is_encounter_accepted(
     if target_leads_army:
         return False
     if challenger_is_king:
+        if king_evasion_applies is not None:
+            return not king_evasion_applies
         return rng.random() < 0.5  # "evade encounters from Kings 50% of the time"
     if has_sense_danger_evasion:
         return rng.random() < 0.5  # "avoided... 50% of the time"
@@ -2110,6 +2161,12 @@ class ChallengeExecutionResult:
     # itself, the same Phase 213 convention `PursueExecutionResult.request`/
     # `SearchExecutionResult.request` already established.
     request: ChallengeRequest | None = None
+    # Phase 793: True only when `AdvancedAbility.SPY_ASSASSINATE`'s own
+    # unconditional-accept bypass (Phase 698) is why this encounter was
+    # accepted at all -- lets `report/turn_report.py describe_challenge()`
+    # render SANOTE.X2 record 79 (`Desktop/LCHALL.md` section 9.2a)
+    # right after the ENCATT.X search line.
+    used_spy_assassinate: bool = False
 
 
 def _apply_bravest_talk_inspiration(state: GameState, challenger: LeaderState, target: LeaderState) -> None:
@@ -2278,6 +2335,19 @@ def execute_challenge(
     docstring for the full eligibility computation and why the
     "random encounters" half of this ability's own text stays
     unmodeled (this project has no random-encounter mechanism at all).
+
+    Phase 793 -- ``Desktop/LCHALL.md`` (a disassembly of the real
+    ``ResolveChallenge``) resolves three things at once: (1) ENCATT.X's
+    own opening "searched for the target" sentence (``report/turn_
+    report.py render_challenge_search()``) fires unconditionally, wired
+    into ``describe_challenge()`` as its own first line regardless of
+    outcome; (2) the King-challenges-Hero "50%" evasion is really a
+    deterministic parity test, see ``king_challenge_evasion_applies()``;
+    (3) ``AdvancedAbility.SPY_ASSASSINATE``'s own real accompanying
+    sentence (SANOTE.X2 record 79) was never wired -- ``used_spy_
+    assassinate`` on the result records whenever this encounter was
+    accepted via that ability's own bypass, so the report layer can
+    render it right after the search line.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -2316,21 +2386,27 @@ def execute_challenge(
         return ChallengeExecutionResult(accepted=True, combat_occurred=False)
 
     target_leads_army = bool(state.armies_commanded_by(target.leader_id))
+    has_spy_assassinate = AdvancedAbility.SPY_ASSASSINATE in challenger.advanced_abilities
     accepted = is_encounter_accepted(
         target_is_king=target.is_king,
         target_leads_army=target_leads_army,
         challenger_is_king=challenger.is_king,
         mutual_encounter=mutual_encounter,
         rng=rng,
-        has_spy_assassinate=AdvancedAbility.SPY_ASSASSINATE in challenger.advanced_abilities,
+        has_spy_assassinate=has_spy_assassinate,
         is_treasury_raid_attempt=is_treasury_raid_attempt,
         has_sense_danger_evasion=target_evades_via_sense_danger(state, target, challenger),
+        king_evasion_applies=king_challenge_evasion_applies(state, challenger, target, request),
     )
     if not accepted:
         _apply_duel_encounter_merit(
             challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
         )
         return ChallengeExecutionResult(accepted=False, reason="encounter refused")
+
+    # Phase 793: only meaningful once `accepted` is True -- `SANOTE.X2`
+    # record 79 accompanies a real, successful bypass, not a refusal.
+    used_spy_assassinate = has_spy_assassinate
 
     if has_talk_tactic:
         _apply_bravest_talk_inspiration(state, challenger, target)
@@ -2377,6 +2453,7 @@ def execute_challenge(
             stolen_item_ids=combat_result.stolen_item_ids,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
+            used_spy_assassinate=used_spy_assassinate,
         )
     if combat_result.winner is None:
         return ChallengeExecutionResult(
@@ -2388,6 +2465,7 @@ def execute_challenge(
             stolen_item_ids=combat_result.stolen_item_ids,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
+            used_spy_assassinate=used_spy_assassinate,
         )
 
     winner_id, loser_id = (
@@ -2420,4 +2498,5 @@ def execute_challenge(
         stolen_item_ids=combat_result.stolen_item_ids,
         fire_arrow_shots=combat_result.fire_arrow_shots,
         melee_swings=combat_result.melee_swings,
+        used_spy_assassinate=used_spy_assassinate,
     )
