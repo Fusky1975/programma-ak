@@ -10763,14 +10763,18 @@ def _stranger_descriptor(state: GameState, target: LeaderState, *, viewer_kingdo
     kings may not use this ability" -- the `is_king` branch below is
     unaffected, since `target.is_king` and holding this ability are
     mutually exclusive by the ability's own text, not by a check here.
-    One real, documented residual gap, deliberately out of scope this
-    phase: Enhanced Clairvoyance's own `Was_Clairved` full-table bypass
-    (`describe_characters_report()`'s own impulse-1 pass) reveals a
-    watched leader's real fields directly, without going through this
-    function at all -- a foreign Kingdom that specifically Clairvoys a
-    Double Agent could still learn their real Kingdom that way; this
-    ability's own text doesn't claim to defeat every other detection
-    channel, only the ordinary stranger-report/Hire path modeled here.
+    **Phase 792, user-confirmed directly**: Enhanced Clairvoyance's own
+    `Was_Clairved` full-table bypass (`describe_characters_report()`'s
+    own impulse-1 pass) reveals a watched leader's real fields directly,
+    without going through this function at all -- a foreign Kingdom
+    that specifically Clairvoys a Double Agent learns their real, un-
+    masked details this way. Confirmed deliberate, not a gap: this
+    ability's own text ("give the impression of being a wandering
+    hero... in any foreign king's turn report") only claims to defeat
+    the ordinary stranger-report/Hire path modeled here -- Clairvoyance
+    is a deeper, independent detection channel this masquerade was
+    never meant to survive. No code change; `_was_clairved()`/its own
+    caller stay exactly as they are.
     """
 
     if target.leader_id in state.dead_leaders:

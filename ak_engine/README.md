@@ -32560,6 +32560,20 @@ question for a future source or a direct question to the user.
   this project's own lump-sum maintenance model) stays untouched. Test
   count: 6622 -> 6626 (net +4). Full suite verified green (unchanged,
   6622) before touching a single test.
+- **Phase 792** -- comment-only, no behavior change. Closes the last
+  narrow, never-revisited residual flagged since the 24th/29th/42nd
+  fresh codebase surveys: Enhanced Clairvoyance's own `Was_Clairved`
+  full-table bypass (`describe_characters_report()`'s impulse-1 pass)
+  reveals a `AdvancedAbility.SPY_DOUBLE_AGENT` holder's real, unmasked
+  details (alignment/temper/race/skills) to a foreign Kingdom that
+  specifically Clairvoys them, instead of the masqueraded `": a
+  wandering Hero"` row `_stranger_descriptor()`/`_render_stranger_row()`
+  use for the ordinary stranger-report/Hire path (Phase 729). **User-
+  confirmed directly**: this is deliberate, not a gap -- the ability's
+  own text only claims to defeat the ordinary stranger-report/Hire
+  detection channel; Clairvoyance is a deeper, independent one this
+  masquerade was never meant to survive. `_stranger_descriptor()`'s own
+  docstring updated to record the confirmed decision; no code change.
 
 ## Setup
 
