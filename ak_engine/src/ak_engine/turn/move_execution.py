@@ -32,10 +32,11 @@ Wires together, in order:
    comment for why this stays separate from ``movement_cost_for_move()``
    itself (it targets specific army types, not the whole moving party).
    The spell's own end-of-gameturn dissipation
-   (``ILLUSORY_FOG_DISSIPATES_AT_END_OF_GAMETURN``) is still not
-   modeled -- see ``turn/cast_execution.py``'s own Phase 207 addendum
-   for why (no end-of-turn cleanup pass exists for any persistent
-   province-level spell flag in this project yet, not just this one).
+   (``ILLUSORY_FOG_DISSIPATES_AT_END_OF_GAMETURN``) is already modeled
+   too, since Phase 576 -- ``turn_processor.py _replenish_turn_scoped_
+   state()`` unconditionally clears ``province.illusory_fog_active``
+   every real turn (Phase 576 predates this Phase 651 addendum, whose
+   own wording was never updated to reflect it; corrected Phase 794).
 5. ``GameState`` mutation: army relocation (only if the move actually
    succeeds -- an unconquered, contested, or repelled battle leaves the
    mover's surviving armies where ``fight_battle()`` put them, not at the

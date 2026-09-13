@@ -32607,6 +32607,18 @@ question for a future source or a direct question to the user.
   count: 6626 -> 6641 (net +15). Full suite verified green (unchanged,
   6626) before touching a single test.
 
+**Phase 794** -- comment-only, no behavior change, test count unchanged
+(6641). A fresh codebase survey (Explore agent) found a stale "known-gap"
+docstring claim: `turn/cast_execution.py`'s own Phase 207 Illusory Fog
+addendum and `turn/move_execution.py`'s own Phase 651 addendum both
+still said the spell's real "dissipates at the end of the gameturn"
+clause (`ILLUSORY_FOG_DISSIPATES_AT_END_OF_GAMETURN`) was unmodeled --
+stale since Phase 576, which already made `turn_processor.py
+_replenish_turn_scoped_state()` unconditionally clear `ProvinceState.
+illusory_fog_active` every real turn (with its own dedicated regression
+test), predating the Phase 651 addendum that never got updated to
+reflect it. Both passages corrected in place.
+
 ## Setup
 
 ```
