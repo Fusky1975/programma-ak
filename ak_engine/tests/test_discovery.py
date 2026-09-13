@@ -8,6 +8,7 @@ from ak_engine.models.discovery import (
     DISCOVERY_DISPLAY_VALUE,
     DISCOVERY_NAME,
     DISCOVERY_REVENUE_BONUS_PERCENT,
+    DISCOVERY_SPREAD_CATEGORY,
     Discovery,
     describe_discovery_line,
     discovery_effect_description,
@@ -144,6 +145,22 @@ def test_discovery_display_value_verbatim_samples():
     assert DISCOVERY_DISPLAY_VALUE[Discovery.PONY_EXPRESS] == 20
     assert DISCOVERY_DISPLAY_VALUE[Discovery.PEANUT_BUTTER_SANDWICH] == 10
     assert DISCOVERY_DISPLAY_VALUE[Discovery.VULCANIZED_RUBBER] == 13
+
+
+# -- Phase 795: DISCOVERY_SPREAD_CATEGORY (dspread) -- Desktop/DISCVAL.md --
+
+
+def test_discovery_spread_category_covers_every_discovery_with_a_valid_value():
+    assert set(DISCOVERY_SPREAD_CATEGORY.keys()) == set(Discovery)
+    assert set(DISCOVERY_SPREAD_CATEGORY.values()) <= {1, 2, 3, 4}
+
+
+def test_discovery_spread_category_verbatim_samples():
+    # CTME.PAS dspread array, positional -- see module docstring.
+    assert DISCOVERY_SPREAD_CATEGORY[Discovery.LAND_SHIP] == 1  # Batt
+    assert DISCOVERY_SPREAD_CATEGORY[Discovery.PONY_EXPRESS] == 2  # Comm
+    assert DISCOVERY_SPREAD_CATEGORY[Discovery.ANALYTICAL_PSYCHOLOGY] == 3  # Prof
+    assert DISCOVERY_SPREAD_CATEGORY[Discovery.OSTEOPATHIC_GERM_WARFARE] == 4  # Form
 
 
 def test_discovery_effect_description_ability_bonus():

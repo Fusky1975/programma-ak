@@ -95,23 +95,27 @@ figure out how to get it for your kingdom. Sage level 1 will be more
 than enough to understand all common inventions, but higher ability may
 be needed for inventions of obscure design. The chance for discovering
 an invention by spying is limited to twice the chance of discovery by
-Sages." Reuses ``turn/practice_execution.py SAGE_DEVICE_DISCOVERY_
-CHANCE_PER_LEVEL`` (the same "5% per level" [4.3.1] figure the rulebook
-here explicitly ties its own "twice" multiplier to) rather than
-inventing a second constant. Every Discovery the province's owning
-kingdom has that the caster's own kingdom doesn't is rolled
-independently at ``2 * spy_skill * SAGE_DEVICE_DISCOVERY_CHANCE_PER_
-LEVEL`` (capped at 100%) -- an explicit, documented reading of "a
-chance of finding out what Discoveries... and obtaining them" as a
-per-invention roll, not one single roll unlocking the whole list; no
-sourced text distinguishes the two readings, and per-item independent
-rolls already match this project's own established shape for "roll
-each eligible X separately" (``turn/exploration.py discover_features()``,
-Phase 242). The rulebook's own "common vs. obscure design" difficulty
-distinction has no sourced weighting anywhere (``models/discovery.py``'s
-own confirmed data: ``discval`` is a pure display-order key, not a
-difficulty score) and is therefore not modeled -- every eligible
-Discovery shares the same roll. Espionage never targets the caster's
+Sages." **Phase 795 (``Desktop/DISCVAL.md``, 2026-09-13) supersedes the
+original flat-chance reading above** with the real compiled formula:
+``models/discovery.py DISCOVERY_SPREAD_CATEGORY`` (``dspread``, a real,
+byte-verified 64-entry table distinct from ``discval`` -- see that
+constant's own docstring) categorizes every Discovery into one of four
+"diffusion" classes (Batt/Comm/Prof/Form), each with its own real two-
+stage roll depending on *both* the caster's Spy *and* Sage skill levels
+(``_discovery_spread_success()``) -- this **is** the real, sourced
+answer to the rulebook's own "common vs. obscure design" distinction,
+not an invented weighting. Every Discovery the province's owning
+kingdom has that the caster's own kingdom doesn't is still rolled
+independently (an explicit, documented reading of "a chance of finding
+out what Discoveries... and obtaining them" as a per-invention roll, not
+one single roll unlocking the whole list; no sourced text distinguishes
+the two readings, and per-item independent rolls already match this
+project's own established shape for "roll each eligible X separately",
+``turn/exploration.py discover_features()``, Phase 242) -- the real
+diffusion container's own increasing-index-order scan with a cumulative
+per-category budget threshold (DISCVAL sections 17-18) is deliberately
+NOT reproduced, since it needs an unmodeled ``gdyear``/``gdmonth``
+calendar concept this project has never had a reason to build. Espionage never targets the caster's
 own kingdom (``province.owner_kingdom_id == leader.kingdom_id`` skips
 entirely) and grants nothing when the caster has no kingdom of their
 own (an independent Hero) -- the same "nowhere to grant a kingdom-level
@@ -188,7 +192,7 @@ from dataclasses import dataclass, field
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import MONSTROUS_ARMY_RACE, ArmyType
-from ak_engine.models.discovery import Discovery
+from ak_engine.models.discovery import DISCOVERY_SPREAD_CATEGORY, Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.map import HexCoord
@@ -199,28 +203,62 @@ from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.intelligence_estimate import estimate_alignment, estimate_temper
 from ak_engine.turn.movement import MapBounds, neighbors
-from ak_engine.turn.practice_execution import SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL
 from ak_engine.turn.recruit import is_army_type_compatible_with_race
 from ak_engine.turn.spy_table import estimate_reported_value
 from ak_engine.turn.tax_base import province_tax_yield
-
-# RULES.AK [3.14]: "limited to twice the chance of discovery by Sages" -- see
-# module docstring's Phase 267 note.
-ESPIONAGE_DISCOVERY_CHANCE_MULTIPLIER = 2.0
-
 
 def _spy_skill_of(state: GameState, leader: LeaderState) -> int:
     return effective_skill_level(state, leader, Ability.SPY)
 
 
+def _discovery_spread_success(category: int, sp: int, sa: int, rng: random.Random) -> bool:
+    """The real "diffusion" success roll for one ``Discovery`` already
+    known to the spied-on kingdom, keyed by its own ``DISCOVERY_SPREAD_
+    CATEGORY`` -- ``Desktop/DISCVAL.md`` (2026-09-13) section 16.3,
+    the two-stage roll behind the real ``AK.EXE`` ``_DCSpy`` diffusion
+    contexts (raw ``0x122F4``/``AK.OVR 0x00707``). ``sp``/``sa`` are the
+    caster's own Spy/Sage skill levels plus one (``M_Skill(actor,X)+1``
+    in the source). Each branch short-circuits on the first failed roll
+    -- confirmed essential for RNG-consumption fidelity by the source
+    itself ("è essenziale mantenere il cortocircuito: se il primo
+    confronto fallisce, il secondo numero casuale non viene consumato").
+    """
+
+    if category == 1:  # Batt: raw 205AD/201AA
+        return rng.random() < 0.15 + 0.10 * sp and rng.random() < 0.30 * sp and rng.random() < 0.25 * sa
+    if category == 2:  # Comm: raw 205F2/20146
+        return rng.random() < 0.10 * sp and rng.random() < 0.60 * sa
+    if category == 3:  # Prof: raw 2062A/20217
+        return rng.random() < 0.05 * sp and rng.random() < 0.30 * sp and rng.random() < 0.15 * sa
+    return rng.random() < 0.02 * sp and rng.random() < 0.20 * sp and rng.random() < 0.05 * sa  # Form: raw 2063B/20283
+
+
 def _roll_espionage_discoveries(
-    state: GameState, spy_kingdom_id: int | None, target_kingdom_id: int | None, spy_skill: int, rng: random.Random
+    state: GameState,
+    spy_kingdom_id: int | None,
+    target_kingdom_id: int | None,
+    spy_skill: int,
+    sage_skill: int,
+    rng: random.Random,
 ) -> tuple[Discovery, ...]:
     """Rolls, independently, every ``Discovery`` the spied-on kingdom owns
-    that the caster's own kingdom doesn't -- see module docstring's Phase
-    267 note. Grants each success directly to ``spy_kingdom_id``'s own
-    ``KingdomState.discoveries``. Returns an empty tuple (no roll at all)
-    when either kingdom is missing or they're the same kingdom.
+    that the caster's own kingdom doesn't, via the real per-category
+    "diffusion" formula (``_discovery_spread_success()``, ``Desktop/
+    DISCVAL.md`` sections 16-18) -- supersedes this function's own Phase
+    267 flat-chance approximation (rulebook [3.14]'s plain-English
+    "twice the chance of discovery by Sages" undersold the real, category-
+    dependent, Spy-*and*-Sage-skill-dependent compiled formula). Grants
+    each success directly to ``spy_kingdom_id``'s own ``KingdomState.
+    discoveries``. Returns an empty tuple (no roll at all) when either
+    kingdom is missing or they're the same kingdom.
+
+    **Deliberately not reproduced** (see this module's own docstring):
+    the real diffusion container's own increasing-index-order scan with
+    a cumulative per-category budget threshold (DISCVAL sections 17-18,
+    gated on an unmodeled ``gdyear``/``gdmonth`` calendar check) -- every
+    eligible ``Discovery`` here is still rolled independently, matching
+    this project's own established "roll each eligible X separately"
+    convention (``turn/exploration.py discover_features()``).
     """
 
     if spy_kingdom_id is None or target_kingdom_id is None or spy_kingdom_id == target_kingdom_id:
@@ -230,9 +268,10 @@ def _roll_espionage_discoveries(
     if spy_kingdom is None or target_kingdom is None:
         return ()
 
-    chance = min(1.0, ESPIONAGE_DISCOVERY_CHANCE_MULTIPLIER * spy_skill * SAGE_DEVICE_DISCOVERY_CHANCE_PER_LEVEL)
+    sp = spy_skill + 1
+    sa = sage_skill + 1
     candidates = sorted(target_kingdom.discoveries - spy_kingdom.discoveries, key=lambda d: d.value)
-    obtained = [discovery for discovery in candidates if rng.random() < chance]
+    obtained = [d for d in candidates if _discovery_spread_success(DISCOVERY_SPREAD_CATEGORY[d], sp, sa, rng)]
     spy_kingdom.discoveries.update(obtained)
     return tuple(obtained)
 
@@ -423,6 +462,7 @@ def execute_aspy(
     )
 
     spy_skill = _spy_skill_of(state, leader)
+    sage_skill = effective_skill_level(state, leader, Ability.SAGE)
 
     exact_tax_yield = province_tax_yield(province)
     tax_estimate = (
@@ -430,7 +470,7 @@ def execute_aspy(
     )
 
     discoveries_obtained = _roll_espionage_discoveries(
-        state, leader.kingdom_id, province.owner_kingdom_id, spy_skill, rng
+        state, leader.kingdom_id, province.owner_kingdom_id, spy_skill, sage_skill, rng
     )
     if discoveries_obtained:
         leader.merit_tally.discoveries_via_espionage += len(discoveries_obtained)

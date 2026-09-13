@@ -945,7 +945,12 @@ DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE = 0.05
 
 # AKGEN_reverse_engineering_report (2).md SS4.2.1: these two ordinals are
 # never selected by ordinary Sage-device research in the real engine --
-# only obtainable via starting equipment or trade.
+# only obtainable via starting equipment or trade. Independently
+# re-confirmed by ``Desktop/DISCVAL.md`` (2026-09-13, section 4.6): the
+# real ``ResearchDiscovery`` resolver (``AK.OVR`` raw ``0x1B18-0x1DE1``)
+# jumps straight back to re-proposing whenever candidate=18 or 19, before
+# ever reaching the assignment step -- these two are permanently
+# unreachable via this resolver, exactly as already modeled here.
 DISCOVERY_RESEARCH_EXCLUDED = (Discovery.HIEROGLYPHIC_TRANSLATION, Discovery.SCIENTIFIC_METHOD)
 
 # Defensive, non-authoritative bound guaranteeing _select_discovery_to_grant
@@ -955,7 +960,9 @@ DISCOVERY_RESEARCH_EXCLUDED = (Discovery.HIEROGLYPHIC_TRANSLATION, Discovery.SCI
 _DISCOVERY_SELECTION_MAX_ATTEMPTS = 200
 
 
-def _select_discovery_to_grant(state: GameState, kingdom: KingdomState, rng: random.Random) -> Discovery | None:
+def _select_discovery_to_grant(
+    state: GameState, kingdom: KingdomState, leader: LeaderState, rng: random.Random
+) -> Discovery | None:
     """Picks a ``Discovery`` the kingdom doesn't already own, per the real engine's
     diffusion-biased selection (AKGEN_reverse_engineering_report (2).md
     SS4.2.1, Phase 448) -- supersedes Phase 266's original uniform-random
@@ -967,14 +974,54 @@ def _select_discovery_to_grant(state: GameState, kingdom: KingdomState, rng: ran
     is kept only 5% of the time (``DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE``),
     biasing the world toward discoveries that already exist somewhere.
     Returns ``None`` if no eligible discovery remains (kingdom owns
-    everything eligible) or the retry bound is exhausted."""
+    everything eligible) or the retry bound is exhausted.
+
+    **Phase 795 addition** (``Desktop/DISCVAL.md`` sections 4.2/15.2-15.3,
+    2026-09-13): the real resolver forces its *first* proposal toward
+    ``Discovery.ANALYTICAL_PSYCHOLOGY`` (index 28, only when the kingdom
+    doesn't already own it) with escalating probability -- 25%/50%/75%/
+    100% -- driven by a per-*character* counter (``ldiscp[actor]`` in the
+    source), confirmed via ``REPORTS.PAS``'s own Chancellor formula
+    (``+2*lfdisc+ldiscp``) cross-referenced against the compiled ``Ofc_
+    Pts`` routine. ``ldiscp`` itself is confirmed to increment by 2 on a
+    genuine world-first Discovery credited to this same character, and by
+    1 on a diffusion/espionage success credited to this same character --
+    exactly the two events ``leader.merit_tally.discoveries_found_first``/
+    ``.discoveries_via_espionage`` (both already live, per-leader, Phase
+    271/267) already track, so ``ldiscp`` is *derived* from them rather
+    than stored as a new field -- both counters were already scoped 1:1
+    to the same real events DISCVAL independently confirms feed ``ldiscp``.
+    ``IRand and 3`` is realized as ``int(rng.random() * 4)`` -- an ordinary
+    ``random.Random`` reduction, not ``rng.randrange()`` (whose own
+    ``_randbelow`` fallback isn't controllable by this project's own
+    ``ScriptedRandom`` test helper, the same fix Phase 656 already made
+    for an unrelated formula). Forcing the proposal does **not** bypass the ordinary filters below --
+    per section 4.2, Analytical Psychology still has to pass the same
+    "already known elsewhere"/``DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE``
+    gate as any other candidate; only which candidate is tried *first*
+    changes. Deliberately NOT reproduced: ``ldiscp``'s own reduction on
+    death/execution (DISCVAL sections 15.4/16.6/17.4 -- confirmed for at
+    least one real trigger, an execution/gallows event this project has
+    no matching mechanic for, with other trigger paths left unidentified
+    even in the source document itself) and the ``preferExisting`` gate's
+    own ``gamevers``-conditional on/off toggle (section 15.1 -- ``gamevers``
+    is a global game-version setting this project has never modeled;
+    ``DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE`` applying unconditionally
+    already matches the real ``gamevers=5`` case, kept as the documented
+    default rather than an unstated one).
+    """
 
     available = [d for d in Discovery if d not in kingdom.discoveries and d not in DISCOVERY_RESEARCH_EXCLUDED]
     if not available:
         return None
 
-    for _ in range(_DISCOVERY_SELECTION_MAX_ATTEMPTS):
-        candidate = rng.choice(available)
+    ldiscp = 2 * leader.merit_tally.discoveries_found_first + leader.merit_tally.discoveries_via_espionage
+    forced_first: Discovery | None = None
+    if Discovery.ANALYTICAL_PSYCHOLOGY in available and ldiscp >= int(rng.random() * 4):
+        forced_first = Discovery.ANALYTICAL_PSYCHOLOGY
+
+    for attempt in range(_DISCOVERY_SELECTION_MAX_ATTEMPTS):
+        candidate = forced_first if attempt == 0 and forced_first is not None else rng.choice(available)
         if candidate in state.discoveries_first_found_by:
             return candidate
         if rng.random() < DISCOVERY_WORLD_DIFFUSION_KEEP_CHANCE:
@@ -1020,7 +1067,7 @@ def _roll_sage_device_discovery(
     if device_discovered and leader.kingdom_id is not None:
         kingdom = state.kingdoms.get(leader.kingdom_id)
         if kingdom is not None:
-            discovery_granted = _select_discovery_to_grant(state, kingdom, rng)
+            discovery_granted = _select_discovery_to_grant(state, kingdom, leader, rng)
             if discovery_granted is not None:
                 kingdom.discoveries.add(discovery_granted)
                 # Phase 271 (Chancellor Merit Points, user-specified

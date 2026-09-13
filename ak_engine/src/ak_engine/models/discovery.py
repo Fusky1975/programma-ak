@@ -517,6 +517,91 @@ DISCOVERY_DISPLAY_VALUE: dict[Discovery, int] = {
 }
 
 
+# CTME.PAS `dspread` (~line 390-420), verbatim, positional with
+# `Discovery`'s own enum declaration order -- cross-checked byte-for-
+# byte against `AK.EXE` raw 0x5107F-0x510BE by `Desktop/DISCVAL.md`
+# (2026-09-13), zero mismatches across all 64 entries. **This is a
+# different table from `DISCOVERY_DISPLAY_VALUE`/`discval` above** --
+# `discval` is a pure display-order key read by the printing report and
+# the Scientific Treaty exchange-priority selector; `dspread` instead
+# categorizes how hard a Discovery is to obtain via "diffusion" (learning
+# a Discovery already known to another Kingdom, via Spy/Battle/
+# Conversation contexts) -- four categories, `Batt=1` (battle-related),
+# `Comm=2` (common), `Prof=3` (professional), `Form=4` (formula-based),
+# each with its own real per-category probability formula (`turn/
+# aspy_execution.py _discovery_spread_success()`, the confirmed real
+# per-category formula for the Spy channel specifically). See DISCVAL.md
+# sections 16-18 for the full derivation, including the confirmed
+# byte-level verification and the deliberately-deferred cumulative-
+# budget/scanning-order refinement this project does not reproduce.
+DISCOVERY_SPREAD_CATEGORY: dict[Discovery, int] = {
+    Discovery.LAND_SHIP: 1,
+    Discovery.SCYTHED_CHARIOTS: 1,
+    Discovery.PONY_EXPRESS: 2,
+    Discovery.MACADAM_ROADS: 2,
+    Discovery.GREEK_FIRE: 4,
+    Discovery.SEXTANT: 3,
+    Discovery.COMPOSITE_BOW: 3,
+    Discovery.TUNGSTEN_TIPPED_ARROW: 4,
+    Discovery.STRENGTH_ELIXIR: 4,
+    Discovery.MITHRIL_CHAINMAIL: 4,
+    Discovery.MEDITATION_INCENSE: 4,
+    Discovery.CLASSIFICATION_OF_LIFE: 3,
+    Discovery.MAGNETIZED_LOCK_PICKS: 3,
+    Discovery.TRAP_FINDING_DUST: 4,
+    Discovery.COMPASS: 3,
+    Discovery.TELESCOPE: 3,
+    Discovery.INVISIBLE_INK: 4,
+    Discovery.TWO_WAY_MIRRORS: 3,
+    Discovery.HIEROGLYPHIC_TRANSLATION: 3,
+    Discovery.SCIENTIFIC_METHOD: 3,
+    Discovery.OSTEOPATHIC_GERM_WARFARE: 4,
+    Discovery.HIDDEN_TATTOOS: 3,
+    Discovery.PENICILLIN: 4,
+    Discovery.ARTIFICIAL_ORGANS: 4,
+    Discovery.FLOOD_DAMS: 2,
+    Discovery.GIANT_FAN: 1,
+    Discovery.REINFORCED_CONCRETE: 2,
+    Discovery.ASBESTOS_CLOTHING: 4,
+    Discovery.ANALYTICAL_PSYCHOLOGY: 3,
+    Discovery.PROPAGANDA_MEGAPHONES: 1,
+    Discovery.DRY_ICE_FOG: 4,
+    Discovery.LEAD_LINED_HELMET: 4,
+    Discovery.ULTRAVIOLET_LENSES: 4,
+    Discovery.OBSERVATION_BALLOONS: 1,
+    Discovery.HAND_HELD_RADAR: 4,
+    Discovery.INFRARED_GOGGLES: 4,
+    Discovery.PEANUT_BUTTER_SANDWICH: 2,
+    Discovery.ASPIRIN_PILL: 3,
+    Discovery.PEPPER_SPICE: 3,
+    Discovery.COTTON_GIN: 2,
+    Discovery.ICE_CREAM_CONE: 2,
+    Discovery.BLACK_LACE_TEDDY: 3,
+    Discovery.SCREW: 2,
+    Discovery.REFORGING_OF_STEEL: 3,
+    Discovery.MAGNET: 3,
+    Discovery.MALPRACTICE_SUIT: 2,
+    Discovery.GAMBLING_CASINO: 2,
+    Discovery.PULLEY: 2,
+    Discovery.INK_STAMP: 2,
+    Discovery.POSTAGE_STAMP: 2,
+    Discovery.GAME_OF_CHESS: 2,
+    Discovery.WATER_WHEEL: 2,
+    Discovery.SOAP_BAR: 2,
+    Discovery.PIPE_ORGAN: 2,
+    Discovery.REAPER: 2,
+    Discovery.COAL_MINE: 2,
+    Discovery.SPECTACLES: 2,
+    Discovery.WINDMILL: 2,
+    Discovery.GUITAR: 2,
+    Discovery.PAPER_MILL: 2,
+    Discovery.UMBRELLA: 2,
+    Discovery.TIMEPIECE: 2,
+    Discovery.FIREWORKS_DISPLAY: 3,
+    Discovery.VULCANIZED_RUBBER: 3,
+}
+
+
 def discovery_effect_description(discovery: Discovery) -> str:
     """The parenthesized effect text REPORTS.PAS prints after each
     Discovery's own name -- see module docstring's Phase 268 quote:

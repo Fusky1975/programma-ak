@@ -32619,6 +32619,39 @@ illusory_fog_active` every real turn (with its own dedicated regression
 test), predating the Phase 651 addendum that never got updated to
 reflect it. Both passages corrected in place.
 
+**Phase 795** -- `Desktop/DISCVAL.md` (2026-09-13, a disassembly of
+`AK.OVR`'s `ResearchDiscovery`, its caller, and two related residents)
+closes the espionage half of backlog #8: `discval` is conclusively
+proven display-order-only for ordinary Sage research, but a second, real,
+byte-verified 64-entry table -- `dspread` (`CTME.PAS:390-420`, `models/
+discovery.py DISCOVERY_SPREAD_CATEGORY`) -- drives the real "diffusion"
+mechanism (obtaining a Discovery already known elsewhere), with one of
+its confirmed real callers using story-code `_DCSpy`. `turn/aspy_
+execution.py _roll_espionage_discoveries()` now rolls each eligible
+Discovery via the real per-category two-stage formula (`_discovery_
+spread_success()`, depending on both Spy and Sage skill) instead of the
+old flat approximation -- this is the real, sourced answer to rulebook
+[3.14]'s own "common vs. obscure design" distinction. Also closes a real
+gap in already-shipped Phase 448 code: `turn/practice_execution.py
+_select_discovery_to_grant()` was missing the real Analytical-Psychology
+(index 28) forced-first-proposal mechanism, gated on a per-character
+counter derived from two already-live `MeritTally` fields (`2*
+discoveries_found_first + discoveries_via_espionage`, exactly the two
+real events DISCVAL confirms feed the source's own `ldiscp`). `SAGE_
+DISC`'s own Feature-power tie-break stays open -- this document examines
+a different resolver entirely. `discval`'s own scientific-treaty
+priority-selection use (`turn/scientific_treaty.py`, Phase 268) was
+independently re-confirmed correct by this same document, no change
+needed. Test count: 6641 -> 6655 (net +14). Full suite verified green
+(unchanged, 6641) before touching a single test; 5 pre-existing end-to-
+end tests needed one more scripted value each for the new forced-check
+draw. `rng.randrange()`'s own `ScriptedRandom`-incompatibility (Phase
+656's own lesson) was caught before writing a single test -- the forced-
+check uses `int(rng.random()*4)` instead. Deliberately deferred, each
+for a real, stated reason: `ldiscp`'s own reduction on death/execution,
+the `preferExisting` gate's `gamevers`-conditional on/off toggle, and the
+diffusion mechanism's own cumulative-budget/scanning-order refinement.
+
 ## Setup
 
 ```

@@ -14,9 +14,9 @@ from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.aspy_execution import (
-    ESPIONAGE_DISCOVERY_CHANCE_MULTIPLIER,
     SpottedCharacter,
     SpyReport,
+    _discovery_spread_success,
     _roll_espionage_discoveries,
     execute_aspy,
 )
@@ -353,11 +353,52 @@ def _kingdom(kingdom_id: int, *, discoveries: set[Discovery] | None = None) -> K
     return kingdom
 
 
+# -- Phase 795: _discovery_spread_success() -- Desktop/DISCVAL.md section 16.3 --
+# sp=sa=1 throughout (spy_skill=0/sage_skill=0), so each threshold is the
+# formula's own raw base coefficient.
+
+
+def test_discovery_spread_success_batt_clears_every_roll():
+    assert _discovery_spread_success(1, sp=1, sa=1, rng=ScriptedRandom([0.1, 0.1, 0.1])) is True
+
+
+def test_discovery_spread_success_batt_short_circuits_on_the_second_roll():
+    # Stage 1 (0.25) passes, stage 2a (0.30) fails -- stage 2b (0.25) must
+    # never be drawn, so exactly 2 scripted values is the whole budget.
+    assert _discovery_spread_success(1, sp=1, sa=1, rng=ScriptedRandom([0.1, 0.35])) is False
+
+
+def test_discovery_spread_success_comm_clears_every_roll():
+    assert _discovery_spread_success(2, sp=1, sa=1, rng=ScriptedRandom([0.05, 0.5])) is True
+
+
+def test_discovery_spread_success_comm_short_circuits_on_the_first_roll():
+    assert _discovery_spread_success(2, sp=1, sa=1, rng=ScriptedRandom([0.15])) is False
+
+
+def test_discovery_spread_success_prof_clears_every_roll():
+    assert _discovery_spread_success(3, sp=1, sa=1, rng=ScriptedRandom([0.01, 0.1, 0.1])) is True
+
+
+def test_discovery_spread_success_prof_short_circuits_on_the_second_roll():
+    # Stage 1 (0.05) passes, stage 2a (0.30) fails.
+    assert _discovery_spread_success(3, sp=1, sa=1, rng=ScriptedRandom([0.01, 0.35])) is False
+
+
+def test_discovery_spread_success_form_clears_every_roll():
+    assert _discovery_spread_success(4, sp=1, sa=1, rng=ScriptedRandom([0.01, 0.1, 0.01])) is True
+
+
+def test_discovery_spread_success_form_short_circuits_on_the_second_roll():
+    # Stage 1 (0.02) passes, stage 2a (0.20) fails.
+    assert _discovery_spread_success(4, sp=1, sa=1, rng=ScriptedRandom([0.01, 0.25])) is False
+
+
 def test_roll_espionage_discoveries_never_rolls_against_own_kingdom():
     state = GameState()
     state.add_kingdom(_kingdom(1, discoveries={Discovery.COMPASS}))
 
-    obtained = _roll_espionage_discoveries(state, 1, 1, spy_skill=9, rng=ScriptedRandom([]))
+    obtained = _roll_espionage_discoveries(state, 1, 1, spy_skill=9, sage_skill=9, rng=ScriptedRandom([]))
 
     assert obtained == ()
 
@@ -366,15 +407,15 @@ def test_roll_espionage_discoveries_never_rolls_with_no_kingdom_ids():
     state = GameState()
     state.add_kingdom(_kingdom(1, discoveries={Discovery.COMPASS}))
 
-    assert _roll_espionage_discoveries(state, None, 1, spy_skill=9, rng=ScriptedRandom([])) == ()
-    assert _roll_espionage_discoveries(state, 1, None, spy_skill=9, rng=ScriptedRandom([])) == ()
+    assert _roll_espionage_discoveries(state, None, 1, spy_skill=9, sage_skill=9, rng=ScriptedRandom([])) == ()
+    assert _roll_espionage_discoveries(state, 1, None, spy_skill=9, sage_skill=9, rng=ScriptedRandom([])) == ()
 
 
 def test_roll_espionage_discoveries_never_rolls_for_a_kingdom_missing_from_state():
     state = GameState()
     state.add_kingdom(_kingdom(1))
 
-    obtained = _roll_espionage_discoveries(state, 1, 2, spy_skill=9, rng=ScriptedRandom([]))
+    obtained = _roll_espionage_discoveries(state, 1, 2, spy_skill=9, sage_skill=9, rng=ScriptedRandom([]))
 
     assert obtained == ()
 
@@ -384,47 +425,45 @@ def test_roll_espionage_discoveries_only_considers_what_the_spy_kingdom_lacks():
     state.add_kingdom(_kingdom(1, discoveries={Discovery.COMPASS}))
     state.add_kingdom(_kingdom(2, discoveries={Discovery.COMPASS, Discovery.SEXTANT}))
 
-    # Only SEXTANT is a real candidate (COMPASS is already owned) -- a
-    # single scripted value proves exactly one roll was consumed.
-    obtained = _roll_espionage_discoveries(state, 1, 2, spy_skill=9, rng=ScriptedRandom([0.0]))
+    # Only SEXTANT is a real candidate (COMPASS is already owned) -- SEXTANT
+    # is Prof (3 rolls: stage1/stage2a/stage2b), all scripted to pass.
+    obtained = _roll_espionage_discoveries(state, 1, 2, spy_skill=9, sage_skill=9, rng=ScriptedRandom([0.0, 0.0, 0.0]))
 
     assert obtained == (Discovery.SEXTANT,)
     assert state.kingdoms[1].discoveries == {Discovery.COMPASS, Discovery.SEXTANT}
 
 
-def test_roll_espionage_discoveries_uses_twice_the_sage_chance():
-    # Skill 1 -> chance = 2 * 1 * 5% = 10%. 0.09 succeeds, 0.11 fails.
+def test_roll_espionage_discoveries_prof_category_real_formula():
+    # SEXTANT is Prof (category 3). spy_skill=4 -> sp=5 (stage1=0.25,
+    # stage2a=1.5, always passes); sage_skill=0 -> sa=1 (stage2b=0.15).
     state = GameState()
     state.add_kingdom(_kingdom(1))
     state.add_kingdom(_kingdom(2, discoveries={Discovery.SEXTANT}))
 
-    assert _roll_espionage_discoveries(state, 1, 2, spy_skill=1, rng=ScriptedRandom([0.09])) == (Discovery.SEXTANT,)
+    obtained = _roll_espionage_discoveries(
+        state, 1, 2, spy_skill=4, sage_skill=0, rng=ScriptedRandom([0.1, 0.5, 0.1])
+    )
+    assert obtained == (Discovery.SEXTANT,)
 
     state2 = GameState()
     state2.add_kingdom(_kingdom(1))
     state2.add_kingdom(_kingdom(2, discoveries={Discovery.SEXTANT}))
-    assert _roll_espionage_discoveries(state2, 1, 2, spy_skill=1, rng=ScriptedRandom([0.11])) == ()
-
-
-def test_roll_espionage_discoveries_chance_is_capped_at_100_percent():
-    assert ESPIONAGE_DISCOVERY_CHANCE_MULTIPLIER == 2.0
-    state = GameState()
-    state.add_kingdom(_kingdom(1))
-    state.add_kingdom(_kingdom(2, discoveries={Discovery.SEXTANT}))
-
-    # skill 20 -> raw formula is 200%, must still just barely succeed at 0.999.
-    obtained = _roll_espionage_discoveries(state, 1, 2, spy_skill=20, rng=ScriptedRandom([0.999]))
-
-    assert obtained == (Discovery.SEXTANT,)
+    # stage2b (0.15) now fails -- the whole roll fails.
+    obtained2 = _roll_espionage_discoveries(
+        state2, 1, 2, spy_skill=4, sage_skill=0, rng=ScriptedRandom([0.1, 0.5, 0.2])
+    )
+    assert obtained2 == ()
 
 
 def test_execute_aspy_obtains_discoveries_via_espionage_and_credits_merit():
+    # SEXTANT is Prof (3). spy_skill=4 -> sp=5 (stage1=0.25, stage2a
+    # always passes); sage_skill=0 (default) -> sa=1 (stage2b=0.15).
     state = _state(owner_kingdom_id=2)
     state.add_kingdom(_kingdom(2, discoveries={Discovery.SEXTANT}))
     state.leaders[LEADER_ID].skills = SkillTable(raw_values=[0] * 30)
-    state.leaders[LEADER_ID].skills.set_pair_for_ability(Ability.SPY, 4, 0)  # chance = 2*4*5% = 40%
+    state.leaders[LEADER_ID].skills.set_pair_for_ability(Ability.SPY, 4, 0)
 
-    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.1, 0.5, 0.5]))
+    report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.1, 0.5, 0.1, 0.5, 0.5]))
 
     assert report.discoveries_obtained == (Discovery.SEXTANT,)
     assert state.kingdoms[1].discoveries == {Discovery.SEXTANT}
@@ -432,10 +471,12 @@ def test_execute_aspy_obtains_discoveries_via_espionage_and_credits_merit():
 
 
 def test_execute_aspy_reports_no_discoveries_when_the_roll_fails():
+    # Stage 1 (0.25) fails outright -- exactly one draw for the espionage
+    # roll, then add_experience()'s own two draws.
     state = _state(owner_kingdom_id=2)
     state.add_kingdom(_kingdom(2, discoveries={Discovery.SEXTANT}))
     state.leaders[LEADER_ID].skills = SkillTable(raw_values=[0] * 30)
-    state.leaders[LEADER_ID].skills.set_pair_for_ability(Ability.SPY, 4, 0)  # chance = 40%
+    state.leaders[LEADER_ID].skills.set_pair_for_ability(Ability.SPY, 4, 0)
 
     report = execute_aspy(state, LEADER_ID, _request(), rng=ScriptedRandom([0.9, 0.5, 0.5]))
 
