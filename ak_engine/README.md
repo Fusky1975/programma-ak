@@ -32652,6 +32652,35 @@ for a real, stated reason: `ldiscp`'s own reduction on death/execution,
 the `preferExisting` gate's `gamevers`-conditional on/off toggle, and the
 diffusion mechanism's own cumulative-budget/scanning-order refinement.
 
+**Phase 796** -- resolves `SAGE_DISC`'s own real Feature-power tie-break
+via direct disassembly of `AK.OVR raw 0x11A9F-0x11BEE` (address already
+published in `Desktop/PROGRAMMA AK/Special Features.md`'s own address
+table, never previously acted on), cross-confirmed by `DISCVAL.md`
+section 6 independently flagging two sub-addresses inside this same
+range (`0x11B3E`/`0x11B58`) as real `discval` accesses. The real
+algorithm samples `1 + (IRand AND 3)` batches of up to 100 tries each
+and keeps the single running-minimum-`discval` (`models/discovery.py
+DISCOVERY_DISPLAY_VALUE`) candidate across the *whole* sample, granting
+exactly ONE Discovery per success -- fixing a real bug in already-
+shipped Phase 616/619 code, which granted 1-4 Discoveries via a uniform-
+random shuffle (misreading "rounds" as "how many Discoveries" instead of
+"how many 100-try sampling batches"). `discval` genuinely IS the real
+selection criterion for this resolver -- this doesn't contradict Phase
+795's own finding that `discval` is display-order-only for the separate
+`ResearchDiscovery` resolver; two different real routines read the same
+array two different ways. The real success narration was traced through
+3 fragments (POWMSG.X2 choice 42 + `_LDTell=3338` + `Tell_Inv`'s own
+intro, `SAY.PAS:703-707`/`SAY.PAS:689-692`/`DISCVAL.md` section 9),
+concatenated with the already-modeled `discovery_effect_description()`
+(Phase 268) for the per-Discovery effect text. Test count: 6655 -> 6664 (net +9: 10 new tests -- 6 in `test_
+feature_power_execution.py` proving the real algorithm's own running-
+minimum/cross-round-persistence/skip-not-stop/exhaustion shape, 4 in
+`test_turn_report.py` for the new success narration (3 real Discovery
+effect shapes + the `character_name=None` fallback) -- minus 1 stale
+test removed that only proved "grants 1 to 4 Discoveries," the wrong
+premise this phase corrects). Full suite verified green (unchanged,
+6655) before touching a single test.
+
 ## Setup
 
 ```

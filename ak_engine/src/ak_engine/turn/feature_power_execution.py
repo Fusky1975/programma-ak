@@ -39,17 +39,18 @@ owner_kingdom_id` is ownership, not a visibility/knowledge flag).
 below for the tracking concept and the wired effect; every real `Power`
 is now wired, nothing left deliberately excluded any more.
 
-**`SAGE_DISC`'s own selection is a documented simplification, not a
-guess**: the source says "privilegiando il valore/difficoltà minore
-osservato" (favoring the lowest observed difficulty), but this project
-has no `Discovery` difficulty/value table anywhere (confirmed absent by
-grep) -- `Discovery`'s own enum declaration order has no confirmed
-correspondence to real in-game difficulty. Rather than invent an
-ordering, `_reveal_sage_discoveries()` below picks uniformly at random
-among the Kingdom's own not-yet-known `Discovery` members -- the
-"how many" count (`1 + IRand & 3`) and the "no Chancellor merit credit"
-rule are both fully sourced and implemented exactly; only the specific
-tie-break ordering among candidates is a stand-in.
+**`SAGE_DISC`'s own selection was corrected in Phase 796 via direct
+disassembly** (`Desktop/PROGRAMMA AK/Special Features.md`'s own address
+table, `AK.OVR raw 0x11A9F-0x11BEE`, cross-confirmed by `DISCVAL.md`
+section 6 independently flagging two sub-addresses inside this same
+range) -- the real routine samples `1 + (IRand AND 3)` batches of up to
+100 tries each and keeps the single running-minimum-`discval` candidate
+across the whole sample, granting exactly ONE Discovery per success,
+not 1-4. `models/discovery.py DISCOVERY_DISPLAY_VALUE` genuinely IS the
+real selection criterion here (confirmed byte-for-byte), superseding
+this module's own earlier Phase 616/619 "no difficulty table, pick
+uniformly at random" placeholder. See `_reveal_sage_discoveries()`'s
+own docstring for the full algorithm.
 
 **Not credited to any `MeritTally`**: `MAP_FEAT`/`SAGE_DISC` explicitly
 grant no Chancellor-office merit (`FPDESC.X2`'s own text, corroborated
@@ -164,7 +165,7 @@ import re
 from dataclasses import dataclass, replace
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.discovery import Discovery
+from ak_engine.models.discovery import DISCOVERY_DISPLAY_VALUE, Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, ArmyState, GameState, LeaderState
@@ -688,12 +689,37 @@ def _reveal_unknown_feature(state: GameState, leader: LeaderState, rng: random.R
     return FeaturePowerAttemptResult(power=Power.MAP_FEAT, applied=True, revealed_feature_id=feature.feature_id)
 
 
+_SAGE_DISC_SAMPLE_ATTEMPTS_PER_ROUND = 100
+
+
 def _reveal_sage_discoveries(state: GameState, leader: LeaderState, rng: random.Random) -> FeaturePowerAttemptResult:
-    """`SAGE_DISC` (section 5.3): "reveal one discovery" per scout,
-    `1 + (IRand AND 3)` selections (1-4) -- see module docstring for why
-    the real "lowest difficulty first" tie-break is a documented
-    uniform-random substitute here, not a guess at the missing
-    ordering. No Chancellor merit credit (confirmed, not touched).
+    """`SAGE_DISC` -- direct disassembly of the real routine (`Desktop/
+    PROGRAMMA AK/Special Features.md` section 5.3's own address table:
+    `AK.OVR raw 0x11A9F-0x11BEE`), cross-confirmed by `DISCVAL.md`
+    section 6 independently flagging two sub-addresses inside this same
+    range (`0x11B3E`/`0x11B58`) as real `discval` (`DS:3038`) accesses.
+
+    The real algorithm samples `rounds = 1 + (IRand() AND 3)` batches of
+    up to 100 tries each (`cmp word ptr [bp-4], 0x64`); each try draws a
+    candidate Discovery (`IRand() MOD 64`), skips it if already known,
+    and otherwise keeps the running minimum `discval` (`models/
+    discovery.py DISCOVERY_DISPLAY_VALUE`) candidate seen across the
+    *entire* sample -- `best_value` is initialized once, outside the
+    round loop, so a later round's own candidate can still beat an
+    earlier round's. Exactly ONE Discovery is ever granted per success,
+    not 1-4 -- Phase 616/619's own `1 + IRand&3` reading misread
+    "rounds" (how many 100-try sampling batches run) as "how many
+    Discoveries are granted." `discval` genuinely IS the real selection
+    criterion for *this* resolver (a `jge` skips any candidate whose own
+    value isn't strictly lower than the running best) -- this doesn't
+    contradict Phase 795's own finding that `discval` is display-order-
+    only for the separate `ResearchDiscovery` resolver; two different
+    real routines read the same array two different ways. No Chancellor
+    merit credit (confirmed, not touched).
+
+    `int(rng.random() * N)` throughout, not `rng.randrange()` -- this
+    project's own `ScriptedRandom` test helper only overrides `.random()`/
+    `.choice()` (Phase 656/795 precedent).
     """
 
     if leader.kingdom_id is None:
@@ -701,14 +727,26 @@ def _reveal_sage_discoveries(state: GameState, leader: LeaderState, rng: random.
     kingdom = state.kingdoms.get(leader.kingdom_id)
     if kingdom is None:
         return FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=False, reason="no Kingdom to record this for")
-    unknown = [d for d in Discovery if d not in kingdom.discoveries]
+    unknown = {d for d in Discovery if d not in kingdom.discoveries}
     if not unknown:
         return FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=False, reason="no more discoveries to reveal")
-    count = min(len(unknown), 1 + rng.randrange(4))
-    rng.shuffle(unknown)
-    revealed = tuple(unknown[:count])
-    kingdom.discoveries.update(revealed)
-    return FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=True, revealed_discoveries=revealed)
+
+    rounds = 1 + int(rng.random() * 4)
+    best_value: int | None = None
+    best_candidate: Discovery | None = None
+    for _ in range(rounds):
+        for _ in range(_SAGE_DISC_SAMPLE_ATTEMPTS_PER_ROUND):
+            candidate = Discovery(int(rng.random() * 64))
+            if candidate not in unknown:
+                continue
+            value = DISCOVERY_DISPLAY_VALUE[candidate]
+            if best_value is None or value < best_value:
+                best_value = value
+                best_candidate = candidate
+    if best_candidate is None:
+        return FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=False, reason="no more discoveries to reveal")
+    kingdom.discoveries.add(best_candidate)
+    return FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=True, revealed_discoveries=(best_candidate,))
 
 
 def _reveal_unknown_provinces(state: GameState, leader: LeaderState, rng: random.Random) -> FeaturePowerAttemptResult:

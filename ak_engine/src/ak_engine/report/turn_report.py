@@ -1319,7 +1319,13 @@ from ak_engine.models.power import POWER_DESCRIPTION, Power
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
-from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, describe_discovery_line, sorted_kingdom_discoveries
+from ak_engine.models.discovery import (
+    DISCOVERY_NAME,
+    Discovery,
+    describe_discovery_line,
+    discovery_effect_description,
+    sorted_kingdom_discoveries,
+)
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import TEMPER_ABBREVIATION, TEMPER_NAME
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
@@ -2739,11 +2745,14 @@ def render_magic_feature_discovery(
 # to which ability/skill/aptitude verb it names), not independently
 # confirmed against a real screenshot -- flagged here, not hidden, per
 # this project's own "no source, no guess" convention. No POWMSG id
-# recovered for UP_APT's own "already at the cap" case, or for MAP_FEAT/
-# SAGE_DISC's own success text (only their exhaustion messages, 18/20,
-# survive in the recovered 42) -- both render plain, unquoted factual
-# sentences below rather than inventing flavor text the source doesn't
-# supply.
+# recovered for UP_APT's own "already at the cap" case, or for MAP_FEAT's
+# own success text (only its exhaustion message, 20, survives in the
+# recovered 42) -- it renders a plain, unquoted factual sentence below
+# rather than inventing flavor text the source doesn't supply. **Phase
+# 796** resolves SAGE_DISC's own success text via direct disassembly and
+# the real Pascal sources (`RUMORS.PAS`/`SAY.PAS`) -- see
+# `_POWMSG_SAGE_DISC_SUCCESS_TEMPLATE` below; it is no longer one of the
+# "no id recovered" cases.
 _POWMSG_NEW_TEMP_ALREADY = "The $\\ turns your temper to $T.But your temper is already $T, so you're fine already."
 _POWMSG_NEW_TEMP_CHANGED = (
     "You do not have the proper temperament for my liking/Rtastes!"
@@ -2791,6 +2800,15 @@ _POWMSG_DN_APT_SUCCESS = (
 _POWMSG_MAP_FEAT_EXHAUSTED = "There are no more features to be told of in the provinces you have mapped."
 _POWMSG_MAP_PROV_EXHAUSTED = "No more provinces exist to be told of in this world."  # POWMSG.X2 line 21, Phase 623
 _POWMSG_SAGE_DISC_EXHAUSTED = "Science has come to an end!There are no more discoveries to be made in this universe."
+# Phase 796: the real SAGE_DISC success narration, traced through 3 real
+# fragments (POWMSG.X2 choice 42 + `_LDTell=3338` + `Tell_Inv`'s own
+# intro, `SAY.PAS:703-707`/`SAY.PAS:689-692`/`DISCVAL.md` section 9) --
+# see `describe_feature_power_attempt()`'s own SAGE_DISC branch below for
+# how this concatenates with `discovery_effect_description()`.
+_POWMSG_SAGE_DISC_SUCCESS_TEMPLATE = (
+    "Very well, I shall fulfill/Rhonor {my part of }the contract/Ragreement (as I always do)."
+    "I speak_now/Rwill_tell_you of the ...< then learned that the following benefits are conferred by the !:"
+)
 _POWMSG_NEW_SEX_TO_FEMALE = (
     "By the power of the $\\, I change you to a woman!"
     "Hee_hee/Rho_ho, how do_you_like_THEM_apples/Rdoes_your_armor_fit_you_NOW!"
@@ -2892,11 +2910,15 @@ def describe_feature_power_attempt(
     Power [5.8] outcome, wired into `describe_search()` right after the
     Scout discovery narration. Returns `None` whenever this phase has no
     recovered POWMSG id for the specific outcome that occurred --
-    UP_APT/MAP_FEAT/SAGE_DISC's own successful cases and "no skill data
-    recorded" fall through to `None` deliberately (see each branch below
-    and the module comment above these templates) -- not a bug,
-    `describe_search()`'s own caller already treats `None` as "nothing
-    to add".
+    UP_APT/MAP_FEAT's own successful cases and "no skill data recorded"
+    fall through to `None` deliberately (see each branch below and the
+    module comment above these templates) -- not a bug, `describe_
+    search()`'s own caller already treats `None` as "nothing to add".
+    SAGE_DISC's own successful case is no longer one of these (Phase
+    796) -- it renders the real 3-fragment success narration plus the
+    matching `discovery_effect_description()`, but only when a real
+    `character_name` is given (defensive fallback to `None` otherwise,
+    since the real text needs the character's own name).
 
     Phase 782: every `_apply_condition_gate()` refusal (King/alignment/
     gameturn/gold/skill-drain/courage-drain) now renders real, verbatim
@@ -2991,7 +3013,11 @@ def describe_feature_power_attempt(
     if outcome.power is Power.SAGE_DISC:
         if outcome.reason == "no more discoveries to reveal":
             return render(_POWMSG_SAGE_DISC_EXHAUSTED, values, rng=rng)
-        return None  # a successful reveal has no recovered POWMSG id
+        if outcome.revealed_discoveries and character_name is not None:
+            discovery = outcome.revealed_discoveries[0]
+            intro = render(_POWMSG_SAGE_DISC_SUCCESS_TEMPLATE, {**values, "!": DISCOVERY_NAME[discovery]}, rng=rng)
+            return f"{intro} {discovery_effect_description(discovery)}"
+        return None
 
     if outcome.power is Power.NEW_SEX and outcome.applied and outcome.new_sex is not None:
         template = _POWMSG_NEW_SEX_TO_FEMALE if outcome.new_sex is Sex.FEMALE else _POWMSG_NEW_SEX_TO_MALE

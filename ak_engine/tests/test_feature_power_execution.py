@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.discovery import Discovery
+from ak_engine.models.discovery import DISCOVERY_DISPLAY_VALUE, Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
@@ -27,9 +27,16 @@ from ak_engine.turn.feature_power_execution import (
     parse_sa_argument,
     resolve_feature_power_attempt,
 )
+from _helpers import ScriptedRandom
 
 LOCATION = HexCoord(3, 9)
 LEADER_ID = 1
+
+
+def _draw_for_index(index: int) -> float:
+    """The `.random()` value that `int(x * 64)` decodes back to `index`."""
+
+    return (index + 0.5) / 64
 
 
 def _feature(feature_id: int, province: int, kind: FeatureType) -> Feature:
@@ -428,18 +435,105 @@ def test_map_feat_refuses_when_nothing_left_to_reveal():
     assert result.reason == "no more features to reveal"
 
 
-def test_sage_disc_reveals_between_one_and_four_new_discoveries():
+def _sage_disc_state(known: set[Discovery]) -> GameState:
     state = GameState()
     state.add_leader(LeaderState(LEADER_ID, 1, "Searcher", LOCATION))
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
-    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    state.kingdoms[1].discoveries.update(known)
+    return state
+
+
+def _sage_disc_feature() -> Feature:
+    return Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+
+
+def _sage_disc_event():
     from ak_engine.turn.feature_power_execution import FeaturePowerEvent
 
-    event = FeaturePowerEvent(power=Power.SAGE_DISC, magic_feature=MagicFeature.LAMP, condition=PowerCondition.PC_NONE)
-    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+    return FeaturePowerEvent(power=Power.SAGE_DISC, magic_feature=MagicFeature.LAMP, condition=PowerCondition.PC_NONE)
+
+
+def test_sage_disc_grants_exactly_one_discovery_the_single_lowest_discval_seen():
+    # rounds=1 (first draw < 0.25); 99 draws of an already-known
+    # candidate (LAND_SHIP, index 0), 1 draw of the real, unknown,
+    # lowest-discval candidate in the sample (HIEROGLYPHIC_TRANSLATION,
+    # discval=1). Every other Discovery is pre-known so it can never be
+    # accidentally drawn as a lower-discval competitor.
+    known = {d for d in Discovery if d is not Discovery.HIEROGLYPHIC_TRANSLATION}
+    state = _sage_disc_state(known)
+    draws = [0.1] + [_draw_for_index(Discovery.LAND_SHIP.value)] * 100
+    draws[50] = _draw_for_index(Discovery.HIEROGLYPHIC_TRANSLATION.value)
+    result = resolve_feature_power_attempt(state, LEADER_ID, _sage_disc_feature(), _sage_disc_event(), ScriptedRandom(draws))
     assert result.applied is True
-    assert 1 <= len(result.revealed_discoveries) <= 4
-    assert set(result.revealed_discoveries) <= state.kingdoms[1].discoveries
+    assert result.revealed_discoveries == (Discovery.HIEROGLYPHIC_TRANSLATION,)
+    assert state.kingdoms[1].discoveries == known | {Discovery.HIEROGLYPHIC_TRANSLATION}
+
+
+def test_sage_disc_keeps_the_running_minimum_within_one_round():
+    # Two unknown candidates land in the SAME round: COMPOSITE_BOW
+    # (discval=3) first, then the lower HIEROGLYPHIC_TRANSLATION
+    # (discval=1) later -- the later, lower-discval draw must win,
+    # proving a running minimum, not "first found."
+    assert DISCOVERY_DISPLAY_VALUE[Discovery.HIEROGLYPHIC_TRANSLATION] < DISCOVERY_DISPLAY_VALUE[Discovery.COMPOSITE_BOW]
+    known = {d for d in Discovery if d not in (Discovery.COMPOSITE_BOW, Discovery.HIEROGLYPHIC_TRANSLATION)}
+    state = _sage_disc_state(known)
+    draws = [0.1] + [_draw_for_index(Discovery.LAND_SHIP.value)] * 100
+    draws[10] = _draw_for_index(Discovery.COMPOSITE_BOW.value)
+    draws[60] = _draw_for_index(Discovery.HIEROGLYPHIC_TRANSLATION.value)
+    result = resolve_feature_power_attempt(state, LEADER_ID, _sage_disc_feature(), _sage_disc_event(), ScriptedRandom(draws))
+    assert result.applied is True
+    assert result.revealed_discoveries == (Discovery.HIEROGLYPHIC_TRANSLATION,)
+
+
+def test_sage_disc_best_value_persists_across_rounds():
+    # rounds=2 (first draw in [0.25, 0.5)); round 1's own best
+    # (COMPOSITE_BOW, discval=3) must still be beaten by round 2's own
+    # better candidate (HIEROGLYPHIC_TRANSLATION, discval=1), proving
+    # `best_value` is initialized once, outside the round loop.
+    known = {d for d in Discovery if d not in (Discovery.COMPOSITE_BOW, Discovery.HIEROGLYPHIC_TRANSLATION)}
+    state = _sage_disc_state(known)
+    filler = _draw_for_index(Discovery.LAND_SHIP.value)
+    round1 = [filler] * 100
+    round1[5] = _draw_for_index(Discovery.COMPOSITE_BOW.value)
+    round2 = [filler] * 100
+    round2[5] = _draw_for_index(Discovery.HIEROGLYPHIC_TRANSLATION.value)
+    draws = [0.3] + round1 + round2
+    result = resolve_feature_power_attempt(state, LEADER_ID, _sage_disc_feature(), _sage_disc_event(), ScriptedRandom(draws))
+    assert result.applied is True
+    assert result.revealed_discoveries == (Discovery.HIEROGLYPHIC_TRANSLATION,)
+
+
+def test_sage_disc_already_known_candidate_is_skipped_not_a_stop():
+    # An already-known candidate drawn first must NOT halt the sample --
+    # a later, real, unknown candidate still gets found and granted.
+    known = {d for d in Discovery if d is not Discovery.HIEROGLYPHIC_TRANSLATION}
+    state = _sage_disc_state(known)
+    draws = [0.1] + [_draw_for_index(Discovery.LAND_SHIP.value)] * 100  # LAND_SHIP is already known throughout
+    draws[99] = _draw_for_index(Discovery.HIEROGLYPHIC_TRANSLATION.value)
+    result = resolve_feature_power_attempt(state, LEADER_ID, _sage_disc_feature(), _sage_disc_event(), ScriptedRandom(draws))
+    assert result.applied is True
+    assert result.revealed_discoveries == (Discovery.HIEROGLYPHIC_TRANSLATION,)
+
+
+def test_sage_disc_refuses_with_zero_draws_when_everything_is_already_known():
+    state = _sage_disc_state(set(Discovery))
+    result = resolve_feature_power_attempt(state, LEADER_ID, _sage_disc_feature(), _sage_disc_event(), ScriptedRandom([]))
+    assert result.applied is False
+    assert result.reason == "no more discoveries to reveal"
+
+
+def test_sage_disc_exhausted_when_the_whole_sample_misses_the_one_real_candidate():
+    # Only SEXTANT is unknown; rounds=1, and every one of the 100 draws
+    # lands on the already-known LAND_SHIP -- the sample never finds
+    # the one real candidate, matching the real, low-probability
+    # "bad luck across the whole sample" exhaustion fallthrough.
+    known = {d for d in Discovery if d is not Discovery.SEXTANT}
+    state = _sage_disc_state(known)
+    draws = [0.1] + [_draw_for_index(Discovery.LAND_SHIP.value)] * 100
+    result = resolve_feature_power_attempt(state, LEADER_ID, _sage_disc_feature(), _sage_disc_event(), ScriptedRandom(draws))
+    assert result.applied is False
+    assert result.reason == "no more discoveries to reveal"
+    assert Discovery.SEXTANT not in state.kingdoms[1].discoveries
 
 
 def test_sage_disc_refuses_when_all_discoveries_already_known():

@@ -8,7 +8,7 @@ from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_naming import make_army_name
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.discovery import Discovery, describe_discovery_line
+from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, describe_discovery_line, discovery_effect_description
 from ak_engine.models.feature import Feature, FeatureType, RaidEvent
 from ak_engine.models.game_state import (
     ArmyState,
@@ -6880,6 +6880,42 @@ def test_describe_feature_power_attempt_sage_disc_exhausted():
     outcome = FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=False, reason="no more discoveries to reveal")
     line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
     assert line == "Science has come to an end!There are no more discoveries to be made in this universe."
+
+
+# -- Phase 796: SAGE_DISC's own real success narration (direct
+# disassembly + RUMORS.PAS/SAY.PAS) -- see `_POWMSG_SAGE_DISC_SUCCESS_
+# TEMPLATE`'s own docstring for the 3-fragment sourcing.
+
+
+def test_describe_feature_power_attempt_sage_disc_success_ability_bonus():
+    outcome = FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=True, revealed_discoveries=(Discovery.COMPASS,))
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 8), character_name="Erasmus")
+    assert "Erasmus then learned that the following benefits are conferred by the" in line
+    assert DISCOVERY_NAME[Discovery.COMPASS] in line
+    assert line.endswith(discovery_effect_description(Discovery.COMPASS))
+
+
+def test_describe_feature_power_attempt_sage_disc_success_antispell():
+    discovery = Discovery.OSTEOPATHIC_GERM_WARFARE
+    outcome = FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=True, revealed_discoveries=(discovery,))
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 8), character_name="Erasmus")
+    assert DISCOVERY_NAME[discovery] in line
+    assert line.endswith(discovery_effect_description(discovery))
+    assert discovery_effect_description(discovery) == "Anti-spell: Skeletal Army"
+
+
+def test_describe_feature_power_attempt_sage_disc_success_revenue_bonus():
+    discovery = Discovery.PEANUT_BUTTER_SANDWICH
+    outcome = FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=True, revealed_discoveries=(discovery,))
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 8), character_name="Erasmus")
+    assert DISCOVERY_NAME[discovery] in line
+    assert line.endswith(discovery_effect_description(discovery))
+    assert discovery_effect_description(discovery) == "+1% revenue"
+
+
+def test_describe_feature_power_attempt_sage_disc_success_needs_a_character_name():
+    outcome = FeaturePowerAttemptResult(power=Power.SAGE_DISC, applied=True, revealed_discoveries=(Discovery.COMPASS,))
+    assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 8), character_name=None) is None
 
 
 def test_describe_feature_power_attempt_new_sex_to_female():
