@@ -32717,6 +32717,34 @@ of shift Phase 426/427 already caused), needing 2 pre-existing
 to a different feature -- found and fixed via the standing non-
 breaking run, not assumed.
 
+**Phase 798** -- corrects the already-shipped Phase 776
+`worldgen/initial_armies.py fleet_second_slot_gate()`, superseded by
+`Desktop/COASTFLEET.md`'s own real Fleet-second-slot comparison
+(sections 9.2/10.3): the real mechanism is `ProvinceRandom(x,y) <
+fleetThreshold[index]` -- the same parity-biased `province_random()`
+helper Phase 797 already built -- not a flat `rng.random() < chance`
+roll. `fleet_second_slot_chance()`/`FLEET_SECOND_SLOT_CHANCE` needed no
+change (the table itself was already correct, only the comparison
+mechanism was wrong). Widened the function's own signature to `(terrain,
+x, y, effective_sea_neighbors, rng)`: Desert now returns `False` with
+zero draws (the real terrain check happens before any `ProvinceRandom`
+call, confirmed by section 10.3's own flat 0% row); Sea/`NO_TERRAIN`
+raise `ValueError`, mirroring `_draw_humanoid_terrain_ordinal()`'s own
+"unsupported terrain" convention, since no humanoid race ever lands on
+Sea terrain in this project's own generator, making this function only
+ever reachable for the same 5 ordinary land terrains either way. Two
+things COASTFLEET.md also describes stay structurally inapplicable, not
+implemented (mirroring Phase 797's own `pt2`/Sea-humanoid-race
+reasoning): the "alternate helper" Sea-with-secondary-terrain Fleet
+override, and the genuinely-unsourced "ordinary second army" type
+itself. Scope stays a standalone, unwired primitive -- no live pipeline
+calls this function today (the second-slot pipeline itself remains
+unbuilt, per Phase 797's own still-open item), so this is a correction
+ready for whenever that pipeline exists, not a live behavior change.
+Test count: 6678 -> 6684 (net +6). Full suite verified green (unchanged,
+6678) before touching a single test; every new test passed on the first
+run.
+
 ## Setup
 
 ```

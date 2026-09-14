@@ -216,10 +216,10 @@ none invented past here:
   pass and the ``elif race in _HUMANOID_RACES:`` branch below. The
   *second* recruit slot for these provinces remains a real, separate,
   NOT-attempted-here gap -- see ``worldgen/initial_armies.py``'s own
-  Phase 797 addendum for what it is and why, plus a newly-found,
-  deliberately-NOT-fixed discrepancy in the already-shipped Phase 776
-  ``fleet_second_slot_gate()`` (a flat uniform roll where the real
-  engine uses a parity-biased draw).
+  Phase 797 addendum for what it is and why. A discrepancy found in
+  the already-shipped Phase 776 ``fleet_second_slot_gate()`` (a flat
+  uniform roll where the real engine uses a parity-biased draw) was
+  corrected, Phase 798 -- see that function's own docstring.
 - **Trollish special-race armies**: ``budget_by_race_or_owner`` only
   covers King_Home, Human/Elf/Dwarf/Orc-nonhome, Whale, and
   Eagle/Dragon/Merman/Ent/Werefolk -- Trollish provinces get their

@@ -76,7 +76,11 @@ Sixth phase of the world-generation sub-plan. Source:
   genuinely unsourced, so no ordinary-humanoid-province recruit-slot
   pipeline exists yet for this to plug into either. See ``worldgen/
   province_tax.py``'s own Phase 776 addendum for the sibling half of
-  this same finding.
+  this same finding. **Superseded, Phase 798**: the table itself
+  (``FLEET_SECOND_SLOT_CHANCE``/``fleet_second_slot_chance()``) was
+  always correct -- only ``fleet_second_slot_gate()``'s own comparison
+  mechanism (a flat ``rng.random() < chance`` roll) was wrong; see the
+  Phase 798 bullet below for the real, corrected comparison.
 - ``humanoid_first_slot()``/``province_random()``/``_draw_humanoid_
   terrain_ordinal()`` (Phase 797, closes the land-side half of backlog
   #22 the bullet above left open): ``Desktop/COASTFLEET.md``
@@ -138,7 +142,18 @@ Sixth phase of the world-generation sub-plan. Source:
   approximation of the real per-coordinate-parity probability. Not
   touched this phase: ``fleet_second_slot_gate()`` is still unwired
   into any real pipeline today, so there is no live behavior to
-  regress; correcting it is separate, future work.
+  regress; correcting it is separate, future work. **Corrected, Phase
+  798** -- see that phase's own bullet below.
+- ``fleet_second_slot_gate()`` (Phase 798) -- corrects Phase 776's own
+  flat-probability approximation with COASTFLEET.md's real, parity-
+  biased comparison: ``ProvinceRandom(x,y) < fleetThreshold[index]``
+  (sections 9.2/10.3), plus a real Desert exception (0%, zero draws,
+  terrain checked before any ``ProvinceRandom`` call). Still a
+  standalone, unwired primitive -- the *second* recruit slot for an
+  ordinary humanoid province (what it is when it isn't Fleet) remains
+  genuinely unsourced, so this correction has no live pipeline to
+  reach yet either. See ``fleet_second_slot_gate()``'s own docstring
+  for the full account.
 
 **Deliberately NOT implemented here**, each a genuine, separately
 documented gap:
@@ -230,13 +245,61 @@ def fleet_second_slot_chance(effective_sea_neighbors: int) -> float:
     return FLEET_SECOND_SLOT_CHANCE.get(effective_sea_neighbors, 0.0)
 
 
-def fleet_second_slot_gate(effective_sea_neighbors: int, rng: PascalRandom) -> bool:
+def fleet_second_slot_gate(
+    terrain: Terrain,
+    x: int,
+    y: int,
+    effective_sea_neighbors: int,
+    rng: PascalRandom,
+) -> bool:
     """Whether an already-gated second recruit slot (``second_slot_
-    gate()`` above) specifically becomes a Fleet, per ``fleet_second_
-    slot_chance()``.
+    gate()`` above) specifically becomes a Fleet.
+
+    Phase 798, ``Desktop/COASTFLEET.md`` sections 9.2/10.3: the real
+    comparison is ``ProvinceRandom(x,y) < fleetThreshold[index]`` -- the
+    same parity-biased helper as ``province_random()`` above, not a
+    flat uniform roll -- superseding Phase 776's own flat-probability
+    approximation (``rng.random() < chance``, built from a *different*
+    document, ``AKGEN 0xEB8A.md``). ``fleet_second_slot_chance()``'s
+    own table needed no change -- only the comparison mechanism was
+    wrong, not the table itself.
+
+    Desert never places Fleet in the second slot (section 10.3's own
+    confirmed flat 0%) -- the real terrain check happens *before* any
+    ``ProvinceRandom`` call, so Desert consumes zero draws for this
+    decision, mirroring ``_draw_humanoid_terrain_ordinal()``'s own
+    "unsupported terrain raises" convention for Sea/``NO_TERRAIN``:
+    this function is only ever reachable, by construction, for the
+    same 5 ordinary land terrains ``humanoid_first_slot()`` already
+    covers (no humanoid race ever lands on Sea terrain in this
+    project's own generator).
+
+    Two things COASTFLEET.md also describes but are structurally
+    inapplicable to this project's own pipeline (documented, not
+    implemented, mirroring the exact "moot here" reasoning already
+    used for the ``pt2``/Sea-humanoid-race exclusion): the "alternate
+    helper" (raw ``20ACE``, section 10.1) can deterministically force
+    Fleet for a Sea province with a valid secondary terrain and
+    ``race<=Orcish``, with no ``ProvinceRandom`` draw at all -- never
+    reachable here, since ``draw_base_race()`` never assigns a
+    humanoid race to Sea terrain; and the genuinely-unsourced "ordinary
+    second army" type itself stays exactly as open as before.
+
+    Scope stays a standalone, still-unwired primitive -- no live
+    pipeline in ``generate_new_game.py`` calls this function today
+    (``recruit_type_2`` is never populated for an ordinary humanoid
+    province at all, since the genuinely-unsourced "ordinary" type
+    blocks the whole second-slot pipeline, not just the Fleet
+    sub-question). This phase corrects the primitive's own internal
+    formula so it's ready and byte-accurate for whenever a future
+    phase can build the full second-slot pipeline.
     """
 
-    return rng.random() < fleet_second_slot_chance(effective_sea_neighbors)
+    if terrain is Terrain.DESERT:
+        return False
+    if terrain in (Terrain.PLAINS, Terrain.JUNGLE, Terrain.FOREST, Terrain.MTNS):
+        return province_random(x, y, rng) < fleet_second_slot_chance(effective_sea_neighbors)
+    raise ValueError(f"fleet_second_slot_gate: unsupported terrain {terrain!r}")
 
 
 # Phase 797 (backlog item #22, land-side half): `Desktop/COASTFLEET.md`'s

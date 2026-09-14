@@ -118,13 +118,47 @@ def test_fleet_second_slot_chance_defaults_to_zero_outside_the_real_domain():
     assert fleet_second_slot_chance(7) == 0.0
 
 
-def test_fleet_second_slot_gate_matches_the_hand_derived_probability():
+def test_fleet_second_slot_gate_desert_never_places_fleet_with_zero_draws():
+    for effective_sea_neighbors in FLEET_SECOND_SLOT_CHANCE:
+        rng = _StubRandom([])  # zero draws -- terrain checked before any ProvinceRandom call
+        assert fleet_second_slot_gate(Terrain.DESERT, 0, 0, effective_sea_neighbors, rng) is False
+
+
+@pytest.mark.parametrize("terrain", [Terrain.PLAINS, Terrain.JUNGLE, Terrain.FOREST, Terrain.MTNS])
+def test_fleet_second_slot_gate_matches_the_real_province_random_comparison(terrain):
+    # x=1,y=0 -> parity=1, ProvinceRandom range [0.25, 0.5); effective_sea_neighbors=2 -> chance 0.5
+    rng_below = _StubRandom([0.5, 0.99999])
+    assert fleet_second_slot_gate(terrain, 1, 0, 2, rng_below) is True
+
+    # x=0,y=1 -> parity=2, ProvinceRandom range [0.5, 0.75); effective_sea_neighbors=2 -> chance 0.5
+    rng_above = _StubRandom([0.5, 0.00001])
+    assert fleet_second_slot_gate(terrain, 0, 1, 2, rng_above) is False
+
+    # same parity=2 range, effective_sea_neighbors=3 -> chance 0.7
+    rng_below2 = _StubRandom([0.5, 0.79999])
+    assert fleet_second_slot_gate(terrain, 0, 1, 3, rng_below2) is True
+    rng_above2 = _StubRandom([0.5, 0.80001])
+    assert fleet_second_slot_gate(terrain, 0, 1, 3, rng_above2) is False
+
+
+def test_fleet_second_slot_gate_matches_the_real_section_9_3_formula():
+    # P(ProvinceRandom < t) = 0.02*t + 0.98*clamp(4*t-q, 0, 1), q=(x&1)+2*(y&1)
     rng = PascalRandom(seed=4)
     n = 100_000
-    for effective_sea_neighbors in FLEET_SECOND_SLOT_CHANCE:
-        successes = sum(1 for _ in range(n) if fleet_second_slot_gate(effective_sea_neighbors, rng))
-        expected = fleet_second_slot_chance(effective_sea_neighbors)
+    x, y = 0, 1  # q = 0 + 2*1 = 2
+    q = (x & 1) + 2 * (y & 1)
+    for effective_sea_neighbors in (2, 3, 4):
+        t = fleet_second_slot_chance(effective_sea_neighbors)
+        expected = 0.02 * t + 0.98 * max(0.0, min(1.0, 4 * t - q))
+        successes = sum(
+            1 for _ in range(n) if fleet_second_slot_gate(Terrain.PLAINS, x, y, effective_sea_neighbors, rng)
+        )
         assert abs(successes / n - expected) < 0.01
+
+
+def test_fleet_second_slot_gate_raises_for_unsupported_terrain():
+    with pytest.raises(ValueError):
+        fleet_second_slot_gate(Terrain.SEA, 0, 0, 2, _StubRandom([]))
 
 
 def test_draw_r4_stays_within_1_to_4():

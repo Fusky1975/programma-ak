@@ -117,8 +117,13 @@ documented gap:
   for ordinary (non-Home, non-special-race) humanoid provinces. The
   *second* recruit slot for those same provinces remains open -- see
   ``initial_armies.py``'s own Phase 797 addendum for what's still
-  unattempted there, including a newly-found (not fixed) discrepancy
-  in ``fleet_second_slot_gate()`` itself.
+  unattempted there. **The Fleet-threshold discrepancy Phase 797 found
+  (a flat uniform roll where the real engine uses a parity-biased
+  draw) is now corrected too, Phase 798** -- ``fleet_second_slot_
+  gate()`` now uses the real ``ProvinceRandom(x,y) < fleetThreshold[
+  index]`` comparison (``Desktop/COASTFLEET.md`` sections 9.2/10.3)
+  plus a real Desert exception, still as a standalone, unwired
+  primitive (the *second*-slot pipeline itself remains unbuilt).
 
 The special-race tax recompute (Phase 355's own note that special-race
 placement would need to "recompute the accepted province tax") is
