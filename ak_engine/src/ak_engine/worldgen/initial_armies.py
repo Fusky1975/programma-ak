@@ -77,15 +77,72 @@ Sixth phase of the world-generation sub-plan. Source:
   pipeline exists yet for this to plug into either. See ``worldgen/
   province_tax.py``'s own Phase 776 addendum for the sibling half of
   this same finding.
+- ``humanoid_first_slot()``/``province_random()``/``_draw_humanoid_
+  terrain_ordinal()`` (Phase 797, closes the land-side half of backlog
+  #22 the bullet above left open): ``Desktop/COASTFLEET.md``
+  (2026-09-13), a disassembly of ``AKGEN.EXE`` raw ``0x20E18-0x214FF``
+  (``0B57:9CD8``, the *same* real routine the bullet above already
+  cites for the Fleet-second-slot table), supplies the missing first-
+  slot formula for Human/Elven/Dwarven/Orcish provinces:
+  ``if OwnerField[x,y] < KingCountField then first := best_atype[race]
+  else begin case effective_terrain of Plains: first :=
+  Trunc(4*ProvinceRandom(x,y))+1; Jungle,Forest,Mtns: repeat first :=
+  Trunc(4*ProvinceRandom(x,y))+1 until first<>Phalanx; Desert: repeat
+  first := Trunc(4*ProvinceRandom(x,y)+1) until first<>Axemen; end;
+  coin := Trunc(2*Random); if coin=1 then first := best_atype[race];
+  end;``. ``ProvinceRandom(x,y)`` (section 3, raw ``0x20A08-0x20AB5``)
+  is not uniform -- 2% plain ``Random``, 98% biased by ``(x mod 2, y
+  mod 2)`` quadrant parity -- but two real facts simplify it here
+  without approximating it: (1) every call inside the terrain ``case``
+  above only ever happens in the *already-known-False* branch of the
+  outer ``OwnerField<KingCountField`` check, so ``ProvinceRandom``'s
+  own internal copy of that same check can never fire from this call
+  site, reducing it to a clean two-branch draw -- the primitive is
+  still built with the full, faithful ``initially_owned_by_king``
+  signature rather than hand-simplified, it just never needs ``True``
+  from this one call site; (2) ``OwnerField[x,y] < KingCountField`` is
+  provably RNG-consumption-neutral for this project's own pipeline
+  regardless of its unconfirmed literal AKGEN identity -- a King Home
+  coordinate is a zero-draw short-circuit on both sides of the mapping
+  question (``home_first_slot()``, Phase 358, already gives an
+  identical result with zero draws), so King Home coordinates are
+  simply excluded from the new call site entirely
+  (``worldgen/generate_new_game.py``'s own new ``recruit1_grid`` pass).
+  ``ARMY_TYPE_BY_ORDINAL`` (``models/army_type.py``) already gives
+  exactly COASTFLEET's own ``1:Bowmen,2:Axemen,3:Phalanx,4:Legion``
+  table -- no new lookup needed. The coin flip (raw ``0x4A08A``) is a
+  single plain ``Random`` draw, not ``IRand``, matching this project's
+  own existing "moneta" idiom (e.g. ``draw_second_companion_race()``).
+  **Race scope**: ``HUMANOID_FIRST_SLOT_RACES`` is the real
+  ``race<=Orcish`` domain with Rohan (``race=14``) excluded per the
+  user's own direct request ("è di una variante di gioco che non mi
+  interessa al momento") -- a deliberate scope cut, not a sourcing gap;
+  ``draw_base_race()`` never produces ``Race.ROHAN`` for an ordinary
+  province anyway, so excluding it costs nothing. **Structurally
+  inapplicable, not implemented**: the Swamp/``DS:C3DA=10``/coin=0 ->
+  Marauders exception (section 5) -- this project's ``Terrain`` enum
+  has exactly 7 members, no ``SWAMP``, the same "structurally
+  unreachable" precedent already used in ``turn/random_encounter.py
+  habitat_accepts()`` (Phase 707); the primary-Sea-with-secondary-
+  terrain (``pt2``) redirect (section 2) -- moot here, since
+  ``draw_base_race()`` never assigns a humanoid race to Sea terrain in
+  this project, so ``humanoid_first_slot()`` is only ever reached for
+  the 5 ordinary land terrains already in ``province_tax.py
+  ORDINARY_LAND_MAX``. **Deliberately still open, a real, separate,
+  NOT-attempted-here gap**: the *second* recruit slot for an ordinary
+  humanoid province, and the newly-found fact (COASTFLEET.md section 9)
+  that the real Fleet-second-slot comparison is ``ProvinceRandom(x,y) <
+  fleetThreshold[index]`` rather than a plain uniform roll -- which
+  would make the already-shipped Phase 776 ``fleet_second_slot_gate()``
+  (built from a *different* document, ``AKGEN 0xEB8A.md``) an
+  approximation of the real per-coordinate-parity probability. Not
+  touched this phase: ``fleet_second_slot_gate()`` is still unwired
+  into any real pipeline today, so there is no live behavior to
+  regress; correcting it is separate, future work.
 
 **Deliberately NOT implemented here**, each a genuine, separately
 documented gap:
 
-- ``humanoid_first_slot``'s own "terrain-weighted infantry" table --
-  the source names that such a table exists and gates it with a 50%
-  ``best_atype`` override, but doesn't give the actual per-terrain
-  infantry weights anywhere in the material available to this
-  project, so it can't be built without guessing.
 - The ``necromantic_home_exception`` ("a qualifying King property can
   mark the first Home army Zomboid/Skeletal") -- the source never
   states what makes a King property "qualifying", so there is no rule
@@ -114,7 +171,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from ak_engine.models.army_type import BASE_STRENGTH, MONSTROUS_ARMY_RACE, ArmyType
+from ak_engine.models.army_type import ARMY_TYPE_BY_ORDINAL, BASE_STRENGTH, MONSTROUS_ARMY_RACE, ArmyType
+from ak_engine.models.map import Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
 from ak_engine.worldgen.pascal_random import PascalRandom
@@ -179,6 +237,102 @@ def fleet_second_slot_gate(effective_sea_neighbors: int, rng: PascalRandom) -> b
     """
 
     return rng.random() < fleet_second_slot_chance(effective_sea_neighbors)
+
+
+# Phase 797 (backlog item #22, land-side half): `Desktop/COASTFLEET.md`'s
+# own real terrain-weighted first-slot table for an ordinary (non-Home,
+# non-special-race) humanoid province -- see module docstring's own
+# Phase 797 addendum for the full sourcing (`ProvinceRandom`'s parity
+# bias, the Rohan exclusion, the Swamp/Marauders structural-
+# inapplicability note).
+def province_random(x: int, y: int, rng: PascalRandom, *, initially_owned_by_king: bool = False) -> float:
+    """"ProvinceRandom(x,y)": a real, non-uniform draw -- 2% plain, 98%
+    biased into the ``(x mod 2, y mod 2)`` quadrant. Always consumes
+    exactly one or two ``rng.random()`` calls, never ``irand()``, per
+    the real function's own shape. ``initially_owned_by_king`` is part
+    of the faithful port of the real signature, but this project's own
+    call site (``humanoid_first_slot`` below) never needs ``True`` --
+    King Home coordinates are excluded from that call site entirely
+    (see module docstring).
+    """
+
+    test = rng.random()
+    if test < 0.02 or initially_owned_by_king:
+        return rng.random()
+    u = rng.random()
+    parity = (x & 1) + 2 * (y & 1)
+    return (u + parity) * 0.25
+
+
+# The ordinal each terrain's own rejection loop excludes -- Phalanx=3
+# for Jungle/Forest/Mtns, Axemen=2 for Desert; Plains has no entry (no
+# rejection).
+_TERRAIN_ORDINAL_REJECT: dict[Terrain, int] = {
+    Terrain.JUNGLE: 3,
+    Terrain.FOREST: 3,
+    Terrain.MTNS: 3,
+    Terrain.DESERT: 2,
+}
+
+
+def _draw_humanoid_terrain_ordinal(terrain: Terrain, x: int, y: int, rng: PascalRandom) -> int:
+    """The per-terrain first-slot ordinal draw, before the coin-flip
+    override -- see ``humanoid_first_slot()``. Only ever reached for
+    the 5 ordinary land terrains (see module docstring for why Sea
+    never reaches this).
+    """
+
+    if terrain is Terrain.PLAINS:
+        return int(4 * province_random(x, y, rng)) + 1
+    reject = _TERRAIN_ORDINAL_REJECT.get(terrain)
+    if reject is None:
+        raise ValueError(f"humanoid_first_slot: unsupported terrain {terrain!r}")
+    if terrain is Terrain.DESERT:
+        while True:
+            ordinal = int(4 * province_random(x, y, rng) + 1)
+            if ordinal != reject:
+                return ordinal
+    while True:
+        ordinal = int(4 * province_random(x, y, rng)) + 1
+        if ordinal != reject:
+            return ordinal
+
+
+# The real `race<=Orcish` domain -- Rohan excluded per the user's own
+# direct request (a game variant not currently of interest), not a
+# sourcing gap; see module docstring.
+HUMANOID_FIRST_SLOT_RACES: tuple[Race, ...] = (Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH)
+
+
+def humanoid_first_slot(
+    terrain: Terrain,
+    race: Race,
+    x: int,
+    y: int,
+    rng: PascalRandom,
+    *,
+    initially_owned_by_king: bool = False,
+) -> ArmyType:
+    """"COASTFLEET.md" sections 2/4/5/7 -- the ordinary-humanoid-province
+    first recruit slot. ``initially_owned_by_king=True`` short-circuits
+    to ``BEST_ATYPE[race]`` with zero draws; otherwise draws a terrain-
+    weighted ordinal (rejecting Phalanx on Jungle/Forest/Mtns, Axemen on
+    Desert), converts it via ``models.army_type.ARMY_TYPE_BY_ORDINAL``,
+    then a single plain coin flip (``int(2*rng.random())``, not
+    ``irand()``) can override the result to ``BEST_ATYPE[race]``. A
+    ``race`` outside ``HUMANOID_FIRST_SLOT_RACES`` raises via the plain
+    ``BEST_ATYPE[race]`` ``KeyError``, matching ``home_first_slot()``'s
+    own existing no-guard style.
+    """
+
+    if initially_owned_by_king:
+        return BEST_ATYPE[race]
+    ordinal = _draw_humanoid_terrain_ordinal(terrain, x, y, rng)
+    first = ARMY_TYPE_BY_ORDINAL[ordinal]
+    coin = int(2 * rng.random())
+    if coin == 1:
+        return BEST_ATYPE[race]
+    return first
 
 
 # -- Initial army budgets ---------------------------------------------------

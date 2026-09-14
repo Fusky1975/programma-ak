@@ -32681,6 +32681,42 @@ test removed that only proved "grants 1 to 4 Discoveries," the wrong
 premise this phase corrects). Full suite verified green (unchanged,
 6655) before touching a single test.
 
+**Phase 797** -- `Desktop/COASTFLEET.md` (2026-09-13, a disassembly of
+`AKGEN.EXE` raw `0x20E18-0x214FF`, `0B57:9CD8` -- the same real routine
+Phase 776's own Fleet-second-slot table already cites) closes backlog
+#22's land-side half: the ordinary (non-Home, non-special-race)
+humanoid province's first recruit slot, previously unsourced since
+Phase 358. New `worldgen/initial_armies.py province_random()` (a real,
+non-uniform helper -- 2% plain `Random`, 98% biased by `(x mod 2, y mod
+2)` parity), `humanoid_first_slot()` (the real terrain-weighted ordinal
+draw for Plains/Jungle/Forest/Mtns/Desert, rejecting Phalanx/Axemen
+where the source's own rejection loop names them, then a plain coin
+flip that can override to `BEST_ATYPE[race]`), and `HUMANOID_FIRST_
+SLOT_RACES` (Human/Elven/Dwarven/Orcish -- Rohan excluded per the
+user's own direct request, a deliberate scope cut, not a sourcing gap:
+"è di una variante di gioco che non mi interessa al momento"). Wired
+into `generate_new_game.py` via a new `recruit1_grid` pre-pass (King
+Home coordinates excluded entirely -- provably RNG-neutral either way,
+since a King Home already gets an identical result via the pre-
+existing `home_first_slot()` path) and a new `elif race in _HUMANOID_
+RACES:` branch mirroring the special-race branch's own exact shape.
+The Swamp/Marauders exception and the Sea-with-secondary-terrain
+redirect are both structurally inapplicable in this project (no
+`SWAMP` terrain member; `draw_base_race()` never assigns a humanoid
+race to Sea) and are documented as such, not implemented. Deliberately
+still open: the *second* recruit slot for these provinces, and a
+newly-found (not fixed) discrepancy in the already-shipped Phase 776
+`fleet_second_slot_gate()` -- COASTFLEET.md's own section 9 shows the
+real Fleet-second-slot comparison uses the same parity-biased
+`ProvinceRandom`, not a plain uniform roll. Test count: 6664 -> 6678
+(net +14). Full suite verified green (unchanged, 6664) before touching
+a single test; the new RNG consumption before `place_all_features()`
+shifted `generate_new_game(seed=1)`'s own feature roster (same class
+of shift Phase 426/427 already caused), needing 2 pre-existing
+`test_use_mi_item_creation_integration.py` tests re-seeded/re-targeted
+to a different feature -- found and fixed via the standing non-
+breaking run, not assumed.
+
 ## Setup
 
 ```

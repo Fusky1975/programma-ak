@@ -208,11 +208,18 @@ none invented past here:
   as too ambiguous to code (this is the Valhalla-visitor-reserved slot,
   ``models/valhalla.py``'s own separate mechanic, not a King-loadable
   Hero).
-- **Ordinary (non-Home, non-special-race) humanoid provinces' recruit
-  slots and armies**: ``humanoid_first_slot``'s terrain-weighted
-  infantry table was never sourced (Phase 358's own documented gap) --
-  these provinces get a real race/tax but no recruit slot or army from
-  this pipeline.
+- **Ordinary (non-Home, non-special-race) humanoid provinces' first
+  recruit slot and army**: **closed, Phase 797** (backlog #22's own
+  land-side half) -- ``worldgen/initial_armies.py humanoid_first_slot()``
+  now supplies the real, terrain-weighted first-slot table
+  (``Desktop/COASTFLEET.md``), wired via the new ``recruit1_grid``
+  pass and the ``elif race in _HUMANOID_RACES:`` branch below. The
+  *second* recruit slot for these provinces remains a real, separate,
+  NOT-attempted-here gap -- see ``worldgen/initial_armies.py``'s own
+  Phase 797 addendum for what it is and why, plus a newly-found,
+  deliberately-NOT-fixed discrepancy in the already-shipped Phase 776
+  ``fleet_second_slot_gate()`` (a flat uniform roll where the real
+  engine uses a parity-biased draw).
 - **Trollish special-race armies**: ``budget_by_race_or_owner`` only
   covers King_Home, Human/Elf/Dwarf/Orc-nonhome, Whale, and
   Eagle/Dragon/Merman/Ent/Werefolk -- Trollish provinces get their
@@ -298,6 +305,8 @@ from ak_engine.worldgen.initial_armies import (
     build_initial_armies,
     flying_or_special_budget,
     home_first_slot,
+    humanoid_first_slot,
+    ordinary_humanoid_budget,
     resolve_commander,
     special_race_recruit_slot,
     whale_budget,
@@ -493,6 +502,25 @@ def generate_new_game(
         for coord in placed_coords:
             tax_grid[coord] = recompute_tax(coord, grid[coord], grid, bounds, bounds.height - 1, rng, race)
 
+    # Phase 797 (backlog #22, land-side half): the ordinary-humanoid-
+    # province first recruit slot, `COASTFLEET.md`'s own real terrain-
+    # weighted table. Run right after race_grid reflects every special-
+    # race overwrite (above) and before any King Home overwrite (below)
+    # -- King Home coordinates are excluded here entirely, since a King
+    # Home's own first slot is already `home_first_slot(king.race)`
+    # (Phase 358), an RNG-neutral identical result (see module docstring
+    # of worldgen/initial_armies.py for the proof). A special-race-
+    # overwritten coordinate's race_grid entry is already the special
+    # race by this point, so it's naturally skipped with no extra
+    # bookkeeping.
+    recruit1_grid: dict[HexCoord, ArmyType] = {}
+    for coord, terrain in grid.items():
+        if coord in king_home_set:
+            continue
+        race = race_grid[coord]
+        if race in _HUMANOID_RACES:
+            recruit1_grid[coord] = humanoid_first_slot(terrain, race, coord.x, coord.y, rng)
+
     for king in kings:
         home_coord = home_coord_by_king[king.leader_id]
         effects = king_home_effects(king.leader_id, king.race, home_coord)
@@ -604,6 +632,16 @@ def generate_new_game(
             recruit_type_1 = special_race_recruit_slot(race)
             budget = _special_race_army_budget(race, tax, rng)
             if budget is not None:
+                army_types = build_initial_armies(recruit_type_1, None, budget)
+        elif race in _HUMANOID_RACES:
+            # Phase 797 (backlog #22, land-side half): an ordinary
+            # (non-Home, non-special-race) humanoid province -- mirrors
+            # the SPECIAL_RACE_BASE_COUNT branch's own exact shape.
+            # recruit_type_2/owner_kingdom_id stay None, matching every
+            # other non-Home, non-owned province today.
+            recruit_type_1 = recruit1_grid.get(coord)
+            if recruit_type_1 is not None:
+                budget = ordinary_humanoid_budget(tax, rng)
                 army_types = build_initial_armies(recruit_type_1, None, budget)
 
         game_state.provinces[coord] = ProvinceState(

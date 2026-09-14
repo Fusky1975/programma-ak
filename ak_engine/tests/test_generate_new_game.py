@@ -133,6 +133,47 @@ def test_special_race_provinces_get_their_own_native_recruit_slot():
     assert found_any
 
 
+def test_king_home_recruit_type_1_is_unaffected_by_the_new_ordinary_humanoid_pass():
+    # Phase 797's own new recruit1_grid pass explicitly excludes King
+    # Home coordinates -- proves the new pass doesn't clobber the
+    # existing, real home_first_slot(king.race) result.
+    from ak_engine.worldgen.initial_armies import home_first_slot
+
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=2)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        province = result.provinces[king.home_coord]
+        assert province.recruit_type_1 == home_first_slot(king.race)
+
+
+def test_ordinary_humanoid_provinces_now_get_a_real_first_recruit_slot_and_army():
+    # Phase 797 (backlog #22's land-side half): before this phase, an
+    # ordinary (non-Home, non-special-race) humanoid province had a
+    # real race/tax but recruit_type_1=None and no army at all.
+    infantry = {ArmyType.BOWMEN, ArmyType.AXEMEN, ArmyType.PHALANX, ArmyType.LEGION}
+    found_recruit_type = False
+    found_army = False
+    for seed in range(1, 15):
+        gs, kings = _setup()
+        rng = PascalRandom(seed=seed)
+        result = generate_new_game(rng, gs, kings, gamevers=1)
+        king_home_coords = {king.home_coord for king in kings}
+        for coord, province in result.provinces.items():
+            if coord in king_home_coords or province.race not in _HUMANOID_RACES:
+                continue
+            if province.recruit_type_1 is not None:
+                found_recruit_type = True
+                assert province.recruit_type_1 in infantry
+                if [a for a in result.armies.values() if a.location == coord]:
+                    found_army = True
+        if found_recruit_type and found_army:
+            break
+    assert found_recruit_type
+    assert found_army
+
+
 def test_trollish_provinces_never_get_an_army_no_sourced_budget():
     game_state, kings = _setup()
     # A handful of seeds to reliably land at least one Trollish placement.

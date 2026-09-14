@@ -110,12 +110,15 @@ documented gap:
   ``worldgen/initial_armies.py fleet_second_slot_chance()``/``_gate()``,
   reusing the exact same ``effective_sea_neighbors``/``edge_score``
   value ``compute_edge_score()`` above already computes. **The land-
-  side sibling gap remains exactly as open as before**:
-  ``initial_armies.py``'s own "terrain-weighted infantry" first-slot
-  table is still unsourced/unbuildable, so no full recruit-slot
-  pipeline exists yet for either half to plug into -- the user
-  confirmed directly (2026-09-09) to ship the Sea-side primitive alone
-  rather than wait for the missing land-side table.
+  side sibling gap is now closed too, Phase 797**:
+  ``Desktop/COASTFLEET.md`` supplies ``initial_armies.py``'s own real
+  "terrain-weighted infantry" first-slot table (``humanoid_first_slot()``),
+  now wired into ``generate_new_game.py``'s own per-province pipeline
+  for ordinary (non-Home, non-special-race) humanoid provinces. The
+  *second* recruit slot for those same provinces remains open -- see
+  ``initial_armies.py``'s own Phase 797 addendum for what's still
+  unattempted there, including a newly-found (not fixed) discrepancy
+  in ``fleet_second_slot_gate()`` itself.
 
 The special-race tax recompute (Phase 355's own note that special-race
 placement would need to "recompute the accepted province tax") is

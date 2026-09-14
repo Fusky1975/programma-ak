@@ -30,15 +30,24 @@ real ``execute_use_mi()`` call -- proving the chain
 -> ``GameState.add_item()`` -> ``execute_use_mi()`` is genuinely closed,
 not just closed in separate pieces.
 
-``seed=5`` (search RNG) was found by scanning outcomes for this exact
-scenario until the leader won -- Melee combat's own win/loss roll has
-no simpler deterministic lever available (see ``turn/encounter.py``);
-recorded here as a fixed, reproducible fact about this scenario, not a
-tuned probability. (Originally ``seed=30`` against a different feature;
-re-scanned after Phase 427 added King-Home second-recruit-slot RNG
-consumption before ``place_all_features()``, which -- like Phase 426
-before it -- shifted which treasure lands on which feature id for this
-same ``generate_new_game(seed=1)`` scenario.)
+The search-RNG seeds below were found by scanning outcomes for each
+exact scenario until the leader won -- Melee combat's own win/loss
+roll has no simpler deterministic lever available (see ``turn/
+encounter.py``); recorded here as fixed, reproducible facts about
+each scenario, not tuned probabilities. (Originally ``seed=30``
+against a different feature; re-scanned after Phase 427 added
+King-Home second-recruit-slot RNG consumption before
+``place_all_features()``, which -- like Phase 426 before it -- shifted
+which treasure lands on which feature id for this same
+``generate_new_game(seed=1)`` scenario. Re-scanned again after Phase
+797 added the ordinary-humanoid-province first-recruit-slot pass
+(``worldgen/initial_armies.py humanoid_first_slot()``), which -- for
+the identical reason -- consumes real RNG before ``place_all_
+features()`` too, shifting the feature roster once more: the first
+treasure+guardian feature is now a tough ``GW_WHALE`` guard, so its
+own win seed (``224``) is a genuinely rare outcome, not a tuning
+choice; ``_BOOK_FEATURE_ID`` moved to a different, weaker-guarded
+``SKILL_BOOK`` feature for the same reason.)
 """
 
 from __future__ import annotations
@@ -60,16 +69,20 @@ from ak_engine.worldgen.pascal_random import PascalRandom
 
 _KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
 _SEARCHER_LEADER_ID = 999
-_SEARCH_WIN_SEED = 5
-# Phase 427 note: generate_new_game(seed=1)'s own feature roster is a
-# fixed, reproducible fact of this scenario, re-checked after Phase 427
-# added King-Home second-recruit-slot RNG consumption before
-# place_all_features() (which, like Phase 426 before it, shifted which
-# treasure lands on which feature id). feature_id 8 (GI_CLAM guarding
-# BOOK_ELEMENTAL) is the SKILL_BOOK-category feature this test now
-# targets.
-_BOOK_FEATURE_ID = 8
-_BOOK_SEARCH_WIN_SEED = 5
+# Phase 797 note: generate_new_game(seed=1)'s own feature roster is a
+# fixed, reproducible fact of this scenario, re-checked after Phase 797
+# added the ordinary-humanoid-province first-recruit-slot pass (RNG
+# consumption before place_all_features(), same class of shift as
+# Phase 426/427 before it). The first treasure+guardian feature is now
+# guarded by a tough GW_WHALE (hp 30, melee skill 3) -- a real,
+# reproducible fact, not a tuning choice -- so this win is genuinely
+# rare (1 in 224 scripted search-RNG seeds).
+_SEARCH_WIN_SEED = 224
+# feature_id 23 (IMP guarding BOOK_MELEE) is the SKILL_BOOK-category
+# feature this test now targets -- picked for a weak guardian (hp 12,
+# melee skill 1) so the win seed stays small.
+_BOOK_FEATURE_ID = 23
+_BOOK_SEARCH_WIN_SEED = 10
 
 
 def _generate_game(king_count: int = 10) -> GameState:
