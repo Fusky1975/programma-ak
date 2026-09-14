@@ -114,16 +114,19 @@ documented gap:
   ``Desktop/COASTFLEET.md`` supplies ``initial_armies.py``'s own real
   "terrain-weighted infantry" first-slot table (``humanoid_first_slot()``),
   now wired into ``generate_new_game.py``'s own per-province pipeline
-  for ordinary (non-Home, non-special-race) humanoid provinces. The
-  *second* recruit slot for those same provinces remains open -- see
-  ``initial_armies.py``'s own Phase 797 addendum for what's still
-  unattempted there. **The Fleet-threshold discrepancy Phase 797 found
-  (a flat uniform roll where the real engine uses a parity-biased
-  draw) is now corrected too, Phase 798** -- ``fleet_second_slot_
-  gate()`` now uses the real ``ProvinceRandom(x,y) < fleetThreshold[
-  index]`` comparison (``Desktop/COASTFLEET.md`` sections 9.2/10.3)
-  plus a real Desert exception, still as a standalone, unwired
-  primitive (the *second*-slot pipeline itself remains unbuilt).
+  for ordinary (non-Home, non-special-race) humanoid provinces. **The
+  Fleet-threshold discrepancy Phase 797 found (a flat uniform roll
+  where the real engine uses a parity-biased draw) is now corrected
+  too, Phase 798** -- ``fleet_second_slot_gate()`` now uses the real
+  ``ProvinceRandom(x,y) < fleetThreshold[index]`` comparison
+  (``Desktop/COASTFLEET.md`` sections 9.2/10.3) plus a real Desert
+  exception. **The *second* recruit slot's own "ordinary" (non-Fleet)
+  army type is now closed too, Phase 799**: ``Desktop/SECONDARMY.md``
+  supplies the real remainder (``initial_armies.py ordinary_second_
+  army()``), combined with ``second_slot_gate()``/``fleet_second_slot_
+  gate()`` into ``humanoid_second_slot()`` and wired into ``generate_
+  new_game.py``'s own per-province pipeline -- closing backlog item #22
+  in full.
 
 The special-race tax recompute (Phase 355's own note that special-race
 placement would need to "recompute the accepted province tax") is

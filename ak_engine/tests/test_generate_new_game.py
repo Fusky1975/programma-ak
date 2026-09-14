@@ -174,6 +174,43 @@ def test_ordinary_humanoid_provinces_now_get_a_real_first_recruit_slot_and_army(
     assert found_army
 
 
+def test_ordinary_humanoid_provinces_now_get_a_real_second_recruit_slot_too():
+    # Phase 799 (backlog #22, closes it in full): before this phase, an
+    # ordinary (non-Home, non-special-race) humanoid province's second
+    # recruit slot always stayed None -- `Desktop/SECONDARMY.md` supplies
+    # the real "ordinary" (non-Fleet) type, combined with the already-
+    # real second_slot_gate()/fleet_second_slot_gate() into humanoid_
+    # second_slot(), now wired into generate_new_game()'s own pipeline.
+    ordinary_second_types = {
+        ArmyType.LT_CAVALRY,
+        ArmyType.HVY_CAVALRY,
+        ArmyType.CHARIOTS,
+        ArmyType.ELEPHANTS,
+        ArmyType.CAMEL_CORPS,
+        ArmyType.WARG_RIDERS,
+    }
+    found_second_slot = False
+    found_army_with_second_type = False
+    for seed in range(1, 30):
+        gs, kings = _setup()
+        rng = PascalRandom(seed=seed)
+        result = generate_new_game(rng, gs, kings, gamevers=1)
+        king_home_coords = {king.home_coord for king in kings}
+        for coord, province in result.provinces.items():
+            if coord in king_home_coords or province.race not in _HUMANOID_RACES:
+                continue
+            if province.recruit_type_2 is not None:
+                found_second_slot = True
+                assert province.recruit_type_2 is ArmyType.FLEET or province.recruit_type_2 in ordinary_second_types
+                armies_here = [a for a in result.armies.values() if a.location == coord]
+                if any(a.army_type == province.recruit_type_2 for a in armies_here):
+                    found_army_with_second_type = True
+        if found_second_slot and found_army_with_second_type:
+            break
+    assert found_second_slot
+    assert found_army_with_second_type
+
+
 def test_trollish_provinces_never_get_an_army_no_sourced_budget():
     game_state, kings = _setup()
     # A handful of seeds to reliably land at least one Trollish placement.

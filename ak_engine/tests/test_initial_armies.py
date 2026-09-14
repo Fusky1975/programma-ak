@@ -23,7 +23,9 @@ from ak_engine.worldgen.initial_armies import (
     flying_or_special_budget,
     home_first_slot,
     humanoid_first_slot,
+    humanoid_second_slot,
     ordinary_humanoid_budget,
+    ordinary_second_army,
     province_random,
     resolve_commander,
     second_slot_gate,
@@ -316,3 +318,107 @@ def test_humanoid_first_slot_plains_only_ever_produces_infantry_across_all_4_rac
         for race in HUMANOID_FIRST_SLOT_RACES:
             result = humanoid_first_slot(Terrain.PLAINS, race, 3, 4, rng)
             assert result in infantry
+
+
+# -- Phase 799 ("SECONDARMY.md", backlog #22's own last piece) -------------
+
+
+class _StubRandomWithIrand(_StubRandom):
+    """Adds ``irand()`` on top of ``_StubRandom``'s own ``.random()`` --
+    ``humanoid_second_slot()`` calls ``second_slot_gate()`` (Phase 358),
+    the one piece of this new chain that needs an ``irand()`` draw.
+    """
+
+    def __init__(self, irand_values: list[int], random_values: list[float]) -> None:
+        super().__init__(random_values)
+        self._irand_values = iter(irand_values)
+
+    def irand(self, *, irand_range: int = 0) -> int:
+        del irand_range
+        return next(self._irand_values)
+
+
+def test_ordinary_second_army_base_draw_matches_the_three_real_ordinals():
+    # Forest + a non-Orcish race never substitutes -- the plain base
+    # draw (ordinals 5/6/7 = Lt Cavalry/Hvy Cavalry/Chariots) survives
+    # unmodified, proving ARMY_TYPE_BY_ORDINAL's own real index scheme.
+    assert ordinary_second_army(Terrain.FOREST, Race.HUMAN, 0, 0, _StubRandom([0.01, 0.1])) == ArmyType.LT_CAVALRY
+    assert ordinary_second_army(Terrain.FOREST, Race.HUMAN, 0, 0, _StubRandom([0.01, 0.5])) == ArmyType.HVY_CAVALRY
+    assert ordinary_second_army(Terrain.FOREST, Race.HUMAN, 0, 0, _StubRandom([0.01, 0.9])) == ArmyType.CHARIOTS
+
+
+def test_ordinary_second_army_orcish_coin_hit_returns_wargriders_and_stops():
+    # The base draw is still consumed even though it's about to be
+    # overwritten (section 8's own fidelity note) -- exactly 3 values,
+    # no StopIteration, proves no further terrain checks run afterward.
+    rng = _StubRandom([0.01, 0.1, 0.9])  # base draw, then coin=1
+    assert ordinary_second_army(Terrain.FOREST, Race.ORCISH, 0, 0, rng) == ArmyType.WARG_RIDERS
+
+
+def test_ordinary_second_army_orcish_coin_miss_falls_through_to_terrain_checks():
+    rng = _StubRandom([0.01, 0.1, 0.1])  # base draw (Lt Cavalry), coin=0
+    assert ordinary_second_army(Terrain.FOREST, Race.ORCISH, 0, 0, rng) == ArmyType.LT_CAVALRY
+
+
+def test_ordinary_second_army_jungle_coin_hit_and_miss():
+    hit = _StubRandom([0.01, 0.1, 0.9])
+    assert ordinary_second_army(Terrain.JUNGLE, Race.HUMAN, 0, 0, hit) == ArmyType.ELEPHANTS
+    miss = _StubRandom([0.01, 0.1, 0.1])
+    assert ordinary_second_army(Terrain.JUNGLE, Race.HUMAN, 0, 0, miss) == ArmyType.LT_CAVALRY
+
+
+def test_ordinary_second_army_desert_coin_hit_and_miss():
+    hit = _StubRandom([0.01, 0.1, 0.9])
+    assert ordinary_second_army(Terrain.DESERT, Race.HUMAN, 0, 0, hit) == ArmyType.CAMEL_CORPS
+    miss = _StubRandom([0.01, 0.1, 0.1])
+    assert ordinary_second_army(Terrain.DESERT, Race.HUMAN, 0, 0, miss) == ArmyType.LT_CAVALRY
+
+
+@pytest.mark.parametrize("terrain", [Terrain.PLAINS, Terrain.MTNS])
+def test_ordinary_second_army_plains_mtns_camels_only_on_eligible_rows(terrain):
+    hit = _StubRandom([0.01, 0.1, 0.01, 0.1])  # base draw, then a threshold draw < 0.20
+    assert ordinary_second_army(terrain, Race.HUMAN, 0, 2, hit) == ArmyType.CAMEL_CORPS
+    miss = _StubRandom([0.01, 0.1, 0.01, 0.5])  # threshold draw >= 0.20
+    assert ordinary_second_army(terrain, Race.HUMAN, 0, 2, miss) == ArmyType.LT_CAVALRY
+    non_eligible_row = _StubRandom([0.01, 0.1])  # y=0 -- zero extra draws, no StopIteration
+    assert ordinary_second_army(terrain, Race.HUMAN, 0, 0, non_eligible_row) == ArmyType.LT_CAVALRY
+
+
+def test_ordinary_second_army_forest_never_substitutes():
+    rng = _StubRandom([0.01, 0.5])
+    assert ordinary_second_army(Terrain.FOREST, Race.HUMAN, 0, 0, rng) == ArmyType.HVY_CAVALRY
+
+
+def test_ordinary_second_army_raises_for_an_unsupported_terrain():
+    with pytest.raises(ValueError):
+        ordinary_second_army(Terrain.SEA, Race.HUMAN, 0, 0, _StubRandom([0.01, 0.1]))
+
+
+def test_humanoid_second_slot_b_fails_returns_none_with_no_further_draws():
+    rng = _StubRandomWithIrand(irand_values=[0], random_values=[])
+    assert humanoid_second_slot(Terrain.PLAINS, Race.HUMAN, 0, 0, tax=0, effective_sea_neighbors=2, rng=rng) is None
+
+
+def test_humanoid_second_slot_b_passes_f_succeeds_returns_fleet_without_the_helper():
+    # tax=8 guarantees B; effective_sea_neighbors=4 -> fleet chance 1.0,
+    # so any real ProvinceRandom value satisfies F -- ordinary_second_
+    # army() is never reached, proven by the stub being fully consumed.
+    rng = _StubRandomWithIrand(irand_values=[0], random_values=[0.01, 0.5])
+    result = humanoid_second_slot(Terrain.PLAINS, Race.HUMAN, 0, 0, tax=8, effective_sea_neighbors=4, rng=rng)
+    assert result is ArmyType.FLEET
+
+
+def test_humanoid_second_slot_b_passes_f_fails_falls_through_to_the_helper():
+    # effective_sea_neighbors=0 -> fleet chance 0.0, F always fails
+    # regardless of the ProvinceRandom draw's own value.
+    rng = _StubRandomWithIrand(irand_values=[0], random_values=[0.01, 0.5, 0.01, 0.1])
+    result = humanoid_second_slot(Terrain.FOREST, Race.HUMAN, 0, 0, tax=8, effective_sea_neighbors=0, rng=rng)
+    assert result == ArmyType.LT_CAVALRY
+
+
+def test_humanoid_second_slot_desert_skips_f_with_zero_draws_then_runs_the_helper():
+    # fleet_second_slot_gate() returns False for Desert with zero draws
+    # -- the helper's own draws start immediately after B's irand() call.
+    rng = _StubRandomWithIrand(irand_values=[0], random_values=[0.01, 0.3, 0.1])
+    result = humanoid_second_slot(Terrain.DESERT, Race.HUMAN, 0, 0, tax=8, effective_sea_neighbors=3, rng=rng)
+    assert result == ArmyType.LT_CAVALRY

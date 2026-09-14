@@ -39,15 +39,17 @@ against a different feature; re-scanned after Phase 427 added
 King-Home second-recruit-slot RNG consumption before
 ``place_all_features()``, which -- like Phase 426 before it -- shifted
 which treasure lands on which feature id for this same
-``generate_new_game(seed=1)`` scenario. Re-scanned again after Phase
-797 added the ordinary-humanoid-province first-recruit-slot pass
+``generate_new_game(seed=1)`` scenario. Re-scanned after Phase 797
+added the ordinary-humanoid-province first-recruit-slot pass
 (``worldgen/initial_armies.py humanoid_first_slot()``), which -- for
 the identical reason -- consumes real RNG before ``place_all_
-features()`` too, shifting the feature roster once more: the first
-treasure+guardian feature is now a tough ``GW_WHALE`` guard, so its
-own win seed (``224``) is a genuinely rare outcome, not a tuning
-choice; ``_BOOK_FEATURE_ID`` moved to a different, weaker-guarded
-``SKILL_BOOK`` feature for the same reason.)
+features()`` too, shifting the feature roster once more. Re-scanned
+again after Phase 799 added the ordinary-humanoid-province second-
+recruit-slot pass (``humanoid_second_slot()``), the identical class of
+shift once more: the first treasure+guardian feature is now feature_id
+1, a weak ``ELE_MAGE`` guard (hp 10, melee skill 1), win seed ``11``;
+``_BOOK_FEATURE_ID`` moved to feature_id 88, guarded by an equally weak
+``MERMAID`` (hp 10, melee skill 1), win seed ``1``.)
 """
 
 from __future__ import annotations
@@ -69,20 +71,19 @@ from ak_engine.worldgen.pascal_random import PascalRandom
 
 _KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
 _SEARCHER_LEADER_ID = 999
-# Phase 797 note: generate_new_game(seed=1)'s own feature roster is a
-# fixed, reproducible fact of this scenario, re-checked after Phase 797
-# added the ordinary-humanoid-province first-recruit-slot pass (RNG
+# Phase 799 note: generate_new_game(seed=1)'s own feature roster is a
+# fixed, reproducible fact of this scenario, re-checked after Phase 799
+# added the ordinary-humanoid-province second-recruit-slot pass (RNG
 # consumption before place_all_features(), same class of shift as
-# Phase 426/427 before it). The first treasure+guardian feature is now
-# guarded by a tough GW_WHALE (hp 30, melee skill 3) -- a real,
-# reproducible fact, not a tuning choice -- so this win is genuinely
-# rare (1 in 224 scripted search-RNG seeds).
-_SEARCH_WIN_SEED = 224
-# feature_id 23 (IMP guarding BOOK_MELEE) is the SKILL_BOOK-category
-# feature this test now targets -- picked for a weak guardian (hp 12,
+# Phase 426/427/797 before it). The first treasure+guardian feature
+# (feature_id 1) is now guarded by a weak ELE_MAGE (hp 10, melee skill
+# 1) -- a real, reproducible fact, not a tuning choice.
+_SEARCH_WIN_SEED = 11
+# feature_id 88 (MERMAID guarding BOOK_NAVAL) is the SKILL_BOOK-category
+# feature this test now targets -- picked for a weak guardian (hp 10,
 # melee skill 1) so the win seed stays small.
-_BOOK_FEATURE_ID = 23
-_BOOK_SEARCH_WIN_SEED = 10
+_BOOK_FEATURE_ID = 88
+_BOOK_SEARCH_WIN_SEED = 1
 
 
 def _generate_game(king_count: int = 10) -> GameState:
@@ -121,9 +122,9 @@ def test_world_generated_treasure_reaches_state_items_via_a_search_win():
 
 def test_a_world_generated_and_search_won_book_is_directly_usable_via_use_mi():
     # This project's real generate_new_game(seed=1) scenario places a
-    # BOOK_ELEMENTAL on feature_id 8 (guarded by a GI_CLAM) -- not tuned
+    # BOOK_NAVAL on feature_id 88 (guarded by a MERMAID) -- not tuned
     # for that, just what this fixed, reproducible generation run
-    # produces (see _BOOK_FEATURE_ID's own Phase 427 note above). Any
+    # produces (see _BOOK_FEATURE_ID's own Phase 799 note above). Any
     # SKILL_BOOK category member would exercise the same chain.
     state = _generate_game()
     feature = next(f for f in state.features.values() if f.feature_id == _BOOK_FEATURE_ID)

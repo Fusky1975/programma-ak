@@ -143,17 +143,36 @@ Sixth phase of the world-generation sub-plan. Source:
   touched this phase: ``fleet_second_slot_gate()`` is still unwired
   into any real pipeline today, so there is no live behavior to
   regress; correcting it is separate, future work. **Corrected, Phase
-  798** -- see that phase's own bullet below.
+  798** -- see that phase's own bullet below. **The second recruit
+  slot's own "ordinary" type itself is no longer open either, Phase
+  799** -- see ``ordinary_second_army()``'s own bullet below.
 - ``fleet_second_slot_gate()`` (Phase 798) -- corrects Phase 776's own
   flat-probability approximation with COASTFLEET.md's real, parity-
   biased comparison: ``ProvinceRandom(x,y) < fleetThreshold[index]``
   (sections 9.2/10.3), plus a real Desert exception (0%, zero draws,
-  terrain checked before any ``ProvinceRandom`` call). Still a
-  standalone, unwired primitive -- the *second* recruit slot for an
-  ordinary humanoid province (what it is when it isn't Fleet) remains
-  genuinely unsourced, so this correction has no live pipeline to
-  reach yet either. See ``fleet_second_slot_gate()``'s own docstring
-  for the full account.
+  terrain checked before any ``ProvinceRandom`` call). See ``fleet_
+  second_slot_gate()``'s own docstring for the full account.
+- ``ordinary_second_army()``/``humanoid_second_slot()`` (Phase 799,
+  closes backlog #22 in full): ``Desktop/SECONDARMY.md`` (2026-09-14)
+  supplies the real, previously-unsourced "ordinary second army" type
+  for when a humanoid province's second recruit slot exists (Phase
+  358's ``second_slot_gate()``, "B") but isn't a Fleet (Phase 776/798's
+  ``fleet_second_slot_gate()``, "F") -- both of which had never had a
+  real caller anywhere in this project until this phase. The document's
+  own worked "B" probability table matches ``second_slot_gate()``'s own
+  ``min(tax,8)/8`` exactly, confirming the two are the same gate; its
+  own base-draw ordinals (5-10) match ``models/army_type.py ARMY_TYPE_
+  BY_ORDINAL`` exactly (Lt Cavalry/Hvy Cavalry/Chariots/Elephants/Camel
+  Corps/Wargriders), needing no new lookup table. ``humanoid_second_
+  slot()`` combines all three primitives (B, then F, then the ordinary
+  helper) and is wired into ``generate_new_game.py``'s own ``recruit1_
+  grid`` pass (renamed in spirit to also build ``recruit2_grid``), this
+  phase, closing backlog item #22's own last open piece. Rohan, Swamp,
+  and this same helper's own Sea-forcing sub-branch stay unimplemented,
+  for the same already-established reasons documented on ``humanoid_
+  first_slot()``/``fleet_second_slot_gate()`` above (no Rohan-race
+  provinces, no Swamp terrain, no humanoid race ever on Sea terrain in
+  this project's own generator).
 
 **Deliberately NOT implemented here**, each a genuine, separately
 documented gap:
@@ -274,7 +293,7 @@ def fleet_second_slot_gate(
     covers (no humanoid race ever lands on Sea terrain in this
     project's own generator).
 
-    Two things COASTFLEET.md also describes but are structurally
+    One thing COASTFLEET.md also describes but is structurally
     inapplicable to this project's own pipeline (documented, not
     implemented, mirroring the exact "moot here" reasoning already
     used for the ``pt2``/Sea-humanoid-race exclusion): the "alternate
@@ -282,17 +301,14 @@ def fleet_second_slot_gate(
     Fleet for a Sea province with a valid secondary terrain and
     ``race<=Orcish``, with no ``ProvinceRandom`` draw at all -- never
     reachable here, since ``draw_base_race()`` never assigns a
-    humanoid race to Sea terrain; and the genuinely-unsourced "ordinary
-    second army" type itself stays exactly as open as before.
+    humanoid race to Sea terrain.
 
-    Scope stays a standalone, still-unwired primitive -- no live
-    pipeline in ``generate_new_game.py`` calls this function today
-    (``recruit_type_2`` is never populated for an ordinary humanoid
-    province at all, since the genuinely-unsourced "ordinary" type
-    blocks the whole second-slot pipeline, not just the Fleet
-    sub-question). This phase corrects the primitive's own internal
-    formula so it's ready and byte-accurate for whenever a future
-    phase can build the full second-slot pipeline.
+    **Wired, Phase 799**: this function is no longer a standalone,
+    unwired primitive -- ``humanoid_second_slot()`` (below) combines it
+    with ``second_slot_gate()`` and the now-real ``ordinary_second_
+    army()`` (``Desktop/SECONDARMY.md``) into the full second-slot
+    chain, called from ``generate_new_game.py``'s own per-province
+    pipeline for every ordinary humanoid province.
     """
 
     if terrain is Terrain.DESERT:
@@ -365,6 +381,78 @@ def _draw_humanoid_terrain_ordinal(terrain: Terrain, x: int, y: int, rng: Pascal
 # direct request (a game variant not currently of interest), not a
 # sourcing gap; see module docstring.
 HUMANOID_FIRST_SLOT_RACES: tuple[Race, ...] = (Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH)
+
+
+def ordinary_second_army(
+    terrain: Terrain,
+    race: Race,
+    x: int,
+    y: int,
+    rng: PascalRandom,
+    *,
+    special: bool = False,
+) -> ArmyType:
+    """"SECONDARMY.md" sections 3-8 -- the ordinary (non-Fleet) second
+    recruit slot for a humanoid province, once ``second_slot_gate()``
+    has already decided a second army exists and ``fleet_second_slot_
+    gate()`` has already decided it isn't a Fleet. Always draws a base
+    type from Lt Cavalry/Hvy Cavalry/Chariots (``ARMY_TYPE_BY_ORDINAL``
+    indices 5-7), consumed unconditionally even when a later
+    substitution overwrites it, then applies race/terrain substitutions
+    in the real fixed order: Orcish -> Wargriders (a coin, terminates
+    the chain), Jungle -> Elephants, Desert -> Camel Corps, Plains/Mtns
+    on map rows 2/3/5/6 -> Camel Corps (a fresh threshold draw, not a
+    coin), Forest -> no substitution. ``special`` is always ``False``
+    for this project's own one real call path (the document's own
+    section 0 confirms the external caller always passes ``false``) --
+    kept as a faithful, documented parameter rather than hand-simplified
+    away, mirroring ``province_random()``'s own ``initially_owned_by_
+    king`` precedent (Phase 797).
+    """
+
+    second = ARMY_TYPE_BY_ORDINAL[int(3 * province_random(x, y, rng)) + 5]
+    if race is Race.ORCISH:
+        coin = int(2 * rng.random())
+        if special or coin == 1:
+            return ArmyType.WARG_RIDERS
+    if terrain is Terrain.JUNGLE:
+        coin = int(2 * rng.random())
+        return ArmyType.ELEPHANTS if coin == 1 else second
+    if terrain is Terrain.DESERT:
+        coin = int(2 * rng.random())
+        return ArmyType.CAMEL_CORPS if (coin == 1 and not special) else second
+    if terrain in (Terrain.PLAINS, Terrain.MTNS):
+        if not special and y in (2, 3, 5, 6) and province_random(x, y, rng) < 0.20:
+            return ArmyType.CAMEL_CORPS
+        return second
+    if terrain is Terrain.FOREST:
+        return second
+    raise ValueError(f"ordinary_second_army: unsupported terrain {terrain!r}")
+
+
+def humanoid_second_slot(
+    terrain: Terrain,
+    race: Race,
+    x: int,
+    y: int,
+    tax: int,
+    effective_sea_neighbors: int,
+    rng: PascalRandom,
+) -> ArmyType | None:
+    """"SECONDARMY.md" section 2 -- the real B-then-F-then-helper chain
+    for a humanoid province's second recruit slot, combining three
+    already-real primitives: ``second_slot_gate()`` (Phase 358, "B" --
+    does a second army exist at all), ``fleet_second_slot_gate()``
+    (Phase 776/798, "F" -- is it a Fleet), and ``ordinary_second_army()``
+    above (the real, previously-unsourced remainder). ``None`` means the
+    second slot stays noarmy (B failed).
+    """
+
+    if not second_slot_gate(tax, rng):
+        return None
+    if fleet_second_slot_gate(terrain, x, y, effective_sea_neighbors, rng):
+        return ArmyType.FLEET
+    return ordinary_second_army(terrain, race, x, y, rng)
 
 
 def humanoid_first_slot(

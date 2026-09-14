@@ -212,14 +212,16 @@ none invented past here:
   recruit slot and army**: **closed, Phase 797** (backlog #22's own
   land-side half) -- ``worldgen/initial_armies.py humanoid_first_slot()``
   now supplies the real, terrain-weighted first-slot table
-  (``Desktop/COASTFLEET.md``), wired via the new ``recruit1_grid``
-  pass and the ``elif race in _HUMANOID_RACES:`` branch below. The
-  *second* recruit slot for these provinces remains a real, separate,
-  NOT-attempted-here gap -- see ``worldgen/initial_armies.py``'s own
-  Phase 797 addendum for what it is and why. A discrepancy found in
-  the already-shipped Phase 776 ``fleet_second_slot_gate()`` (a flat
-  uniform roll where the real engine uses a parity-biased draw) was
-  corrected, Phase 798 -- see that function's own docstring.
+  (``Desktop/COASTFLEET.md``), wired via the ``recruit1_grid`` pass and
+  the ``elif race in _HUMANOID_RACES:`` branch below. **The *second*
+  recruit slot for these provinces is closed too, Phase 799**: the same
+  loop now also builds ``recruit2_grid`` via ``worldgen/initial_armies.py
+  humanoid_second_slot()`` (``Desktop/SECONDARMY.md`` -- the real
+  "ordinary" non-Fleet army type, closing backlog #22 in full). A
+  discrepancy found in the already-shipped Phase 776 ``fleet_second_
+  slot_gate()`` (a flat uniform roll where the real engine uses a
+  parity-biased draw) was corrected, Phase 798 -- see that function's
+  own docstring.
 - **Trollish special-race armies**: ``budget_by_race_or_owner`` only
   covers King_Home, Human/Elf/Dwarf/Orc-nonhome, Whale, and
   Eagle/Dragon/Merman/Ent/Werefolk -- Trollish provinces get their
@@ -265,7 +267,7 @@ neighbor and gets ``ArmyType.FLEET`` as its second recruit slot, and a
 non-Naval King's second slot always matches the terrain rule (Jungle ->
 Elephants, otherwise Light Cavalry/Heavy Cavalry/Chariots) -- including
 the Jungle/Elephants case, which required its own real-but-previously-
-unwired ``ELEPHANTS_STRENGTH_RANGE`` fix (see ``_king_home_strength_of()``'s
+unwired ``ELEPHANTS_STRENGTH_RANGE`` fix (see ``_elephants_aware_strength_of()``'s
 own docstring) since ``build_initial_armies()``'s default strength
 lookup has no fixed entry for Elephants' rulebook "variable" Str.
 Re-verified after Phase 428: every King Home's own
@@ -306,6 +308,7 @@ from ak_engine.worldgen.initial_armies import (
     flying_or_special_budget,
     home_first_slot,
     humanoid_first_slot,
+    humanoid_second_slot,
     ordinary_humanoid_budget,
     resolve_commander,
     special_race_recruit_slot,
@@ -414,21 +417,23 @@ _GOLD_HOARD_TIERS: tuple[Treasure, ...] = (
 )
 
 
-def _king_home_strength_of(rng: PascalRandom):
-    """Phase 427: ``build_initial_armies()``'s own default ``strength_of``
-    (``BASE_STRENGTH`` lookup) has no entry for ``ArmyType.ELEPHANTS`` --
-    its rulebook "Str" is listed as "V" (variable), deliberately excluded
-    from that fixed table (see ``models/army_type.py``'s own docstring).
-    King Home's own second recruit slot can now genuinely be Elephants
-    (a Jungle-terrain, non-Naval King), so this closure -- unlike the
-    module-level default -- resolves that one case via the already-
-    confirmed, already-used-elsewhere ``turn/strength.py
-    ELEPHANTS_STRENGTH_RANGE`` (``turn/battle_orchestrator.py``'s own
-    ``roll_elephants_strength()``), reimplemented against this project's
-    own ``PascalRandom`` rather than the ``random.Random`` that function
-    expects -- the same "same real range, different RNG on hand"
-    adaptation this project already used elsewhere (e.g. ``leader_
-    placement.py draw_second_companion_race()``).
+def _elephants_aware_strength_of(rng: PascalRandom):
+    """Phase 427 (renamed Phase 799, no longer King-Home-only): ``build_
+    initial_armies()``'s own default ``strength_of`` (``BASE_STRENGTH``
+    lookup) has no entry for ``ArmyType.ELEPHANTS`` -- its rulebook "Str"
+    is listed as "V" (variable), deliberately excluded from that fixed
+    table (see ``models/army_type.py``'s own docstring). King Home's own
+    second recruit slot can genuinely be Elephants (a Jungle-terrain,
+    non-Naval King, Phase 427), and -- Phase 799 -- so can an ordinary
+    humanoid province's own second slot (``Desktop/SECONDARMY.md``'s own
+    Jungle substitution, ``initial_armies.py ordinary_second_army()``),
+    so this closure resolves both cases via the already-confirmed,
+    already-used-elsewhere ``turn/strength.py ELEPHANTS_STRENGTH_RANGE``
+    (``turn/battle_orchestrator.py``'s own ``roll_elephants_strength()``),
+    reimplemented against this project's own ``PascalRandom`` rather than
+    the ``random.Random`` that function expects -- the same "same real
+    range, different RNG on hand" adaptation this project already used
+    elsewhere (e.g. ``leader_placement.py draw_second_companion_race()``).
     """
 
     def strength_of(army_type: ArmyType) -> int:
@@ -513,13 +518,28 @@ def generate_new_game(
     # overwritten coordinate's race_grid entry is already the special
     # race by this point, so it's naturally skipped with no extra
     # bookkeeping.
+    #
+    # Phase 799 (backlog #22, closes it in full): the same loop also
+    # builds recruit2_grid, `Desktop/SECONDARMY.md`'s own real B-then-F-
+    # then-helper chain (`initial_armies.py humanoid_second_slot()`).
+    # `effective_sea_neighbors` is computed fresh here, per land
+    # province, the same way the tax loop above already computes it for
+    # Sea provinces (`coast_score()`/`compute_edge_score()`) -- it was
+    # never needed for land tax, only for this second-slot Fleet check.
     recruit1_grid: dict[HexCoord, ArmyType] = {}
+    recruit2_grid: dict[HexCoord, ArmyType] = {}
     for coord, terrain in grid.items():
         if coord in king_home_set:
             continue
         race = race_grid[coord]
         if race in _HUMANOID_RACES:
             recruit1_grid[coord] = humanoid_first_slot(terrain, race, coord.x, coord.y, rng)
+            coast = coast_score(coord, grid, bounds)
+            is_edge_row = coord.y in (0, bounds.height - 1)
+            edge = compute_edge_score(coast, is_edge_row, rng)
+            second = humanoid_second_slot(terrain, race, coord.x, coord.y, tax_grid[coord], edge, rng)
+            if second is not None:
+                recruit2_grid[coord] = second
 
     for king in kings:
         home_coord = home_coord_by_king[king.leader_id]
@@ -616,7 +636,7 @@ def generate_new_game(
             recruit_type_2 = second_recruit_slot(terrain, rng, naval=naval)
             owner_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
             army_types = build_initial_armies(
-                recruit_type_1, recruit_type_2, KING_HOME_BUDGET, strength_of=_king_home_strength_of(rng)
+                recruit_type_1, recruit_type_2, KING_HOME_BUDGET, strength_of=_elephants_aware_strength_of(rng)
             )
             # Phase 428: every King Home starts 100% explored (confirmed
             # verbatim -- "Expl% 100%" -- across four independent real
@@ -637,12 +657,18 @@ def generate_new_game(
             # Phase 797 (backlog #22, land-side half): an ordinary
             # (non-Home, non-special-race) humanoid province -- mirrors
             # the SPECIAL_RACE_BASE_COUNT branch's own exact shape.
-            # recruit_type_2/owner_kingdom_id stay None, matching every
-            # other non-Home, non-owned province today.
+            # owner_kingdom_id stays None, matching every other non-Home,
+            # non-owned province today. Phase 799 (backlog #22, closes it
+            # in full): recruit_type_2 now comes from recruit2_grid, the
+            # real "ordinary" (non-Fleet) second-slot army type or Fleet
+            # itself -- `Desktop/SECONDARMY.md`.
             recruit_type_1 = recruit1_grid.get(coord)
             if recruit_type_1 is not None:
+                recruit_type_2 = recruit2_grid.get(coord)
                 budget = ordinary_humanoid_budget(tax, rng)
-                army_types = build_initial_armies(recruit_type_1, None, budget)
+                army_types = build_initial_armies(
+                    recruit_type_1, recruit_type_2, budget, strength_of=_elephants_aware_strength_of(rng)
+                )
 
         game_state.provinces[coord] = ProvinceState(
             coord=coord,
