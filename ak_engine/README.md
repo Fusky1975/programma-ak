@@ -32745,6 +32745,42 @@ Test count: 6678 -> 6684 (net +6). Full suite verified green (unchanged,
 6678) before touching a single test; every new test passed on the first
 run.
 
+**Phase 799** -- `Desktop/SECONDARMY.md` (2026-09-14, a disassembly
+continuing the same `0B57:9CD8` routine Phase 776/797/798 already
+cite) closes backlog #22 in full: the genuinely-unsourced "ordinary"
+(non-Fleet) second recruit slot army type. Its own worked "B" gate
+table matches the already-shipped `second_slot_gate()`'s own
+`min(tax,8)/8` exactly, confirming it's the identical gate; its base-
+draw ordinals (5-10) match `models/army_type.py ARMY_TYPE_BY_ORDINAL`
+exactly (Lt Cavalry/Hvy Cavalry/Chariots/Elephants/Camel Corps/
+Wargriders), needing no new lookup table. New `worldgen/initial_
+armies.py ordinary_second_army()` (the base LC/HC/CH draw, always
+consumed even when overwritten, then real Orcish->Wargriders/Jungle-
+>Elephants/Desert->Camel Corps/Plains-Mtns-on-rows-2,3,5,6->Camel Corps
+substitutions in the confirmed fixed order; Forest never substitutes)
+and `humanoid_second_slot()` (combining it with the already-real,
+never-before-called `second_slot_gate()`/`fleet_second_slot_gate()`
+into the full B-then-F-then-helper chain). Wired into `generate_new_
+game.py`'s own `recruit1_grid` pass (now also building `recruit2_grid`,
+computing `effective_sea_neighbors` fresh per land province -- never
+needed for land tax before now). Rohan, Swamp, and this same helper's
+own Sea-forcing sub-branch stay out of scope, for the same reasons
+already established for `humanoid_first_slot()`/`fleet_second_slot_
+gate()`. Also fixes a real, pre-existing gap this wiring exposed:
+`build_initial_armies()`'s default `strength_of` has no `BASE_STRENGTH`
+entry for `ArmyType.ELEPHANTS` (rulebook "variable" Str) -- previously
+only King Home's own second slot could reach Elephants, via a
+dedicated `_king_home_strength_of()` closure (Phase 427); generalized
+and renamed to `_elephants_aware_strength_of()`, reused for ordinary
+humanoid provinces too. Test count: 6684 -> 6698 (net +14). Full suite
+verified green (unchanged, 6684) before touching a single test; 2
+pre-existing `generate_new_game(seed=1)`-tuned tests in `test_use_mi_
+item_creation_integration.py` needed re-seeding/re-targeting -- the
+same class of shift Phase 426/427/797 already caused, found and fixed
+via the standing non-breaking run, not assumed. This closes the entire
+COASTFLEET.md/AKGEN-0xEB8A.md/SECONDARMY.md investigation -- nothing
+remains open in backlog item #22.
+
 ## Setup
 
 ```
