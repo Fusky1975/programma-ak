@@ -591,6 +591,88 @@ def test_evaluate_election_call_no_kingdoms_is_a_safe_no_op():
     assert outcome.election_scheduled_next_turn is False
 
 
+# -- Phase 800: caller_percent (REPORTS.PAS's own real `vote_perc`) -------
+
+
+def test_evaluate_election_call_reports_the_caller_percentage():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 30)
+    give_tax(state, 2, HexCoord(1, 1), 30)
+    give_tax(state, 3, HexCoord(2, 2), 40)
+
+    outcome = evaluate_election_call(state, requesting_kingdom_ids={1, 2}, current_turn=5)
+
+    # Kingdoms 1+2 called for a vote: (30+30)/100 = 60%.
+    assert outcome.caller_percent == 60
+
+
+def test_evaluate_election_call_caller_percentage_is_zero_with_no_requesters():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 60)
+    give_tax(state, 2, HexCoord(1, 1), 20)
+    give_tax(state, 3, HexCoord(2, 2), 20)
+
+    # Immediate-coronation branch -- caller_percent is still computed
+    # (unconditionally, per the real source's own independent check),
+    # but nobody requested anything, so it's 0.
+    outcome = evaluate_election_call(state, requesting_kingdom_ids=set(), current_turn=5)
+
+    assert outcome.caller_percent == 0
+
+
+def test_evaluate_election_call_caller_percentage_is_zero_when_world_total_is_zero():
+    state = GameState()
+
+    outcome = evaluate_election_call(state, requesting_kingdom_ids=set(), current_turn=5)
+
+    assert outcome.caller_percent == 0
+
+
+def test_process_election_turn_scheduling_branch_reports_the_caller_percentage():
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 30)
+    give_tax(state, 2, HexCoord(1, 1), 30)
+    give_tax(state, 3, HexCoord(2, 2), 40)
+    headers = {1: _header(VOTE_TURN_SENTINEL), 2: _header(VOTE_TURN_SENTINEL), 3: _header()}
+
+    outcome = process_election_turn(state, headers, current_turn=5)
+
+    assert isinstance(outcome, ElectionCallOutcome)
+    assert outcome.caller_percent == 60
+
+
+def test_process_election_turn_tally_computes_this_turns_own_caller_percentage():
+    # `vote_perc` is computed fresh every turn, independent of `req_vote`'s
+    # own state -- even on the exact turn a pending vote is tallied, a
+    # fresh (redundant, since a vote is already pending) request this same
+    # turn still moves the figure, sourced from *this* turn's own headers,
+    # not whatever set of Kingdoms originally scheduled the pending vote.
+    state = make_state()
+    state.election_pending_turn = 6
+    give_tax(state, 1, HexCoord(0, 0), 60)
+    give_tax(state, 2, HexCoord(1, 1), 40)
+    headers = {1: _header(kprevgold=1), 2: _header(kprevgold=VOTE_TURN_SENTINEL)}
+
+    result = process_election_turn(state, headers, current_turn=6)
+
+    assert isinstance(result, ElectionResult)
+    # Kingdom 1's own header is a real ballot (candidate #1), not a vote
+    # request -- only Kingdom 2 (weight 40) requested this turn: 40/100 = 40%.
+    assert result.caller_percent == 40
+
+
+def test_process_election_turn_tally_caller_percentage_is_zero_with_no_requesters_this_turn():
+    state = make_state()
+    state.election_pending_turn = 6
+    give_tax(state, 1, HexCoord(0, 0), 60)
+    give_tax(state, 2, HexCoord(1, 1), 40)
+    headers = {1: _header(kprevgold=1), 2: _header(kprevgold=1)}
+
+    result = process_election_turn(state, headers, current_turn=6)
+
+    assert result.caller_percent == 0
+
+
 # -- Phase 466: process_election_turn() -----------------------------------
 
 

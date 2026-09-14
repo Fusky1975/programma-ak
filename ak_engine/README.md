@@ -32781,6 +32781,36 @@ via the standing non-breaking run, not assumed. This closes the entire
 COASTFLEET.md/AKGEN-0xEB8A.md/SECONDARMY.md investigation -- nothing
 remains open in backlog item #22.
 
+### Phase 800: backlog #16's last residual -- the real caller-percentage election notice
+
+Closes the last open piece of backlog item #16 (`[[project_genuinely_
+blocked_backlog_2026_08_29]]`): REPORTS.PAS's own "Note: Kings owning
+X% of the world's tax base called for an election." notice
+(`REPORTS.PAS:1937-1944`), left open at Phase 778 because `process_
+election_turn()`'s own tally branch never had access to that turn's
+`kingdom_headers` -- a plumbing gap, not a missing source. No real
+`vote_perc` assignment site survives in any available `.PAS` file (the
+same "missing main program" class of gap as `Ofc_Pts`), but the
+formula is unambiguous from the surrounding, already-shipped code: the
+same `_election_callers_weight()`-share-of-`_world_vote_weight()` sum
+`callers_qualify` already computes and discards. New `_caller_percent()`
+helper in `turn/emperor_election.py`; `ElectionCallOutcome`/
+`ElectionResult` both gain a `caller_percent: int = 0` field. Unlike
+`alignment_trigger` (Phase 778, carried forward from the scheduling
+turn), `caller_percent` is recomputed fresh every turn from *that
+turn's own* `kingdom_headers` -- matching the real source's own `IF
+vote_perc > 0` check, which runs independently of `req_vote`'s state,
+even on the exact turn a pending vote is tallied. `process_election_
+turn()` now computes `requesting_kingdom_ids` once, up front, reused by
+both its tally and scheduling branches (previously computed only in
+the scheduling branch). `report/turn_report.py describe_election_
+status_report()` renders the new line right after the decaying-
+threshold hint, before the alignment-vote-share/bloc-trigger lines --
+matching REPORTS.PAS's own real line order. Test count: 6698 -> 6708
+(net +10). Full suite verified green (unchanged, 6698) before touching
+a single test; every new test passed on the first run. This closes
+backlog item #16 in full -- nothing remains open on it.
+
 ## Setup
 
 ```

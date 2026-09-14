@@ -56,6 +56,18 @@ real per-turn `ballots` from it, called live every turn from
 `orchestrator.py process_turn()` (`election_outcome = process_
 election_turn(state, kingdom_headers, state.turn_number)`).
 
+**Phase 800** closes backlog #16's own last residual: `ElectionCallOutcome`/
+`ElectionResult` now both carry `caller_percent` -- REPORTS.PAS:1937-1944's
+own "Note: Kings owning X% of the world's tax base called for an election."
+figure, derived from `_election_callers_weight()`'s share of `_world_vote_
+weight()` (see `ElectionCallOutcome.caller_percent`'s own docstring). This
+was previously left open because `process_election_turn()`'s own tally
+branch never had access to `kingdom_headers` for the current turn --
+`orchestrator.py process_turn()` already threads `kingdom_headers` into
+every `process_election_turn()` call (see above), so the real fix was
+computing `requesting_kingdom_ids` once, up front, and reusing it in both
+branches instead of only the scheduling one.
+
 ## Requesting a vote
 `can_request_election()` -- a single King or an "alleanza di Re" (read
 here as one connected component of `GameState.allied_kingdoms`, the same
@@ -371,6 +383,16 @@ class ElectionResult:
     # bloc trigger -- see `GameState.election_pending_alignment_
     # trigger`'s own docstring for the full sourcing.
     alignment_trigger: Alignment | None = None
+    # Phase 800 (backlog #16's own last residual): REPORTS.PAS's own
+    # `vote_perc` figure, re-derived fresh for the tally turn itself via
+    # `_caller_percent()` -- see `ElectionCallOutcome.caller_percent`'s
+    # own docstring. Unlike `alignment_trigger` above, this is NOT a
+    # value carried forward from the scheduling turn -- the real source
+    # computes it fresh every turn regardless of `req_vote`'s own state,
+    # so `process_election_turn()` recomputes it at tally time from that
+    # same turn's own `kingdom_headers`, rather than persisting anything
+    # new on `GameState`.
+    caller_percent: int = 0
 
 
 def tally_emperor_vote(state: GameState, ballots: dict[int, int], current_turn: int) -> ElectionResult:
@@ -561,6 +583,17 @@ class ElectionCallOutcome:
     immediate_coronation_kingdom_id: int | None
     callers_qualify: bool
     alignment_trigger: Alignment | None
+    # Phase 800 (backlog #16's own last residual): REPORTS.PAS:1937-1944's
+    # own `vote_perc` -- "Note: Kings owning X% of the world's tax base
+    # called for an election." No assignment site for `vote_perc` survives
+    # in any available `.PAS` file (same "missing main program" class of
+    # gap as `Ofc_Pts`), but its own worked formula is unambiguous from
+    # the surrounding real code: `_election_callers_weight()`'s share of
+    # `_world_vote_weight()`, the exact same step-3 sum `callers_qualify`
+    # already uses -- see `_caller_percent()`. Computed unconditionally
+    # (not gated on `callers_qualify` reaching the real 55% threshold),
+    # matching the real source's own independent `IF vote_perc > 0` check.
+    caller_percent: int = 0
 
     @property
     def election_scheduled_next_turn(self) -> bool:
@@ -575,6 +608,25 @@ class ElectionCallOutcome:
         return self.immediate_coronation_kingdom_id is None and (
             self.callers_qualify or self.alignment_trigger is not None
         )
+
+
+def _caller_percent(state: GameState, requesting_kingdom_ids: set[int]) -> int:
+    """REPORTS.PAS:1937-1944's own `vote_perc` -- see `ElectionCallOutcome.
+    caller_percent`'s own docstring for the full sourcing. Percentage
+    rounding uses `round()`, the same "no source, reasonable default"
+    choice already established for this module's own comparable alignment-
+    vote-share figures (`report/turn_report.py describe_election_status_
+    report()`'s own Phase 652 note) -- `vote_perc`'s own real Trunc-vs-
+    round convention has no surviving assignment site to check against.
+    """
+
+    world_total = _world_vote_weight(state)
+    if world_total <= 0:
+        return 0
+    callers_weight = _election_callers_weight(state, requesting_kingdom_ids)
+    if callers_weight <= 0:
+        return 0
+    return round(callers_weight * 100 / world_total)
 
 
 def evaluate_election_call(
@@ -633,13 +685,16 @@ def evaluate_election_call(
     if leader is not None:
         leader_kingdom_id, leader_weight = leader
         if leader_weight * 100 >= threshold_percent * world_total:
-            return ElectionCallOutcome(world_total, leader_kingdom_id, False, None)
+            return ElectionCallOutcome(
+                world_total, leader_kingdom_id, False, None, _caller_percent(state, requesting_kingdom_ids)
+            )
 
     callers_weight = _election_callers_weight(state, requesting_kingdom_ids)
     callers_qualify = callers_weight * 100 >= threshold_percent * world_total
     alignment_trigger = _alignment_auto_trigger(state, current_turn, world_total)
+    caller_percent = round(callers_weight * 100 / world_total) if callers_weight > 0 else 0
 
-    return ElectionCallOutcome(world_total, None, callers_qualify, alignment_trigger)
+    return ElectionCallOutcome(world_total, None, callers_qualify, alignment_trigger, caller_percent)
 
 
 def process_election_turn(
@@ -682,7 +737,12 @@ def process_election_turn(
       pending_turn` -- report/turn_report.py describe_election_status_
       report()`'s own real REPORTS.PAS notice needs it at exactly this
       moment, since it would otherwise be gone by report-generation
-      time.
+      time. Phase 800: `result.caller_percent` is also set here, from
+      `_caller_percent(state, requesting_kingdom_ids)` computed against
+      *this same tally turn's own* `kingdom_headers` -- unlike `alignment_
+      trigger`, this is not a value carried forward from the scheduling
+      turn (the real source computes `vote_perc` fresh every turn,
+      independent of `req_vote`'s own state).
     - **Otherwise**: evaluate whether this turn crowns someone outright
       or schedules a vote for `current_turn + 1`
       (`evaluate_election_call()`), using each Kingdom's own `kprevgold`
@@ -695,6 +755,10 @@ def process_election_turn(
       for the full sourcing.
     """
 
+    requesting_kingdom_ids = {
+        kingdom_id for kingdom_id, header in kingdom_headers.items() if header.is_vote_turn()
+    }
+
     if state.election_pending_turn == current_turn:
         ballots = {
             kingdom_id: header.kprevgold
@@ -703,13 +767,11 @@ def process_election_turn(
         }
         result = resolve_emperor_election(state, ballots, current_turn)
         result.alignment_trigger = state.election_pending_alignment_trigger
+        result.caller_percent = _caller_percent(state, requesting_kingdom_ids)
         state.election_pending_turn = None
         state.election_pending_alignment_trigger = None
         return result
 
-    requesting_kingdom_ids = {
-        kingdom_id for kingdom_id, header in kingdom_headers.items() if header.is_vote_turn()
-    }
     outcome = evaluate_election_call(state, requesting_kingdom_ids, current_turn)
     if outcome.immediate_coronation_kingdom_id is not None:
         state.emperor_kingdom_id = outcome.immediate_coronation_kingdom_id

@@ -12598,6 +12598,12 @@ def describe_final_standings_report(state: GameState) -> list[str]:
 # procedure's own tail end).
 _ELECTION_STATUS_HEADER = "ELECTION STATUS"
 _ELECTION_THRESHOLD_HINT_TEMPLATE = "Note: it requires only {percent}% of world taxbase to become Emperor next turn."
+# Phase 800 (backlog #16's own last residual): REPORTS.PAS:1937-1944's own
+# caller-percentage notice, transcribed verbatim -- fires unconditionally,
+# independent of `req_vote`'s own state (see `ElectionCallOutcome.caller_
+# percent`'s own docstring for the formula this project derives it from,
+# since no assignment site for the real `vote_perc` survives anywhere).
+_CALLER_PERCENT_TEMPLATE = "Note: Kings owning {percent}% of the world's tax base called for an election."
 _ALIGNMENT_VOTE_SHARE_TEMPLATE = (
     "The {alignment} alignment now controls {percent}% of the world's votes (taxbase + (5 x office/treasure points))."
 )
@@ -12674,14 +12680,22 @@ def describe_election_status_report(
     weight alone -- matching the real source's own independent gating
     of the two lines.
 
-    **Explicitly deferred, not attempted this phase**: the caller-
-    percentage notice (`REPORTS.PAS:1937-1944`, "Note: Kings owning X%
-    of the world's tax base called for an election.") needs `kingdom_
-    headers` (which Kings requested a vote *this* turn) -- data that's
-    never stored on `GameState` and is discarded right after `process_
-    election_turn()` returns; wiring it needs a materially larger
-    plumbing change (threading `kingdom_headers` through to the report
-    layer), a real, separate, still-open item. The real Pascal `catchup`
+    **Caller-percentage notice** (`REPORTS.PAS:1937-1944`, Phase 800,
+    backlog #16's own last residual): "Note: Kings owning X% of the
+    world's tax base called for an election." Shown whenever `election_
+    outcome.caller_percent > 0` -- for either a real `ElectionResult`
+    (tally turn) or an `ElectionCallOutcome` (scheduling turn), since the
+    real source's own `IF vote_perc > 0` check is independent of `req_
+    vote`'s own state, unlike the alignment-bloc-trigger notice below.
+    `caller_percent` is computed by `turn/emperor_election.py`, not here
+    -- see `ElectionCallOutcome.caller_percent`'s own docstring for the
+    full derivation (no real `vote_perc` assignment site survives, so
+    this project derives it from `_election_callers_weight()`'s share of
+    `_world_vote_weight()`, the same step-3 sum `callers_qualify` uses).
+    Absent entirely when `election_outcome` is `None` (this composer
+    called with no data to show), matching every other notice here.
+
+    The real Pascal `catchup`
     ("this report is being regenerated for an already-passed turn")
     gates this whole block in the source; `ak_engine` has no `catchup`
     concept anywhere, so it's treated as always `False` (every turn
@@ -12699,6 +12713,9 @@ def describe_election_status_report(
         threshold = election_threshold_percent(state.turn_number)
         if threshold < 55:
             lines.append(_ELECTION_THRESHOLD_HINT_TEMPLATE.format(percent=threshold))
+
+    if isinstance(election_outcome, (ElectionResult, ElectionCallOutcome)) and election_outcome.caller_percent > 0:
+        lines.append(_CALLER_PERCENT_TEMPLATE.format(percent=election_outcome.caller_percent))
 
     alignment = state.kingdoms[kingdom_id].alignment
     bloc_weights = alignment_bloc_vote_weights(state)

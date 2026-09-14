@@ -11377,6 +11377,75 @@ def test_describe_election_status_report_no_vote_held_line_without_a_real_tally(
     assert not any("will be held" in line for line in lines)
 
 
+# -- Phase 800: describe_election_status_report()'s caller-percentage notice --
+
+
+def test_describe_election_status_report_caller_percentage_from_a_call_outcome():
+    state = _armies_state()
+    call_outcome = ElectionCallOutcome(
+        world_total=10,
+        immediate_coronation_kingdom_id=None,
+        callers_qualify=False,
+        alignment_trigger=None,
+        caller_percent=60,
+    )
+
+    lines = describe_election_status_report(state, 1, call_outcome)
+
+    assert "Note: Kings owning 60% of the world's tax base called for an election." in lines
+
+
+def test_describe_election_status_report_caller_percentage_from_a_tally_result():
+    state = _armies_state()
+    outcome = ElectionResult(
+        elected_emperor_kingdom_id=None,
+        votes_by_candidate={},
+        total_votes_cast=0,
+        ballots={},
+        alignment_trigger=None,
+        caller_percent=40,
+    )
+
+    lines = describe_election_status_report(state, 1, outcome)
+
+    assert "Note: Kings owning 40% of the world's tax base called for an election." in lines
+
+
+def test_describe_election_status_report_omits_caller_percentage_line_when_zero():
+    state = _armies_state()
+    call_outcome = ElectionCallOutcome(
+        world_total=10, immediate_coronation_kingdom_id=None, callers_qualify=False, alignment_trigger=None
+    )
+
+    lines = describe_election_status_report(state, 1, call_outcome)
+
+    assert not any("called for an election" in line for line in lines)
+
+
+def test_describe_election_status_report_caller_percentage_line_precedes_the_alignment_lines():
+    state = _armies_state()
+    state.provinces[HexCoord(0, 0)].tax = 10
+    state.kingdoms[1].alignment = Alignment.GOOD
+    outcome = ElectionResult(
+        elected_emperor_kingdom_id=None,
+        votes_by_candidate={},
+        total_votes_cast=0,
+        ballots={},
+        alignment_trigger=Alignment.GOOD,
+        caller_percent=60,
+    )
+
+    lines = describe_election_status_report(state, 1, outcome)
+
+    assert lines == [
+        "ELECTION STATUS",
+        "Note: Kings owning 60% of the world's tax base called for an election.",
+        "The Good alignment now controls 100% of the world's votes (taxbase + (5 x office/treasure points)).",
+        "The Good alignment controls 100% of the world's votes.",
+        "Consquently, a vote for World Emperor will be held this turn.",
+    ]
+
+
 # -- Phase 656: describe_election_report() -- ELECTION REPORT --
 
 
