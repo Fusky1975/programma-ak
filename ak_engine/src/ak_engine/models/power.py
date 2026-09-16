@@ -178,6 +178,17 @@ condition_terms()`, wired the same phase). `PayUp`/`DrainSkill`/
 not contradicted by this finding. This same evidence also fixed a real
 transcription gap in `NEED_KING`'s own text (see that entry's own
 inline comment for the `^A` marker fix).
+
+**Phase 804 addendum** -- Phase 782's own `ORAC_POWER` "has armies" text
+above is itself a real mis-attribution, corrected by `Desktop/POWMSG.md`'s
+own Approfondimento 10 (`AK.OVR 0x12423`, byte-verified disassembly):
+the real compiled routine never dispatches a single summary sentence for
+this case at all -- it loops every commanded army and calls `_ArmSay`
+once per army (SAY.PAS story-code 3355, `"[ leads/commands ^L=."`), a
+real per-army enumeration, not a plain pointer sentence. See `report/
+turn_report.py describe_feature_power_oracle_power_armies()` for the
+real narration this supersedes Phase 782's own single-sentence text
+with.
 """
 
 from __future__ import annotations

@@ -32995,6 +32995,50 @@ on the first run. This closes backlog #7's PCOND `NeedKing`/`SameAlign`/
 Special-column display and ORAC_POWER's own real per-army narration
 remain open on item #7.
 
+### Phase 804: `Power.ORAC_POWER`'s own real "has armies" narration (`_ArmSay`, per-army enumeration)
+
+`Desktop/POWMSG.md`'s own Approfondimento 10 (`AK.OVR 0x12423`, byte-
+verified disassembly) confirms Phase 782's own `_POWMSG_ORAC_POWER_HAS_
+ARMIES` sentence ("As an example, I will show you what [ is up to (see
+the General Intelligence Report).") is a real mis-attribution: the real
+compiled routine never dispatches any POWMSG line for the has-armies
+case at all. It sets the target-character context, loops every army
+slot (skipping the sentinel `255`), and for each army whose own
+commander matches the target person, calls `_ArmSay` (`SAY.PAS`
+story-code `3355`, template `"[ leads/Rcommands ^L=."`) -- once PER
+MATCHING ARMY, never stopping after the first or computing an aggregate
+strength.
+
+The `^L=` marker is not new -- it's the exact canonical example already
+quoted in `report/prose.py`'s own module docstring, with an existing
+real consumer (`render_recruit_hired_mercenary()`, Phase 595)
+establishing the "one sentence per unit, single-item list" pattern
+followed here. `models/army_naming.py make_army_name()` (Phase 149)
+resolves each army's own display name via the already-existing `turn_
+report.py _trail_army_name(state, army)` helper (built for Trail's own
+narration, same module) -- reused directly, not duplicated a third
+time.
+
+Since `describe_feature_power_attempt()` is a single `str | None`
+composer, it can't express a variable-length list of lines -- the
+established pattern for exactly this situation (`describe_feature_
+power_condition_terms()`'s own precedent) is a separate, additive
+composer: new `describe_feature_power_oracle_power_armies()`, wired
+into `describe_search()` via `lines.extend(...)` right after the
+existing `power_line` append. `describe_feature_power_attempt()`'s own
+`ORAC_POWER` branch now returns `None` for the has-armies case,
+superseding Phase 782's own single-sentence text (itself already a
+correction of Phase 619's project-original "commands N armies: ..."
+guess).
+
+Test count: 6743 -> 6752 (net +9). Full suite verified green
+(unchanged, 6743) before touching a single test; every new test passed
+on the first run. This closes backlog #7's own ORAC_POWER narration
+residual in full -- only the ADVENTURE report's own fdisc-2/3 Special-
+column display (blocked on the unresolved `/F`/`/S` odd-even alternate-
+name puzzle, Phase 92) and the flagged `ORAC_ALIGN` `$o`/`outab`-vs-
+`outname` residual (Phase 619, PCCOND.md's own finding) remain open.
+
 ## Setup
 
 ```

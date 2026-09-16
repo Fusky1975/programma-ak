@@ -126,6 +126,7 @@ from ak_engine.report.turn_report import (
     describe_feature_power_condition_satisfied,
     describe_feature_power_condition_terms,
     describe_feature_power_needs_more_info,
+    describe_feature_power_oracle_power_armies,
     describe_search,
     _search_province_name,
     describe_steal,
@@ -7070,21 +7071,73 @@ def test_describe_feature_power_attempt_orac_align():
 
 
 def test_describe_feature_power_attempt_orac_power_with_armies():
-    # Phase 782: the real POWMSG.X2 line 18 text -- a plain pointer to
-    # the General Intelligence Report, not a literal army listing.
+    # Phase 804: the real per-army `_ArmSay` enumeration supersedes
+    # Phase 782's own single "As an example..." sentence -- this
+    # composer's own single-string contract can't express that list, so
+    # it now returns None; describe_feature_power_oracle_power_armies()
+    # is the only source of narration for this outcome.
     state = _sa_state()
     state.add_army(
         ArmyState(army_id=1, kingdom_id=1, army_type=ArmyType.BOWMEN, quality=Quality.AVERAGE, location=HexCoord(1, 1), commanded_by=2)
     )
     outcome = FeaturePowerAttemptResult(power=Power.ORAC_POWER, applied=True, oracle_target_leader_id=2, oracle_armies=tuple(state.armies.values()))
     line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=state, character_name="King Testerman")
-    assert line == "As an example, I will show you what Sir Roland is up to (see the General Intelligence Report)."
+    assert line is None
 
 
 def test_describe_feature_power_attempt_orac_power_no_armies():
     outcome = FeaturePowerAttemptResult(power=Power.ORAC_POWER, applied=True, oracle_target_leader_id=2, oracle_armies=())
     line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 10), state=_sa_state(), character_name="King Testerman")
     assert "no armies" in line or "no soldiers" in line
+
+
+def _army(army_id, army_type=ArmyType.BOWMEN, commanded_by=2):
+    return ArmyState(
+        army_id=army_id, kingdom_id=1, army_type=army_type, quality=Quality.AVERAGE, location=HexCoord(1, 1), commanded_by=commanded_by
+    )
+
+
+def test_describe_feature_power_oracle_power_armies_single_army_one_line():
+    state = _sa_state()
+    state.add_army(_army(1))
+    outcome = FeaturePowerAttemptResult(
+        power=Power.ORAC_POWER, applied=True, oracle_target_leader_id=2, oracle_armies=(state.armies[1],)
+    )
+    lines = describe_feature_power_oracle_power_armies(outcome, state, ScriptedRandom([0.1]))
+    assert lines == ["Sir Roland leads 1st Bowmen."]
+
+
+def test_describe_feature_power_oracle_power_armies_two_armies_two_separate_lines():
+    state = _sa_state()
+    state.add_army(_army(1, ArmyType.BOWMEN))
+    state.add_army(_army(2, ArmyType.LT_CAVALRY))
+    outcome = FeaturePowerAttemptResult(
+        power=Power.ORAC_POWER, applied=True, oracle_target_leader_id=2, oracle_armies=(state.armies[1], state.armies[2])
+    )
+    lines = describe_feature_power_oracle_power_armies(outcome, state, ScriptedRandom([0.1, 0.9]))
+    assert lines == ["Sir Roland leads 1st Bowmen.", "Sir Roland commands 2nd Lt Cav."]
+
+
+@pytest.mark.parametrize(
+    "outcome_kwargs",
+    [
+        {"power": Power.ORAC_POWER, "applied": False, "oracle_target_leader_id": 2, "oracle_armies": (_army(1),)},
+        {"power": Power.ORAC_POWER, "applied": True, "oracle_target_leader_id": None, "oracle_armies": (_army(1),)},
+        {"power": Power.ORAC_POWER, "applied": True, "oracle_target_leader_id": 2, "oracle_armies": None},
+        {"power": Power.ORAC_POWER, "applied": True, "oracle_target_leader_id": 2, "oracle_armies": ()},
+        {"power": Power.ORAC_ALIGN, "applied": True, "oracle_target_leader_id": 2, "oracle_armies": (_army(1),)},
+    ],
+)
+def test_describe_feature_power_oracle_power_armies_returns_empty_for_every_ineligible_case(outcome_kwargs):
+    outcome = FeaturePowerAttemptResult(**outcome_kwargs)
+    assert describe_feature_power_oracle_power_armies(outcome, _sa_state(), ScriptedRandom([0.1] * 5)) == []
+
+
+def test_describe_feature_power_oracle_power_armies_state_none_returns_empty():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.ORAC_POWER, applied=True, oracle_target_leader_id=2, oracle_armies=(_army(1),)
+    )
+    assert describe_feature_power_oracle_power_armies(outcome, None, ScriptedRandom([0.1])) == []
 
 
 def test_describe_feature_power_attempt_orac_office_vacant():
@@ -7286,6 +7339,26 @@ def test_describe_search_omits_the_feature_power_line_when_none_recovered():
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
 
     assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+def test_describe_search_orac_power_has_armies_renders_per_army_lines_with_no_summary_sentence():
+    # Phase 804: describe_feature_power_attempt() itself contributes no
+    # power_line for this outcome (returns None) -- the real narration
+    # comes entirely from describe_feature_power_oracle_power_armies().
+    state = _sa_state()
+    state.add_army(_army(1, ArmyType.BOWMEN))
+    outcome = FeaturePowerAttemptResult(
+        power=Power.ORAC_POWER, applied=True, oracle_target_leader_id=2, oracle_armies=(state.armies[1],)
+    )
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, feature_power_outcome=outcome)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, state=state, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Sir Roland leads 1st Bowmen.",
+    ]
 
 
 # -- Phase 790: describe_feature_power_needs_more_info() (SAY.PAS `_EDesc` "needy") --

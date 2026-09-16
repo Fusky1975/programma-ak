@@ -2863,11 +2863,15 @@ _POWMSG_ORAC_ALIGN_SUCCESS = "[ is ^A $o character."
 _POWMSG_ORAC_POWER_NO_ARMIES = (
     "[ is {perhaps/RI_think }not a general/Rmilitary_man, for/Ras [ leads/Rcommands no armies/Rsoldiers."
 )
-# Phase 782: POWMSG.X2 line 18 -- confirmed, byte-verified, to need no
-# General Intelligence Report cross-reference at all (a plain pointer
-# sentence, not literal army data); supersedes the project-original
-# "commands N armies: ..." sentence Phase 619 shipped for lack of this.
-_POWMSG_ORAC_POWER_HAS_ARMIES = "As an example, I will show you what [ is up to (see the General Intelligence Report)."
+# Phase 804 (Desktop/POWMSG.md Approfondimento 10, AK.OVR 0x12423,
+# byte-verified): the real compiled routine never emits a single summary
+# sentence for the has-armies case at all -- it calls `_ArmSay` (SAY.PAS
+# story-code 3355) once per commanded army, looping every army slot
+# without stopping at the first match or computing an aggregate.
+# Supersedes Phase 782's own "As an example, I will show you..." sentence,
+# a real mis-attribution confirmed by disassembling the routine directly
+# rather than only matching text in the raw POWMSG.X2 catalog.
+_POWMSG_ORAC_POWER_ARM_SAY = "[ leads/Rcommands ^L=."
 _POWMSG_ORAC_GOLD_SUCCESS = "[ has a treasury of # gold."
 _POWMSG_ORAC_OFFICE_SUCCESS = "The current holder of the office of $O is [ (#), who is loyal to $K's kingdom."
 _POWMSG_ORAC_TREAS_SUCCESS = "The treasure in the & is the \\."
@@ -3104,13 +3108,17 @@ def describe_feature_power_attempt(
         values["["] = target.name
         if not outcome.oracle_armies:
             return render(_POWMSG_ORAC_POWER_NO_ARMIES, values, rng=rng)
-        # Phase 782: the real POWMSG.X2 line 18 text -- a plain pointer
-        # to the General Intelligence Report, not a literal army listing
-        # -- confirmed against the raw file directly. Supersedes this
-        # branch's own earlier project-original "commands N armies: ..."
-        # sentence (Phase 619), which was invented only because that
-        # earlier phase believed no usable id survived for this case.
-        return render(_POWMSG_ORAC_POWER_HAS_ARMIES, values, rng=rng)
+        # Phase 804 (Desktop/POWMSG.md Approfondimento 10, byte-verified
+        # disassembly of AK.OVR 0x12423): the real routine never emits a
+        # single summary sentence for the has-armies case -- it calls
+        # `_ArmSay` once per commanded army instead. This composer's own
+        # contract is a single string, not a variable-length list, so the
+        # real narration for this case moves entirely to the separate
+        # `describe_feature_power_oracle_power_armies()` composer below;
+        # this branch returns `None` here, superseding Phase 782's own
+        # single-sentence text (itself already a correction of Phase
+        # 619's project-original "commands N armies: ..." guess).
+        return None
 
     if outcome.power is Power.ORAC_OFFICE:
         if not outcome.applied or outcome.oracle_office is None:
@@ -3404,6 +3412,35 @@ def describe_feature_power_condition_satisfied(
         return []
     template = MCOND_TEMPLATE[outcome.condition_satisfied]
     return [render(template, _feature_power_values(outcome, character_name), rng=rng)]
+
+
+def describe_feature_power_oracle_power_armies(
+    outcome: FeaturePowerAttemptResult, state: GameState | None, rng: random.Random
+) -> list[str]:
+    """Renders POWMSG.md's own Approfondimento 10 finding for
+    `Power.ORAC_POWER`'s own "has armies" outcome: one real report
+    line per commanded army (`_ArmSay`, SAY.PAS story-code 3355),
+    not a single summary sentence -- see `_POWMSG_ORAC_POWER_ARM_
+    SAY`'s own citation. A separate, additive composer from
+    `describe_feature_power_attempt()` itself (same shape as
+    `describe_feature_power_condition_terms()`) since that
+    function's own contract is one string, not a variable-length
+    list -- its own `ORAC_POWER` branch now returns `None` for this
+    exact case, leaving this function as the only source of
+    narration for it.
+    """
+
+    if outcome.power is not Power.ORAC_POWER or not outcome.applied:
+        return []
+    if outcome.oracle_target_leader_id is None or not outcome.oracle_armies or state is None:
+        return []
+    target = state.leaders.get(outcome.oracle_target_leader_id)
+    if target is None:
+        return []
+    return [
+        render(_POWMSG_ORAC_POWER_ARM_SAY, {"[": target.name}, rng=rng, lists={"=": [_trail_army_name(state, army)]})
+        for army in outcome.oracle_armies
+    ]
 
 
 # The 15 Spell members SPELL_CAST_ANNOUNCEMENT markers, per SPNOTE.X2's own
@@ -10028,6 +10065,11 @@ def describe_search(
         )
         if power_line is not None:
             lines.append(power_line)
+        # Phase 804: ORAC_POWER's own real "has armies" narration (one
+        # `_ArmSay` line per commanded army) -- only ever non-empty when
+        # `power_line` above was `None` for a real ORAC_POWER has-armies
+        # outcome, vacuous for every other power/outcome.
+        lines.extend(describe_feature_power_oracle_power_armies(result.feature_power_outcome, state, rng))
         # Phase 790: the real `_EDesc` "needs more information" pair,
         # for a Scout attempt reaching one of the 8 `SA_ARGUMENT_POWERS`
         # with no real `SA` tactic -- independent of whatever (if

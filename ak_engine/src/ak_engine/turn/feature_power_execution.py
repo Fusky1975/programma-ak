@@ -201,6 +201,14 @@ unconfirmed), and ORAC_POWER's own "has armies" narration (the real
 compiled routine enumerates armies via `_ArmSay`, not the generic
 sentence Phase 782 wired) -- both real, flagged for a possible future
 phase.
+
+Phase 804 addendum: ORAC_POWER's own "has armies" narration above is
+now closed -- see `report/turn_report.py describe_feature_power_
+oracle_power_armies()`, the real per-army `_ArmSay` enumeration
+(Desktop/POWMSG.md Approfondimento 10, byte-verified). No change was
+needed in this module: `oracle_target_leader_id`/`oracle_armies` were
+already the exact data that new composer needed. Only POWMSG.X2 choice
+18's own Illusory-Terrain hypothesis remains open.
 """
 
 from __future__ import annotations
