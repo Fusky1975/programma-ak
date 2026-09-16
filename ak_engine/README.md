@@ -33133,6 +33133,38 @@ behavioral risk. Test count unchanged (6753) -- the fix is a type-hint
 correction with no behavior change, confirmed by re-running the full
 suite before and after.
 
+### Phase 809: second bug sweep -- one real test-coverage gap found and fixed
+
+At the user's direct request to keep searching other parts of the
+codebase, ran `ruff` across several more rule categories not covered by
+Phase 808 (Pylint errors/warnings/conventions, comprehension/implicit-
+string-concat/builtin-shadowing/return-statement/unused-argument rules,
+`__slots__`/print/f-string/perf/logging rules, loop-variable-reassignment/
+closure-capture rules, invalid-escape-sequence/`None`-comparison rules,
+exception-handling anti-patterns, and pytest-specific rules on `tests/`)
+and manually verified every hit rather than trusting the tool's own
+severity labels. The overwhelming majority were confirmed non-bugs:
+`ISC004` (172 hits) is entirely long template strings this project
+deliberately authors as adjacent string literals across multiple lines,
+not a missing comma; `PLC0415` (imports not at module top level) are
+all pre-existing, individually-commented circular-import workarounds;
+`T201` (`print`) is `cli.py`'s own real stdout/stderr output, not
+debug leftovers; the rest (`FLY002`, `PERF401`, `FURB110`, `TRY003`,
+`B008` on an immutable `HexCoord` default) are pure style preferences
+with zero behavioral difference either way.
+
+One real finding: `tests/test_search_execution.py`'s own `test_
+execute_search_use_mi_item_not_owned_by_leader_falls_through_to_melee`
+was missing the `assert result.winner == "leader"` line both of its
+sibling "falls through to Melee" tests have -- a genuine, if minor,
+test-coverage gap (this specific fallback path's own `result.winner`
+value was never actually asserted, only `mock_melee.called`/`item.
+charges`). Added the missing assertion and confirmed it passes against
+the real, already-correct production code -- this closes a coverage
+gap, not a production bug. Test count unchanged (6753, an existing
+test strengthened, not a new one added); full suite re-run before and
+after, green throughout.
+
 ## Setup
 
 ```

@@ -4562,6 +4562,7 @@ def test_execute_search_use_mi_item_not_owned_by_leader_falls_through_to_melee()
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert mock_melee.called
+    assert result.winner == "leader"
     assert item.charges == 3  # untouched -- never resolved as this leader's own item
 
 
