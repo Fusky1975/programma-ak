@@ -1315,7 +1315,15 @@ from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 from ak_engine.models.monster import MONSTER_DESCRIPTION, MONSTER_NAMES, Monster
 from ak_engine.models.office import OFFICE_MIN_POINTS, OFFICE_NAME, Office
-from ak_engine.models.power import MCOND_TEMPLATE, PCOND_TEMPLATE, POWER_DESCRIPTION, Power
+from ak_engine.models.power import (
+    MCOND_TEMPLATE,
+    PCOND_TEMPLATE,
+    POWER_CONDITION_REJECTION_INTRO,
+    POWER_CONDITION_REJECTION_MESSAGE,
+    POWER_DESCRIPTION,
+    Power,
+    PowerCondition,
+)
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
@@ -2825,12 +2833,18 @@ _POWMSG_NEW_SEX_TO_MALE = (
 # block has none of its own). Power-agnostic: any `Power` can be refused
 # by any of these 4 conditions, so these are dispatched once, generically,
 # in `describe_feature_power_attempt()` -- not duplicated per-power.
-_POWMSG_NEED_KING_REFUSED = "Only a King may use the power of the $\\."
+#
+# Phase 803 (`Desktop/PCCOND.md`): `NEED_KING`/`SAME_ALIGN`/`G_TURN`'s own
+# 3 POWMSG-based generic refusal texts here are superseded by real,
+# byte-verified disassembly of the compiled `_NoMeet` dispatcher --
+# `models/power.py POWER_CONDITION_REJECTION_INTRO`/`_MESSAGE` render
+# the real sequence for those 3 conditions instead (see `describe_
+# feature_power_attempt()`'s own dispatch below and `describe_feature_
+# power_condition_terms()`). Only `PayUp`/`DrainSkill`/`DrainCourage`
+# still dispatch through this dict -- `_NoMeet` confirms those 3 have no
+# case of their own at all ("il requisito e' spiegato da PCOND, quando
+# richiesto"), so their own real POWMSG/PCOND text stays untouched here.
 _POWMSG_PAY_UP_REFUSED = "Your Kingdom doesn't have enough gold to use the power of the $\\."
-_POWMSG_SAME_ALIGN_REFUSED = "A Kingdom of your idiotic/Rmisguided alignment may not use the power of the $\\."
-_POWMSG_G_TURN_REFUSED = (
-    "The power of the $\\ has already been used this turn, and cannot be used again until next turn."
-)
 # Phase 782: `Desktop/PCOND.X2` line 8's own real text describes the
 # DRAIN_COURAGE condition's full "terms" (a separate narration point,
 # deliberately not attempted this phase -- see the plan file's own
@@ -2912,11 +2926,13 @@ _POWMSG_CAST_SPELL_ILLUS_TERRAIN_SUCCESS = "As a demonstration, I will change th
 # "insufficient gold" wager-shortfall check (which never sets `condition_
 # refused`) can never collide with `PAY_UP`'s own identically-worded
 # reason here.
+#
+# Phase 803: shrunk to exactly `PayUp`/`DrainSkill`/`DrainCourage` --
+# `NeedKing`/`SameAlign`/`G_Turn` are now dispatched directly in
+# `describe_feature_power_attempt()`, before this dict is ever consulted
+# (see that function's own condition-refusal dispatch below).
 _CONDITION_REFUSAL_TEMPLATES: dict[str, str] = {
-    "only a King may use this power": _POWMSG_NEED_KING_REFUSED,
     "insufficient gold": _POWMSG_PAY_UP_REFUSED,
-    "wrong alignment": _POWMSG_SAME_ALIGN_REFUSED,
-    "already used this gameturn": _POWMSG_G_TURN_REFUSED,
     "insufficient skill levels": _POWMSG_DRAIN_SKILL_REFUSED,
     "a Coward may not use this feature": _PCOND_DRAIN_COURAGE_REFUSED,
 }
@@ -2954,6 +2970,16 @@ def describe_feature_power_attempt(
     `describe_feature_power_needs_more_info()`'s own established
     "separate, additive composer" shape), not folded into this function.
 
+    Phase 803 (`Desktop/PCCOND.md`): `NeedKing`/`SameAlign`/`GTurn`
+    refusals now render the real, byte-verified `_NoMeet` generic intro
+    line (`POWER_CONDITION_REJECTION_INTRO`) directly, checked *before*
+    falling back to `_CONDITION_REFUSAL_TEMPLATES` (now scoped to just
+    `PayUp`/`DrainSkill`/`DrainCourage`) -- the confirmed real sequence
+    for these 3 conditions is generic intro, then PCOND's own "terms"
+    description, then the condition-specific rejection, with the last
+    two rendered by `describe_feature_power_condition_terms()` right
+    after this line (see that function's own Phase 803 addendum).
+
     Phase 619: the 8 SA-argument powers' own messages need to resolve
     other leaders'/kingdoms' own names, so this composer now takes
     `state`/`character_name` too (both optional, default `None`, so
@@ -2981,6 +3007,8 @@ def describe_feature_power_attempt(
     # GAMBLE`). `condition_refused is None` for every successful attempt
     # and for a refusal that never reached the condition gate at all.
     if outcome.condition_refused is not None:
+        if outcome.condition_refused in (PowerCondition.NEED_KING, PowerCondition.SAME_ALIGN, PowerCondition.G_TURN):
+            return render(POWER_CONDITION_REJECTION_INTRO, values, rng=rng)
         template = _CONDITION_REFUSAL_TEMPLATES.get(outcome.reason or "")
         if template is not None:
             return render(template, values, rng=rng)
@@ -3277,14 +3305,29 @@ def describe_feature_power_needs_more_info(outcome: FeaturePowerAttemptResult, r
     return lines
 
 
-def _feature_power_values(outcome: FeaturePowerAttemptResult, character_name: str | None = None) -> dict[str, str]:
-    """Shared `values` dict for the two PCOND/MCOND composers below --
-    same `$\\` resolution `describe_feature_power_attempt()` itself
-    uses, plus `#` for `outcome.condition_cost` when a real number
-    exists (`PayUp`/`DrainSkill` only -- `DrainCourage`'s own PCOND text
-    has no `#` marker at all, so leaving it unset there is harmless),
-    and `<` for `character_name` -- only `MCOND_TEMPLATE`'s own "Spake/
-    Sayeth <..." entries use it; `PCOND_TEMPLATE`'s never do.
+def _feature_power_values(
+    outcome: FeaturePowerAttemptResult,
+    character_name: str | None = None,
+    *,
+    feature_name: str | None = None,
+) -> dict[str, str]:
+    """Shared `values` dict for the PCOND/MCOND composers below -- same
+    `$\\` resolution `describe_feature_power_attempt()` itself uses,
+    plus `#` for `outcome.condition_cost` when a real number exists
+    (`PayUp`/`DrainSkill` only -- `DrainCourage`'s own PCOND text has no
+    `#` marker at all, so leaving it unset there is harmless), and `<`
+    for `character_name` -- only `MCOND_TEMPLATE`'s own "Spake/Sayeth
+    <..." entries use it; `PCOND_TEMPLATE`'s never do.
+
+    Phase 803: `$o` resolves from `outcome.required_alignment.value`
+    (the enum's own display string, e.g. `"Divine"` -- confirmed to be
+    `PCCOND.md`'s own `outname` table, matching `Alignment.value`
+    exactly, **not** `ALIGNMENT_ABBREVIATION`/`outab`, a different
+    6-char table used elsewhere for the CHARACTERS report's own
+    column); `&` resolves from the new `feature_name` keyword-only
+    parameter (the already-established "Feature name" marker, reused
+    verbatim from every other `values["&"] = feature_name` call site in
+    this file) -- only `NEED_KING`'s own real rejection message uses it.
     """
 
     values: dict[str, str] = {}
@@ -3294,10 +3337,19 @@ def _feature_power_values(outcome: FeaturePowerAttemptResult, character_name: st
         values["#"] = str(outcome.condition_cost)
     if character_name is not None:
         values["<"] = character_name
+    if outcome.required_alignment is not None:
+        values["$o"] = outcome.required_alignment.value
+    if feature_name is not None:
+        values["&"] = feature_name
     return values
 
 
-def describe_feature_power_condition_terms(outcome: FeaturePowerAttemptResult, rng: random.Random) -> list[str]:
+_PCOND_TERMS_CONDITIONS = (PowerCondition.NEED_KING, PowerCondition.SAME_ALIGN, PowerCondition.G_TURN)
+
+
+def describe_feature_power_condition_terms(
+    outcome: FeaturePowerAttemptResult, rng: random.Random, *, feature_name: str | None = None
+) -> list[str]:
     """Renders PCOND.X2's own "terms" text (`models/power.py PCOND_
     TEMPLATE`) for the real "needs two Scout orders to accept these
     terms" refusal (Phase 688) -- POWMSG.md's own Approfondimento 4
@@ -3309,18 +3361,31 @@ def describe_feature_power_condition_terms(outcome: FeaturePowerAttemptResult, r
     additive -- mirrors `describe_feature_power_needs_more_info()`'s
     own established shape exactly.
 
-    Scoped to `PayUp`/`DrainSkill`/`DrainCourage` only (the 3 real
-    `_SCOUT_CONSENT_CONDITIONS`, the only conditions this specific
-    refusal reason can ever be set for) -- `NeedKing`/`SameAlign`/
-    `GTurn`'s own PCOND narration stays a real, separate, unresolved
-    question (see `describe_feature_power_attempt()`'s own Phase 790
-    addendum on the competing-text ambiguity there), not attempted here.
+    Phase 803 (`Desktop/PCCOND.md`): widened past that single trigger --
+    also fires for a real `NeedKing`/`SameAlign`/`GTurn` refusal
+    (`outcome.condition_refused in _PCOND_TERMS_CONDITIONS`), rendering
+    **two** lines in the confirmed real order: `PCOND_TEMPLATE[condition
+    _refused]` (the "terms" description), then `POWER_CONDITION_
+    REJECTION_MESSAGE[condition_refused]` (the condition-specific
+    rejection) -- resolving the "no confirmed precedence" ambiguity
+    Phase 790 left open between this dict's own dormant text and Phase
+    782's own POWMSG-based guess, in this dict's favor (real, byte-
+    verified disassembly of `_NoMeet`, not another guess). `feature_
+    name` is threaded through to `_feature_power_values()` for the `&`
+    marker `NEED_KING`'s own rejection text needs.
     """
 
-    if outcome.reason != "needs two Scout orders to accept these terms" or outcome.condition_refused is None:
+    if outcome.condition_refused is None:
         return []
-    template = PCOND_TEMPLATE[outcome.condition_refused]
-    return [render(template, _feature_power_values(outcome), rng=rng)]
+    values = _feature_power_values(outcome, feature_name=feature_name)
+    if outcome.reason == "needs two Scout orders to accept these terms":
+        template = PCOND_TEMPLATE[outcome.condition_refused]
+        return [render(template, values, rng=rng)]
+    if outcome.condition_refused in _PCOND_TERMS_CONDITIONS:
+        terms_line = render(PCOND_TEMPLATE[outcome.condition_refused], values, rng=rng)
+        rejection_line = render(POWER_CONDITION_REJECTION_MESSAGE[outcome.condition_refused], values, rng=rng)
+        return [terms_line, rejection_line]
+    return []
 
 
 def describe_feature_power_condition_satisfied(
@@ -9973,8 +10038,12 @@ def describe_search(
         # Phase 801: PCOND.X2's own "terms" (only ever non-empty when
         # `power_line` above was `None` -- a refusal never also
         # succeeds) and MCOND.X2's own "sacrifice accepted" companion
-        # (only ever non-empty right after a real success line).
-        lines.extend(describe_feature_power_condition_terms(result.feature_power_outcome, rng))
+        # (only ever non-empty right after a real success line). Phase
+        # 803: `feature_name` reaches the new NeedKing/SameAlign/GTurn
+        # branch's own `&` marker (NeedKing's real rejection text only).
+        lines.extend(
+            describe_feature_power_condition_terms(result.feature_power_outcome, rng, feature_name=feature_name)
+        )
         lines.extend(
             describe_feature_power_condition_satisfied(result.feature_power_outcome, rng, character_name=character_name)
         )

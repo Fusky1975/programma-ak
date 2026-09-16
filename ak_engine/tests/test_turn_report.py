@@ -6946,6 +6946,9 @@ def test_describe_feature_power_attempt_condition_refusal_without_condition_refu
 
 
 def test_describe_feature_power_attempt_need_king_refused_is_power_agnostic():
+    # Phase 803 (Desktop/PCCOND.md): NeedKing/SameAlign/GTurn now render
+    # the real, byte-verified `_NoMeet` generic intro line directly --
+    # POWER_CONDITION_REJECTION_INTRO -- not the old POWMSG-based guess.
     # MAGIC_FEATURE_NAME's own strings are raw, unresolved "<name>/F
     # <alternate>" compound templates (models/magic_feature.py's own
     # docstring) -- every existing test in this file avoids asserting
@@ -6957,7 +6960,7 @@ def test_describe_feature_power_attempt_need_king_refused_is_power_agnostic():
             magic_feature=MagicFeature.POOL,
         )
         line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
-        assert line.startswith("Only a King may use the power of the ")
+        assert line.startswith("You don't meet the conditions for using the ")
 
 
 def test_describe_feature_power_attempt_pay_up_refused_is_power_agnostic():
@@ -6971,15 +6974,15 @@ def test_describe_feature_power_attempt_pay_up_refused_is_power_agnostic():
 
 
 def test_describe_feature_power_attempt_same_align_refused():
-    # The template's own "idiotic/Rmisguided" is a real /R word-choice
-    # marker -- assert only the stable text around both markers.
+    # Phase 803: same generic intro line as NEED_KING -- the condition-
+    # specific rejection text moved to describe_feature_power_condition_
+    # terms(), see the new tests for that composer below.
     outcome = FeaturePowerAttemptResult(
         power=Power.NEW_TEMP, applied=False, reason="wrong alignment", condition_refused=PowerCondition.SAME_ALIGN,
         magic_feature=MagicFeature.POOL,
     )
     line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
-    assert line.startswith("A Kingdom of your ")
-    assert "alignment may not use the power of the " in line
+    assert line.startswith("You don't meet the conditions for using the ")
 
 
 def test_describe_feature_power_attempt_g_turn_refused():
@@ -6988,8 +6991,7 @@ def test_describe_feature_power_attempt_g_turn_refused():
         magic_feature=MagicFeature.POOL,
     )
     line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
-    assert line.startswith("The power of the ")
-    assert line.endswith(" has already been used this turn, and cannot be used again until next turn.")
+    assert line.startswith("You don't meet the conditions for using the ")
 
 
 def test_describe_feature_power_attempt_drain_skill_refused_reaches_a_power_other_than_grant_wish():
@@ -7457,6 +7459,78 @@ def test_describe_feature_power_condition_terms_non_matching_reason_returns_noth
     assert describe_feature_power_condition_terms(other_refusal, ScriptedRandom([0.1] * 4)) == []
 
 
+# -- Phase 803 (Desktop/PCCOND.md): describe_feature_power_condition_
+# terms() widened past the Scout-consent trigger alone -- a real
+# NeedKing/SameAlign/GTurn refusal now renders PCOND's own "terms" line
+# followed by the condition-specific rejection, in the confirmed real
+# order (_NoMeet). --
+
+
+def test_describe_feature_power_condition_terms_need_king_renders_both_lines_in_order():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.NEW_TEMP,
+        applied=False,
+        reason="only a King may use this power",
+        condition_refused=PowerCondition.NEED_KING,
+        magic_feature=MagicFeature.POOL,
+    )
+    # 2 draws for the rejection message's own leading /R markers (left/
+    # left), 1 for its final "here/Rthis_&" marker (right, so `&`
+    # actually resolves in the output -- proven via `feature_name`).
+    lines = describe_feature_power_condition_terms(outcome, ScriptedRandom([0.1, 0.1, 0.9]), feature_name="Ancient Ruins")
+    assert lines == [
+        "Only a King may use the power of the Pool/FStream.",
+        "You're just a lowly hero, so get out of this Ancient Ruins!",
+    ]
+
+
+def test_describe_feature_power_condition_terms_same_align_resolves_the_real_alignment_via_o_marker():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.NEW_TEMP,
+        applied=False,
+        reason="wrong alignment",
+        condition_refused=PowerCondition.SAME_ALIGN,
+        required_alignment=Alignment.EVIL,
+        magic_feature=MagicFeature.POOL,
+    )
+    lines = describe_feature_power_condition_terms(outcome, ScriptedRandom([0.9]))
+    assert lines == [
+        "A character must be Evil to use the Pool/FStream (the Kingdom alignment does not matter.)",
+        "You are not Evil, so go away!",
+    ]
+
+
+def test_describe_feature_power_condition_terms_g_turn_renders_both_lines_with_no_markers_to_resolve():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.UP_SKILL,
+        applied=False,
+        reason="already used this gameturn",
+        condition_refused=PowerCondition.G_TURN,
+        magic_feature=MagicFeature.POOL,
+    )
+    lines = describe_feature_power_condition_terms(outcome, ScriptedRandom([]))
+    assert lines == [
+        "After the power of the Pool/FStream is used in a gameturn, it may not be used again until the next gameturn.",
+        "The power has already been used this turn, so go away!",
+    ]
+
+
+def test_describe_feature_power_condition_terms_pay_up_drain_skill_drain_courage_unaffected_by_the_widening():
+    # PayUp/DrainSkill/DrainCourage stay gated on the pre-existing Scout-
+    # consent trigger only -- a refusal for any OTHER reason on one of
+    # these 3 conditions still renders nothing, non-regression of the
+    # behavior `test_describe_feature_power_condition_terms_non_matching_
+    # reason_returns_nothing` already covers for PayUp.
+    for condition, reason in (
+        (PowerCondition.DRAIN_SKILL, "insufficient skill levels"),
+        (PowerCondition.DRAIN_COURAGE, "a Coward may not use this feature"),
+    ):
+        outcome = FeaturePowerAttemptResult(
+            power=Power.NEW_TEMP, applied=False, reason=reason, condition_refused=condition
+        )
+        assert describe_feature_power_condition_terms(outcome, ScriptedRandom([0.1] * 4)) == []
+
+
 @pytest.mark.parametrize(
     "condition,cost,expected",
     [
@@ -7513,6 +7587,31 @@ def test_describe_search_scout_consent_refusal_renders_the_real_pcond_terms():
         "2 skill level(s), chosen at random, will be drained from the character if the Pool/FStream is "
         "scouted.You MUST have enough skill levels to meet the Pool/FStream's demand (to accept these "
         "terms, a character must give two Scout orders when Searching this feature.",
+    ]
+
+
+def test_describe_search_need_king_refusal_renders_the_full_real_three_line_sequence():
+    # Phase 803: NeedKing's own real sequence, end to end -- the generic
+    # intro (describe_feature_power_attempt()), then PCOND's own terms
+    # description, then the specific rejection (describe_feature_power_
+    # condition_terms()), matching the byte-verified real `_NoMeet` order.
+    power_outcome = FeaturePowerAttemptResult(
+        power=Power.NEW_TEMP,
+        applied=False,
+        reason="only a King may use this power",
+        condition_refused=PowerCondition.NEED_KING,
+        magic_feature=MagicFeature.POOL,
+    )
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, feature_power_outcome=power_outcome)
+    rng = ScriptedRandom([0.1, 0.1, 0.1, 0.1, 0.1, 0.9], choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "You don't meet the conditions for using the Pool/FStream.",
+        "Only a King may use the power of the Pool/FStream.",
+        "You're just a lowly hero, so get out of this Ancient Ruins!",
     ]
 
 

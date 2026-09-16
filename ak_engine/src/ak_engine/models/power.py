@@ -154,6 +154,30 @@ guessed at. `POWER_CONDITION_REJECTION_MESSAGE` transcribes these three;
 `POWER_CONDITION_REJECTION_INTRO` transcribes the one generic line said
 first regardless of which condition failed
 (`"You don't meet the conditions for using the $\\."`).
+
+**Phase 803 addendum (`Desktop/PCCOND.md`)** -- the "no confirmed
+precedence" ambiguity this Phase-101 dict was left dormant for (Phase
+790's own note: two real, competing texts for `NeedKing`/`SameAlign`/
+`GTurn` -- this dict's own `_NoMeet` transcription vs. Phase 782's own
+POWMSG.X2-based guess, with no way to decide between them) is now
+resolved with actual disassembly, not another guess: `PCCOND.md`'s own
+Approfondimento 4 locates and fully disassembles the real compiled
+`_NoMeet` dispatcher (story-code `3343`) in **both** `AK.OVR` and
+`AKGEN.EXE`, byte-verified via a reproducible script computing each
+`CALL`'s own real target address from the raw displacement bytes. The
+confirmed real sequence for exactly these 3 conditions: `Runic_Intro`,
+then `Say(POWER_CONDITION_REJECTION_INTRO)`, then (if not already said)
+`Desc_PowCon` (`PCOND_TEMPLATE[condition]`), then the condition-specific
+`Say(POWER_CONDITION_REJECTION_MESSAGE[condition])` -- this dict's own
+dormant text supersedes Phase 782's own POWMSG-based `_CONDITION_
+REFUSAL_TEMPLATES` entries for these 3 conditions (`report/turn_
+report.py describe_feature_power_attempt()`/`describe_feature_power_
+condition_terms()`, wired the same phase). `PayUp`/`DrainSkill`/
+`DrainCourage` are confirmed to have **no case at all** in `_NoMeet`
+("il requisito e' spiegato da PCOND, quando richiesto") -- untouched,
+not contradicted by this finding. This same evidence also fixed a real
+transcription gap in `NEED_KING`'s own text (see that entry's own
+inline comment for the `^A` marker fix).
 """
 
 from __future__ import annotations
@@ -496,10 +520,18 @@ POWER_CONDITION_REJECTION_INTRO = "You don't meet the conditions for using the $
 # only 3 of `PowerCondition`'s 6 non-`PC_NONE` members have a case at all;
 # `PAY_UP`/`DRAIN_SKILL`/`DRAIN_COURAGE` are correctly excluded rather
 # than guessed at.
+#
+# Phase 803 (`Desktop/PCCOND.md`): `NEED_KING`'s own real byte at the
+# literal double-space position is a `<0x01>` control byte -- Turbo
+# Pascal's own `chr(1)` compact encoding for `^A` (this project's
+# already-established "a"/"an" indefinite-article resolver, see the
+# module docstring's own Phase-98-addendum note on `CastSpell`'s
+# identical byte) -- fixed from the earlier, stale double-space
+# transcription to the real `^A` marker.
 POWER_CONDITION_REJECTION_MESSAGE: dict[PowerCondition, str] = {
     PowerCondition.SAME_ALIGN: "You are not $o, so begone/Rgo_away!",
     PowerCondition.NEED_KING: (
-        "You're just  lowly/Rirrelevant hero/Rlackey, so get out of "
+        "You're just ^A lowly/Rirrelevant hero/Rlackey, so get out of "
         "here/Rthis_&!"
     ),
     PowerCondition.G_TURN: "The power has already been used this turn, so go away!",

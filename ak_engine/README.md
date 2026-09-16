@@ -32923,6 +32923,78 @@ full -- only PCOND's own `NeedKing`/`SameAlign`/`GTurn` "terms", the
 ADVENTURE report's own fdisc-2/3 Special-column display, and ORAC_
 POWER's own real per-army narration remain open on item #7.
 
+### Phase 803: `Desktop/PCCOND.md` closes backlog #7's last open PCOND residual + 2 real bug fixes
+
+The user supplied `Desktop/PCCOND.md` (2026-09-15), a disassembly-level
+reverse-engineering report cross-verified byte-for-byte across **two**
+independent executables (`AK.OVR` and `AKGEN.EXE`/`AK.EXE`). Three real
+findings, all shipped:
+
+1. **A real 16-bit-truncation bug in `worldgen/internal_magical_
+   locations.py resolve_power_condition()`** (Phase 616): the real
+   compiled `Set_FCon` computes both of its threshold products as
+   literal 16-bit `MUL` instructions, each truncated back to a signed
+   word (`CWD`) before the subsequent `IDIV` -- this project's own
+   earlier unbounded-precision port didn't reproduce that. New `_i16()`/
+   `_div0()`/`_mod0()` helpers, and `resolve_power_condition()` rewritten
+   to route every intermediate product through `_i16()`. Isolated,
+   confirmed exhaustively by the document, to `SAGE_DISC` (`perc=300`)
+   only -- every other real `perc` value in this project's own
+   `POWER_CONDITION_PAIRS` already matched the old, unbounded model
+   exactly. Worked example, byte-verified: `fn=7, type=Labyrinth, x=14`
+   -- the old model selects `Drain_Courage`; the real, truncated
+   compiled math selects `PC_NONE`.
+2. **A real, confirmed dead branch in `Power.CHANCE`'s own sub-power
+   dispatch** (`turn/feature_power_execution.py _resolve_chance()`,
+   Phase 622): the real compiled `AK.OVR` sub-dispatcher's own `CMP`
+   chain (residues 1, 3, 4, 6, 11, 15) never compares `fpow2` against
+   `2` (NewTemp) at all -- a residue-1 `Chance` reaches the routine's
+   own common exit with no secondary effect applied, silently. The
+   document explicitly warns against "correcting" this to the evidently
+   -intended `CMP AL,2` -- reproduced faithfully as a confirmed real
+   anomaly, not "fixed." `derive_feature_event()`'s own computation of
+   `event.temper_parameter` for this case is kept unchanged -- `Set_
+   Event` really does compute/write it; only the downstream apply-step's
+   own (non-)use of it changes.
+3. **Closes the last open PCOND residual on backlog #7**: PCCOND.md's
+   own Approfondimento 4 fully disassembles the real compiled `_NoMeet`
+   dispatcher (story-code `3343`) in both executables, resolving the
+   "no confirmed precedence" ambiguity Phase 790 left open between
+   `models/power.py`'s own dormant Phase-101 `POWER_CONDITION_
+   REJECTION_INTRO`/`_MESSAGE` constants and Phase 782's own POWMSG-
+   based guess -- in this dict's favor. The confirmed real sequence for
+   `NeedKing`/`SameAlign`/`GTurn`: `Runic_Intro`, the generic intro line,
+   then (if not already said) `PCOND_TEMPLATE[condition]`'s own "terms"
+   description, then the condition-specific rejection. `PayUp`/`Drain_
+   Skill`/`Drain_Courage` are confirmed to have no case at all here --
+   untouched. `report/turn_report.py describe_feature_power_attempt()`
+   now renders the generic intro line for these 3 conditions directly
+   (before falling back to `_CONDITION_REFUSAL_TEMPLATES`, now shrunk to
+   exactly `PayUp`/`DrainSkill`/`DrainCourage`); `describe_feature_power_
+   condition_terms()` widened to render the "terms" + specific-rejection
+   pair for the same 3 conditions, via new `$o` (from a new `FeaturePower
+   AttemptResult.required_alignment` field, `Alignment.value` -- the
+   real `outname` table, **not** `ALIGNMENT_ABBREVIATION`/`outab`) and
+   `&` (from a new `feature_name` parameter) marker support in
+   `_feature_power_values()`. Also fixes a real transcription gap: `NEED_
+   KING`'s own rejection text had a literal double space where the real
+   byte is a `<0x01>` control byte -- this project's own `^A`
+   indefinite-article marker -- now correctly `"You're just ^A lowly..."`.
+
+Deliberately flagged, not fixed: a separate, adjacent `$o` inconsistency
+noticed while researching this -- Phase 619's own `_POWMSG_ORAC_ALIGN_
+SUCCESS` uses `ALIGNMENT_ABBREVIATION` (`outab`) where PCCOND.md's own
+evidence suggests `outname` (`Alignment.value`) should be used for `$o`
+-- a real, separate, pre-existing possible bug in different, already-
+shipped Phase 619 code, unrelated to this phase's own scope.
+
+Test count: 6731 -> 6743 (net +12). Full suite verified green
+(unchanged, 6731) before touching a single test; every new test passed
+on the first run. This closes backlog #7's PCOND `NeedKing`/`SameAlign`/
+`GTurn` residual in full -- only the ADVENTURE report's own fdisc-2/3
+Special-column display and ORAC_POWER's own real per-army narration
+remain open on item #7.
+
 ## Setup
 
 ```

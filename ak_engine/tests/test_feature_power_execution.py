@@ -407,6 +407,46 @@ def test_resolve_feature_power_attempt_condition_satisfied_only_set_on_a_real_sc
     assert need_king_result.condition_satisfied is None
 
 
+# -- Phase 803: resolve_feature_power_attempt()'s own new `required_
+# alignment` field, stamped by its outer wrapper from `event.required_
+# alignment` -- already computed today, just never carried past the
+# event until now (PCCOND.md's real `$o` marker resolution). --
+
+
+def test_resolve_feature_power_attempt_required_alignment_stamped_for_same_align_event():
+    from ak_engine.turn.feature_power_execution import FeaturePowerEvent
+
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    event = FeaturePowerEvent(
+        power=Power.NEW_TEMP,
+        magic_feature=MagicFeature.LAMP,
+        temper_parameter=Temper.BRAVE,
+        condition=PowerCondition.SAME_ALIGN,
+        required_alignment=Alignment.EVIL,
+    )
+
+    refused_state = _state_with_leader(alignment=Alignment.GOOD)
+    refused = resolve_feature_power_attempt(refused_state, LEADER_ID, feature, event, random.Random(0))
+    assert refused.applied is False
+    assert refused.required_alignment is Alignment.EVIL  # stamped even on a refusal
+
+    satisfied_state = _state_with_leader(alignment=Alignment.EVIL)
+    satisfied = resolve_feature_power_attempt(satisfied_state, LEADER_ID, feature, event, random.Random(0))
+    assert satisfied.applied is True
+    assert satisfied.required_alignment is Alignment.EVIL
+
+
+def test_resolve_feature_power_attempt_required_alignment_none_for_other_conditions():
+    from ak_engine.turn.feature_power_execution import FeaturePowerEvent
+
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    state = _state_with_leader(is_king=True)
+    event = FeaturePowerEvent(power=Power.NEW_TEMP, magic_feature=MagicFeature.LAMP, condition=PowerCondition.NEED_KING)
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+    assert result.applied is True
+    assert result.required_alignment is None
+
+
 # -- resolve_feature_power_attempt(): the 9 tractable effects --
 
 
@@ -1138,6 +1178,13 @@ def test_resolve_feature_power_attempt_chance_new_sex():
 
 
 def test_resolve_feature_power_attempt_chance_new_temp():
+    # Phase 803 (Desktop/PCCOND.md): the real compiled AK.OVR sub-
+    # dispatcher's own CMP chain (residues 1, 3, 4, 6, 11, 15) never
+    # compares against 2 (NewTemp) at all -- a confirmed, real compiled
+    # anomaly. A residue-1 Chance reaches the routine's own common exit
+    # with no secondary effect applied and no narration -- the leader's
+    # own temper is left completely unchanged, unlike the pre-Phase-803
+    # behavior this test used to assert.
     state = _state_with_leader(temper=Temper.COWARDLY)
     feature = Feature(feature_id=9, coord=LOCATION, kind=FeatureType.CATACOMBS)
     state.add_feature(feature)
@@ -1145,9 +1192,10 @@ def test_resolve_feature_power_attempt_chance_new_temp():
 
     result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
 
-    assert result.applied is True
-    assert result.power is Power.NEW_TEMP
-    assert state.leaders[LEADER_ID].temper is Temper.BERSERK
+    assert result.applied is False
+    assert result.power is Power.CHANCE
+    assert result.reason == "no secondary effect for this residue"
+    assert state.leaders[LEADER_ID].temper is Temper.COWARDLY
 
 
 def test_resolve_feature_power_attempt_chance_up_skill():

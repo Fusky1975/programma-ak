@@ -144,6 +144,13 @@ def test_power_condition_rejection_message_verbatim_samples():
     assert POWER_CONDITION_REJECTION_MESSAGE[PowerCondition.G_TURN] == (
         "The power has already been used this turn, so go away!"
     )
+    # Phase 803 (Desktop/PCCOND.md): the real byte at this position is a
+    # `<0x01>` control byte -- Turbo Pascal's own `chr(1)` compact
+    # encoding for `^A` -- fixed from the earlier, stale literal double-
+    # space transcription.
+    assert POWER_CONDITION_REJECTION_MESSAGE[PowerCondition.NEED_KING] == (
+        "You're just ^A lowly/Rirrelevant hero/Rlackey, so get out of here/Rthis_&!"
+    )
 
 
 def test_power_condition_rejection_intro_verbatim():

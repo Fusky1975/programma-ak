@@ -306,6 +306,36 @@ POWER_CONDITION_PAIRS: dict[Power, tuple[PowerCondition, PowerCondition, int]] =
 }
 
 
+def _i16(n: int) -> int:
+    """Reinterprets ``n`` as Turbo Pascal's own signed 16-bit
+    ``Integer`` -- a 16x16 ``MUL`` followed by ``CWD`` (sign-extend
+    ``AX`` into ``DX``) truncates the real 32-bit ``DX:AX`` product
+    back to a signed word before every subsequent ``IDIV`` in the
+    compiled ``Set_FCon``. Verified byte-for-byte against
+    ``AK.EXE``/``AKGEN.EXE`` (``Desktop/PCCOND.md``, 2026-09-15) --
+    this closes a real, confirmed bug in ``resolve_power_condition()``'s
+    own prior unbounded-precision port, isolated to ``SAGE_DISC``
+    (``perc=300``) specifically: every other real ``perc`` value
+    already matched the naive/unbounded model exactly.
+    """
+
+    return (n + 32768) % 65536 - 32768
+
+
+def _div0(a: int, b: int) -> int:
+    """Pascal's own ``DIV`` -- truncates toward zero
+    (``abs(a)//abs(b)``, signed), unlike Python's ``//`` (floors
+    toward negative infinity)."""
+
+    return (abs(a) // abs(b)) * (-1 if (a < 0) != (b < 0) else 1)
+
+
+def _mod0(a: int, b: int) -> int:
+    """Pascal's own ``MOD``, paired with ``_div0()``: ``a - (a DIV b) * b``."""
+
+    return a - _div0(a, b) * b
+
+
 def resolve_power_condition(
     power: Power, feature_type: FeatureType, feature_index: int, feature_x: int
 ) -> PowerCondition:
@@ -314,11 +344,22 @@ def resolve_power_condition(
     con1 else if perc > (((fn+5)*fx[fn] MOD 100) * (100-2*perc)) DIV
     100 then fpowcon := con2`` -- ``PC_NONE`` (the real Pascal default,
     left untouched by either branch) for any ``power`` this table
-    doesn't cover, or when neither branch fires. Cross-checked by hand
-    against 5 of ``Special Features.md``'s own section 8 real-world
-    rows (F#5/7/27/85/113 across `UP_SKILL`/`ANS_PRAYER`/5-Oracles),
-    every one an exact match including the resulting cost -- see
-    ``tests/test_internal_magical_locations.py``.
+    doesn't cover, or when neither branch fires.
+
+    Every intermediate product is routed through ``_i16()`` first,
+    matching the real compiled routine's own 16-bit-truncated
+    arithmetic exactly (``Desktop/PCCOND.md``, byte-verified against
+    both ``AK.OVR`` and ``AKGEN.EXE``) -- a real bug fix over the
+    original, unbounded-precision port, isolated to ``SAGE_DISC``
+    (``perc=300``) only. Worked example, byte-verified: ``fn=7,
+    type=9, x=14`` -- the naive/unbounded model selects
+    ``Drain_Courage``; the real, truncated compiled math selects
+    ``PC_NONE`` (see ``tests/test_internal_magical_locations.py``).
+    Cross-checked by hand against 5 of ``Special Features.md``'s own
+    section 8 real-world rows (F#5/7/27/85/113 across
+    `UP_SKILL`/`ANS_PRAYER`/5-Oracles), every one an exact match
+    including the resulting cost -- unaffected by this fix, since
+    none of them uses ``SAGE_DISC``'s own ``perc=300``.
     """
 
     pair = POWER_CONDITION_PAIRS.get(power)
@@ -327,13 +368,14 @@ def resolve_power_condition(
     con1, con2, perc = pair
     ftype_ordinal = feature_type.value
 
-    if min(35, perc) * 2 > ((feature_index + 2) * ftype_ordinal) % 100:
+    a_value = _mod0(_i16(_i16(feature_index + 2) * ftype_ordinal), 100)
+    if a_value < _i16(2 * min(35, perc)):
         return con1
 
-    parity_term = ((feature_index + 5) * feature_x) % 100
-    scaled = parity_term * (100 - 2 * perc)
-    threshold = int(scaled / 100)  # Pascal DIV truncates toward zero, same as int() for these signs
-    if perc > threshold:
+    b_value = _mod0(_i16(_i16(feature_index + 5) * feature_x), 100)
+    factor = _i16(100 - _i16(2 * perc))
+    threshold = _div0(_i16(b_value * factor), 100)
+    if threshold < perc:
         return con2
 
     return PowerCondition.PC_NONE

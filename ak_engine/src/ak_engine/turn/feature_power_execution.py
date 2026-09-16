@@ -470,6 +470,15 @@ class FeaturePowerAttemptResult:
     # separate, unresolved question, see this module's own Phase 790
     # addendum).
     condition_satisfied: PowerCondition | None = None
+    # Phase 803 (Desktop/PCCOND.md): `event.required_alignment` --
+    # already computed by `derive_feature_event()` whenever `condition
+    # is PowerCondition.SAME_ALIGN`, just never carried onto this
+    # result until now. `report/turn_report.py`'s own `$o` marker
+    # resolution (`Alignment.value`, the real `outname` table -- NOT
+    # `ALIGNMENT_ABBREVIATION`/`outab`) reads this field directly.
+    # `None` for every other condition, including a `SAME_ALIGN`
+    # refusal's own sibling conditions (`NEED_KING`/`G_TURN`).
+    required_alignment: Alignment | None = None
     already_matched: bool = False  # NEW_TEMP/NEW_RACE's own real no-op (already that value)
     at_limit: bool = False  # UP_SKILL/UP_APT/DN_SKILL/DN_APT's own real no-op (already capped/floored)
     ability: Ability | None = None
@@ -620,7 +629,11 @@ def resolve_feature_power_attempt(
     returns having to repeat it. Phase 801: also stamps `condition_cost`/
     `condition_satisfied` here, for the same reason -- `event` (not just
     `result`) is needed to know them, and every per-power `_resolve_*()`
-    function stays unaware of the condition that gated it.
+    function stays unaware of the condition that gated it. Phase 803:
+    same treatment for `required_alignment` -- stamped unconditionally
+    from `event.required_alignment`, which `derive_feature_event()`
+    already computes whenever `event.condition is PowerCondition.
+    SAME_ALIGN`.
     """
 
     result = _resolve_feature_power_attempt_effect(
@@ -635,6 +648,7 @@ def resolve_feature_power_attempt(
         magic_feature=event.magic_feature,
         condition_cost=condition_cost,
         condition_satisfied=condition_satisfied,
+        required_alignment=event.required_alignment,
     )
 
 
@@ -1182,6 +1196,10 @@ def _resolve_chance(
     than sharing a parameterized helper -- each branch is a few lines,
     and keeping the well-tested top-level dispatch untouched outweighs
     the modest duplication.
+
+    Phase 803 (`Desktop/PCCOND.md`): the `NEW_TEMP` residue (1) is a
+    real, confirmed dead branch in the compiled `AK.OVR` sub-dispatcher
+    -- see that branch's own inline comment below for the full account.
     """
 
     leader = state.leaders[leader_id]
@@ -1193,12 +1211,22 @@ def _resolve_chance(
         return FeaturePowerAttemptResult(power=sub_power, applied=True, new_sex=leader.sex)
 
     if sub_power is Power.NEW_TEMP:
-        if leader.temper is event.temper_parameter:
-            return FeaturePowerAttemptResult(
-                power=sub_power, applied=True, already_matched=True, new_temper=event.temper_parameter
-            )
-        leader.temper = event.temper_parameter
-        return FeaturePowerAttemptResult(power=sub_power, applied=True, new_temper=event.temper_parameter)
+        # PCCOND.md Approfondimento 2 (AK.OVR raw 0x12A61, byte-verified):
+        # the real compiled sub-dispatcher's own CMP chain (residues 1,
+        # 3, 4, 6, 11, 15) never compares `fpow2` against `2` (NewTemp)
+        # at all -- a confirmed, real compiled anomaly (deliberately NOT
+        # "corrected" to the evidently-intended `CMP AL,2`, per the
+        # document's own explicit warning against silently normalizing
+        # this to an equivalence-with-the-original mode). A residue-1
+        # `Chance` reaches the routine's own common exit with no
+        # secondary effect applied at all, silently. `derive_feature_
+        # event()`'s own `elif chance_sub_power is Power.NEW_TEMP:
+        # temper_parameter = power_temper_parameter(...)` line is kept
+        # unchanged -- `Set_Event` really does compute/write this value
+        # for this residue in the real game (`prepara il temperamento
+        # in EA F8`); only this downstream apply-step's own (non-)use
+        # of it changes.
+        return FeaturePowerAttemptResult(power=Power.CHANCE, applied=False, reason="no secondary effect for this residue")
 
     if sub_power in (Power.UP_SKILL, Power.DN_SKILL):
         ability = event.ability_parameter

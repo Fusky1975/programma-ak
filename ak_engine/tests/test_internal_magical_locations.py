@@ -4,15 +4,19 @@ from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import FeatureType
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import Terrain
-from ak_engine.models.power import Power
+from ak_engine.models.power import Power, PowerCondition
 from ak_engine.worldgen.internal_magical_locations import (
     FORCED_NONE_CANDIDATES,
     LOCATION_RANGE,
     POWER_RANGE,
+    _div0,
+    _i16,
+    _mod0,
     candidate_location,
     candidate_power,
     derive_chance_sub_power,
     resolve_power,
+    resolve_power_condition,
     resolve_spell_candidate,
     resolve_visible_location,
     spell_college,
@@ -277,3 +281,64 @@ def test_derive_chance_sub_power_covers_the_remaining_two_residues():
     # ((gameturn+gdday) AND 7), not transcribed from the report.
     assert derive_chance_sub_power(gameturn=0, gdday=2) is Power.UP_SKILL  # residue 2
     assert derive_chance_sub_power(gameturn=0, gdday=6) is Power.SAGE_DISC  # residue 6
+
+
+# -- Phase 803 (Desktop/PCCOND.md): the real 16-bit-truncated Set_FCon
+# arithmetic -- _i16/_div0/_mod0 and resolve_power_condition()'s own
+# SAGE_DISC-only truncation bug fix.
+
+
+def test_i16_reinterprets_as_signed_16_bit():
+    assert _i16(0) == 0
+    assert _i16(32767) == 32767
+    assert _i16(32768) == -32768  # wraps at the positive edge
+    assert _i16(-32768) == -32768
+    assert _i16(-32769) == 32767  # wraps at the negative edge
+    assert _i16(-33000) == 32536  # the exact SAGE_DISC hole-edge value below
+
+
+def test_div0_truncates_toward_zero_unlike_python_floor_division():
+    assert _div0(7, 2) == 3
+    assert _div0(-7, 2) == -3  # Python's `//` would floor to -4
+    assert _div0(7, -2) == -3
+    assert _div0(-7, -2) == 3
+
+
+def test_mod0_pairs_with_div0():
+    assert _mod0(7, 2) == 1
+    assert _mod0(-7, 2) == -1  # Python's `%` would give 1
+    assert _mod0(31536, 100) == 36
+
+
+def test_resolve_power_condition_sage_disc_worked_example_selects_pc_none():
+    # PCCOND.md's own worked example: fn=7, type=9 (Labyrinth), x=14 --
+    # the naive/unbounded-precision model selects Drain_Courage; the
+    # real, truncated compiled math selects PC_NONE. SAGE_DISC's own
+    # perc=300 is the one real value where this project's prior,
+    # unbounded-precision port disagreed with the real compiled engine.
+    assert (
+        resolve_power_condition(Power.SAGE_DISC, FeatureType.LABYRINTH, feature_index=7, feature_x=14)
+        is PowerCondition.PC_NONE
+    )
+
+
+def test_resolve_power_condition_sage_disc_truncation_hole_edges():
+    # feature_index=8 + FeatureType.LABYRINTH(9) keeps `a_value` (90) well
+    # clear of con1's own threshold (70) for every feature_x below, so
+    # con2's own truncated-vs-naive comparison is isolated cleanly.
+    # `feature_x` values chosen so `b_value = (13*feature_x) mod 100`
+    # lands exactly on the confirmed real truncation-window edges
+    # (B=65/72 outside the hole, still Drain_Courage; B=66/71 inside the
+    # hole, where 16-bit truncation of `b_value*factor` flips the
+    # comparison to PC_NONE).
+    cases = [
+        (5, PowerCondition.DRAIN_COURAGE),  # B=65, just outside the hole
+        (82, PowerCondition.PC_NONE),  # B=66, the hole's own first edge
+        (67, PowerCondition.PC_NONE),  # B=71, the hole's own last edge
+        (44, PowerCondition.DRAIN_COURAGE),  # B=72, just outside the hole
+    ]
+    for feature_x, expected in cases:
+        assert (
+            resolve_power_condition(Power.SAGE_DISC, FeatureType.LABYRINTH, feature_index=8, feature_x=feature_x)
+            is expected
+        ), f"feature_x={feature_x}"
