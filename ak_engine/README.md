@@ -33165,6 +33165,34 @@ gap, not a production bug. Test count unchanged (6753, an existing
 test strengthened, not a new one added); full suite re-run before and
 after, green throughout.
 
+### Phase 810: Praetorian Guard's own eligibility gate wrongly admitted naval armies
+
+Continuing the user-directed bug sweep into `turn/` (turn processing)
+and `report/` (text report generation), manually reading `turn/office_
+holder.py` (the Imperial Office/Royal Title resolver) in full found a
+real, previously-untested logic bug: `_army_office_eligible()`'s own
+`Office.PRAETOR` (Praetorian Guard) branch gated eligibility on `army.
+army_type not in OVERFLIGHT_AIR` alone -- but the title's own real text
+(`models/office.py OFFICE_TITLE_DESCRIPTION[Office.PRAETOR]`) restricts
+it to "the military **land** unit best suited..." A Fleet/Mermen/Whales
+army is neither flying nor land, yet a bare "not flying" check let it
+qualify for Praetor -- meaning a Crack/Elite naval army could win BOTH
+Praetor (a land-only title) and Flagship (its own genuinely-naval
+title) at once, contradicting the sourced text for Praetor. Fixed by
+reusing this project's own already-established `models/army_type.py
+is_land_army()` predicate (`not in SEA_ARMY_TYPES and not in
+OVERFLIGHT_AIR`) instead of the narrower, wrong `OVERFLIGHT_AIR`-only
+check -- the same "match existing precedent" fix this project has
+applied before rather than inventing a fresh ad hoc exclusion. Also
+replaced the file's own locally-duplicated `_FLAGSHIP_ARMY_TYPES`
+frozenset (byte-identical to `models/army_type.py SEA_ARMY_TYPES`, just
+redeclared) with a direct import, removing the redundant duplicate
+definition. New regression test (`test_resolve_army_office_holder_
+praetor_excludes_naval_types`, a Crack/Elite Fleet army) fails against
+the pre-fix code and passes against the fix -- confirmed by running it
+both ways. Test count: 6753 -> 6754 (net +1). Full suite verified green
+before and after.
+
 ## Setup
 
 ```

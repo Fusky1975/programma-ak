@@ -495,6 +495,17 @@ def test_resolve_army_office_holder_praetor_excludes_flying_types():
     assert resolve_army_office_holder(state, Office.PRAETOR) is None
 
 
+def test_resolve_army_office_holder_praetor_excludes_naval_types():
+    # Praetor's own real text (models/office.py) restricts the title to
+    # "the military land unit" -- a Fleet/Mermen/Whales army is neither
+    # flying nor land, and must not qualify just because it isn't flying.
+    state = make_state()
+    state.add_province(ProvinceState(HOME, Terrain.SEA, Race.HUMAN, owner_kingdom_id=1))
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.ELITE, HOME))
+
+    assert resolve_army_office_holder(state, Office.PRAETOR) is None
+
+
 def test_resolve_army_office_holder_praetor_picks_the_stronger_non_flying_army():
     state = make_state()
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))

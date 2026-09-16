@@ -251,7 +251,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ak_engine.models.army_type import OVERFLIGHT_AIR, ARMY_TABLE, ArmyType
+from ak_engine.models.army_type import OVERFLIGHT_AIR, ARMY_TABLE, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.office import OFFICE_MIN_POINTS, Office
@@ -646,8 +646,9 @@ def kingdom_runner_up(state: GameState, office: Office, kingdom_id: int, exclude
 # holders(), describe_imperial_office_report()) assumes a leader_id.
 ARMY_RANKED_OFFICES: tuple[Office, ...] = (Office.AIR_FORCE, Office.PRAETOR, Office.FLAGSHIP)
 
-# Flagship's own "type Mermen, Whale League or Fleet" eligibility gate.
-_FLAGSHIP_ARMY_TYPES = frozenset({ArmyType.MERMEN, ArmyType.WHALES, ArmyType.FLEET})
+# Flagship's own "type Mermen, Whale League or Fleet" eligibility gate --
+# this is exactly `models/army_type.py SEA_ARMY_TYPES`, reused directly
+# rather than a second, locally-duplicated frozenset of the same 3 types.
 
 
 @dataclass(slots=True)
@@ -664,9 +665,16 @@ def _army_office_eligible(office: Office, army: ArmyState, modified_quality: Qua
     if office is Office.AIR_FORCE:
         return army.army_type in OVERFLIGHT_AIR
     if office is Office.PRAETOR:
-        return army.army_type not in OVERFLIGHT_AIR
+        # Real text (models/office.py OFFICE_TITLE_DESCRIPTION): "the
+        # military land unit best suited..." -- `is_land_army()` (not
+        # in OVERFLIGHT_AIR) excludes both air *and* sea types, matching
+        # this project's own established land/sea/air three-way split
+        # (models/army_type.py). A bare `not in OVERFLIGHT_AIR` check
+        # here would wrongly also admit Fleet/Mermen/Whales, letting a
+        # naval army qualify for Praetor and Flagship simultaneously.
+        return is_land_army(army.army_type)
     if office is Office.FLAGSHIP:
-        return army.army_type in _FLAGSHIP_ARMY_TYPES
+        return army.army_type in SEA_ARMY_TYPES
     raise ValueError(f"{office} is not one of the 3 army-scoped Royal Titles")
 
 
