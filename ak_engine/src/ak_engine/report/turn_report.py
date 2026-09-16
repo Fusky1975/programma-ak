@@ -3094,7 +3094,15 @@ def describe_feature_power_attempt(
         if target is None:
             return None
         values["["] = target.name
-        values["$o"] = ALIGNMENT_ABBREVIATION[outcome.oracle_alignment]
+        # Phase 805 (Desktop/PCCOND.md, Phase 803's own flagged finding):
+        # `$o` resolves via `outname` (`Alignment.value`, the full display
+        # string), not `ALIGNMENT_ABBREVIATION`/`outab` -- a different,
+        # 6-char table used elsewhere for the CHARACTERS report's own
+        # column. This is the same real `outname` resolution `_feature_
+        # power_values()`'s own Phase 803 addendum already documents for
+        # `required_alignment`; ORAC_ALIGN's own `$o` was a pre-existing,
+        # separate occurrence of the identical marker Phase 619 got wrong.
+        values["$o"] = outcome.oracle_alignment.value
         return render(_POWMSG_ORAC_ALIGN_SUCCESS, values, rng=rng)
 
     if outcome.power is Power.ORAC_POWER:

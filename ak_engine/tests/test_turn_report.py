@@ -7070,6 +7070,20 @@ def test_describe_feature_power_attempt_orac_align():
     assert line == "Sir Roland is a Good character."
 
 
+def test_describe_feature_power_attempt_orac_align_uses_the_full_outname_not_the_abbreviation():
+    # Phase 805 (Desktop/PCCOND.md, Phase 803's own flagged finding): the
+    # real `$o` marker resolves via `outname` (Alignment.value), never
+    # `ALIGNMENT_ABBREVIATION`/`outab` -- Good/Evil/Pagan happen to render
+    # identically under both tables, so this needs an alignment where they
+    # genuinely differ (e.g. "Divine" vs the abbreviated "Divin") to prove
+    # the fix, not just leave the old bug coincidentally passing.
+    outcome = FeaturePowerAttemptResult(
+        power=Power.ORAC_ALIGN, applied=True, oracle_target_leader_id=2, oracle_alignment=Alignment.DIVINE
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4), state=_sa_state(), character_name="King Testerman")
+    assert line == "Sir Roland is a Divine character."
+
+
 def test_describe_feature_power_attempt_orac_power_with_armies():
     # Phase 804: the real per-army `_ArmSay` enumeration supersedes
     # Phase 782's own single "As an example..." sentence -- this

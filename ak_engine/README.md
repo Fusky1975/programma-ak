@@ -33039,6 +33039,27 @@ column display (blocked on the unresolved `/F`/`/S` odd-even alternate-
 name puzzle, Phase 92) and the flagged `ORAC_ALIGN` `$o`/`outab`-vs-
 `outname` residual (Phase 619, PCCOND.md's own finding) remain open.
 
+### Phase 805: `ORAC_POWER`'s own sibling `ORAC_ALIGN` `$o` marker fix (`outname`, not `outab`)
+
+Closes the one remaining backlog #7 residual PCCOND.md flagged during
+Phase 803: `describe_feature_power_attempt()`'s `Power.ORAC_ALIGN`
+branch resolved its own `$o` marker via `ALIGNMENT_ABBREVIATION`
+("outab", CTBOTH.PAS's own 6-char CHARACTERS-column table) instead of
+the real `outname` table (`Alignment.value`, the full display string)
+Phase 803's own `_feature_power_values()` already confirmed is the
+correct source for this exact marker. A one-line fix (`outcome.oracle_
+alignment.value` instead of the dict lookup), no new design decision --
+the correct resolution was already fully diagnosed by Phase 803, only
+never applied to this pre-existing, separate occurrence of the same
+marker. Test count: 6752 -> 6753 (net +1); the existing `ORAC_ALIGN`
+test happened to use `Alignment.GOOD`, which renders identically under
+both tables, so a new test using `Alignment.DIVINE` ("Divine" vs. the
+abbreviated "Divin") was added to actually prove the fix rather than
+leave the old bug coincidentally passing. Full suite verified green
+(unchanged, 6752) before touching a single test. This closes backlog
+#7 in full except the ADVENTURE report's own fdisc-2/3 Special-column
+display (Phase 92's own unresolved `/F`/`/S` puzzle).
+
 ## Setup
 
 ```
