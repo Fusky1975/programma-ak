@@ -238,6 +238,29 @@ def test_apply_condition_gate_drain_skill_succeeds_with_two_scout_orders():
     assert skill == 2  # the only ability with any skill to drain
 
 
+def test_apply_condition_gate_drain_skill_insufficient_total_never_partially_drains():
+    # Phase 801 (Desktop/POWMSG.md Approfondimento 4, `AK.OVR
+    # 0x11FB9-0x1214A`): the real guard checks the SUM of all 15 skill
+    # levels against the cost BEFORE touching anything. This is the
+    # direct regression test for a real bug found while cross-checking
+    # that document -- the previous per-iteration loop drained real
+    # skill levels before discovering the total was insufficient,
+    # contradicting this function's own "never partially applies a
+    # cost" docstring promise. Only Melee has any skill at all (2), cost
+    # is 3 -- pre-fix, this would decrement Melee to 0 before refusing.
+    state = _state_with_leader(skills=_skilled_leader(Ability.MELEE, 2, 9).skills, sex=Sex.MALE)
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    event = FeaturePowerEvent(
+        power=Power.NEW_SEX, magic_feature=MagicFeature.LAMP, condition=PowerCondition.DRAIN_SKILL, cost=3
+    )
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0), scout_orders_given=2)
+    assert result.applied is False
+    assert result.reason == "insufficient skill levels"
+    skill, _aptitude = state.leaders[LEADER_ID].skills.pair_for_ability(Ability.MELEE)
+    assert skill == 2  # unchanged -- no partial drain applied
+    assert state.leaders[LEADER_ID].sex is Sex.MALE  # the power's own effect never ran either
+
+
 def test_apply_condition_gate_pay_up_succeeds_with_more_than_two_scout_orders():
     # Proves ">= 2", not "== 2".
     state = _state_with_leader()
@@ -319,6 +342,68 @@ def test_resolve_feature_power_attempt_drain_skill_refuses_with_insufficient_ski
     assert result.applied is False
     assert result.reason == "insufficient skill levels"
     assert result.condition_refused is PowerCondition.DRAIN_SKILL
+
+
+# -- Phase 801: resolve_feature_power_attempt()'s own new `condition_
+# cost`/`condition_satisfied` fields, stamped by its outer wrapper --
+
+
+def test_resolve_feature_power_attempt_condition_cost_set_for_pay_up_and_drain_skill_regardless_of_outcome():
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.kingdoms[1].treasury = 0
+    pay_up_event = FeaturePowerEvent(
+        power=Power.NEW_TEMP, magic_feature=MagicFeature.LAMP, condition=PowerCondition.PAY_UP, cost=10
+    )
+    refused = resolve_feature_power_attempt(state, LEADER_ID, feature, pay_up_event, random.Random(0), scout_orders_given=2)
+    assert refused.reason == "insufficient gold"
+    assert refused.condition_cost == 10  # populated even on refusal
+
+    state.kingdoms[1].treasury = 10
+    satisfied = resolve_feature_power_attempt(state, LEADER_ID, feature, pay_up_event, random.Random(0), scout_orders_given=2)
+    assert satisfied.applied is True
+    assert satisfied.condition_cost == 10
+
+
+def test_resolve_feature_power_attempt_condition_cost_none_for_conditions_without_a_real_cost():
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+    state = _state_with_leader(is_king=True)
+    event = FeaturePowerEvent(power=Power.NEW_TEMP, magic_feature=MagicFeature.LAMP, condition=PowerCondition.NEED_KING)
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+    assert result.condition_cost is None
+
+
+def test_resolve_feature_power_attempt_condition_satisfied_only_set_on_a_real_scout_consent_success():
+    feature = Feature(feature_id=999, coord=HexCoord(5, 5), kind=FeatureType.CATACOMBS)
+
+    # Refused (only one Scout order) -- never satisfied.
+    state = _state_with_leader(temper=Temper.BRAVE)
+    drain_courage_event = FeaturePowerEvent(
+        power=Power.NEW_TEMP, magic_feature=MagicFeature.LAMP, condition=PowerCondition.DRAIN_COURAGE, cost=0
+    )
+    refused = resolve_feature_power_attempt(
+        state, LEADER_ID, feature, drain_courage_event, random.Random(0), scout_orders_given=1
+    )
+    assert refused.applied is False
+    assert refused.condition_satisfied is None
+
+    # Two Scout orders, real success -- now satisfied.
+    satisfied = resolve_feature_power_attempt(
+        state, LEADER_ID, feature, drain_courage_event, random.Random(0), scout_orders_given=2
+    )
+    assert satisfied.applied is True
+    assert satisfied.condition_satisfied is PowerCondition.DRAIN_COURAGE
+
+    # A successful attempt under a non-Scout-consent condition (NEED_KING)
+    # never sets condition_satisfied -- that narration stays deliberately
+    # unresolved (Phase 790's own competing-text ambiguity).
+    king_state = _state_with_leader(is_king=True)
+    need_king_event = FeaturePowerEvent(power=Power.NEW_TEMP, magic_feature=MagicFeature.LAMP, condition=PowerCondition.NEED_KING)
+    need_king_result = resolve_feature_power_attempt(king_state, LEADER_ID, feature, need_king_event, random.Random(0))
+    assert need_king_result.applied is True
+    assert need_king_result.condition_satisfied is None
 
 
 # -- resolve_feature_power_attempt(): the 9 tractable effects --

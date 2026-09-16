@@ -1315,7 +1315,7 @@ from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 from ak_engine.models.monster import MONSTER_DESCRIPTION, MONSTER_NAMES, Monster
 from ak_engine.models.office import OFFICE_MIN_POINTS, OFFICE_NAME, Office
-from ak_engine.models.power import POWER_DESCRIPTION, Power
+from ak_engine.models.power import MCOND_TEMPLATE, PCOND_TEMPLATE, POWER_DESCRIPTION, Power
 from ak_engine.models.quote import quote_of_the_week
 from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
@@ -2858,6 +2858,17 @@ _POWMSG_ORAC_GOLD_SUCCESS = "[ has a treasury of # gold."
 _POWMSG_ORAC_OFFICE_SUCCESS = "The current holder of the office of $O is [ (#), who is loyal to $K's kingdom."
 _POWMSG_ORAC_TREAS_SUCCESS = "The treasure in the & is the \\."
 _POWMSG_RECHARGE_SUCCESS = "The $\\ recharged the \\."
+# Phase 801 (Desktop/POWMSG.md choice 30, byte-verified): the real
+# "invalid SA argument" companion to `_POWMSG_GRANT_WISH_AT_LIMIT`
+# below -- both render together, unconditionally, for an out-of-range
+# or missing ability argument (see `_resolve_grant_wish()`'s own Phase
+# 801 addendum for the real trigger).
+_POWMSG_GRANT_WISH_TUTORIAL = (
+    "The $\\ will grant a wish to a character.SA-y an ability number "
+    "(not the skill name itself), and your skill shall be raised by one: "
+    "0-Tac, 1-Mar, 2-Nav, 3-Arc, 4-Mel, 5-Whi, 6-Nec, 7-Ele, 8-Psy, 9-Ill, "
+    "10-Dru, 11-Thi, 12-Exp, 13-Spy, 14-Sage."
+)
 _POWMSG_GRANT_WISH_AT_LIMIT = "The $\\ cannot grant the wish if the character's skill has already reached his aptitude level."
 _POWMSG_GRANT_WISH_SUCCESS = "There!<'s ^ ability is now one point higher than before!"
 _POWMSG_GAMBLE_REFUSED = "Hah!The realm of $K isn't that rich.Begone!"
@@ -2924,9 +2935,12 @@ def describe_feature_power_attempt(
     gameturn/gold/skill-drain/courage-drain) now renders real, verbatim
     POWMSG.X2/PCOND.X2 text via `_CONDITION_REFUSAL_TEMPLATES`, checked
     generically before any per-power branch below -- see that dict's own
-    docstring note. The one refusal still left unrendered is the Scout-
-    consent case ("needs two Scout orders to accept these terms") -- no
-    POWMSG.X2-specific text survives for it.
+    docstring note. The Scout-consent case ("needs two Scout orders to
+    accept these terms") itself still returns `None` here -- Phase 801
+    renders PCOND.X2's own real "terms" text for it via the separate
+    `describe_feature_power_condition_terms()` composer instead (mirrors
+    `describe_feature_power_needs_more_info()`'s own established
+    "separate, additive composer" shape), not folded into this function.
 
     Phase 619: the 8 SA-argument powers' own messages need to resolve
     other leaders'/kingdoms' own names, so this composer now takes
@@ -3123,8 +3137,21 @@ def describe_feature_power_attempt(
 
     if outcome.power is Power.GRANT_WISH:
         # Phase 782: the "insufficient skill levels" refusal is now
-        # handled generically above (any power, not just GrantWish) --
-        # reaching here at all means `outcome.applied` is True.
+        # handled generically above (any power, not just GrantWish).
+        # Phase 801: an out-of-range or missing SA argument (`reason`
+        # "invalid target"/"no SA argument given" -- both real Pascal
+        # cases collapse to the same `a<0 or a>=15` guard, see
+        # `_resolve_grant_wish()`'s own Phase 801 addendum) always
+        # renders the tutorial sentence *then* the at-limit text,
+        # unconditionally -- the real routine never compares a skill at
+        # all for an invalid argument. `"no skill data recorded"` (an
+        # ak_engine-only defensive guard, no real Pascal analog) still
+        # falls through to the `ability is None` check below, rendering
+        # nothing -- deliberately not conflated with the two real cases.
+        if outcome.reason in ("no SA argument given", "invalid target"):
+            tutorial = render(_POWMSG_GRANT_WISH_TUTORIAL, values, rng=rng)
+            at_limit = render(_POWMSG_GRANT_WISH_AT_LIMIT, values, rng=rng)
+            return f"{tutorial} {at_limit}"
         if not outcome.applied or outcome.ability is None:
             return None
         if outcome.at_limit:
@@ -3211,9 +3238,19 @@ def describe_feature_power_needs_more_info(outcome: FeaturePowerAttemptResult, r
     attempt()`'s own outer wrapper (including on this exact refusal
     path), so the `$\\` marker resolves correctly with zero new
     plumbing; none of the 8 real descriptions use any other marker.
+
+    Phase 801: `Power.GRANT_WISH` is deliberately excluded from this
+    generic pair -- `Desktop/POWMSG.md`'s own disassembly-verified
+    account of GRANT_WISH's own real dispatcher (`AK.OVR
+    0x11CEC-0x11E46`) shows only POWMSG choices 30-then-31 firing for
+    an out-of-range/missing argument, with no mention of this generic
+    `_EDesc` pair -- a later, more specific finding superseding the
+    earlier, less precise "all 8 SA-argument powers alike" assumption
+    for this one power (see `describe_feature_power_attempt()`'s own
+    `GRANT_WISH` branch for what renders instead).
     """
 
-    if outcome.reason != "no SA argument given":
+    if outcome.reason != "no SA argument given" or outcome.power is Power.GRANT_WISH:
         return []
     values: dict[str, str] = {}
     if outcome.magic_feature is not None:
@@ -3223,6 +3260,70 @@ def describe_feature_power_needs_more_info(outcome: FeaturePowerAttemptResult, r
     if description is not None:
         lines.append(render(description, values, rng=rng))
     return lines
+
+
+def _feature_power_values(outcome: FeaturePowerAttemptResult, character_name: str | None = None) -> dict[str, str]:
+    """Shared `values` dict for the two PCOND/MCOND composers below --
+    same `$\\` resolution `describe_feature_power_attempt()` itself
+    uses, plus `#` for `outcome.condition_cost` when a real number
+    exists (`PayUp`/`DrainSkill` only -- `DrainCourage`'s own PCOND text
+    has no `#` marker at all, so leaving it unset there is harmless),
+    and `<` for `character_name` -- only `MCOND_TEMPLATE`'s own "Spake/
+    Sayeth <..." entries use it; `PCOND_TEMPLATE`'s never do.
+    """
+
+    values: dict[str, str] = {}
+    if outcome.magic_feature is not None:
+        values["$\\"] = MAGIC_FEATURE_NAME[outcome.magic_feature]
+    if outcome.condition_cost is not None:
+        values["#"] = str(outcome.condition_cost)
+    if character_name is not None:
+        values["<"] = character_name
+    return values
+
+
+def describe_feature_power_condition_terms(outcome: FeaturePowerAttemptResult, rng: random.Random) -> list[str]:
+    """Renders PCOND.X2's own "terms" text (`models/power.py PCOND_
+    TEMPLATE`) for the real "needs two Scout orders to accept these
+    terms" refusal (Phase 688) -- POWMSG.md's own Approfondimento 4
+    (`AK.OVR 0x12B15-0x12CB7`) confirms this refusal *is* the real
+    "mode 2 with sacrifice, describe only" case: exactly one Scout
+    order reaches the description routine (`_EIntro`/`_EDesc`/`_ECond`,
+    `0x11371`) without ever applying the power's own effect. A separate
+    function from `describe_feature_power_attempt()` itself, strictly
+    additive -- mirrors `describe_feature_power_needs_more_info()`'s
+    own established shape exactly.
+
+    Scoped to `PayUp`/`DrainSkill`/`DrainCourage` only (the 3 real
+    `_SCOUT_CONSENT_CONDITIONS`, the only conditions this specific
+    refusal reason can ever be set for) -- `NeedKing`/`SameAlign`/
+    `GTurn`'s own PCOND narration stays a real, separate, unresolved
+    question (see `describe_feature_power_attempt()`'s own Phase 790
+    addendum on the competing-text ambiguity there), not attempted here.
+    """
+
+    if outcome.reason != "needs two Scout orders to accept these terms" or outcome.condition_refused is None:
+        return []
+    template = PCOND_TEMPLATE[outcome.condition_refused]
+    return [render(template, _feature_power_values(outcome), rng=rng)]
+
+
+def describe_feature_power_condition_satisfied(
+    outcome: FeaturePowerAttemptResult, rng: random.Random, *, character_name: str | None = None
+) -> list[str]:
+    """Renders MCOND.X2's own in-character "sacrifice accepted" text
+    (`models/power.py MCOND_TEMPLATE`) once `_apply_condition_gate()`
+    actually lets a `PayUp`/`DrainSkill`/`DrainCourage` attempt through
+    (`outcome.condition_satisfied`, Phase 801) -- the real "mode 3"
+    case (2+ Scout orders, cost paid) `0x12606` reaches once the
+    description-only mode 2 branch above is bypassed. Placed right
+    after the power's own success line in `describe_search()`.
+    """
+
+    if outcome.condition_satisfied is None:
+        return []
+    template = MCOND_TEMPLATE[outcome.condition_satisfied]
+    return [render(template, _feature_power_values(outcome, character_name), rng=rng)]
 
 
 # The 15 Spell members SPELL_CAST_ANNOUNCEMENT markers, per SPNOTE.X2's own
@@ -9854,6 +9955,14 @@ def describe_search(
         # above, since that composer's own contract already returns
         # `None` for this exact refusal (no recovered POWMSG id there).
         lines.extend(describe_feature_power_needs_more_info(result.feature_power_outcome, rng))
+        # Phase 801: PCOND.X2's own "terms" (only ever non-empty when
+        # `power_line` above was `None` -- a refusal never also
+        # succeeds) and MCOND.X2's own "sacrifice accepted" companion
+        # (only ever non-empty right after a real success line).
+        lines.extend(describe_feature_power_condition_terms(result.feature_power_outcome, rng))
+        lines.extend(
+            describe_feature_power_condition_satisfied(result.feature_power_outcome, rng, character_name=character_name)
+        )
     return lines
 
 

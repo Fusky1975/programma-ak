@@ -123,6 +123,8 @@ from ak_engine.report.turn_report import (
     describe_recruit,
     describe_rumor,
     describe_feature_power_attempt,
+    describe_feature_power_condition_satisfied,
+    describe_feature_power_condition_terms,
     describe_feature_power_needs_more_info,
     describe_search,
     _search_province_name,
@@ -7266,7 +7268,10 @@ def test_describe_search_omits_the_feature_power_line_when_none_recovered():
         Power.ORAC_GOLD,
         Power.ORAC_TREAS,
         Power.RECHARGE,
-        Power.GRANT_WISH,
+        # Power.GRANT_WISH deliberately excluded -- Phase 801, it now
+        # renders its own real POWMSG-30-then-31 text instead (see
+        # test_describe_feature_power_needs_more_info_excludes_grant_wish
+        # below).
         Power.GAMBLE,
     ],
 )
@@ -7276,6 +7281,17 @@ def test_describe_feature_power_needs_more_info_renders_both_lines_for_every_sa_
     assert lines[0] == "The Pool/FStream needs more information to perform its power."
     assert len(lines) == 2
     assert "Pool/FStream" in lines[1]
+
+
+def test_describe_feature_power_needs_more_info_excludes_grant_wish():
+    # Phase 801: Desktop/POWMSG.md's own disassembly-verified account of
+    # GRANT_WISH's own real dispatcher shows only POWMSG choices 30-
+    # then-31 firing for this refusal, not this generic `_EDesc` pair --
+    # see describe_feature_power_attempt()'s own GRANT_WISH branch.
+    outcome = FeaturePowerAttemptResult(
+        power=Power.GRANT_WISH, applied=False, reason="no SA argument given", magic_feature=MagicFeature.POOL
+    )
+    assert describe_feature_power_needs_more_info(outcome, ScriptedRandom([0.1] * 4)) == []
 
 
 def test_describe_feature_power_needs_more_info_non_matching_reason_returns_nothing():
@@ -7293,7 +7309,7 @@ def test_describe_feature_power_needs_more_info_wrong_power_reason_returns_nothi
 
 
 def test_describe_feature_power_needs_more_info_no_magic_feature_still_renders_gracefully():
-    outcome = FeaturePowerAttemptResult(power=Power.GRANT_WISH, applied=False, reason="no SA argument given", magic_feature=None)
+    outcome = FeaturePowerAttemptResult(power=Power.ORAC_ALIGN, applied=False, reason="no SA argument given", magic_feature=None)
     lines = describe_feature_power_needs_more_info(outcome, ScriptedRandom([0.1] * 4))
     assert lines[0] == "The $\\ needs more information to perform its power."
     assert len(lines) == 2
@@ -7317,7 +7333,7 @@ def test_describe_search_renders_magic_feature_discovery_before_the_feature_powe
 
 def test_describe_search_needs_more_info_refusal_renders_after_the_empty_power_line():
     power_outcome = FeaturePowerAttemptResult(
-        power=Power.GRANT_WISH, applied=False, reason="no SA argument given", magic_feature=MagicFeature.POOL
+        power=Power.ORAC_ALIGN, applied=False, reason="no SA argument given", magic_feature=MagicFeature.POOL
     )
     result = SearchExecutionResult(accepted=True, combat_resolved=False, feature_power_outcome=power_outcome)
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
@@ -7329,9 +7345,165 @@ def test_describe_search_needs_more_info_refusal_renders_after_the_empty_power_l
     assert lines == [
         "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
         "The Pool/FStream needs more information to perform its power.",
-        "The Pool/FStream will grant a minor Wish.When you scout it, you may increase any ability by one, "
-        "if your unmodified skill level is less than your aptitude (maximum 4).SA-y the ability number "
-        "(0=Tactics, 1=March etc., the order is shown in your Character List).",
+        "The Pool/FStream is an Oracle of Alignment.When you scout it, just SA-y the character number "
+        '(not the name; e.g., "SA Tell me about character 1.") and the character\'s alignment will become '
+        "known to you.",
+    ]
+
+
+def test_describe_search_grant_wish_invalid_argument_renders_the_tutorial_then_at_limit_text():
+    # Phase 801: supersedes the generic `_EDesc` pair for GRANT_WISH
+    # specifically -- see describe_feature_power_attempt()'s own
+    # GRANT_WISH branch and describe_feature_power_needs_more_info()'s
+    # own exclusion of this power.
+    power_outcome = FeaturePowerAttemptResult(
+        power=Power.GRANT_WISH, applied=False, reason="no SA argument given", magic_feature=MagicFeature.POOL
+    )
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, feature_power_outcome=power_outcome)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "The Pool/FStream will grant a wish to a character.SA-y an ability number (not the skill name itself), "
+        "and your skill shall be raised by one: 0-Tac, 1-Mar, 2-Nav, 3-Arc, 4-Mel, 5-Whi, 6-Nec, 7-Ele, 8-Psy, "
+        "9-Ill, 10-Dru, 11-Thi, 12-Exp, 13-Spy, 14-Sage. "
+        "The Pool/FStream cannot grant the wish if the character's skill has already reached his aptitude level.",
+    ]
+
+
+# -- Phase 801: describe_feature_power_condition_terms()/_satisfied()
+# (PCOND.X2/MCOND.X2, `Desktop/POWMSG.md` Approfondimento 4) --
+
+
+@pytest.mark.parametrize(
+    "condition,cost,expected",
+    [
+        (
+            PowerCondition.PAY_UP,
+            5,
+            "You must pay 5 gold each time the Pool/FStream is used (to show that you accept these terms, "
+            "a character must give two Scout orders when he Searches this feature.)",
+        ),
+        (
+            PowerCondition.DRAIN_SKILL,
+            2,
+            "2 skill level(s), chosen at random, will be drained from the character if the Pool/FStream is "
+            "scouted.You MUST have enough skill levels to meet the Pool/FStream's demand (to accept these "
+            "terms, a character must give two Scout orders when Searching this feature.",
+        ),
+        (
+            PowerCondition.DRAIN_COURAGE,
+            None,
+            "When you use the Pool/FStream, it will drain away one level of courage (Brave men become "
+            "Cautious, etc.)A Coward may not use this feature!To accept these terms, a character must give "
+            "two Scout orders when Searching this feature.",
+        ),
+    ],
+)
+def test_describe_feature_power_condition_terms_renders_pcond_text(condition, cost, expected):
+    outcome = FeaturePowerAttemptResult(
+        power=Power.NEW_TEMP,
+        applied=False,
+        reason="needs two Scout orders to accept these terms",
+        condition_refused=condition,
+        condition_cost=cost,
+        magic_feature=MagicFeature.POOL,
+    )
+    lines = describe_feature_power_condition_terms(outcome, ScriptedRandom([0.1] * 4))
+    assert lines == [expected]
+
+
+def test_describe_feature_power_condition_terms_non_matching_reason_returns_nothing():
+    outcome = FeaturePowerAttemptResult(power=Power.NEW_TEMP, applied=True, reason=None, condition_refused=None)
+    assert describe_feature_power_condition_terms(outcome, ScriptedRandom([0.1] * 4)) == []
+
+    # A refusal for an unrelated reason on one of the 3 real Scout-
+    # consent conditions is still not the Scout-consent case itself.
+    other_refusal = FeaturePowerAttemptResult(
+        power=Power.NEW_TEMP, applied=False, reason="insufficient gold", condition_refused=PowerCondition.PAY_UP
+    )
+    assert describe_feature_power_condition_terms(other_refusal, ScriptedRandom([0.1] * 4)) == []
+
+
+@pytest.mark.parametrize(
+    "condition,cost,expected",
+    [
+        (
+            PowerCondition.PAY_UP,
+            5,
+            'Aldric plunked down the gold.Spake Aldric, "I have brought you 5 gold, as you have asked", '
+            "and the gold immediately disappeared.",
+        ),
+        (
+            PowerCondition.DRAIN_SKILL,
+            2,
+            'Spake Aldric, "I am willing to give up the 2 skill levels".',
+        ),
+        (
+            PowerCondition.DRAIN_COURAGE,
+            None,
+            'Spake Aldric, "I agree to lose some of my courage in exchange for your favor".'
+            "immediately, Aldric felt less hot-tempered.",
+        ),
+    ],
+)
+def test_describe_feature_power_condition_satisfied_renders_mcond_text(condition, cost, expected):
+    outcome = FeaturePowerAttemptResult(
+        power=Power.NEW_TEMP, applied=True, condition_satisfied=condition, condition_cost=cost, magic_feature=MagicFeature.POOL
+    )
+    lines = describe_feature_power_condition_satisfied(outcome, ScriptedRandom([0.1] * 10), character_name="Aldric")
+    assert lines == [expected]
+
+
+def test_describe_feature_power_condition_satisfied_none_returns_nothing():
+    outcome = FeaturePowerAttemptResult(power=Power.NEW_TEMP, applied=True, condition_satisfied=None)
+    assert describe_feature_power_condition_satisfied(outcome, ScriptedRandom([0.1] * 4), character_name="Aldric") == []
+
+
+def test_describe_search_scout_consent_refusal_renders_the_real_pcond_terms():
+    power_outcome = FeaturePowerAttemptResult(
+        power=Power.NEW_SEX,
+        applied=False,
+        reason="needs two Scout orders to accept these terms",
+        condition_refused=PowerCondition.DRAIN_SKILL,
+        condition_cost=2,
+        magic_feature=MagicFeature.POOL,
+    )
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, feature_power_outcome=power_outcome)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    # describe_feature_power_attempt() itself renders nothing for this
+    # refusal -- the PCOND terms line is the entire added content.
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "2 skill level(s), chosen at random, will be drained from the character if the Pool/FStream is "
+        "scouted.You MUST have enough skill levels to meet the Pool/FStream's demand (to accept these "
+        "terms, a character must give two Scout orders when Searching this feature.",
+    ]
+
+
+def test_describe_search_scout_consent_success_renders_the_power_line_then_mcond():
+    power_outcome = FeaturePowerAttemptResult(
+        power=Power.NEW_SEX,
+        applied=True,
+        new_sex=Sex.FEMALE,
+        condition_satisfied=PowerCondition.DRAIN_COURAGE,
+        magic_feature=MagicFeature.POOL,
+    )
+    result = SearchExecutionResult(accepted=True, combat_resolved=False, feature_power_outcome=power_outcome)
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "By the power of the Pool/FStream, I change you to a woman!Hee hee, how do you like THEM apples!",
+        'Spake Aldric, "I agree to lose some of my courage in exchange for your favor".'
+        "immediately, Aldric felt less hot-tempered.",
     ]
 
 

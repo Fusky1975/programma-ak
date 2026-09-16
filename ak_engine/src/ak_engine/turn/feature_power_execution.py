@@ -156,6 +156,51 @@ the 3 conditions that cost the character something -- `PAY_UP`,
 this first, before any of those 3 conditions' own cost-specific
 checks -- `turn/search_execution.py`'s own docstring used to say this
 had "nothing to consume it yet"; it does now.
+
+**Phase 801 (`Desktop/POWMSG.md`, a disassembly-level report on
+`POWMSG.X2`'s own selection chain).** Two real findings:
+
+1. **A real, pre-existing bug in `_apply_condition_gate()`'s own
+   `DRAIN_SKILL` branch**: the real Pascal (`AK.OVR 0x11FB9-0x1214A`,
+   quoted in full) checks the *sum* of all 15 skill levels against the
+   cost *before* touching anything ("if SumSkills(hero) < fpay then
+   Reject else begin ... repeat ... until removed = fpay end") -- a
+   clean, all-or-nothing guard. The code here instead looped up to
+   `event.cost` times, decrementing a real skill each iteration, and
+   only checked sufficiency *after* the loop -- a refusal could follow
+   several already-applied decrements, contradicting this very
+   function's own docstring promise ("a refusal never partially
+   applies a cost"). Fixed: precompute the total skill sum and reject
+   before any mutation; once that guard passes, a candidate ability is
+   guaranteed to exist at every one of the `event.cost` iterations, so
+   the old post-loop check and the inner "no candidates" break are both
+   now dead code, removed. The document's own "protected ability index"
+   nuance (a specific talent excluded from the draw for the first 1001
+   attempts) has no proven symbolic identity ("la sua identificazione
+   simbolica non è ancora provata") -- correctly left unimplemented.
+2. **`resolve_feature_power_attempt()`'s own wrapper gains two new
+   stamped fields** (`condition_cost`, `condition_satisfied`), used by
+   `report/turn_report.py`'s new PCOND/MCOND composers -- see
+   `FeaturePowerAttemptResult`'s own docstring for both.
+
+`_resolve_grant_wish()`'s own real "invalid argument" behavior
+(`AK.OVR 0x11CEC-0x11E46`) is also now fully sourced: an out-of-range
+SA argument (`a<0` or `a>=15`) emits POWMSG choice 30 (the "SA-y an
+ability number..." tutorial sentence) then choice 31 unconditionally,
+with no skill ever compared -- this is the ordinary invalid-argument
+refusal, not the "fdisc tier 2" discovery narration an earlier
+docstring guessed at. No code change needed here -- `reason==
+"invalid target"` already exists exactly as needed; only `report/
+turn_report.py describe_feature_power_attempt()`'s own GRANT_WISH
+branch needed to actually render it (Phase 801).
+
+Two further real POWMSG.md findings were deliberately NOT attempted
+this phase, per the user's own confirmed scope choice: POWMSG.X2
+choice 18's own Illusory-Terrain hypothesis (content recovered, trigger
+unconfirmed), and ORAC_POWER's own "has armies" narration (the real
+compiled routine enumerates armies via `_ArmSay`, not the generic
+sentence Phase 782 wired) -- both real, flagged for a possible future
+phase.
 """
 
 from __future__ import annotations
@@ -397,6 +442,23 @@ class FeaturePowerAttemptResult:
     # condition-refusal templates on this field specifically, not on
     # `.reason` alone, to avoid exactly that collision.
     condition_refused: PowerCondition | None = None
+    # Phase 801: `event.cost` for a `PAY_UP`/`DRAIN_SKILL` event,
+    # regardless of refused/satisfied -- both PCOND.X2's own "#" (the
+    # pre-attempt terms) and MCOND.X2's own "#" (the post-attempt,
+    # in-character "sacrifice accepted" companion) need the real number.
+    # `None` for every other condition.
+    condition_cost: int | None = None
+    # Phase 801: set only when `_apply_condition_gate()` actually let
+    # the attempt through (`applied` is True) for one of the 3 real
+    # Scout-consent conditions (`PAY_UP`/`DRAIN_SKILL`/`DRAIN_COURAGE`)
+    # -- `report/turn_report.py describe_feature_power_condition_
+    # satisfied()`'s own real trigger for rendering `MCOND_TEMPLATE`.
+    # `None` for a refusal and for every other condition (including a
+    # successful `NEED_KING`/`SAME_ALIGN`/`G_TURN`/`PC_NONE` attempt --
+    # those 3/4 conditions' own PCOND/MCOND narration stays a real,
+    # separate, unresolved question, see this module's own Phase 790
+    # addendum).
+    condition_satisfied: PowerCondition | None = None
     already_matched: bool = False  # NEW_TEMP/NEW_RACE's own real no-op (already that value)
     at_limit: bool = False  # UP_SKILL/UP_APT/DN_SKILL/DN_APT's own real no-op (already capped/floored)
     ability: Ability | None = None
@@ -487,18 +549,20 @@ def _apply_condition_gate(
     elif event.condition is PowerCondition.DRAIN_SKILL:
         if leader.skills is None:
             return "insufficient skill levels"
-        drained = 0
         skills = leader.skills
+        # Phase 801: the real guard is the SUM of all 15 skill levels
+        # against the cost, checked before any mutation at all (`AK.OVR
+        # 0x11FB9-0x1214A`) -- fixes a real bug where this project's own
+        # earlier per-iteration loop could already have decremented
+        # several real skill levels before discovering insufficiency.
+        total_skill = sum(skills.pair_for_ability(ability)[0] for ability in Ability)
+        if total_skill < event.cost:
+            return "insufficient skill levels"
         for _ in range(event.cost):
             candidates = [ability for ability in Ability if skills.pair_for_ability(ability)[0] > 0]
-            if not candidates:
-                break
             ability = candidates[rng.randrange(len(candidates))]
             skill, aptitude = skills.pair_for_ability(ability)
             skills.set_pair_for_ability(ability, skill - 1, aptitude)
-            drained += 1
-        if drained < event.cost:
-            return "insufficient skill levels"
     elif event.condition is PowerCondition.DRAIN_COURAGE:
         if leader.temper is None or leader.temper is Temper.COWARDLY:
             return "a Coward may not use this feature"
@@ -537,13 +601,25 @@ def resolve_feature_power_attempt(
     `event.magic_feature` onto every real outcome (POWMSG.X2's own
     ``$\\`` marker, see `report/turn_report.py describe_feature_power_
     attempt()`) without every one of that function's own many early
-    returns having to repeat it.
+    returns having to repeat it. Phase 801: also stamps `condition_cost`/
+    `condition_satisfied` here, for the same reason -- `event` (not just
+    `result`) is needed to know them, and every per-power `_resolve_*()`
+    function stays unaware of the condition that gated it.
     """
 
     result = _resolve_feature_power_attempt_effect(
         state, leader_id, feature, event, rng, sa_argument, scout_orders_given=scout_orders_given
     )
-    return replace(result, magic_feature=event.magic_feature)
+    condition_cost = event.cost if event.condition in (PowerCondition.PAY_UP, PowerCondition.DRAIN_SKILL) else None
+    condition_satisfied = (
+        event.condition if result.applied and event.condition in _SCOUT_CONSENT_CONDITIONS else None
+    )
+    return replace(
+        result,
+        magic_feature=event.magic_feature,
+        condition_cost=condition_cost,
+        condition_satisfied=condition_satisfied,
+    )
 
 
 def _resolve_feature_power_attempt_effect(
@@ -909,9 +985,22 @@ def _resolve_recharge(state: GameState, leader_id: int, item_id: int) -> Feature
 def _resolve_grant_wish(leader: LeaderState, ability_ordinal: int) -> FeaturePowerAttemptResult:
     """`GRANT_WISH` (section 5.6): "SA-y the ability number... `skill <
     min(4, aptitude)` -> skill+1", a deterministic grant distinct from
-    `UP_SKILL`'s own probabilistic roll. POWMSG 30 (can't grant, skill
-    already at the aptitude/4 ceiling -- `at_limit`, the same real
-    no-op shape `UP_SKILL`/`UP_APT` already use), POWMSG 31 (success).
+    `UP_SKILL`'s own probabilistic roll. POWMSG choice 31 (can't grant,
+    skill already at the aptitude/4 ceiling -- `at_limit`, the same real
+    no-op shape `UP_SKILL`/`UP_APT` already use), choice 32 (success).
+
+    Phase 801 (`Desktop/POWMSG.md` Approfondimento 2, `AK.OVR
+    0x11CEC-0x11E46`, address-verified): an out-of-range argument
+    (`ability_ordinal not in range(15)`, the real `a<0 or a>=15` guard --
+    covers both "no SA argument given at all" and a genuinely invalid
+    one, since the real `EAFA` register defaults to -1 when no digits
+    were ever typed) always emits POWMSG choice 30 (the "SA-y an
+    ability number..." tutorial sentence) *then* choice 31
+    unconditionally, with no character skill ever compared. This is the
+    ordinary invalid-argument refusal, not the "fdisc tier 2" discovery
+    narration an earlier docstring guessed at -- see `report/turn_
+    report.py describe_feature_power_attempt()`'s own `GRANT_WISH`
+    branch for where this renders.
     """
 
     if ability_ordinal not in range(15):
