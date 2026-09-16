@@ -1310,7 +1310,7 @@ from ak_engine.models.army_type import (
     is_overflight_unit,
 )
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature
-from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 from ak_engine.models.monster import MONSTER_DESCRIPTION, MONSTER_NAMES, Monster

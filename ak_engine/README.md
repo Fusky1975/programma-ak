@@ -33102,6 +33102,37 @@ item is no longer "still unresolved." This closes backlog item #15 in
 full -- the entire genuinely-blocked backlog now has zero items left
 that are actionable without new source material.
 
+### Phase 808: `ruff`-assisted bug sweep -- one real type-hint defect fixed
+
+At the user's direct request for another bug/error review (not scoped
+to a single phase's own diff this time), ran `ruff` (installed
+temporarily for this analysis only, not a project dependency) across
+the full `src/ak_engine` tree with Pyflakes/Bugbear/security-focused
+rule sets, then manually verified every non-cosmetic hit. Found one
+real, fixable defect: `report/turn_report.py`'s own `_province_tax_
+tier()` and `_discovery_skill_modifier_row()` both type-annotate a
+parameter as `KingdomState` without that name ever being imported in
+this file -- benign at runtime only because `from __future__ import
+annotations` defers evaluation, but a real, verifiable bug that would
+fail under `typing.get_type_hints()`, mypy/pyright, or any runtime
+introspection, and a misleading signature for a reader. Confirmed via
+both call sites that `KingdomState` really is the correct, intended
+type (not a mismatch) -- fixed by adding it to the file's existing
+`ak_engine.models.game_state` import line. Every other candidate
+checked and ruled out as a real bug, not just left unexamined: a
+`zip()` without `strict=` in `turn_processor.py _dispatch_multi_
+practice()` is provably safe (`execute_practice_group()`'s own
+docstring guarantees one result per input leader, in order); a second
+`zip()` in `turn/victory_points.py OUTLOOK_REDUCTION` pairs two
+hardcoded 10-element sequences (counted, they match); an unused
+`decode_defend_phase` import in `turn_processor.py` is genuinely dead
+(the real Defend dispatch already happens correctly via `plan_
+dispatch.py`'s own call to the same function) but harmless; the
+remaining unused-import/unused-loop-variable hits are cosmetic, zero
+behavioral risk. Test count unchanged (6753) -- the fix is a type-hint
+correction with no behavior change, confirmed by re-running the full
+suite before and after.
+
 ## Setup
 
 ```
