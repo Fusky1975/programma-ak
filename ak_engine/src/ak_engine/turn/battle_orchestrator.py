@@ -539,8 +539,24 @@ def _build_battle_units(
     opposing side holding ``Treasure.AMULET_ANTI_ILLUSION`` halves
     whichever ``phantasmal_armies_bonus_per_level`` rate the Balloons
     check above already selected. Stacks with Balloons multiplicatively
-    (15% -> 5% -> 2.5%) since no source gives a combined formula for both
-    wards applying at once.
+    (15% -> 5% -> 2.5%).
+
+    **Phase 807 addendum -- closes backlog item #15 as a confirmed
+    project decision, not a guess.** No source ever states a combined
+    formula for Balloons ("army strength is increased by only 5% per
+    level... instead of the base 15%") and the Crystal ("the Illusory
+    Armies spell has only half its normal effect") applying together --
+    "normal" is genuinely ambiguous once Balloons has already redefined
+    the active rate. Asked the user directly (same "no source, ask
+    directly" convention as ``feedback_ask_user_for_unconfirmed_wire_
+    formats``): **confirmed to keep the sequential-application reading
+    above** (whichever rate is currently active gets halved by the
+    Crystal, regardless of whether Balloons already changed it from the
+    15% baseline) over the alternative (the Crystal always halves the
+    true 15% baseline independently, with only the more severe of the
+    two reductions applying, non-stacking). No code change needed --
+    this addendum records the decision so the item isn't revisited as
+    "still unresolved."
 
     **Island provinces** (Phase 282, ``is_island``): resolved once by
     ``fight_battle()`` from ``ProvinceState.is_island`` and passed

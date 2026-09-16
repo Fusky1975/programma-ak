@@ -33083,6 +33083,25 @@ attempt doesn't retry either dead end. Still genuinely blocked -- needs
 either a real K1 move file for one of G6's other Kingdoms or a
 disassembly of the move-file writer. Test count unchanged (6753).
 
+### Phase 807: backlog #15 closed as a confirmed project decision (Crystal of True Seeing + Observation Balloons, combined)
+
+Comment-only, no behavior change. No source states a combined formula
+for Observation Balloons (a flat "5% per level instead of 15%"
+override) and the Crystal of True Seeing ("half its normal effect")
+both reducing Phantasmal Armies' own strength bonus at once --
+"normal" is genuinely ambiguous once Balloons has already redefined
+the active rate. Asked the user directly which reading to keep
+(matching the project's own established "no source, ask directly"
+convention): **confirmed the already-implemented sequential-application
+reading** (15% -> 5% via Balloons -> 2.5% via the Crystal halving
+whatever rate is currently active) over the alternative (the Crystal
+always halves the true 15% baseline independently, non-stacking, more
+severe wins). No code change needed -- `turn/battle_orchestrator.py
+_build_battle_units()`'s own docstring records the decision so this
+item is no longer "still unresolved." This closes backlog item #15 in
+full -- the entire genuinely-blocked backlog now has zero items left
+that are actionable without new source material.
+
 ## Setup
 
 ```
