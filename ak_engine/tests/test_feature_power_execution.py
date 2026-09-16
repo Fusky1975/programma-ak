@@ -27,6 +27,7 @@ from ak_engine.turn.feature_power_execution import (
     parse_sa_argument,
     resolve_feature_power_attempt,
 )
+from ak_engine.worldgen.internal_magical_locations import power_terrain_parameter
 from _helpers import ScriptedRandom
 
 LOCATION = HexCoord(3, 9)
@@ -1211,6 +1212,85 @@ def test_resolve_feature_power_attempt_chance_cast_spell():
     assert result.applied is True
     assert result.power is Power.CAST_SPELL
     assert result.cast_spell is Spell.TORNADO
+
+
+# -- Phase 801 (Desktop/POWMSG.md choice 18): CAST_SPELL/ANS_PRAYER
+# granting Spell.ILLUS_TERRAIN -- a real bug fix, not just narration.
+# `_resolve_terrain_spell()` never supplied a fake terrain before this
+# phase, so `_execute_illus_terrain()` always refused with "fake
+# terrain not specified". FeatureType.TEMPLE fid=1 at x=3 (this file's
+# own LOCATION) confirmed via a standalone script directly against
+# `resolve_spell_candidate()`/`power_terrain_parameter()`, not hand-
+# traced -- resolves to Power.CAST_SPELL / Spell.ILLUS_TERRAIN /
+# chosen terrain Terrain.FOREST.
+
+
+def test_power_terrain_parameter_matches_the_modular_formula():
+    # (feature_index + feature_type.value) % 6 -- the same shape as
+    # power_temper_parameter()/power_race_parameter(), just a wider
+    # modulus (6, PLAINS..SEA) excluding the NO_TERRAIN sentinel (6).
+    assert power_terrain_parameter(FeatureType.TEMPLE, 1) is Terrain.FOREST
+    assert power_terrain_parameter(FeatureType.HOLLOW_TREE, 17) is Terrain.MTNS
+    for feature_type in FeatureType:
+        for feature_id in range(20):
+            assert power_terrain_parameter(feature_type, feature_id) is not Terrain.NO_TERRAIN
+
+
+def test_derive_feature_event_illus_terrain_populates_the_terrain_parameter():
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.TEMPLE)
+    state = GameState()
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    event = derive_feature_event(feature, state=state)
+    assert event.power is Power.CAST_SPELL
+    assert event.spell_parameter is Spell.ILLUS_TERRAIN
+    assert event.illusory_terrain_parameter is Terrain.FOREST
+
+
+def test_derive_feature_event_non_illus_terrain_spell_leaves_the_terrain_parameter_none():
+    # F#7 Tomb at x=3 -> Cast Spell / Flood (already-existing Phase 620
+    # fixture) -- confirms the new field stays None for every other spell.
+    feature = _feature(7, 307, FeatureType.TOMB)
+    state = GameState()
+    state.provinces[feature.coord] = ProvinceState(coord=feature.coord, terrain=Terrain.SEA, race=Race.HUMAN)
+    event = derive_feature_event(feature, state=state)
+    assert event.spell_parameter is Spell.FLOOD
+    assert event.illusory_terrain_parameter is None
+
+
+def test_resolve_feature_power_attempt_illus_terrain_now_succeeds():
+    # The direct regression test for the real bug: before Phase 801,
+    # this always refused with "fake terrain not specified" regardless
+    # of any other state, since nothing ever populated CastRequest.terrain.
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.TEMPLE)
+    state.add_feature(feature)
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.PLAINS, race=Race.HUMAN)
+    event = FeaturePowerEvent(
+        power=Power.CAST_SPELL,
+        magic_feature=MagicFeature.CRYSTAL_BALL,
+        condition=PowerCondition.PC_NONE,
+        spell_parameter=Spell.ILLUS_TERRAIN,
+        illusory_terrain_parameter=Terrain.FOREST,
+    )
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
+
+    assert result.applied is True
+    assert result.cast_spell is Spell.ILLUS_TERRAIN
+    assert result.cast_illusory_terrain is Terrain.FOREST
+    assert state.provinces[LOCATION].illusory_terrain is Terrain.FOREST
+
+
+def test_resolve_feature_power_attempt_non_illus_terrain_spell_leaves_cast_illusory_terrain_none():
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+    state.provinces[LOCATION] = ProvinceState(coord=LOCATION, terrain=Terrain.SEA, race=Race.HUMAN)
+
+    result = resolve_feature_power_attempt(state, LEADER_ID, feature, _terrain_spell_event(Spell.PART_SEA), random.Random(0))
+
+    assert result.applied is True
+    assert result.cast_illusory_terrain is None
 
 
 # -- Phase 623: Power.MAP_PROV, "known provinces" ----------------------------

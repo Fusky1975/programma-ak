@@ -215,7 +215,7 @@ from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, ArmyState, GameState, LeaderState
 from ak_engine.models.magic_feature import MagicFeature
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.power import Power, PowerCondition
 from ak_engine.models.race import Race
@@ -236,6 +236,7 @@ from ak_engine.worldgen.internal_magical_locations import (
     power_condition_cost,
     power_race_parameter,
     power_temper_parameter,
+    power_terrain_parameter,
     resolve_power,
     resolve_power_condition,
     resolve_required_alignment,
@@ -342,6 +343,12 @@ class FeaturePowerEvent:
     # resolved to one of the 3 territory-filtered candidates -- see
     # TERRAIN_SPELL_POWERS and this module's own Phase 620 addendum.
     spell_parameter: Spell | None = None
+    # Phase 801 (Desktop/POWMSG.md choice 18): the fake terrain a Feature
+    # announces when `spell_parameter` resolves to `Spell.ILLUS_TERRAIN`
+    # specifically -- see `power_terrain_parameter()`'s own docstring for
+    # the project-original selection formula. `None` for every other
+    # spell (or when `spell_parameter` itself is `None`).
+    illusory_terrain_parameter: Terrain | None = None
     # Phase 622: Power.CHANCE's own resolved sub-power (one of NEW_SEX/
     # NEW_TEMP/UP_SKILL/DN_SKILL/CAST_SPELL/SAGE_DISC), only when `state`
     # was given -- see this module's own Phase 622 addendum.
@@ -375,6 +382,7 @@ def derive_feature_event(feature: Feature, state: GameState | None = None) -> Fe
     race_parameter: Race | None = None
     temper_parameter: Temper | None = None
     spell_parameter: Spell | None = None
+    illusory_terrain_parameter: Terrain | None = None
     chance_sub_power: Power | None = None
     if power in (Power.UP_SKILL, Power.UP_APT, Power.DN_SKILL, Power.DN_APT):
         ability_parameter = power_ability_parameter(feature.kind, feature.feature_id)
@@ -390,6 +398,8 @@ def derive_feature_event(feature: Feature, state: GameState | None = None) -> Fe
             spell_parameter = resolve_spell_candidate(
                 feature.kind, feature.feature_id, province.effective_terrain(), power, state.miscwrit
             )
+            if spell_parameter is Spell.ILLUS_TERRAIN:
+                illusory_terrain_parameter = power_terrain_parameter(feature.kind, feature.feature_id)
     elif power is Power.CHANCE and state is not None:
         chance_sub_power = derive_chance_sub_power(state.turn_number, state.gdday)
         if chance_sub_power in (Power.UP_SKILL, Power.DN_SKILL):
@@ -417,6 +427,7 @@ def derive_feature_event(feature: Feature, state: GameState | None = None) -> Fe
         cost=cost,
         required_alignment=required_alignment,
         spell_parameter=spell_parameter,
+        illusory_terrain_parameter=illusory_terrain_parameter,
         chance_sub_power=chance_sub_power,
     )
 
@@ -501,6 +512,11 @@ class FeaturePowerAttemptResult:
     # itself ultimately succeeded), for report/turn_report.py's own
     # ``~`` marker.
     cast_spell: Spell | None = None
+    # Phase 801 (Desktop/POWMSG.md choice 18): the fake terrain a
+    # Feature announced -- only set when `cast_spell is Spell.ILLUS_
+    # TERRAIN`, regardless of whether the cast itself succeeded (same
+    # "attempt was made" convention as `cast_spell` above).
+    cast_illusory_terrain: Terrain | None = None
 
 
 _SCOUT_CONSENT_CONDITIONS = (PowerCondition.PAY_UP, PowerCondition.DRAIN_SKILL, PowerCondition.DRAIN_COURAGE)
@@ -652,7 +668,9 @@ def _resolve_feature_power_attempt_effect(
     leader = state.leaders[leader_id]
 
     if power in TERRAIN_SPELL_POWERS:
-        return _resolve_terrain_spell(state, leader_id, feature, power, event.spell_parameter, rng)
+        return _resolve_terrain_spell(
+            state, leader_id, feature, power, event.spell_parameter, rng, event.illusory_terrain_parameter
+        )
 
     if power is Power.CHANCE:
         return _resolve_chance(state, leader_id, feature, event, rng)
@@ -1050,7 +1068,13 @@ def _resolve_gamble(
 
 
 def _resolve_terrain_spell(
-    state: GameState, leader_id: int, feature: Feature, power: Power, spell: Spell, rng: random.Random
+    state: GameState,
+    leader_id: int,
+    feature: Feature,
+    power: Power,
+    spell: Spell,
+    rng: random.Random,
+    illusory_terrain_parameter: Terrain | None = None,
 ) -> FeaturePowerAttemptResult:
     """`CAST_SPELL`/`ANS_PRAYER`'s own `Set_Spell` effect (section 3.6,
     Phase 620/621): an automatic-success cast (`turn/cast_execution.py
@@ -1099,6 +1123,19 @@ def _resolve_terrain_spell(
     board_width`) without the other would break this round trip the
     instant `state.board_width != NORMAL_MAP_BOUNDS[0]` -- left as a
     matched pair on purpose.
+
+    **Phase 801 (`Desktop/POWMSG.md` choice 18)**: a real, previously
+    unnoticed bug -- `spell is Spell.ILLUS_TERRAIN` needs a fake
+    terrain (`CastRequest.terrain`), but nothing ever supplied one here
+    before this phase, so `_execute_illus_terrain()` always refused
+    with "fake terrain not specified" -- a Feature could never actually
+    grant Illusory Terrain. `illusory_terrain_parameter` (`event.
+    illusory_terrain_parameter`, `power_terrain_parameter()`'s own
+    project-original formula) fixes this; stamped back onto the result
+    as `cast_illusory_terrain` for `report/turn_report.py`'s own new
+    choice-18 narration. `None` for every other spell (the `_resolve_
+    chance()` call site never needs it, `Power.CHANCE`'s own spell
+    table never includes `ILLUS_TERRAIN`).
     """
 
     leader = state.leaders[leader_id]
@@ -1112,7 +1149,7 @@ def _resolve_terrain_spell(
         target = leader_id
     else:
         target = encode_hex_number(feature.coord, NORMAL_MAP_BOUNDS[0])
-    request = CastRequest(spell=spell, target=target)
+    request = CastRequest(spell=spell, target=target, terrain=illusory_terrain_parameter)
     cast_result = execute_cast(
         state, leader.kingdom_id, leader_id, request, rng, board_width=NORMAL_MAP_BOUNDS[0], wand_skill_level=1
     )
@@ -1121,6 +1158,7 @@ def _resolve_terrain_spell(
         applied=cast_result.applied,
         reason=cast_result.reason,
         cast_spell=spell,
+        cast_illusory_terrain=illusory_terrain_parameter if spell is Spell.ILLUS_TERRAIN else None,
     )
 
 

@@ -2893,6 +2893,18 @@ _POWMSG_DRAIN_SKILL_REFUSED = (
 # id survives in the recovered 42.
 _POWMSG_CAST_SPELL_SUCCESS = "I give you the power to cast a ~ spell!"
 
+# Phase 801 (Desktop/POWMSG.md choice 18, byte-verified): a real, more
+# specific override of _POWMSG_CAST_SPELL_SUCCESS above -- when the
+# derived spell is Illusory Terrain specifically, the Feature doesn't
+# just "grant the power to cast," it directly demonstrates the illusion
+# on its own province. The backtick marker resolves to the fake terrain
+# `power_terrain_parameter()` chose (`turn/feature_power_execution.py`'s
+# own Phase 801 addendum) via the same TERRAIN_NAME lookup this project
+# already uses elsewhere -- no source confirms a more elaborate Sea/
+# Island rendering nuance for this one marker, so the plain terrain
+# name is used, documented rather than guessed further.
+_POWMSG_CAST_SPELL_ILLUS_TERRAIN_SUCCESS = "As a demonstration, I will change the appearance of this province to `!"
+
 # Phase 782: dispatches on the exact, already-stable `.reason` strings
 # `turn/feature_power_execution.py _apply_condition_gate()` already
 # returns -- guarded by `outcome.condition_refused is not None` at the
@@ -3205,6 +3217,9 @@ def describe_feature_power_attempt(
     if outcome.power in (Power.CAST_SPELL, Power.ANS_PRAYER):
         if not outcome.applied or outcome.cast_spell is None:
             return None  # a failed cast (wrong terrain, ...) has no recovered POWMSG id
+        if outcome.cast_spell is Spell.ILLUS_TERRAIN and outcome.cast_illusory_terrain is not None:
+            values["`"] = TERRAIN_NAME[outcome.cast_illusory_terrain]
+            return render(_POWMSG_CAST_SPELL_ILLUS_TERRAIN_SUCCESS, values, rng=rng)
         values["~"] = SPELL_NAME[outcome.cast_spell]
         return render(_POWMSG_CAST_SPELL_SUCCESS, values, rng=rng)
 

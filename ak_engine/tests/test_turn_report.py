@@ -7233,6 +7233,36 @@ def test_describe_feature_power_attempt_cast_spell_failure_has_no_recovered_mess
     assert describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4)) is None
 
 
+# -- Phase 801 (Desktop/POWMSG.md choice 18): CAST_SPELL/ANS_PRAYER
+# granting Spell.ILLUS_TERRAIN overrides the generic choice-43 text --
+
+
+def test_describe_feature_power_attempt_cast_spell_illus_terrain_uses_the_real_demonstration_text():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.CAST_SPELL, applied=True, cast_spell=Spell.ILLUS_TERRAIN, cast_illusory_terrain=Terrain.SEA
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line == "As a demonstration, I will change the appearance of this province to Sea!"
+
+
+def test_describe_feature_power_attempt_ans_prayer_illus_terrain_uses_the_same_override():
+    outcome = FeaturePowerAttemptResult(
+        power=Power.ANS_PRAYER, applied=True, cast_spell=Spell.ILLUS_TERRAIN, cast_illusory_terrain=Terrain.JUNGLE
+    )
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line == "As a demonstration, I will change the appearance of this province to Jungle!"
+
+
+def test_describe_feature_power_attempt_illus_terrain_without_a_chosen_terrain_falls_back_to_the_generic_text():
+    # Defensive -- shouldn't happen in practice (resolve_feature_power_
+    # attempt() always stamps cast_illusory_terrain alongside cast_spell
+    # for a real ILLUS_TERRAIN attempt), but a missing value must not
+    # crash, and must not silently render an unresolved "`" marker.
+    outcome = FeaturePowerAttemptResult(power=Power.CAST_SPELL, applied=True, cast_spell=Spell.ILLUS_TERRAIN, cast_illusory_terrain=None)
+    line = describe_feature_power_attempt(outcome, ScriptedRandom([0.1] * 4))
+    assert line == f"I give you the power to cast a {SPELL_NAME[Spell.ILLUS_TERRAIN]} spell!"
+
+
 def test_describe_search_appends_the_feature_power_line_when_present():
     outcome = FeaturePowerAttemptResult(power=Power.MAP_FEAT, applied=False, reason="no more features to reveal")
     result = SearchExecutionResult(accepted=True, combat_resolved=False, feature_power_outcome=outcome)

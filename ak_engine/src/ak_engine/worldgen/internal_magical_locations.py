@@ -251,6 +251,32 @@ def power_race_parameter(feature_type: FeatureType, feature_index: int) -> Race:
     return Race(modval & 3)
 
 
+def power_terrain_parameter(feature_type: FeatureType, feature_index: int) -> Terrain:
+    """Phase 801 (`Desktop/POWMSG.md` choice 18, byte-verified): "As a
+    demonstration, I will change the appearance of this province to
+    `!" -- `CAST_SPELL`/`ANS_PRAYER` granting a derived `Spell.ILLUS_
+    TERRAIN` needs a fake terrain to announce, but no player order ever
+    supplies one for a Feature-granted cast (unlike an ordinary player-
+    issued Illusory Terrain order, which always carries its own chosen
+    terrain). POWMSG.md gives the real *text* and confirms a terrain
+    parameter is genuinely needed, but no formula for *which* terrain
+    survives anywhere in the document.
+
+    **Project-original, clearly labeled as such** (confirmed directly
+    with the user, no source, no guess at random): mirrors this same
+    module's own `power_temper_parameter()`/`power_race_parameter()`
+    shape exactly -- the identical `(feature_index + ftype) mod N`
+    rotation already used for every other Set_Event parameter, `mod 6`
+    to land on one of `Terrain`'s 6 real members (`PLAINS`..`SEA`,
+    ordinals 0-5) -- `NO_TERRAIN` (6) is a sentinel, never a real
+    terrain to feign, excluded the same way `power_race_parameter()`'s
+    own `AND 3` excludes every non-humanoid `Race`.
+    """
+
+    modval = feature_index + feature_type.value
+    return Terrain(modval % 6)
+
+
 # -- Phase 616: Set_FCon -- ``Special Features.md`` section 4.1-4.3.
 # ``(con1, con2, perc)`` per real ``Power`` that calls it -- the 5 real
 # Oracles (``ORAC_ALIGN``..``ORAC_TREAS``) share one entry each, all

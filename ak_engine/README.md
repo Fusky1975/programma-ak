@@ -32879,6 +32879,50 @@ individually via `_ArmSay`, not the generic sentence Phase 782 wired.
 Test count: 6708 -> 6723 (net +15). Full suite verified green
 (unchanged, 6708) before touching a single test.
 
+### Phase 802: POWMSG choice 18 was a real functional bug, not just a missing sentence
+
+Closes backlog #7's own POWMSG choice 18 residual, deliberately
+deferred by Phase 801. Investigating the exact trigger found this was
+more than a narration gap: `turn/feature_power_execution.py
+_resolve_terrain_spell()` (CAST_SPELL/ANS_PRAYER's own dispatcher)
+never populated `CastRequest.terrain` at all, so `_execute_illus_
+terrain()` always refused with "fake terrain not specified" -- **a
+Feature could never actually grant `Spell.ILLUS_TERRAIN` through this
+mechanism**, regardless of anything else. The message itself ("As a
+demonstration, I will change the appearance of this province to `!")
+makes sense in this light: the Feature itself picks and announces the
+fake terrain, since no player order ever supplies one for a Feature-
+granted cast (unlike an ordinary player-issued Illusory Terrain order,
+which always carries its own chosen terrain).
+
+The one genuinely unsourced piece -- which terrain the Feature
+announces -- was confirmed directly with the user (`AskUserQuestion`):
+a new, project-original, clearly-labeled deterministic formula. New
+`worldgen/internal_magical_locations.py power_terrain_parameter()`
+mirrors `power_temper_parameter()`/`power_race_parameter()`'s own exact
+`(feature_index + feature_type.value) mod N` shape (`mod 6`, landing on
+one of `Terrain`'s 6 real members, `PLAINS`..`SEA`, excluding the
+`NO_TERRAIN` sentinel the same way `power_race_parameter()`'s own `AND
+3` already excludes non-humanoid races). `FeaturePowerEvent` gains
+`illusory_terrain_parameter`; `FeaturePowerAttemptResult` gains
+`cast_illusory_terrain` (both `None` for every other spell).
+`_resolve_terrain_spell()` now threads the chosen terrain into
+`CastRequest.terrain` whenever `spell is Spell.ILLUS_TERRAIN`. New
+`report/turn_report.py _POWMSG_CAST_SPELL_ILLUS_TERRAIN_SUCCESS`
+(POWMSG choice 18, byte-verified) overrides the generic choice-43 "I
+give you the power to cast a ~ spell!" text specifically for this
+spell, substituting the new backtick marker via the already-existing
+`TERRAIN_NAME` lookup -- no further Sea/Island rendering nuance is
+confirmed beyond the plain terrain name, documented rather than guessed
+further.
+
+Test count: 6723 -> 6731 (net +8). Full suite verified green
+(unchanged, 6723) before touching a single test; every new test passed
+on the first run. This closes backlog #7's POWMSG choice 18 residual in
+full -- only PCOND's own `NeedKing`/`SameAlign`/`GTurn` "terms", the
+ADVENTURE report's own fdisc-2/3 Special-column display, and ORAC_
+POWER's own real per-army narration remain open on item #7.
+
 ## Setup
 
 ```
