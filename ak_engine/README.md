@@ -33060,6 +33060,29 @@ leave the old bug coincidentally passing. Full suite verified green
 #7 in full except the ADVENTURE report's own fdisc-2/3 Special-column
 display (Phase 92's own unresolved `/F`/`/S` puzzle).
 
+### Phase 806: two more real avenues for backlog #14's SkillTable 31st value, both confirmed dead ends
+
+Comment-only, no behavior change. At the user's own direct request to
+re-check whether any of the 4 remaining genuinely-blocked backlog items
+(#4/#6/#14/#15) had become actionable, re-investigated #14 specifically
+with two new leads: (1) whether the `GW*`-format world save's own per-
+leader skill line (`parser/gw_world.py`) might carry the same mystery
+31st value the K1 move-file's own `SkillTable` has, which would let the
+question be answered from `GW6`'s own 22 real Kings instead of just the
+7 already checked -- confirmed it does not: the GW format's skill line
+is exactly 15 `(skill, aptitude)` pairs (30 tokens, doubled to 60 for a
+King), fully accounted for, no hidden 31st slot; (2) whether `Desktop/
+PROGRAMMA AK/G6/Pre turno 1.rar`/`Pre turno 2.rar` might contain move
+files for any of G6's other 16 Kingdoms -- listed both archives
+directly (no extraction needed, nothing new found): they hold only the
+same 7 `AK6__T*.K*` files already on hand. Also directly checked all 44
+real `SE6__T{2,3}.K*` turn-report letters' own CHARACTERS section --
+confirms the 31st value is never printed in real report text either.
+Recorded in `models/kingdom.py SkillTable`'s own docstring so a future
+attempt doesn't retry either dead end. Still genuinely blocked -- needs
+either a real K1 move file for one of G6's other Kingdoms or a
+disassembly of the move-file writer. Test count unchanged (6753).
+
 ## Setup
 
 ```

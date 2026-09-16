@@ -211,6 +211,30 @@ class SkillTable:
     instead of a guess so a future attempt doesn't have to re-derive this
     table from scratch, and doesn't retry the now-falsified race-ordinal
     reading.
+
+    **Phase 806 addendum -- two more real avenues tried, both confirmed
+    dead ends (2026-09-16), so a future attempt doesn't retry them.**
+    (1) The `GW*`-format world save's own per-leader skill line (`parser/
+    gw_world.py GWLeaderRecord.skills`) does NOT carry this 31st value at
+    all -- it is exactly 30 tokens for a Hero, 60 (the same 30-value
+    table written twice back-to-back) for a King, both fully accounted
+    for as the real 15 `(skill, aptitude)` pairs (Phase 325, an original
+    game-host document's own field legend). There is no hidden 31st slot
+    to extract from `GW6`/`GW3__T1`'s own 22+10 real Kings via this
+    route -- the K1 move-file's own 31-value line is a genuinely
+    different, move-file-only shape with no GW-format equivalent. (2)
+    `Desktop/PROGRAMMA AK/G6/Pre turno 1.rar`/`Pre turno 2.rar` were
+    listed (not extracted, since nothing new was found) -- both contain
+    only the same 7 real `AK6__T*.K*` move files already on hand at the
+    Desktop root (`T1.K3`, `T2.K{3,7,12,16,17,22}`), no additional
+    Kingdoms' own move files hiding inside. The 44 real `SE6__T{2,3}.K*`
+    turn-report letters were also checked directly (not just assumed) --
+    their own CHARACTERS section prints exactly the 15 visible skill/
+    aptitude pairs and nothing else; the 31st value is never surfaced in
+    real report prose at all, confirming it really is an invisible,
+    K1-move-file-only field. Still genuinely blocked: would need either
+    a K1 move file for one of G6's other 16 Kingdoms (never supplied) or
+    a disassembly of the move-file writer covering this specific field.
     """
 
     raw_values: list[int]
