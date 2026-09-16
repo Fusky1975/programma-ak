@@ -32811,6 +32811,74 @@ matching REPORTS.PAS's own real line order. Test count: 6698 -> 6708
 a single test; every new test passed on the first run. This closes
 backlog item #16 in full -- nothing remains open on it.
 
+### Phase 801: `Desktop/POWMSG.md` closes backlog #7's safe core -- PCOND/MCOND, GRANT_WISH's real text, a DRAIN_SKILL bug fix
+
+`Desktop/POWMSG.md` (2026-09-16), a disassembly-level report on
+`POWMSG.X2` and its selection chain, was read in full and cross-checked
+line-by-line against the already-shipped Feature->Power system before
+implementing anything. It closes most of backlog item #7
+(`[[project_genuinely_blocked_backlog_2026_08_29]]`) and surfaces one
+real, provable bug in already-shipped code. Per the user's own
+confirmed scope (via `AskUserQuestion`), only the "safe core" -- every
+finding with a concrete, already-identified real trigger -- was
+implemented; two more speculative findings were deliberately deferred.
+
+**PCOND.X2/MCOND.X2's own 7-line catalogs turned out to already be
+byte-identical to `models/power.py PCOND_TEMPLATE`/`MCOND_TEMPLATE`**
+(live since Phase 97) -- the real gap was never content, only trigger.
+The document's own Approfondimento 4 (`AK.OVR 0x12B15-0x12CB7`) shows
+the real trigger is exactly the already-shipped "needs two Scout
+orders to accept these terms" refusal (Phase 688): a Scout order that
+reaches a cost-bearing condition (`PayUp`/`DrainSkill`/`DrainCourage`)
+with fewer than two consent orders is the real "describe the terms,
+apply nothing" case (`_EIntro`/`_EDesc`/`_ECond`, routine `0x11371`).
+New `report/turn_report.py describe_feature_power_condition_terms()`
+renders `PCOND_TEMPLATE`'s own real text there; new `describe_feature_
+power_condition_satisfied()` renders `MCOND_TEMPLATE`'s own in-
+character "sacrifice accepted" companion once the gate actually passes
+(2+ Scout orders, cost paid). `FeaturePowerAttemptResult` gains
+`condition_cost`/`condition_satisfied`, both stamped by `resolve_
+feature_power_attempt()`'s own existing outer wrapper. `NeedKing`/
+`SameAlign`/`GTurn`'s own PCOND narration stays exactly as ambiguous
+as Phase 790 left it (a real, unresolved competing-text question) --
+not touched.
+
+**GRANT_WISH's own "invalid SA argument" behavior is now fully
+sourced** (`AK.OVR 0x11CEC-0x11E46`): an out-of-range or missing
+argument emits POWMSG choice 30 (the "SA-y an ability number..."
+tutorial sentence) then choice 31 unconditionally, with no character
+skill ever compared -- the ordinary invalid-argument refusal, not the
+"fdisc tier 2" discovery narration an earlier docstring guessed at.
+`describe_feature_power_attempt()`'s own `GRANT_WISH` branch now
+renders both texts together for `reason in ("no SA argument given",
+"invalid target")`; `describe_feature_power_needs_more_info()` now
+excludes `Power.GRANT_WISH` specifically (its own generic `_EDesc`
+pair would otherwise double-narrate the same refusal).
+
+**A real, pre-existing bug found and fixed**: `_apply_condition_
+gate()`'s own `DRAIN_SKILL` branch decremented real skill levels one
+iteration at a time, only checking sufficiency *after* the loop --
+meaning a refusal could follow several already-applied decrements,
+contradicting this exact function's own docstring promise ("a refusal
+never partially applies a cost"). The real Pascal (quoted in full in
+POWMSG.md) checks the *sum* of all 15 skill levels against the cost
+before touching anything. Fixed to match.
+
+Backlog #7's own "line 43" wording (an unrelated Fulfill-flavored
+sentence with an unexplained `0x04` control byte) is stale -- POWMSG.md
+confirms `<0x04>` is simply `dname[_discov]` (the Discovery-name
+marker), and this residual has been closed since Phase 796 (SAGE_DISC's
+own success text). Deliberately deferred, per the user's own confirmed
+scope: POWMSG choice 18 ("As a demonstration, I will change the
+appearance of this province to `!"), a plausible but disassembly-
+unconfirmed CAST_SPELL/ANS_PRAYER-Illusory-Terrain hypothesis; and
+ORAC_POWER's own "has armies" narration, where POWMSG.md's own
+Approfondimento 10 shows the real compiled routine enumerates armies
+individually via `_ArmSay`, not the generic sentence Phase 782 wired.
+
+Test count: 6708 -> 6723 (net +15). Full suite verified green
+(unchanged, 6708) before touching a single test.
+
 ## Setup
 
 ```
