@@ -53,7 +53,7 @@ function's docstring for why.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ak_engine.models.army_type import BEASTS, ArmyType, is_overflight_unit, overflight_group
 from ak_engine.models.map import TERRAIN_LINE_LENGTH_RANGE, Terrain
@@ -318,12 +318,33 @@ def _apply_nemesis_to_column(own_column: Column, opposing_column: Column, rng: r
             continue
         adjusted_strength = apply_nemesis_penalty(unit.effective_strength, unit.army_type, inflictor.army_type)
         if adjusted_strength != unit.effective_strength:
-            own_column[index] = BattleUnit(
-                unit.army_type,
-                adjusted_strength,
-                source_id=unit.source_id,
-                druidic_rear_targeting_blocked=unit.druidic_rear_targeting_blocked,
-            )
+            # Bug fix (this phase): a bare `BattleUnit(army_type, strength,
+            # source_id=..., druidic_rear_targeting_blocked=...)` here used
+            # to silently drop every field added to BattleUnit since Phase
+            # 43 (led_by_insufficient_druid/Phase 298, is_humanoid_race/
+            # Phase 392, duellist_bonus_if_selected/Phase 471, alignment_
+            # king_bonus_if_selected/Phase 661, has_druidic_horse_control/
+            # Phase 696) back to their own defaults -- the exact same
+            # "reconstruction drops newer fields" bug this project already
+            # found and fixed twice in `turn/duel.py apply_duel_
+            # demoralization()` (Phase 471/661) and in the Mirror-Image/
+            # Illusory-Hero illusion clones (Phase 783, fixed there via
+            # `dataclasses.replace()`). A real, live consequence: a
+            # humanoid front-line unit that also happens to be nemesis-
+            # penalized would wrongly read `is_humanoid_race=False`
+            # downstream (`turn/battle_orchestrator.py
+            # _apply_werebeast_bites()` reads it straight off `BattleResult.
+            # columns`' own post-nemesis units), and a Duellist/alignment-
+            # King-eligible side's own nemesis-penalized front-line unit
+            # would wrongly lose its `duellist_bonus_if_selected`/
+            # `alignment_king_bonus_if_selected` eligibility (`turn/
+            # battle_resolution.py _apply_duellist_bonus()`/`_apply_
+            # alignment_king_bonus()` both run after `apply_nemesis_
+            # penalties()` and read `column[0]` directly). Fixed with
+            # `dataclasses.replace()`, which carries every field --
+            # current and future -- forward automatically instead of
+            # re-listing them by hand.
+            own_column[index] = replace(unit, effective_strength=adjusted_strength)
 
 
 def column_strength(column: Column, *, outflank_second_line: bool = False) -> float:

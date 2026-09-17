@@ -33228,6 +33228,52 @@ returns 1.00) and passes against the fix -- confirmed by computing the
 pre-fix formula directly. Test count: 6754 -> 6755 (net +1). Full
 suite verified green before and after.
 
+### Phase 812: `apply_nemesis_penalties()` silently dropped 4 newer `BattleUnit` fields on a nemesis-penalized replacement
+
+Continuing the manual bug-hunting sweep into `turn/battle_line.py`
+(rulebook [7.2] line-up/nemesis/switch mechanics). Found a real, live
+recurrence of a bug class this project has already found and fixed
+twice before (`turn/duel.py apply_duel_demoralization()`, Phase 471/
+661; the Mirror-Image/Illusory-Hero illusion clones, Phase 783):
+`_apply_nemesis_to_column()`'s own reconstruction of a nemesis-
+penalized unit -- `BattleUnit(unit.army_type, adjusted_strength,
+source_id=unit.source_id, druidic_rear_targeting_blocked=unit.
+druidic_rear_targeting_blocked)` -- only ever carried forward 3 of
+`BattleUnit`'s now 8 real fields, silently resetting `led_by_
+insufficient_druid` (Phase 298), `is_humanoid_race` (Phase 392),
+`duellist_bonus_if_selected` (Phase 471), and `alignment_king_bonus_
+if_selected` (Phase 661) to their own defaults every time a unit's
+strength was actually nemesis-adjusted -- a common, ordinary combat
+event, not an edge case. Two real, live consequences confirmed by
+tracing the exact downstream readers: `turn/battle_orchestrator.py
+_apply_werebeast_bites()` reads `is_humanoid_race` straight off
+`BattleResult.columns`' own post-nemesis units, so a genuinely
+humanoid front-line unit that also happened to be nemesis-penalized
+would wrongly read as non-humanoid and be spared a Werebeast bite it
+should have suffered; `turn/battle_resolution.py _apply_duellist_
+bonus()`/`_apply_alignment_king_bonus()` both run *after* `apply_
+nemesis_penalties()` and read `column[0]`'s own bonus fields directly,
+so a Duellist- or alignment-King-eligible side's own nemesis-penalized
+front-line unit would silently lose its eligibility for the random
+"one front-line unit becomes fanatic" bonus -- in the worst case (every
+column's front-line unit nemesis-penalized), the whole title bonus
+would silently fail to apply for that battle even though the Supreme
+Commander genuinely holds the title. An existing regression test
+(Phase 43) already proved the project once cared about exactly this
+kind of drop for `druidic_rear_targeting_blocked` -- but the 4 fields
+added in later phases were never added to that same reconstruction.
+Fixed by replacing the hand-rolled reconstruction with `dataclasses.
+replace(unit, effective_strength=adjusted_strength)`, which carries
+every field -- current and any added in the future -- forward
+automatically, closing the whole bug class rather than just this one
+instance (matching Phase 783's own precedent for the identical fix
+shape). 4 new regression tests prove each of the 4 previously-dropped
+fields now survives the replacement; confirmed by directly simulating
+the old reconstruction, which really did reset all 4 to their
+defaults. Test count: 6755 -> 6759 (net +4). Full suite verified green
+before and after (a provable no-op for every pre-existing test, since
+none combine a nemesis-penalized unit with any of these 4 fields set).
+
 ## Setup
 
 ```

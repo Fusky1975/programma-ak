@@ -30,12 +30,20 @@ def unit(
     *,
     druidic_rear_targeting_blocked: bool = False,
     has_druidic_horse_control: bool = False,
+    led_by_insufficient_druid: bool = False,
+    is_humanoid_race: bool = False,
+    duellist_bonus_if_selected: float | None = None,
+    alignment_king_bonus_if_selected: float | None = None,
 ) -> BattleUnit:
     return BattleUnit(
         army_type=army_type,
         effective_strength=strength,
         druidic_rear_targeting_blocked=druidic_rear_targeting_blocked,
         has_druidic_horse_control=has_druidic_horse_control,
+        led_by_insufficient_druid=led_by_insufficient_druid,
+        is_humanoid_race=is_humanoid_race,
+        duellist_bonus_if_selected=duellist_bonus_if_selected,
+        alignment_king_bonus_if_selected=alignment_king_bonus_if_selected,
     )
 
 
@@ -335,6 +343,68 @@ def test_apply_nemesis_penalties_preserves_the_druidic_rear_targeting_blocked_fl
     penalized = attacker_columns[0][0]
     assert penalized.effective_strength == pytest.approx(10 * 2 / 3)
     assert penalized.druidic_rear_targeting_blocked is True
+
+
+def test_apply_nemesis_penalties_preserves_is_humanoid_race():
+    # Regression: a nemesis-penalized unit's own is_humanoid_race must
+    # survive the replacement, or turn/battle_orchestrator.py's own
+    # Werebeast-bite check (which reads BattleResult.columns' post-
+    # nemesis units directly) would wrongly treat a genuinely humanoid
+    # front-line unit as non-humanoid once it's nemesis-penalized.
+    attacker_columns = [[unit(ArmyType.PHALANX, 10, is_humanoid_race=True)]]
+    defender_columns = [[unit(ArmyType.LEGION, 10)]]
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
+
+    penalized = attacker_columns[0][0]
+    assert penalized.effective_strength == pytest.approx(10 * 2 / 3)
+    assert penalized.is_humanoid_race is True
+
+
+def test_apply_nemesis_penalties_preserves_led_by_insufficient_druid():
+    # Regression: turn/aftermath.py roll_quality_change()'s own
+    # insufficient-Druidic-ability improve-chance penalty ([7.5]) reads
+    # this flag; it must not reset to False just because the same unit
+    # was also nemesis-penalized.
+    attacker_columns = [[unit(ArmyType.PHALANX, 10, led_by_insufficient_druid=True)]]
+    defender_columns = [[unit(ArmyType.LEGION, 10)]]
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
+
+    penalized = attacker_columns[0][0]
+    assert penalized.effective_strength == pytest.approx(10 * 2 / 3)
+    assert penalized.led_by_insufficient_druid is True
+
+
+def test_apply_nemesis_penalties_preserves_duellist_bonus_if_selected():
+    # Regression: turn/battle_resolution.py _apply_duellist_bonus() runs
+    # *after* apply_nemesis_penalties and reads column[0]'s own
+    # duellist_bonus_if_selected directly -- a nemesis-penalized front-
+    # line unit on a Duellist-eligible side must not silently lose its
+    # eligibility for the random fanatic-unit bonus.
+    attacker_columns = [[unit(ArmyType.PHALANX, 10, duellist_bonus_if_selected=3.5)]]
+    defender_columns = [[unit(ArmyType.LEGION, 10)]]
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
+
+    penalized = attacker_columns[0][0]
+    assert penalized.effective_strength == pytest.approx(10 * 2 / 3)
+    assert penalized.duellist_bonus_if_selected == 3.5
+
+
+def test_apply_nemesis_penalties_preserves_alignment_king_bonus_if_selected():
+    # Regression: the sibling check to the Duellist one above, for the 7
+    # alignment-King titles' own identical "random front-line unit
+    # becomes fanatic" bonus (turn/battle_resolution.py _apply_
+    # alignment_king_bonus()).
+    attacker_columns = [[unit(ArmyType.PHALANX, 10, alignment_king_bonus_if_selected=2.0)]]
+    defender_columns = [[unit(ArmyType.LEGION, 10)]]
+
+    apply_nemesis_penalties(attacker_columns, defender_columns)
+
+    penalized = attacker_columns[0][0]
+    assert penalized.effective_strength == pytest.approx(10 * 2 / 3)
+    assert penalized.alignment_king_bonus_if_selected == 2.0
 
 
 def test_apply_nemesis_penalties_ignores_an_empty_opposing_column():
