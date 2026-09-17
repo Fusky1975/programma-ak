@@ -1059,6 +1059,7 @@ def find_transport_illegality(
     target_province: ProvinceState,
     *,
     has_march_through_floods: bool = False,
+    is_hug_coastline_hop: bool = False,
 ) -> TransportIllegalMoveReason | None:
     """The real sea-transport legality check -- see the module-level
     Phase 737 addendum right above `TransportIllegalMoveReason` for the
@@ -1083,6 +1084,31 @@ def find_transport_illegality(
     Sea for their own purposes, so the question never arises) or
     Mermen's own rule (already sea-effective either way, flooded or
     natural).
+
+    `is_hug_coastline_hop` (Phase 819 bug fix): `execute_move()` passes
+    `True` exactly when `_naval_hug_coastline_move_is_legal()` has
+    already confirmed this specific hop is a legitimate `AdvancedAbility.
+    NAVAL_HUG_COASTLINE` land-to-land jump across a shared coastal sea
+    hex (Phase 524/720, extensively tested -- `test_execute_move_naval_
+    hug_coastline_grants_the_hop_when_the_fleet_can_carry_every_land_
+    army` has a real Fleet ending the hop at a land province alongside
+    its boarded cargo). Before this fix, a Fleet/Whale making exactly
+    this real, already-legal hop was unconditionally flagged
+    `"naval_land_hop"` here -- neither endpoint of a Hug Coastline hop
+    is ever `Terrain.SEA` by construction (that's the entire point of
+    the shortcut), so `origin_is_sea or target_is_sea` was always False
+    for it. This was live in production: `turn/plan_dispatch.py`'s own
+    real LMOVE dispatch already passes `enforce_transport_legality=True`
+    unconditionally (Phase 737) alongside a real `has_naval_hug_
+    coastline` flag (Phase 524) for any leader holding the ability --
+    every Fleet/Whale actually using this ability was silently blocked
+    outright, with zero existing test ever combining the two flags to
+    catch it. Only relaxes the Fleet/Whale branch immediately below --
+    Mermen's own separate rule is checked first and never reaches this
+    branch at all (see the dedicated branch above), and ordinary land
+    units are already unaffected by a Hug Coastline hop (both endpoints
+    are real land, so `_land_crossing_blocked()` never blocks them
+    regardless of this flag).
     """
 
     origin_terrain = origin_province.effective_terrain() if origin_province is not None else Terrain.NO_TERRAIN
@@ -1102,8 +1128,8 @@ def find_transport_illegality(
                 continue
             return "mermen_air_transport"
         if army.army_type in SEA_ARMY_TYPES:  # Fleet, Whales
-            if origin_is_sea or target_is_sea:
-                continue  # entering/leaving land on its own is fine
+            if origin_is_sea or target_is_sea or is_hug_coastline_hop:
+                continue  # entering/leaving land on its own is fine, or a real, already-verified Hug Coastline hop
             return "naval_land_hop"
         origin_blocked = _land_crossing_blocked(origin_province, origin_is_sea, has_march_through_floods)
         target_blocked = _land_crossing_blocked(target_province, target_is_sea, has_march_through_floods)
@@ -1347,8 +1373,16 @@ def execute_move(
     0xB65C`: a Move made with real armies tries `Add_Experience(leader,
     Naval, 10)` when origin *or* destination terrain is Sea, else
     `Add_Experience(leader, ForcedMarch, 10)` -- excluding a majority-
-    air-or-air-transportable force (the same test this module's own
-    Phase 634 addendum already cites for the `_LFly` narration branch).
+    air-or-air-transportable force. **Phase 819 correction**: this is
+    *not* the same test the `_LFly` narration branch uses (that one is a
+    documented, unsourced, user-confirmed heuristic --
+    `report/turn_report.py`'s own module-level comment above
+    `_FLY_MOVE_TEMPLATE` -- "every army the mover brought is an
+    overflight type," `all(is_overflight_unit(...))`, not a majority
+    test at all) -- this citation was simply wrong; `2 * air_count <
+    len(armies)` below is a real, independent formula used only here,
+    confirmed genuinely ambiguous and kept as originally shipped (Phase
+    784's own investigation, reverted, see that phase's own history).
     The document itself names this helper "Try_Experience," distinct
     from "Add_Experience" -- but it cites the *exact same* address,
     `104A:1877`, `turn/experience.py`'s own docstring already gives for
@@ -1538,7 +1572,12 @@ def execute_move(
 
     if enforce_transport_legality and armies:
         transport_reason = find_transport_illegality(
-            armies, army_ids, origin_province, target_province, has_march_through_floods=has_march_through_floods
+            armies,
+            army_ids,
+            origin_province,
+            target_province,
+            has_march_through_floods=has_march_through_floods,
+            is_hug_coastline_hop=is_hug_coastline_hop,
         )
         if transport_reason is not None:
             raise TransportIllegalMoveError(transport_reason, origin_coord=current, destination_coord=actual_target)
@@ -1796,10 +1835,11 @@ def execute_move(
     # this function's own Phase 768 addendum for the full gating. Gated
     # on `moved` (this call's own real hex-step), a real leader
     # commanding at least one army in this same move, and excluding a
-    # majority-air-or-air-transportable force (the identical test this
-    # module's own Phase 634 addendum already attributes to the `_LFly`/
-    # wind-walking narration branch) -- reproduces the real engine's own
-    # per-phase re-dispatch faithfully rather than under/over-counting a
+    # majority-air-or-air-transportable force -- a real, independent
+    # formula (Phase 819 correction: NOT the same test the `_LFly`/wind-
+    # walking narration branch uses, see this function's own Phase 768
+    # addendum above) -- reproduces the real engine's own per-phase
+    # re-dispatch faithfully rather than under/over-counting a
     # multi-phase chase. The Phase 763 straggler recursive call above
     # passes `leader_id=None`, so it's excluded here with no special
     # casing needed. `rng` is never actually `None` here -- the top of

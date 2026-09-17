@@ -2105,6 +2105,20 @@ def test_find_transport_illegality_fleet_hopping_land_to_land():
     assert reason == "naval_land_hop"
 
 
+def test_find_transport_illegality_fleet_hopping_land_to_land_excused_by_hug_coastline():
+    # Phase 819 bug fix: a real, already-verified Naval Hug Coastline hop
+    # (both endpoints land, per _naval_hug_coastline_move_is_legal()) is
+    # exactly the one land-to-land Fleet/Whale crossing the ability is
+    # meant to allow -- is_hug_coastline_hop=True must excuse it, unlike
+    # an ordinary, unassisted land-to-land Fleet hop (the test right
+    # above, which stays illegal with the default False).
+    fleet = ArmyState(1, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality(
+        [fleet], [1], _land_province(ORIGIN), _land_province(TARGET), is_hug_coastline_hop=True
+    )
+    assert reason is None
+
+
 def test_find_transport_illegality_fleet_entering_or_leaving_land_is_fine():
     fleet = ArmyState(1, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN)
     assert find_transport_illegality([fleet], [1], _land_province(ORIGIN), _sea_province(TARGET)) is None
@@ -2267,6 +2281,54 @@ def test_execute_move_enforced_permits_a_real_boarded_crossing():
 
     assert result.moved is True
     assert state.armies[102].transported_by == 101
+
+
+def test_execute_move_enforced_permits_a_real_naval_hug_coastline_hop():
+    # Phase 819 bug fix: turn/plan_dispatch.py's own real LMOVE dispatch
+    # already passes enforce_transport_legality=True unconditionally
+    # (Phase 737) alongside a real has_naval_hug_coastline=True for any
+    # leader holding the ability (Phase 524) -- before this fix, a pure
+    # Fleet making exactly this real, already-legal hop was always
+    # blocked outright with "naval_land_hop", since neither endpoint of
+    # a Hug Coastline hop is ever Terrain.SEA by construction. No
+    # existing test ever combined the two flags to catch this.
+    state = _hug_state()
+    state.armies[101].army_type = ArmyType.FLEET
+
+    result = execute_move(
+        state,
+        kingdom_id=1,
+        army_ids=[101],
+        target=HUG_TARGET,
+        has_naval_hug_coastline=True,
+        enforce_transport_legality=True,
+    )
+
+    assert result.moved is True
+    assert state.armies[101].location == HUG_TARGET
+
+
+def test_execute_move_enforced_permits_a_mixed_naval_hug_coastline_hop():
+    # The mixed carrier-plus-boarded-cargo case (Phase 720) is equally
+    # affected: the Fleet itself, not just its cargo, must clear the
+    # transport-legality gate for the same real hop.
+    state = _hug_state()
+    state.add_army(ArmyState(102, 1, ArmyType.FLEET, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+
+    result = execute_move(
+        state,
+        kingdom_id=1,
+        army_ids=[101, 102],
+        target=HUG_TARGET,
+        has_naval_hug_coastline=True,
+        auto_board=True,
+        enforce_transport_legality=True,
+    )
+
+    assert result.moved is True
+    assert state.armies[101].location == HUG_TARGET
+    assert state.armies[102].location == HUG_TARGET
+    assert state.armies[101].transported_by == 102
 
 
 def test_execute_move_enforced_checks_the_real_chase_step_not_the_ultimate_target():

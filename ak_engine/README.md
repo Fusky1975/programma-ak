@@ -33525,6 +33525,68 @@ against the pre-fix code (dropping the first swing) and pass against
 the fix; every pre-existing test in the file is unaffected. Test count:
 6771 -> 6772. Full suite verified green before and after.
 
+### Phase 819: Naval Hug Coastline's own real land-to-land hop was blocked outright by the transport-legality gate
+
+Continuing the manual bug-hunting sweep, this phase read `turn/move_
+execution.py` (1850 lines) cover to cover -- the module's own 267-line
+docstring, `march_movement_point_bonus()`/`march_table_extra_movement()`/
+`naval_movement_point_bonus()`, `_naval_hug_coastline_move_is_legal()`,
+`record_kingdom_exploration()`/`reveal_adjacent_provinces()`,
+`resolve_wandering_mercenary_following()`, the Fleet/Whale auto-boarding
+subsystem (`_boarding_priority_tier()`/`_auto_board_transport_group()`),
+`find_transport_illegality()`, and `execute_move()` itself (chase-
+stepping, the straggler split, movement-point bonuses, the Move-
+triggered March/Naval experience credit) -- all checked out exactly
+against their own docstring citations. The standing technique (`grep -n
+"Combatant(\|BattleUnit("`) found zero construction sites in this file.
+
+One real, live bug found in `find_transport_illegality()`'s own
+`SEA_ARMY_TYPES` (Fleet/Whales) branch: it unconditionally returned
+`"naval_land_hop"` whenever neither endpoint of a hop was `Terrain.SEA`
+-- but that is *exactly* what every real `AdvancedAbility.NAVAL_HUG_
+COASTLINE` hop looks like by construction (`_naval_hug_coastline_move_
+is_legal()` requires both endpoints to be real land provinces sharing a
+common Sea neighbor -- that is the entire point of the shortcut). The
+function had no awareness of `execute_move()`'s own already-computed
+`is_hug_coastline_hop` flag at all. This was live in production, not
+theoretical: `turn/plan_dispatch.py`'s own real LMOVE dispatch already
+passes `enforce_transport_legality=True` unconditionally (Phase 737)
+alongside a real `has_naval_hug_coastline=True` for any leader holding
+the ability (Phase 524) -- every Fleet/Whale actually using this
+ability, pure or mixed with boarded land cargo alike, was silently
+blocked outright with `TransportIllegalMoveError("naval_land_hop")`.
+Confirmed directly with a manual repro before touching any code: a pure
+Fleet move via a real Hug Coastline hop raised the error every time.
+None of the 8 existing Naval Hug Coastline tests, and none of the 5
+existing `enforce_transport_legality` tests, ever combined the two
+flags together, so this had zero test coverage despite both features
+being individually well-tested since Phase 524 and Phase 737
+respectively. Fixed by adding a new `is_hug_coastline_hop: bool = False`
+parameter to `find_transport_illegality()`, threaded from `execute_
+move()`'s own already-computed flag, exempting only the Fleet/Whale
+branch (Mermen's own separate rule is checked first and never reaches
+this branch at all; ordinary land units are already unaffected since
+both endpoints of a real Hug Coastline hop are land). 3 new regression
+tests (one direct `find_transport_illegality()` unit test, one pure-
+Fleet end-to-end case, one mixed Fleet-plus-boarded-cargo end-to-end
+case) confirmed to fail against the pre-fix branch body and pass
+against the fix; every pre-existing test in the file (176 total) is
+unaffected. Test count: 6772 -> 6775. Full suite verified green before
+and after.
+
+A second, smaller finding, comment-only: the Phase 768 addendum's own
+citation ("the identical test this module's own Phase 634 addendum
+already cites for the `_LFly` narration branch") turned out to be
+factually wrong, not just stale -- `report/turn_report.py`'s own real
+`_LFly` narration trigger is a documented, unsourced, user-confirmed
+heuristic ("every army the mover brought is an overflight type,"
+`all(is_overflight_unit(...))`), never the "majority-air" formula
+(`2 * air_count < len(armies)`) this file's own Move-triggered
+experience-credit gate actually uses. The two are real, independent,
+correctly-functioning formulas serving two different composers -- only
+the cross-reference between them was wrong. Corrected in both places
+this citation appeared; no behavior change.
+
 ## Setup
 
 ```
