@@ -164,9 +164,16 @@ level 5 is required"); below that, a documented interpretation steps
 it down to ``Quality.GREEN`` instead -- see that constant's own
 docstring. A successful Dinosaur recruit also sets ``ProvinceState.
 recruit_locked_this_turn = True`` ("no further units may be recruited
-in the province that turn"), checked as an early whole-order block
-(``RecruitExecutionResult.province_locked``) right after the existing
-Treat-permission check. "Only in place of elven EL, LC or HC" is read
+in the province that turn"), reported via ``RecruitExecutionResult.
+province_locked``. **Bug fix**: this was originally checked only once,
+before the per-``army_type`` loop -- correctly blocking a later,
+*separate* ``execute_recruit()`` call the same turn, but not a *later
+army type in the same request* (a single real Recruit order can list
+several types at once, ``turn/recruit_decode.py``'s own ordinal list),
+letting e.g. ``[DINOSAURS, BOWMEN]`` in one order still recruit the
+Bowmen after the Dinosaur locked the province. Now re-checked at the
+top of every loop iteration, so the lock takes effect immediately once
+set, within the same call too. "Only in place of elven EL, LC or HC" is read
 as descriptive context for why this only applies in Elven provinces,
 not a literal cross-type slot-consumption formula -- no source gives a
 mechanism for how recruiting a Dinosaur would decrement a *different*
@@ -274,10 +281,6 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         result.treat_blocked.extend(request.army_types)
         return result
 
-    if province.recruit_locked_this_turn:
-        result.province_locked.extend(request.army_types)
-        return result
-
     wingman_holder = resolve_office_holder(state, Office.WINGMAN)
     leader_is_wingman = wingman_holder is not None and wingman_holder.leader_id == leader_id
     marshal_holder = resolve_office_holder(state, Office.MARSHAL)
@@ -294,6 +297,18 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
     leader_is_neutral_king = neutral_king_holder is not None and neutral_king_holder.leader_id == leader_id
 
     for army_type in request.army_types:
+        # Phase (bug fix): re-checked on every iteration, not just once
+        # before the loop -- "no further units may be recruited in the
+        # province that turn" must also block a *later* army type in this
+        # SAME request once an earlier Dinosaur recruit in this same call
+        # has already set the lock, matching a real single Recruit order
+        # that lists several types together (`turn/recruit_decode.py`
+        # already decodes an ordinal list, not just one type per order).
+        # Checking only once up front let a request like [DINOSAURS,
+        # BOWMEN] recruit the Bowmen anyway, contradicting the rule.
+        if province.recruit_locked_this_turn:
+            result.province_locked.append(army_type)
+            continue
         if province.recruit_type_1 is not None:
             is_native = army_type in (province.recruit_type_1, province.recruit_type_2)
         else:

@@ -33351,6 +33351,49 @@ Every pre-existing test in this file (43 of them) uses only same-
 Kingdom co-located leaders, so none needed updating. Test count:
 6761 -> 6763. Full suite verified green before and after.
 
+### Phase 815: a Dinosaur recruit's own province lock never re-checked mid-request, letting later army types in the same order slip through
+
+Continuing the manual bug-hunting sweep, this phase reviewed `turn/
+recruit_execution.py` (404 lines). `execute_recruit()`'s own [3.4]
+pricing/limit machinery (native-vs-double-cost, Chief of Staff's -1
+discount applied before doubling, Wingman/Grand Marshal/Grand
+Admiral's mutually-exclusive per-domain +1 caps, the ally Treat-
+permission gate, mercenary-hire-vs-fresh-levy) all checked out exactly
+against their own docstring citations -- one real bug found in the
+Dinosaur-recruit province lock (`AdvancedAbility.DRUIDIC_DINOSAURS`,
+Phase 691).
+
+The rule text is unambiguous: "no further units may be recruited in
+the province that turn" once a Dinosaur is recruited. The code set
+`ProvinceState.recruit_locked_this_turn = True` correctly on a
+successful Dinosaur recruit, but only ever *checked* that flag once,
+before the per-`army_type` loop began -- correctly blocking a later,
+*separate* `execute_recruit()` call the same turn, but not a later
+army type requested in the *same* order. Since a single real Recruit
+order can list several army types together (`turn/recruit_decode.py`'s
+own ordinal list, not one type per order), a request like `[DINOSAURS,
+LT_CAVALRY]` recruited both -- the Cavalry slipping through after the
+Dinosaur had already locked the province, directly contradicting the
+rule. An existing test's own comment even documented this exact gap
+as if it were the intended behavior ("the lock only takes effect
+*after* a successful recruit, checked once at the top of the *next*
+execute_recruit() call, not mid-loop") without ever justifying it
+against the rule's own plain wording.
+
+Fixed by re-checking `recruit_locked_this_turn` at the top of every
+loop iteration instead of once before the loop -- this also let the
+now-redundant upfront early-return be removed entirely, since the
+per-iteration check reproduces it exactly for a province already
+locked before the call even starts. One pre-existing test's own
+assertion changed to match the corrected behavior (a second Dinosaur
+in the same request is now blocked by the province lock itself, not
+the ordinary per-type cap, since the lock fires immediately after the
+first one succeeds) -- both the updated test and a brand new one
+(`[DINOSAURS, LT_CAVALRY]` in one request only recruiting the
+Dinosaur) confirmed to fail against the pre-fix code and pass against
+the fix. Test count: 6763 -> 6764. Full suite verified green before
+and after.
+
 ## Setup
 
 ```

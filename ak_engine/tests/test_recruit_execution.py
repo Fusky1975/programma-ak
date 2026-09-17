@@ -797,16 +797,33 @@ def test_second_dinosaur_recruit_request_same_turn_is_province_locked():
     assert second.province_locked == [ArmyType.BOWMEN]
 
 
-def test_only_one_dinosaur_per_province_per_turn_via_recruited_this_turn_cap():
+def test_only_one_dinosaur_per_province_per_turn_via_province_lock_mid_request():
     state = build_dinosaur_state(druid_skill=5)
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS, ArmyType.DINOSAURS])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
 
-    # The 2nd Dinosaur is blocked by the ordinary per-type recruit cap
-    # (already 1 this turn), not by province_locked -- the lock only
-    # takes effect *after* a successful recruit, checked once at the
-    # top of the *next* execute_recruit() call, not mid-loop.
+    # Regression: the 2nd Dinosaur is now blocked by the province lock
+    # itself (re-checked every loop iteration), not the ordinary per-type
+    # cap -- the first Dinosaur's own successful recruit sets the lock
+    # immediately, mid-request, so it takes effect before the 2nd
+    # army_type in the SAME request is even considered.
     assert len(result.recruited) == 1
-    assert result.limit_blocked == [ArmyType.DINOSAURS]
-    assert result.province_locked == []
+    assert result.limit_blocked == []
+    assert result.province_locked == [ArmyType.DINOSAURS]
+
+
+def test_a_dinosaur_recruit_locks_out_a_different_army_type_in_the_same_request():
+    # Regression for the real bug: a single Recruit order can list several
+    # army types together (turn/recruit_decode.py's own ordinal list), so
+    # "no further units may be recruited in the province that turn" must
+    # take effect immediately once the Dinosaur recruit succeeds, not only
+    # for a later, separate execute_recruit() call.
+    state = build_dinosaur_state(druid_skill=5)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS, ArmyType.LT_CAVALRY])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.recruited[0].army_type is ArmyType.DINOSAURS
+    assert result.province_locked == [ArmyType.LT_CAVALRY]
