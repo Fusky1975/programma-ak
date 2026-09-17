@@ -33311,6 +33311,46 @@ pattern explicitly so a future review greps for every remaining
 hand-rolled `BattleUnit(`/`Combatant(` construction site proactively,
 rather than finding each recurrence one at a time by luck.
 
+### Phase 814: `_reassign_visitor_armies()` could hand a departing Valhalla visitor's armies to a foreign leader
+
+Continuing the manual bug-hunting sweep across `turn/`+`report/`
+(started Phase 810, after worldgen/'s ruff sweep found nothing
+further), this phase reviewed `turn/aspy_execution.py` (plus its two
+direct dependencies, `turn/intelligence_estimate.py` and `turn/
+spy_table.py`) with no bug found, then `turn/valhalla_execution.py`
+(602 lines), where a real bug turned up. `_reassign_visitor_armies()`
+implements `VALHALLA.txt` rule 5's own hand-off chain for a departing
+Valhalla visitor's uncommanded armies -- "transferred to your
+lowest-numbered leader in the same province, or at last resort, the
+garrison commander in an adjacent province owned by you" -- but its
+own co-located-leader branch (the middle tier of the chain) had no
+Kingdom filter at all, unlike both of its sibling branches (the King
+branch above it, and the adjacent-province branch below it, both of
+which correctly filter on `leader.kingdom_id == kingdom_id`). "Your
+lowest-numbered leader" unambiguously means the visitor's own host
+Kingdom, but the code accepted the lowest-`leader_id` leader physically
+present in the province regardless of which Kingdom they belonged to.
+
+Reproduced directly: a Valhalla visitor departing a province shared
+with a co-located leader of a *different* Kingdom (e.g. during an
+active encounter) had their army handed to that foreign leader --
+`army.commanded_by` pointed at a leader of Kingdom 2 while `army.
+kingdom_id` stayed at Kingdom 1 (the visitor's own host), a genuine
+split-brain state no other code path in this project ever produces
+(the one real precedent, `turn/plan_dispatch.py _dispatch_leave()`'s
+own ally-province auto-transfer rule, updates `kingdom_id` to match
+whenever it changes hands across a Kingdom boundary; this function
+never did). Fixed by adding the same `leader.kingdom_id == kingdom_id`
+filter the other two branches already use. Two new regression tests
+(a co-located foreign leader with no same-Kingdom leader present now
+correctly disbands the army instead of handing it over; a same-Kingdom
+leader with a higher `leader_id` correctly wins over a lower-`id`
+foreign one) both fail against the pre-fix code and pass after the
+fix, confirmed by reverting the source file and re-running them.
+Every pre-existing test in this file (43 of them) uses only same-
+Kingdom co-located leaders, so none needed updating. Test count:
+6761 -> 6763. Full suite verified green before and after.
+
 ## Setup
 
 ```

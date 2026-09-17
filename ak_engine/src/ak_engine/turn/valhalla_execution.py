@@ -507,8 +507,23 @@ def _reassign_visitor_armies(state: GameState, kingdom_id: int, location, board_
     new_commander_id = king.leader_id if king is not None else None
 
     if new_commander_id is None:
+        # Phase (bug fix): "your lowest-numbered leader in the same
+        # province" -- this must be scoped to `kingdom_id`, the same way
+        # the King branch above and the adjacent-province branch below
+        # already are. Without this filter, a co-located leader of ANY
+        # Kingdom (including a hostile one sharing the province during an
+        # active encounter) could inherit command of the departing
+        # visitor's armies, leaving `army.kingdom_id` (still `kingdom_id`)
+        # and `army.commanded_by`'s own real owner permanently
+        # inconsistent -- reproduced directly: a co-located foreign leader
+        # with no same-Kingdom leader present ended up commanding an army
+        # whose own `kingdom_id` never changed to match.
         co_located = sorted(
-            (leader for leader in state.leaders_at(location) if leader.leader_id != VALHALLA_VISITOR_LEADER_ID),
+            (
+                leader
+                for leader in state.leaders_at(location)
+                if leader.leader_id != VALHALLA_VISITOR_LEADER_ID and leader.kingdom_id == kingdom_id
+            ),
             key=lambda leader: leader.leader_id,
         )
         if co_located:

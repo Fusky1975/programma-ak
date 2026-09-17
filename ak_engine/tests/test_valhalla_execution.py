@@ -294,6 +294,36 @@ def test_process_valhalla_departure_hands_off_to_lowest_id_colocated_leader_with
     assert state.armies[9].commanded_by == 4
 
 
+def test_process_valhalla_departure_never_hands_off_to_a_co_located_foreign_leader():
+    # Regression: "your lowest-numbered leader in the same province" (rule
+    # 5) must be scoped to the visitor's own host Kingdom -- a co-located
+    # leader of a DIFFERENT Kingdom (e.g. sharing the province during an
+    # active encounter) must never inherit command. Previously the
+    # co-located branch had no Kingdom filter at all, unlike the King
+    # branch and the adjacent-province branch right next to it.
+    state = GameState()
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Visitor", HOME, valhalla_active_turn=1))
+    state.add_leader(LeaderState(2, 2, "Enemy Hero", HOME))
+    state.add_army(ArmyState(9, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=VALHALLA_VISITOR_LEADER_ID))
+
+    process_valhalla_departure(state)
+
+    assert state.armies[9].commanded_by is None
+    assert state.armies[9].kingdom_id is None
+
+
+def test_process_valhalla_departure_prefers_a_same_kingdom_leader_over_a_lower_id_foreign_one():
+    state = GameState()
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, 1, "Visitor", HOME, valhalla_active_turn=1))
+    state.add_leader(LeaderState(2, 2, "Enemy Hero", HOME))  # lower id, foreign Kingdom
+    state.add_leader(LeaderState(7, 1, "Own Hero", HOME))  # higher id, same Kingdom as the visitor
+    state.add_army(ArmyState(9, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=VALHALLA_VISITOR_LEADER_ID))
+
+    process_valhalla_departure(state)
+
+    assert state.armies[9].commanded_by == 7
+
+
 def test_process_valhalla_departure_hands_off_to_an_adjacent_owned_province_leader_as_last_resort():
     adjacent = HexCoord(4, 9)  # adjacent to HOME (3, 9) on the odd-r grid
     state = GameState()
