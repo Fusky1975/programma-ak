@@ -481,13 +481,6 @@ def run_turn(
             )
 
         entries = _collect_phase_entries(turn_leaders, label)
-        # Phase 252, [3.17] Trail's own "Actions" field: every leader's own
-        # decoded action for this phase label, before any of the filtering
-        # below removes entries -- a leader with no entry here (mid-chase,
-        # or simply idle) has no action to report, the same "no data"
-        # convention trail_execution.py's own module docstring already
-        # uses for its other fields. See that docstring's Phase 252 note.
-        action_this_phase_by_leader = {tl.leader.leader_id: phase.action for tl, _segment_index, phase in entries}
         # A leader still mid-chase (Pursue/Trail, or a Move chase toward
         # a non-adjacent target) has this phase's own order preempted
         # entirely -- see "PERSISTENT PURSUE/TRAIL CHASE"/"PERSISTENT
@@ -498,6 +491,18 @@ def run_turn(
             for entry in entries
             if entry[0].leader.leader_id not in active_pursuits and entry[0].leader.leader_id not in active_move_chases
         ]
+        # Phase 252, [3.17] Trail's own "Actions" field: every leader's own
+        # decoded action for this phase label, computed AFTER the mid-chase
+        # filter above (Phase 817 fix -- this used to be built from the
+        # unfiltered `entries`, so a target who was itself mid-chase but
+        # still had a real, now-preempted order queued for this same phase
+        # leaked that never-dispatched order into a Trail report instead of
+        # the documented `None`). A leader with no entry here (mid-chase, or
+        # simply idle) has no real order this phase to report, the same
+        # "no data" convention trail_execution.py's own module docstring
+        # already uses for its other fields. See that docstring's Phase 252
+        # note.
+        action_this_phase_by_leader = {tl.leader.leader_id: phase.action for tl, _segment_index, phase in entries}
         results.extend(_continue_active_pursuits(active_pursuits, label, state, rng, action_this_phase_by_leader))
         results.extend(_continue_active_move_chases(active_move_chases, label, state, board_width, explorer_skill, rng))
 

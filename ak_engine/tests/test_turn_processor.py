@@ -27,6 +27,7 @@ from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.movement import neighbors as _neighbors
 from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.plan_dispatch import NoOpResult
+from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.turn_processor import (
     MultiAttackerMoveResult,
@@ -1440,6 +1441,67 @@ def test_run_turn_trail_continuation_backfills_the_targets_own_action():
     assert p1_entry.segment_index == -1  # continuation, not a real plan segment
     assert p1_entry.result.spied_on is True
     assert p1_entry.result.actions is ActionCode.WAIT
+
+
+def test_run_turn_trail_actions_is_none_when_the_target_is_itself_mid_chase():
+    """Phase 817 regression: ``action_this_phase_by_leader`` used to be
+    built from the *unfiltered* phase entries, before the mid-chase
+    preemption filter ran -- so a Trail target who was itself mid-Pursue
+    this same phase, but still had a real (never-actually-dispatched,
+    preempted) order queued for it, leaked that discarded order into the
+    Trail report instead of the documented ``None``. Here leader 20 is
+    mid-Pursue (still chasing leader 999 from P0) *and* has a real P1
+    WAIT order in its own plan -- that WAIT order must never dispatch
+    (it's preempted by the still-active chase) and must not leak into
+    the trailer's own report either.
+
+    ``execute_pursue``/``advance_pursuit`` are both mocked to a fixed
+    "still chasing" result -- this test is only about which map
+    ``action_this_phase_by_leader`` gets built from, not about the
+    already-reviewed mechanics of Pursue's own catch-up roll.
+    """
+
+    state = _chase_state()
+    state.leaders[20].location = CHASE_START  # co-located with the trailer -> guaranteed Trail catch-up
+    trailer = _leader_with_phase(10, "Trailer", "P1", _trail_phase("P1", 20))
+    target = Leader(
+        leader_id=20,
+        name="Target",
+        plan=ActionPlan(
+            leader_id=20,
+            segments=[
+                PlanSegment(
+                    0,
+                    1,
+                    (),
+                    {
+                        "P0": _pursue_phase("P0", 999),
+                        "P1": PlanPhase(label="P1", action=ActionCode.WAIT, obj=0, extra=[0]),
+                    },
+                )
+            ],
+        ),
+    )
+
+    still_chasing = PursueExecutionResult(caught_up=False, reason="did not catch up this phase")
+    with patch("ak_engine.turn.plan_dispatch.execute_pursue", return_value=still_chasing):
+        with patch("ak_engine.turn.turn_processor.advance_pursuit", return_value=still_chasing):
+            results = run_turn(
+                [TurnLeader(trailer, 1), TurnLeader(target, 2)],
+                state,
+                board_width=BOARD_WIDTH,
+                # Trailing 0.0, 0.0: apply_turn_revenue()'s own end-of-turn
+                # Invention-Bonus draw, one per Kingdom (2 here), unrelated
+                # to what this test is about.
+                rng=ScriptedRandom([0.1, 0.5, 0.5, 0.0, 0.0]),
+            )
+
+    trail_result = next(r for r in results if r.leader_id == 10 and r.phase_label == "P1").result
+    assert trail_result.spied_on is True
+    # Leader 20's own P1 WAIT order never actually dispatched (preempted
+    # by its still-active P0 Pursue chase) -- reported as no data, not
+    # as the discarded order.
+    assert trail_result.actions is None
 
 
 def test_run_turn_unresolved_move_chase_preempts_p1_and_continues_the_chase():

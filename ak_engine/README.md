@@ -33436,6 +33436,50 @@ none of them ever set `GameType.ARCANES` (matching that function's own
 "0 for every existing game/test" docstring note). Test count: 6764 ->
 6770. Full suite verified green before and after.
 
+### Phase 817: Trail's own "Actions" field could leak a target's discarded, never-dispatched order
+
+Continuing the manual bug-hunting sweep, this phase read `turn/trail_
+execution.py` (423 lines) cover to cover -- [3.17] Trail's own six
+named intelligence fields (Actions, race, temper, alignment, treasures
+owned, armies led, plus the King-target aggregate case), the shared
+Spy Table catch-up roll (`turn/spy_table.py pursue_catch_up_chance()`,
+cross-checked against its own real signature and against `turn/
+pursue_execution.py`'s already-reviewed call to the identical function),
+Spy Super Sleuth/Expanded Spying/Blackmail's own wiring (`turn/
+blackmail.py`, independently reviewed and correct), and `advance_
+trail()`'s own hex-stepping -- all checked out exactly against their
+own docstring citations, and the standing technique (`grep -n
+"Combatant("`) found no construction sites in this file at all.
+
+One real, live bug found in `turn/turn_processor.py run_turn()`'s own
+per-phase loop, not in `trail_execution.py` itself: [3.17]'s own
+"Actions" field (Phase 252) is meant to report `None` whenever a Trail
+target had no real order this phase -- explicitly including a target
+who is itself mid-Pursue/mid-Trail/mid-Move-chase this same phase,
+per that module's own docstring ("idle, or itself mid-chase and
+therefore excluded from this phase's own entries"). But the map
+feeding that backfill, `action_this_phase_by_leader`, was built from
+the phase's *unfiltered* entries -- **before** the very next few lines
+filter out every leader still mid-chase. So a target who was mid-chase
+but also still had a real (now-preempted, never-actually-dispatched)
+order queued for that same phase had that discarded order leak into
+the Trail report instead of the documented `None` -- e.g. a leader
+mid-Pursue at P1 who also had a P1 `WAIT` order queued (now silently
+overridden by the chase persistence) would report `actions=WAIT` to
+anyone trailing them that phase, even though `WAIT` never actually
+happened. Fixed by moving the map's construction to after the mid-
+chase filter, so an excluded (mid-chase) leader has no entry and
+correctly reports `None`. New regression test (`turn/turn_processor.py`
+`test_run_turn_trail_actions_is_none_when_the_target_is_itself_mid_
+chase`, mocking `execute_pursue()`/`advance_pursuit()` to a fixed
+"still chasing" result to isolate this from their own already-reviewed
+mechanics) confirmed to fail against the pre-fix code (reporting
+`ActionCode.WAIT`) and pass against the fix (`None`); every pre-
+existing test in the file is unaffected, since none of them combine a
+mid-chase target with a real, distinct queued order for that same
+phase. Test count: 6770 -> 6771. Full suite verified green before and
+after.
+
 ## Setup
 
 ```
