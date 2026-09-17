@@ -26,7 +26,7 @@ preliminary_duel_loser_led_units` is `0.75`, matching
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ak_engine.turn.battle_line import BattleUnit
 
@@ -74,25 +74,44 @@ def apply_duel_demoralization(units: list[BattleUnit]) -> list[BattleUnit]:
     needed) gets the same treatment -- without it, a demoralized cavalry
     unit would silently lose its own Beasts-nemesis exemption for the
     rest of the battle whenever its side lost the preliminary duel.
+
+    **Bug fix (Phase 812's own sibling finding)**: this function's own
+    hand-rolled reconstruction was patched three separate times (471,
+    661, 696) for three separate fields, but never noticed it was
+    *still* missing two OTHER fields that existed even earlier --
+    ``led_by_insufficient_druid`` (Phase 298) and ``is_humanoid_race``
+    (Phase 392) -- the exact same "reconstruction drops newer fields"
+    bug class just fixed in ``turn/battle_line.py apply_nemesis_
+    penalties()`` (see that module's own Phase 812 addendum). Real
+    consequence: `turn/battle_orchestrator.py`'s own `attacker_units`/
+    `defender_units` lists are overwritten in place with whatever this
+    function returns, and those same lists later feed both `led_by_
+    insufficient_druid_by_army_id` (read straight from them) and
+    `resolve_battle()` (whose own `BattleResult.columns` are built from
+    them) -- so a demoralized unit that also had `led_by_insufficient_
+    druid=True` or `is_humanoid_race=True` before losing the duel
+    silently lost both flags for the rest of the battle. Fixed by
+    switching to `dataclasses.replace()`, which carries every field --
+    current and future -- forward automatically, then overrides only
+    the three that need scaling/recomputation.
     """
 
-    return [
-        BattleUnit(
-            u.army_type,
-            u.effective_strength * DUEL_DEMORALIZATION_MULTIPLIER,
-            source_id=u.source_id,
-            druidic_rear_targeting_blocked=u.druidic_rear_targeting_blocked,
-            duellist_bonus_if_selected=(
-                u.duellist_bonus_if_selected * DUEL_DEMORALIZATION_MULTIPLIER
-                if u.duellist_bonus_if_selected is not None
-                else None
-            ),
-            alignment_king_bonus_if_selected=(
-                u.alignment_king_bonus_if_selected * DUEL_DEMORALIZATION_MULTIPLIER
-                if u.alignment_king_bonus_if_selected is not None
-                else None
-            ),
-            has_druidic_horse_control=u.has_druidic_horse_control,
+    demoralized = []
+    for u in units:
+        demoralized.append(
+            replace(
+                u,
+                effective_strength=u.effective_strength * DUEL_DEMORALIZATION_MULTIPLIER,
+                duellist_bonus_if_selected=(
+                    u.duellist_bonus_if_selected * DUEL_DEMORALIZATION_MULTIPLIER
+                    if u.duellist_bonus_if_selected is not None
+                    else None
+                ),
+                alignment_king_bonus_if_selected=(
+                    u.alignment_king_bonus_if_selected * DUEL_DEMORALIZATION_MULTIPLIER
+                    if u.alignment_king_bonus_if_selected is not None
+                    else None
+                ),
+            )
         )
-        for u in units
-    ]
+    return demoralized

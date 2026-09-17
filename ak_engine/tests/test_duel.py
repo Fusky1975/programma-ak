@@ -94,3 +94,25 @@ def test_apply_duel_demoralization_leaves_an_ineligible_units_horse_control_flag
     units = [BattleUnit(ArmyType.LT_CAVALRY, 10)]
     demoralized = apply_duel_demoralization(units)
     assert demoralized[0].has_druidic_horse_control is False
+
+
+def test_apply_duel_demoralization_carries_led_by_insufficient_druid_through():
+    # Regression (Phase 812): this reconstruction was patched three times
+    # (471/661/696) for three other fields but never noticed it was still
+    # missing this one, which existed even earlier (Phase 298) -- a
+    # demoralized unit must not silently lose the [7.5] insufficient-
+    # Druidic-ability quality-improve-chance penalty just because its own
+    # side also lost the preliminary duel.
+    units = [BattleUnit(ArmyType.BOWMEN, 10, led_by_insufficient_druid=True)]
+    demoralized = apply_duel_demoralization(units)
+    assert demoralized[0].led_by_insufficient_druid is True
+
+
+def test_apply_duel_demoralization_carries_is_humanoid_race_through():
+    # Regression (Phase 812), the sibling finding to the one above: a
+    # demoralized humanoid unit must not silently read as non-humanoid
+    # downstream (turn/battle_orchestrator.py _apply_werebeast_bites()
+    # reads this flag straight off the post-duel units).
+    units = [BattleUnit(ArmyType.BOWMEN, 10, is_humanoid_race=True)]
+    demoralized = apply_duel_demoralization(units)
+    assert demoralized[0].is_humanoid_race is True

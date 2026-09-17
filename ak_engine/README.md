@@ -33274,6 +33274,43 @@ defaults. Test count: 6755 -> 6759 (net +4). Full suite verified green
 before and after (a provable no-op for every pre-existing test, since
 none combine a nemesis-penalized unit with any of these 4 fields set).
 
+### Phase 813: `apply_duel_demoralization()` had the same missing-field bug, for 2 different fields
+
+Immediate follow-up to Phase 812, found by proactively re-applying its
+own lesson: recorded a new project memory documenting "hand-rolled
+dataclass reconstruction drops fields added in a later phase" as a
+now-3-times-recurring bug class, then re-grepped every `BattleUnit(`
+construction site in `turn/` to check each one against the *current*
+9-field dataclass, rather than waiting to stumble onto the next
+instance during a later linear file review. `turn/duel.py apply_duel_
+demoralization()` is the exact function Phase 471/661/696 already
+patched three separate times, once per newly-added field
+(`duellist_bonus_if_selected`, `alignment_king_bonus_if_selected`,
+`has_druidic_horse_control`) -- but nobody had checked whether it was
+missing any *other* field, and it was: `led_by_insufficient_druid`
+(Phase 298) and `is_humanoid_race` (Phase 392), both older than the
+three fields already patched in, were never added to this same
+reconstruction. Real, live consequence, identical in shape to Phase
+812's own finding: `turn/battle_orchestrator.py`'s own `attacker_
+units`/`defender_units` lists are overwritten in place with whatever
+this function returns, and those same lists later feed both `led_by_
+insufficient_druid_by_army_id` (read directly) and `resolve_battle()`
+(whose `BattleResult.columns` are built from them, in turn read by
+`_apply_werebeast_bites()`) -- so a unit that lost the preliminary
+duel and also had either flag set would silently lose it for the rest
+of the battle. Fixed the same way as Phase 812: switched to
+`dataclasses.replace()`, which carries every field forward
+automatically, then overrides only the three that need scaling
+(`effective_strength`, `duellist_bonus_if_selected`, `alignment_king_
+bonus_if_selected`). 2 new regression tests prove it; confirmed by
+directly simulating the old, three-times-patched reconstruction, which
+really did reset both fields. Test count: 6759 -> 6761 (net +2). Full
+suite verified green before and after. New project memory
+(`feedback_dataclass_reconstruction_drops_new_fields`) records this
+pattern explicitly so a future review greps for every remaining
+hand-rolled `BattleUnit(`/`Combatant(` construction site proactively,
+rather than finding each recurrence one at a time by luck.
+
 ## Setup
 
 ```
