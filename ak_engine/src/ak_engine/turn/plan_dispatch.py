@@ -1044,13 +1044,34 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
     skeletal armies freely" half needs no code change at all --
     ``_dispatch_pick_up()`` already has no skeletal-specific
     restriction for anyone to bypass.
+
+    **Phase 821 bug fix**: a real turn can dispatch this phase for a
+    leader who already died earlier in the *same* turn (e.g. lost a
+    Challenge in an earlier phase, with a Leave order still queued for
+    a later one) -- `run_leader_plan()` has no per-phase liveness gate
+    of its own, matching every other action dispatch in this module.
+    Previously this function never checked whether the acting leader
+    still existed at all: it happily reassigned command of every
+    listed army regardless (a dead leader silently executing a real
+    order), and, for a skeletal army specifically, crashed outright on
+    a bare `state.leaders[leader_id]` lookup once it got to the
+    Enhanced-Skeletal-Units check. Both are now the same, single
+    `acting_leader is None` guard -- mirroring `_dispatch_disband()`'s
+    own already-correct "a missing acting leader can't act at all"
+    stance -- so a dead leader's Leave order now skips every listed
+    army cleanly, the same as it already does for Disband.
     """
 
     request = decode_army_list_phase(phase)
+    acting_leader = state.leaders.get(leader_id)
+    result = ArmyListExecutionResult(request=request)
+    if acting_leader is None:
+        result.skipped.extend(request.army_ids)
+        return result
+
     target_ids = (
         [army.army_id for army in state.armies_commanded_by(leader_id)] if request.all_armies else request.army_ids
     )
-    result = ArmyListExecutionResult(request=request)
 
     for army_id in target_ids:
         army = state.armies.get(army_id)
@@ -1060,7 +1081,7 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
         if (
             army.is_skeletal
             and not _is_undead_king(state, request.target_leader_id)
-            and AdvancedAbility.ENHANCED_SKELETAL_UNITS not in state.leaders[leader_id].advanced_abilities
+            and AdvancedAbility.ENHANCED_SKELETAL_UNITS not in acting_leader.advanced_abilities
         ):
             result.skeletal_army_lost.append((army_id, army.army_type))
             state.remove_army(army_id)
@@ -1084,10 +1105,25 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
 def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListExecutionResult:
     """Phase 420: returns a real ``ArmyListExecutionResult`` -- see
     ``_dispatch_leave()``'s own note above.
+
+    **Phase 821 bug fix**: the acting leader was previously resolved via
+    a bare ``state.leaders[leader_id]`` lookup, which crashed with an
+    unhandled ``KeyError`` for a leader who already died earlier in the
+    same turn (a Pick_Up order queued for a later phase than the one
+    that killed them) -- the same class of "dead leader, stale queued
+    order" gap already fixed for `_dispatch_leave()` in this same phase.
+    Resolved via `.get()` instead, matching `_dispatch_disband()`'s own
+    established "a missing acting leader can't act at all" stance: with
+    no leader to resolve a location from, every explicitly-listed army
+    is skipped and an ``all_armies`` request finds nothing to pick up.
     """
 
     request = decode_army_list_phase(phase)
-    acting_leader = state.leaders[leader_id]
+    acting_leader = state.leaders.get(leader_id)
+    result = ArmyListExecutionResult(request=request)
+    if acting_leader is None:
+        result.skipped.extend(request.army_ids)
+        return result
 
     if request.all_armies:
         # "Pick Up All UNLED armies (with Garrison Commander) in the province."
@@ -1097,7 +1133,6 @@ def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
     else:
         target_ids = request.army_ids
 
-    result = ArmyListExecutionResult(request=request)
     for army_id in target_ids:
         army = state.armies.get(army_id)
         if army is None or army.location != acting_leader.location:

@@ -33662,6 +33662,74 @@ against the pre-fix bare lookup (a real `KeyError`) and pass against
 the fix; every pre-existing test in the file (100 total) is unaffected.
 Test count: 6775 -> 6776. Full suite verified green before and after.
 
+### Phase 821: a dead leader could still execute a queued Leave/Pick_Up order in a later phase
+
+Continuing the manual bug-hunting sweep, this phase read `turn/
+plan_dispatch.py` (1426 lines) cover to cover -- the module's own
+359-line docstring (every `ActionCode`'s own dispatch history, the
+`SUCC_TRAIL` deliberate-exclusion rationale, the Phase 32 nested-plan-
+dispatch mechanic), `dispatch_phase()` itself (the real-possession-
+pattern flag block, the LMOVE/EXPLORE branches), every smaller
+`_dispatch_*()` helper (`_dispatch_aspy()`, `_dispatch_practice()`,
+`_dispatch_recruit()`, `_dispatch_cast()`, `_dispatch_use_mi()`,
+`_dispatch_challenge()`, `_dispatch_pursue()`, `_dispatch_trade()`,
+`_dispatch_search()`, `_dispatch_trail()`, `_dispatch_leave()`,
+`_dispatch_pick_up()`, `_dispatch_disband()`, `_dispatch_hire()`,
+`_dispatch_fire()`), and `run_leader_plan()` itself (the Valhalla
+visitor's own per-visit phase-cap enforcement, the nested-plan
+recursive-dispatch logic, the critical `try`/`except` safety wrapper
+around every phase's own `dispatch_phase()` call) -- all checked out
+exactly against their own docstring citations. The standing technique
+found zero `Combatant(`/`BattleUnit(` construction sites in this file
+(a pure dispatch/orchestration module, no dataclass reconstruction
+anywhere in it).
+
+The real, confirmed bug: `_dispatch_leave()` and `_dispatch_pick_up()`
+both assumed the acting leader (the one issuing the order) was still
+alive, unlike every sibling in this same cluster -- `_dispatch_disband()`
+already resolves the acting leader via `state.leaders.get(leader_id)`
+and cleanly skips every listed army when it's `None`. `_dispatch_leave()`
+never checked at all: a leader who died earlier in the *same* turn
+(e.g. lost a Challenge in phase P0, with a Leave order still queued for
+phase P1 -- `run_leader_plan()`'s own per-phase loop has no leader-
+liveness gate of its own, dispatching every phase of a leader's plan
+regardless of whether they're still alive by the time a later phase is
+reached) would still have that later Leave order execute in full,
+silently reassigning command of one or more real armies from beyond
+the grave. Confirmed directly by reproduction: a Bowmen army commanded
+by a leader removed from `state.leaders` (simulating an earlier-phase
+death) still had its `commanded_by` field successfully cleared/
+reassigned by a dead leader's own Leave order, with zero indication
+anything was wrong. `_dispatch_pick_up()` had the same missing check,
+but manifested as an outright crash instead of a silent wrong result:
+it resolved the acting leader via a bare `state.leaders[leader_id]`
+lookup (needed to read the leader's own location for an "all armies"
+request), which raises `KeyError` the instant the leader is already
+dead -- caught by `run_leader_plan()`'s own top-level `try`/`except`
+(so it doesn't crash the whole turn), but turning a should-be-clean
+"the leader can't act, nothing happens" case into an opaque unhandled
+exception instead of the intended, structured refusal every other
+dispatch in this cluster already produces. A third, narrower crash in
+`_dispatch_leave()` itself was found along the way: even when a Leave
+order *was* being executed for a genuinely dead leader, checking
+`AdvancedAbility.ENHANCED_SKELETAL_UNITS` against a skeletal target
+army bare-indexed `state.leaders[leader_id]` too -- so a mixed Leave
+order (one ordinary army, one skeletal one) would silently reassign
+the ordinary army's command *and then* crash on the skeletal one,
+leaving the order's own effects half-applied. Fixed by adding one
+`acting_leader = state.leaders.get(leader_id)` / `if acting_leader is
+None: skip everything and return` guard to both functions, matching
+`_dispatch_disband()`'s own already-correct "a missing acting leader
+can't act at all" stance exactly, and reusing the now-guaranteed-non-
+`None` `acting_leader` for the skeletal-army ability check instead of
+re-indexing `state.leaders` a second time. New regression tests (3,
+covering a dead leader's ordinary Leave order, a dead leader's Leave
+order against a skeletal army, and a dead leader's Pick_Up order) all
+confirmed to fail against the pre-fix code (2 real `KeyError` crashes,
+1 wrong-successful-reassignment assertion failure) and pass against
+the fix; every pre-existing test in the file (141 total) is unaffected.
+Test count: 6776 -> 6779. Full suite verified green before and after.
+
 ## Setup
 
 ```

@@ -1458,6 +1458,48 @@ def test_dispatch_leave_skeletal_army_handed_to_non_undead_king_survives_with_en
     assert state.armies[army_id].commanded_by == 2
 
 
+# -- Phase 821: a leader who already died earlier this same turn can't
+# still execute a Leave/Pick_Up order queued for a later phase --
+
+
+def test_dispatch_leave_by_a_dead_leader_is_a_clean_no_op():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    del state.leaders[LEADER_ID]  # died in an earlier phase this same turn
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[255, 255, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == []
+    assert result.skeletal_army_lost == []
+    assert state.armies[army_id].commanded_by == LEADER_ID  # untouched, not reassigned
+
+
+def test_dispatch_leave_by_a_dead_leader_does_not_crash_on_a_skeletal_army():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.armies[army_id].is_skeletal = True
+    del state.leaders[LEADER_ID]  # died in an earlier phase this same turn
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[255, 255, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == []
+    assert result.skeletal_army_lost == []
+    assert army_id in state.armies  # not dug its own grave -- the order never ran at all
+
+
+def test_dispatch_pick_up_by_a_dead_leader_does_not_crash():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.armies[army_id].commanded_by = None  # unled, at the leader's own location
+    del state.leaders[LEADER_ID]  # died in an earlier phase this same turn
+    phase = PlanPhase(label="P0", action=ActionCode.PICK_UP, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[], board_width=BOARD_WIDTH)
+
+    assert result.succeeded == []
+    assert state.armies[army_id].commanded_by is None
+
+
 def test_dispatch_pick_up_attaches_colocated_army():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})
