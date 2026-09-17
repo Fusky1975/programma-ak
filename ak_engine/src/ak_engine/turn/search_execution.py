@@ -2811,9 +2811,10 @@ def _resolve_search_encounter(
             return outcome
         if combat_range is CombatRange.MELEE_RANGE:
             melee_duel_result = resolve_melee_duel(leader_combatant, monster_combatant, rng, skip_temper_setup=melee_setup_done)
+            melee_swings.extend(melee_duel_result.melee_swings)
             outcome = _outcome_from(melee_duel_result)
             if outcome is not None:
-                outcome.melee_swings = melee_duel_result.melee_swings
+                outcome.melee_swings = tuple(melee_swings)
                 outcome.guardian_monster = feature.guardian_monster
             return outcome
         duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng)

@@ -1444,6 +1444,40 @@ def test_execute_search_steal_caught_melee_range_surfaces_melee_swings():
     assert result.melee_swings == swings
 
 
+def test_execute_search_steal_caught_melee_range_after_a_melee_round_accumulates_both_swings():
+    # Phase 818 regression: an earlier, non-decisive Melee round (from a
+    # leading [MELEE, STEAL] plan) already populates the shared
+    # melee_swings accumulator. Steal's own caught-thief roll then
+    # independently lands on CombatRange.MELEE_RANGE and resolves via a
+    # *second*, separate resolve_melee_duel() call. Before the fix,
+    # _resolve_steal()'s own caught-thief MELEE_RANGE branch overwrote
+    # SearchExecutionResult.melee_swings with only the second duel's own
+    # swings, silently dropping the first round's real swing. The
+    # pre-existing test above (_steal_request(1), STEAL-only) never
+    # exercised this because _steal_request() always puts STEAL first,
+    # leaving the accumulator empty beforehand.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _shoot_request(1, Maneuver.MELEE, Maneuver.STEAL)
+    first_round_swing = MeleeSwing(attacker="a", hit=True, damage=3)
+    second_duel_swing = MeleeSwing(attacker="b", hit=True, damage=5)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_one_melee_round",
+        return_value=MeleeRoundOutcome(result=None, swings=(first_round_swing,)),
+    ), patch("ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_steal_evasion", return_value=False
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel",
+        return_value=EncounterCombatResult(winner="b", rounds=1, melee_swings=(second_duel_swing,)),
+    ) as mock_melee:
+        rng = ScriptedRandom([0.5] * 30, choice_indices=[2])  # MELEE_RANGE
+        result = execute_search(state, LEADER_ID, request, rng)
+
+    assert mock_melee.called
+    assert result.melee_swings == (first_round_swing, second_duel_swing)
+
+
 def test_execute_search_shoot_exhausted_with_no_further_tactic_defaults_to_melee():
     # Phase 178: a plan whose tactic list runs out without a winner no
     # longer reports "inconclusive" -- it now defaults to Melee until

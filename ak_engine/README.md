@@ -33480,6 +33480,51 @@ mid-chase target with a real, distinct queued order for that same
 phase. Test count: 6770 -> 6771. Full suite verified green before and
 after.
 
+### Phase 818: `_resolve_steal()`'s own caught-thief Melee-Range branch dropped an earlier round's real swings
+
+Continuing the manual bug-hunting sweep, this phase read `turn/
+search_execution.py` (3344 lines) cover to cover -- the module's own
+518-line docstring, `effective_flee_chance()`, `_apply_scout()`'s
+3-outcome esito model, `_resolve_cast_tactic()`'s ~650-line 16-spell
+dispatcher, `_finish_melee_outcome()`, `_resolve_melee_range_round()`,
+`_resolve_fire_arrow_phase()`, `_resolve_talk()`/`_resolve_fulfill()`/
+`_resolve_beg()`, and the main tactic-walk loop -- all checked out
+exactly against their own docstring citations. The standing technique
+(`grep -n "Combatant(\|BattleUnit("`) found three construction sites
+(`_leader_combatant()`, an inline guardian `Combatant`, and an inline
+Gate Demon `Combatant`) -- all confirmed genuine fresh builds, not
+reconstructions, and `_leader_combatant()` confirmed field-for-field
+identical to its `cast_execution.py`/`challenge_execution.py` siblings.
+
+One real, live bug found in `_resolve_steal()`'s own caught-thief
+`CombatRange.MELEE_RANGE` branch. Every other real Melee-duel-
+resolution call site in this file correctly extends the shared
+`melee_swings` accumulator list (populated by any earlier Melee tactic
+in the same plan) before attaching it to the outcome
+(`melee_swings.extend(duel_result.melee_swings)` then
+`outcome.melee_swings = tuple(melee_swings)`) -- but this one call site
+instead did a direct assignment, `outcome.melee_swings =
+melee_duel_result.melee_swings`, discarding whatever the accumulator
+already held. Reachable via a real `[MELEE, STEAL]` plan: the leading
+`MELEE` tactic (not the plan's last tactic, since `STEAL` follows)
+fights one non-decisive round via `_resolve_melee_range_round()`
+(populating the shared accumulator), then the `STEAL` tactic's own
+caught-thief roll independently lands on `CombatRange.MELEE_RANGE` and
+resolves via a second, separate `resolve_melee_duel()` call -- the
+final `SearchExecutionResult.melee_swings` showed only the second
+duel's own swings, silently dropping the first round's real swing from
+what the report layer narrates. The existing test `test_execute_
+search_steal_caught_melee_range_surfaces_melee_swings` never caught
+this because its own `_steal_request()` helper always puts `STEAL`
+first, leaving the accumulator empty beforehand. Fixed by extending the
+accumulator before attaching it, matching the other 2 real call sites
+exactly. New regression test (`test_execute_search_steal_caught_melee_
+range_after_a_melee_round_accumulates_both_swings`, built via
+`_shoot_request(1, Maneuver.MELEE, Maneuver.STEAL)`) confirmed to fail
+against the pre-fix code (dropping the first swing) and pass against
+the fix; every pre-existing test in the file is unaffected. Test count:
+6771 -> 6772. Full suite verified green before and after.
+
 ## Setup
 
 ```
