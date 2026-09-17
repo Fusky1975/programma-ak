@@ -2488,6 +2488,25 @@ def personal_combat_spell_cast_chance(
     -- the caller must already have excluded White Magic spells from
     setting this flag (see module docstring's Phase 192 addendum).
 
+    **Bug fix (this phase)**: SS21.1's own real compiled formula is
+    ``P_cast = clamp_0^100(30 + 15*L_c + 10*P)``, ``L_c = min(level,
+    4)`` -- the per-level term's own ``level`` is itself capped at
+    ``PERSONAL_COMBAT_SPELL_LEVEL_CAP`` (4), the exact same cap every
+    individual Personal-Combat spell *effect* in this module already
+    applies (``holy_symbol_hit_chance()``, ``roll_fireball_damage()``,
+    etc. -- Phase 181's own "come tutti" ["like all of them"] rule).
+    This function's own implementation previously fed the raw,
+    uncapped ``skill_level`` straight into the per-level term and only
+    clamped the *final* percentage at 100% -- for a non-Pagan caster at
+    skill level 5+ (a real, reachable value: ``MAX_SKILL_LEVEL`` is 9),
+    this silently gave 100% instead of the correct, capped 90%
+    (``30 + 15*4``). Both real production call sites (`turn/challenge_
+    execution.py`/`turn/search_execution.py`) pass an uncapped
+    ``effective_skill_level()`` result straight through, so this was a
+    real, live discrepancy, not just a theoretical one -- fixed by
+    capping ``skill_level`` here, matching every sibling formula in
+    this same module.
+
     Phase 617: ``damp_magic`` (``Power.DAMP_MAGIC``, ``Special
     Features.md`` section 5.2, user-supplied 2026-08-22: "dimezza la
     probabilità di lancio di ogni incantesimo" -- halves the cast
@@ -2506,7 +2525,8 @@ def personal_combat_spell_cast_chance(
     Feature concept to check.
     """
 
-    chance = PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE + PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL * skill_level
+    effective_level = min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)
+    chance = PERSONAL_COMBAT_SPELL_CAST_BASE_CHANCE + PERSONAL_COMBAT_SPELL_CAST_CHANCE_PER_LEVEL * effective_level
     if caster_is_pagan:
         chance += PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS
     if places_bonus:

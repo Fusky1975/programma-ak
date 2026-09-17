@@ -1546,9 +1546,25 @@ def test_personal_combat_spell_cast_chance_matches_the_reports_own_pagan_table()
 
 
 def test_personal_combat_spell_cast_chance_caps_at_100_percent():
-    # Level 5, Pagan: 30% + 15%*5 + 10% = 115%, clamped to 100% (Phase
-    # 467 -- corrected from the rulebook's own claimed 95% cap).
+    # Level 5, Pagan: the level term is itself capped at 4 (SS21.1's own
+    # `L_c = min(level, 4)`), so this is 30% + 15%*4 + 10% = 100% exactly
+    # -- already at the real ceiling before the final clamp even matters
+    # (Phase 467 -- corrected from the rulebook's own claimed 95% cap).
     assert personal_combat_spell_cast_chance(5, caster_is_pagan=True) == pytest.approx(1.00)
+
+
+def test_personal_combat_spell_cast_chance_caps_the_level_term_not_just_the_final_percent():
+    # Regression test for a real bug: the level fed into the per-level
+    # term must itself be capped at PERSONAL_COMBAT_SPELL_LEVEL_CAP (4),
+    # per SS21.1's own `L_c = min(level, 4)` -- not just the final sum
+    # clamped at 100%. A non-Pagan caster at level 5+ used to silently
+    # read 100% (30 + 15*5 = 105%, clamped) instead of the correct,
+    # capped 90% (30 + 15*4). Every existing "caps at 100%" test above
+    # happens to use caster_is_pagan=True, which reaches exactly 100%
+    # at level 4 either way -- masking this discrepancy, since it only
+    # shows up for a non-Pagan caster whose own level exceeds the cap.
+    assert personal_combat_spell_cast_chance(5) == pytest.approx(0.90)
+    assert personal_combat_spell_cast_chance(9) == pytest.approx(0.90)
 
 
 def test_personal_combat_spell_cast_chance_pagan_bonus():
@@ -1573,7 +1589,8 @@ def test_personal_combat_spell_cast_chance_damp_magic_halves_the_result():
 
 
 def test_personal_combat_spell_cast_chance_damp_magic_applies_after_the_cap():
-    # Level 5, Pagan: capped at 100%, then halved by Damp Magic -> 50%.
+    # Level 5, Pagan: level term capped at 4, giving exactly 100%
+    # (30 + 60 + 10), then halved by Damp Magic -> 50%.
     assert personal_combat_spell_cast_chance(5, caster_is_pagan=True, damp_magic=True) == pytest.approx(0.50)
 
 
@@ -1607,7 +1624,8 @@ def test_personal_combat_spell_cast_chance_places_bonus_stacks_with_pagan_before
 
 
 def test_personal_combat_spell_cast_chance_places_bonus_applies_before_the_cap():
-    # Level 5, Pagan + Places: 30% + 75% + 10% + 20% = 135%, clamped to 100%.
+    # Level 5, Pagan + Places: level term capped at 4, so 30% + 60% +
+    # 10% + 20% = 120%, clamped to 100%.
     assert personal_combat_spell_cast_chance(5, caster_is_pagan=True, places_bonus=True) == pytest.approx(1.00)
 
 

@@ -33193,6 +33193,41 @@ the pre-fix code and passes against the fix -- confirmed by running it
 both ways. Test count: 6753 -> 6754 (net +1). Full suite verified green
 before and after.
 
+### Phase 811: Personal-Combat spell cast chance dropped the real level-4 cap on its own per-level term
+
+Continuing the manual bug-hunting sweep into `turn/encounter.py`
+(5664 lines, the largest file in `turn/`), found a real, previously-
+untested discrepancy in `personal_combat_spell_cast_chance()`
+(governs all ten Personal-Combat-only spells plus Words of Healing).
+The module's own module-level comment already quotes the real
+compiled formula directly (`AKGEN_reverse_engineering_report (2).md`
+SS21.1, `AK.OVR 0x18A75`): `P_cast = clamp_0^100(30 + 15*L_c + 10*P)`,
+`L_c = min(level, 4)` -- the per-level term's own `level` is itself
+capped at 4 (`PERSONAL_COMBAT_SPELL_LEVEL_CAP`), the exact same cap
+every individual Personal-Combat spell *effect* in this same module
+already applies (`holy_symbol_hit_chance()`, `roll_fireball_damage()`,
+etc., per Phase 181's own "come tutti" rule). The function's own
+implementation, however, fed the raw, uncapped `skill_level` straight
+into the per-level term and only clamped the *final* percentage at
+100% -- for a non-Pagan caster at skill level 5 or higher (a real,
+reachable value, `MAX_SKILL_LEVEL` is 9), this silently gave 100%
+instead of the correct, capped 90% (`30 + 15*4`). Both real production
+call sites (`turn/challenge_execution.py`/`turn/search_execution.py`)
+pass an uncapped `effective_skill_level()` result straight through, so
+this was a real, live production bug, not a theoretical one. Every
+existing test exercising skill level 5+ happened to also set
+`caster_is_pagan=True`, which reaches exactly 100% at level 4 anyway
+(`30+60+10=100`) -- masking the discrepancy for a full 344 phases,
+since it only shows up for a non-Pagan caster whose level exceeds the
+cap. Fixed by capping `skill_level` at `PERSONAL_COMBAT_SPELL_LEVEL_
+CAP` before computing the per-level term, matching every sibling
+formula in the same module. New regression test (`test_personal_
+combat_spell_cast_chance_caps_the_level_term_not_just_the_final_
+percent`) fails against the pre-fix code (asserts 0.90, pre-fix code
+returns 1.00) and passes against the fix -- confirmed by computing the
+pre-fix formula directly. Test count: 6754 -> 6755 (net +1). Full
+suite verified green before and after.
+
 ## Setup
 
 ```
