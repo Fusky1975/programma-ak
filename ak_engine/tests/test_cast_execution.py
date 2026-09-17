@@ -12,6 +12,7 @@ from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, GraveyardEntry, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
@@ -51,7 +52,7 @@ from ak_engine.turn.cast_execution import (
     scar_terrain_is_exhausted,
 )
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.encounter import EncounterCombatResult, MeleeSwing
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, EncounterCombatResult, MeleeSwing
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, direction_between, neighbor_in_direction, neighbors
 
@@ -792,6 +793,29 @@ def test_kill_enemy_combatant_reads_non_undead_alignment_as_not_undead_or_anti_h
     combatant = _kill_enemy_combatant(state, state.leaders[CASTER_ID], temper=Temper.BERSERK)
 
     assert combatant.is_undead_or_anti_holy is False
+
+
+def test_kill_enemy_combatant_reads_arcane_valor_scepter_hit_points_bonus():
+    # Regression: Phase 538's Arcane's Valor hit-points bonus (+5 for
+    # personally holding the Scepter of Life, GameType.ARCANES only) was
+    # never wired here, unlike challenge_execution.py's own identical
+    # _leader_combatant().
+    state = build_state()
+    state.game_type = GameType.ARCANES
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=CASTER_ID)
+
+    combatant = _kill_enemy_combatant(state, state.leaders[CASTER_ID], temper=Temper.BERSERK)
+
+    assert combatant.hit_points == CHARACTER_HIT_POINTS + 5
+
+
+def test_kill_enemy_combatant_arcane_valor_bonus_is_zero_outside_arcanes():
+    state = build_state()
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=CASTER_ID)
+
+    combatant = _kill_enemy_combatant(state, state.leaders[CASTER_ID], temper=Temper.BERSERK)
+
+    assert combatant.hit_points == CHARACTER_HIT_POINTS
 
 
 def test_kill_enemy_puts_a_colocated_target_into_a_coma():

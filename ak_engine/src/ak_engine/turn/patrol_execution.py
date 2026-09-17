@@ -108,7 +108,12 @@ from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted, target_evades_via_sense_danger
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
-from ak_engine.turn.discovery_effects import effective_skill_level, equipped_combat_weapon, holds_bow_of_elven_kings
+from ak_engine.turn.discovery_effects import (
+    arcane_valor_hit_points_bonus,
+    effective_skill_level,
+    equipped_combat_weapon,
+    holds_bow_of_elven_kings,
+)
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     Combatant,
@@ -211,6 +216,19 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
     own audit; closed here alongside the identical gap in
     ``cast_execution.py``'s Augur-Combat retaliator and ``pursue_
     execution.py``'s own duplicate).
+
+    **Bug fix**: ``arcane_valor_hit_points_bonus()`` (Phase 538, "Arcane's
+    Valor" -- +5 combat hit points for personally holding the Scepter of
+    Life, +2 more for the King's own whole Kingdom, active only under
+    ``GameType.ARCANES``) was introduced independently of Phase 684's own
+    weapon-bonus sweep and never propagated here (nor to ``pursue_
+    execution.py``'s/``cast_execution.py``'s own identical duplicate
+    builders, fixed alongside this one) even though ``challenge_
+    execution.py``/``battle_orchestrator.py``/``search_execution.py``/
+    ``turn/random_encounter_execution.py`` all already fold it into
+    their own starting ``hit_points`` -- a real, silent inconsistency
+    under the ARCANES game type specifically (0 for every other game,
+    per that function's own docstring).
     """
 
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)
@@ -237,7 +255,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
 
     return Combatant(
         name=leader.name,
-        hit_points=CHARACTER_HIT_POINTS,
+        hit_points=CHARACTER_HIT_POINTS + arcane_valor_hit_points_bonus(state, leader),
         melee_skill=melee_skill,
         neutral_duelist_bonus=neutral_bonus,
         temper=leader.temper,

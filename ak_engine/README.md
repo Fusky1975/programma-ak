@@ -33394,6 +33394,48 @@ Dinosaur) confirmed to fail against the pre-fix code and pass against
 the fix. Test count: 6763 -> 6764. Full suite verified green before
 and after.
 
+### Phase 816: Arcane's Valor hit-points bonus never reached Patrol/Pursue/Kill Enemy's own duplicate `_leader_combatant()` builders
+
+Continuing the manual bug-hunting sweep, this phase reviewed `turn/
+patrol_execution.py` (369 lines) -- rules (a)-(i) of [3.16] "Characters
+On Patrol" (armyless-only interception, owned/allied-territory gating,
+the Archery/Melee/Magic skill-comparison threshold, the orphaned "point
+(7)" cross-reference falling back to a deterministic lowest-`leader_id`
+tiebreak, the Spy Table's own 50% wander roll) all checked out exactly
+against their own docstring citations. Applying the standing technique
+first (`grep -n "Combatant("`) found exactly one construction site,
+`_leader_combatant()` -- confirmed a genuine fresh build from a
+`LeaderState`, already correctly wired with Phase 535's weapon-bonus
+formulas since Phase 684, not a reconstruction.
+
+Comparing that builder field-by-field against its already-reviewed
+`challenge_execution.py` counterpart (Phase 814's own session) turned
+up a real, live gap: `arcane_valor_hit_points_bonus()` (Phase 538,
+"Arcane's Valor" -- +5 combat hit points for personally holding the
+Scepter of Life, +2 more for the whole Kingdom if the King holds it,
+active only under `GameType.ARCANES`) was folded into `challenge_
+execution.py`/`battle_orchestrator.py`/`search_execution.py`/`turn/
+random_encounter_execution.py`'s own starting `hit_points`, but never
+into `patrol_execution.py`'s own duplicate builder. Checking the two
+sibling duplicate builders Phase 684 already fixed for the *different*,
+earlier weapon-bonus gap (`turn/pursue_execution.py`'s own `_leader_
+combatant()`, `turn/cast_execution.py`'s own Augur-Combat `_kill_enemy_
+combatant()`) found the identical omission in both -- `arcane_valor_
+hit_points_bonus()` was introduced independently of Phase 684's own
+sweep (which only targeted Phase 535's weapon formulas) and was never
+propagated to any of the 3 duplicate-builder sites it fixed.
+
+Fixed by adding the same `+ arcane_valor_hit_points_bonus(state,
+leader)` term to all 3 builders' own `hit_points` field, matching the
+4 already-correct call sites exactly. 6 new regression tests (2 per
+file: bonus applies under `GameType.ARCANES` with the Scepter held,
+stays exactly `CHARACTER_HIT_POINTS` outside it) confirmed to fail
+against the pre-fix code (the 3 "bonus applies" cases) and pass against
+the fix; every pre-existing test in all 3 files is unaffected, since
+none of them ever set `GameType.ARCANES` (matching that function's own
+"0 for every existing game/test" docstring note). Test count: 6764 ->
+6770. Full suite verified green before and after.
+
 ## Setup
 
 ```

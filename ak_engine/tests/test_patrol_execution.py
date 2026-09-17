@@ -9,6 +9,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, Maneuver
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
@@ -16,7 +17,7 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
-from ak_engine.turn.encounter import EncounterCombatResult, MeleeSwing
+from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, EncounterCombatResult, MeleeSwing
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.movement import neighbors as _neighbors
 from ak_engine.turn.patrol_execution import _leader_combatant, execute_patrol, find_patrol_target
@@ -254,6 +255,33 @@ def test_leader_combatant_reads_non_undead_alignment_as_not_undead_or_anti_holy(
     combatant = _leader_combatant(leader, state)
 
     assert combatant.is_undead_or_anti_holy is False
+
+
+def test_leader_combatant_reads_arcane_valor_scepter_hit_points_bonus():
+    # Regression: Phase 538's Arcane's Valor hit-points bonus (+5 for
+    # personally holding the Scepter of Life, GameType.ARCANES only) was
+    # never wired here, unlike challenge_execution.py's own identical
+    # _leader_combatant().
+    state = _base_state()
+    state.game_type = GameType.ARCANES
+    leader = LeaderState(1, kingdom_id=1, name="Patroller", location=HOME)
+    state.add_leader(leader)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.hit_points == CHARACTER_HIT_POINTS + 5
+
+
+def test_leader_combatant_arcane_valor_bonus_is_zero_outside_arcanes():
+    state = _base_state()
+    leader = LeaderState(1, kingdom_id=1, name="Patroller", location=HOME)
+    state.add_leader(leader)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.hit_points == CHARACTER_HIT_POINTS
 
 
 # -- find_patrol_target: rules (a), (f) ---------------------------------

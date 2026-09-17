@@ -731,6 +731,7 @@ from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.cast_decode import CHARACTER_TARGET_SPELLS, CastRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import (
+    arcane_valor_hit_points_bonus,
     effective_skill_level,
     equipped_combat_weapon,
     holder_is_immune_to_spell,
@@ -1713,6 +1714,19 @@ def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temp
     Phase 682's own audit; closed here alongside the identical gap in
     ``patrol_execution.py``/``pursue_execution.py``'s own duplicate
     ``_leader_combatant()``).
+
+    **Bug fix**: ``arcane_valor_hit_points_bonus()`` (Phase 538, "Arcane's
+    Valor" -- +5 combat hit points for personally holding the Scepter of
+    Life, +2 more for the King's own whole Kingdom, active only under
+    ``GameType.ARCANES``) was introduced independently of Phase 684's own
+    weapon-bonus sweep and never propagated here (nor to ``patrol_
+    execution.py``'s/``pursue_execution.py``'s own identical duplicate
+    builders, fixed alongside this one) even though ``challenge_
+    execution.py``/``battle_orchestrator.py``/``search_execution.py``/
+    ``turn/random_encounter_execution.py`` all already fold it into
+    their own starting ``hit_points`` -- a real, silent inconsistency
+    under the ARCANES game type specifically (0 for every other game,
+    per that function's own docstring).
     """
 
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)
@@ -1740,7 +1754,7 @@ def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temp
 
     return Combatant(
         name=leader.name,
-        hit_points=CHARACTER_HIT_POINTS,
+        hit_points=CHARACTER_HIT_POINTS + arcane_valor_hit_points_bonus(state, leader),
         melee_skill=melee_skill,
         archery_skill=archery_skill,
         neutral_duelist_bonus=neutral_bonus,
