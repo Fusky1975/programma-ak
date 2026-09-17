@@ -942,10 +942,43 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
     ``gate_angel_due_alignment_turn`` cache (`turn/cast_execution.py`),
     which only works correctly now that ``turn_number`` itself actually
     advances (see this function's own call site).
+
+    **Phase 820 bug fix**: ``ARMY_TABLE[army.army_type]`` used to be a
+    bare lookup. 8 real, catalog-named ``ArmyType`` members (Vampires,
+    Marauders, Shamans, Crossbow, Javelins, Artillery, Spiders, D-Turtle
+    -- ``models/army_type.py``'s own Phase 383 addendum: "none of these
+    9 appear in the rulebook's Army Type Table [6.3]... get no
+    ArmyTypeStats... entry", Dinosaurs being the 9th, now the one
+    exception with a real entry since Phase 691) have no ``ARMY_TABLE``
+    entry at all -- confirmed no current world-generation code path
+    ever actually constructs one of these 8 (``Race.VAMPISH`` in
+    particular is only ever *mapped* to ``ArmyType.VAMPIRES`` via
+    ``worldgen/initial_armies.py NATIVE_ARMY_TYPE``, never *placed* by
+    ``generate_new_game()``, since it was never added to ``worldgen/
+    special_race_placement.py SPECIAL_RACE_BASE_COUNT``), but this
+    function is the *one* unconditional, unguarded step at the tail of
+    every ``run_turn()`` call -- reached for every real turn, with no
+    ``try``/``except`` anywhere between it and ``run_turn()``'s own
+    caller. A single such army anywhere on the map (via ``GameState.
+    add_army()``, a fully public API any moderator tool, test fixture,
+    or future world-gen phase can call directly) would raise
+    ``KeyError`` here and crash the *entire* turn's processing for
+    *every* kingdom, silently discarding every already-computed
+    ``PhaseDispatchResult`` -- the same class of "bare lookup into an
+    ArmyType-keyed table with known gaps" bug this project already
+    fixed once for real (Phase 799, ``build_initial_armies()``'s own
+    missing ``BASE_STRENGTH`` entry for Elephants), and the exact same
+    known gap ``_boarding_priority_tier()`` (this module) already
+    handles safely via ``ARMY_TABLE.get(...)``. Fixed the same way: an
+    army whose own type has no ``ARMY_TABLE`` entry keeps whatever
+    ``movement_points`` it already had -- no invented value, matching
+    this project's own "no source, no guess" convention, and no crash.
     """
 
     for army in state.armies.values():
-        army.movement_points = ARMY_TABLE[army.army_type].speed
+        stats = ARMY_TABLE.get(army.army_type)
+        if stats is not None:
+            army.movement_points = stats.speed
         army.march_bonus_applied_this_turn = False
         army.naval_bonus_applied_this_turn = False
         army.march_table_bonus_applied_this_turn = False

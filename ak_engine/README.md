@@ -33587,6 +33587,81 @@ correctly-functioning formulas serving two different composers -- only
 the cross-reference between them was wrong. Corrected in both places
 this citation appeared; no behavior change.
 
+### Phase 820: a stray army of an uncatalogued type would have crashed every `run_turn()` call outright
+
+Continuing the manual bug-hunting sweep, this phase read `turn/
+turn_processor.py` (1783 lines) cover to cover -- the module's own
+258-line docstring (the phase-by-phase orchestration model, the
+Multiple Contingents/Practice-coordination/mutual-encounter/Defend-
+cancellation/persistent-Pursue-Trail-Move-chase/plague-spread/Gate-
+Angel-Valhalla-visit mechanics it wires together), `run_turn()` itself,
+and every helper it calls (`_apply_defend_reinforcements()`, `_apply_
+defend_battle_loss()`, `_continue_active_pursuits()`/`_continue_
+active_move_chases()`, `_dispatch_active_patrols()`, `_dispatch_mutual_
+encounter()`, `_dispatch_contested_rebattles()`, `_dispatch_multi_
+practice()`, `_dispatch_multi_attacker_lmove()`, `_replenish_turn_
+scoped_state()`, `_apply_werebeast_transformations()`, `_kingdom_
+submitted_real_orders()`) -- all checked out exactly against their own
+docstring citations. The standing technique found zero `Combatant(`/
+`BattleUnit(` construction sites in this file.
+
+Several plausible-looking leads were traced precisely and ruled out,
+not just assumed safe: several of this module's own dispatch helpers
+(`_dispatch_mutual_encounter()`, `_dispatch_multi_practice()`,
+`_continue_active_pursuits()`, `_dispatch_active_patrols()`, `_dispatch_
+contested_rebattles()`) call downstream `execute_*`/`advance_*`
+functions with no `try`/`except` of their own, unlike `_dispatch_multi_
+attacker_lmove()`/`_continue_active_move_chases()` -- a real
+inconsistency against `run_turn()`'s own documented "never raises on
+its own" contract. Every concrete crash scenario this could construct
+(a leader dying earlier in the same turn while their own static plan
+still queues a later-phase Practice/Challenge/Pursue/Patrol order) was
+confirmed, by direct reproduction, to already be defended against
+upstream -- `practice_keys`'s own construction, `execute_challenge()`/
+`execute_pursue()`, and `find_patrol_target()` all resolve a missing
+leader via `.get()` and skip/refuse cleanly before any bare indexing is
+ever reached. A separate concern (`TurnLeader.kingdom_id` vs. the live,
+possibly-Charmed `LeaderState.kingdom_id`) turned out to be the
+pervasive, deliberate convention used identically at every one of this
+file's own allegiance checks, not a localized defect.
+
+The real, confirmed bug: `_replenish_turn_scoped_state()`'s own
+`ARMY_TABLE[army.army_type]` bare lookup, resetting every army's
+movement points at the tail of every `run_turn()` call. 8 real,
+catalog-named `ArmyType` members (Vampires, Marauders, Shamans,
+Crossbow, Javelins, Artillery, Spiders, D-Turtle -- `models/army_
+type.py`'s own Phase 383 addendum: "none of these 9 appear in the
+rulebook's Army Type Table [6.3]... get no ArmyTypeStats... entry",
+Dinosaurs being the 9th and now the one exception since Phase 691)
+have no `ARMY_TABLE` entry at all. Traced precisely whether any of the
+8 are actually reachable via the current world-generation pipeline:
+Marauders has zero real construction sites anywhere in production;
+Vampires is *mapped* to a real `ArmyType` (`worldgen/initial_armies.py
+NATIVE_ARMY_TYPE`, sourced from the real `special_races` catalog
+field) but never actually *placed* by `generate_new_game()`, since
+`Race.VAMPISH` was never added to `worldgen/special_race_placement.py
+SPECIAL_RACE_BASE_COUNT`. So none of the 8 are reachable through any
+implemented game mechanic today -- but this function is the *one*
+unconditional, unguarded step at the very tail of every `run_turn()`
+call, with no `try`/`except` anywhere between it and `run_turn()`'s own
+caller, and `GameState.add_army()` is a fully public API any moderator
+tool, test fixture, or future world-gen phase can call directly with
+any of these 8 types. A single such army anywhere on the map would
+raise `KeyError` here and silently discard every already-computed
+`PhaseDispatchResult` for the *entire* turn, for *every* kingdom -- the
+same class of "bare lookup into an `ArmyType`-keyed table with known
+gaps" defect this project already fixed once for real (Phase 799,
+`build_initial_armies()`'s own missing `BASE_STRENGTH` entry for
+Elephants), and the exact same known gap this very module's own
+`_boarding_priority_tier()` already handles safely via `ARMY_TABLE.
+get(...)`. Fixed the same way: an army whose own type has no `ARMY_
+TABLE` entry now keeps whatever `movement_points` it already had --
+no invented value, matching this project's own "no source, no guess"
+convention, and no crash. New regression test confirmed to fail
+against the pre-fix bare lookup (a real `KeyError`) and pass against
+the fix; every pre-existing test in the file (100 total) is unaffected.
+Test count: 6775 -> 6776. Full suite verified green before and after.
+
 ## Setup
 
 ```

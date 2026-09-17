@@ -2226,6 +2226,26 @@ def test_replenish_turn_scoped_state_refills_movement_points_to_the_real_rate():
     assert state.armies[101].movement_points == ARMY_TABLE[ArmyType.HVY_CAVALRY].speed
 
 
+def test_replenish_turn_scoped_state_does_not_crash_for_an_army_type_with_no_army_table_entry():
+    # Phase 820 bug fix: 8 real, catalog-named ArmyType members (Vampires,
+    # Marauders, Shamans, Crossbow, Javelins, Artillery, Spiders, D-Turtle
+    # -- models/army_type.py's own Phase 383 addendum) have no ARMY_TABLE
+    # entry at all. Before the fix, the bare ARMY_TABLE[army.army_type]
+    # lookup here raised KeyError for any of them -- the one unconditional,
+    # unguarded step at the tail of every run_turn() call, so a single
+    # such army anywhere on the map would crash the entire turn's
+    # processing. No current world-generation path constructs one, but
+    # GameState.add_army() is a fully public API. Fixed to leave
+    # movement_points untouched (no invented value) instead of crashing.
+    state = _base_state()
+    state.add_army(ArmyState(101, 1, ArmyType.MARAUDERS, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    _replenish_turn_scoped_state(state)  # must not raise
+
+    assert state.armies[101].movement_points == 3
+    assert state.armies[101].unhireable_this_turn is False  # every other field still resets normally
+
+
 def test_replenish_turn_scoped_state_clears_march_and_naval_bonus_flags():
     state = _base_state()
     army = ArmyState(
