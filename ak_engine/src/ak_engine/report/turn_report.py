@@ -11867,6 +11867,17 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
     module's own docstring for the full derivation of each of the five
     modifiers) and rendered as a second `Quality` name next to the
     normal one, matching the real table's own two-column shape.
+
+    **Phase 829 bug fix**: the Hired pass's own Leader-column resolution
+    used to check `army.commanded_by in state.leaders` (alive-only) --
+    an army whose real commander died in an EARLIER phase of the SAME
+    turn (still referenced by `ArmyState.commanded_by`, since `GameState.
+    remove_leader()` never clears that field) was silently mislabeled
+    "Garrison" instead of naming the real, dead commander, even though
+    the army is, by this project's own data model, still genuinely
+    commanded by them. Fixed via `_leader_name()`'s own established
+    alive-or-dead fallback (the identical fix shape as `describe_turn_
+    results()`'s Phase 612/827 addenda and BATLDR's Phase 649 addendum).
     """
 
     kingdom = state.kingdoms[kingdom_id]
@@ -11889,10 +11900,16 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
                 province_index = 0
             province_field, province_index = _army_row_province_field(state, army.location, province_index)
 
-            if army.commanded_by is not None and army.commanded_by in state.leaders:
-                leader_label = state.leaders[army.commanded_by].name
-            else:
-                leader_label = "Garrison"
+            # Phase 829 bug fix: a bare `in state.leaders` check treats a
+            # commander who died EARLIER this same turn (archived into
+            # `state.dead_leaders` by `GameState.remove_leader()`, which
+            # never clears `ArmyState.commanded_by`) as if the army were
+            # genuinely uncommanded, mislabeling it "Garrison" instead of
+            # naming the real (now-dead) commander -- the same "dead-actor
+            # narration" gap already fixed for `describe_turn_results()`
+            # (Phase 612/827) and BATLDR (Phase 649). `_leader_name()`'s own
+            # alive-or-dead fallback resolves this the same way.
+            leader_label = _leader_name(state, army.commanded_by) or "Garrison"
             default_race = kingdom.race
             lines.append(
                 _render_army_row(

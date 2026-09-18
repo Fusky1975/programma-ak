@@ -8158,6 +8158,21 @@ def test_describe_armies_report_unled_army_shows_garrison():
     ]
 
 
+def test_describe_armies_report_names_a_commander_who_died_earlier_this_same_turn():
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Sir Aldric", HexCoord(0, 0)))
+    state.add_army(ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), commanded_by=1))
+    state.remove_leader(1)  # died in an earlier phase this same turn
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == [
+        _ARMIES_CAPTION_LINE_1,
+        _ARMIES_COLUMN_HEADER,
+        "Capital City      Sir Aldric     Bowmen                Human  Average  Veteran",
+    ]
+
+
 def test_describe_armies_report_monstrous_army_uses_its_own_fixed_race():
     state = _armies_state()
     state.add_army(ArmyState(1, 1, ArmyType.DRAGON_WING, Quality.ELITE, HexCoord(0, 0)))

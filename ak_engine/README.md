@@ -34049,6 +34049,40 @@ tests unchanged (still 1113 total) and the full suite (unchanged,
 6789) both before and after -- no new regression test needed, since
 there is nothing a test could observe differently.
 
+### Phase 829: `describe_armies_report()` naming a commander who died earlier the same turn
+
+Continuing the manual sweep into `report/turn_report.py`'s own next
+large, unread composers -- `describe_battle()` (275 lines) and
+`describe_search()` (245 lines) and `describe_finances_report()` (233
+lines) were all read cover to cover with no bug found, each checked
+field-by-field/signature-by-signature against `BattleReport`/
+`SearchExecutionResult`/`GameState`'s own real declarations.
+`describe_armies_report()` (227 lines) surfaced a real, live bug: its
+Hired-pass Leader-column resolution checked `army.commanded_by in
+state.leaders` (alive-only) to decide between naming the commander and
+falling back to `"Garrison"` -- but `GameState.remove_leader()` never
+clears `ArmyState.commanded_by`, so an army whose real commander died
+in an EARLIER phase of the SAME turn (e.g. lost a Challenge/duel) is
+still, by this project's own data model, genuinely commanded by that
+leader for the rest of the turn. The alive-only check silently
+mislabeled such an army `"Garrison"` at end-of-turn report time instead
+of naming the real (now-dead) commander -- the identical "dead-actor
+narration" bug class already fixed for `describe_turn_results()`
+(Phase 612/827) and BATLDR (Phase 649), recurring in a composer that
+had never been read end-to-end before. Confirmed by direct
+reproduction (a leader commanding a Bowmen army, killed via
+`GameState.remove_leader()`, then `describe_armies_report()` showing
+`"Garrison"` instead of the real name). Fixed by reusing `_leader_
+name()`'s own established alive-or-dead fallback (`leader_label =
+_leader_name(state, army.commanded_by) or "Garrison"`), the same shape
+every other dead-actor fix in this project already uses. New
+regression test confirmed to fail against the pre-fix code (asserted
+`"Garrison"`) and pass against the fix (`git stash` round-trip); the
+existing `test_describe_armies_report_unled_army_shows_garrison` test
+(a genuinely uncommanded army, `commanded_by=None`) is unaffected,
+proving the fix is scoped to the dead-leader case only. Test count:
+6789 -> 6790. Full suite verified green before and after.
+
 ## Setup
 
 ```
