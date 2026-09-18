@@ -295,6 +295,10 @@ def test_execute_practice_attaches_a_fresh_skill_table_when_none_recorded():
     assert state.leaders[1].skills is not None
     assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (0, 0)
     assert state.leaders[1].experience_credit == PRACTICE_CREDIT_SOLO_GAIN
+    # Phase 853: a solo Practice has no co-practicer to ever credit as a
+    # teacher -- teacher_leader_id stays at its own default, unlike the
+    # group path, which sets it for a real skill rise.
+    assert result.teacher_leader_id is None
 
 
 def test_execute_practice_reuses_and_only_touches_the_practiced_abilitys_pair():
@@ -996,6 +1000,9 @@ def test_execute_practice_group_tied_skill_credit_threshold_crossing_still_gives
     assert results[0].new_skill == 3
     assert state.leaders[1].merit_tally.teaching_interactions == 0
     assert state.leaders[2].merit_tally.teaching_interactions == 0
+    # Phase 853: no teacher_leader_id either, for the identical reason --
+    # a real skill rise with nobody to credit as the tutor.
+    assert results[0].teacher_leader_id is None
 
 
 def test_execute_practice_group_three_leaders_only_minimum_skill_ones_roll():
@@ -1052,10 +1059,16 @@ def test_execute_practice_group_credits_teacher_merit_when_the_student_actually_
         },
     )
 
-    execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.01]))
+    results = execute_practice_group(state, [1, 2], Ability.NECROMANCY, rng=ScriptedRandom([0.01]))
 
     assert state.leaders[2].merit_tally.teaching_interactions == 1
     assert state.leaders[1].merit_tally.teaching_interactions == 0
+    # Phase 853: the exact same selected teacher is also carried onto the
+    # rising student's own result, for report/turn_report.py's own
+    # render_practice_tutored() narration -- a second consumer of this
+    # one already-computed fact, not a separate selection.
+    assert results[0].teacher_leader_id == 2
+    assert results[1].teacher_leader_id is None  # leader 2 never rose
 
 
 def test_execute_practice_group_credits_only_the_current_officeholder_among_qualified_candidates():
@@ -1114,6 +1127,8 @@ def test_execute_practice_group_credits_no_teacher_for_an_aptitude_only_rise():
     assert results[0].skill_rose is False
     assert results[0].aptitude_rose is True
     assert state.leaders[2].merit_tally.teaching_interactions == 0
+    # Phase 853: same "only a real skill rise gets a teacher" rule.
+    assert results[0].teacher_leader_id is None
 
 
 # -- Phase 473: Professor Whizdumb's own aptitude-gate bonus (SS2.5) -------

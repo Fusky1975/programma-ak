@@ -742,6 +742,19 @@ class PracticeExecutionResult:
     # (foreign province, matching Advanced Ability, real loot) don't
     # all hold.
     gold_looted_as_bandit: int = 0
+    # Phase 853: the real, already-computed "selected teacher" for a
+    # genuine group-practice skill rise (`_select_teacher()`, Phase 446,
+    # `AKGEN_reverse_engineering_report (2).md` SS20.2) -- previously
+    # computed only to credit `Office.TEACHER`'s own merit tally, then
+    # discarded before it could also feed `report/turn_report.py
+    # render_practice_tutored()`'s own already-sourced, already-tested
+    # `_LTeach` narration ("< was tutored by ["), which needs exactly
+    # this fact and has never had a real caller supply it. `None` for a
+    # solo Practice (`execute_practice()` never sets this field at all),
+    # an aptitude-only rise, or a group rise where no co-practicer had
+    # strictly higher pre-attempt skill (matching `_select_teacher()`'s
+    # own "no teacher when tied" rule).
+    teacher_leader_id: int | None = None
 
 
 def _get_or_create_skills(leader: LeaderState) -> SkillTable:
@@ -1458,10 +1471,16 @@ def execute_practice_group(
         society_maps_revealed = _maybe_receive_society_maps(state, leader, ability, rng)
         gems_gold_gained = _maybe_make_gems(state, leader, ability, rng)
 
+        teacher_id: int | None = None
         if outcome.skill_rose:
             # Phase 446: Teacher merit -- +1 to the selected teacher per
             # real natural skill level gained (never for an aptitude-only
-            # rise) -- see _select_teacher()'s own docstring.
+            # rise) -- see _select_teacher()'s own docstring. Phase 853:
+            # the same `teacher_id` is now also carried onto this
+            # student's own `PracticeExecutionResult` (below), for
+            # `report/turn_report.py render_practice_tutored()`'s own
+            # real narration -- a second, independent consumer of this
+            # one already-computed fact, not a second computation.
             teacher_id = _select_teacher(state, leader_ids, pairs, index)
             if teacher_id is not None:
                 state.leaders[teacher_id].merit_tally.teaching_interactions += 1
@@ -1487,6 +1506,7 @@ def execute_practice_group(
                 advanced_ability_granted=advanced_ability_granted,
                 society_maps_revealed=society_maps_revealed,
                 gems_gold_gained=gems_gold_gained,
+                teacher_leader_id=teacher_id,
             )
         )
     return results

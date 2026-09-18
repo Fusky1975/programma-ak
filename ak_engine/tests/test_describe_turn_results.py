@@ -310,6 +310,58 @@ def test_describe_turn_results_renders_practice_with_supplied_ability_name():
     assert lines == ["Aldric practiced Melee even though Aldric had already reached the maximum skill level."]
 
 
+def test_describe_turn_results_renders_practice_tutored_via_the_real_selected_teacher():
+    # Phase 853: PracticeExecutionResult.teacher_leader_id (execute_
+    # practice_group()'s own real _select_teacher() pick) now reaches
+    # render_practice_tutored() through describe_turn_results() itself.
+    state = _state_with_leaders(_leader(1, "Aldric"), _leader(2, "Borin"))
+    result = PracticeExecutionResult(ability=Ability.MELEE, skill_rose=True, new_skill=2, teacher_leader_id=2)
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.PRACTICE, result=result, error=None
+        )
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 5), ability_names={Ability.MELEE: "Melee"})
+
+    assert lines == ["Aldric was tutored in Melee by Borin."]
+
+
+def test_describe_turn_results_renders_practice_tutored_for_a_teacher_who_died_later_the_same_turn():
+    # Same dead-actor-safe fallback (_leader_name()) every other resolved
+    # name in this composer already uses -- the teacher taught earlier
+    # this same turn, then died in a later phase before report time.
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    state.dead_leaders[2] = _leader(2, "Borin")
+    result = PracticeExecutionResult(ability=Ability.MELEE, skill_rose=True, new_skill=2, teacher_leader_id=2)
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.PRACTICE, result=result, error=None
+        )
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 5), ability_names={Ability.MELEE: "Melee"})
+
+    assert lines == ["Aldric was tutored in Melee by Borin."]
+
+
+def test_describe_turn_results_renders_nothing_for_a_group_rise_with_no_teacher():
+    # Non-regression: teacher_leader_id=None (a tied-skill group rise, or
+    # a solo Practice) still renders nothing, matching describe_practice()'s
+    # own established "no sourced narrative" stance.
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    result = PracticeExecutionResult(ability=Ability.MELEE, skill_rose=True, new_skill=2, teacher_leader_id=None)
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.PRACTICE, result=result, error=None
+        )
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([]), ability_names={Ability.MELEE: "Melee"})
+
+    assert lines == []
+
+
 def test_describe_turn_results_skips_practice_without_ability_names_map():
     state = _state_with_leaders(_leader(1, "Aldric"))
     result = PracticeExecutionResult(ability=Ability.MELEE, skill_rose=False, new_skill=9)

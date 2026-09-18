@@ -7984,7 +7984,21 @@ def describe_turn_results(
                 ability_name = ability_names.get(ability)
             if ability_name is None:
                 continue
-            line = describe_practice(entry.result, character_name=caster_name, ability_name=ability_name, rng=rng)
+            # Phase 853: the real, already-computed group-practice
+            # "selected teacher" (`turn/practice_execution.py execute_
+            # practice_group()`'s own `_select_teacher()` call, previously
+            # only used to credit Office.TEACHER merit) now also reaches
+            # `describe_practice()`'s own `render_practice_tutored()`
+            # branch, dead-actor-safe like every other name resolution in
+            # this composer.
+            teacher_name = (
+                _leader_name(state, entry.result.teacher_leader_id)
+                if entry.result.teacher_leader_id is not None
+                else None
+            )
+            line = describe_practice(
+                entry.result, character_name=caster_name, ability_name=ability_name, teacher_name=teacher_name, rng=rng
+            )
             if line is not None:
                 lines.append(line)
             # Phase 772: the Sage device-discovery roll is independent of
@@ -8482,11 +8496,20 @@ def describe_practice(
     - ``render_practice_tutored`` (``_LTeach``) fires when the skill
       genuinely rose (``skill_rose``) *and* the caller supplies a
       ``teacher_name`` -- the higher-skilled co-practicer rulebook
-      [3.13]'s own group-practice rule requires, which
-      ``PracticeExecutionResult`` has no field for at all (it doesn't
-      even record whether this was a solo or group attempt). Leave
-      ``teacher_name`` unset for a solo rise: no sourced narrative
-      template exists for solo success at all, so nothing is rendered.
+      [3.13]'s own group-practice rule requires. **Phase 853**:
+      ``PracticeExecutionResult.teacher_leader_id`` now carries this --
+      ``execute_practice_group()``'s own ``_select_teacher()`` call
+      (Phase 446, already computed for ``Office.TEACHER``'s own merit
+      credit) is the exact same real teacher this narration needs, so
+      ``describe_turn_results()`` resolves it (dead-actor-safe) and
+      passes it straight through; a solo Practice (``execute_practice()``)
+      never sets the field at all, so a solo rise still renders nothing,
+      matching this composer's own "no sourced narrative for solo
+      success" stance. A tied-skill group rise (every co-practicer at
+      the same starting skill, ``_select_teacher()``'s own "no teacher
+      when tied" rule) likewise still renders nothing -- a real,
+      documented gap, not fixed here, since no source names a narration
+      for that specific case either.
     - **Phase 601**: ``render_practice_vain`` (``_LStudV``) fires for a
       genuine total failure -- not already-maxed, ``skill_rose`` False,
       and (unlike the prior two cases above, which already exclude it)

@@ -34615,6 +34615,38 @@ green (unchanged, 6831) before touching a single test; all 7 new tests
 confirmed to fail against the pre-fix code (`AttributeError`, the new
 `BattleReport` fields didn't exist yet) and pass against the fix.
 
+### Phase 853: wire the real group-practice "selected teacher" into `render_practice_tutored()`
+
+Continuing the manual cover-to-cover sweep into the Practice cluster
+(`describe_practice()`/`render_practice_tutored()`/`_already_maxed`/
+`_vain`, never checked before in this session). `describe_practice()`'s
+own docstring already documented exactly the gap: `render_practice_
+tutored()` (`_LTeach`, "< was tutored in ^ by [.") fires only when the
+caller supplies a `teacher_name`, but the one real production call
+site in `describe_turn_results()` never passed one at all -- a genuine
+report-completeness gap, since `turn/practice_execution.py execute_
+practice_group()` already computes the exact fact needed:
+`_select_teacher()` (Phase 446, `AKGEN_reverse_engineering_report
+(2).md` SS20.2) picks the real higher-skilled co-practicer credited as
+the tutor for Office.TEACHER's own merit tally, then discards that id
+immediately after crediting it -- never carrying it onto the rising
+student's own `PracticeExecutionResult`. New `PracticeExecutionResult.
+teacher_leader_id`, set in `execute_practice_group()` to the exact same
+`_select_teacher()` return value already computed for merit crediting
+(a second, independent consumer of one already-computed fact, not a
+new selection); `describe_turn_results()` resolves it into a name via
+`_leader_name()` (dead-actor-safe, matching every other name resolution
+in this composer) and threads it straight into `describe_practice()`.
+A solo Practice (`execute_practice()`) never sets the field at all, and
+a tied-skill group rise (`_select_teacher()`'s own "no teacher when
+tied" rule) still leaves it `None` -- both correctly keep rendering
+nothing, matching this composer's own established "no sourced
+narrative for solo/untutored success" stance. 7 new/extended
+assertions across 2 files confirmed to fail against the pre-fix code
+(`AttributeError`/`TypeError`, the field didn't exist) and pass against
+the fix. Test count: 6838 -> 6841. Full suite verified green (unchanged,
+6838) before touching a single test.
+
 ## Setup
 
 ```
