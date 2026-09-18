@@ -13391,22 +13391,53 @@ def _battle_reports_from_results(results: list[PhaseDispatchResult]) -> list[tup
     resolve a season prefix for it (``_season_phrase_for_phase_label()``)
     -- ``PhaseDispatchResult`` already stamps every entry with this, no
     new data needed.
+
+    **Phase 844 bug fix**: the Multiple Contingents fan-out
+    (``turn/battle_orchestrator.py fight_multi_attacker_battle()``)
+    genuinely unites 2+ leaders into *one* shared ``BattleReport``
+    (``MultiAttackerBattle.leader_ids``, rulebook [7.8]) -- ``turn/
+    turn_processor.py _dispatch_multi_attacker_lmove()`` then appends
+    one ``PhaseDispatchResult`` per united leader, each pointing at the
+    *identical* ``BattleReport`` object (`battle_by_leader[leader_id]`).
+    Before this fix, every one of those duplicate entries produced its
+    own separate, independently-rerolled ``(phase_label, BattleReport)``
+    pair here -- both real consumers (``record_battle_world_events()``/
+    ``record_battle_narratives()``) then recorded the *same* battle
+    once per united leader: GENERAL INTELLIGENCE REPORT showed the
+    identical battle "won" N times (each with its own differently-
+    rolled wording), and the two involved Kingdoms' own ACTION REPORT
+    showed the full narrative repeated N times in a row. Confirmed by
+    direct reproduction (two entries sharing one ``BattleReport``
+    instance). The exact same "one ``BattleReport`` can legitimately be
+    reached by several entries" fact was already found and handled once
+    before, for a different, sibling consumer (Phase 299's own
+    ``_apply_defend_battle_loss()`` fix, "at most one battle is ever
+    produced for a single target") -- deduplicated here the same way,
+    by object identity (``id()``, safe since every referenced object
+    stays alive for this function's own single call), keeping only the
+    first entry that reaches a given ``BattleReport``. A genuinely
+    distinct battle (e.g. a later forced rebattle) is always a new
+    object, so this never collapses two real, separate battles.
     """
 
     reports: list[tuple[str, BattleReport]] = []
+    seen_report_ids: set[int] = set()
     for entry in results:
         result = entry.result
         if isinstance(result, BattleReport):
-            reports.append((entry.phase_label, result))
+            battle_report = result
+        else:
+            candidate = getattr(result, "battle_report", None)
+            if isinstance(candidate, BattleReport):
+                battle_report = candidate
+            else:
+                battle = getattr(result, "battle", None)
+                nested_report = getattr(battle, "report", None) if battle is not None else None
+                battle_report = nested_report if isinstance(nested_report, BattleReport) else None
+        if battle_report is None or id(battle_report) in seen_report_ids:
             continue
-        battle_report = getattr(result, "battle_report", None)
-        if isinstance(battle_report, BattleReport):
-            reports.append((entry.phase_label, battle_report))
-            continue
-        battle = getattr(result, "battle", None)
-        nested_report = getattr(battle, "report", None) if battle is not None else None
-        if isinstance(nested_report, BattleReport):
-            reports.append((entry.phase_label, nested_report))
+        seen_report_ids.add(id(battle_report))
+        reports.append((entry.phase_label, battle_report))
     return reports
 
 

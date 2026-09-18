@@ -13011,6 +13011,43 @@ def test_record_battle_world_events_finds_a_battle_report_nested_under_battle_do
     assert len(state.world_events) == 1
 
 
+def test_record_battle_world_events_deduplicates_a_multi_attacker_shared_battle_report():
+    # Phase 844: rulebook [7.8] Multiple Contingents genuinely unites 2+
+    # leaders into ONE shared BattleReport -- turn_processor.py's own
+    # fan-out then appends one PhaseDispatchResult per united leader,
+    # each pointing at the identical BattleReport object. Before this
+    # fix, each duplicate entry independently re-rolled and recorded
+    # its own copy of the same battle's winner sentence.
+    state, battle_coord, _watcher_coord = _gir_state()
+    report = BattleReport(
+        battle_result=BattleResult(winner="attacker"), conquered=True,
+        province_coord=battle_coord, attacker_kingdom_id=1, defender_kingdom_id=2,
+    )
+
+    class _FakeBattle:
+        def __init__(self, report):
+            self.report = report
+
+    class _FakeMultiAttackerMoveResult:
+        def __init__(self, report):
+            self.battle = _FakeBattle(report)
+
+    results = [
+        PhaseDispatchResult(
+            leader_id=101, segment_index=0, phase_label="P0", action=ActionCode.LMOVE,
+            result=_FakeMultiAttackerMoveResult(report), error=None,
+        ),
+        PhaseDispatchResult(
+            leader_id=102, segment_index=0, phase_label="P0", action=ActionCode.LMOVE,
+            result=_FakeMultiAttackerMoveResult(report), error=None,
+        ),
+    ]
+
+    record_battle_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+
+    assert len(state.world_events) == 1
+
+
 def test_describe_general_intelligence_report_none_at_present_with_no_events():
     state, _battle_coord, _watcher_coord = _gir_state()
 
@@ -13618,6 +13655,60 @@ def test_record_battle_narratives_resolves_real_retreat_destination_names():
     record_battle_narratives(state, results, rng)
 
     assert any("retreated" in line for line in state.battle_narratives_by_kingdom[1])
+
+
+def test_record_battle_narratives_deduplicates_a_multi_attacker_shared_battle_report():
+    # Phase 844: same shared-BattleReport fan-out as record_battle_
+    # world_events()'s own sibling regression test above -- before this
+    # fix, both involved Kingdoms' own ACTION REPORT showed the full
+    # narrative once per united leader instead of once per real battle.
+    def _build_report():
+        column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+        battle_result = BattleResult(winner="attacker", columns=[column])
+        return BattleReport(
+            battle_result=battle_result,
+            conquered=True,
+            destroyed_army_ids=[20],
+            province_coord=battle_coord,
+            attacker_kingdom_id=1,
+            defender_kingdom_id=2,
+        )
+
+    class _FakeBattle:
+        def __init__(self, report):
+            self.report = report
+
+    class _FakeMultiAttackerMoveResult:
+        def __init__(self, report):
+            self.battle = _FakeBattle(report)
+
+    state, battle_coord, _watcher_coord = _gir_state()
+    single_report = _build_report()
+    single_results = [
+        PhaseDispatchResult(
+            leader_id=101, segment_index=0, phase_label="P0", action=ActionCode.LMOVE,
+            result=_FakeMultiAttackerMoveResult(single_report), error=None,
+        )
+    ]
+    record_battle_narratives(state, single_results, ScriptedRandom([0.1, 0.1, 0.1, 0.1, 0.1], choice_indices=[0, 0, 0]))
+    single_run_lines = list(state.battle_narratives_by_kingdom[1])
+
+    state2, battle_coord, _watcher_coord = _gir_state()
+    shared_report = _build_report()
+    shared_results = [
+        PhaseDispatchResult(
+            leader_id=101, segment_index=0, phase_label="P0", action=ActionCode.LMOVE,
+            result=_FakeMultiAttackerMoveResult(shared_report), error=None,
+        ),
+        PhaseDispatchResult(
+            leader_id=102, segment_index=0, phase_label="P0", action=ActionCode.LMOVE,
+            result=_FakeMultiAttackerMoveResult(shared_report), error=None,
+        ),
+    ]
+    record_battle_narratives(state2, shared_results, ScriptedRandom([0.1, 0.1, 0.1, 0.1, 0.1], choice_indices=[0, 0, 0]))
+
+    assert state2.battle_narratives_by_kingdom[1] == single_run_lines
+    assert state2.battle_narratives_by_kingdom[2] == single_run_lines
 
 
 # -- Phase 713: render_blackmail_demand / record_blackmail_narratives ---------

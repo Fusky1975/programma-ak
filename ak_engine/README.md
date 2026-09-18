@@ -34312,6 +34312,42 @@ keyword argument 'state'`) and pass against the fix; every pre-existing
 test for this composer is unaffected. Test count: 6808 -> 6811. Full
 suite verified green before and after.
 
+### Phase 844: fix `_battle_reports_from_results()`'s own multi-attacker duplicate-battle bug
+
+Continuing the manual cover-to-cover sweep: `describe_random_
+encounter_combat()`, `_discovery_skill_modifier_row()`, `_stranger_
+descriptor()`, `describe_alignment_victory_point_reduction()`, and
+`render_bystander_spell_notice()` were all reviewed with no bug found.
+`_battle_reports_from_results()` (the shared helper both `record_
+battle_world_events()` and `record_battle_narratives()` use to pull
+every real battle out of a turn's own `results`) surfaced a real,
+confirmed bug: rulebook [7.8] Multiple Contingents genuinely unites
+2+ leaders into ONE shared `BattleReport` object (`turn/battle_
+orchestrator.py fight_multi_attacker_battle()`'s own `MultiAttacker
+Battle.leader_ids`); `turn/turn_processor.py _dispatch_multi_attacker_
+lmove()` then appends one `PhaseDispatchResult` per united leader, each
+pointing at the *identical* `BattleReport` instance. `_battle_reports_
+from_results()` had no deduplication at all, so a united battle was
+recorded once per leader in the coalition instead of once -- GENERAL
+INTELLIGENCE REPORT showed the same battle "won" N times (each with
+its own independently-rerolled wording), and both involved Kingdoms'
+own ACTION REPORT showed the full narrative repeated N times in a row.
+Confirmed by direct reproduction (two `PhaseDispatchResult` entries
+sharing one `BattleReport` object produced 2 world events and 2x the
+narrative lines instead of 1). The identical "one `BattleReport` can
+legitimately be reached by several entries" fact was already found and
+handled once before, for a different, sibling consumer (Phase 299's
+own `_apply_defend_battle_loss()` fix) -- never applied to this
+function. Fixed by deduplicating on `BattleReport` object identity
+(`id()`), keeping only the first entry that reaches a given report; a
+genuinely distinct battle (e.g. a later forced rebattle) is always a
+new object, so this never collapses two real, separate battles. 2 new
+regression tests (one per real consumer) confirmed to fail against the
+pre-fix code (a wrong `len()`, and an `IndexError` from the pre-fix
+code silently doubling its own RNG consumption) and pass against the
+fix; every pre-existing test for both composers is unaffected. Test
+count: 6811 -> 6813. Full suite verified green before and after.
+
 ## Setup
 
 ```
