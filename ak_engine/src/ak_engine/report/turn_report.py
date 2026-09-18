@@ -3242,20 +3242,34 @@ def describe_feature_power_attempt(
         if kingdom is None:
             return None
         values["$K"] = kingdom.name
-        # The real template repeats "#" 2-3 times for 3 distinct numbers
-        # (character roll, house roll, stake) -- render()'s own `values`
-        # dict substitutes one string per literal marker everywhere it
-        # appears, so a positional post-pass fills each "#" left to
-        # right instead (no "#" is put in `values`, so render() leaves
-        # every one of them untouched -- "unrecognized symbols... are
-        # left untouched," per this module's own `render()` docstring).
+        # The real WON/LOST templates each repeat "#" exactly 3 times, for
+        # the same 3 numbers in both (character roll, house roll, the gold
+        # amount) -- confirmed directly via `.count("#")` on both real
+        # strings, Phase 828, not "2-3" as an earlier version of this
+        # comment claimed. render()'s own `values` dict substitutes one
+        # string per literal marker everywhere it appears, so a positional
+        # post-pass fills each "#" left to right instead (no "#" is put in
+        # `values`, so render() leaves every one of them untouched --
+        # "unrecognized symbols... are left untouched," per this module's
+        # own `render()` docstring).
+        #
+        # Phase 828 bug fix: a 4th, unconditional-when-`gamble_won`
+        # replacement here (from this branch's own original Phase 619
+        # implementation) had nothing left to replace by the time it ran
+        # -- both real templates have only 3 "#" markers total, already
+        # fully consumed by the 3 calls below -- making it a pure no-op
+        # (`str.replace()` silently returns the string unchanged when the
+        # substring isn't found). Confirmed dead, not merely redundant,
+        # before removing it: the plan that introduced this branch
+        # (Phase 619) already correctly describes "one template shape
+        # with `#`/`#`/`#` markers for the two rolls and the amount" --
+        # three, not four -- so the extra call was an implementation slip
+        # against the plan's own stated design, never a real 4th number.
         template = _POWMSG_GAMBLE_WON if outcome.gamble_won else _POWMSG_GAMBLE_LOST
         text = render(template, values, rng=rng)
         text = text.replace("#", str(outcome.gamble_character_roll), 1)
         text = text.replace("#", str(outcome.gamble_house_roll), 1)
         text = text.replace("#", str(outcome.gamble_amount), 1)
-        if outcome.gamble_won:
-            text = text.replace("#", str(outcome.gamble_amount), 1)
         return text
 
     if outcome.power in (Power.CAST_SPELL, Power.ANS_PRAYER):

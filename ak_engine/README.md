@@ -34017,6 +34017,38 @@ pre-Phase-612 docstring claim ("Character/leader names are always
 resolved directly from `state.leaders[leader_id].name`") that predates
 `_leader_name()`'s own alive-or-dead fallback and was never updated.
 
+### Phase 828: `describe_feature_power_attempt()`'s dead Gamble marker substitution
+
+Continuing the manual sweep into `report/turn_report.py`'s own next
+large, unread composer (`compose_letter_report()`, 452 lines, read
+cover to cover -- no live bug found; one apparent finding, the ASCII-
+map append's own `if lines:` guard, was traced precisely and confirmed
+a provable no-op today, since `describe_provinces_report()` never
+returns an empty list -- recorded in memory as a latent risk, not
+fixed, since there is zero observable behavior to change). `describe_
+feature_power_attempt()` (326 lines, the Feature -> Power [5.8] POWMSG
+renderer) was then read cover to cover too, and found one real, if
+harmless, defect: its `Power.GAMBLE` branch substituted the real WON/
+LOST templates' own `#` markers via 3 positional `str.replace(...,
+1)` calls (character roll, house roll, gold amount), then did a 4th,
+unconditional-when-`gamble_won` replacement with nothing left to
+replace -- both real templates have exactly 3 `#` markers each
+(confirmed directly via `.count("#")` on both real strings), all
+already consumed by the first 3 calls, making the 4th a guaranteed
+no-op (`str.replace()` silently returns the string unchanged when the
+substring isn't found). Traced back to this branch's own original
+Phase 619 implementation -- the plan that introduced it already
+correctly describes "one template shape with `#`/`#`/`#` markers for
+the two rolls and the amount" (three, not four), so the extra call was
+an implementation slip against the plan's own stated design from the
+start, not a later drift. Removed the dead call and corrected the
+neighboring comment (which said "2-3 times", also imprecise -- both
+templates use exactly 3). Zero observable behavior change for any real
+input, confirmed by re-running the file's own existing Gamble-won/lost
+tests unchanged (still 1113 total) and the full suite (unchanged,
+6789) both before and after -- no new regression test needed, since
+there is nothing a test could observe differently.
+
 ## Setup
 
 ```
