@@ -4160,6 +4160,39 @@ def test_describe_turn_results_narrates_a_defend_by_a_leader_who_later_dies_this
     assert lines != []
 
 
+def test_describe_turn_results_narrates_a_rumor_heard_by_a_leader_who_later_dies_this_same_turn():
+    # Phase 835: a leader can hear a rumor in an early phase (e.g. a real
+    # 20-30% roll on Explore/Move/Trail/etc., turn/rumor.py) and then die
+    # in a LATER phase of the same turn (e.g. losing a Challenge) --
+    # the already-generated rumor must still be narrated. The end-of-
+    # function rumor block resolved the hearer via a bare, alive-only
+    # state.leaders.get(leader_id), silently dropping the rumor once the
+    # leader was dead by report-generation time.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(9, 9)))
+    state.add_feature(Feature(feature_id=5, coord=HexCoord(2, 2), kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    state.rumors[1] = Rumor(
+        rumor_id=1,
+        kingdom_id=1,
+        leader_id=1,
+        source_action=ActionCode.EXPLORE,
+        content=RumorContent.FEATURE_AND_MONSTER,
+        feature_id=5,
+        is_true=True,
+        described_coord=HexCoord(2, 2),
+        described_monster=Monster.ARCHER,
+    )
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=None, error=None)
+    ]
+    state.remove_leader(1)  # died in a later phase this same turn
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 10, choice_indices=[0]), board_width=10)
+
+    assert any("Archer" in line for line in lines)
+
+
 def test_describe_turn_results_narrates_a_double_agent_report_sentinel():
     # Phase 729: AdvancedAbility.SPY_DOUBLE_AGENT's own end-of-turn
     # intel grant -- action=None, matched by phase_label alone, renders

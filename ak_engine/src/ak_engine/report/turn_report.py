@@ -8113,7 +8113,15 @@ def describe_turn_results(
     if board_width is not None:
         heard_leader_ids = {entry.leader_id for entry in results}
         for leader_id in sorted(heard_leader_ids):
-            leader = state.leaders.get(leader_id)
+            # Phase 835 bug fix: a bare `state.leaders.get(...)` silently
+            # dropped this leader's own already-heard rumor(s) whenever
+            # they died in a LATER phase of the SAME turn (e.g. losing a
+            # Challenge after an earlier Explore already generated the
+            # rumor) -- the same dead-actor-narration class `_leader_name()`
+            # already exists to fix, just never applied here since this
+            # block predates that convention and reads `state.leaders`
+            # directly instead of going through it.
+            leader = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
             if leader is None or leader.kingdom_id is None:
                 continue
             for rumor in state.rumors_heard_by(leader.kingdom_id):

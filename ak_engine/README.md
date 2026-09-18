@@ -34258,6 +34258,31 @@ brand-new arrival), just imprecisely worded -- corrected the docstring
 to describe the real behavior accurately. Comment-only, no test
 changes needed. Full suite verified unchanged (6807) before and after.
 
+### Phase 835: fix `describe_turn_results()`'s own dead-actor rumor-narration drop
+
+Continuing the manual cover-to-cover sweep: `describe_move()`,
+`describe_cargo_boarded()`, `describe_naval_hug_coastline_stragglers()`,
+`describe_give()`, and `describe_curator_research()` were all reviewed
+with no bug found. `describe_rumor()` itself was also correct, but its
+one real call site -- the end-of-function loop in `describe_turn_
+results()` that narrates every rumor a leader heard this turn -- had a
+real, confirmed bug: it resolved the hearer via a bare, alive-only
+`state.leaders.get(leader_id)`, unlike every other branch in this same
+function, which already uses the dead-actor-safe `_leader_name()`
+helper (Phase 612). A leader who successfully hears a rumor in an
+early phase (Explore/Move/Trail/Aspy/Cast/Practice all have a real
+20-30% chance, `turn/rumor.py`) and then dies in a LATER phase of the
+SAME turn (e.g. losing a Challenge) had that already-generated rumor
+silently dropped from the turn report -- confirmed by direct
+reproduction (`GameState.remove_leader()`, matching the real death
+mechanism). Fixed by using the same `state.leaders.get(leader_id) or
+state.dead_leaders.get(leader_id)` fallback already used elsewhere in
+this file. New regression test confirmed to fail against the pre-fix
+code (`assert False`) and pass against the fix; the full pre-existing
+1132-test suite for this file was unaffected (no existing fixture
+ever exercises this exact block with a dead leader). Test count:
+6807 -> 6808. Full suite verified green before and after.
+
 ## Setup
 
 ```
