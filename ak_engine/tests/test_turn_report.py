@@ -8773,7 +8773,10 @@ def test_describe_letter_reports_renders_a_letter_from_a_hero_to_the_king():
         "From: Borin",
         "To: Aldric",
         "Honored Sovereign,",
-        "Borin spoke to Elena and convinced Elena to pledge Elena's allegiance to Borin.",
+        # Phase 851: Hire's own ^K marker names Borin's real King (Aldric),
+        # not Borin himself -- the hireling's employment goes to Aldric's
+        # Kingdom, per _dispatch_hire()'s own `hero.kingdom_id = kingdom_id`.
+        "Borin spoke to Elena and convinced Elena to pledge Elena's allegiance to Aldric.",
         "Thy humble servant,   Borin",
     ]
 
@@ -8875,12 +8878,14 @@ def test_describe_letter_reports_multiple_heroes_each_get_their_own_letter():
         "From: Borin",
         "To: Aldric",
         "Honored Sovereign,",
-        "Borin spoke to Elena and convinced Elena to pledge Elena's allegiance to Borin.",
+        # Phase 851: both heroes' own Hire orders name their shared real
+        # King (Aldric), not themselves -- see the sibling test above.
+        "Borin spoke to Elena and convinced Elena to pledge Elena's allegiance to Aldric.",
         "Thy humble servant,   Borin",
         "From: Cyra",
         "To: Aldric",
         "Honored Sovereign,",
-        "Cyra spoke to Finn and convinced Finn to pledge Finn's allegiance to Cyra.",
+        "Cyra spoke to Finn and convinced Finn to pledge Finn's allegiance to Aldric.",
         "Thy humble servant,   Cyra",
     ]
 
@@ -11466,7 +11471,8 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "From: Borin",
         "To: Aldric",
         "Honored Sovereign,",
-        "Borin spoke to Elena and convinced Elena to pledge Elena's allegiance to Borin.",
+        # Phase 851: Borin's own Hire order names his real King (Aldric).
+        "Borin spoke to Elena and convinced Elena to pledge Elena's allegiance to Aldric.",
         "Thy humble servant,   Borin",
         "",
         "",

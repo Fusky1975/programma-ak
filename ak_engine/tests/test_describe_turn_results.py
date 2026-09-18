@@ -76,6 +76,42 @@ def test_describe_turn_results_renders_fire():
     assert "Borin" in lines[0] and "Aldric" in lines[0]
 
 
+# -- Phase 851: Hire/Fire's own ^K marker names the acting caster's real King, not the caster themselves --
+
+
+def test_describe_turn_results_hire_by_a_hero_names_the_real_king_not_the_hero():
+    king = LeaderState(leader_id=1, kingdom_id=1, name="King Aldric", location=HexCoord(0, 0), is_king=True)
+    hero = LeaderState(leader_id=2, kingdom_id=1, name="Sir Roland", location=HexCoord(0, 0))
+    hireling = LeaderState(leader_id=32, kingdom_id=None, name="Borin", location=HexCoord(0, 0))
+    state = _state_with_leaders(king, hero, hireling)
+    result = HireExecutionResult(HireRequest(hero_id=32, gold_offer=2), hired=True)
+    results = [
+        PhaseDispatchResult(leader_id=2, segment_index=0, phase_label="P0", action=ActionCode.HIRE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines == ["Sir Roland spoke to Borin and convinced Borin to pledge Borin's allegiance to King Aldric."]
+
+
+def test_describe_turn_results_fire_by_a_hero_names_the_real_king_not_the_hero():
+    king = LeaderState(leader_id=1, kingdom_id=1, name="King Aldric", location=HexCoord(0, 0), is_king=True)
+    hero = LeaderState(leader_id=2, kingdom_id=1, name="Sir Roland", location=HexCoord(0, 0))
+    hireling = LeaderState(leader_id=32, kingdom_id=1, name="Borin", location=HexCoord(0, 0))
+    state = _state_with_leaders(king, hero, hireling)
+    result = FireExecutionResult(FireRequest(hero_id=32), fired=True)
+    results = [
+        PhaseDispatchResult(leader_id=2, segment_index=0, phase_label="P0", action=ActionCode.FIRE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines == [
+        "Sir Roland told Borin that Borin was no longer an useful employee to King Aldric, "
+        "and relieved Borin of Borin's position."
+    ]
+
+
 # -- Grandfather of Assassins (Phase 614) ------------------------------------
 
 

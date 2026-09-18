@@ -34526,6 +34526,44 @@ exist yet) and pass against the fix; every one of the 14 pre-existing
 empty/omitted). Test count: 6820 -> 6829. Full suite verified green
 before and after.
 
+### Phase 851: fix Hire/Fire's own `^K` marker naming the acting Hero instead of their real King
+
+Continuing the manual cover-to-cover sweep into the Hire/Fire cluster
+(`describe_hire()`/`describe_fire()`, never checked before in this
+session). Rulebook [3.5]/[3.7] are explicit that Hire/Fire orders can
+be issued by "any character," not just the King ("Any character can
+attempt to Hire a Hero in the same province"; "A character can Fire a
+Hero only if he is in the same province") -- `turn/plan_dispatch.py
+_dispatch_hire()`/`_dispatch_fire()` already model this correctly (an
+ordinary Hero bypasses co-location only when they ARE the King, per
+`is_king`), and a successful Hire sets the hireling's own `kingdom_id`
+to the *acting caster's own Kingdom* (`hero.kingdom_id = kingdom_id`,
+the Kingdom, not the caster's personal `leader_id`) -- but `describe_
+turn_results()` passed `king_name=caster_name` unconditionally into
+both `describe_hire()`/`describe_fire()`, so ACCHIRE.X/REFHIRE.X/
+`_LCounter`/FIREMAN.X's own real `^K` marker (which names the Kingdom's
+actual King -- the hireling's real new/former employer) silently named
+the acting *Hero* instead whenever they weren't the King themselves.
+Confirmed by direct reproduction: a Hero (not the King) issuing a real
+Hire rendered "...pledge Borin's allegiance to Sir Roland" instead of
+the real King's own name. Fixed with a new `_hire_fire_king_name()`
+helper (the same alive-or-dead fallback as `_leader_name()`/`_leader_
+location()`, Phase 612, for the acting caster themselves), resolving
+the caster's own Kingdom's real King and falling back to the caster's
+own name only when no King is on record for that Kingdom at all (the
+same "no data, sensible default" convention already used throughout
+this file, and exactly what every pre-existing test fixture -- none of
+which registered a King distinct from the acting caster -- already
+relied on implicitly). 2 new regression tests confirmed to fail against
+the pre-fix code (wrong name) and pass against the fix; 3 pre-existing
+tests (2 in `test_turn_report.py`, 1 in `test_describe_turn_results.py`)
+needed their own expected-output strings corrected for the real,
+intended behavior change (their own fixtures happened to have a real
+King distinct from the acting Hero, so they were silently encoding the
+bug as if it were correct) -- each fix verified empirically by running
+first, not assumed. Test count: 6829 -> 6831. Full suite verified green
+before and after.
+
 ## Setup
 
 ```

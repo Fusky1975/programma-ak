@@ -7708,6 +7708,44 @@ def _leader_location(state: GameState, leader_id: int) -> HexCoord | None:
     return leader.location if leader is not None else None
 
 
+def _hire_fire_king_name(state: GameState, leader_id: int, fallback: str) -> str:
+    """Resolves the acting Hire/Fire caster's own King's display name.
+
+    **Phase 851 bug fix**: rulebook [3.5] ("Any character can attempt to
+    Hire a Hero in the same province")/[3.7] ("A character can Fire a
+    Hero only if he is in the same province") -- `_dispatch_hire()`/
+    `_dispatch_fire()` both already let an ordinary Hero (not just the
+    King) issue these orders, and a successful Hire sets the hireling's
+    ``kingdom_id`` to the *acting caster's own Kingdom* (``turn/plan_
+    dispatch.py _dispatch_hire()``: ``hero.kingdom_id = kingdom_id``,
+    the caster's kingdom, not the caster's own ``leader_id``). But
+    ACCHIRE.X/REFHIRE.X/``_LCounter``/FIREMAN.X's own ``^K`` marker
+    names that real King -- the caller previously passed the acting
+    caster's own name for ``^K`` unconditionally, so a Hero-issued Hire/
+    Fire wrongly told the hireling they were pledging allegiance to (or
+    being dismissed by) the *Hero*, not the King whose Kingdom actually
+    gains or loses them. Confirmed by direct reproduction: a Hero (not
+    the King) issuing a real Hire rendered "...pledge Borin's allegiance
+    to Sir Roland" instead of the real King's own name.
+
+    Uses the same alive-or-dead fallback as ``_leader_name()``/
+    ``_leader_location()`` (Phase 612) for the acting caster themselves
+    -- resolving their own ``kingdom_id`` even if they died in a later
+    phase of the same turn (``remove_leader()`` never touches
+    ``.kingdom_id`` on the archived ``LeaderState`` either). Falls back
+    to ``fallback`` (the caster's own name) when the caster has no
+    Kingdom at all, or no King is currently on record for it -- this
+    project's own established "no data, fall back to a sensible
+    default" convention, matching every existing test fixture that
+    registers no King at all.
+    """
+
+    leader = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
+    if leader is None or leader.kingdom_id is None:
+        return fallback
+    return _leader_name(state, _king_leader_id(state, leader.kingdom_id)) or fallback
+
+
 def describe_turn_results(
     results: list[PhaseDispatchResult],
     state: GameState,
@@ -7879,8 +7917,9 @@ def describe_turn_results(
             hireling_name = _leader_name(state, entry.result.request.hero_id)
             if hireling_name is None:
                 continue
+            king_name = _hire_fire_king_name(state, entry.leader_id, caster_name)
             line = describe_hire(
-                entry.result, character_name=caster_name, hireling_name=hireling_name, king_name=caster_name, rng=rng
+                entry.result, character_name=caster_name, hireling_name=hireling_name, king_name=king_name, rng=rng
             )
         elif entry.action is ActionCode.FIRE and isinstance(entry.result, FireExecutionResult):
             hireling_name = _leader_name(state, entry.result.request.hero_id)
@@ -7891,8 +7930,9 @@ def describe_turn_results(
                 # notice that this FIRE became a Guild attempt instead.
                 line = render_assassination_ordered(caster_name, hireling_name, rng)
             else:
+                king_name = _hire_fire_king_name(state, entry.leader_id, caster_name)
                 line = describe_fire(
-                    entry.result, character_name=caster_name, hireling_name=hireling_name, king_name=caster_name, rng=rng
+                    entry.result, character_name=caster_name, hireling_name=hireling_name, king_name=king_name, rng=rng
                 )
         elif entry.action is ActionCode.PRACTICE and isinstance(entry.result, PracticeExecutionResult):
             ability = entry.result.ability
