@@ -7696,6 +7696,27 @@ def describe_turn_results(
     is always the discoverer's own current one, so `feature.coord`
     resolves it directly.
 
+    **Phase 848 -- EXPLORE's own progress sentence.** `render_explore_
+    progress()`/`render_explore_already_maxed()` (`EXPMOVE.X`/`_LExpMax`,
+    Phase 110) were fully sourced and render-tested but had zero real
+    callers anywhere -- an ordinary Explore order produced no narration
+    at all unless it happened to discover a Feature. Wired here, right
+    before the existing feature-discovery loop: `render_explore_already_
+    maxed()` when the province was already at 100% *before* this action
+    ran (`result.fully_explored and result.delta_applied == 0` -- a
+    `delta_applied` of 0 without `fully_explored` only ever means a
+    `Terrain.NO_TERRAIN` province, whose own Basic Exploration Number is
+    0, not "already maxed"), else `render_explore_progress()` with the
+    real resulting percentage. The acting leader's own province is
+    resolved via `_leader_location()`'s alive-or-dead fallback (this
+    action can't kill its own leader, but a later phase of the same turn
+    still can) rather than a raw `state.leaders[...].location`. `_LExpDiff`'s
+    own "wasn't in the target province" prefix has no matching code path
+    here -- this project's own Explore dispatch always targets the
+    acting leader's own current location, never a separate target
+    province, so that clause is structurally unreachable, not omitted by
+    oversight.
+
     **Rumors don't attach to any one `PhaseDispatchResult` entry** --
     `turn/rumor.py resolve_rumor_generation()` is a side effect of
     `dispatch_phase()` itself (Phase 243), decoupled from whatever
@@ -8029,6 +8050,19 @@ def describe_turn_results(
             )
             continue
         elif entry.action is ActionCode.EXPLORE and isinstance(entry.result, ExploreResult):
+            explore_coord = _leader_location(state, entry.leader_id)
+            if explore_coord is not None:
+                explore_province_name = _province_label(state, explore_coord)
+                explore_province = state.provinces.get(explore_coord)
+                explore_is_sea = explore_province is not None and explore_province.effective_terrain() is Terrain.SEA
+                if entry.result.fully_explored and entry.result.delta_applied == 0:
+                    lines.append(render_explore_already_maxed(caster_name, explore_province_name, rng))
+                else:
+                    lines.append(
+                        render_explore_progress(
+                            caster_name, explore_province_name, entry.result.new_percent, rng, is_sea=explore_is_sea
+                        )
+                    )
             for feature in entry.result.discovered_features:
                 province_name = _province_label(state, feature.coord)
                 lines.extend(describe_feature_discovery(feature, caster_name, province_name, rng))

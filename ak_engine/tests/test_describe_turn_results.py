@@ -799,6 +799,60 @@ def test_describe_turn_results_skips_entries_for_unknown_leader():
     assert lines == []
 
 
+# -- Phase 848: EXPMOVE.X/_LExpMax's own EXPLORE progress sentence --
+
+
+def test_describe_turn_results_renders_explore_progress_when_not_yet_maxed():
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    result = ExploreResult(new_percent=60, delta_applied=25, fully_explored=False)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert len(lines) == 1
+    assert "Aldric" in lines[0]
+    assert "60%" in lines[0]
+
+
+def test_describe_turn_results_renders_explore_already_maxed_before_this_action():
+    # `render_explore_already_maxed()`'s own real trigger is the
+    # province being at 100% BEFORE this Explore ran, not just ending
+    # there -- delta_applied=0 alongside fully_explored=True is exactly
+    # that case (a real 100%-with-real-progress turn is covered by the
+    # progress-line test above, at new_percent=100/delta_applied>0).
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    result = ExploreResult(new_percent=100, delta_applied=0, fully_explored=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10))
+
+    assert lines == ["Aldric tried to explore (0, 0) but it seemed that it had already been completely explored."]
+
+
+def test_describe_turn_results_explore_progress_survives_the_leader_dying_later_the_same_turn():
+    # Phase 848: an Explore's own progress line must not be dropped just
+    # because the exploring leader died in a LATER phase of the SAME
+    # turn (e.g. losing a Challenge) -- `_leader_location()`'s alive-or-
+    # dead fallback (Phase 612) is used for exactly this, matching every
+    # other branch in this composer.
+    state = _state_with_leaders(_leader(1, "Aldric"))
+    result = ExploreResult(new_percent=60, delta_applied=25, fully_explored=False)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=result, error=None)
+    ]
+    state.remove_leader(1)  # the explorer died in a later phase this same turn
+
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert len(lines) == 1
+    assert "Aldric" in lines[0]
+    assert "60%" in lines[0]
+
+
 # -- Phase 247: EXPLORE discovery + rumor narration --
 
 
@@ -811,17 +865,26 @@ def test_describe_turn_results_renders_explore_discovered_features():
         PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=result, error=None)
     ]
 
-    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0, 0]))
 
-    # Phase 613: MONSTERS.X2's own flavor text for the guardian now
-    # follows FINDFEAT.X's own discovery sentence as its own line.
-    assert len(lines) == 2
+    # Phase 848: EXPMOVE.X's own progress sentence (the leader's own
+    # current province, here "(0, 0)") now precedes the feature
+    # discovery. Phase 613: MONSTERS.X2's own flavor text for the
+    # guardian follows FINDFEAT.X's own discovery sentence as its own
+    # line.
+    assert len(lines) == 3
     assert "Aldric" in lines[0]
-    assert "(3, 4)" in lines[0]
-    assert "Gargoyle" in lines[1]
+    assert "(0, 0)" in lines[0]
+    assert "Aldric" in lines[1]
+    assert "(3, 4)" in lines[1]
+    assert "Gargoyle" in lines[2]
 
 
 def test_describe_turn_results_omits_rumors_without_board_width():
+    # Phase 848: Aldric's own turn is no longer silently empty -- the
+    # newly-wired EXPLORE progress sentence renders regardless of
+    # board_width, so exactly one line appears; only the rumor text
+    # itself stays omitted without a real board_width.
     state = _state_with_leaders(_leader(1, "Aldric"))
     feature = Feature(feature_id=5, coord=HexCoord(3, 4), kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE)
     state.add_feature(feature)
@@ -842,9 +905,11 @@ def test_describe_turn_results_omits_rumors_without_board_width():
         PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=result, error=None)
     ]
 
-    lines = describe_turn_results(results, state, ScriptedRandom([]))
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
 
-    assert lines == []
+    assert len(lines) == 1
+    assert "Aldric" in lines[0]
+    assert "heard" not in lines[0]
 
 
 def test_describe_turn_results_renders_rumors_when_board_width_given():
@@ -868,10 +933,13 @@ def test_describe_turn_results_renders_rumors_when_board_width_given():
         PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.EXPLORE, result=result, error=None)
     ]
 
-    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]), board_width=10)
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0, 0]), board_width=10)
 
-    assert len(lines) == 1
+    # Phase 848: the EXPLORE progress sentence now precedes the rumor.
+    assert len(lines) == 2
     assert "Aldric" in lines[0]
+    assert "Aldric" in lines[1]
+    assert "heard" in lines[1]
 
 
 def test_describe_turn_results_only_narrates_rumors_heard_by_that_leader():
@@ -897,4 +965,8 @@ def test_describe_turn_results_only_narrates_rumors_heard_by_that_leader():
 
     lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 10, choice_indices=[0]), board_width=10)
 
-    assert lines == []
+    # Phase 848: Aldric's own EXPLORE progress sentence still renders --
+    # only the rumor (heard by Borin, not Aldric) is correctly absent.
+    assert len(lines) == 1
+    assert "Aldric" in lines[0]
+    assert "heard" not in lines[0]

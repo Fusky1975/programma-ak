@@ -8801,17 +8801,24 @@ def _rumor_letter_setup() -> tuple[GameState, list[PhaseDispatchResult]]:
 
 
 def test_describe_letter_reports_omits_rumor_without_board_width():
+    # Phase 848: Borin's own turn is no longer silently empty -- the
+    # newly-wired EXPLORE progress sentence renders regardless of
+    # board_width, so a real letter now appears; only the rumor text
+    # itself stays omitted without a real board_width.
     state, results = _rumor_letter_setup()
 
-    lines = describe_letter_reports(results, state, 1, ScriptedRandom([]))
+    lines = describe_letter_reports(results, state, 1, ScriptedRandom([0.1] * 10, choice_indices=[0]))
 
-    assert lines == ["LETTER REPORTS", "There are no letters from anyone at this time."]
+    assert any(line == "From: Borin" for line in lines)
+    assert not any("heard" in line for line in lines)
 
 
 def test_describe_letter_reports_renders_rumor_when_board_width_given():
     state, results = _rumor_letter_setup()
 
-    lines = describe_letter_reports(results, state, 1, ScriptedRandom([0.1] * 10, choice_indices=[0]), board_width=10)
+    lines = describe_letter_reports(
+        results, state, 1, ScriptedRandom([0.1] * 10, choice_indices=[0, 0]), board_width=10
+    )
 
     assert lines[0] == "LETTER REPORTS"
     assert any(line == "From: Borin" for line in lines)
@@ -11881,7 +11888,7 @@ def test_compose_letter_report_forwards_board_width_to_action_report_and_letters
         ),
     ]
 
-    lines = compose_letter_report(results, state, 1, ScriptedRandom([0.1] * 20, choice_indices=[0, 0]), board_width=10)
+    lines = compose_letter_report(results, state, 1, ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0]), board_width=10)
 
     action_start = lines.index("ACTION REPORT")
     letters_start = lines.index("LETTER REPORTS")

@@ -34421,6 +34421,43 @@ against the pre-fix code (`assert 0 == 1`) and pass against the fix;
 every pre-existing test for this composer is unaffected. Test count:
 6815 -> 6816. Full suite verified green before and after.
 
+### Phase 848: wire EXPMOVE.X/`_LExpMax`'s own EXPLORE progress sentence (real report-completeness gap)
+
+Continuing the manual cover-to-cover sweep: `render_explore_progress()`/
+`render_explore_already_maxed()` (`EXPMOVE.X`/`_LExpMax`, fully sourced
+and render-tested since Phase 110) had zero production callers anywhere
+-- confirmed by grep. `describe_turn_results()`'s own `ActionCode.
+EXPLORE` branch only ever rendered `describe_feature_discovery()` for a
+newly-discovered Feature; an ordinary Explore order that discovered
+nothing new produced ZERO narration lines at all, even though the
+action genuinely raised the province's own exploration percentage.
+Wired both real templates into that branch, right before the existing
+feature-discovery loop: `render_explore_already_maxed()` when the
+province was already at 100% *before* this action ran (`result.fully_
+explored and result.delta_applied == 0` -- chosen instead of a new
+field because it correctly excludes the one edge case where `delta_
+applied` alone would mislead, a `Terrain.NO_TERRAIN` province whose own
+Basic Exploration Number is 0), else `render_explore_progress()` with
+the real resulting percentage. The acting leader's own province is
+resolved via `_leader_location()`'s alive-or-dead fallback (Phase 612)
+rather than a raw `state.leaders[...].location`, proactively closing
+off the same "dead-actor narration" bug class this sweep has already
+found repeatedly (Explore itself can't kill its own leader, but a later
+phase of the same turn still can) -- proven with a dedicated regression
+test. `_LExpDiff`'s own "wasn't in the target province" prefix has no
+matching code path here, since this project's Explore dispatch always
+targets the acting leader's own current location, never a separate
+target province -- documented as structurally unreachable, not omitted
+by oversight. 4 pre-existing tests across 2 files needed their own
+`ScriptedRandom`/exact-line-count assertions updated for the new,
+always-present line (a real, intended behavior change -- an Explore-
+only turn's letter is no longer silently empty); each fix verified
+empirically by running first, not assumed. 3 new regression tests
+(progress line, already-maxed line, dead-actor survival) confirmed to
+fail against the pre-fix code (`assert 0 == 1`, empty-list mismatches)
+and pass against the fix. Test count: 6816 -> 6819. Full suite verified
+green before and after.
+
 ## Setup
 
 ```
