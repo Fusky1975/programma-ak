@@ -34369,6 +34369,34 @@ the pre-fix code (`KeyError`) and pass against the fix; every
 pre-existing test for this composer is unaffected. Test count:
 6813 -> 6814. Full suite verified green before and after.
 
+### Phase 846: fix `record_move_world_events()`'s own armless-wind-walker drop
+
+Continuing the manual cover-to-cover sweep: `record_move_world_events()`
+computed `armies = [army for army in state.armies_commanded_by(...) if
+army.location == new_location]` and unconditionally `continue`d whenever
+that list was empty -- *before* ever checking `result.wind_walking`. But
+Mystic Winds' own real `_LWWalk` trigger (Phase 634) names only the
+mover, never an accompanying army ("the great Wind Spirits... carry the
+mage or a co-located character into the sky"), and this project already
+has a real, confirmed case of a wind-walking leader moving with no army
+at all (`MoveExecutionResult.moved_without_armies`, Phase 769). This
+function's own docstring already documented the intended behavior
+correctly ("a mover with no armies... who wasn't wind-walking... is
+skipped entirely") -- the code just didn't implement it, checking the
+armies-empty guard unconditionally instead of only when `wind_walking`
+was also `False`. Confirmed by direct reproduction: a solo wind-walking
+leader's own Move produced zero world events, silently dropping the
+`_LWWalk` notice for every kingdom's own GENERAL INTELLIGENCE REPORT.
+Fixed by resolving `wind_walking` first and rendering that notice
+unconditionally when set, moving the armies-empty guard into the
+`_LFly` (overflight-army) branch alone, where it always belonged (an
+armless mover has no "flying armies" to speak of, so that branch still
+needs a real, non-empty, all-overflight army list). New regression test
+confirmed to fail against the pre-fix code (`assert 0 == 1`) and pass
+against the fix; every pre-existing test for this composer is
+unaffected. Test count: 6814 -> 6815. Full suite verified green before
+and after.
+
 ## Setup
 
 ```

@@ -13887,6 +13887,28 @@ def test_record_move_world_events_skips_a_mover_with_no_army_at_the_destination(
     assert state.world_events == []
 
 
+def test_record_move_world_events_records_a_wind_walk_event_for_a_leader_travelling_alone():
+    # Phase 846: the real _LWWalk trigger names only the mover, never an
+    # accompanying army ("the great Wind Spirits... carry the mage or a
+    # co-located character into the sky") -- a wind-walking leader who
+    # moves with no army at all (`MoveExecutionResult.moved_without_
+    # armies`, Phase 769) must still get this notice, unlike an ordinary
+    # (non-wind-walking) armless mover, which stays private.
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Tlazolteotl", battle_coord))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_move_result(True, battle_coord, wind_walking=True), error=None,
+        )
+    ]
+
+    record_move_world_events(state, results, ScriptedRandom([0.1, 0.1]))
+
+    assert len(state.world_events) == 1
+    assert state.world_events[0].lines == ["In late summer, Tlazolteotl rode the Mystic Winds into Border Fort."]
+
+
 def test_record_move_world_events_skips_a_result_that_did_not_move():
     state, battle_coord, _watcher_coord = _gir_state()
     state.add_leader(LeaderState(1, 1, "Tlazolteotl", battle_coord))

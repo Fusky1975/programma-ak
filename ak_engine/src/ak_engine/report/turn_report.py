@@ -14219,17 +14219,21 @@ def record_move_world_events(state: GameState, results: list[PhaseDispatchResult
         new_location = getattr(result, "new_location", None)
         if not moved or new_location is None:
             continue
-        armies = [army for army in state.armies_commanded_by(entry.leader_id) if army.location == new_location]
-        if not armies:
-            continue
         leader = state.leaders.get(entry.leader_id)
         if leader is None:
             continue
+        armies = [army for army in state.armies_commanded_by(entry.leader_id) if army.location == new_location]
         province_name = _province_label(state, new_location)
         prefix = _season_phrase_for_phase_label(entry.phase_label)
         if getattr(result, "wind_walking", False):
+            # Phase 634's own real trigger names only the mover, never
+            # their armies ("the great Wind Spirits... carry the mage or
+            # a co-located character into the sky") -- a wind-walking
+            # leader travelling alone (`MoveExecutionResult.moved_
+            # without_armies`, Phase 769) still gets this notice. Checked
+            # before the armies-empty guard below, not after it.
             line = render_wind_walk_move_world_event(leader.name, province_name, rng)
-        elif all(is_overflight_unit(army.army_type) for army in armies):
+        elif armies and all(is_overflight_unit(army.army_type) for army in armies):
             line = render_fly_move_world_event(leader.name, province_name, rng)
         else:
             continue
