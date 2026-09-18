@@ -3795,7 +3795,12 @@ def describe_kill_enemy_berserk_retaliation(
 
     loser_name = target_name if result.kill_enemy_berserk_winner == "a" else caster_name
     winner_name = caster_name if loser_name == target_name else target_name
-    lines.append(render_mortally_wounded(loser_name, rng))
+    # Phase 849 bug fix: `is_sea` was already a real parameter of this
+    # composer (threaded through to the sibling SPOILS line 7 lines
+    # below), but was never forwarded here -- MORTWOUN.X's own "fell"/
+    # "sank down" `/S` variants always rendered the land wording, even
+    # for a Kill-Enemy Berserk duel resolved in a Sea province.
+    lines.append(render_mortally_wounded(loser_name, rng, is_sea=is_sea))
     lines.append(render_character_death(loser_name, rng))
     if result.looted_item_ids:
         item_names = _item_display_names(state, result.looted_item_ids)

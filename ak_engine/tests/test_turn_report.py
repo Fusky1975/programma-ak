@@ -6474,6 +6474,25 @@ def test_describe_kill_enemy_berserk_retaliation_narrates_the_caster_winning():
     ]
 
 
+def test_describe_kill_enemy_berserk_retaliation_forwards_is_sea_to_the_mortally_wounded_line():
+    # Phase 849: `is_sea` was already threaded into this composer (used
+    # by the sibling SPOILS line) but never forwarded to its own
+    # render_mortally_wounded() call -- MORTWOUN.X's own "sank down"
+    # variant could never render for a Kill-Enemy duel resolved at sea.
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.KILL_ENEMY, target=2),
+        applied=False,
+        reason="spell failed",
+        kill_enemy_berserk_winner="a",
+        melee_swings=(MeleeSwing(attacker="a", hit=True, damage=5),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 1, 0])
+
+    lines = describe_kill_enemy_berserk_retaliation(result, caster_name="Aldric", target_name="Borin", rng=rng, is_sea=True)
+
+    assert lines[1] == "Borin sank down, fatally injured."
+
+
 def test_describe_kill_enemy_berserk_retaliation_narrates_the_target_winning():
     result = CastExecutionResult(
         request=CastRequest(spell=Spell.KILL_ENEMY, target=2),

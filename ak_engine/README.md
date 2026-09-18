@@ -34458,6 +34458,28 @@ fail against the pre-fix code (`assert 0 == 1`, empty-list mismatches)
 and pass against the fix. Test count: 6816 -> 6819. Full suite verified
 green before and after.
 
+### Phase 849: fix `describe_kill_enemy_berserk_retaliation()`'s own dropped `is_sea` flag
+
+Continuing the manual cover-to-cover sweep: `describe_kill_enemy_
+berserk_retaliation()` already receives a real `is_sea` parameter
+(threaded through since Phase 830, used by its own sibling SPOILS line
+via `render_group_spoils_from_corpse(..., is_sea=is_sea)`) but never
+forwarded it to its own `render_mortally_wounded(loser_name, rng)`
+call a few lines above -- even though `render_mortally_wounded()`
+itself already accepts `is_sea` and 2 of its own 4 MORTWOUN.X
+variants carry a real `/S` marker ("fell" on land vs. "sank down" at
+sea). Confirmed by direct reproduction: a Kill-Enemy Berserk-
+retaliation duel resolved in a real Sea province (`is_sea=True`
+correctly computed and passed into the composer by `describe_turn_
+results()`) still rendered the land-only "fell, fatally injured"
+wording every time, never the sea-appropriate "sank down." Fixed by
+forwarding `is_sea=is_sea` into the `render_mortally_wounded()` call,
+matching the sibling SPOILS line's own existing shape exactly. New
+regression test confirmed to fail against the pre-fix code (wrong
+wording) and pass against the fix; every pre-existing test for this
+composer is unaffected. Test count: 6819 -> 6820. Full suite verified
+green before and after.
+
 ## Setup
 
 ```
