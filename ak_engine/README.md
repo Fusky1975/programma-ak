@@ -34237,6 +34237,27 @@ confirmed to fail against the pre-fix code (`AttributeError`/
 `TypeError` for the missing field) and pass against the fix. Test
 count: 6805 -> 6807. Full suite verified green before and after.
 
+### Phase 834: comment-only, `record_wandering_world_events()`'s own docstring wording corrected
+
+Continuing the sweep: `describe_steal()` (68 lines) and `record_
+wandering_world_events()` (70 lines) both reviewed cover to cover, no
+functional bug found in either. The Treasury Raid's own gold-only
+"success" outcome was double-checked against the fully-mined `RUMORS.
+PAS` STEAL prose cluster (Phase 607) and confirmed to have no sourced
+narration anywhere -- matches `describe_steal()`'s own documented "no
+source, no guess" stance, not a silent gap. `record_wandering_world_
+events()`'s own docstring said a mercenary army's display-name race
+falls back to "the army's own current province's race" -- traced this
+precisely against `turn/wandering_units.py resolve_wandering()` and
+found the code actually uses the *origin* province (where the army
+wandered *from*), not the destination it just arrived at, since
+`resolve_wandering()` already updates `army.location` to the
+destination before this recorder ever runs. A real, defensible choice
+(reflects wherever the army had actually been stationed, not a
+brand-new arrival), just imprecisely worded -- corrected the docstring
+to describe the real behavior accurately. Comment-only, no test
+changes needed. Full suite verified unchanged (6807) before and after.
+
 ## Setup
 
 ```

@@ -14254,10 +14254,17 @@ def record_wandering_world_events(state: GameState, results: list[PhaseDispatchR
     wander"``), mirroring every other synthetic-entry recorder here.
 
     A mercenary army's own display name has no real owning Kingdom to
-    resolve a race from -- falls back to the army's own current
-    province's race (or ``Race.HUMAN`` with no province data at all),
-    the same ``MONSTROUS_ARMY_RACE``-else-fallback shape ``build_battle_
-    army_names()`` already uses for a comparable "no Kingdom" case.
+    resolve a race from -- falls back to the army's own *origin*
+    province's race (Phase 834: the province it wandered *from*, not
+    the destination it just arrived at -- `resolve_wandering()` already
+    updates `army.location` to the destination before this recorder
+    ever sees the relocation, so "current" would actually mean the
+    brand-new destination; using origin instead reflects wherever the
+    army had actually been stationed, arguably the more representative
+    fact for a display name) or ``Race.HUMAN`` with no province data at
+    all, the same ``MONSTROUS_ARMY_RACE``-else-fallback shape
+    ``build_battle_army_names()`` already uses for a comparable "no
+    Kingdom" case.
     """
 
     for entry in results:
