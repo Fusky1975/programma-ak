@@ -34564,6 +34564,57 @@ bug as if it were correct) -- each fix verified empirically by running
 first, not assumed. Test count: 6829 -> 6831. Full suite verified green
 before and after.
 
+### Phase 852: wire `_BHome`'s real homeland-defense-morale sentence into `describe_battle()`
+
+Continuing the manual cover-to-cover sweep into the Defend cluster and
+its neighbors. `describe_defend()`/`describe_defend_reinforcement()`
+and `describe_pick_up()`/`describe_disband()` were both read cover to
+cover -- no bug found in either, all already correctly patched by
+earlier phases (827, 422, 524, 769, 420). The real finding surfaced
+while auditing the "Bravest of the Brave" candidate list instead:
+`render_skeletal_army_fervor()`, `render_oratory_speech()`, `render_
+homeland_defense_morale()`, `render_weapon_rally()`, and `render_
+vampiric_bite()` (Phase 126, `SAY.PAS`'s own real battle-morale
+templates) are all fully sourced and render-tested but have zero
+production callers anywhere -- confirmed by grep, the same "report-
+completeness gap" class already closed for BATLDR/MCOME/BLUCK/
+TACTICS.X2 in `describe_battle()` (Phases 649/657/615/712). Of the
+five, `render_homeland_defense_morale()` (`_BHome`) is the one whose
+real trigger is both fully computable and free of any snapshot-timing
+risk: rulebook [6.3]'s own "+1 if in home province" quality bonus
+(`turn/strength.py compute_effective_strength()`'s `is_home_province`
+parameter, already applied per-army in `turn/battle_orchestrator.py
+_build_battle_units()` since Phase 30) already fires in every real
+battle fought in a Kingdom's own home province, but nothing ever
+narrated it. New `BattleReport.attacker_home_province_leader_ids`/
+`defender_home_province_leader_ids`, computed in `fight_battle()`
+directly from the raw pre-battle `attacker_armies`/`defender_armies`
+lists (the same lists `attacker_commanding_leader_ids` is itself
+derived from) rather than re-derived from `state.armies` at report
+time -- a home-province-boosted army destroyed in the very battle
+being reported would otherwise vanish from `state.armies` before the
+report could read it. `describe_battle()` renders one sentence per
+distinct commanding leader in either list, right after the leader
+roster and before the duel-demoralization line, matching this
+composer's own established "no real trigger-call survives, place it
+near the leader roster" convention (Phase 657/739). The other four
+render functions stay unwired: `_BFun`/`_BRWeap` would need the same
+"compute during battle" treatment `_BHome` got here (their own trigger
+data -- which armies are Skeletal, which commander holds a race-
+matching leadership item -- is equally at risk of vanishing from
+`state.armies`/`state.items_held_by()` if the relevant army is
+destroyed or the leader dies in the same battle), `_BSpeech` would
+additionally need `LeaderState.oratory_boosted_this_turn` cross-
+referenced against who's actually fighting, and `_LChUnd` (a vampiric
+bite changing a leader's own alignment) has no matching mechanic
+anywhere in this project at all (confirmed by grep -- no code path
+ever mutates a `LeaderState.alignment`) -- a genuine model-scope gap,
+not a wiring gap. Test count: 6831 -> 6838 (net +7: 4 in `test_battle_
+orchestrator.py`, 3 in `test_turn_report.py`). Full suite verified
+green (unchanged, 6831) before touching a single test; all 7 new tests
+confirmed to fail against the pre-fix code (`AttributeError`, the new
+`BattleReport` fields didn't exist yet) and pass against the fix.
+
 ## Setup
 
 ```

@@ -931,7 +931,18 @@ a future phase that extracts `NODRU.X`/`BLUFF.X`.
 - `_BHome: Say('<''s troops/Rsoldiers were_prepared/Rswore to
   fight/Rstruggle desperately/Rlike_tigers for their
   homeland/Rfatherland.',S_Batt)` -- home-province defensive morale.
-  `render_homeland_defense_morale()`.
+  `render_homeland_defense_morale()`. **Wired into `describe_battle()`
+  as of Phase 852** -- see that composer's own Phase 852 addendum.
+  `_BFun`/`_BSpeech`/`_BRWeap`/`_LChUnd` remain unwired: `_BFun`/
+  `_BRWeap` would need the same "compute during battle, don't re-derive
+  from `state.armies` at report time" treatment `_BHome` got here, and
+  `_BSpeech` additionally needs `LeaderState.oratory_boosted_this_turn`
+  cross-referenced against who's actually fighting this battle -- real,
+  separate follow-ups, not attempted this phase. `_LChUnd` (a vampiric
+  bite changing a leader's own alignment) has no matching mechanic
+  anywhere in this project at all (confirmed by grep -- no code path
+  ever mutates a `LeaderState.alignment`), a genuine model-scope gap,
+  not a wiring gap.
 - `_BRWeap: Say('< waved/Rheld_aloft > \\ and the/R> \x12
   cheered_wildly/Rwere_virtually_hypnotized{ with/Rin
   admiration/Rit''s_enchanted_glow}!',S_Batt)` -- a leader rallies
@@ -2634,6 +2645,19 @@ def describe_battle(
     leader_ids is not None` condition BLUCK/CLUCK already use -- `_BTac`
     sits in the exact same real dispatch block, immediately after `_BLuck`
     (see above), so no separate, unsourced gating rule is invented for it.
+
+    **Phase 852 -- `_BHome` wiring.** `render_homeland_defense_morale()`
+    (Phase 126) was sourced, fully render-tested, and never called from
+    anywhere until now. `battle_report.attacker_home_province_leader_
+    ids`/`defender_home_province_leader_ids` (new fields, computed in
+    `fight_battle()` from the same raw pre-battle army lists `attacker_
+    commanding_leader_ids` is itself derived from, not re-derived from
+    `state.armies` at report time, since a home-province-boosted army
+    can be destroyed in the very battle being reported) name every
+    commanding leader whose own army's Kingdom calls the battle's
+    province home -- the real, already-computed rulebook [6.3] "+1 if in
+    home province" bonus (`turn/strength.py compute_effective_strength()`'s
+    `is_home_province` parameter) finally gets its own sentence.
     """
 
     army_names = build_battle_army_names(state, battle_report)
@@ -2655,6 +2679,25 @@ def describe_battle(
             leader_name = _leader_name(state, leader_id)
             if leader_name is not None:
                 lines.append(render_battle_leader_no_command(leader_name, rng))
+
+    # Phase 852 -- _BHome (SAY.PAS): rulebook [6.3]'s own "+1 if in home
+    # province" quality bonus (`turn/strength.py compute_effective_
+    # strength()`'s `is_home_province` parameter, computed per-army in
+    # `turn/battle_orchestrator.py _build_battle_units()` since Phase 30
+    # but never narrated -- `render_homeland_defense_morale()` was
+    # sourced and render-tested since Phase 126 with zero callers) --
+    # one sentence per distinct commanding leader whose own army's
+    # Kingdom calls this battle's province home (`BattleReport.attacker_
+    # home_province_leader_ids`/`defender_home_province_leader_ids`,
+    # Phase 852). No real trigger call survives to confirm `_BHome`'s
+    # exact position (the same "missing main program" gap this
+    # composer's own other wirings already document) -- placed right
+    # after the leader roster, matching this composer's own established
+    # "about who's fighting" placement convention (Phase 657/739).
+    for leader_id in battle_report.attacker_home_province_leader_ids + battle_report.defender_home_province_leader_ids:
+        commander_name = _leader_name(state, leader_id)
+        if commander_name is not None:
+            lines.append(render_homeland_defense_morale(commander_name, rng))
 
     # Phase 739 -- _ADishK/_ADishF (SAY.PAS): the duel loser's own forces
     # become demoralized (rulebook [7.1]). No real trigger call survives

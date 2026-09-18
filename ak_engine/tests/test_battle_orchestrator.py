@@ -350,6 +350,74 @@ def test_fight_battle_dedupes_and_sorts_multiple_commanders_per_side():
     assert report.attacker_commanding_leader_ids == [10, 30]  # sorted, deduped
 
 
+# -- Phase 852: BattleReport's per-side home-province commanding-leader roster --
+
+
+def test_fight_battle_leaves_home_province_leaders_empty_away_from_home():
+    # build_state()'s own battle happens at FIELD, which is neither
+    # kingdom's own home_province (Attackia=(0,0), Defendia=DEFENDER_HOME) --
+    # the default fixture is a provable no-op for the new fields.
+    state = build_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Attacker Leader", location=FIELD))
+    state.add_leader(LeaderState(20, kingdom_id=2, name="Defender Leader", location=FIELD))
+    state.armies[101].commanded_by = 10
+    state.armies[201].commanded_by = 20
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert report.attacker_home_province_leader_ids == []
+    assert report.defender_home_province_leader_ids == []
+
+
+def test_fight_battle_records_the_defenders_home_province_leader():
+    home = HexCoord(5, 5)
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, home))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, home, commanded_by=20))
+    state.add_leader(LeaderState(20, kingdom_id=2, name="Defender Leader", location=home))
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=home, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert report.defender_home_province_leader_ids == [20]
+    assert report.attacker_home_province_leader_ids == []
+
+
+def test_fight_battle_records_the_attackers_home_province_leader_when_defending_it_is_not_home():
+    home = HexCoord(5, 5)
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, home))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, home, commanded_by=10))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, home))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Attacker Leader", location=home))
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=home, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    # An attacker fighting its own way back through its own home province
+    # (e.g. reconquering it) is home-boosted too -- the real mechanic is
+    # per-army-Kingdom, not "only ever the defender".
+    assert report.attacker_home_province_leader_ids == [10]
+    assert report.defender_home_province_leader_ids == []
+
+
+def test_fight_battle_excludes_an_unled_home_province_army():
+    home = HexCoord(5, 5)
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, home))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, home))  # no commanded_by
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=home, attacker_army_ids=[101], rng=_generously_padded_rng())
+
+    assert report.defender_home_province_leader_ids == []
+
+
 def test_fight_multi_attacker_battle_unites_commanders_from_both_parties():
     # Phase 307/649: a united multi-attacker battle's own combined_army_ids
     # spans every party, so fight_battle()'s new roster naturally recovers

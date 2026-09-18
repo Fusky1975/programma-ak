@@ -902,6 +902,85 @@ def test_describe_battle_skips_a_present_leader_no_longer_in_state():
     assert lines == []
 
 
+def test_describe_battle_renders_homeland_defense_morale_right_after_the_leader_roster():
+    # Phase 852: attacker home-province leaders, then defender home-province
+    # leaders, right after the BATLDR roster (both sides) and before the
+    # duel-demoralization line.
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Borin", location=HexCoord(0, 0)))
+    report = BattleReport(
+        battle_result=BattleResult(),
+        conquered=False,
+        attacker_commanding_leader_ids=[1],
+        defender_commanding_leader_ids=[2],
+        attacker_home_province_leader_ids=[1],
+        defender_home_province_leader_ids=[2],
+    )
+
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=rng,
+    )
+
+    assert lines == [
+        "Aldric led Aldric's armies into the battle.",
+        "Borin led Borin's armies into the battle.",
+        "Aldric's troops were prepared to fight desperately for their homeland.",
+        "Borin's troops were prepared to fight desperately for their homeland.",
+    ]
+
+
+def test_describe_battle_skips_a_home_province_leader_no_longer_in_state():
+    # No source, don't guess -- same "died earlier the same turn" convention
+    # every other BATLDR-adjacent field in this composer already uses.
+    state = GameState()
+    report = BattleReport(battle_result=BattleResult(), conquered=False, attacker_home_province_leader_ids=[999])
+
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=ScriptedRandom([]),
+    )
+
+    assert lines == []
+
+
+def test_describe_battle_omits_homeland_defense_morale_when_nobody_is_home():
+    # Non-regression: the new field defaults to an empty list, so a battle
+    # away from home renders exactly as it did before Phase 852.
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    report = BattleReport(
+        battle_result=BattleResult(),
+        conquered=False,
+        attacker_commanding_leader_ids=[1],
+    )
+
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=rng,
+    )
+
+    assert lines == ["Aldric led Aldric's armies into the battle."]
+
+
 def test_describe_battle_renders_monster_assistance_before_everything_else():
     # Phase 657: MCOME/MFIGHT render right after the BATLDR roster, before
     # BLUCK and the per-column clash sentences.

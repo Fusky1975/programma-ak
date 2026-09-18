@@ -330,6 +330,22 @@ class BattleReport:
     # `resolve_battle()` call -- stored here rather than re-derived.
     attacker_tactical_ability: int = 0
     defender_tactical_ability: int = 0
+    # Phase 852 -- SAY.PAS `_BHome`'s own real trigger: rulebook [6.3]'s
+    # "+1 if in home province" quality bonus (already applied per-army in
+    # `_build_battle_units()` via `is_home_province`, see that function's
+    # own docstring) has never been narrated. Every distinct commanding
+    # leader (a subset of `attacker_commanding_leader_ids`/`defender_
+    # commanding_leader_ids` above) whose own army's Kingdom calls this
+    # battle's province home, computed here from `attacker_armies`/
+    # `defender_armies` -- the same raw, pre-battle army lists
+    # `attacker_commanding_leader_ids` is itself derived from -- rather
+    # than re-deriving it from `state.armies` at report time, since a
+    # home-province-boosted army that's destroyed in this very battle
+    # would otherwise vanish from `state.armies` before the report ever
+    # reads it (the same "compute now, don't re-derive from state.armies
+    # later" lesson `retreat_destination_coord` above already applies).
+    attacker_home_province_leader_ids: list[int] = field(default_factory=list)
+    defender_home_province_leader_ids: list[int] = field(default_factory=list)
 
 
 def _build_battle_units(
@@ -2280,6 +2296,29 @@ def fight_battle(
     attacker_commanding_leader_ids = sorted(attacker_commander_ids)
     defender_commanding_leader_ids = sorted(defender_commander_ids)
 
+    # Phase 852: SAY.PAS `_BHome`'s own real trigger -- see BattleReport's
+    # own docstring addendum for why this is computed from the raw
+    # pre-battle army lists here, not re-derived from `state.armies` at
+    # report time.
+    attacker_home_province_leader_ids = sorted(
+        {
+            army.commanded_by
+            for army in attacker_armies
+            if army.commanded_by is not None
+            and army.kingdom_id is not None
+            and state.kingdoms[army.kingdom_id].home_province == province_coord
+        }
+    )
+    defender_home_province_leader_ids = sorted(
+        {
+            army.commanded_by
+            for army in defender_armies
+            if army.commanded_by is not None
+            and army.kingdom_id is not None
+            and state.kingdoms[army.kingdom_id].home_province == province_coord
+        }
+    )
+
     # Phase 658: the real `_BLList`'s other half -- a leader present at
     # the battle but commanding no armies (`tentdex[fn] > cdrdex[fn]`,
     # `"< was there, leading no armies."`). The Phase 649 comment this
@@ -2570,6 +2609,8 @@ def fight_battle(
         defender_commander_leader_id=duel.defender_commander_leader_id,
         attacker_commanding_leader_ids=attacker_commanding_leader_ids,
         defender_commanding_leader_ids=defender_commanding_leader_ids,
+        attacker_home_province_leader_ids=attacker_home_province_leader_ids,
+        defender_home_province_leader_ids=defender_home_province_leader_ids,
         duel_loser_side=duel.loser_side,
         duel_loser_fled=duel.loser_fled,
         province_coord=province_coord,
