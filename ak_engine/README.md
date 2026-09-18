@@ -34348,6 +34348,27 @@ code silently doubling its own RNG consumption) and pass against the
 fix; every pre-existing test for both composers is unaffected. Test
 count: 6811 -> 6813. Full suite verified green before and after.
 
+### Phase 845: fix `record_blackmail_narratives()`'s own dead-actor narration drop
+
+Continuing the manual cover-to-cover sweep: `record_blackmail_
+narratives()` surfaced a real, confirmed bug of the same "dead-actor
+narration" class already fixed several times this session (Phase 612/
+649/827/829/835): it resolved the demanding Spy via a bare, alive-only
+`state.leaders.get(claim.spy_leader_id)`, not the dead-actor-safe
+`_leader_name()` helper every other narration branch in this file
+already uses. A Spy can deliver a real Blackmail demand in an early
+phase and then die in a LATER phase of the SAME turn (e.g. losing a
+Challenge) -- confirmed by direct reproduction (`GameState.remove_
+leader()`, matching the real death mechanism) that this silently
+dropped the ENTIRE demand line for BOTH the Spy's own Kingdom and the
+victim Kingdom, even though the demand had already been delivered and
+the victim still needed to see it to know they owed the gold. Fixed by
+resolving both the Spy's and the target King's own display names via
+`_leader_name()` instead. New regression test confirmed to fail against
+the pre-fix code (`KeyError`) and pass against the fix; every
+pre-existing test for this composer is unaffected. Test count:
+6813 -> 6814. Full suite verified green before and after.
+
 ## Setup
 
 ```

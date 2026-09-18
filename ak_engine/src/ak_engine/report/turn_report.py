@@ -13602,12 +13602,20 @@ def record_blackmail_narratives(state: GameState, results: list[PhaseDispatchRes
         )
         if target_kingdom_id is None:
             continue
-        spy = state.leaders.get(claim.spy_leader_id)
-        target_leader_id = _king_leader_id(state, target_kingdom_id)
-        target = state.leaders.get(target_leader_id) if target_leader_id is not None else None
-        if spy is None or target is None:
+        # Phase 845 bug fix: a bare `state.leaders.get(claim.spy_leader_
+        # id)` silently dropped the ENTIRE demand line -- for both the
+        # spy's own Kingdom and the victim -- whenever the spy died in a
+        # LATER phase of the SAME turn (e.g. losing a Challenge after an
+        # earlier Trail already delivered the demand). The dead-actor
+        # narration class `_leader_name()` already exists to fix, just
+        # never applied here since this function predates that
+        # convention and read `state.leaders` directly instead of going
+        # through it.
+        spy_name = _leader_name(state, claim.spy_leader_id)
+        target_name = _leader_name(state, _king_leader_id(state, target_kingdom_id))
+        if spy_name is None or target_name is None:
             continue
-        line = render_blackmail_demand(spy.name, target.name, claim.amount, claim.spy_kingdom_id, rng)
+        line = render_blackmail_demand(spy_name, target_name, claim.amount, claim.spy_kingdom_id, rng)
         state.blackmail_narratives_by_kingdom.setdefault(claim.spy_kingdom_id, []).append(line)
         state.blackmail_narratives_by_kingdom.setdefault(target_kingdom_id, []).append(line)
 

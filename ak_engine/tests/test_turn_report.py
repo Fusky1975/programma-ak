@@ -13748,6 +13748,27 @@ def test_record_blackmail_narratives_populates_both_kingdoms_with_identical_cont
     assert any("Spymaster" in line and "King Bob" in line for line in state.blackmail_narratives_by_kingdom[1])
 
 
+def test_record_blackmail_narratives_survives_the_spy_dying_later_the_same_turn():
+    # Phase 845: a Spy can deliver a real Blackmail demand in an early
+    # phase and then die in a LATER phase of the same turn (e.g. losing
+    # a Challenge) -- the already-delivered demand must still be
+    # narrated to both the spy's own Kingdom and the victim. A bare,
+    # alive-only state.leaders.get(claim.spy_leader_id) silently dropped
+    # the whole line for both sides once the spy was dead by report-
+    # generation time.
+    state = _blackmail_state()
+    claim = BlackmailClaim(spy_leader_id=1, spy_kingdom_id=1, amount=15)
+    state.kingdoms[2].pending_blackmail = claim
+    result = TrailExecutionResult(spied_on=True, blackmail_claim=claim)
+    results = [PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.TRAIL, result=result, error=None)]
+    state.remove_leader(1)  # the spy died in a later phase this same turn
+
+    record_blackmail_narratives(state, results, ScriptedRandom([0.1] * 15))
+
+    assert state.blackmail_narratives_by_kingdom[1] == state.blackmail_narratives_by_kingdom[2]
+    assert any("Spymaster" in line and "King Bob" in line for line in state.blackmail_narratives_by_kingdom[1])
+
+
 def test_record_blackmail_narratives_skips_a_non_trail_result():
     state = _blackmail_state()
     results = [PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.LMOVE, result=object(), error=None)]
