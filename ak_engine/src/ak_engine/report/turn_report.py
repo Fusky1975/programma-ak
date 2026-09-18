@@ -3704,7 +3704,13 @@ def render_kill_enemy_berserk_onset(target_name: str) -> str:
 
 
 def describe_kill_enemy_berserk_retaliation(
-    result: CastExecutionResult, *, caster_name: str, target_name: str, rng: random.Random
+    result: CastExecutionResult,
+    *,
+    caster_name: str,
+    target_name: str,
+    rng: random.Random,
+    state: GameState | None = None,
+    is_sea: bool = False,
 ) -> list[str]:
     """Assembles the Berserk-retaliation duel's own narration (Phase
     612) from an already-computed ``CastExecutionResult`` -- the
@@ -3733,6 +3739,20 @@ def describe_kill_enemy_berserk_retaliation(
     611) for whichever side lost. ``"a"`` = the caster, ``"b"`` = the
     target, matching ``CastExecutionResult.melee_swings``'s own Phase
     612 docstring.
+
+    **Phase 830 bug fix**: `CastExecutionResult.looted_item_ids`
+    (Phase 313, `turn/encounter.py loot_defeated_leader()`, [5.9]'s
+    "looting a vanquished foe's treasure") was set at both real
+    construction sites but never read here -- the SPOILS narration
+    cluster (Phase 777) reused this exact field's own structurally
+    identical sibling on `ChallengeExecutionResult`/`PursueExecutionResult`
+    (wired into `describe_encounter_combat()`), but Kill Enemy's own
+    Berserk retaliation was never cross-checked against it, silently
+    dropping real loot narration for a real, already-happened transfer.
+    ``state``/``is_sea`` (both new, optional) mirror `describe_
+    encounter_combat()`'s own identical parameters -- omitted (`None`/
+    `False`), the SPOILS line simply doesn't render, the same "no data,
+    no guess" fallback `_item_display_names()` itself already documents.
     """
 
     if result.kill_enemy_berserk_winner is None:
@@ -3763,8 +3783,15 @@ def describe_kill_enemy_berserk_retaliation(
         lines.append(onset)
 
     loser_name = target_name if result.kill_enemy_berserk_winner == "a" else caster_name
+    winner_name = caster_name if loser_name == target_name else target_name
     lines.append(render_mortally_wounded(loser_name, rng))
     lines.append(render_character_death(loser_name, rng))
+    if result.looted_item_ids:
+        item_names = _item_display_names(state, result.looted_item_ids)
+        if len(item_names) == 1:
+            lines.append(render_treasure_spoils_from_corpse(winner_name, loser_name, rng))
+        elif len(item_names) >= 2:
+            lines.append(render_group_spoils_from_corpse(winner_name, loser_name, item_names, rng, is_sea=is_sea))
     return lines
 
 
@@ -7633,10 +7660,15 @@ def describe_turn_results(
             # Phase 612: the Berserk-retaliation duel `describe_cast()`
             # itself can never reach (`applied` stays False on every
             # branch of that outcome) -- a no-op `[]` for every other
-            # Cast result.
+            # Cast result. Phase 830: `state`/`is_sea` reach the SPOILS
+            # narration, mirroring the PURSUE branch's own identical
+            # resolution below.
+            caster_location = _leader_location(state, entry.leader_id)
+            caster_province = state.provinces.get(caster_location)
+            is_sea = caster_province is not None and caster_province.effective_terrain() is Terrain.SEA
             lines.extend(
                 describe_kill_enemy_berserk_retaliation(
-                    entry.result, caster_name=caster_name, target_name=target_name, rng=rng
+                    entry.result, caster_name=caster_name, target_name=target_name, rng=rng, state=state, is_sea=is_sea
                 )
             )
             continue

@@ -6359,6 +6359,42 @@ def test_describe_kill_enemy_berserk_retaliation_narrates_the_target_winning():
     ]
 
 
+def test_describe_kill_enemy_berserk_retaliation_narrates_the_spoils_line_with_one_looted_item():
+    state, item_ids = _state_with_items(Treasure.ABILITY_TACTICAL)
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.KILL_ENEMY, target=2),
+        applied=False,
+        reason="spell failed",
+        kill_enemy_berserk_winner="a",
+        melee_swings=(MeleeSwing(attacker="a", hit=True, damage=5),),
+        looted_item_ids=item_ids,
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0])
+
+    lines = describe_kill_enemy_berserk_retaliation(
+        result, caster_name="Aldric", target_name="Borin", rng=rng, state=state
+    )
+
+    assert lines[-1] == "Aldric looked with satisfaction at the remains of Borin."
+
+
+def test_describe_kill_enemy_berserk_retaliation_omits_the_spoils_line_when_nothing_was_looted():
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.KILL_ENEMY, target=2),
+        applied=False,
+        reason="spell failed",
+        kill_enemy_berserk_winner="a",
+        melee_swings=(MeleeSwing(attacker="a", hit=True, damage=5),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0])
+
+    lines = describe_kill_enemy_berserk_retaliation(
+        result, caster_name="Aldric", target_name="Borin", rng=rng, state=GameState()
+    )
+
+    assert lines[-1] == "and so it was that Borin met Borin's unseemly end."
+
+
 # -- SBUNGLE.X/SFAIL.X (Phase 603) --
 
 

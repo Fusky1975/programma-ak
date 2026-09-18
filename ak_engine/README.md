@@ -34083,6 +34083,47 @@ existing `test_describe_armies_report_unled_army_shows_garrison` test
 proving the fix is scoped to the dead-leader case only. Test count:
 6789 -> 6790. Full suite verified green before and after.
 
+### Phase 830: `describe_kill_enemy_berserk_retaliation()`'s missing SPOILS narration
+
+Continuing the manual sweep into `report/turn_report.py`'s own next
+unread composers -- `describe_search()`/`describe_finances_report()`/
+`describe_armies_report()`/`describe_imperial_office_report()`/
+`describe_election_status_report()`/`describe_provinces_report()`/
+`describe_adventure_report()`/`describe_general_intelligence_report()`/
+`record_plague_spread_world_events()`/`describe_letter_reports()`/
+`describe_final_standings_report()`/`describe_encounter_combat()`/
+`describe_map_report()`/`render_tactical_comparison()`/`record_spell_
+world_events()`/`describe_election_report()` were all read cover to
+cover with no bug found (several of the "large" ones by line count
+turned out to be small functions sitting next to large adjacent
+constant tables, an artifact of the crude size-sorting heuristic used
+to pick the next target). `describe_kill_enemy_berserk_retaliation()`
+surfaced a real bug: `CastExecutionResult.looted_item_ids` (Phase 313,
+set by `turn/encounter.py loot_defeated_leader()` at both real
+construction sites whenever the Kill Enemy Berserk-retaliation duel's
+loser owned real treasure) was never read by this composer at all --
+the structurally identical field on `ChallengeExecutionResult`/
+`PursueExecutionResult` already gets a real SPOILS narration line via
+`describe_encounter_combat()` (Phase 777), but Kill Enemy's own analog
+was never cross-checked against that same wiring when Phase 777
+shipped (a different code path entirely, `CastExecutionResult`, not in
+that phase's own scope). Confirmed by direct reproduction: a scripted
+Berserk-retaliation win with `looted_item_ids` set produced zero
+mention of the loot. Fixed by reusing the exact same `_item_display_
+names()`/`render_treasure_spoils_from_corpse()`/`render_group_spoils_
+from_corpse()` pattern `describe_encounter_combat()` already
+established, threading new optional `state`/`is_sea` parameters
+(mirroring that composer's own identical parameters) through from the
+one real call site in `describe_turn_results()`'s `ActionCode.CAST`
+branch, resolving `is_sea` the same way the sibling `ActionCode.PURSUE`
+branch already does (`_leader_location()` -> `state.provinces.get()`
+-> `effective_terrain()`). 2 new regression tests confirmed to fail
+against the pre-fix code (one `TypeError` for the missing `state`
+kwarg, one for the missing SPOILS line) and pass against the fix; both
+pre-existing tests for this composer are unaffected (neither sets
+`looted_item_ids`). Test count: 6790 -> 6792. Full suite verified green
+before and after.
+
 ## Setup
 
 ```
