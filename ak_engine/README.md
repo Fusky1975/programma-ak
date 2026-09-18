@@ -33953,6 +33953,70 @@ Hire, ASpy, Recruit, Use_MI) or traced precisely and confirmed provably
 SAFE by construction (`feature_power_execution.py`'s 4 sites, `office_
 holder.py leader_office_rank()`) -- no remaining unverified candidate.
 
+### Phase 827: `describe_turn_results()`'s own RECRUIT/LEAVE/PICK_UP/DEFEND branches dropped real narration for a leader who died later the same turn
+
+Continuing the manual bug-hunting sweep into `report/turn_report.py`
+(14670 lines) with a sampled, targeted spot-check (cover-to-cover
+confirmed infeasible at this size) applying the project's own recurring
+bug classes -- dead-actor narration, dataclass reconstruction, division
+by zero, unguarded `next()`, stale docstring claims. Most of the file
+checked out clean; one real, live bug was found in the file's own
+largest function, `describe_turn_results()` (506 lines, the central
+dispatcher that walks a turn's own `PhaseDispatchResult` list and calls
+the matching `describe_*` composer per entry).
+
+The `RECRUIT`/`LEAVE`/`PICK_UP`/`DEFEND` branches each resolved the
+acting leader's own province via a bare, **alive-only** `state.leaders.
+get(entry.leader_id)` lookup purely to find their location -- unlike
+the sibling `PURSUE`/`CHALLENGE`/`TRAIL` branches a few lines below,
+which already use `_leader_location()`'s own alive-or-dead fallback
+(Phase 612). This is a real, different flavor of the "dead-actor
+narration" bug class than Phase 612's own fix: those three actions can
+kill their OWN acting leader as a direct result of the action being
+narrated (a duel loss), so the leader is guaranteed dead by the time
+that SAME entry is processed. RECRUIT/LEAVE/PICK_UP/DEFEND can never
+kill their own acting leader -- but a leader who successfully recruits
+an army (or leaves/picks up one, or registers a real Defend coverage
+area) in an EARLY phase of a turn (say P0) can still die in a LATER
+phase of that SAME turn (say P1, losing a Challenge) -- and by the time
+`describe_turn_results()` runs at end-of-turn, that leader no longer
+resolves via the alive-only lookup, silently dropping the whole
+narration for an action that genuinely happened and left real,
+permanent state (`state.armies` already has the new army; `RecruitedUnit`/
+`ArmyListExecutionResult.succeeded` already record the real success).
+Confirmed by direct reproduction for all 4 actions before touching any
+code -- a fully separate repro script per action, using `GameState.
+remove_leader()` (not a bare `del`) to match the real archival-into-
+`dead_leaders` mechanism every genuine in-game death uses.
+
+For DEFEND specifically, also confirmed the underlying game-state
+effect itself is unaffected by the later death: `turn/turn_processor.py
+run_turn()`'s own `active_defends` registration checks the acting
+leader's liveness at THAT phase's own dispatch time (within the same
+per-phase loop iteration), not at end-of-turn -- so a Defend order
+issued while alive registers correctly regardless of a later death,
+and the report-layer bug was purely a narration drop, not a symptom of
+a deeper state-corruption issue.
+
+Fixed by replacing all 4 branches' own `state.leaders.get(...)`+`.
+location` pattern with `_leader_location(state, entry.leader_id)`,
+identical to the already-correct PURSUE/CHALLENGE/TRAIL branches --
+`_leader_location()`'s own alive-or-dead fallback (`state.leaders.get(
+leader_id) or state.dead_leaders.get(leader_id)`) resolves to the
+dead leader's own real location at time of death (`remove_leader()`
+never touches `.location`), exactly the value these 4 composers still
+need. 4 new regression tests confirmed to fail against the pre-fix
+code (all 4, real narration silently dropped) and pass against the
+fix; the full existing `test_turn_report.py` suite (1109 tests --
+apparently the first time any of these 4 actions were ever exercised
+end-to-end through `describe_turn_results()` at all, confirmed by grep,
+only their own standalone `describe_recruit()`/`describe_leave()`/etc.
+unit tests existed before) is unaffected. Test count: 6785 -> 6789.
+Full suite verified green before and after. Also corrected a stale,
+pre-Phase-612 docstring claim ("Character/leader names are always
+resolved directly from `state.leaders[leader_id].name`") that predates
+`_leader_name()`'s own alive-or-dead fallback and was never updated.
+
 ## Setup
 
 ```

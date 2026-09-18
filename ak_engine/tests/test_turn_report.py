@@ -392,10 +392,12 @@ from ak_engine.turn.wandering_units import WanderRelocation
 from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalMoveError
+from ak_engine.turn.army_list_decode import ArmyListRequest
 from ak_engine.turn.plan_dispatch import ArmyListExecutionResult, FireExecutionResult, HireExecutionResult, PhaseDispatchResult
 from ak_engine.turn.practice_execution import PracticeExecutionResult
 from ak_engine.turn.patrol_execution import PatrolExecutionResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
+from ak_engine.turn.recruit_decode import RecruitRequest
 from ak_engine.turn.recruit_execution import RecruitedUnit, RecruitExecutionResult
 from ak_engine.turn.search_decode import SearchRequest
 from ak_engine.turn.search_execution import SearchExecutionResult
@@ -4066,6 +4068,93 @@ def test_describe_turn_results_narrates_cargo_boarding_after_a_real_move():
     lines = describe_turn_results(entries, state, rng, board_width=20)
 
     assert "Arthur boarded Bowmen aboard the Fleet." in lines
+
+
+def test_describe_turn_results_narrates_a_recruit_by_a_leader_who_later_dies_this_same_turn():
+    # Phase 827: a leader can successfully Recruit in an early phase (P0)
+    # and then die in a LATER phase of the same turn (e.g. losing a
+    # Challenge) -- the real, already-applied Recruit (a real new army
+    # already exists in state.armies) must still be narrated. Previously
+    # the RECRUIT branch resolved the province via a bare, alive-only
+    # state.leaders.get(entry.leader_id), silently dropping the whole
+    # narration once the acting leader was dead by report-generation time.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(3, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Arthur", location=HexCoord(3, 9)))
+    state.add_army(ArmyState(10, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9)))
+    unit = RecruitedUnit(army_id=10, army_type=ArmyType.BOWMEN, gold_paid=2)
+    result = RecruitExecutionResult(
+        request=RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN]), recruited=[unit], total_gold_spent=2
+    )
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.RECRUIT, result=result, error=None)
+    ]
+    state.remove_leader(1)  # died in a later phase this same turn
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines != []
+
+
+def test_describe_turn_results_narrates_a_leave_by_a_leader_who_later_dies_this_same_turn():
+    # Phase 827: same fix as Recruit above, for Leave.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(3, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Arthur", location=HexCoord(3, 9)))
+    state.add_army(ArmyState(10, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9)))
+    result = ArmyListExecutionResult(
+        request=ArmyListRequest(target_leader_id=None, army_ids=[10]), succeeded=[10]
+    )
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.LEAVE, result=result, error=None)
+    ]
+    state.remove_leader(1)  # died in a later phase this same turn
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines != []
+
+
+def test_describe_turn_results_narrates_a_pick_up_by_a_leader_who_later_dies_this_same_turn():
+    # Phase 827: same fix as Recruit above, for Pick_Up.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(3, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Arthur", location=HexCoord(3, 9)))
+    state.add_army(ArmyState(10, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 9)))
+    result = ArmyListExecutionResult(
+        request=ArmyListRequest(target_leader_id=1, army_ids=[10]), succeeded=[10]
+    )
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.PICK_UP, result=result, error=None)
+    ]
+    state.remove_leader(1)  # died in a later phase this same turn
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines != []
+
+
+def test_describe_turn_results_narrates_a_defend_by_a_leader_who_later_dies_this_same_turn():
+    # Phase 827: same fix as Recruit above, for Defend. The real Defend
+    # coverage area registers in turn/turn_processor.py's own active_
+    # defends while the leader is still alive at THAT phase's dispatch
+    # time, independent of whether they later die this same turn.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(3, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Arthur", location=HexCoord(3, 9)))
+    result = DefendRequest(target_province=0, unconfirmed_extra0=0)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.DEFEND, result=result, error=None)
+    ]
+    state.remove_leader(1)  # died in a later phase this same turn
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines != []
 
 
 def test_describe_turn_results_narrates_a_double_agent_report_sentinel():

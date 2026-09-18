@@ -7405,6 +7405,21 @@ def _leader_location(state: GameState, leader_id: int) -> HexCoord | None:
     action -- previously unreachable in practice only because `_leader_
     name()` itself returned `None` first and the caller already
     `continue`d before ever getting here.
+
+    **Phase 827 bug fix**: also reused by the RECRUIT/LEAVE/PICK_UP/
+    DEFEND branches below, for a real, distinct gap -- unlike the 3
+    original branches above (where the acting leader dies performing
+    the very action being narrated), these 4 actions can never kill
+    their own acting leader, so the bug was never "dies during this
+    action," it was "dies in a LATER phase of the SAME turn" (e.g.
+    successfully Recruits in P0, then loses a Challenge in P1). Those 4
+    branches previously used a bare ``state.leaders.get(entry.leader_id)``
+    (alive-only) purely to resolve the province, silently dropping a
+    real, already-applied action's own narration (the recruited armies/
+    left armies/picked-up armies/Defend coverage area were already real
+    in ``state`` regardless) the moment end-of-turn report generation
+    found the acting leader no longer alive. Confirmed by direct
+    reproduction for all 4 actions before fixing.
     """
 
     leader = state.leaders.get(leader_id) or state.dead_leaders.get(leader_id)
@@ -7426,9 +7441,15 @@ def describe_turn_results(
     function in this project (Phases 142-147 built nine composers, but
     none had ever been wired to a real turn until now).
 
-    **Character/leader names are always resolved directly from
-    ``state.leaders[leader_id].name``** -- confirmed always available,
-    no gap here (unlike province/army naming, Phase 149/150).
+    **Character/leader names are always resolved via ``_leader_name()``**
+    -- confirmed always available, no gap here (unlike province/army
+    naming, Phase 149/150). Stale as of Phase 612: this used to be a
+    direct ``state.leaders[leader_id].name`` subscript, which is why the
+    acting leader's own alive-or-dead fallback (needed for a leader who
+    dies from their own action, Phase 612) and its own PROVINCE-lookup
+    sibling (needed for a leader who dies in a LATER phase of the SAME
+    turn, Phase 827) both had to be added as separate, later fixes --
+    see ``_leader_name()``/``_leader_location()``'s own docstrings.
 
     **Confirmed, not guessed, why several actions aren't wired here at
     all**: `HIRE`/`FIRE` (`describe_hire()`/`describe_fire()`) and
@@ -7805,10 +7826,17 @@ def describe_turn_results(
             lines.extend(describe_random_encounter(entry.result, state, caster_name, rng))
             continue
         elif entry.action is ActionCode.RECRUIT and isinstance(entry.result, RecruitExecutionResult):
-            leader = state.leaders.get(entry.leader_id)
-            if leader is None:
-                continue
-            province = state.provinces.get(leader.location)
+            # Phase 827 bug fix: resolved via the acting leader's own
+            # CURRENT (alive-only) location, dropping a real, already-
+            # successful Recruit's own narration whenever that leader
+            # died later the SAME turn (e.g. lost a Challenge in a later
+            # phase) -- `result.recruited`/the real new armies in `state.
+            # armies` are already unaffected by the later death, only the
+            # report text was silently swallowed. Fixed via `_leader_
+            # location()`'s own alive-or-dead fallback (Phase 612),
+            # mirroring the identical fix already applied to Pursue/
+            # Challenge/Trail below.
+            province = state.provinces.get(_leader_location(state, entry.leader_id))
             if province is None:
                 continue
             lines.extend(
@@ -7816,19 +7844,19 @@ def describe_turn_results(
             )
             continue
         elif entry.action is ActionCode.LEAVE and isinstance(entry.result, ArmyListExecutionResult):
-            leader = state.leaders.get(entry.leader_id)
-            if leader is None:
-                continue
-            province = state.provinces.get(leader.location)
+            # Phase 827 bug fix: same alive-or-dead fallback as Recruit
+            # above -- a real, successful Leave's own narration was
+            # silently dropped whenever the acting leader died later the
+            # same turn.
+            province = state.provinces.get(_leader_location(state, entry.leader_id))
             if province is None:
                 continue
             lines.extend(describe_leave(entry.result, state, leader_name=caster_name, province=province, rng=rng))
             continue
         elif entry.action is ActionCode.PICK_UP and isinstance(entry.result, ArmyListExecutionResult):
-            leader = state.leaders.get(entry.leader_id)
-            if leader is None:
-                continue
-            province = state.provinces.get(leader.location)
+            # Phase 827 bug fix: same alive-or-dead fallback as Recruit
+            # above.
+            province = state.provinces.get(_leader_location(state, entry.leader_id))
             if province is None:
                 continue
             lines.extend(describe_pick_up(entry.result, state, leader_name=caster_name, province=province, rng=rng))
@@ -7837,10 +7865,14 @@ def describe_turn_results(
             lines.extend(describe_disband(entry.result, state, leader_name=caster_name, rng=rng))
             continue
         elif entry.action is ActionCode.DEFEND and isinstance(entry.result, DefendRequest):
-            leader = state.leaders.get(entry.leader_id)
-            if leader is None:
-                continue
-            province = state.provinces.get(leader.location)
+            # Phase 827 bug fix: same alive-or-dead fallback as Recruit
+            # above -- a real Defend coverage area, registered while the
+            # leader was still alive earlier this same turn (`turn/
+            # turn_processor.py run_turn()`'s own per-phase `active_
+            # defends` registration checks liveness at THAT phase's own
+            # dispatch time, not at end-of-turn report-generation time),
+            # was never announced if that leader died in a later phase.
+            province = state.provinces.get(_leader_location(state, entry.leader_id))
             if province is None:
                 continue
             lines.append(describe_defend(state, leader_name=caster_name, province=province, rng=rng))
