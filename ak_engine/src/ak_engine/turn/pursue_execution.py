@@ -436,7 +436,12 @@ def execute_pursue(
     offset (mirrors ``turn/spy_table.py estimate_reported_value()``'s
     own "uniform, symmetric" documented-choice convention for an
     analogous unsourced-but-bounded margin of error), floored at 0
-    (a negative distance has no meaning).
+    (a negative distance has no meaning). **Phase 832**: `guessed_
+    distance` is finally rendered into report text, via `report/
+    turn_report.py describe_pursue_guessed_distance()`'s own project-
+    original `render_guessed_distance()` (shared with Trail's own
+    identical fact) -- computed here since this same phase, but never
+    reaching the player before Phase 832.
     """
 
     rng = rng if rng is not None else random.Random()

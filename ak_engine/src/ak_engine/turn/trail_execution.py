@@ -284,6 +284,10 @@ def execute_trail(
     mechanic and reasoning as `turn/pursue_execution.py execute_pursue()`'s
     own Phase 695 addendum -- automatic success, plus a guessed distance
     perturbed by a uniformly random -1/0/+1 offset, floored at 0.
+    **Phase 832**: `guessed_distance` is finally rendered into report
+    text, via `report/turn_report.py describe_trail_intelligence()`'s
+    own project-original `render_guessed_distance()` -- computed here
+    since Phase 695, but never reaching the player before this phase.
 
     **Phase 705 -- `AdvancedAbility.SPY_EXPANDED_SPYING`**: "with the
     Trail action, estimates are gained for skills, and for offices
@@ -295,6 +299,11 @@ def execute_trail(
     The skill-estimate half stays genuinely unmodeled: no ``Skill_Est``
     routine survives anywhere in the source (unlike ``Align_Est``/
     ``Temper_Est``), so inventing one would be a guess, not a recovery.
+    **Phase 832**: `offices_held` is likewise finally rendered, via
+    `describe_trail_intelligence()`'s own project-original `render_
+    trail_offices_held()` -- computed here since Phase 705, but never
+    reaching the player before this phase (confirmed by grep: zero
+    references anywhere in `report/turn_report.py` before it).
 
     **Phase 713 -- `AdvancedAbility.SPY_BLACKMAIL`**: "ends any phase in
     the same province" is exactly this function's own ``spied_on``

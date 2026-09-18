@@ -34167,6 +34167,43 @@ this phase is the first to actually reach it end-to-end via `describe_
 turn_results()`. Test count: 6792 -> 6793. Full suite verified green
 before and after.
 
+### Phase 832: Trail/Pursue's own "guessed distance" + Trail's "offices held" facts, computed since Phase 695/705, never rendered
+
+Continuing the sweep into `describe_trail_intelligence()` (90 lines).
+No bug in its own existing logic, but a real, live report-completeness
+gap surfaced while cross-checking `TrailExecutionResult`'s full field
+list against what the composer actually renders: `guessed_distance`
+(`AdvancedAbility.SPY_SUPER_SLEUTH`, Phase 695) and `offices_held`
+(`AdvancedAbility.SPY_EXPANDED_SPYING`, Phase 705) are both computed
+correctly and tested at the mechanic layer, but neither has ever had a
+single reference anywhere in `report/turn_report.py` -- confirmed by
+grep. The identical `guessed_distance` field on `PursueExecutionResult`
+(also Phase 695) has the same gap. No `SAY.PAS`/`.X2` source survives
+for either fact (the same situation Trail's own owner/adjacent-owner
+facts and its whole intelligence-payload cluster already had before
+Phase 400/212's own project-original text) -- asked the user directly
+before writing anything, per the standing "no source, no guess, ask"
+convention; the user confirmed authoring project-original text
+directly, the same precedent those two earlier phases already set.
+
+New shared `render_guessed_distance()` (mirrors `render_caught_up()`'s
+own shared-by-Pursue-and-Trail role), a new additive `describe_pursue_
+guessed_distance()` composer (mirrors `describe_sage_discovery()`'s own
+Phase 772 "independent, can co-occur with the main branch" shape,
+wired into `describe_turn_results()`'s `ActionCode.PURSUE` branch), and
+a new `render_trail_offices_held()` wired directly into `describe_
+trail_intelligence()`'s own existing body (guessed distance rendered
+first, offices held right after armies led). `offices_held` is
+deliberately NOT given the "empty list is itself a learned fact"
+treatment every other list-shaped Trail field gets: an empty tuple is
+genuinely ambiguous between "the caster doesn't hold the ability at
+all" and "the ability applies, but the target holds no offices" (this
+result type exposes no separate flag to tell them apart), so the line
+is skipped rather than over-claiming a fact the data can't actually
+confirm. 12 new tests, covering both render functions, both composers,
+and one real end-to-end `describe_turn_results()` case. Test count:
+6793 -> 6805. Full suite verified green before and after.
+
 ## Setup
 
 ```

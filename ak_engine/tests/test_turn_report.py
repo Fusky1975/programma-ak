@@ -27,7 +27,7 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
-from ak_engine.models.office import Office
+from ak_engine.models.office import OFFICE_NAME, Office
 from ak_engine.models.power import Power, PowerCondition
 from ak_engine.models.race import Race
 from ak_engine.models.rumor import Rumor, RumorContent
@@ -120,6 +120,7 @@ from ak_engine.report.turn_report import (
     describe_practice,
     describe_sage_discovery,
     describe_pursue,
+    describe_pursue_guessed_distance,
     describe_recruit,
     describe_rumor,
     describe_feature_power_attempt,
@@ -176,6 +177,7 @@ from ak_engine.report.turn_report import (
     render_breath_weapon_hit,
     render_breath_weapon_missed,
     render_caught_up,
+    render_guessed_distance,
     render_cluck_narration,
     render_column_clash,
     render_commander_died_demoralized,
@@ -348,6 +350,7 @@ from ak_engine.report.turn_report import (
     render_trail_king_provinces,
     render_trail_no_armies_led,
     render_trail_no_treasures,
+    render_trail_offices_held,
     render_trail_race,
     render_trail_temper,
     render_trail_treasures,
@@ -378,7 +381,7 @@ from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
 from ak_engine.turn.cast_execution import CastExecutionResult
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
-from ak_engine.turn.challenge_pursue_decode import ChallengeRequest
+from ak_engine.turn.challenge_pursue_decode import ChallengeRequest, PursueRequest
 from ak_engine.turn.encounter import CombatRange, FireArrowShot, MeleeSwing
 from ak_engine.turn.druidic_monster_aid import DruidicMonsterAssistance
 from ak_engine.turn.emperor_election import ElectionCallOutcome, ElectionResult
@@ -6737,6 +6740,120 @@ def test_describe_trail_intelligence_king_lines_with_no_allies_or_provinces():
     assert "Aldric learned that Borin commands a treasury of 0 gold." in lines
     assert "Aldric learned that Borin has no allies." in lines
     assert "Aldric learned that Borin controls no provinces." in lines
+
+
+# -- Phase 832: SPY_SUPER_SLEUTH's own "guessed distance" (Pursue/Trail)
+# and SPY_EXPANDED_SPYING's own "offices held" (Trail) -- both computed
+# since Phase 695/705 but never rendered until now.
+
+
+def test_render_guessed_distance_singular():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_guessed_distance("Aldric", "Borin", 1, rng)
+    assert result == "Aldric estimates Borin to be about 1 province away."
+
+
+def test_render_guessed_distance_plural():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_guessed_distance("Aldric", "Borin", 3, rng)
+    assert result == "Aldric estimates Borin to be about 3 provinces away."
+
+
+def test_render_guessed_distance_zero_is_plural():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_guessed_distance("Aldric", "Borin", 0, rng)
+    assert result == "Aldric estimates Borin to be about 0 provinces away."
+
+
+def test_render_trail_offices_held_one_office():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_offices_held("Aldric", "Borin", ["Esteemed High Chancellor"], rng)
+    assert result == "Aldric learned that Borin holds the office of Esteemed High Chancellor."
+
+
+def test_render_trail_offices_held_multiple_offices():
+    rng = ScriptedRandom([0.1] * 4)
+    result = render_trail_offices_held("Aldric", "Borin", ["Esteemed High Chancellor", "Imperial Treasurer"], rng)
+    assert result == "Aldric learned that Borin holds the office of Esteemed High Chancellor and Imperial Treasurer."
+
+
+def test_describe_trail_intelligence_renders_guessed_distance_first():
+    result = TrailExecutionResult(spied_on=True, guessed_distance=2)
+    rng = ScriptedRandom([0.1] * 20)
+
+    lines = describe_trail_intelligence(result, state=_trail_intel_state(), trailer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert lines[0] == "Aldric estimates Borin to be about 2 provinces away."
+
+
+def test_describe_trail_intelligence_omits_guessed_distance_when_none():
+    result = TrailExecutionResult(spied_on=True, guessed_distance=None)
+    rng = ScriptedRandom([0.1] * 20)
+
+    lines = describe_trail_intelligence(result, state=_trail_intel_state(), trailer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert not any("estimates" in line for line in lines)
+
+
+def test_describe_trail_intelligence_renders_offices_held():
+    result = TrailExecutionResult(spied_on=True, offices_held=(Office.CHANCELLOR,))
+    rng = ScriptedRandom([0.1] * 20)
+
+    lines = describe_trail_intelligence(result, state=_trail_intel_state(), trailer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert f"Aldric learned that Borin holds the office of {OFFICE_NAME[Office.CHANCELLOR]}." in lines
+
+
+def test_describe_trail_intelligence_omits_offices_held_when_empty():
+    # Phase 832: an empty `offices_held` is genuinely ambiguous between
+    # "caster doesn't hold SPY_EXPANDED_SPYING" and "ability held, target
+    # holds no offices" -- this result type exposes no way to tell them
+    # apart, so (unlike treasures/armies_led) the line is skipped rather
+    # than claiming a "holds no offices" fact it can't actually confirm.
+    result = TrailExecutionResult(spied_on=True, offices_held=())
+    rng = ScriptedRandom([0.1] * 20)
+
+    lines = describe_trail_intelligence(result, state=_trail_intel_state(), trailer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert not any("office" in line for line in lines)
+
+
+def test_describe_pursue_guessed_distance_renders_when_set():
+    result = PursueExecutionResult(caught_up=True, guessed_distance=4)
+    rng = ScriptedRandom([0.1] * 4)
+
+    lines = describe_pursue_guessed_distance(result, pursuer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert lines == ["Aldric estimates Borin to be about 4 provinces away."]
+
+
+def test_describe_pursue_guessed_distance_empty_when_none():
+    result = PursueExecutionResult(caught_up=True, guessed_distance=None)
+    rng = ScriptedRandom([0.1] * 4)
+
+    lines = describe_pursue_guessed_distance(result, pursuer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert lines == []
+
+
+def test_describe_turn_results_renders_pursue_guessed_distance():
+    # End-to-end: SPY_SUPER_SLEUTH's own real fact reaches the turn
+    # report through describe_turn_results()'s ActionCode.PURSUE branch,
+    # independent of whatever catch-up/combat outcome also renders.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, kingdom_id=1, name="Borin", location=HexCoord(0, 0)))
+    request = PursueRequest(target_character_id=2, unconfirmed_extra0=0, tactics=[])
+    result = PursueExecutionResult(caught_up=True, combat_occurred=False, guessed_distance=2, request=request)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.PURSUE, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 20, choice_indices=[0]))
+
+    assert "Aldric estimates Borin to be about 2 provinces away." in lines
 
 
 # -- Phase 156: Search's own report composer --

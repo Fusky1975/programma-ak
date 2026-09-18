@@ -6740,6 +6740,51 @@ def render_caught_up(character_name: str, target_name: str, province_name: str, 
     return render(CAUGHT_UP_TEMPLATE, values, rng=rng)
 
 
+# Phase 832 -- `AdvancedAbility.SPY_SUPER_SLEUTH`'s own "the Spy can also
+# guess how far away the target is" (Phase 695, `PursueExecutionResult.
+# guessed_distance`/`TrailExecutionResult.guessed_distance`) has no
+# confirmed PROSE source anywhere in the available archive -- both
+# fields have been computed and correctly tested at the mechanic layer
+# since Phase 695, but neither was ever rendered into report text
+# (confirmed by grep, zero references anywhere in this module before
+# this phase). Project-original, written on direct user instruction
+# ("Scrivi tu il testo originale"), the same "data ready, no sourced
+# prose" situation Trail's own owner/adjacent-owner facts had before the
+# user authorized project-original text for those (Phase 400) and
+# Trail's own intelligence-payload cluster had before Phase 212. Shared
+# by Pursue and Trail (identical real fact, identical marker shape),
+# mirroring ``render_caught_up()``'s own shared-by-both role just above.
+GUESSED_DISTANCE_TEMPLATE = "< estimates [ to be about # away."
+
+
+def render_guessed_distance(character_name: str, target_name: str, distance: int, rng: random.Random) -> str:
+    """Renders the project-original Spy-Super-Sleuth "guessed distance"
+    sentence for a Pursue/Trail catch-up -- see the module comment above.
+    """
+
+    province_phrase = "1 province" if distance == 1 else f"{distance} provinces"
+    values = {"<": character_name, "[": target_name, "#": province_phrase}
+    return render(GUESSED_DISTANCE_TEMPLATE, values, rng=rng)
+
+
+def describe_pursue_guessed_distance(
+    result: PursueExecutionResult, *, pursuer_name: str, target_name: str, rng: random.Random
+) -> list[str]:
+    """Additive, separate composer for Pursue's own guessed-distance fact
+    (Phase 832) -- independent of whichever catch-up/combat outcome
+    ``describe_pursue()``/``describe_encounter_combat()`` already narrate
+    (the ability text is unconditional: catch-up becomes automatic AND a
+    distance guess is offered, regardless of what happens next), the
+    same "can co-occur with any of the main branch's own outcomes"
+    additive shape ``describe_sage_discovery()`` already established
+    (Phase 772).
+    """
+
+    if result.guessed_distance is None:
+        return []
+    return [render_guessed_distance(pursuer_name, target_name, result.guessed_distance, rng)]
+
+
 def describe_pursue(
     result: PursueExecutionResult,
     *,
@@ -7188,6 +7233,14 @@ TRAIL_TREASURES_TEMPLATE = "< learned that [ owns ^L^V."
 TRAIL_NO_TREASURES_TEMPLATE = "< learned that [ owns no treasures."
 TRAIL_ARMIES_LED_TEMPLATE = "< learned that [ leads ^L^V."
 TRAIL_NO_ARMIES_LED_TEMPLATE = "< learned that [ leads no armies."
+# Phase 832 -- `AdvancedAbility.SPY_EXPANDED_SPYING`'s own "estimates
+# are gained for... offices held" (Phase 705, `TrailExecutionResult.
+# offices_held`) has the identical "computed, no confirmed PROSE
+# source, never rendered" history as the eleven templates above --
+# project-original, same direct user instruction, same placement
+# alongside the other leader-scoped facts (before the King-only cluster
+# below).
+TRAIL_OFFICES_HELD_TEMPLATE = "< learned that [ holds the office of ^L^V."
 TRAIL_KING_FINANCES_TEMPLATE = "< learned that [ commands a treasury of # gold."
 TRAIL_KING_ALLIES_TEMPLATE = "< learned that [ is allied with ^L^V."
 TRAIL_KING_NO_ALLIES_TEMPLATE = "< learned that [ has no allies."
@@ -7230,6 +7283,24 @@ def render_trail_armies_led(trailer_name: str, target_name: str, army_names: lis
 def render_trail_no_armies_led(trailer_name: str, target_name: str, rng: random.Random) -> str:
     values = {"<": trailer_name, "[": target_name}
     return render(TRAIL_NO_ARMIES_LED_TEMPLATE, values, rng=rng)
+
+
+def render_trail_offices_held(trailer_name: str, target_name: str, office_names: list[str], rng: random.Random) -> str:
+    """Renders the project-original SPY_EXPANDED_SPYING "offices held"
+    sentence (Phase 832) -- see the module comment above ``TRAIL_
+    OFFICES_HELD_TEMPLATE``. Only ever called with a non-empty
+    ``office_names`` -- unlike Trail's other list-shaped facts, an
+    empty ``offices_held`` has no distinct "holds no offices" sentence
+    of its own (the ability's own real text only ever promises a
+    positive estimate, "offices held," not a negative one), so
+    ``describe_trail_intelligence()`` simply omits the line entirely
+    when there's nothing to report, matching the ability text's own
+    narrower scope rather than inventing a converse fact it never
+    claims to reveal.
+    """
+
+    values = {"<": trailer_name, "[": target_name}
+    return render(TRAIL_OFFICES_HELD_TEMPLATE, values, rng=rng, lists={"^V": office_names})
 
 
 def render_trail_king_finances(trailer_name: str, king_name: str, treasury: int, rng: random.Random) -> str:
@@ -7355,12 +7426,31 @@ def describe_trail_intelligence(
     falling back to a raw coordinate the same way
     ``describe_armies_report()``'s own Phase 158 precedent already
     does for an unnamed province.
+
+    **Phase 832 additions** -- two more real, previously-computed-but-
+    never-rendered facts, both project-original (see the module comments
+    above ``GUESSED_DISTANCE_TEMPLATE``/``TRAIL_OFFICES_HELD_TEMPLATE``):
+    ``result.guessed_distance`` (``AdvancedAbility.SPY_SUPER_SLEUTH``)
+    renders first, ahead of every other fact, mirroring the ability's
+    own text naming it as an unconditional companion to a successful
+    catch-up rather than one more item in the intelligence-payload list.
+    ``result.offices_held`` (``AdvancedAbility.SPY_EXPANDED_SPYING``)
+    renders right after armies led -- the last leader-scoped fact before
+    the King-only cluster -- but, unlike every other list-shaped field
+    here, is skipped entirely when empty: an empty tuple is genuinely
+    ambiguous between "the caster doesn't hold this ability" and "the
+    ability applies, but the target holds no offices" (this result type
+    exposes no separate flag to tell them apart), so this deliberately
+    doesn't claim the stronger "learned that they hold none" fact the
+    other fields can safely claim.
     """
 
     if not result.spied_on:
         return []
 
     lines: list[str] = []
+    if result.guessed_distance is not None:
+        lines.append(render_guessed_distance(trailer_name, target_name, result.guessed_distance, rng))
     if result.temper is not None:
         lines.append(render_trail_temper(trailer_name, target_name, TEMPER_NAME[result.temper], rng))
     if result.alignment is not None:
@@ -7379,6 +7469,10 @@ def describe_trail_intelligence(
         lines.append(render_trail_armies_led(trailer_name, target_name, army_names, rng))
     else:
         lines.append(render_trail_no_armies_led(trailer_name, target_name, rng))
+
+    if result.offices_held:
+        office_names = [OFFICE_NAME[office] for office in result.offices_held]
+        lines.append(render_trail_offices_held(trailer_name, target_name, office_names, rng))
 
     king = result.king_intelligence
     if king is not None:
@@ -7736,6 +7830,12 @@ def describe_turn_results(
             )
             if catch_up_line is not None:
                 lines.append(catch_up_line)
+            # Phase 832: SPY_SUPER_SLEUTH's own "guessed distance" fact --
+            # independent of the catch-up/combat outcome above, per its
+            # own real ability text.
+            lines.extend(
+                describe_pursue_guessed_distance(entry.result, pursuer_name=caster_name, target_name=target_name, rng=rng)
+            )
             # Phase 417: the armyless personal-duel case's own combat --
             # `_fight_army_pursuit_battle()`'s own army-vs-army case has
             # no fire_arrow_shots/melee_swings at all (empty tuples), so
