@@ -297,3 +297,23 @@ def test_execute_use_mi_wand_becomes_useless_after_its_last_charge():
     assert second.applied is False
     assert second.reason == "item has no charges remaining"
     assert 79 in state.leaders  # second cast never happened
+
+
+def test_execute_use_mi_by_a_dead_leader_is_a_clean_refusal_not_a_crash():
+    # Phase 826: a leader who died earlier this same turn can still have a
+    # later-phase Use_MI order dispatched for them (turn/plan_dispatch.py's
+    # own per-phase loop has no leader-liveness gate of its own). GameState.
+    # remove_leader() never clears an ordinary dead Hero's own item
+    # ownership, so a skill-book Use_MI previously reached a bare
+    # state.leaders[leader_id] lookup and raised a real, unhandled KeyError.
+    state = build_state()
+    item = state.add_item(Treasure.BOOK_MELEE, owner_leader_id=CASTER_ID)
+    del state.leaders[CASTER_ID]  # died in an earlier phase this same turn
+    request = UseMIRequest(item_instance_id=item.item_id, target=0)
+
+    result = execute_use_mi(state, KINGDOM_ID, CASTER_ID, request)
+
+    assert result.applied is False
+    assert result.reason == "acting leader not found"
+    assert result.ability_boosted is None
+    assert item.item_id in state.items  # untouched, not consumed

@@ -139,7 +139,34 @@ def execute_use_mi(
 
     ``board_width`` (Phase 780, default ``None``) falls back to ``state.
     board_width``.
+
+    **Phase 826 bug fix**: the acting leader (the one issuing this
+    Use_MI order) was never checked for liveness at all -- a leader who
+    died earlier in the same turn can still have a later-phase Use_MI
+    order dispatched for them, since ``turn/plan_dispatch.py``'s own
+    per-phase loop has no leader-liveness gate of its own (the same
+    "dead leader with a stale later-phase order" gap already fixed for
+    Leave/Pick_Up (Phase 821), Practice (822), Hire (823), ASpy (824),
+    and Recruit (825)). ``GameState.remove_leader()`` never clears an
+    ordinary dead Hero's own ``ItemInstance.owner_leader_id`` entries
+    (only a King's own throne gets a live successor under the same id),
+    so the existing ``item.owner_leader_id != leader_id`` check right
+    below does *not* filter this out -- a skill-book Use_MI reaches the
+    ``TreasureCategory.SKILL_BOOK`` branch's own bare ``state.leaders[
+    leader_id]`` lookup and raises an unhandled ``KeyError`` (caught
+    upstream by ``run_leader_plan()``'s own top-level ``try``/``except``,
+    so it never crashed the whole turn, but an opaque exception instead
+    of a clean refusal). A spell-wand Use_MI reaching ``turn/cast_
+    execution.py execute_cast()``'s own per-spell handlers has the
+    identical, already-documented, deliberately-not-fixed bare-index
+    exposure there (a separate, lower-priority style observation from
+    this same review, unaffected by this fix's own narrower scope).
+    Resolved by refusing outright, before any item lookup, whenever the
+    acting leader no longer exists.
     """
+
+    if leader_id not in state.leaders:
+        return UseMIExecutionResult(applied=False, reason="acting leader not found")
 
     board_width = board_width if board_width is not None else state.board_width
     item = state.items.get(request.item_instance_id)

@@ -33913,6 +33913,46 @@ This leaves exactly 1 site in 1 other file genuinely unverified from
 the standing technique's own original candidate list: `turn/use_mi_
 execution.py:180`.
 
+### Phase 826: `execute_use_mi()`'s own dead-leader crash, closing the standing bare-acting-leader-index sweep
+
+Direct follow-up verifying the last remaining candidate from the
+standing bare-acting-leader-index technique: `turn/use_mi_execution.py
+execute_use_mi()` never checked the acting leader (the one issuing the
+Use_MI order) for liveness at all -- the same "dead leader with a stale
+later-phase order" gap already fixed for Leave/Pick_Up (Phase 821),
+Practice (822), Hire (823), ASpy (824), and Recruit (825). Unlike those
+5, the existing `item.owner_leader_id != leader_id` check right at the
+top of this function does NOT filter out a dead acting leader:
+`GameState.remove_leader()` never clears an ordinary dead Hero's own
+item-ownership records (only a King's own throne gets a live successor
+under the same `leader_id`), so a skill-book Use_MI order for an item
+the now-dead leader still "owns" on paper reaches the `TreasureCategory.
+SKILL_BOOK` branch's own bare `state.leaders[leader_id]` lookup and
+raises an unhandled `KeyError`, caught upstream by `run_leader_plan()`'s
+own top-level `try`/`except` (so it never crashed the whole turn), but
+an opaque exception instead of a clean refusal. Confirmed by direct
+reproduction before touching any code. A spell-wand Use_MI reaching
+`turn/cast_execution.py execute_cast()`'s own per-spell handlers has
+the identical, already-documented, deliberately-not-fixed bare-index
+exposure there (a separate, lower-priority style observation from an
+earlier phase of this same review, explicitly out of scope for this
+fix). Fixed by refusing outright, before any item lookup, whenever the
+acting leader no longer exists -- a new `"acting leader not found"`
+reason, since none of this function's own existing reason strings
+("item not found", "leader does not possess this item", "item has no
+charges remaining") semantically fit a leader who no longer exists at
+all. New regression test confirmed to fail against the pre-fix code (a
+real `KeyError`) and pass against the fix; every pre-existing test in
+the file (19 total) is unaffected. Test count: 6784 -> 6785. Full suite
+verified green before and after.
+
+**This closes the standing bare-acting-leader-index sweep in full.**
+Every candidate site the technique flagged across Phases 821-826 has
+now been either fixed (Leave/Pick_Up/Disband already correct, Practice,
+Hire, ASpy, Recruit, Use_MI) or traced precisely and confirmed provably
+SAFE by construction (`feature_power_execution.py`'s 4 sites, `office_
+holder.py leader_office_rank()`) -- no remaining unverified candidate.
+
 ## Setup
 
 ```
