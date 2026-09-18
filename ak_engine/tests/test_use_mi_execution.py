@@ -143,6 +143,11 @@ def test_execute_use_mi_book_boosts_the_ability_and_consumes_the_item():
 
     assert result.applied is True
     assert result.ability_boosted is Ability.MELEE
+    # Phase 833 bug fix: book_treasure must be captured before the item
+    # is removed from state.items below -- report/turn_report.py's own
+    # describe_turn_results() needs it to resolve the book's display
+    # name, since it can no longer look the item up by id afterward.
+    assert result.book_treasure is Treasure.BOOK_MELEE
     assert state.leaders[CASTER_ID].skills.pair_for_ability(Ability.MELEE) == (1, 0)
     assert item.item_id not in state.items
 

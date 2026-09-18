@@ -112,6 +112,20 @@ class UseMIExecutionResult:
     reason: str | None = None
     cast_result: CastExecutionResult | None = None  # set when a wand triggered a spell cast
     ability_boosted: Ability | None = None  # set when a book was read
+    # Phase 833 bug fix: the book's own real Treasure identity, set
+    # alongside `ability_boosted` -- needed because `state.remove_item()`
+    # (a few lines below in the real SKILL_BOOK branch) removes the book
+    # from `GameState.items` before this result is ever seen by the
+    # report layer, so `report/turn_report.py describe_turn_results()`
+    # has no way to resolve which book was read from `state` alone by
+    # the time it runs (the same "post-mutation, state no longer has the
+    # fact" class of gap the dead-actor-narration pattern already
+    # documents for leaders, here for an item instead). Without this
+    # field, `render_skill_book_read()` (Phase 148, project-original, on
+    # the user's own explicit request) had no real caller anywhere --
+    # confirmed by grep, a skill-book Use_MI produced zero turn-report
+    # narration despite the mechanic itself applying correctly.
+    book_treasure: Treasure | None = None
     # Phase 542: sourced from the dossier's own intent-classification rule
     # (see USE_MI_NON_AGGRESSIVE_WANDS above), but this project has no
     # simulated monster/AI reaction system for ANY action type to consume
@@ -210,7 +224,8 @@ def execute_use_mi(
 
         skill, aptitude = leader.skills.pair_for_ability(ability)
         leader.skills.set_pair_for_ability(ability, min(skill + 1, MAX_SKILL_LEVEL), aptitude)
+        book_treasure = item.treasure
         state.remove_item(item.item_id)
-        return UseMIExecutionResult(applied=True, ability_boosted=ability)
+        return UseMIExecutionResult(applied=True, ability_boosted=ability, book_treasure=book_treasure)
 
     return UseMIExecutionResult(applied=False, reason="not a Use_MI target -- operates automatically")

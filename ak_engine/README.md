@@ -34204,6 +34204,39 @@ confirm. 12 new tests, covering both render functions, both composers,
 and one real end-to-end `describe_turn_results()` case. Test count:
 6793 -> 6805. Full suite verified green before and after.
 
+### Phase 833: `describe_use_mi()`'s skill-book branch had no real caller
+
+Continuing the sweep into `describe_use_mi()` (60 lines). Its own
+skill-book branch (`render_skill_book_read()`, Phase 148, a project-
+original sentence already written and unit-tested at the composer
+level) turned out to have no real caller anywhere: `describe_turn_
+results()`'s own `ActionCode.USE_MI` branch `continue`d outright
+whenever `entry.result.cast_result` was `None` -- the exact case a
+skill-book read (as opposed to a wand-triggered spell) always produces
+-- never checking `entry.result.ability_boosted` at all. Confirmed by
+direct reproduction: a real, successful skill-book Use_MI produced
+zero turn-report lines, even though `execute_use_mi()` itself already
+applies the skill boost and removes the book correctly.
+
+A second, deeper problem blocked a naive fix: `UseMIExecutionResult`
+had no way to recover *which* book was read, because `execute_use_mi()`
+calls `state.remove_item()` on the book before returning -- by the time
+the report layer runs (after the whole turn resolves), the item is
+already gone from `state.items`, so there's nothing left to look up (the
+same "state was already mutated past the point where the fact could be
+recovered" class of gap the dead-actor-narration pattern already
+documents for leaders, here for an item instead). Fixed by adding a new
+`UseMIExecutionResult.book_treasure: Treasure | None` field, captured
+in `execute_use_mi()`'s own `SKILL_BOOK` branch immediately before the
+`remove_item()` call, and wiring `describe_turn_results()`'s own
+dispatch to check `ability_boosted`/`book_treasure` as a real sibling
+case to the existing wand-cast branch. 3 new/updated tests (one
+confirming `execute_use_mi()` now captures `book_treasure` before the
+item is removed, two end-to-end `describe_turn_results()` cases) all
+confirmed to fail against the pre-fix code (`AttributeError`/
+`TypeError` for the missing field) and pass against the fix. Test
+count: 6805 -> 6807. Full suite verified green before and after.
+
 ## Setup
 
 ```

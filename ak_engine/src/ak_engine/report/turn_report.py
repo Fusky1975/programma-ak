@@ -7789,15 +7789,29 @@ def describe_turn_results(
             continue
         elif entry.action is ActionCode.USE_MI and isinstance(entry.result, UseMIExecutionResult):
             cast_result = entry.result.cast_result
-            if cast_result is None:
+            if cast_result is not None:
+                spell = cast_result.request.spell
+                if spell not in _AUTO_RESOLVABLE_CAST_TARGET_SPELLS:
+                    continue
+                target_name = _leader_name(state, cast_result.request.target)
+                if target_name is None:
+                    continue
+                line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, target_name=target_name)
+            elif entry.result.ability_boosted is not None and entry.result.book_treasure is not None:
+                # Phase 833 bug fix: the skill-book branch of describe_
+                # use_mi() (render_skill_book_read(), Phase 148) had no
+                # real caller anywhere -- this dispatch used to `continue`
+                # outright whenever `cast_result` was None, never checking
+                # whether a skill-book read happened instead.
+                line = describe_use_mi(
+                    entry.result,
+                    caster_name=caster_name,
+                    rng=rng,
+                    book_name=TREASURE_NAME[entry.result.book_treasure],
+                    ability_name=ABILITY_NAME[entry.result.ability_boosted],
+                )
+            else:
                 continue
-            spell = cast_result.request.spell
-            if spell not in _AUTO_RESOLVABLE_CAST_TARGET_SPELLS:
-                continue
-            target_name = _leader_name(state, cast_result.request.target)
-            if target_name is None:
-                continue
-            line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, target_name=target_name)
         elif entry.action is ActionCode.TRADE and isinstance(entry.result, TradeExecutionResult):
             request = entry.result.request
             if request is None:

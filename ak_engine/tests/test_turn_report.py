@@ -6518,6 +6518,44 @@ def test_describe_use_mi_renders_nothing_on_failure():
     assert line is None
 
 
+def test_describe_turn_results_narrates_a_skill_book_use_mi():
+    # Phase 833 bug fix: describe_turn_results()'s own ActionCode.USE_MI
+    # branch used to `continue` outright whenever `cast_result` was None
+    # (a wand-triggered spell fizzled or, as here, never happened at all
+    # because a skill book was read instead) -- never checking whether
+    # `ability_boosted`/`book_treasure` were set, so a real, successful
+    # skill-book read produced zero turn-report narration despite
+    # render_skill_book_read() (Phase 148) existing specifically for it.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    result = UseMIExecutionResult(applied=True, ability_boosted=Ability.MELEE, book_treasure=Treasure.BOOK_MELEE)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.USE_MI, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines == [f"Aldric read the {TREASURE_NAME[Treasure.BOOK_MELEE]} and Aldric's Meleeing increased by one level!"]
+
+
+def test_describe_turn_results_still_ignores_a_use_mi_with_no_cast_and_no_book():
+    # Non-regression: a genuinely no-op UseMIExecutionResult (neither a
+    # wand cast nor a skill-book read -- e.g. `applied=False`, or the
+    # existing "not a Use_MI target" refusal) still narrates nothing.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    result = UseMIExecutionResult(applied=False, reason="not a Use_MI target -- operates automatically")
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.USE_MI, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines == []
+
+
 # -- describe_pursue / describe_trail (Phase 147) --
 
 
