@@ -3811,6 +3811,80 @@ def test_describe_patrol_combat_narrates_the_mortal_wound_line_for_the_loser():
     ]
 
 
+def test_describe_patrol_combat_narrates_the_spoils_line_with_one_looted_item():
+    # Phase 836: PatrolExecutionResult.looted_item_ids (Phase 313) was
+    # populated by execute_patrol() from day one but never read here --
+    # the SPOILS line describe_encounter_combat() already renders for
+    # the identical Challenge/Pursue situation was silently missing.
+    state, item_ids = _state_with_items(Treasure.ABILITY_TACTICAL)
+    result = PatrolExecutionResult(
+        intercepted=True,
+        target_leader_id=2,
+        combat_occurred=True,
+        winner_leader_id=1,
+        loser_leader_id=2,
+        loser_killed=True,
+        looted_item_ids=item_ids,
+    )
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0])
+
+    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
+
+    assert lines == [
+        "Borin was mortally wounded.",
+        "and so it was that Borin met Borin's unseemly end.",
+        "Aldric looked with satisfaction at the remains of Borin.",
+    ]
+
+
+def test_describe_patrol_combat_narrates_the_spoils_line_when_the_patroller_is_the_loser():
+    # The winner isn't always "a" -- an intruder can win the duel and
+    # loot the patroller. Proves winner_name resolution, not just the
+    # a_leader_id-is-always-the-winner shortcut.
+    state, item_ids = _state_with_items(Treasure.ABILITY_TACTICAL)
+    result = PatrolExecutionResult(
+        intercepted=True,
+        target_leader_id=2,
+        combat_occurred=True,
+        winner_leader_id=2,
+        loser_leader_id=1,
+        loser_killed=True,
+        looted_item_ids=item_ids,
+    )
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0])
+
+    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
+
+    assert lines == [
+        "Aldric was mortally wounded.",
+        "and so it was that Aldric met Aldric's unseemly end.",
+        "Borin looked with satisfaction at the remains of Aldric.",
+    ]
+
+
+def test_describe_patrol_combat_omits_the_spoils_line_without_state():
+    # Same "no data, no guess" fallback _item_display_names() itself
+    # already documents -- non-regression for every existing caller
+    # that never threads state through.
+    result = PatrolExecutionResult(
+        intercepted=True,
+        target_leader_id=2,
+        combat_occurred=True,
+        winner_leader_id=1,
+        loser_leader_id=2,
+        loser_killed=True,
+        looted_item_ids=[999],
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+
+    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+
+    assert lines == [
+        "Borin was mortally wounded.",
+        "and so it was that Borin met Borin's unseemly end.",
+    ]
+
+
 def test_describe_turn_results_narrates_a_patrol_interception_sentinel():
     state = GameState()
     location = HexCoord(0, 0)

@@ -34283,6 +34283,35 @@ code (`assert False`) and pass against the fix; the full pre-existing
 ever exercises this exact block with a dead leader). Test count:
 6807 -> 6808. Full suite verified green before and after.
 
+### Phase 836: fix `describe_patrol_combat()`'s own missing SPOILS line
+
+Continuing the manual cover-to-cover sweep: `describe_challenge()` and
+`describe_trail()` were both reviewed cover to cover with no bug found
+(both are thin wrappers over already-reviewed shared machinery, and
+both real call sites already resolve names via the dead-actor-safe
+`_leader_name()`/`_leader_location()` helpers). `describe_patrol_
+combat()` surfaced a real, confirmed bug: `PatrolExecutionResult.
+looted_item_ids` (Phase 313, the exact same "loser's items transfer to
+the winner on a decisive kill" fact `ChallengeExecutionResult`/
+`PursueExecutionResult` already carry, and `execute_patrol()` already
+populates on every decisive Patrol kill) was never read by this
+composer -- the real SPOILS sentence `describe_encounter_combat()`
+already renders for the identical Challenge/Pursue situation (Phase
+777/830) was silently missing for Patrol. The same "sibling field
+never cross-checked" bug class already found once this session in
+`describe_kill_enemy_berserk_retaliation()` (Phase 830). Fixed by
+threading a new optional `state` parameter through (mirroring `describe_
+encounter_combat()`'s own exact shape) and reusing `_item_display_
+names()`/`render_treasure_spoils_from_corpse()`/`render_group_spoils_
+from_corpse()` verbatim, including the `winner_name` resolution needed
+since either side (patroller or intruder) can be the loser. 3 new
+regression tests (single item, two-plus items with the winner being
+the *target* rather than the patroller, and the no-`state` fallback)
+confirmed to fail against the pre-fix code (`TypeError: unexpected
+keyword argument 'state'`) and pass against the fix; every pre-existing
+test for this composer is unaffected. Test count: 6808 -> 6811. Full
+suite verified green before and after.
+
 ## Setup
 
 ```

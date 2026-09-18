@@ -6934,7 +6934,14 @@ def describe_encounter_combat(
 
 
 def describe_patrol_combat(
-    result: PatrolExecutionResult, *, a_leader_id: int, a_name: str, b_name: str, rng: random.Random, is_sea: bool = False
+    result: PatrolExecutionResult,
+    *,
+    a_leader_id: int,
+    a_name: str,
+    b_name: str,
+    rng: random.Random,
+    is_sea: bool = False,
+    state: GameState | None = None,
 ) -> list[str]:
     """Phase 733: a smaller sibling of ``describe_encounter_combat()``
     above, for ``turn/patrol_execution.py PatrolExecutionResult``
@@ -6952,6 +6959,17 @@ def describe_patrol_combat(
     narrated here, the same "no source, no guess" stance `describe_
     encounter_combat()`'s own docstring already states for the
     identical situation.
+
+    **Phase 836 bug fix**: ``PatrolExecutionResult.looted_item_ids``
+    (Phase 313, the exact same "loser's own items transfer to the
+    winner on a decisive kill" fact ``ChallengeExecutionResult``/
+    ``PursueExecutionResult`` already carry) was populated by
+    ``execute_patrol()`` from day one but never read here -- this
+    composer's own death branch stopped at ``render_character_death()``,
+    silently dropping the SPOILS sentence ``describe_encounter_combat()``
+    already renders for the identical situation. The same "sibling
+    field never cross-checked" class already found in this file's own
+    Kill-Enemy Berserk-retaliation composer (Phase 830).
     """
 
     if not result.combat_occurred:
@@ -6973,8 +6991,17 @@ def describe_patrol_combat(
 
     if result.loser_killed:
         loser_name = a_name if result.loser_leader_id == a_leader_id else b_name
+        winner_name = b_name if loser_name == a_name else a_name
         lines.append(render_mortally_wounded(loser_name, rng, is_sea=is_sea))
         lines.append(render_character_death(loser_name, rng))
+        if result.looted_item_ids:
+            item_names = _item_display_names(state, result.looted_item_ids)
+            if len(item_names) == 1:
+                lines.append(render_treasure_spoils_from_corpse(winner_name, loser_name, rng))
+            elif len(item_names) >= 2:
+                lines.append(
+                    render_group_spoils_from_corpse(winner_name, loser_name, item_names, rng, is_sea=is_sea)
+                )
 
     return lines
 
@@ -7883,7 +7910,13 @@ def describe_turn_results(
             is_sea = province is not None and province.effective_terrain() is Terrain.SEA
             lines.extend(
                 describe_patrol_combat(
-                    entry.result, a_leader_id=entry.leader_id, a_name=caster_name, b_name=target_name, rng=rng, is_sea=is_sea
+                    entry.result,
+                    a_leader_id=entry.leader_id,
+                    a_name=caster_name,
+                    b_name=target_name,
+                    rng=rng,
+                    is_sea=is_sea,
+                    state=state,
                 )
             )
             continue
