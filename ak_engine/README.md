@@ -34397,6 +34397,30 @@ against the fix; every pre-existing test for this composer is
 unaffected. Test count: 6814 -> 6815. Full suite verified green before
 and after.
 
+### Phase 847: fix `record_uncontested_conquest_world_events()`'s own dead-actor narration drop
+
+Continuing the manual cover-to-cover sweep: `record_uncontested_
+conquest_world_events()` surfaced a real, confirmed bug of the same
+"dead-actor narration" class already fixed several times this session
+(Phase 612/649/827/829/835/844/845/846): it resolved the conquering
+leader via a bare, alive-only `state.leaders.get(entry.leader_id)`, not
+the dead-actor-safe `_leader_name()` helper every other narration
+branch in this file already uses. A Hero can uncontestedly conquer a
+province in an early phase and then die in a LATER phase of the SAME
+turn (e.g. losing a Challenge) -- confirmed by direct reproduction
+(`GameState.remove_leader()`, matching the real death mechanism) that
+this silently dropped the ENTIRE conquest notice, even though the
+conquest had already happened and the province had already changed
+hands. (A King who dies is unaffected -- `remove_leader()`'s own
+succession installs a same-`leader_id` Royal Heir who keeps the dead
+King's own name, so `state.leaders.get(...)` still resolves correctly
+for that case; only an ordinary Hero, who gets no such replacement,
+triggers the bug.) Fixed by resolving the attacker's own display name
+via `_leader_name()` instead. New regression test confirmed to fail
+against the pre-fix code (`assert 0 == 1`) and pass against the fix;
+every pre-existing test for this composer is unaffected. Test count:
+6815 -> 6816. Full suite verified green before and after.
+
 ## Setup
 
 ```

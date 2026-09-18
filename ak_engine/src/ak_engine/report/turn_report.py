@@ -14307,14 +14307,23 @@ def record_uncontested_conquest_world_events(state: GameState, results: list[Pha
         new_location = getattr(result, "new_location", None)
         if new_location is None:
             continue
-        leader = state.leaders.get(entry.leader_id)
+        # Phase 847 bug fix: a bare `state.leaders.get(entry.leader_id)`
+        # silently dropped this ENTIRE conquest notice whenever the
+        # conquering Hero died in a LATER phase of the SAME turn (e.g.
+        # losing a Challenge) -- `remove_leader()` only installs a
+        # same-id Royal Heir for a King (whose own name survives via
+        # succession anyway), never for an ordinary Hero, so the dead
+        # Hero's `leader_id` is simply gone from `state.leaders` by the
+        # time this runs. `_leader_name()` already exists to fix this,
+        # matching every other narration branch in this file.
+        attacker_name = _leader_name(state, entry.leader_id)
         province = state.provinces.get(new_location)
-        if leader is None or province is None:
+        if attacker_name is None or province is None:
             continue
         province_name = _province_label(state, new_location)
         is_sea = province.effective_terrain() == Terrain.SEA
         prefix = _season_phrase_for_phase_label(entry.phase_label)
-        line = render_uncontested_conquest(leader.name, province_name, rng, is_sea=is_sea)
+        line = render_uncontested_conquest(attacker_name, province_name, rng, is_sea=is_sea)
         state.record_world_event(new_location, [prefix + line])
 
 

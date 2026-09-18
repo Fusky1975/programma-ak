@@ -14065,6 +14065,31 @@ def test_record_uncontested_conquest_world_events_records_a_conquest_event():
     assert event.lines == ["In late summer, Attackia's forces conquered Border Fort without any major battles."]
 
 
+def test_record_uncontested_conquest_world_events_survives_the_conqueror_dying_later_the_same_turn():
+    # Phase 847: a Hero can uncontestedly conquer a province in an early
+    # phase and then die in a LATER phase of the same turn (e.g. losing
+    # a Challenge) -- the already-happened conquest must still be
+    # narrated. A bare, alive-only state.leaders.get(entry.leader_id)
+    # silently dropped the whole notice once the conqueror was dead by
+    # report-generation time.
+    state, battle_coord, _watcher_coord = _gir_state()
+    state.add_leader(LeaderState(1, 1, "Attackia", battle_coord))
+    results = [
+        PhaseDispatchResult(
+            leader_id=1, segment_index=0, phase_label="P2", action=ActionCode.LMOVE,
+            result=_fake_conquest_result(True, battle_coord), error=None,
+        )
+    ]
+    state.remove_leader(1)  # the conqueror died in a later phase this same turn
+
+    record_uncontested_conquest_world_events(state, results, ScriptedRandom([0.1, 0.1], choice_indices=[0]))
+
+    assert len(state.world_events) == 1
+    event = state.world_events[0]
+    assert event.coord == battle_coord
+    assert event.lines == ["In late summer, Attackia's forces conquered Border Fort without any major battles."]
+
+
 def test_record_uncontested_conquest_world_events_skips_a_battle_won_conquest():
     # A real BattleReport means record_battle_world_events() already
     # recorded this one via its own winner sentence -- must not double-record.
