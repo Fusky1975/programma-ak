@@ -33730,6 +33730,73 @@ confirmed to fail against the pre-fix code (2 real `KeyError` crashes,
 the fix; every pre-existing test in the file (141 total) is unaffected.
 Test count: 6776 -> 6779. Full suite verified green before and after.
 
+### Phase 822: a dead leader's queued Practice order could still train armies or crash
+
+Continuing the manual bug-hunting sweep, this phase read `turn/
+practice_execution.py` (1469 lines) cover to cover -- the module's own
+extensively-annotated docstring (the real AKGEN-sourced aptitude-gate/
+persistent-credit roll sequencing, the Tactical/Naval army-training
+mechanic and its Improved Training/Wargames Mastery bonuses, Sageness's
+independent device-discovery roll and its real diffusion-biased
+Discovery-selection formula, the Professor Whizdumb aptitude bonus, the
+Society Maps/Make Gems/Thief Banditry-Piracy Advanced-Ability side
+effects, the Super Sage university bonus), `roll_practice_aptitude_
+gate()`/`_resolve_practice_attempt()`/`resolve_practice_solo()`/`_pair()`/
+`_group()`, every `_maybe_*()` helper, `_select_discovery_to_grant()`,
+`_roll_sage_device_discovery()`, `execute_practice_tactical()`/`_group()`,
+`_select_teacher()`/`_teacher_aptitude_bonus()`, and `execute_practice()`/
+`execute_practice_group()` themselves -- all checked out exactly against
+their own docstring citations. The standing technique found zero
+`Combatant(`/`BattleUnit(` construction sites in this file (a pure
+skill/army-training dispatch module, no combat dataclass involved).
+
+The real, confirmed bug: `execute_practice()` had no leader-liveness
+check of its own, the identical gap already found and fixed for Leave/
+Pick_Up in `turn/plan_dispatch.py` (Phase 821) -- `_dispatch_practice()`
+calls it with no upstream check either, and `run_leader_plan()`'s own
+per-phase loop dispatches every phase of a leader's plan regardless of
+whether that leader is still alive by the time a later phase is
+reached. This one gap had two distinct, previously-unnoticed live
+consequences, both traced by direct reproduction before touching any
+code: for `Ability.TACTICAL`/`Ability.NAVAL`, `execute_practice_
+tactical()` needs no `LeaderState` at all (only `state.armies_
+commanded_by(leader_id)`, which resolves purely from `ArmyState.
+commanded_by` and doesn't care whether that leader still exists) -- so
+a dead leader's own queued Practice order would silently keep training
+their own commanded armies upward from beyond the grave, exactly the
+"executes when it shouldn't" flavor of bug as Phase 821's own Leave
+finding; for every other ability, the acting leader was resolved via a
+bare `state.leaders[leader_id]` lookup, raising an unhandled `KeyError`
+instead (caught by `run_leader_plan()`'s own top-level `try`/`except`,
+so it doesn't crash the whole turn, but an opaque exception rather than
+the same clean no-op every other dead-leader order now produces).
+Confirmed directly: a leader removed from `state.leaders` (simulating
+an earlier-phase death) with two commanded armies (one Green, one
+higher-tier to inspire it) still had the Green army's Quality tier
+rolled upward by a Tactical Practice order issued in its own name.
+Fixed by resolving the acting leader via `.get()` once, before either
+branch, and returning the same all-defaults `PracticeExecutionResult`
+already used for the comatose case when it's `None`. New regression
+tests (2, covering the Tactical-training silent-success case and the
+ordinary-ability crash case) confirmed to fail against the pre-fix code
+(one wrong-success assertion, one real `KeyError`) and pass against the
+fix; every pre-existing test in the file (159 total) is unaffected.
+Test count: 6779 -> 6781. Full suite verified green before and after.
+
+While chasing this exact bug class down, a targeted grep for the
+identical `state.leaders[leader_id]` bare-indexing-of-the-acting-leader
+pattern turned up several more candidate sites this phase does **not**
+touch, each in a different, not-yet-reviewed file, deliberately left
+for whichever future phase reviews that file rather than fixed on
+spec without the same direct-reproduction verification this bug and
+Phase 821's own findings both got: `turn/plan_dispatch.py _dispatch_
+hire()` (a genuine miss during Phase 821's own review of that exact
+file -- every other sibling in that cluster was checked, this one
+wasn't), `turn/aspy_execution.py`, `turn/feature_power_execution.py`
+(4 separate sites), `turn/office_holder.py`, `turn/recruit_execution.py`,
+and `turn/use_mi_execution.py`. Recorded as a new standing pre-check
+for this sweep, alongside the existing `Combatant(`/`BattleUnit(` grep.
+
 ## Setup
 
 ```

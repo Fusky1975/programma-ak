@@ -1198,6 +1198,26 @@ def execute_practice(
     ``Ability.TACTICAL``/``Ability.NAVAL`` (``_ARMY_TRAINING_ABILITIES``,
     Phase 644) instead route to ``execute_practice_tactical`` -- see
     module docstring for its own, narrower scope.
+
+    **Phase 822 bug fix**: ``turn/plan_dispatch.py``'s own ``_dispatch_
+    practice()`` calls this function with no leader-liveness check of
+    its own -- the same "a leader who died earlier in the same turn can
+    still have a later phase dispatched" gap already fixed for Leave/
+    Pick_Up in that module (Phase 821). Previously this had two distinct
+    live consequences here, both now closed by one guard: for the
+    ``TACTICAL``/``NAVAL`` branch, ``execute_practice_tactical()`` needs
+    no ``LeaderState`` at all (only ``state.armies_commanded_by(leader_
+    id)``, which doesn't care whether ``leader_id`` still resolves) --
+    so a dead leader's own queued Practice order would silently keep
+    training their own commanded armies from beyond the grave; for
+    every other ability, the acting leader was resolved via a bare
+    ``state.leaders[leader_id]`` lookup, raising an unhandled ``KeyError``
+    instead (caught by ``run_leader_plan()``'s own top-level ``try``/
+    ``except``, so it doesn't crash the whole turn, but still an opaque
+    exception rather than the same clean no-op every other dead-leader
+    order now produces). Both are now the identical, single "no acting
+    leader, nothing happens" result already used for the comatose case
+    a few lines below (every field at its own default).
     """
 
     rng = rng if rng is not None else random.Random()
@@ -1205,11 +1225,14 @@ def execute_practice(
     if not isinstance(ability, Ability):
         return PracticeExecutionResult(ability=ability, not_implemented_for_ability=True)
 
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return PracticeExecutionResult(ability=ability)
+
     if ability in _ARMY_TRAINING_ABILITIES:
         trained_army_ids = execute_practice_tactical(state, leader_id, rng)
         return PracticeExecutionResult(ability=ability, trained_army_ids=trained_army_ids)
 
-    leader: LeaderState = state.leaders[leader_id]
     if leader.is_comatose:
         # Phase 310: Kill_Enemy's own coma variant ([4.25.2]) -- "non
         # potrà aumentare i talenti con l'esperienza" (cannot raise

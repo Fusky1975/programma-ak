@@ -388,6 +388,34 @@ def test_execute_practice_tactical_does_not_touch_personal_skill():
     assert state.leaders[1].skills is None  # [6.1] never touches personal skill at all
 
 
+# -- Phase 822: a leader who already died earlier this same turn can't
+# still execute a Practice order queued for a later phase --
+
+
+def test_execute_practice_by_a_dead_leader_is_a_clean_no_op():
+    state = _state_with_leader(skills=SkillTable([0] * 30))
+    del state.leaders[1]  # died in an earlier phase this same turn
+
+    result = execute_practice(state, leader_id=1, ability=Ability.SAGE, rng=ScriptedRandom([]))
+
+    assert result.skill_rose is False
+    assert result.aptitude_rose is False
+    assert result.new_skill is None
+    assert result.new_aptitude is None
+
+
+def test_execute_practice_tactical_by_a_dead_leader_does_not_train_armies():
+    state = _state_with_leader(skills=None)
+    state.add_army(_army(1, Quality.GREEN))
+    state.add_army(_army(2, Quality.VETERAN))
+    del state.leaders[1]  # died in an earlier phase this same turn
+
+    result = execute_practice(state, leader_id=1, ability=Ability.TACTICAL, rng=ScriptedRandom([0.01]))
+
+    assert result.trained_army_ids == ()
+    assert state.armies[1].quality == Quality.GREEN  # untouched, not trained from beyond the grave
+
+
 # -- Phase 167: Ability.TACTICAL's own army-training mechanic ([6.1]) -------
 # Unaffected by Phase 449 -- Tactical never routes through the skill-rise
 # mechanic at all, see module docstring.
