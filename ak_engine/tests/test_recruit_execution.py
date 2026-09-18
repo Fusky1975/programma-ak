@@ -827,3 +827,27 @@ def test_a_dinosaur_recruit_locks_out_a_different_army_type_in_the_same_request(
     assert len(result.recruited) == 1
     assert result.recruited[0].army_type is ArmyType.DINOSAURS
     assert result.province_locked == [ArmyType.LT_CAVALRY]
+
+
+def test_execute_recruit_by_a_dead_leader_is_a_clean_no_op_not_a_crash():
+    # Phase 825: a leader who died earlier this same turn can still have a
+    # later-phase Recruit order dispatched for them (turn/plan_dispatch.py's
+    # own per-phase loop has no leader-liveness gate of its own). Previously
+    # this raised a real, unhandled KeyError from a bare state.leaders[
+    # leader_id] lookup.
+    state = build_state()
+    del state.leaders[LEADER_ID]  # died in an earlier phase this same turn
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.limit_blocked == []
+    assert result.gold_blocked == []
+    assert result.incompatible == []
+    assert result.treat_blocked == []
+    assert result.territory_blocked == []
+    assert result.province_locked == []
+    assert result.total_gold_spent == 0
+    assert state.kingdoms[1].treasury == 100  # untouched
+    assert state.armies == {}  # nothing recruited

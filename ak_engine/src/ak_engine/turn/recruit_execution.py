@@ -253,9 +253,39 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
     raise" convention already used for Disband/Fire/Pick_Up's own
     co-location checks (Phase 40), rather than assigning command to a
     character who couldn't plausibly have issued this order.
+
+    **Phase 825 bug fix**: the *acting* leader (the one issuing this
+    Recruit order) was resolved via a bare ``state.leaders[leader_id]``
+    lookup, unconditionally -- a leader who died earlier in the same
+    turn can still have a later-phase Recruit order dispatched for
+    them, since ``turn/plan_dispatch.py``'s own per-phase loop has no
+    leader-liveness gate of its own (the same "dead leader with a
+    stale later-phase order" gap already fixed for Leave/Pick_Up
+    (Phase 821), Practice (Phase 822), Hire (Phase 823), and ASpy
+    (Phase 824)). Previously this raised an unhandled ``KeyError``,
+    caught upstream by ``run_leader_plan()``'s own top-level
+    ``try``/``except`` (so it never crashed the whole turn), but an
+    opaque exception instead of a clean, empty result. Resolved via
+    ``.get()``, returning a fully-default ``RecruitExecutionResult(
+    request=request)`` (nothing recruited, nothing blocked-for-a-
+    specific-reason) when the acting leader no longer exists -- none of
+    this dataclass's own existing fields (``recruited``/``limit_
+    blocked``/``gold_blocked``/``incompatible``/``treat_blocked``/
+    ``territory_blocked``/``province_locked``) semantically represents
+    "the acting leader is dead, the whole order never started", so this
+    mirrors ``execute_practice()``'s own Phase 822 precedent of reusing
+    an already-established "no-op" result shape rather than inventing a
+    new category. The two adjacent bare indices right below this guard
+    (``state.provinces[location]``, ``state.kingdoms[kingdom_id]``) are
+    out of scope for this same bug class -- ``location`` is the now-
+    guaranteed-live ``leader``'s own current position (always a real
+    province by construction), and ``kingdom_id`` is the dispatcher's
+    own parameter, not a value carried stale from an earlier phase.
     """
 
-    leader = state.leaders[leader_id]
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return RecruitExecutionResult(request=request)
     location = leader.location
     province = state.provinces[location]
     kingdom = state.kingdoms[kingdom_id]

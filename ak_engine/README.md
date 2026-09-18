@@ -33867,6 +33867,52 @@ Of the standing technique's own remaining candidate list, 3 sites in 3
 other files remain genuinely unverified: `turn/office_holder.py:579`,
 `turn/recruit_execution.py:258`, `turn/use_mi_execution.py:180`.
 
+### Phase 825: `execute_recruit()`'s own dead-leader crash
+
+Continuing the standing bare-acting-leader-index sweep, verifying the
+next candidate directly (`turn/recruit_execution.py:258`). Two of the
+three remaining candidates were investigated first and found provably
+safe by construction, not fixed: `turn/feature_power_execution.py`'s 4
+bare-index sites are only ever reached via `turn/search_execution.py
+_apply_scout()`, which already guards `leader is None` via `.get()`
+before ever calling in; `turn/office_holder.py:579` (`leader_office_
+rank()`) is an end-of-turn report-query function whose own `leader_id`
+is always freshly re-derived from `state.leaders.items()` at call time,
+never a mid-turn order-dispatch id carried stale across phases -- a
+fundamentally different, safe context from the mid-turn dispatch
+functions this sweep has been fixing.
+
+`execute_recruit()` itself was a real, reachable bug: it resolved the
+acting leader (whoever is issuing the Recruit order) via a bare `state.
+leaders[leader_id]` lookup, unconditionally, before touching the
+request at all -- the same "a leader who died earlier in the same turn
+can still have a later phase dispatched" gap already fixed for Leave/
+Pick_Up (Phase 821), Practice (Phase 822), Hire (Phase 823), and ASpy
+(Phase 824). Confirmed by direct reproduction: a Recruit order
+dispatched for a `leader_id` no longer present in `state.leaders`
+raised an unhandled `KeyError`, caught upstream by `run_leader_plan()`'s
+own top-level `try`/`except` (so it never crashed the whole turn), but
+an opaque exception instead of a clean, empty result. Fixed via `.get()`,
+returning a fully-default `RecruitExecutionResult(request=request)` --
+none of that dataclass's own existing fields (`recruited`/`limit_
+blocked`/`gold_blocked`/`incompatible`/`treat_blocked`/`territory_
+blocked`/`province_locked`) semantically represents "the acting leader
+is dead, the whole order never started," so this reuses the same
+all-defaults "no-op" shape `execute_practice()` already established at
+Phase 822 rather than inventing a new category. The two adjacent bare
+indices right below the fixed guard (`state.provinces[location]`,
+`state.kingdoms[kingdom_id]`) were confirmed out of scope for this same
+bug class -- `location` is the now-guaranteed-live leader's own current
+position, and `kingdom_id` is the dispatcher's own parameter, neither
+ever carried stale from an earlier phase. New regression test confirmed
+to fail against the pre-fix code (a real `KeyError`) and pass against
+the fix; every pre-existing test in the file (60 total) is unaffected.
+Test count: 6783 -> 6784. Full suite verified green before and after.
+
+This leaves exactly 1 site in 1 other file genuinely unverified from
+the standing technique's own original candidate list: `turn/use_mi_
+execution.py:180`.
+
 ## Setup
 
 ```
