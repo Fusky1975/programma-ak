@@ -323,11 +323,14 @@ from ak_engine.report.turn_report import (
     render_search_feature_already_sacked,
     render_skeletal_army_fervor,
     render_sneak_detected,
+    render_espionage_discovery,
+    render_spy_adjacent_forces,
     render_spy_adjacent_owners,
     render_spy_army_type,
     render_spy_capital_province,
     render_spy_character_here,
     render_spy_elements_intro,
+    render_spy_feature_knowledge,
     render_spy_garrison,
     render_spy_leads,
     render_spy_no_characters,
@@ -12921,6 +12924,131 @@ def test_describe_aspy_renders_no_owner_and_no_adjacent_owners_as_real_facts():
 
     assert lines[1] == "Greenfield is not owned by any Kingdom."
     assert lines[2] == "None of the provinces adjacent to Greenfield are owned by any Kingdom."
+
+
+# -- Phase 850: render_espionage_discovery / render_spy_adjacent_forces / render_spy_feature_knowledge (project-original) --
+
+
+def test_render_espionage_discovery():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
+    result = render_espionage_discovery("Aldric", "Greenfield", Discovery.SEXTANT, rng)
+    assert result == "Through espionage in Greenfield, Aldric learned the secrets of the Sextant."
+
+
+def test_render_spy_adjacent_forces():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
+    result = render_spy_adjacent_forces("Northfield", ["1st Bowmen", "2nd Axemen"], rng)
+    assert result == "Animal scouts report 1st Bowmen and 2nd Axemen near Northfield."
+
+
+def test_render_spy_feature_knowledge_all_three_levels():
+    rng = ScriptedRandom([0.1] * 4, choice_indices=[0])
+    assert (
+        render_spy_feature_knowledge("Greenfield", 7, 1, rng)
+        == "Regarding Feature 7 in Greenfield, the owner knows something is hidden there, but no more."
+    )
+    assert (
+        render_spy_feature_knowledge("Greenfield", 7, 2, rng)
+        == "Regarding Feature 7 in Greenfield, the owner has identified what it is."
+    )
+    assert (
+        render_spy_feature_knowledge("Greenfield", 7, 3, rng)
+        == "Regarding Feature 7 in Greenfield, the owner fully understands its secrets."
+    )
+
+
+def test_describe_aspy_renders_espionage_discoveries_right_before_closing():
+    report = SpyReport(
+        province=HexCoord(0, 0), owner_kingdom_id=1, discoveries_obtained=(Discovery.SEXTANT, Discovery.LAND_SHIP)
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0])
+
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
+
+    assert "Through espionage in Greenfield, Aldric learned the secrets of the Sextant." in lines
+    assert "Through espionage in Greenfield, Aldric learned the secrets of the Land Ship." in lines
+    sextant_index = lines.index("Through espionage in Greenfield, Aldric learned the secrets of the Sextant.")
+    assert lines[-1] == (
+        "Aldric also kept tabs on the characters in Greenfield and any "
+        "further news is in the General Intelligence Report."
+    )
+    assert sextant_index == len(lines) - 3
+
+
+def test_describe_aspy_omits_espionage_discoveries_when_none_obtained():
+    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1)  # discoveries_obtained defaults to ()
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
+
+    assert not any("espionage" in line for line in lines)
+
+
+def test_describe_aspy_renders_adjacent_forces_right_after_adjacent_owners_and_skips_empty_ones():
+    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1)
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(
+        report,
+        spy_name="Aldric",
+        province_name="Greenfield",
+        owner_name=None,
+        adjacent_owner_names=[],
+        adjacent_force_names={"Northfield": ("1st Bowmen",), "Emptyville": ()},
+        rng=rng,
+    )
+
+    assert lines[3] == "Animal scouts report 1st Bowmen near Northfield."
+    assert not any("Emptyville" in line for line in lines)
+
+
+def test_describe_aspy_omits_adjacent_forces_line_when_not_supplied():
+    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1)
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
+
+    assert not any("Animal scouts" in line for line in lines)
+
+
+def test_describe_aspy_renders_feature_knowledge_between_taxation_and_characters_sorted_by_id():
+    report = SpyReport(
+        province=HexCoord(0, 0),
+        owner_kingdom_id=1,
+        recruitable_army_types=[ArmyType.BOWMEN],
+        tax_estimate=250,
+        features_known_to_owner={9: 3, 4: 1},
+    )
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
+
+    low_id_index = lines.index(
+        "Regarding Feature 4 in Greenfield, the owner knows something is hidden there, but no more."
+    )
+    high_id_index = lines.index("Regarding Feature 9 in Greenfield, the owner fully understands its secrets.")
+    tax_index = lines.index("Approximate Taxation: 250")
+    assert tax_index < low_id_index < high_id_index
+    assert high_id_index < lines.index("there were no conspicuous characters or forces in Greenfield.")
+
+
+def test_describe_aspy_omits_feature_knowledge_when_empty():
+    report = SpyReport(province=HexCoord(0, 0), owner_kingdom_id=1)  # features_known_to_owner defaults to {}
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0])
+
+    lines = describe_aspy(
+        report, spy_name="Aldric", province_name="Greenfield", owner_name=None, adjacent_owner_names=[], rng=rng
+    )
+
+    assert not any("Regarding Feature" in line for line in lines)
 
 
 # -- Phase 231: record_battle_world_events() / describe_general_intelligence_report() --

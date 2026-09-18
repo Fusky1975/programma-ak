@@ -2283,6 +2283,68 @@ def render_spy_garrison(army_names: list[str], rng: random.Random) -> str:
     return render(SPY_GARRISON_APPROXIMATELY_TEMPLATE, {}, rng=rng, lists={"^V": army_names})
 
 
+# Phase 850 -- three real ``SpyReport`` facts (Phase 267/694/705) were
+# computed (including a real, live gameplay effect for the espionage
+# case -- Discoveries are already granted to the caster's own kingdom
+# by the time the report is built) but never rendered anywhere --
+# confirmed by grep, zero references to any of the three fields
+# anywhere in this file before this phase. No ``SAY.PAS`` template
+# survives for any of them (each is a derived fact from an Advanced
+# Ability's own plain-English description, not one of the enumerated
+# ``SAY.PAS`` line items Phase 115 already mined) -- project-original
+# text, authored at the user's own direct request ("Scrivi tu il testo
+# originale"), the same precedent already set for the owner/adjacent-
+# owners lines above (Phase 400) and Trail's own guessed-distance/
+# offices-held facts (Phase 832).
+SPY_ESPIONAGE_DISCOVERY_TEMPLATE = "Through espionage in @, < learned the secrets of the !."
+SPY_ADJACENT_FORCES_TEMPLATE = "Animal scouts report ^L^V near @."
+# ``level`` is ``models/feature.py Feature.discovery_level()``'s own
+# 1-3 tier (bare existence / identified / fully understood) -- this
+# reports only the *tier* of the province owner's own knowledge, not
+# the underlying secret itself. ``AdvancedAbility.SPY_EXPANDED_SPYING``'s
+# own text ("gains information on what features are known to the
+# owning kingdom") is about the fact of knowledge, not a proxy for a
+# fresh Scout attempt, so no feature name/power is revealed here.
+_SPY_FEATURE_KNOWLEDGE_LEVEL_PHRASE: dict[int, str] = {
+    1: "knows something is hidden there, but no more",
+    2: "has identified what it is",
+    3: "fully understands its secrets",
+}
+SPY_FEATURE_KNOWLEDGE_TEMPLATE = "Regarding Feature # in @, the owner |."
+
+
+def render_espionage_discovery(spy_name: str, province_name: str, discovery: Discovery, rng: random.Random) -> str:
+    """Renders one entry of ``SpyReport.discoveries_obtained`` (Phase
+    267's real espionage-diffusion mechanic, project-original text --
+    see module comment above).
+    """
+
+    values = {"<": spy_name, "@": province_name, "!": DISCOVERY_NAME[discovery]}
+    return render(SPY_ESPIONAGE_DISCOVERY_TEMPLATE, values, rng=rng)
+
+
+def render_spy_adjacent_forces(province_name: str, army_names: list[str], rng: random.Random) -> str:
+    """Renders one entry of ``SpyReport.adjacent_military_forces``
+    (``AdvancedAbility.DRUIDIC_ANIMAL_SPIES``, Phase 694, project-
+    original text -- see module comment above). Only called for a
+    province with at least one real army -- "only military forces are
+    reported" (the ability's own text) reads as silence, not an empty-
+    province notice, for a neighbor with none.
+    """
+
+    return render(SPY_ADJACENT_FORCES_TEMPLATE, {"@": province_name}, rng=rng, lists={"^V": army_names})
+
+
+def render_spy_feature_knowledge(province_name: str, feature_id: int, level: int, rng: random.Random) -> str:
+    """Renders one entry of ``SpyReport.features_known_to_owner``
+    (``AdvancedAbility.SPY_EXPANDED_SPYING``, Phase 705, project-
+    original text -- see module comment above).
+    """
+
+    values = {"@": province_name, "#": str(feature_id), "|": _SPY_FEATURE_KNOWLEDGE_LEVEL_PHRASE[level]}
+    return render(SPY_FEATURE_KNOWLEDGE_TEMPLATE, values, rng=rng)
+
+
 def describe_aspy(
     report: SpyReport,
     *,
@@ -2290,6 +2352,7 @@ def describe_aspy(
     province_name: str,
     owner_name: str | None,
     adjacent_owner_names: list[str],
+    adjacent_force_names: dict[str, tuple[str, ...]] | None = None,
     rng: random.Random,
 ) -> list[str]:
     """Assembles ASpy's full report body from an already-computed
@@ -2343,17 +2406,45 @@ def describe_aspy(
     docstring), so there is no sourced slot to put an alignment/temper
     guess into; that estimated data remains available on the
     ``SpyReport`` itself for a caller who wants it some other way.
+
+    **Phase 850 -- three more real, computed ``SpyReport`` facts, all
+    project-original text (see module comment above the 3 new render
+    functions)**: ``adjacent_force_names`` (``AdvancedAbility.DRUIDIC_
+    ANIMAL_SPIES``'s own already-resolved province-name -> army-names
+    map -- this module still never looks up ``GameState`` itself, so
+    the caller resolves ``SpyReport.adjacent_military_forces``'s own
+    ``HexCoord`` keys into names first, same convention as ``owner_
+    name``/``adjacent_owner_names``) renders right after the adjacent-
+    owners line, since both are about the spied province's own
+    neighbors; an empty army-names tuple for a given neighbor renders
+    nothing at all (silence, not an empty-province notice -- "only
+    military forces are reported"). ``SpyReport.features_known_to_
+    owner`` (``AdvancedAbility.SPY_EXPANDED_SPYING``) needs no extra
+    caller-side resolution (it's already a bare ``feature_id -> level``
+    map, and the caster's own current province is already ``province_
+    name``) -- renders right after Taxation, grouped with this
+    province's own other facts, sorted by ``feature_id`` for a
+    deterministic order. ``SpyReport.discoveries_obtained`` (Phase 267's
+    real espionage-diffusion mechanic -- already granted to the caster's
+    own kingdom by the time this report is built) renders right before
+    the closing line, as a "one more thing learned on this trip" fact,
+    one line per ``Discovery``.
     """
 
     lines = [render_spy_report_opening(spy_name, province_name, rng)]
     lines.append(render_spy_owner(province_name, owner_name, rng))
     lines.append(render_spy_adjacent_owners(province_name, adjacent_owner_names, rng))
+    for neighbor_name, army_names in (adjacent_force_names or {}).items():
+        if army_names:
+            lines.append(render_spy_adjacent_forces(neighbor_name, list(army_names), rng))
     if report.is_capital:
         lines.append(render_spy_capital_province(province_name, rng))
     for index, army_type in enumerate(report.recruitable_army_types, start=1):
         lines.append(render_spy_army_type(index, ARMY_TYPE_NAME[army_type], rng))
     if report.tax_estimate is not None:
         lines.append(render_spy_tax_estimate(report.tax_estimate, rng))
+    for feature_id, level in sorted(report.features_known_to_owner.items()):
+        lines.append(render_spy_feature_knowledge(province_name, feature_id, level, rng))
 
     has_characters = bool(report.spotted_characters)
     has_forces = bool(report.garrison_army_names) or any(c.army_names for c in report.spotted_characters)
@@ -2370,6 +2461,9 @@ def describe_aspy(
                     lines.append(render_spy_leads(character.name, list(character.army_names), rng))
         if report.garrison_army_names:
             lines.append(render_spy_garrison(list(report.garrison_army_names), rng))
+
+    for discovery in report.discoveries_obtained:
+        lines.append(render_espionage_discovery(spy_name, province_name, discovery, rng))
 
     lines.append(render_spy_report_closing(spy_name, province_name, rng))
     return lines
@@ -8015,6 +8109,10 @@ def describe_turn_results(
             adjacent_owner_names = [
                 _kingdom_display_name(state, kid) for kid in entry.result.adjacent_owners.values() if kid is not None
             ]
+            adjacent_force_names = {
+                _province_label(state, coord): army_names
+                for coord, army_names in entry.result.adjacent_military_forces.items()
+            }
             lines.extend(
                 describe_aspy(
                     entry.result,
@@ -8022,6 +8120,7 @@ def describe_turn_results(
                     province_name=province_name,
                     owner_name=owner_name,
                     adjacent_owner_names=adjacent_owner_names,
+                    adjacent_force_names=adjacent_force_names,
                     rng=rng,
                 )
             )
@@ -8043,6 +8142,10 @@ def describe_turn_results(
             adjacent_owner_names = [
                 _kingdom_display_name(state, kid) for kid in entry.result.adjacent_owners.values() if kid is not None
             ]
+            adjacent_force_names = {
+                _province_label(state, coord): army_names
+                for coord, army_names in entry.result.adjacent_military_forces.items()
+            }
             lines.extend(
                 describe_aspy(
                     entry.result,
@@ -8050,6 +8153,7 @@ def describe_turn_results(
                     province_name=province_name,
                     owner_name=owner_name,
                     adjacent_owner_names=adjacent_owner_names,
+                    adjacent_force_names=adjacent_force_names,
                     rng=rng,
                 )
             )

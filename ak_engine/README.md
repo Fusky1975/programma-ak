@@ -34480,6 +34480,52 @@ wording) and pass against the fix; every pre-existing test for this
 composer is unaffected. Test count: 6819 -> 6820. Full suite verified
 green before and after.
 
+### Phase 850: wire 3 real, never-rendered `SpyReport` facts into `describe_aspy()` (report-completeness gap)
+
+Continuing the manual cover-to-cover sweep, this time into `describe_
+aspy()` (the ASpy/Spy Province [3.14] report composer, never checked
+before in this session). `SpyReport` (`turn/aspy_execution.py`) has 3
+real, live, already-computed fields that were never referenced anywhere
+in `report/turn_report.py` -- confirmed by grep, zero hits before this
+phase: `discoveries_obtained` (Phase 267, the real espionage-diffusion
+mechanic -- Discoveries are already granted to the caster's own kingdom
+by the time the report is built), `adjacent_military_forces` (Phase
+694, `AdvancedAbility.DRUIDIC_ANIMAL_SPIES`), and `features_known_to_
+owner` (Phase 705, `AdvancedAbility.SPY_EXPANDED_SPYING`). All three are
+real, active gameplay mechanics with a genuine state effect (the
+espionage case even mutates the caster's own kingdom's Discovery set),
+but a caster who benefited from any of them got zero mention of it in
+their own ASpy report. No `SAY.PAS` template survives for any of the
+three (each is a derived fact from an Advanced Ability's own plain-
+English description, not one of the enumerated `SAY.PAS` line items
+Phase 115 already mined) -- asked the user directly before writing
+anything, per the standing "no source, no guess, ask" convention; the
+user confirmed authoring project-original text for all three, the same
+precedent already set for the owner/adjacent-owners lines (Phase 400)
+and Trail's own guessed-distance/offices-held facts (Phase 832). New
+`render_espionage_discovery()` (one line per Discovery, right before
+the closing line), `render_spy_adjacent_forces()` (one line per
+neighboring province with real forces, right after the adjacent-owners
+line -- a neighbor with no forces renders nothing at all, matching
+"only military forces are reported"), and `render_spy_feature_
+knowledge()` (one line per Feature the province's own owner has any
+real discovery-level knowledge of, sorted by `feature_id`, right after
+Taxation -- reports only the *tier* of the owner's own knowledge
+(bare-existence/identified/fully-understood), not the underlying secret
+itself, since the ability's own text is about the fact of knowledge,
+not a proxy for a fresh Scout attempt). `describe_aspy()` gained a new
+optional `adjacent_force_names` parameter (pre-resolved by the caller,
+matching this composer's own established "never looks up `GameState`
+itself" convention) threaded through both real call sites in `describe_
+turn_results()`. 9 new tests (3 direct render tests, 6 `describe_aspy()`
+end-to-end cases covering placement, sorting, and the two "nothing
+supplied, no change" non-regression cases) confirmed to fail against
+the pre-fix code (`ImportError`, since the render functions didn't
+exist yet) and pass against the fix; every one of the 14 pre-existing
+`describe_aspy()` tests is unaffected (all three new facts default to
+empty/omitted). Test count: 6820 -> 6829. Full suite verified green
+before and after.
+
 ## Setup
 
 ```
