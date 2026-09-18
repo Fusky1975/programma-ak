@@ -34124,6 +34124,49 @@ pre-existing tests for this composer are unaffected (neither sets
 `looted_item_ids`). Test count: 6790 -> 6792. Full suite verified green
 before and after.
 
+### Phase 831: `describe_recruit()`/`render_cast_announcement()` reviewed, `_AUTO_RESOLVABLE_CAST_TARGET_SPELLS` missing `Spell.CLAIRVOYANCE`
+
+Continuing the sweep. `describe_recruit()` (78 lines) reviewed cover to
+cover -- no bug found; the unled-commander fallback (`_unled_army_
+commander_name()`) and the dead-commander case (`_leader_name()`'s own
+alive-or-dead fallback, so a commander who died earlier the same turn
+is still named correctly, not mislabeled "Garrison") both check out
+against their own docstring citations, and every helper renderer/
+dataclass field matches exactly. `render_cast_announcement()` also
+reviewed cover to cover -- no bug found; every one of its 4 marker sets
+(`_CAST_ANNOUNCEMENT_TARGET_SPELLS`/`_PROVINCE_SPELLS`/`_ARMY_LIST_
+SPELLS`/`_FEATURE_SPELLS`) matches each spell's own real
+`SPELL_CAST_ANNOUNCEMENT` text exactly.
+
+Reviewing its own real caller, `describe_cast()`, found the actual bug:
+`describe_turn_results()`'s own `ActionCode.CAST`/`ActionCode.USE_MI`
+branches both gate on a *second*, sibling set,
+`_AUTO_RESOLVABLE_CAST_TARGET_SPELLS`, to decide which spells' target
+character they may safely auto-resolve via `state.leaders` before
+calling `describe_cast()` at all. That set was never updated to include
+`Spell.CLAIRVOYANCE` when Phase 193 added it to `render_cast_
+announcement()`'s own `_CAST_ANNOUNCEMENT_TARGET_SPELLS` (both real
+`Spell` members share the same `S_PCom` "private to the caster"
+severity as `Spell.CHARM`/`Spell.RESURRECTION`, already present in the
+set) -- a real "two lists meant to stay in sync silently drifted apart"
+bug, confirmed by direct reproduction: a successful Clairvoyance cast
+(direct, or via `Treasure.WAND_CLAIRVOYANCE`/Use_MI) produced zero
+turn-report lines at all, while an otherwise-identical Charm cast
+produced a real sentence. Fixed by adding `Spell.CLAIRVOYANCE` to
+`_AUTO_RESOLVABLE_CAST_TARGET_SPELLS`. New regression test confirmed to
+fail against the pre-fix code (`assert [] != []`) and pass against the
+fix; every pre-existing test in the file is unaffected (no existing
+test exercised this dispatch branch for any spell before this phase).
+A pre-existing unit test (`test_render_cast_announcement_clairvoyance_
+double_cast_clause_is_transcribed_honestly`) already covered the real,
+source-faithful "cast a spell and cast a spell..." double-statement
+`render_cast_announcement()` itself produces for Clairvoyance (the same
+class of oddity already documented for Oratory) -- the module's own
+docstring is extended to name it as a third such confirmed case, since
+this phase is the first to actually reach it end-to-end via `describe_
+turn_results()`. Test count: 6792 -> 6793. Full suite verified green
+before and after.
+
 ## Setup
 
 ```

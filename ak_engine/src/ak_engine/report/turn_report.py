@@ -3532,6 +3532,17 @@ def render_cast_announcement(
     ``Spell.CHARM`` entry, whose leading period (".< befriended...")
     likewise concatenates into a mid-sentence full stop.
 
+    **Phase 831**: ``Spell.CLAIRVOYANCE`` is a third such oddity, found
+    once this path was finally wired end-to-end into
+    ``describe_turn_results()`` (see that dispatch's own Phase 831 bug
+    fix note) -- its own entry ("< cast a ~ spell and could see
+    everything that happened to [.") is itself already a complete
+    "< cast a ~ spell and ..." sentence, yet Clairvoyance isn't in
+    ``CAST_SPELL_OPENING_COMPLETE_SPELLS`` either, so it too gets the
+    continuation prefix prepended, producing the identical "cast a
+    spell and cast a spell and..." double statement as Oratory.
+    Transcribed as-is for the same reason.
+
     ``target_name``/``province_name``/``terrain_name``/``army_names``/
     ``feature_name`` are each required only for the spells whose own
     announcement text actually needs them (see the four
@@ -7397,8 +7408,18 @@ def describe_trail_intelligence(
 # state.leaders, since CastRequest.target's own meaning (character id,
 # province id, or unused) is spell-dependent and this project has no
 # blanket way to tell them apart without checking spell membership first.
+#
+# Phase 831 bug fix: this set and render_cast_announcement()'s own
+# _CAST_ANNOUNCEMENT_TARGET_SPELLS are meant to describe the identical
+# "needs a character target" spell group -- Phase 193 added Spell.
+# CLAIRVOYANCE to the latter (both it and its own real SPELL_CAST_
+# ANNOUNCEMENT text are S_PCom, the same private-to-the-caster severity
+# as CHARM/RESURRECTION, already present here) but never updated this
+# set to match, so a successful Clairvoyance cast (whether direct or via
+# Treasure.WAND_CLAIRVOYANCE/Use_MI) silently produced zero turn-report
+# lines -- confirmed by direct reproduction, not just by inspection.
 _AUTO_RESOLVABLE_CAST_TARGET_SPELLS = frozenset(
-    {Spell.KILL_ENEMY, Spell.RESURRECTION, Spell.ILLUS_ARMIES, Spell.ORATORY, Spell.CHARM}
+    {Spell.KILL_ENEMY, Spell.RESURRECTION, Spell.ILLUS_ARMIES, Spell.ORATORY, Spell.CHARM, Spell.CLAIRVOYANCE}
 )
 
 

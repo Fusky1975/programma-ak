@@ -4181,6 +4181,31 @@ def test_describe_turn_results_narrates_a_double_agent_report_sentinel():
     assert lines == expected
 
 
+def test_describe_turn_results_narrates_a_successful_clairvoyance_cast():
+    # Phase 831 bug fix: Spell.CLAIRVOYANCE was added to
+    # render_cast_announcement()'s own _CAST_ANNOUNCEMENT_TARGET_SPELLS
+    # (Phase 193), but _AUTO_RESOLVABLE_CAST_TARGET_SPELLS -- the sibling
+    # set describe_turn_results()'s own CAST branch uses to decide which
+    # spells' target it may safely auto-resolve -- was never updated to
+    # match, so a successful Clairvoyance cast silently produced zero
+    # turn-report lines.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Sir Aldric", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, kingdom_id=1, name="Borin", location=HexCoord(0, 0)))
+    request = CastRequest(spell=Spell.CLAIRVOYANCE, target=2)
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 10, choice_indices=[0]))
+
+    assert lines != []
+    assert "Sir Aldric" in lines[0]
+    assert "Borin" in lines[0]
+
+
 def test_describe_turn_results_still_ignores_an_unrelated_error():
     # Non-regression: every other exception (including this same
     # function's own "no province data" ValueError) still narrates
