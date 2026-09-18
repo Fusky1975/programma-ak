@@ -33834,6 +33834,39 @@ remain genuinely unverified: `turn/aspy_execution.py:394`, `turn/
 office_holder.py:579`, `turn/recruit_execution.py:258`, `turn/use_mi_
 execution.py:180`.
 
+### Phase 824: `execute_aspy()`'s own dead-leader crash
+
+Direct follow-up requested by the user, verifying the next candidate
+from the standing bare-acting-leader-index technique: `turn/aspy_
+execution.py execute_aspy()` resolved the ASpy caster via a bare
+`state.leaders[leader_id]` lookup, unconditionally, at the very top of
+the function. `turn/plan_dispatch.py _dispatch_aspy()` (the one real
+per-phase caller) already computes this function's own Advanced-
+Ability flags defensively via `.get()` (the "real-possession pattern"
+every other dispatch branch in that module uses), but never actually
+gates the `execute_aspy()` call itself on the result -- the same
+"a leader who died earlier in the same turn can still have a later
+phase dispatched" gap already fixed for Leave/Pick_Up (Phase 821),
+Practice (Phase 822), and Hire (Phase 823). `turn/turn_processor.py`'s
+own separate Double-Agent end-of-turn call site was checked and
+confirmed safe by construction -- it iterates `state.leaders.values()`
+directly, so its own `spy.leader_id` is always a real, currently-live
+leader. Confirmed by direct reproduction: a dead `leader_id` raised an
+unhandled `KeyError`, caught upstream by `run_leader_plan()`'s own
+top-level `try`/`except` (so it doesn't crash the whole turn), but an
+opaque exception instead of the same "insufficient data" `None` this
+function already returns for a comparable case (the caster's own
+province not being registered) one line below. Fixed via `.get()`,
+returning `None` -- the identical, already-documented convention, not
+a new one. New regression test confirmed to fail against the pre-fix
+code (a real `KeyError`) and pass against the fix; every pre-existing
+test in the file (56 total) is unaffected. Test count: 6782 -> 6783.
+Full suite verified green before and after.
+
+Of the standing technique's own remaining candidate list, 3 sites in 3
+other files remain genuinely unverified: `turn/office_holder.py:579`,
+`turn/recruit_execution.py:258`, `turn/use_mi_execution.py:180`.
+
 ## Setup
 
 ```

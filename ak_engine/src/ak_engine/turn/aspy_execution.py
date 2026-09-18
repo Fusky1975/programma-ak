@@ -367,6 +367,21 @@ def execute_aspy(
     Returns ``None`` if the caster's location isn't a known province (no
     ``GameState`` in this project's tests populates every hex -- the same
     "insufficient data, not a guessed result" convention used throughout).
+    Also returns ``None`` if ``leader_id`` doesn't resolve to a real
+    ``LeaderState`` at all (Phase 824 bug fix) -- a leader who died
+    earlier in the same turn can still have an ASPY order queued for a
+    later phase, since ``turn/plan_dispatch.py _dispatch_aspy()`` (the
+    one real per-phase caller) computes this function's own Advanced-
+    Ability flags defensively via ``.get()`` but never actually gates
+    the call on the result, unlike `turn_processor.py`'s own separate
+    Double-Agent end-of-turn call site (always a real, currently-live
+    leader by construction, since it iterates `state.leaders.values()`
+    directly). Previously resolved via a bare ``state.leaders[leader_
+    id]`` lookup, raising an unhandled ``KeyError`` -- caught upstream
+    by ``run_leader_plan()``'s own top-level ``try``/``except`` so it
+    never crashed the whole turn, but an opaque exception instead of
+    the same "insufficient data" ``None`` this function already returns
+    for a comparable case one line below.
 
     ``caster_holds_psychic_mage_office``/``caster_has_detect_align`` feed
     ``turn/intelligence_estimate.py``'s ``estimate_alignment()``/
@@ -391,7 +406,9 @@ def execute_aspy(
 
     del request  # see module docstring
     rng = rng if rng is not None else random.Random()
-    leader = state.leaders[leader_id]
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return None
     province = state.provinces.get(leader.location)
     if province is None:
         return None

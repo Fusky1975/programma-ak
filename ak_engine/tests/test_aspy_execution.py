@@ -194,6 +194,15 @@ def test_execute_aspy_returns_none_when_the_casters_province_is_unknown():
     assert execute_aspy(state, LEADER_ID, _request()) is None
 
 
+def test_execute_aspy_returns_none_for_a_dead_leader_instead_of_crashing():
+    # Phase 824: a leader who died earlier this same turn can still have
+    # an ASPY order queued for a later phase.
+    state = _state()
+    del state.leaders[LEADER_ID]
+
+    assert execute_aspy(state, LEADER_ID, _request()) is None
+
+
 # --- Phase 139: spotted_characters (Align_Est/Temper_Est consumer) ---
 
 
