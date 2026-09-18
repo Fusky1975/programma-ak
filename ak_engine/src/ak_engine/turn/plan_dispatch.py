@@ -1180,9 +1180,28 @@ def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
 def _dispatch_hire(
     phase: PlanPhase, state: GameState, kingdom_id: int, leader_id: int, rng: random.Random | None = None
 ) -> HireExecutionResult:
+    """Phase 40/264/729: returns a real ``HireExecutionResult`` -- see
+    ``_dispatch_leave()``'s own note above for the family shape.
+
+    **Phase 823 bug fix**: the acting leader (whoever is issuing this
+    Hire order) was resolved via a bare ``state.leaders[leader_id]``
+    lookup, unconditionally, before even the ``hero is None`` check --
+    the same "a leader who died earlier in the same turn can still have
+    a later phase dispatched" gap already fixed for Leave/Pick_Up/
+    Practice (Phase 821/822), and a genuine miss during Phase 821's own
+    review of this exact file: every other sibling in this dispatch
+    cluster (`_dispatch_disband()` right above) already resolves the
+    acting leader via `.get()`, this one didn't. Resolved via `.get()`
+    instead, refusing with the same "not co-located" reason the hero's
+    own co-location check below already uses -- a dead acting leader
+    has no real location to be co-located with anyone at.
+    """
+
     request = decode_hire_phase(phase)
     hero = state.leaders.get(request.hero_id)
-    acting_leader = state.leaders[leader_id]
+    acting_leader = state.leaders.get(leader_id)
+    if acting_leader is None:
+        return HireExecutionResult(request, hired=False, reason="not co-located")
 
     if hero is None:
         return HireExecutionResult(request, hired=False, reason="hero not found")

@@ -1593,6 +1593,22 @@ def test_dispatch_hire_fails_when_hero_not_colocated():
     assert state.kingdoms[1].treasury == 100  # untouched
 
 
+def test_dispatch_hire_by_a_dead_leader_is_a_clean_refusal_not_a_crash():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(32, None, "Wandering Hero", location))
+    del state.leaders[LEADER_ID]  # died in an earlier phase this same turn
+    phase = PlanPhase(label="P1", action=ActionCode.HIRE, obj=32, extra=[3])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert isinstance(result, HireExecutionResult)
+    assert result.hired is False
+    assert result.reason == "not co-located"
+    assert state.leaders[32].kingdom_id is None  # untouched
+    assert state.kingdoms[1].treasury == 100  # untouched
+
+
 def test_dispatch_hire_fails_when_hero_already_employed():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})

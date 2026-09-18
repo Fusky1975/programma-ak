@@ -33797,6 +33797,43 @@ wasn't), `turn/aspy_execution.py`, `turn/feature_power_execution.py`
 and `turn/use_mi_execution.py`. Recorded as a new standing pre-check
 for this sweep, alongside the existing `Combatant(`/`BattleUnit(` grep.
 
+### Phase 823: `_dispatch_hire()`'s own dead-leader crash, closing plan_dispatch.py's bare-index sweep
+
+Direct follow-up requested by the user, verifying the one candidate
+flagged during Phase 822 as a genuine miss during Phase 821's own
+review of `turn/plan_dispatch.py`: `_dispatch_hire()` resolved the
+acting leader (whoever is issuing the Hire order) via a bare `state.
+leaders[leader_id]` lookup, unconditionally, even before checking
+whether the target hero itself exists -- the same "a leader who died
+earlier in the same turn can still have a later phase dispatched" gap
+already fixed for Leave/Pick_Up (Phase 821) and Practice (Phase 822)
+in this exact file's own dispatch cluster, but missed for Hire during
+that first pass even though every OTHER sibling (`_dispatch_disband()`,
+right above it in the same file) already resolves the acting leader
+via `.get()`. Confirmed by direct reproduction: a Hire order dispatched
+for a `leader_id` no longer present in `state.leaders` (simulating a
+leader who lost a Challenge in an earlier phase this same turn) raised
+an unhandled `KeyError`, caught upstream by `run_leader_plan()`'s own
+top-level `try`/`except` (so no full-turn crash), but an opaque
+exception instead of the same clean refusal every other dispatch in
+this cluster already produces for a missing acting leader. Fixed by
+resolving the acting leader via `.get()` and refusing with the same
+`"not co-located"` reason the hero's own co-location check just below
+it already uses -- a dead acting leader has no real location to be
+co-located with anyone at, the identical semantics, not a new reason
+category. New regression test confirmed to fail against the pre-fix
+code (a real `KeyError`) and pass against the fix; every pre-existing
+test in the file (141 total) is unaffected. Test count: 6781 -> 6782.
+Full suite verified green before and after.
+
+This closes `plan_dispatch.py`'s own bare-acting-leader-index cluster
+in full (all 4 sibling `_dispatch_*` functions in this file now use
+`.get()` consistently: Leave/Pick_Up/Disband/Hire). Of the standing
+technique's own remaining candidate list, 4 sites in 4 other files
+remain genuinely unverified: `turn/aspy_execution.py:394`, `turn/
+office_holder.py:579`, `turn/recruit_execution.py:258`, `turn/use_mi_
+execution.py:180`.
+
 ## Setup
 
 ```
