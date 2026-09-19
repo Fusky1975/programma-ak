@@ -259,13 +259,16 @@ def test_describe_turn_results_narrates_kill_enemy_berserk_retaliation_even_when
         PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
     ]
 
-    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0]))
+    # Phase 859: two more choice_indices entries for THATT.X/THFAIL.X.
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0, 0]))
 
     assert lines == [
         "Borin went berserk over the Kill-Enemy attempt.Guided by eerily accurate psychotic visions, "
         "Borin assailed Aldric and missed.",
         "Aldric was mortally wounded.",
         "and so it was that Aldric met Aldric's unseemly end.",
+        "Borin crept up on Aldric's treasure, hoping to steal a great treasure.",
+        "but after searching for an hour, Borin failed to find any treasure.",
     ]
 
 
@@ -660,14 +663,17 @@ def test_describe_turn_results_renders_pursue_combat_after_the_catch_up_sentence
     ]
 
     # Phase 611: HORDEATH.X's own generic closing beat now follows the
-    # mortal-wound sentence.
-    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[8, 0, 0, 0]))
+    # mortal-wound sentence. Phase 859: two more choice_indices entries
+    # for THATT.X/THFAIL.X.
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[8, 0, 0, 0, 0, 0]))
 
     assert lines == [
         "Aldric caught up with Borin in Eldoria.",
         "Aldric Attacked Borin and inflicted 4 damage points.",
         "Borin was mortally wounded.",
         "and so it was that Borin met Borin's unseemly end.",
+        "Aldric crept up on Borin's treasure, hoping to steal a great treasure.",
+        "but after searching for an hour, Aldric failed to find any treasure.",
     ]
 
 
@@ -718,14 +724,16 @@ def test_describe_turn_results_narrates_challenge_even_when_the_challenger_dies_
     ]
 
     # Phase 793: one more choice_indices entry for the new, unconditional
-    # ENCATT.X opening line.
-    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0]))
+    # ENCATT.X opening line. Phase 859: two more for THATT.X/THFAIL.X.
+    lines = describe_turn_results(results, state, ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0, 0, 0]))
 
     assert lines == [
         "Aldric searched throughout (0, 0) for Borin.",
         "Borin assailed Aldric and inflicted 6 damage points.",
         "Aldric was mortally wounded.",
         "and so it was that Aldric met Aldric's unseemly end.",
+        "Borin crept up on Aldric's treasure, hoping to steal a great treasure.",
+        "but after searching for an hour, Borin failed to find any treasure.",
     ]
 
 

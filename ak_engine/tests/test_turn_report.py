@@ -3761,13 +3761,17 @@ def test_describe_encounter_combat_narrates_the_mortal_wound_line_for_the_loser(
     # Phase 611: HORDEATH.X's own generic closing beat now follows the
     # MORTWOUN.X sentence -- variant 0 of each (mortally-wounded has no
     # further /R alternation of its own; HORDEATH's own "/R" is padded).
-    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+    # Phase 859: THATT.X/THFAIL.X (variant 0 each) now follow, since no
+    # items were looted.
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0, 0])
 
     lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
     assert lines == [
         "Borin was mortally wounded.",
         "and so it was that Borin met Borin's unseemly end.",
+        "Aldric crept up on Borin's treasure, hoping to steal a great treasure.",
+        "but after searching for an hour, Aldric failed to find any treasure.",
     ]
 
 
@@ -3781,13 +3785,16 @@ def test_describe_encounter_combat_narrates_the_spoils_line_with_one_looted_item
         loser_killed=True,
         looted_item_ids=item_ids,
     )
-    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0])
+    # Phase 859: one more choice_indices entry for THATT.X, now rendered
+    # unconditionally right before the SPOILS line.
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0])
 
     lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
 
     assert lines == [
         "Borin was mortally wounded.",
         "and so it was that Borin met Borin's unseemly end.",
+        "Aldric crept up on Borin's treasure, hoping to steal a great treasure.",
         "Aldric looked with satisfaction at the remains of Borin.",
     ]
 
@@ -3803,16 +3810,23 @@ def test_describe_encounter_combat_narrates_the_spoils_line_with_two_looted_item
             loser_killed=True,
             looted_item_ids=item_ids,
         )
-        rng = ScriptedRandom([0.9] * 20, choice_indices=[0, 0, 0])
+        # Phase 859: one more choice_indices entry for THATT.X, now
+        # rendered unconditionally right before the SPOILS line (shifting
+        # it from index 2 to index 3).
+        rng = ScriptedRandom([0.9] * 20, choice_indices=[0, 0, 0, 0])
 
         lines = describe_encounter_combat(
             result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state, is_sea=is_sea
         )
 
-        assert lines[2] == f"Aldric {verb} over to a mound of treasure and secured the Standard of Command and Bracelets of Swordsmanship."
+        assert lines[3] == f"Aldric {verb} over to a mound of treasure and secured the Standard of Command and Bracelets of Swordsmanship."
 
 
-def test_describe_encounter_combat_omits_the_spoils_line_when_nothing_was_looted():
+def test_describe_encounter_combat_narrates_thatt_then_thfail_when_nothing_was_looted():
+    # Phase 859: renamed from "omits the spoils line" -- the SPOILS line
+    # itself is still correctly absent, but THATT.X/THFAIL.X (the real
+    # "searched the body, found nothing" pair) now render in its place,
+    # rather than nothing at all.
     result = ChallengeExecutionResult(
         accepted=True,
         combat_occurred=True,
@@ -3821,13 +3835,15 @@ def test_describe_encounter_combat_omits_the_spoils_line_when_nothing_was_looted
         loser_killed=True,
         looted_item_ids=[],
     )
-    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0, 0])
 
     lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
     assert lines == [
         "Borin was mortally wounded.",
         "and so it was that Borin met Borin's unseemly end.",
+        "Aldric crept up on Borin's treasure, hoping to steal a great treasure.",
+        "but after searching for an hour, Aldric failed to find any treasure.",
     ]
 
 
@@ -3845,6 +3861,30 @@ def test_describe_encounter_combat_omits_the_spoils_line_when_the_loser_wasnt_ki
     rng = ScriptedRandom([])
 
     assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state) == []
+
+
+def test_describe_encounter_combat_renders_thatt_but_not_thfail_when_items_are_unresolvable():
+    # Phase 859: looted_item_ids is genuinely non-empty here, but no
+    # state is supplied to resolve their names -- THATT.X still renders
+    # (it needs no state), but THFAIL.X must NOT render, since "found
+    # nothing" would be a real, wrong guess about what actually happened.
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        winner_leader_id=1,
+        loser_leader_id=2,
+        loser_killed=True,
+        looted_item_ids=[999],
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
+
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+
+    assert lines == [
+        "Borin was mortally wounded.",
+        "and so it was that Borin met Borin's unseemly end.",
+        "Aldric crept up on Borin's treasure, hoping to steal a great treasure.",
+    ]
 
 
 def test_describe_encounter_combat_narrates_the_steal_line_first():
@@ -3914,13 +3954,17 @@ def test_describe_patrol_combat_narrates_the_mortal_wound_line_for_the_loser():
         loser_leader_id=2,
         loser_killed=True,
     )
-    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+    # Phase 859: THATT.X/THFAIL.X (variant 0 each) now follow, since no
+    # items were looted.
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0, 0])
 
     lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
     assert lines == [
         "Borin was mortally wounded.",
         "and so it was that Borin met Borin's unseemly end.",
+        "Aldric crept up on Borin's treasure, hoping to steal a great treasure.",
+        "but after searching for an hour, Aldric failed to find any treasure.",
     ]
 
 
@@ -3939,13 +3983,15 @@ def test_describe_patrol_combat_narrates_the_spoils_line_with_one_looted_item():
         loser_killed=True,
         looted_item_ids=item_ids,
     )
-    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0])
+    # Phase 859: one more choice_indices entry for THATT.X.
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0])
 
     lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
 
     assert lines == [
         "Borin was mortally wounded.",
         "and so it was that Borin met Borin's unseemly end.",
+        "Aldric crept up on Borin's treasure, hoping to steal a great treasure.",
         "Aldric looked with satisfaction at the remains of Borin.",
     ]
 
@@ -3964,13 +4010,15 @@ def test_describe_patrol_combat_narrates_the_spoils_line_when_the_patroller_is_t
         loser_killed=True,
         looted_item_ids=item_ids,
     )
-    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0])
+    # Phase 859: one more choice_indices entry for THATT.X.
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0])
 
     lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
 
     assert lines == [
         "Aldric was mortally wounded.",
         "and so it was that Aldric met Aldric's unseemly end.",
+        "Borin crept up on Aldric's treasure, hoping to steal a great treasure.",
         "Borin looked with satisfaction at the remains of Aldric.",
     ]
 
@@ -3978,7 +4026,10 @@ def test_describe_patrol_combat_narrates_the_spoils_line_when_the_patroller_is_t
 def test_describe_patrol_combat_omits_the_spoils_line_without_state():
     # Same "no data, no guess" fallback _item_display_names() itself
     # already documents -- non-regression for every existing caller
-    # that never threads state through.
+    # that never threads state through. THATT.X (Phase 859) still
+    # renders unconditionally (it needs no state), but neither the
+    # SPOILS line nor THFAIL.X follows -- looted_item_ids is genuinely
+    # non-empty here, so "found nothing" would be a real, wrong guess.
     result = PatrolExecutionResult(
         intercepted=True,
         target_leader_id=2,
@@ -3988,13 +4039,14 @@ def test_describe_patrol_combat_omits_the_spoils_line_without_state():
         loser_killed=True,
         looted_item_ids=[999],
     )
-    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
 
     lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
     assert lines == [
         "Borin was mortally wounded.",
         "and so it was that Borin met Borin's unseemly end.",
+        "Aldric crept up on Borin's treasure, hoping to steal a great treasure.",
     ]
 
 
@@ -4018,7 +4070,8 @@ def test_describe_turn_results_narrates_a_patrol_interception_sentinel():
         PhaseDispatchResult(leader_id=1, segment_index=-1, phase_label="P0", action=ActionCode.PURSUE, result=result, error=None)
     ]
 
-    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0]))
+    # Phase 859: two more choice_indices entries for THATT.X/THFAIL.X.
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0, 0, 0]))
 
     assert "Patroller assailed Intruder and inflicted 6 damage points." in lines
     assert "and so it was that Intruder met Intruder's unseemly end." in lines
@@ -4924,7 +4977,8 @@ def test_describe_challenge_threads_state_through_to_the_steal_and_spoils_narrat
         loser_killed=True,
         looted_item_ids=looted_ids,
     )
-    rng2 = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0])
+    # Phase 859: one more choice_indices entry for THATT.X.
+    rng2 = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0, 0])
     spoils_lines = describe_challenge(
         spoils_result,
         challenger_leader_id=1,
@@ -6575,7 +6629,8 @@ def test_describe_kill_enemy_berserk_retaliation_narrates_the_caster_winning():
         kill_enemy_berserk_winner="a",
         melee_swings=(MeleeSwing(attacker="a", hit=True, damage=5),),
     )
-    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0])
+    # Phase 859: two more choice_indices entries for THATT.X/THFAIL.X.
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0, 0])
 
     lines = describe_kill_enemy_berserk_retaliation(result, caster_name="Aldric", target_name="Borin", rng=rng)
 
@@ -6584,6 +6639,8 @@ def test_describe_kill_enemy_berserk_retaliation_narrates_the_caster_winning():
         "Aldric assailed Borin and inflicted 5 damage points.",
         "Borin was mortally wounded.",
         "and so it was that Borin met Borin's unseemly end.",
+        "Aldric crept up on Borin's treasure, hoping to steal a great treasure.",
+        "but after searching for an hour, Aldric failed to find any treasure.",
     ]
 
 
@@ -6599,7 +6656,8 @@ def test_describe_kill_enemy_berserk_retaliation_forwards_is_sea_to_the_mortally
         kill_enemy_berserk_winner="a",
         melee_swings=(MeleeSwing(attacker="a", hit=True, damage=5),),
     )
-    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 1, 0])
+    # Phase 859: two more choice_indices entries for THATT.X/THFAIL.X.
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 1, 0, 0, 0])
 
     lines = describe_kill_enemy_berserk_retaliation(result, caster_name="Aldric", target_name="Borin", rng=rng, is_sea=True)
 
@@ -6614,7 +6672,8 @@ def test_describe_kill_enemy_berserk_retaliation_narrates_the_target_winning():
         kill_enemy_berserk_winner="b",
         melee_swings=(MeleeSwing(attacker="b", hit=False, damage=0),),
     )
-    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0])
+    # Phase 859: two more choice_indices entries for THATT.X/THFAIL.X.
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0, 0])
 
     lines = describe_kill_enemy_berserk_retaliation(result, caster_name="Aldric", target_name="Borin", rng=rng)
 
@@ -6623,6 +6682,8 @@ def test_describe_kill_enemy_berserk_retaliation_narrates_the_target_winning():
         "Borin assailed Aldric and missed.",
         "Aldric was mortally wounded.",
         "and so it was that Aldric met Aldric's unseemly end.",
+        "Borin crept up on Aldric's treasure, hoping to steal a great treasure.",
+        "but after searching for an hour, Borin failed to find any treasure.",
     ]
 
 
@@ -6636,7 +6697,8 @@ def test_describe_kill_enemy_berserk_retaliation_narrates_the_spoils_line_with_o
         melee_swings=(MeleeSwing(attacker="a", hit=True, damage=5),),
         looted_item_ids=item_ids,
     )
-    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0])
+    # Phase 859: one more choice_indices entry for THATT.X.
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0, 0])
 
     lines = describe_kill_enemy_berserk_retaliation(
         result, caster_name="Aldric", target_name="Borin", rng=rng, state=state
@@ -6646,6 +6708,9 @@ def test_describe_kill_enemy_berserk_retaliation_narrates_the_spoils_line_with_o
 
 
 def test_describe_kill_enemy_berserk_retaliation_omits_the_spoils_line_when_nothing_was_looted():
+    # Phase 859: THFAIL.X ("searched, found nothing") now renders in the
+    # SPOILS line's own place, not silence -- see this test's own
+    # updated final-line assertion.
     result = CastExecutionResult(
         request=CastRequest(spell=Spell.KILL_ENEMY, target=2),
         applied=False,
@@ -6653,13 +6718,13 @@ def test_describe_kill_enemy_berserk_retaliation_omits_the_spoils_line_when_noth
         kill_enemy_berserk_winner="a",
         melee_swings=(MeleeSwing(attacker="a", hit=True, damage=5),),
     )
-    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0])
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0, 0, 0, 0])
 
     lines = describe_kill_enemy_berserk_retaliation(
         result, caster_name="Aldric", target_name="Borin", rng=rng, state=GameState()
     )
 
-    assert lines[-1] == "and so it was that Borin met Borin's unseemly end."
+    assert lines[-1] == "but after searching for an hour, Aldric failed to find any treasure."
 
 
 # -- SBUNGLE.X/SFAIL.X (Phase 603) --
@@ -11903,8 +11968,8 @@ def test_compose_letter_report_narrates_a_non_king_leader_who_dies_this_turn():
     ]
 
     # Phase 793: one more choice_indices entry for the new, unconditional
-    # ENCATT.X opening line.
-    lines = compose_letter_report(results, state, 1, ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0, 0]))
+    # ENCATT.X opening line. Phase 859: two more for THATT.X/THFAIL.X.
+    lines = compose_letter_report(results, state, 1, ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0, 0, 0, 0]))
 
     assert "From: Guerin" in lines
     assert "Borin assailed Guerin and inflicted 6 damage points." in lines

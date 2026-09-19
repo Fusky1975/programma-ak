@@ -34788,6 +34788,49 @@ assertion-bearing tests confirmed to fail against the pre-fix code
 (`TypeError`/`AttributeError`, the new fields didn't exist) and pass
 against the fix via a scoped `git stash` round-trip.
 
+### Phase 860: wire THATT.X/THFAIL.X and correct 2 stale claims found via the zero-caller function audit
+
+Continuing the sweep from the zero-caller-function grep audit's own
+flagged candidate list (Phase 859). Two findings, both in `report/
+turn_report.py`.
+
+**Stale claim correction (comment-only)**: the module comment right
+above the STEAL/SPOILS "L"/"M" template cluster (`_GLSTEAL_TEMPLATES`
+etc., Phase 590) still framed the `L`-vs-`M` selection rule as fully
+unresolved -- stale since Phase 777 (backlog #19), which actually
+wired the `M` halves into `describe_steal()`/`describe_encounter_
+combat()` and closed the ambiguity directly with the user: STEAL
+always uses the `M` ("tense") variant (no discriminator survives to
+pick between them); SPOILS's own `L` (survivor) variant is confirmed
+structurally unreachable, since every real SPOILS-triggering call site
+only fires on a genuine death. Corrected to record this; the four
+`L`-suffixed renderers (`render_group_theft_from_survivor()`, `render_
+group_spoils_from_survivor()`, `render_treasure_theft_from_survivor()`,
+`render_treasure_spoils_from_survivor()`) stay real, tested, and
+permanently unwired by design.
+
+**Real bug found and fixed**: `render_thief_searches_treasure()`
+(THATT.X) and `render_thief_search_failed()` (THFAIL.X, Phase 592)
+were fully sourced, tested, and zero-caller -- THATT.X's own docstring
+already said it "precedes either `render_thief_search_failed()` ...
+or one of Phase 590's `render_*_spoils_from_corpse()`/`render_*_
+theft_*()` renderers," exactly the sequence `describe_encounter_
+combat()` (and its siblings `describe_patrol_combat()`, `describe_
+kill_enemy_berserk_retaliation()`) already implement for a decisive
+leader-vs-leader kill -- it was simply never called. Wired into all 3
+composers: THATT.X now fires unconditionally right after every real
+death (the search always begins), followed by either the existing
+SPOILS line (items found) or THFAIL.X (the search genuinely came back
+empty, `looted_item_ids` itself empty) -- an unresolvable state
+(`looted_item_ids` non-empty but `state=None`, so item names can't be
+resolved) renders neither SPOILS nor THFAIL, the same "no data, no
+guess" fallback these composers already use elsewhere, proven by a
+dedicated new test. Test count: 6855 -> 6856 (net +1 new test; 19
+pre-existing tests across `test_turn_report.py`/`test_describe_turn_
+results.py` needed their own scripted-RNG/exact-line-list assertions
+updated for the new, real lines -- each fix verified empirically by
+computing the exact rendered output first, not guessed).
+
 ## Setup
 
 ```

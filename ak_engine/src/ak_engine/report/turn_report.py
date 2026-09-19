@@ -3901,6 +3901,12 @@ def describe_kill_enemy_berserk_retaliation(
     encounter_combat()`'s own identical parameters -- omitted (`None`/
     `False`), the SPOILS line simply doesn't render, the same "no data,
     no guess" fallback `_item_display_names()` itself already documents.
+
+    **Phase 859**: `render_thief_searches_treasure()`/`render_thief_
+    search_failed()` (THATT.X/THFAIL.X, Phase 592) now bracket the SPOILS
+    check the same way `describe_encounter_combat()`'s own Phase 859
+    addendum does -- see that composer's own docstring for the full
+    sourcing.
     """
 
     if result.kill_enemy_berserk_winner is None:
@@ -3939,12 +3945,23 @@ def describe_kill_enemy_berserk_retaliation(
     # for a Kill-Enemy Berserk duel resolved in a Sea province.
     lines.append(render_mortally_wounded(loser_name, rng, is_sea=is_sea))
     lines.append(render_character_death(loser_name, rng))
+    # Phase 859: THATT.X/THFAIL.X (Phase 592, real, tested, previously
+    # zero-caller) -- see describe_encounter_combat()'s own Phase 859
+    # addendum for the full sourcing/design. THATT.X's own opening always
+    # fires right after a death; THFAIL.X fires only when the search
+    # comes back genuinely empty (looted_item_ids itself empty) -- an
+    # unresolvable state (looted_item_ids non-empty but state=None, so
+    # item_names comes back []) renders neither, the same "no data, no
+    # guess" fallback the SPOILS lines below already use.
+    lines.append(render_thief_searches_treasure(winner_name, loser_name, rng))
     if result.looted_item_ids:
         item_names = _item_display_names(state, result.looted_item_ids)
         if len(item_names) == 1:
             lines.append(render_treasure_spoils_from_corpse(winner_name, loser_name, rng))
         elif len(item_names) >= 2:
             lines.append(render_group_spoils_from_corpse(winner_name, loser_name, item_names, rng, is_sea=is_sea))
+    else:
+        lines.append(render_thief_search_failed(winner_name, rng))
     return lines
 
 
@@ -4819,12 +4836,31 @@ def render_stunned(character_name: str, rng: random.Random, *, is_sea: bool = Fa
 # `G_`/`T_` beyond the list/no-list heuristic above) assigns these
 # constants to a variable somewhere rather than writing their names
 # literally, which this project's available source can't trace further.
-# Following the same "sourced but unwired" precedent Phase 587 already
-# set for `LUCKINT_TEMPLATE`/`LUCKINT2_TEMPLATE`: all eight templates
-# below are real, byte-faithful, and render-tested, but none is wired
-# into `describe_steal()` or any other composer, and the exact `L`
-# (mnemonic unconfirmed) vs. `M` (mnemonic unconfirmed) selection rule
-# is left an open, flagged gap rather than guessed.
+# **Phase 858/859 correction**: the paragraph above described this as
+# fully unresolved -- stale since Phase 777 (backlog #19), which
+# actually wired the `*Steal`/`*Spoils` halves into `describe_steal()`/
+# `describe_encounter_combat()` and closed the exact `L`-vs-`M`
+# ambiguity directly with the user, rather than leaving it open:
+# **STEAL** (`_GLSTEAL_TEMPLATES`/`_TLSTEAL_TEMPLATES` here, i.e.
+# `render_group_theft_from_survivor()`/`render_treasure_theft_from_
+# survivor()`) -- "no discriminator survives in any source for this
+# family at all... always the M ("tense") variant, never the L
+# (victim-referencing) one... the simpler, unconditional M-only choice
+# was picked instead" (`describe_steal()`'s own docstring, User-
+# confirmed 2026-09-09). **SPOILS** (`_GLSPOILS_TEMPLATES`/
+# `render_group_spoils_from_survivor()`/`render_treasure_spoils_from_
+# survivor()`) -- confirmed structurally unreachable, not merely
+# unpicked: every real SPOILS-triggering call site in this project
+# (`describe_encounter_combat()`) only ever fires on `result.loser_
+# killed`, i.e. a genuinely dead victim -- a "survivor" (`L`) SPOILS
+# narration has no real game-state condition that could ever select it,
+# matching `GMSPOILS.X`'s own real overflow text ("from the corpse of
+# [") cited above. The four `L`-suffixed renderers in this cluster
+# (`render_group_theft_from_survivor()`, `render_group_spoils_from_
+# survivor()`, `render_treasure_theft_from_survivor()`, `render_
+# treasure_spoils_from_survivor()`) therefore stay real, byte-faithful,
+# render-tested, and permanently unwired by design -- not a remaining
+# gap to close, and not silently dropped either.
 _GLSTEAL_TEMPLATES: list[str] = [
     "< {expertly }pickpocketed/Rrobbed_him_of ] ^L\\.",
     "< {skillfully }stole the ^L\\ belonging_to/Rowned_by [.",
@@ -5406,6 +5442,9 @@ def render_thief_searches_treasure(searcher_name: str, victim_name: str, rng: ra
     defeated leader's belongings for treasure (Phase 592) -- precedes
     either ``render_thief_search_failed()`` below or one of Phase 590's
     ``render_*_spoils_from_corpse()``/``render_*_theft_*()`` renderers.
+    Wired (Phase 859) into ``describe_encounter_combat()``/``describe_
+    patrol_combat()``/``describe_kill_enemy_berserk_retaliation()``,
+    fired unconditionally right after every real leader-vs-leader death.
     """
 
     variant = pick_variant(_THATT_TEMPLATES, rng)
@@ -5437,7 +5476,10 @@ def render_thief_search_failed(searcher_name: str, rng: random.Random) -> str:
     searches_treasure()``. No victim reference of its own. The first
     variant's own leading lowercase "but" is verbatim from the real
     source, meant to continue directly after THATT.X's own sentence
-    rather than start a fresh one.
+    rather than start a fresh one. Wired (Phase 859) right where the
+    real ``looted_item_ids`` list turns out empty after a decisive
+    leader-vs-leader kill -- see ``render_thief_searches_treasure()``'s
+    own Phase 859 addendum.
     """
 
     variant = pick_variant(_THFAIL_TEMPLATES, rng)
@@ -7029,9 +7071,13 @@ def describe_encounter_combat(
     generic closing beat, sourced (`SAY.PAS:429-432 _LDies`) as firing
     for *any* real leader death right after its own cause-specific
     sentence, the same shared-trailer role `_LSucc` fills for
-    succession, then (Phase 777, backlog #19) the SPOILS prose cluster
-    when the loser was actually looted -- the natural closing beat right
-    after the death itself is narrated. `a_leader_id` resolves which of
+    succession, then (Phase 859) `render_thief_searches_treasure()`
+    (THATT.X) unconditionally right after the death, then either (Phase
+    777, backlog #19) the SPOILS prose cluster when the loser was
+    actually looted or (Phase 859) `render_thief_search_failed()`
+    (THFAIL.X) when the search genuinely came back empty -- the natural
+    closing beat right after the death itself is narrated. `a_leader_id`
+    resolves which of
     `a_name`/`b_name` is the loser from `result.loser_leader_id` --
     `resolve_challenge_combat()`'s own "a" is always the challenger/
     pursuer, "b" always the target, so `a_name`/`b_name` here must be
@@ -7089,6 +7135,18 @@ def describe_encounter_combat(
         winner_name = b_name if loser_name == a_name else a_name
         lines.append(render_mortally_wounded(loser_name, rng, is_sea=is_sea))
         lines.append(render_character_death(loser_name, rng))
+        # Phase 859: THATT.X/THFAIL.X (Phase 592) -- a real, tested,
+        # zero-caller pair: THATT.X's own docstring already says it
+        # "precedes either render_thief_search_failed() ... or one of
+        # Phase 590's render_*_spoils_from_corpse()/render_*_theft_*()
+        # renderers", exactly the sequence this composer already
+        # implements below -- it was simply never called. THFAIL.X fires
+        # only when the search genuinely comes back empty
+        # (`looted_item_ids` itself empty); an unresolvable state
+        # (`looted_item_ids` non-empty but `state=None`, so `item_names`
+        # comes back `[]`) renders neither, the same "no data, no guess"
+        # fallback the SPOILS lines already use.
+        lines.append(render_thief_searches_treasure(winner_name, loser_name, rng))
         if result.looted_item_ids:
             item_names = _item_display_names(state, result.looted_item_ids)
             if len(item_names) == 1:
@@ -7097,6 +7155,8 @@ def describe_encounter_combat(
                 lines.append(
                     render_group_spoils_from_corpse(winner_name, loser_name, item_names, rng, is_sea=is_sea)
                 )
+        else:
+            lines.append(render_thief_search_failed(winner_name, rng))
 
     return lines
 
@@ -7138,6 +7198,11 @@ def describe_patrol_combat(
     already renders for the identical situation. The same "sibling
     field never cross-checked" class already found in this file's own
     Kill-Enemy Berserk-retaliation composer (Phase 830).
+
+    **Phase 859**: `render_thief_searches_treasure()`/`render_thief_
+    search_failed()` (THATT.X/THFAIL.X) now bracket the SPOILS check
+    below too -- see `describe_encounter_combat()`'s own Phase 859
+    addendum for the full sourcing.
     """
 
     if not result.combat_occurred:
@@ -7162,6 +7227,9 @@ def describe_patrol_combat(
         winner_name = b_name if loser_name == a_name else a_name
         lines.append(render_mortally_wounded(loser_name, rng, is_sea=is_sea))
         lines.append(render_character_death(loser_name, rng))
+        # Phase 859: THATT.X/THFAIL.X -- see describe_encounter_combat()'s
+        # own Phase 859 addendum for the full sourcing.
+        lines.append(render_thief_searches_treasure(winner_name, loser_name, rng))
         if result.looted_item_ids:
             item_names = _item_display_names(state, result.looted_item_ids)
             if len(item_names) == 1:
@@ -7170,6 +7238,8 @@ def describe_patrol_combat(
                 lines.append(
                     render_group_spoils_from_corpse(winner_name, loser_name, item_names, rng, is_sea=is_sea)
                 )
+        else:
+            lines.append(render_thief_search_failed(winner_name, rng))
 
     return lines
 
