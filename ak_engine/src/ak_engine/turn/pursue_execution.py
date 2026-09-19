@@ -476,6 +476,19 @@ def execute_pursue(
         result.guessed_distance = guessed_distance
         return result
 
+    # Phase 856 bug fix: the armyless case never actually relocated the
+    # pursuer, contradicting this module's own docstring ("the same
+    # abstraction level already used for the armyless case's encounter"
+    # -- see the "Army-vs-army pursuit" section above). A real,
+    # confirmed consequence: report/turn_report.py describe_pursue()
+    # resolves the caught-up sentence's own province from the pursuer's
+    # *current* location, which -- without this line -- still showed
+    # wherever the pursuer started, not the province they supposedly
+    # caught up with the target in. Mirrors _fight_army_pursuit_
+    # battle()'s own relocation exactly, just without any armies to
+    # bring along.
+    pursuer.location = target.location
+
     if not has_combat_intent(request):
         return PursueExecutionResult(caught_up=True, combat_occurred=False, guessed_distance=guessed_distance)
 

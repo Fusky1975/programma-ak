@@ -1314,7 +1314,16 @@ def test_run_turn_unresolved_pursue_preempts_p1_and_continues_the_chase():
     assert p1_entry.segment_index == -1
     assert p1_entry.action is ActionCode.PURSUE
     assert p1_entry.result.caught_up is True
-    assert state.leaders[10].location == CHASE_STEP  # one chase step, not DECOY
+    # Phase 856 bug fix: a successful catch-up relocates the pursuer to
+    # the target's own province -- not just the CHASE_STEP left behind
+    # by the earlier, unresolved hex-stepping continuation -- matching
+    # pursue_execution.py's own module docstring ("the same abstraction
+    # level already used for the armyless case's encounter") and the
+    # army-vs-army branch's own already-established relocation-on-
+    # catch-up precedent. This assertion used to read CHASE_STEP,
+    # silently encoding the bug (the armyless case never relocated at
+    # all) as if it were the intended behavior.
+    assert state.leaders[10].location == CHASE_TARGET  # relocated to the target's own province, not DECOY
 
     # Resolved -- P2's own WAIT order dispatches normally again.
     p2_entry = by_label[(10, "P2")]

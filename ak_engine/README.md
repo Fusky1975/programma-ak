@@ -34701,6 +34701,36 @@ against the pre-fix code (`AttributeError`/`TypeError`, the field
 didn't exist) and pass against the fix. Test count: 6841 -> 6844. Full
 suite verified green (unchanged, 6841) before touching a single test.
 
+### Phase 856: fix Pursue's armyless case never relocating the pursuer on catch-up
+
+Continuing the manual cover-to-cover sweep into `describe_pursue()`
+itself (the report composer, distinct from `pursue_execution.py`'s own
+already-reviewed turn-layer module). Cross-checking `execute_pursue()`
+against its own module docstring found a real, confirmed contradiction:
+the docstring states plainly that a successful armyless catch-up
+converges the pursuer on the target's province, "the same abstraction
+level already used for the armyless case's encounter" as the army-vs-
+army branch's own already-established relocation-on-catch-up -- but
+the armyless code path never actually set `pursuer.location`, leaving
+it at wherever the pursuer started the chase. Reproduced directly: a
+pursuer at one province catching up with a target far away still
+showed the pursuer's own stale starting province, and `report/
+turn_report.py describe_pursue()`'s real `_LCatch` sentence ("< caught
+up with [ in @.") named the wrong province -- the pursuer's own old
+location instead of where the target (and the encounter) actually was.
+Fixed with one line, `pursuer.location = target.location`, added right
+where the armyless branch begins (mirroring `_fight_army_pursuit_
+battle()`'s own identical relocation exactly). One pre-existing test
+(`test_run_turn_unresolved_pursue_preempts_p1_and_continues_the_chase`)
+had silently encoded the bug as if it were the intended behavior
+(asserting the pursuer stayed at the intermediate chase-step hex, not
+the target's own province, after a real catch-up) -- corrected in
+place, not just re-run, per this project's own standing precedent for
+exactly this situation. 2 new/updated assertions confirmed to fail
+against the pre-fix code and pass against the fix. Test count: 6844 ->
+6845. Full suite verified green (unchanged, 6844) before touching a
+single test.
+
 ## Setup
 
 ```

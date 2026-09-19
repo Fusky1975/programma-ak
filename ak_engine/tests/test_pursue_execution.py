@@ -396,6 +396,26 @@ def test_execute_pursue_uses_pursuers_real_spy_skill():
 # -- armyless combat resolution (caught up + combat intent) ---------------
 
 
+def test_execute_pursue_armyless_catch_up_relocates_the_pursuer_to_the_targets_province():
+    # Phase 856 bug fix: the armyless case never relocated the pursuer at
+    # all, contradicting this module's own docstring ("the same
+    # abstraction level already used for the armyless case's encounter")
+    # and silently showing the pursuer's own stale, pre-catch-up location
+    # in report/turn_report.py describe_pursue()'s "caught up ... in @"
+    # sentence -- see that composer's own real-data reproduction in the
+    # commit for this phase.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=1, name="Target", location=FAR_AWAY))
+
+    result = execute_pursue(state, 1, _peaceful_request(2), rng=ScriptedRandom([0.99, 0.5, 0.5]))
+
+    assert result.caught_up is True
+    assert state.leaders[1].location == FAR_AWAY
+    # The target itself never moves -- only the pursuer converges.
+    assert state.leaders[2].location == FAR_AWAY
+
+
 def test_execute_pursue_peaceful_plan_bypasses_acceptance_and_combat():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD, is_king=True))
