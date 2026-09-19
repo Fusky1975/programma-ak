@@ -34647,6 +34647,60 @@ assertions across 2 files confirmed to fail against the pre-fix code
 the fix. Test count: 6838 -> 6841. Full suite verified green (unchanged,
 6838) before touching a single test.
 
+### Phase 854: Assassination cluster reviewed, verified safe (no code change)
+
+Continuing the manual cover-to-cover sweep, this time into the
+Assassination cluster (`render_assassination_ordered/_attempt/_success/
+_failed()`, `render_could_not_be_assassinated()`, `turn/assassin_
+guild.py` in full, the `_dispatch_fire()` interception, the
+`orchestrator.py` sentinel call site, and both real `describe_turn_
+results()` branches plus the King/other-leader letter-routing paths).
+Every template matches its own cited source text verbatim (including
+the real "dagger!Cursed" no-space concatenation); the guard-escalation
+right-shift, the "already dead, no counter increment" branch, the
+King-target refusal, the once-per-turn single-slot queue, and the live
+(non-sticky) `resolve_office_holder()` re-read at resolution time were
+all traced and confirmed correct. This cluster had already been fixed
+and independently re-verified across Phases 614, 676, and 745 (two
+separate user-supplied disassemblies) -- this pass found nothing
+further wrong. No code change, no test run needed.
+
+### Phase 855: wire Ice Suspend's real "frozen" narration (`_LShIce`) into `describe_search()`
+
+Continuing the manual cover-to-cover sweep into the Ice Suspend
+narration cluster (`render_ice_*`, 7 functions, `SAY.PAS` lines
+637-646, module docstring's own Phase 123 addendum -- fully sourced
+and tested since Phase 123, zero production callers ever). Tracing the
+real mechanic (`turn/encounter.py`'s own Phase 189 addendum) found the
+spell's real "fully frozen" branch is deliberately simplified to an
+immediate encounter win ("Confirmed by the user: the frozen branch
+simplifies to a win," `turn/search_execution.py`'s own ICE_SUSPEND
+dispatch) -- but nothing ever narrated *why* the encounter ended that
+way, even though the real `_LShIce` sentence exists and is fully
+tested. New `SearchExecutionResult.ice_suspend_immobilized`, set at
+the one call site where the frozen branch already calls `_outcome_
+from()` directly (mirroring Hand of Death's own `squeeze_hits`
+attachment pattern exactly -- no nonlocal accumulator needed, since
+this branch always terminates the encounter at that same call site);
+`describe_search()` renders `render_ice_immobilized()` for whichever
+side lost, right before any fatal-death lines. The sibling "slowed"/
+"flying crash"/"ghost immune" branches (`_LPIce`/`_LIceCr`/`_LIceGh`)
+are real and reachable too, but none of them terminates the encounter
+at its own call site the way the frozen branch does -- capturing them
+would need a nonlocal accumulator threaded through this function's own
+several other exit points (Flee/Beg/Talk success, the exhausted-
+tactics fallback, ...), a real, separate, larger follow-up, not
+attempted here. `_LBIce`/`_LFIce`/`_LWMelt`/`_LSFroz` (break-out
+attempt/success, waiting for the ice to melt, a blocked Steal against
+a frozen target) remain a genuine, permanent model-scope gap, not a
+wiring gap: the real multi-round "frozen but still fighting" state
+these describe was deliberately eliminated by the same "frozen = win"
+simplification, so nothing in this project's data model can ever reach
+them. 5 new/extended assertions across 2 files confirmed to fail
+against the pre-fix code (`AttributeError`/`TypeError`, the field
+didn't exist) and pass against the fix. Test count: 6841 -> 6844. Full
+suite verified green (unchanged, 6841) before touching a single test.
+
 ## Setup
 
 ```

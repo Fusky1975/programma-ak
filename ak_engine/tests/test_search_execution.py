@@ -2374,6 +2374,8 @@ def test_execute_search_cast_ice_suspend_frozen_branch_wins_instantly():
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert result.winner == "leader"
+    # Phase 855: flags the real _LShIce narration for describe_search().
+    assert result.ice_suspend_immobilized is True
 
 
 def test_execute_search_cast_ice_suspend_flying_branch_crash_damage_can_kill():
@@ -2389,6 +2391,10 @@ def test_execute_search_cast_ice_suspend_flying_branch_crash_damage_can_kill():
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert result.winner == "leader"
+    # Phase 855: the flying-crash branch is a separate, still-unflagged
+    # gap (see SearchExecutionResult.ice_suspend_immobilized's own
+    # docstring) -- only the frozen branch sets this.
+    assert result.ice_suspend_immobilized is False
 
 
 def test_execute_search_cast_ice_suspend_slowed_branch_grants_bonus_attacks():
@@ -2404,6 +2410,9 @@ def test_execute_search_cast_ice_suspend_slowed_branch_grants_bonus_attacks():
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
     assert result.winner == "leader"
+    # Phase 855: the slowed branch is a separate, still-unflagged gap --
+    # only the frozen branch sets this.
+    assert result.ice_suspend_immobilized is False
 
 
 def test_execute_search_cast_control_undead_ineligible_target_consumes_no_roll():

@@ -7184,6 +7184,55 @@ def test_describe_search_inconclusive_combat_renders_only_the_opening_line():
     assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
 
 
+# -- Phase 855 (SAY.PAS _LShIce): Ice Suspend's own "fully frozen" branch --
+# -- always ends the encounter as an immediate win (turn/encounter.py's --
+# -- own Phase 189 addendum) -- see SearchExecutionResult.ice_suspend_ --
+# -- immobilized's own docstring for why only this one branch is captured.
+
+
+def test_describe_search_ice_suspend_immobilized_guardian_renders_before_win():
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=True, winner="leader", feature_looted=True, ice_suspend_immobilized=True
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "guardian was immobilized by the shell of ice.",
+    ]
+
+
+def test_describe_search_ice_suspend_immobilized_leader_renders_before_mortal_wound():
+    result = SearchExecutionResult(
+        accepted=True, combat_resolved=True, winner="monster", leader_killed=True, ice_suspend_immobilized=True
+    )
+    rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric was immobilized by the shell of ice.",
+        "Aldric was mortally wounded.",
+        "and so it was that Aldric met Aldric's unseemly end.",
+    ]
+
+
+def test_describe_search_ice_suspend_immobilized_false_renders_no_extra_line():
+    # Non-regression: the default (every pre-Phase-855 fixture) renders
+    # nothing extra -- same shape as test_describe_search_leader_won_
+    # renders_only_the_opening_line above, just spelled out explicitly
+    # for this new field.
+    result = SearchExecutionResult(accepted=True, combat_resolved=True, winner="leader", feature_looted=True)
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
 # -- Phase 672/673: report-layer narration for the 3 raid-pacification --
 # -- outcomes -- real, sourced SAY.PAS text as of Phase 673 (Desktop/ --
 # -- BOLD OK.txt), see render_guardian_pacified_by_fulfill()/render_ --

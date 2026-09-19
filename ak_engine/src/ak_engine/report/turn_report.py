@@ -10538,6 +10538,15 @@ def describe_search(
         if proc_line is not None:
             lines.append(proc_line)
 
+    # Phase 855 (SAY.PAS _LShIce): Ice Suspend's own "fully frozen"
+    # branch always simplifies to an immediate win (turn/encounter.py's
+    # own Phase 189 addendum) -- render the real narration for *why*,
+    # before any fatal-death lines below. The frozen side is whichever
+    # side didn't win this encounter.
+    if result.ice_suspend_immobilized:
+        frozen_name = monster_name if result.winner == "leader" else character_name
+        lines.append(render_ice_immobilized(frozen_name, rng))
+
     if result.combat_resolved and result.winner == "monster" and result.leader_killed:
         lines.append(render_mortally_wounded(character_name, rng, is_sea=is_sea))
         lines.append(render_character_death(character_name, rng))

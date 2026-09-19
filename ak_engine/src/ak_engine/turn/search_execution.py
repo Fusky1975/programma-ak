@@ -1016,6 +1016,22 @@ class SearchExecutionResult:
     # registered (unlike the terrain-King credit, which still needs
     # one). See `report/turn_report.py render_magic_feature_discovery()`.
     magic_feature_discovered: MagicFeature | None = None
+    # Phase 855 (SAY.PAS _LShIce, module docstring's own Phase 123
+    # addendum): Ice Suspend's own "fully frozen" branch (`turn/
+    # encounter.py ice_suspension_is_frozen()`) already ends the
+    # encounter as an immediate win ("Confirmed by the user: the frozen
+    # branch simplifies to a win," that module's own Phase 189 addendum)
+    # -- but nothing ever narrated *why*. This flags exactly that one
+    # real, reachable branch so `report/turn_report.py describe_search()`
+    # can render the real `_LShIce` sentence. The sibling "slowed"/
+    # "flying crash"/"ghost immune" branches stay unflagged here on
+    # purpose: unlike this one, none of them terminates the encounter at
+    # the same call site, so capturing them would need a nonlocal
+    # accumulator threaded through every one of this function's several
+    # other exit points (Flee/Beg/Talk success, the exhausted-tactics
+    # fallback, ...) -- a real, separate, larger follow-up, not attempted
+    # here.
+    ice_suspend_immobilized: bool = False
 
 
 def execute_search(
@@ -2106,7 +2122,13 @@ def _resolve_search_encounter(
                 return None
             if ice_suspension_is_frozen(target.hit_points, level):
                 # Confirmed by the user: the frozen branch simplifies to a win.
-                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                outcome = _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                # Phase 855: flags the real _LShIce narration -- see
+                # SearchExecutionResult.ice_suspend_immobilized's own
+                # docstring for why only this one branch is captured.
+                if outcome is not None:
+                    outcome.ice_suspend_immobilized = True
+                return outcome
             if target_is_monster and monster_species in ICE_SUSPENSION_FLYING_MONSTERS:
                 target.hit_points -= roll_ice_suspension_flying_crash_damage(rng)
                 caster.bonus_unanswered_attacks += roll_ice_suspension_flying_bonus_rounds(rng)
