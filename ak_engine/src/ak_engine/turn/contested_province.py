@@ -13,9 +13,16 @@ that it's illegal to move from a contested province to an adjacent enemy
 province. You can, however, move from a province owned by a neutral
 player-King to an enemy province."
 
-This module answers the specific yes/no questions the rulebook poses; it
-does not track a full per-province state machine across turns (no
-persistent game state exists yet to hang that off of).
+This module answers the specific yes/no questions the rulebook poses as
+pure predicates; the actual per-province state machine across turns
+lives elsewhere, on ``models/game_state.py ProvinceState.contested_by_
+kingdom_id``/``.contested_from_coord`` (Phase 409) -- set by ``turn/
+battle_orchestrator.py fight_battle()``'s own [7.6] "mixed result"
+branch, cleared by the same two branches, and consumed by ``turn/
+turn_processor.py _dispatch_contested_rebattles()`` to decide whether a
+still-eligible attacker forces another battle next phase. **Stale as of
+Phase 409** -- this paragraph used to say no such persistent state
+existed anywhere in the project; it has, for a while.
 """
 
 from __future__ import annotations
