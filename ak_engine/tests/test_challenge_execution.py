@@ -853,6 +853,23 @@ def test_execute_challenge_cast_charm_success_makes_the_caster_flee():
     assert 1 in state.leaders and 2 in state.leaders
 
 
+def test_execute_challenge_cast_fizzle_falls_through_to_melee_and_is_recorded():
+    # Phase 858: end-to-end proof the fizzle reaches ChallengeExecutionResult,
+    # not just the inner ChallengeCombatOutcome.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.CHARM, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.9]))
+
+    assert result.winner_leader_id == 1
+    assert result.loser_leader_id == 2
+    assert result.fizzled_spells == (("A", Spell.CHARM),)
+
+
 def test_resolve_personal_combat_cast_charm_blocked_by_analytical_psychology():
     # Phase 529: AKGEN_reverse_engineering_report (3).md SS8.3 -- Counter_
     # Science(target, Charm) is checked before the flee itself; when the
@@ -893,6 +910,60 @@ def test_resolve_personal_combat_cast_charm_unprotected_target_still_flees():
     )
 
     assert outcome == "fled"
+
+
+def test_resolve_personal_combat_cast_records_a_fizzle_on_a_failed_roll():
+    # Phase 858: SBUNGLE.X's own real "personal-combat Cast that just
+    # fizzles" trigger -- `resolve_personal_combat_spell_cast()` (real,
+    # sourced "30% + 15%/level" roll) failing with no other precondition
+    # involved. Skill 0 gives a flat 30% chance; a scripted 0.9 roll fails.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 0, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.CHARM.value)
+    rng = ScriptedRandom([0.9])
+    fizzled: list[tuple[str, Spell]] = []
+
+    outcome = _resolve_personal_combat_cast(
+        caster,
+        caster_leader,
+        target,
+        target_leader,
+        tactic,
+        state,
+        rng,
+        is_first_tactic=True,
+        cast_slots_used={},
+        cast_spells_attempted=set(),
+        fizzled_spells=fizzled,
+    )
+
+    assert outcome is None
+    assert fizzled == [("A", Spell.CHARM)]
+
+
+def test_resolve_personal_combat_cast_fizzle_defaults_to_none_without_a_list():
+    # every pre-Phase-858 caller omits fizzled_spells entirely -- must
+    # stay a safe no-op, not a crash.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 0, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.CHARM.value)
+    rng = ScriptedRandom([0.9])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+    )
+
+    assert outcome is None
 
 
 def test_resolve_personal_combat_cast_charm_with_enhanced_ability_transfers_item():
@@ -1946,6 +2017,22 @@ def test_resolve_challenge_combat_flee_only_plan_still_falls_through_to_the_exha
     assert outcome.fled is False
     assert outcome.winner == "b"
     mock_duel.assert_called_once()
+
+
+def test_resolve_challenge_combat_a_fizzled_cast_falls_through_and_is_recorded():
+    # Phase 858: a fizzled CAST tactic falls through to whatever tactic
+    # follows (matching the "encounter continues" contract this function
+    # already had for a fizzle before this phase), and the fizzle itself
+    # reaches ChallengeCombatOutcome.fizzled_spells.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.CAST, Spell.CHARM.value), SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([0.9]))
+
+    assert outcome.winner == "a"
+    assert outcome.fizzled_spells == (("A", Spell.CHARM),)
 
 
 def test_resolve_challenge_combat_flee_tactic_temper_bonus_reaches_through():

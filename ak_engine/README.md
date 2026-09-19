@@ -34731,6 +34731,63 @@ against the pre-fix code and pass against the fix. Test count: 6844 ->
 6845. Full suite verified green (unchanged, 6844) before touching a
 single test.
 
+### Phase 859: wire SBUNGLE.X's real "personal-combat Cast that just fizzles" narration
+
+Continuing the manual cover-to-cover sweep, this time into the newly-
+built zero-caller-function audit rather than a specific composer.
+`report/turn_report.py render_spell_fizzled_in_combat()` (SBUNGLE.X)
+was fully sourced, tested, and unwired -- its own module comment
+claimed "this project's combat resolution has no probabilistic
+spell-fizzle roll of its own either," a stale/incorrect claim
+(`feedback_stale_known_gap_claims`'s own recurring class): `turn/
+encounter.py resolve_personal_combat_spell_cast()` IS exactly that
+roll (a real, sourced "30% + 15%/level" Personal-Combat cast-success
+chance, AKGEN_reverse_engineering_report (2).md SS21.1), live at both
+real Personal-Combat call sites (`turn/challenge_execution.py`'s
+`_resolve_personal_combat_cast()` and `turn/search_execution.py`'s
+`_resolve_cast_tactic()`). Both dispatchers already had one precise,
+unambiguous `if not succeeded: return None` branch (excluding
+`CONTROL_UNDEAD`'s own separately-narrated failure effect, checked in
+its own earlier branch) -- exactly SBUNGLE.X's own real trigger.
+
+New `fizzled_spells` accumulator field on `ChallengeCombatOutcome`/
+`ChallengeExecutionResult`/`PursueExecutionResult` (challenge_
+execution.py, storing `(caster_name, spell)` tuples) and on
+`SearchExecutionResult` (search_execution.py, storing `(side, spell)`
+tuples with `side` = `"leader"`/`"monster"`, matching that module's
+own `winner` field convention). `_resolve_personal_combat_cast()`
+gained an optional `fizzled_spells` output parameter (default `None`,
+every pre-existing caller/test unaffected); `resolve_challenge_
+combat()`'s own local accumulator is threaded into both real call
+sites and the `_outcome()` closure, then copied through to
+`ChallengeExecutionResult` at all 3 real construction sites in
+`execute_challenge()`, and `PursueExecutionResult` picks it up for
+free via the shared combat core (`execute_pursue()`'s armyless case).
+`search_execution.py`'s own accumulator is appended directly inside
+the `_resolve_cast_tactic()` closure and attached to the final
+`SearchExecutionResult` at every point `melee_swings`/`fire_arrow_
+shots` are already attached (`_finish_melee_outcome()`, `_resolve_
+fire_arrow_phase()`, and `_resolve_steal()`'s own caught-thief
+BOW_RANGE/MELEE_RANGE branches) -- exactly as complete as those
+already-established accumulators, no further.
+
+`report/turn_report.py describe_encounter_combat()` (shared by
+Challenge/Pursue) and `describe_search()` both render one `render_
+spell_fizzled_in_combat()` line per fizzle, placed before any Fire
+Arrow/Melee narration (Cast never needs to close range, per this
+project's own Phase 292 addendum) -- a documented placement choice,
+not literally chronological against Fire Arrow/Melee the way those
+two already are against each other. Test count: 6845 -> 6855 (net
++10: 4 in `test_challenge_execution.py`, 1 in `test_pursue_execution.py`,
+1 in `test_search_execution.py` plus 1 existing test extended with a
+new assertion, 4 in `test_turn_report.py`). Full suite verified green
+(unchanged, 6845) before writing a single new test -- a provable
+no-op for every existing fixture, confirmed empirically (no existing
+test scripts a real Personal-Combat cast-fizzle roll). All 8 new
+assertion-bearing tests confirmed to fail against the pre-fix code
+(`TypeError`/`AttributeError`, the new fields didn't exist) and pass
+against the fix via a scoped `git stash` round-trip.
+
 ## Setup
 
 ```

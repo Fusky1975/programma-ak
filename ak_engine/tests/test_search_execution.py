@@ -1859,6 +1859,25 @@ def test_execute_search_guardians_own_cast_slot_level_1_blocks_a_second_differen
     assert mock_cast.call_count == 1  # the guardian's own 2nd cast never reached the roll -- slot exhausted
 
 
+def test_execute_search_guardians_own_fizzled_cast_is_recorded():
+    # Phase 858: the "monster" side of the same real SBUNGLE.X trigger --
+    # mirrors test_execute_search_cast_charm_failure_falls_through_to_melee
+    # but for the guardian's own leading Cast instead of the leader's.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.GARGOYLE))
+    monster_plan = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch.dict(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.GARGOYLE: {Ability.ELEMENTAL: 1}}
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert result.fizzled_spells == (("monster", Spell.FIREBALL),)
+
+
 def test_execute_search_guardian_and_leader_cast_slots_track_independently():
     # A leader-side slot exhaustion must never block the guardian's own
     # independent slot pool for the identical Ability, and vice versa.
@@ -1948,6 +1967,10 @@ def test_execute_search_cast_charm_failure_falls_through_to_melee():
 
     assert mock_melee.called
     assert result.winner == "leader"
+    # Phase 858: SBUNGLE.X's own real "personal-combat Cast that just
+    # fizzles" trigger -- the failed roll above is recorded, side-labeled
+    # "leader" since the searching character was the caster here.
+    assert result.fizzled_spells == (("leader", Spell.CHARM),)
 
 
 def test_execute_search_cast_charm_undead_caster_uses_necromancy_skill_level():

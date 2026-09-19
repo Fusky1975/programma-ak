@@ -770,6 +770,7 @@ def _resolve_personal_combat_cast(
     is_first_tactic: bool,
     cast_slots_used: dict[Ability, int],
     cast_spells_attempted: set[Spell],
+    fizzled_spells: list[tuple[str, Spell]] | None = None,
 ) -> str | None:
     """Leader-vs-leader Personal-Combat spell dispatch -- see module
     docstring's own Phase 290 addendum for how this was re-derived
@@ -919,6 +920,12 @@ def _resolve_personal_combat_cast(
         return None
 
     if not succeeded:
+        # Phase 858: SBUNGLE.X's own real "personal-combat Cast that just
+        # fizzles" text -- see `ChallengeCombatOutcome.fizzled_spells`'s
+        # own docstring for why this is the one precise, unambiguous
+        # trigger point.
+        if fizzled_spells is not None:
+            fizzled_spells.append((caster.name, spell))
         return None
 
     if spell is Spell.CHARM:
@@ -1422,6 +1429,21 @@ class ChallengeCombatOutcome:
     # final blow.
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
     melee_swings: tuple[MeleeSwing, ...] = ()
+    # Phase 858 (continuing the manual report-completeness sweep):
+    # `turn/encounter.py resolve_personal_combat_spell_cast()` is a real,
+    # sourced (AKGEN_reverse_engineering_report (2).md SS21.1) probabilistic
+    # cast-success roll -- the module comment above `report/turn_report.py
+    # render_spell_fizzled_in_combat()` (SBUNGLE.X) claimed "this project's
+    # combat resolution has no probabilistic spell-fizzle roll of its own
+    # either," which was stale: this roll IS exactly that, at both real
+    # call sites (this module and `turn/search_execution.py`). One
+    # `(caster_name, spell)` entry per `CAST` tactic whose roll came back
+    # `False` with no other precondition failure -- excludes `CONTROL_
+    # UNDEAD`'s own failure (a real, distinct, differently-narrated effect
+    # via `control_undead_failure_new_hit_points()`, checked in its own
+    # branch *before* the generic `if not succeeded: return None` this
+    # list is populated from).
+    fizzled_spells: tuple[tuple[str, Spell], ...] = ()
 
 
 def _close_to(target_range: CombatRange, current_range: CombatRange) -> CombatRange:
@@ -1781,6 +1803,8 @@ def resolve_challenge_combat(
     # as plain locals here since this function has no nested closures.
     fire_arrow_shots: list[FireArrowShot] = []
     melee_swings: list[MeleeSwing] = []
+    # Phase 858: see `ChallengeCombatOutcome.fizzled_spells`'s own docstring.
+    fizzled_spells: list[tuple[str, Spell]] = []
 
     def _outcome(
         *, winner: str | None = None, fled: bool = False
@@ -1794,6 +1818,7 @@ def resolve_challenge_combat(
             stolen_item_ids=list(stolen_item_ids),
             fire_arrow_shots=tuple(fire_arrow_shots),
             melee_swings=tuple(melee_swings),
+            fizzled_spells=tuple(fizzled_spells),
         )
 
     def _peek_target_cast() -> SearchTactic | None:
@@ -1847,6 +1872,7 @@ def resolve_challenge_combat(
             is_first_tactic=is_first,
             cast_slots_used=target_cast_slots_used,
             cast_spells_attempted=target_cast_spells_attempted,
+            fizzled_spells=fizzled_spells,
         )
         if outcome == "fled":
             return "fled"
@@ -2054,6 +2080,7 @@ def resolve_challenge_combat(
                 is_first_tactic=(index == 0),
                 cast_slots_used=caster_cast_slots_used,
                 cast_spells_attempted=caster_cast_spells_attempted,
+                fizzled_spells=fizzled_spells,
             )
             if outcome == "fled":
                 return _outcome(fled=True)
@@ -2167,6 +2194,9 @@ class ChallengeExecutionResult:
     # render SANOTE.X2 record 79 (`Desktop/LCHALL.md` section 9.2a)
     # right after the ENCATT.X search line.
     used_spy_assassinate: bool = False
+    # Phase 858: copied straight from `ChallengeCombatOutcome` -- see that
+    # dataclass's own `fizzled_spells` docstring.
+    fizzled_spells: tuple[tuple[str, Spell], ...] = ()
 
 
 def _apply_bravest_talk_inspiration(state: GameState, challenger: LeaderState, target: LeaderState) -> None:
@@ -2453,6 +2483,7 @@ def execute_challenge(
             stolen_item_ids=combat_result.stolen_item_ids,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
+            fizzled_spells=combat_result.fizzled_spells,
             used_spy_assassinate=used_spy_assassinate,
         )
     if combat_result.winner is None:
@@ -2465,6 +2496,7 @@ def execute_challenge(
             stolen_item_ids=combat_result.stolen_item_ids,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
+            fizzled_spells=combat_result.fizzled_spells,
             used_spy_assassinate=used_spy_assassinate,
         )
 
@@ -2498,5 +2530,6 @@ def execute_challenge(
         stolen_item_ids=combat_result.stolen_item_ids,
         fire_arrow_shots=combat_result.fire_arrow_shots,
         melee_swings=combat_result.melee_swings,
+        fizzled_spells=combat_result.fizzled_spells,
         used_spy_assassinate=used_spy_assassinate,
     )

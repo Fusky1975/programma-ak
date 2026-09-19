@@ -177,7 +177,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.enums import Ability
+from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
@@ -358,6 +358,11 @@ class PursueExecutionResult:
     # Outcome`.
     fire_arrow_shots: tuple[FireArrowShot, ...] = ()
     melee_swings: tuple[MeleeSwing, ...] = ()
+    # Phase 858: same field, same reason as `turn/challenge_execution.py
+    # ChallengeCombatOutcome.fizzled_spells`'s own docstring -- copied
+    # straight through, set for the armyless-combat branch only, which
+    # shares that module's combat core directly.
+    fizzled_spells: tuple[tuple[str, Spell], ...] = ()
     # Phase 695: `AdvancedAbility.SPY_SUPER_SLEUTH`'s own real text --
     # "the Spy can also guess how far away the target is (the guess may
     # be off by one province)." Set only when the pursuer holds the
@@ -548,6 +553,7 @@ def execute_pursue(
             stolen_item_ids=combat_result.stolen_item_ids,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
+            fizzled_spells=combat_result.fizzled_spells,
             guessed_distance=guessed_distance,
         )
     if combat_result.winner is None:
@@ -560,6 +566,7 @@ def execute_pursue(
             stolen_item_ids=combat_result.stolen_item_ids,
             fire_arrow_shots=combat_result.fire_arrow_shots,
             melee_swings=combat_result.melee_swings,
+            fizzled_spells=combat_result.fizzled_spells,
             guessed_distance=guessed_distance,
         )
 
@@ -584,6 +591,7 @@ def execute_pursue(
         stolen_item_ids=combat_result.stolen_item_ids,
         fire_arrow_shots=combat_result.fire_arrow_shots,
         melee_swings=combat_result.melee_swings,
+        fizzled_spells=combat_result.fizzled_spells,
         guessed_distance=guessed_distance,
     )
 

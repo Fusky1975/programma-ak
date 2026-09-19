@@ -3955,12 +3955,23 @@ def describe_kill_enemy_berserk_retaliation(
 # itself operates in); `SAY.PAS:674 _LBung: FD('sbungle',S_PCom,8)` is
 # the personal-combat Cast tactic's own sibling (`S_PCom`, the same
 # family Phase 588's `CCAST.X`/`FLAMEREL.X`/`SHADTR.X` cluster lives
-# in). Neither is wired -- see ``describe_cast()``'s own Phase 603
-# correction above for why ``SFAIL.X`` stays unwired despite being real,
-# sourced text; ``SBUNGLE.X`` has the identical problem one level down,
-# since this project's combat resolution has no probabilistic
-# spell-fizzle roll of its own either. ``~`` is the already-established
-# spell-name marker (``render_cast_no_treasure()``, Phase 588).
+# in). ``SFAIL.X`` stays unwired -- see ``describe_cast()``'s own Phase
+# 603 correction above for why (Action-Cast's own validity checks are
+# all deterministic; no probabilistic "just fizzled" roll exists for
+# that mechanic). **Phase 858 correction**: the claim that "this
+# project's combat resolution has no probabilistic spell-fizzle roll of
+# its own either" was stale/wrong the moment it was written -- `turn/
+# encounter.py resolve_personal_combat_spell_cast()` IS exactly that
+# roll (AKGEN_reverse_engineering_report (2).md SS21.1, "30% + 15%/level"),
+# live at both real Personal-Combat call sites (`turn/challenge_
+# execution.py`/`turn/search_execution.py`). ``SBUNGLE.X`` is now wired
+# via both modules' own `fizzled_spells` accumulator, populated at the
+# one precise, unambiguous point each dispatcher already has (`if not
+# succeeded: return None`, excluding `CONTROL_UNDEAD`'s own separately-
+# narrated failure effect) -- see ``describe_encounter_combat()``/
+# ``describe_search()`` for the real consumers. ``~`` is the already-
+# established spell-name marker (``render_cast_no_treasure()``, Phase
+# 588).
 _SBUNGLE_TEMPLATES: list[str] = [
     "< attempted to bolster/Rhelp > fortunes/Rcause with ^A ~ "
     "spell, but it fizzled/Rsputtered at the last moment/Rsecond.",
@@ -7004,8 +7015,14 @@ def describe_encounter_combat(
 
     Order: `describe_steal()`'s own sub-event line (if any) first --
     Steal, when present, always happens *before* whatever combat follows
-    getting caught, chronologically -- then every Fire Arrow shot, then
-    every Melee swing (both in `result` order, i.e. chronological), then
+    getting caught, chronologically -- then (Phase 858, backlog: SBUNGLE.X)
+    one line per fizzled Personal-Combat Cast attempt (`result.fizzled_
+    spells`, a documented placement choice -- Cast never needs to close
+    range, per this module's own Phase 292 addendum, so a fizzle logically
+    precedes range-closing combat, though it isn't literally chronological
+    against Fire Arrow/Melee the way those two already are against each
+    other), then every Fire Arrow shot, then every Melee swing (both in
+    `result` order, i.e. chronological), then
     `render_mortally_wounded()` if `result.loser_killed` (the same
     MORTWOUN.X sentence every other personal-combat death already uses),
     then (Phase 611) `render_character_death()` -- HORDEATH.X's own
@@ -7034,6 +7051,15 @@ def describe_encounter_combat(
     steal_line = describe_steal(result, thief_name=a_name, victim_name=b_name, rng=rng, state=state)
     if steal_line is not None:
         lines.append(steal_line)
+
+    # Phase 858: SBUNGLE.X's own real "personal-combat Cast that just
+    # fizzles" text -- see `ChallengeCombatOutcome.fizzled_spells`'s own
+    # docstring. Rendered before Fire Arrow/Melee, matching the engine's
+    # own "Cast never needs to close range" precedence (module docstring's
+    # Phase 292 addendum) -- a fizzled cast attempt logically precedes
+    # whatever range-closing combat follows it.
+    for caster_name, spell in result.fizzled_spells:
+        lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
 
     for shot in result.fire_arrow_shots:
         attacker_name, defender_name = (a_name, b_name) if shot.shooter == "a" else (b_name, a_name)
@@ -10470,6 +10496,17 @@ def describe_search(
     monster_name = MONSTER_NAMES.get(result.guardian_monster, "guardian") if result.guardian_monster is not None else "guardian"
     weapon = MONSTER_RANGED_WEAPON.get(result.guardian_monster) if result.guardian_monster is not None else None
     flavor = missile_attack_flavor(weapon) if weapon is not None else None
+
+    # Phase 858 (backlog: SBUNGLE.X, the "personal-combat Cast that just
+    # fizzles" sentence -- see `SearchExecutionResult.fizzled_spells`'s
+    # own docstring for the real, sourced trigger and why it was
+    # previously unwired). Placed right after the opening search-attempt
+    # line, before any Fire Arrow/Melee narration, matching this project's
+    # `describe_encounter_combat()` sibling's own documented placement
+    # choice (Cast never needs to close range).
+    for side, spell in result.fizzled_spells:
+        caster_name = character_name if side == "leader" else monster_name
+        lines.append(render_spell_fizzled_in_combat(caster_name, SPELL_NAME[spell], rng))
 
     for shot in result.fire_arrow_shots:
         if shot.shooter == "b" and flavor == "breath_weapon":

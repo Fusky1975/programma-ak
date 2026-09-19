@@ -3684,6 +3684,37 @@ def test_describe_steal_success_with_no_state_renders_nothing():
 # -- describe_encounter_combat / describe_challenge (Phase 417) -------------
 
 
+def test_describe_encounter_combat_narrates_a_fizzled_cast_before_fire_arrow_and_melee():
+    # Phase 858: SBUNGLE.X's own real "personal-combat Cast that just
+    # fizzles" text -- see ChallengeCombatOutcome.fizzled_spells's own
+    # docstring for the real, sourced trigger and the placement choice.
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        fizzled_spells=(("Aldric", Spell.FIREBALL),),
+        fire_arrow_shots=(FireArrowShot(shooter="a", hit=True, damage=5),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0, 0])
+
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+
+    assert lines[0] == "Aldric attempted to bolster Aldric's fortunes with a Fireball spell, but it fizzled at the last moment."
+    assert lines[1] == "Aldric Fired an arrow at Borin and inflicted 5 damage points."
+
+
+def test_describe_encounter_combat_omits_fizzled_spells_line_when_none_fizzled():
+    result = ChallengeExecutionResult(
+        accepted=True,
+        combat_occurred=True,
+        fire_arrow_shots=(FireArrowShot(shooter="a", hit=True, damage=5),),
+    )
+    rng = ScriptedRandom([0.1] * 30, choice_indices=[0, 0])
+
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+
+    assert lines == ["Aldric Fired an arrow at Borin and inflicted 5 damage points."]
+
+
 def test_describe_encounter_combat_narrates_fire_arrow_shots_and_melee_swings_in_order():
     result = ChallengeExecutionResult(
         accepted=True,
@@ -7182,6 +7213,39 @@ def test_describe_search_inconclusive_combat_renders_only_the_opening_line():
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
 
     assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+def test_describe_search_renders_a_fizzled_leader_cast_right_after_the_opening_line():
+    # Phase 858: SBUNGLE.X's own real "personal-combat Cast that just
+    # fizzles" text -- see SearchExecutionResult.fizzled_spells's own
+    # docstring for the real, sourced trigger.
+    result = SearchExecutionResult(accepted=True, combat_resolved=True, winner=None, fizzled_spells=(("leader", Spell.FIREBALL),))
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Aldric attempted to bolster Aldric's fortunes with a Fireball spell, but it fizzled at the last moment.",
+    ]
+
+
+def test_describe_search_renders_a_fizzled_monster_cast_using_the_guardians_own_name():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=True,
+        winner=None,
+        guardian_monster=Monster.GARGOYLE,
+        fizzled_spells=(("monster", Spell.FIREBALL),),
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        "Gargoyle attempted to bolster Gargoyle's fortunes with a Fireball spell, but it fizzled at the last moment.",
+    ]
 
 
 # -- Phase 855 (SAY.PAS _LShIce): Ice Suspend's own "fully frozen" branch --

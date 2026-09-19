@@ -957,6 +957,15 @@ class SearchExecutionResult:
     # (a self-contained atomic duel, not part of the tactic-walk's own
     # accumulator).
     melee_swings: tuple[MeleeSwing, ...] = ()
+    # Phase 858: see `turn/challenge_execution.py ChallengeCombatOutcome.
+    # fizzled_spells`'s own docstring -- the identical real, sourced
+    # SBUNGLE.X trigger, populated by `_resolve_cast_tactic()`'s own
+    # `if not succeeded:` branch below. Each entry is `("leader"/
+    # "monster", spell)` -- a side label matching this dataclass's own
+    # `winner` field convention, not a raw name (unlike the challenge_
+    # execution.py sibling field, which has no equivalent "leader"/
+    # "monster" concept to borrow).
+    fizzled_spells: tuple[tuple[str, Spell], ...] = ()
     guardian_monster: Monster | None = None
     # Phase 213: the originating request, so a caller (report/turn_report.py
     # describe_turn_results()) can resolve the searched feature's own id.
@@ -1994,6 +2003,14 @@ def _resolve_search_encounter(
             return None
 
         if not succeeded:
+            # Phase 858: SBUNGLE.X's own real "personal-combat Cast that
+            # just fizzles" text -- see the enclosing function's own
+            # `fizzled_spells` accumulator comment. Stored as the same
+            # "leader"/"monster" side label this module's own `winner`
+            # field already uses, not a raw name, so the report layer can
+            # resolve display names itself (`character_name`/`monster_
+            # name`) without relying on `Combatant.name` matching exactly.
+            fizzled_spells.append(("leader" if caster_is_leader else "monster", spell))
             return None
 
         if spell is Spell.CHARM:
@@ -2558,6 +2575,12 @@ def _resolve_search_encounter(
     # path (extended once, from the duel's own already-aggregated result),
     # mirroring `fire_arrow_shots`'s own accumulator pattern above.
     melee_swings: list[MeleeSwing] = []
+    # Phase 858: see `turn/challenge_execution.py ChallengeCombatOutcome.
+    # fizzled_spells`'s own docstring -- the identical, real, sourced
+    # SBUNGLE.X "personal-combat Cast that just fizzles" trigger, wired
+    # into this module's own leader-vs-monster Cast dispatch too (`if not
+    # succeeded:` inside `_resolve_cast_tactic()` below).
+    fizzled_spells: list[tuple[str, Spell]] = []
 
     def _resolve_guardian_pacification() -> tuple[bool, bool]:
         """Phase 673 (``Desktop/BOLD OK.txt``): called once, whenever this
@@ -2597,6 +2620,7 @@ def _resolve_search_encounter(
         outcome = _outcome_from(combat_result) or SearchExecutionResult(accepted=True, combat_resolved=True, winner=None)
         outcome.fire_arrow_shots = fire_arrow_shots
         outcome.melee_swings = tuple(melee_swings)
+        outcome.fizzled_spells = tuple(fizzled_spells)
         outcome.guardian_monster = feature.guardian_monster
         return outcome
 
@@ -2736,6 +2760,7 @@ def _resolve_search_encounter(
         outcome = _outcome_from(duel_result)
         if outcome is not None:
             outcome.fire_arrow_shots = fire_arrow_shots
+            outcome.fizzled_spells = tuple(fizzled_spells)
             outcome.guardian_monster = feature.guardian_monster
         return outcome
 
@@ -2837,12 +2862,14 @@ def _resolve_search_encounter(
             outcome = _outcome_from(melee_duel_result)
             if outcome is not None:
                 outcome.melee_swings = tuple(melee_swings)
+                outcome.fizzled_spells = tuple(fizzled_spells)
                 outcome.guardian_monster = feature.guardian_monster
             return outcome
         duel_result = resolve_fire_arrow_duel(leader_combatant, monster_combatant, rng)
         outcome = _outcome_from(duel_result)
         if outcome is not None:
             outcome.fire_arrow_shots = duel_result.shots
+            outcome.fizzled_spells = tuple(fizzled_spells)
             outcome.guardian_monster = feature.guardian_monster
         return outcome
 
