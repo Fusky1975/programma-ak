@@ -74,10 +74,20 @@ entirely on the Pascal source, the rulebook, its addendum, and the
 official ``AKMOVES.TXT`` example sheet, with no real-data cross-check
 possible.
 
-**Decode-only**: resolving what a successful Spy report reveals, or
-actually giving a leader reactive Defend behavior, needs game-state
-logic (intelligence tracking, battle-triggering on enemy moves) not
-present anywhere in the available Pascal source.
+**Decode-only, itself** -- this module only turns a raw ``PlanPhase``
+into a ``SpyProvinceRequest``/``DefendRequest``; it does not resolve
+what a successful Spy report reveals or give a leader reactive Defend
+behavior. **Stale as of Phase 134 (Defend) and later phases (ASpy)** --
+this paragraph used to say that real-world logic needed game-state
+machinery this project didn't have anywhere; both exist now:
+``turn/aspy_execution.py execute_aspy()`` is the real Spy Province
+report generator (owner/adjacent-owners/taxation/recruitable-types/
+capital-status, plus several Advanced-Ability-gated enrichments), and
+``turn/defend_execution.py`` is the real reactive-coverage-area/
+battle-triggering implementation the Phase 134 addendum above already
+points to. Only the *decode* step here stayed this narrow -- both
+downstream modules resolve their own province/leader references from
+live ``GameState``, not from the raw ``obj``/``extra`` values above.
 """
 
 from __future__ import annotations

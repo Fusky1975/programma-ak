@@ -40,10 +40,14 @@ files** (re-verified fresh) -- same situation as Fire, Trade, Challenge,
 Pursue, Use_MI, ASpy, and Defend. This module's correctness rests on
 the rulebook (English and Italian) and the Pascal source alone.
 
-**Decode-only**: resolving whether a Trail actually catches its target
-and what intelligence it reveals needs the same missing turn-simulation
-engine this project has flagged as absent for every other unresolved
-action.
+**Decode-only, itself** -- this module only turns a raw ``PlanPhase``
+into a ``TrailRequest``. **Stale as of Phase 70** -- this paragraph
+used to say resolving whether a Trail catches its target and what
+intelligence it reveals needed a turn-simulation engine this project
+didn't have; ``turn/trail_execution.py`` is that engine (the shared
+Spy Table catch-up roll also used by Pursue, all six named
+intelligence fields [3.17] lists, Spy Super Sleuth/Expanded Spying/
+Blackmail's own wiring) and has existed for a long time.
 
 Not to be confused with **Succ_Trail** (``ActionCode.SUCC_TRAIL``),
 which this project deliberately does *not* decode at all -- see

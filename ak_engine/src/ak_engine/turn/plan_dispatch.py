@@ -160,9 +160,14 @@ to dispatch automatically:
   before this note's own last edit -- see
   [[feedback_stale_known_gap_claims]]. As of Phase 644, ``Ability.NAVAL``
   routes through the identical mechanic too ([6.1]'s own "both methods,
-  same effect" text). Sage's own skill rise runs normally here, but its
-  rulebook-additional "device discovery" side roll isn't modeled (no
-  item/device data model exists at all).
+  same effect" text). **Stale as of Phase 266** -- this note used to say
+  Sage's own rulebook-additional "device discovery" side roll wasn't
+  modeled at all (no item/device data model). It has been for a while:
+  ``execute_practice()``/``execute_practice_group()`` both roll it via
+  the shared ``_roll_sage_device_discovery()`` (real per-level chance,
+  a genuine ``Discovery`` grant via ``KingdomState.discoveries``, first-
+  discoverer Chancellor-merit credit) -- see that function's own
+  docstring for the full, disassembly-confirmed formula.
 - **WAIT**, **NO_ACTION**, and **MOVE_ABORT** dispatch as bare no-ops
   (Phase 22): no ``turn/*_decode.py`` module exists for any of the
   three, and none is needed -- an exhaustive grep of every

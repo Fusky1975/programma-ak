@@ -68,11 +68,16 @@ phase before this module (``cast_decode.py``) ever sees it --
 ``cast_decode.py`` itself is unchanged, and still only ever decodes
 phases already tagged ``ActionCode.CAST`` in the parsed token stream.
 
-**Decode-only**: resolving what a successful Cast actually does (a
-province's tax/exploration effects, a character's death/resurrection,
-army effects, etc.) needs game-state mutation logic not present anywhere
-in the available Pascal source -- only the rulebook's percentages and
-the id/target/nesting *shape* reconstructed above.
+**Decode-only, itself** -- this module only turns a raw ``PlanPhase``
+into a ``CastRequest``. **Stale as of the many phases that built
+``turn/cast_execution.py``** -- this paragraph used to say resolving
+what a successful Cast actually does needed game-state mutation logic
+this project didn't have anywhere; ``turn/cast_execution.py execute_
+cast()`` is that logic (every Action spell above, real or secret, has
+its own ``_execute_*()`` handler there -- province effects, character
+death/resurrection/Charm, the Trade->Cast secret-spell rewrite this
+same docstring already cites, and more) and has existed for a long
+time. Only the *decode* step here stayed this narrow.
 """
 
 from __future__ import annotations

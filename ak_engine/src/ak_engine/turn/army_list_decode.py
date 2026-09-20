@@ -21,10 +21,14 @@ structure by inference from the shared Pascal code path, not independent
 confirmation the way LEAVE's is.
 
 This module only decodes the request -- it does not apply it to
-``GameState``. See ``turn/plan_dispatch.py`` for why: Disband would need
-a way to represent an unowned mercenary army (``ArmyState.kingdom_id``
-isn't nullable), and Leave/Pick_Up would need a leader-to-army command
-model this project doesn't have yet.
+``GameState`` itself, that's ``turn/plan_dispatch.py``'s own
+``_dispatch_leave()``/``_dispatch_pick_up()``/``_dispatch_disband()``
+(wired since Phase 420, returning the shared ``ArmyListExecutionResult``
+-- see that dataclass's own docstring). **Stale as of Phase 420** --
+this paragraph used to say applying the decoded request needed
+modeling concepts (an unowned-mercenary representation, a leader-to-
+army command model) this project didn't have yet; both have existed
+for a while and all three dispatchers already use them.
 """
 
 from __future__ import annotations

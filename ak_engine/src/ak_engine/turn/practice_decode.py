@@ -39,21 +39,22 @@ nonetheless):
   independent ~5%-per-level chance of a "device discovery", on top of
   (not instead of) the normal [3.13] skill-rise roll.
 
-**Deliberately not built here**: resolving what a Practice phase
-actually *does* (rolling the skill/aptitude/army-quality changes above)
-needs three things this project doesn't have yet: (1) a per-leader
-``SkillTable`` in persistent ``GameState`` -- the move file only exposes
-the *King's own* 15 ability pairs, but 74% of real Practice instances in
-this sample belong to Heroes, who have no skill data available at all;
-(2) province-level grouping of every co-located character's *same-phase*
-action, since [3.13]'s core mechanic is inherently multi-character, not
-resolvable from one leader's plan in isolation; (3) the dice-roll
-procedure itself, which isn't present in the available Pascal source
-(only the rulebook's percentages and the aptitude-rise table,
-``CTME.PAS``'s ``apt_rise``, are available -- no RNG call site to
-validate against). See ``models/kingdom.py SkillTable``'s docstring for
-the now-resolved ``(skill, aptitude)`` pair meaning this future work
-would build on.
+**Decode-only, itself** -- this module only turns a raw ``PlanPhase``
+into a ``PracticeRequest``. **Stale as of Phase 44/46/167** -- this
+paragraph used to say resolving what a Practice phase actually *does*
+needed three things this project didn't have yet: a per-leader
+``SkillTable`` in persistent ``GameState`` (``LeaderState.skills``, a
+fresh all-zero table created on demand for a Hero with none recorded),
+province-level grouping of every co-located character's same-phase
+action (``turn/turn_processor.py``'s own ``practice_groups`` detection,
+Phase 46, routing 2+ co-located same-ability practicers through
+``turn/practice_execution.py execute_practice_group()``), and the
+dice-roll procedure itself (``turn/practice_execution.py``'s own
+skill/aptitude-rise tables, Tactical/Naval's [6.1] army-training
+mechanic, and Sage's own independent device-discovery roll,
+``_roll_sage_device_discovery()`` -- see that module's own docstring
+for the full, since-disassembly-confirmed formulas). All of it has
+existed for a long time; only this decode step stayed this narrow.
 """
 
 from __future__ import annotations

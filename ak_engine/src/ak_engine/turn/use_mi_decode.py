@@ -54,9 +54,15 @@ paragraph originally said: an automatic world-gen/loot trigger that
 calls it -- ``ak_engine`` has no way to *auto-populate* the registry the
 way it auto-populates the mercenary-army pool (Phase 16) or
 independent-hero pool (Phase 17), since there's no Pascal source
-describing how instances come into existence in the first place. A real
-``execute_use_mi()`` resolver that consumes the now-resolvable id is
-also still a separate, not-yet-built follow-up.
+describing how instances come into existence in the first place.
+**Stale as of a later phase** -- this paragraph used to also say a
+real ``execute_use_mi()`` resolver consuming the now-resolvable id was
+still a separate, not-yet-built follow-up; ``turn/use_mi_execution.py
+execute_use_mi()`` is that resolver and has existed for a while
+(wands, skill books, the Illus_Terrain/Charm/Resurrection sub-reads
+this same docstring names below, all wired against a real, populated
+``GameState.items``) -- only the registry's own *auto-population* gap
+described just above remains genuinely open.
 
 **The ``treasure`` type enum itself, though, is fully present and has
 been reconstructed** (``CTBOTH.PAS`` lines 605-645, cross-referenced
