@@ -86,6 +86,19 @@ re-flag the same already-resolved conflict.
 list it in its own King-creation sentence, but it's confirmed directly
 with the user (project author, drawing on first-hand game knowledge)
 as also chosen at creation.
+
+**Phase 862 bug fix**: ``create_king()`` used to apply the Divine/
+Undead alignment bonus (+1 White/Necromancy) *after* running the
+Phase 554 exceeding-check above, instead of alongside the royal-
+training bonus it's otherwise identical to (automatic, not player-
+chosen). This let a Divine or Undead succession silently create a
+second, never-validated exceeding ability on top of whichever one the
+player's own point allocation already produced -- e.g. a Divine heir
+whose dead predecessor had ``White=0`` always ends up with a real,
+stored ``White=1`` from this bonus alone, which is exactly one
+"exceeds the dead King's own preserved skill" case the check should
+have counted. Fixed by moving the alignment-bonus assignment to run
+before the check, alongside the training bonus.
 """
 
 from __future__ import annotations
@@ -217,6 +230,21 @@ def create_king(
     final_skill: dict[Ability, int] = {ability: skill_points.get(ability, 0) for ability in Ability}
     for ability in KING_TRAINING_BONUS_ABILITIES:
         final_skill[ability] += 1
+    # Phase 862: the alignment-intrinsic bonus below must land in
+    # `final_skill` *before* the exceeding-check, not after -- it is
+    # just as automatic and unconditional as the training bonus above
+    # (the player never chooses it), and the dead King's own preserved
+    # skill already reflects his own equivalent bonus from when *he*
+    # was created (same alignment, never re-chosen at succession -- see
+    # module docstring). Applying it after the check let a Divine/Undead
+    # succession silently create a second, unvalidated exceeding ability
+    # (White/Necromancy) on top of whichever one the player's own points
+    # already produced, defeating the "at most 1 ability may exceed"
+    # rule below.
+    if alignment is Alignment.DIVINE:
+        final_skill[Ability.WHITE] += 1
+    elif alignment is Alignment.UNDEAD:
+        final_skill[Ability.NECROMANCY] += 1
 
     dead_king = state.dead_leaders.get(heir_leader_id)
     if dead_king is not None and dead_king.skills is not None:
@@ -235,11 +263,6 @@ def create_king(
                 applied=False,
                 reason=f"the one exceeding Talent may rise at most {KING_CREATION_MAX_EXCEEDING_LEVELS} level above the dead King's own preserved skill",
             )
-
-    if alignment is Alignment.DIVINE:
-        final_skill[Ability.WHITE] += 1
-    elif alignment is Alignment.UNDEAD:
-        final_skill[Ability.NECROMANCY] += 1
 
     special_abilities = ALIGNMENT_SPECIAL_ABILITIES.get(alignment) if alignment is not None else None
 

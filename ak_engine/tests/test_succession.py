@@ -225,6 +225,46 @@ def test_create_king_race_and_alignment_are_never_touched():
     assert state.leaders[HEIR_ID].race is None  # unchanged (never set, same as before)
 
 
+def test_create_king_divine_alignment_bonus_counts_toward_the_exceeding_check():
+    # Phase 862: the dead King never invested in White (his own record
+    # stays at 0), and the player's own points already spend the single
+    # allowed "exceeds by 1" exception on MARCH -- so the automatic
+    # Divine +1 White bonus (which the player never chose) must count
+    # as a *second* exceeding ability and refuse the creation, exactly
+    # like a second player-chosen exceeding ability would.
+    state = _state_with_heir(
+        alignment=Alignment.DIVINE,
+        dead_king_skills=_dead_king_skills({Ability.TACTICAL: 3, Ability.MARCH: 1}),
+    )
+
+    result = create_king(
+        state, HEIR_ID, name="Divine King", temper=Temper.BRAVE, sex=Sex.MALE,
+        skill_points={Ability.TACTICAL: 2, Ability.MARCH: 2},
+    )
+
+    assert result.applied is False
+    assert result.reason == (
+        f"no more than {KING_CREATION_MAX_EXCEEDING_ABILITIES} Talent may exceed the dead King's own preserved skill"
+    )
+
+
+def test_create_king_undead_alignment_bonus_counts_toward_the_exceeding_check():
+    state = _state_with_heir(
+        alignment=Alignment.UNDEAD,
+        dead_king_skills=_dead_king_skills({Ability.TACTICAL: 3, Ability.MARCH: 1}),
+    )
+
+    result = create_king(
+        state, HEIR_ID, name="Undead King", temper=Temper.BRAVE, sex=Sex.MALE,
+        skill_points={Ability.TACTICAL: 2, Ability.MARCH: 2},
+    )
+
+    assert result.applied is False
+    assert result.reason == (
+        f"no more than {KING_CREATION_MAX_EXCEEDING_ABILITIES} Talent may exceed the dead King's own preserved skill"
+    )
+
+
 def test_create_king_divine_gets_white_magic_bonus_and_zero_necromancy_aptitude():
     state = _state_with_heir(
         alignment=Alignment.DIVINE,

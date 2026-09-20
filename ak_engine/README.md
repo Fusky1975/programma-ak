@@ -34831,6 +34831,36 @@ results.py` needed their own scripted-RNG/exact-line-list assertions
 updated for the new, real lines -- each fix verified empirically by
 computing the exact rendered output first, not guessed).
 
+### Phase 862: fix `create_king()`'s own Divine/Undead alignment bonus escaping the Phase 554 exceeding-check
+
+Continuing the manual review sweep into a further batch of small,
+previously-unreviewed `turn/` files (`army_naming.py`, `rename_
+province.py`, `race_titles.py`, `kingdom_bridge.py`, `succession.py`).
+The first four checked out clean against their own docstring
+citations, no bug found. `succession.py create_king()` had a real,
+reproducible ordering bug: the automatic Divine (+1 White) / Undead
+(+1 Necromancy) alignment bonus was applied *after* the Phase 554
+"at most 1 ability may exceed the dead King's own preserved skill"
+validation, instead of alongside the (also automatic, also player-
+independent) Melee/Archery/Sage royal-training bonus applied just
+above it, which *is* included before the check. Since the dead King's
+own preserved skill for White/Necromancy is very often 0 (nothing
+forces a King to invest there), this let a Divine/Undead succession
+silently produce a real, stored `White`/`Necromancy` skill of 1 that
+exceeds the dead King's own 0 -- a second, wholly unvalidated exceeding
+ability on top of whichever one the player's own point allocation
+already spent the rule's own single allowance on. Reproduced directly
+(a Divine heir, dead King's own `White=0`/`March=1`, player spends the
+allowed one-ability exception on `March`) before touching any code:
+the pre-fix code returned `applied=True` with both `White` and `March`
+exceeding the dead King's own record, when the rule requires refusing
+once a second ability exceeds. Fixed by moving the alignment-bonus
+assignment to run before the exceeding-check, alongside the training
+bonus. Two new regression tests (Divine and Undead) confirmed to fail
+against the pre-fix code (`git stash` round-trip) and pass against the
+fix. Test count: 6856 -> 6858 (net +2). Full suite verified green
+(unchanged, 6856) before touching a single test.
+
 ## Setup
 
 ```
