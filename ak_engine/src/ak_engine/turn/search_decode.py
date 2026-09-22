@@ -59,12 +59,23 @@ or misaligned tokens), using only ``Maneuver`` ordinals ``CAST``(0),
 -- every real Search order ends in ``Melee`` and/or ``Scout``.
 
 **This module only decodes the request -- it does not resolve a Search's
-outcome.** Doing so needs a personal, non-army Encounter/combat resolver
-(distinct from ``turn/combat.py``'s battle math, which is for armies)
-that this project doesn't have yet, plus the treasure/monster/rumor
-content-generation system flagged as out of scope since Explore's own
-docstring. A Cast/Use_MI tactic's sub-object is also kept as a raw int:
-this project has no decoded spell-id or magic-item-id table yet.
+outcome.** **Stale as of the many phases that built ``turn/search_
+execution.py``** -- this paragraph used to say resolving a Search's own
+outcome needed a personal, non-army Encounter/combat resolver this
+project didn't have yet; ``turn/search_execution.py`` (a large module,
+``_apply_scout()`` and its many siblings) is exactly that resolver and
+has existed for a long time, handling combat, Feature->Power, treasure/
+monster content, and rumor generation alike. Only the *decode* step
+here stayed this narrow. A Cast/Use_MI tactic's own ``sub_object`` is
+still kept as a raw int at this layer -- that half of the claim remains
+accurate as a description of the decode/execute split this project uses
+throughout (e.g. ``turn/cast_decode.py`` resolves the same kind of value
+via ``spell_from_int()`` at ITS own decode layer, but this shared tactic
+walk deliberately doesn't, leaving that to whichever execution module
+consumes a given ``SearchTactic``) -- but "this project has no decoded
+spell-id or magic-item-id table yet" is false: ``models/enums.py Spell``/
+``spell_from_int()`` and ``models/item.py``/``GameState.items`` have
+both existed for a long time.
 """
 
 from __future__ import annotations

@@ -52,9 +52,15 @@ lead armies can always be Encountered by other Heroes, but evade
 encounters from Kings 50% of the time. Kings only accept a non-peaceful
 encounter if both King and challenger attempt to Encounter each other
 in the same province in the same phase. Heroes who lead armies also do
-not accept encounters." None of this acceptance logic is modeled here
--- decode-only, same as every other action-with-no-resolver in this
-project.
+not accept encounters." None of this acceptance logic is modeled in
+THIS module -- pure decode, matching the decode/execute split this
+project uses throughout. **Stale as of Phase 290-ish and later** -- this
+paragraph used to imply the acceptance logic wasn't modeled anywhere in
+the project at all; ``turn/challenge_execution.py is_encounter_
+accepted()`` is exactly this logic (the King 50% evasion roll, the
+mutual-same-phase-Encounter exception, the army-leader refusal) and has
+existed for a long time, with several Advanced-Ability-driven
+exceptions layered on since (e.g. Phase 698/706).
 
 Rulebook [3.16] (quoted in full, ``RULES.AK`` ~line 580): "A character
 can be ordered to chase after another character for the rest of the
@@ -65,8 +71,12 @@ specified... If the Pursuing character leads an army and the pursued
 character doesn't, or visa versa, the Pursue order is ignored." Success
 is governed by the Spy Table [4.33] (base chance by Spy skill level,
 ``*2`` if the target leads an army, ``/`` distance in provinces, `100%`
-if pursuer and target share a Kingdom) -- none of this is modeled here
-either. A documented but unmodeled nuance: targeting **one's own**
+if pursuer and target share a Kingdom) -- none of this is modeled in
+THIS module (pure decode again). **Stale as of Phase 51/265ish and
+later** -- ``turn/pursue_execution.py execute_pursue()`` already applies
+this exact formula via ``turn/spy_table.py pursue_catch_up_chance()``
+and has for a long time. A documented but unmodeled nuance: targeting
+**one's own**
 character id turns a Pursue order into a standing "Patrol" (auto-
 intercept nearby armyless enemy characters, rulebook [3.16] "Characters
 on Patrol") -- this module doesn't special-case that; it decodes
@@ -92,10 +102,15 @@ real examples), this module's correctness rests on the Pascal source
 and rulebook alone, with no real-data cross-check possible. Same
 situation as Fire, Trade, and Use_MI.
 
-**Decode-only**: resolving whether an Encounter/Pursue is even accepted
-(the King/Hero acceptance rules above), let alone what happens in the
-resulting personal combat, needs the same non-army Encounter/combat
-resolver ``turn/search_decode.py`` already flags as missing.
+**Decode-only, itself**: this module only turns a raw ``PlanPhase`` into
+a ``ChallengeRequest``/``PursueRequest``. **Stale as of the many phases
+that built ``turn/challenge_execution.py``/``turn/pursue_execution.py``**
+-- this paragraph used to say resolving acceptance and the resulting
+personal combat needed a non-army Encounter/combat resolver this
+project didn't have yet; both modules are exactly that resolver
+(reusing much of ``turn/search_execution.py``'s own tactic-resolution
+machinery, e.g. ``resolve_challenge_combat()``) and have existed for a
+long time. Only the *decode* step here stayed this narrow.
 """
 
 from __future__ import annotations
