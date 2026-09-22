@@ -8,7 +8,6 @@ from ak_engine.turn.combat import (
     NEMESIS_PENALTY,
     QUALITY_NAME,
     Quality,
-    apply_defender_bonus,
     apply_nemesis_penalty,
     column_bres,
     direct_destruction_probability,
@@ -56,7 +55,6 @@ def test_line_contribution_rejects_negative_depth():
 
 
 def test_defender_bonus_is_25_percent():
-    assert apply_defender_bonus(100) == pytest.approx(125)
     assert DEFENDER_BONUS == 1.25
 
 

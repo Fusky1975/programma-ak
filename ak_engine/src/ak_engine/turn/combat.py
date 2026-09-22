@@ -11,7 +11,11 @@ small composable pieces:
   rule ("a second non-humanoid unit attacking an enemy unit is at 1/2
   strength, a third at 1/4") -- these are the same halving law applied at
   two different call sites, so one function covers both.
-- ``DEFENDER_BONUS`` (an explicit x1.25 multiplier).
+- ``DEFENDER_BONUS`` (an explicit x1.25 multiplier), applied directly by
+  ``turn/strength.py compute_effective_strength()`` (Phase 872: this
+  module's own former ``apply_defender_bonus()`` wrapper was confirmed
+  dead -- zero real callers anywhere, the constant's own real consumer
+  never used it -- and removed).
 - ``NEMESIS_PENALTY`` (an explicit 2/3 multiplier), via
   ``ak_engine.models.army_type.is_nemesis_of``.
 - ``win_probability`` -- the rulebook gives exactly two anchor points
@@ -99,10 +103,6 @@ def line_contribution(depth_index: int) -> float:
     if depth_index < 0:
         raise ValueError(f"depth_index must be >= 0, got {depth_index}")
     return 1.0 / (2**depth_index)
-
-
-def apply_defender_bonus(strength: float) -> float:
-    return strength * DEFENDER_BONUS
 
 
 def apply_nemesis_penalty(strength: float, attacker_type: ArmyType, opponent_type: ArmyType) -> float:
