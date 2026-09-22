@@ -100,16 +100,24 @@ docstring for the exact shape and the real "single value per directed
 pair" limitation it reproduces. Rendered by `report/turn_report.py
 describe_finances_report()`.
 
-**No ``turn_processor.py`` wiring**: "The exchange takes place after
-finances are computed" describes a sequencing point this project has
-no equivalent hook for -- ``turn/tax_base.py``'s own revenue/
-``Inv_Bonus`` formulas are computed on demand for report rendering,
-never applied as a mutating step inside ``turn/turn_processor.py
-run_turn()`` itself (there is no "apply this turn's revenue to the
-treasury" phase to sequence after). ``execute_scientific_treaties()``
-is therefore a standalone resolver the caller invokes directly,
-alongside their own end-of-turn financial step -- the same "caller's
-job" convention ``treat_permissions`` itself established, not a gap.
+**Phase 869 -- now wired into ``turn_processor.py run_turn()``, right
+after both real financial steps.** This module's own earlier claim here
+("no equivalent hook... `tax_base.py`'s own revenue formulas are...
+never applied as a mutating step inside `run_turn()` itself") was stale
+the moment Phase 404/771 built exactly that: `turn/tax_base.py apply_
+turn_revenue()` and `turn/expenses.py apply_turn_maintenance()` are both
+real, mutating, once-per-turn calls inside `run_turn()` (previously
+lines 793-794) -- precisely the "finances are computed" sequencing point
+this mechanic needed. `execute_scientific_treaties()` is called
+immediately after both (the broadest reading of "after finances," since
+maintenance is also a financial step), its own result fed straight into
+`turn/diplomatic_merit.py apply_diplomatic_merit()` -- see `run_turn()`'s
+own docstring for the exact call site. This closes a real, previously-
+undiscovered gap: despite every precondition/formula below being fully
+built and sourced since as far back as Phase 445, nothing anywhere ever
+actually called either function before this phase -- every real game
+processed by this engine exchanged zero Discoveries via [8.4] and
+credited zero Silver Tongue merit, regardless of game data.
 
 **Phase 474 -- the real alignment-distance success gate (``AKGEN_
 reverse_engineering_report (2).md`` SS4.5/SS18.3, real disassembly

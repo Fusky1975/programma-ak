@@ -285,6 +285,7 @@ from ak_engine.turn.challenge_execution import execute_challenge
 from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.defend_execution import DefendCoverage, DefendReinforcement, defend_coverage_area, defend_radius_for_leader
+from ak_engine.turn.diplomatic_merit import apply_diplomatic_merit
 from ak_engine.turn.expenses import apply_turn_maintenance
 from ak_engine.turn.contested_province import (
     IllegalMoveFromContestedError,
@@ -309,6 +310,7 @@ from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import execute_practice_group
 from ak_engine.turn.patrol_execution import execute_patrol
 from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue
+from ak_engine.turn.scientific_treaty import execute_scientific_treaties
 from ak_engine.turn.sep_decode import decode_special_encounter_plan
 from ak_engine.turn.skeletal_decay import decompose_graveyard
 from ak_engine.turn.monster_raids import age_all_feature_guardians, maybe_dissipate_hidden_feature
@@ -410,7 +412,13 @@ def run_turn(
     apply_turn_maintenance()`` -- the real per-turn treasury debit for
     every kingdom's own Expected Expenses (army + leader upkeep), now
     passed this function's own ``rng`` (Phase 527: unpaid Heroes roll for
-    desertion/standby, see that module's own Phase 527 addendum). One
+    desertion/standby, see that module's own Phase 527 addendum), and, as
+    of Phase 869, ``turn/scientific_treaty.py execute_scientific_
+    treaties()`` immediately followed by ``turn/diplomatic_merit.py
+    apply_diplomatic_merit()`` -- [8.4]'s own "after finances are
+    computed" exchange plus the Silver Tongue merit it feeds, previously
+    built (Phase 445/474/511/643/714/738) but never actually called from
+    anywhere; see both modules' own docstrings for the full sourcing. One
     call to ``run_turn()`` is the one unambiguous "once per game turn"
     boundary this phase-by-phase loop offers; see each function's own
     module docstring for why it lives here rather than per-phase.
@@ -792,6 +800,17 @@ def run_turn(
         )
     apply_turn_revenue(state, rng)
     apply_turn_maintenance(state, rng)
+    # Phase 869: [8.4] Scientific Treaties -- "the exchange takes place
+    # after finances are computed" (`turn/scientific_treaty.py`'s own
+    # module docstring), placed after both real financial steps above.
+    # `apply_diplomatic_merit()` (Silver Tongue, `Office.DIPLOMAT`)
+    # consumes this same call's own result -- see both modules' own
+    # docstrings for the full sourcing and why this call was missing
+    # from `run_turn()` entirely until now.
+    treaty_results = execute_scientific_treaties(
+        state, board_width=board_width, board_height=state.board_height, rng=rng
+    )
+    apply_diplomatic_merit(state, treaty_results, board_width=board_width, board_height=state.board_height)
     # Phase 468: King of Cowards' own real per-turn temperament rise
     # (AKGEN_reverse_engineering_report (2).md SS18.6) -- see that
     # function's own docstring for why this is a confirmed no-op under

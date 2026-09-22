@@ -771,13 +771,21 @@ def silvertongue_merit_points(state: GameState, leader: LeaderState) -> float:
     counter, no live skill term, no King-only gate. See module
     docstring's Phase 369 addendum.
 
-    **Live as of Phase 445**: credited by `turn/diplomatic_merit.py
-    apply_diplomatic_merit()`, called once per turn -- `+1` per allied
-    Kingdom, `+2` more if adjacent, `+5` per Discovery actually
-    transferred via Scientific Treaty (`AKGEN_reverse_engineering_report
-    (2).md` SS18.3). Only the receiving Kingdom's own King is credited
-    (the field is leader-keyed, not Kingdom-keyed); a Kingless Kingdom
-    receives nothing that turn.
+    Credited by `turn/diplomatic_merit.py apply_diplomatic_merit()` --
+    `+1` per allied Kingdom, `+2` more if adjacent, `+5` per Discovery
+    actually transferred via Scientific Treaty (`AKGEN_reverse_
+    engineering_report (2).md` SS18.3). Only the receiving Kingdom's own
+    King is credited (the field is leader-keyed, not Kingdom-keyed); a
+    Kingless Kingdom receives nothing that turn.
+
+    **Phase 869 correction**: the applier function itself dates to Phase
+    445, but this docstring's own earlier "Live as of Phase 445... called
+    once per turn" claim was never actually true -- `apply_diplomatic_
+    merit()` had no caller anywhere in the project until Phase 869 wired
+    it (alongside `turn/scientific_treaty.py execute_scientific_
+    treaties()`) into `turn_processor.py run_turn()`. Every game
+    processed before Phase 869 credited zero Silver Tongue merit,
+    regardless of alliance/Treat-order data.
     """
 
     return leader.merit_tally.diplomatic_merit_points

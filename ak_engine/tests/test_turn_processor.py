@@ -2565,3 +2565,59 @@ def test_run_turn_end_to_end_hero_wander_and_king_orders_flag_gate():
 
     assert [r for r in results2 if r.phase_label == "hero-wander"] == []
     assert state2.leaders[2].location == home
+
+
+# -- Phase 869: [8.4] Scientific Treaty exchange + Silver Tongue merit,
+# previously fully built (Phase 445/474/511/643/714/738) but never
+# actually called from anywhere -- now wired into run_turn() right after
+# both real financial steps. See turn/scientific_treaty.py's own module
+# docstring for the full sourcing this fixture mirrors.
+
+
+def _treaty_state() -> GameState:
+    state = GameState()
+    home_a = HexCoord(2, 2)
+    home_b = HexCoord(3, 2)  # adjacent to home_a on the odd-r grid
+    state.board_width = 10
+    state.board_height = 10
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, home_a))
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.GOOD, home_b))
+    state.add_province(ProvinceState(home_a, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(home_b, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.treat_permissions.add((1, 2))
+    state.treat_permissions.add((2, 1))
+    state.kingdoms[1].discoveries.add(Discovery.COMPASS)
+    state.kingdoms[2].discoveries.add(Discovery.TELESCOPE)
+    return state
+
+
+def test_run_turn_exchanges_discoveries_via_mutual_treat_order():
+    state = _treaty_state()
+    leader_a = _empty_plan_leader(10, "A")
+    leader_b = _empty_plan_leader(20, "B")
+
+    run_turn([TurnLeader(leader_a, 1), TurnLeader(leader_b, 2)], state, board_width=10, rng=random.Random(0))
+
+    assert Discovery.TELESCOPE in state.kingdoms[1].discoveries
+    assert Discovery.COMPASS in state.kingdoms[2].discoveries
+    assert state.discovery_exchanged_from[(1, 2)] == Discovery.COMPASS
+    assert state.discovery_exchanged_from[(2, 1)] == Discovery.TELESCOPE
+
+
+def test_run_turn_credits_silver_tongue_merit_to_both_kings():
+    state = _treaty_state()
+    state.add_leader(
+        LeaderState(10, kingdom_id=1, name="King A", location=state.kingdoms[1].home_province, is_king=True)
+    )
+    state.add_leader(
+        LeaderState(20, kingdom_id=2, name="King B", location=state.kingdoms[2].home_province, is_king=True)
+    )
+    king_a = _empty_plan_leader(10, "King A")
+    king_b = _empty_plan_leader(20, "King B")
+
+    run_turn([TurnLeader(king_a, 1), TurnLeader(king_b, 2)], state, board_width=10, rng=random.Random(0))
+
+    # +1 allied, +2 adjacent, +5 for the one real Discovery received each way.
+    assert state.leaders[10].merit_tally.diplomatic_merit_points == 8
+    assert state.leaders[20].merit_tally.diplomatic_merit_points == 8
