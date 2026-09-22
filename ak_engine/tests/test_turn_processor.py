@@ -2346,6 +2346,23 @@ def test_replenish_turn_scoped_state_clears_action_casts_used():
     assert state.action_casts_used == {}
 
 
+# -- Phase 874: treat_permissions, the fifth "never reset -- caller's
+# job" field. Rulebook [3.4]: a Treat grant is scoped to "this
+# gameturn" -- nothing in production currently populates the field (no
+# Treat-order decoder exists yet), so this is a proactive, sourced fix
+# against the exact bug class Phase 573/575/670/702 already found and
+# fixed for every sibling field in this same family.
+
+
+def test_replenish_turn_scoped_state_clears_treat_permissions():
+    state = _base_state()
+    state.treat_permissions.add((1, 2))
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.treat_permissions == set()
+
+
 def test_run_turn_clears_action_casts_used_at_the_end():
     state = _base_state()
     state.action_casts_used[(10, Ability.WHITE)] = 3

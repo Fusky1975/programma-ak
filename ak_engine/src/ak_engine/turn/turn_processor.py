@@ -954,6 +954,16 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
       turn" deterrent would otherwise keep escalating forever, halving
       every future Treasury Raid attempt against that kingdom for the
       rest of the game instead of just for the turn it was raided.
+    - ``GameState.treat_permissions`` -> ``set()`` (Phase 874) -- rulebook
+      [3.4]'s own quoted text scopes a Treat grant to "this gameturn"; the
+      field's own docstring had explicitly flagged it as the one field in
+      this family still "the caller's job to clear," since no in-project
+      Treat-order decoder exists yet to populate it in production. Closed
+      proactively (no live game currently sets this field, so this is a
+      real, sourced correctness fix with zero observable behavior change
+      today) rather than leaving it to silently repeat the exact same
+      "field forgotten, permission never expires" bug the moment a future
+      phase wires a real Treat-order decoder in.
 
     ``GameState.gate_angel_candidates_this_turn`` is deliberately NOT
     touched here despite its own name -- it's already self-resetting,
@@ -1011,6 +1021,7 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
     for kingdom in state.kingdoms.values():
         kingdom.treasury_raid_attempts_this_turn = 0
     state.action_casts_used = {}
+    state.treat_permissions = set()
 
 
 def _apply_werebeast_transformations(state: GameState) -> None:

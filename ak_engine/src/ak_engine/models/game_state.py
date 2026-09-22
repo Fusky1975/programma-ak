@@ -1468,10 +1468,15 @@ class GameState:
     # (same "no real order-file shape ever seen" category as Break Treaty
     # and Call-For-Vote -- see turn/emperor_election.py's own docstring),
     # so this is populated directly by the caller, not decoded from a
-    # move file -- still "caller's job to clear at a turn boundary," not
-    # auto-cleared by anything here, unlike recruited_this_turn/
-    # ArmyState.movement_points, which Phase 573's own `turn/turn_
-    # processor.py _replenish_turn_scoped_state()` now resets instead.
+    # move file. **Phase 874**: cleared at the end of every `run_turn()`
+    # call by `turn/turn_processor.py _replenish_turn_scoped_state()`,
+    # same as `recruited_this_turn`/`ArmyState.movement_points` -- the
+    # rulebook's own quoted text above ("issue a 'Treat' order... this
+    # gameturn") scopes the grant to exactly one turn; nothing in this
+    # project currently populates the set in production (no decoder to
+    # drive it), but a future one that did would silently make every
+    # grant permanent without this reset, the identical bug class Phase
+    # 573/670/702 already found and fixed for other turn-scoped fields.
     treat_permissions: set[tuple[int, int]] = field(default_factory=set)
     # Feature instances (Phase 75) -- see models/feature.py's own docstring
     # for why this is a flat dict-by-id, mirroring `armies`/`provinces`,
