@@ -1376,9 +1376,15 @@ def _apply_scout(
     more) regardless of whether this function finds anything -- PCOND.
     X2's own confirmed reading is that *two* Scout orders on the same
     feature is this game's explicit consent mechanism for a Power
-    condition ("PayUp"/"DrainSkill"/"DrainCourage") this project has no
-    Feature->Power wiring to actually apply yet. Recorded now, honestly,
-    as a fact the caller can act on later, rather than silently dropped.
+    condition ("PayUp"/"DrainSkill"/"DrainCourage"). **Stale as of Phase
+    688**: this paragraph used to say this project had no Feature->Power
+    wiring to actually apply that consent yet -- the Feature->Power
+    system itself has existed since Phase 616-623, and Phase 688 wired
+    this exact count straight into it: the call below passes
+    ``scout_orders_given=scout_count`` into
+    ``resolve_feature_power_attempt()``, which refuses PayUp/DrainSkill/
+    DrainCourage outright below two Scout orders (see
+    ``turn/feature_power_execution.py _apply_condition_gate()``).
     """
 
     scout_count = sum(1 for tactic in request.tactics if tactic.maneuver is Maneuver.SCOUT)
