@@ -14,9 +14,17 @@ come Buoni o Malvagi, ma non ricevono visite dal Vahlalla" describes
 which *bucket* a Divine/Undead hero's own legendary character joins,
 not who can *receive* a visit -- see ``turn/cast_execution.py``'s own
 "Phase 195 addendum" for the full distinction); a ``Temper``; a race
-(``M/F`` gender is present in the source but not transcribed here --
-this project has no per-leader gender field anywhere, and nothing would
-consume it); a ``Race``; and two rows of 15 numbers each in the exact
+(``M/F`` gender is present in each source line right next to ``Temper``
+but still not transcribed into ``ValhallaHero`` below -- **stale as of
+Phase 260/635**: this paragraph used to say no per-leader gender field
+existed anywhere in this project to consume it; ``models/sex.py Sex``/
+``LeaderState.sex`` have existed since Phase 260, and the CHARACTERS
+report has rendered a real Gender column from it since Phase 635. A
+spawned Valhalla visitor (``turn/valhalla_execution.py``) therefore
+still shows a blank Gender column today -- a real, deliberately
+NOT-attempted-here gap, left open given the scale of retranscribing all
+150 ``ValhallaHero`` entries below, not because the field is
+unconsumable); a ``Race``; and two rows of 15 numbers each in the exact
 column order ``Ta Ma Na Ar Me Wh Ne El Ps Il Dr Th Ex Sp Sa`` --
 confirmed to match ``models/enums.py Ability``'s own declared member
 order exactly (``TACTICAL, MARCH, NAVAL, ARCHERY, MELEE, WHITE,

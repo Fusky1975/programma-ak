@@ -1244,15 +1244,28 @@ def execute_move(
     use this ability, after they have moved" -- is read the same way
     Phase 651 (Illusory Fog's own "must expend 1 additional movement
     point when entering or leaving it") already read an analogous
-    clause: this project has no general terrain-movement-legality gate
-    anywhere (no code blocks a land army from entering a Sea-terrain
-    province, flooded or naturally Sea, at all), so "becomes possible"
-    is modeled as a movement-point surcharge for land armies making
-    such a move, not as an invented blocking mechanic for a restriction
-    this project doesn't otherwise model. Naval's own movement-point
-    bonus is closed in Phase 523, and both remaining Naval members
-    (`NAVAL_LONG_DEFEND`, `NAVAL_HUG_COASTLINE`) are closed in Phase
-    524 -- see the addenda below.
+    clause: **at the time this note was written**, this project had no
+    general terrain-movement-legality gate anywhere (no code blocked a
+    land army from entering a Sea-terrain province, flooded or
+    naturally Sea, at all), so "becomes possible" was modeled as a
+    movement-point surcharge for land armies making such a move, not as
+    an invented blocking mechanic for a restriction this project didn't
+    otherwise model at the time. **Stale as of Phase 737** -- a real,
+    general terrain-movement-legality gate now exists in this same
+    module (`find_transport_illegality()`, below), enforced
+    unconditionally by the real production LMOVE dispatch (`turn/plan_
+    dispatch.py`, `enforce_transport_legality=True`). `has_march_
+    through_floods` is precisely the parameter that ability now also
+    threads into that gate, *relaxing* what would otherwise be a real
+    refusal for crossing into/out of a Flooded province -- so "becomes
+    possible" is no longer purely a surcharge-only reading: without the
+    ability, the crossing is genuinely illegal today; with it, the
+    crossing is legal AND still pays the movement-point surcharge this
+    section originally modeled, both layers coexisting rather than one
+    superseding the other. Naval's own movement-point bonus is closed
+    in Phase 523, and both remaining Naval members (`NAVAL_LONG_DEFEND`,
+    `NAVAL_HUG_COASTLINE`) are closed in Phase 524 -- see the addenda
+    below.
 
     **Phase 523 -- Naval movement bonus + air-unit correction.**
     `AKGEN_reverse_engineering_report (3).md` SS97-99 (disassembly of

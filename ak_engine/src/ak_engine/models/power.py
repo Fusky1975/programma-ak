@@ -132,17 +132,21 @@ real DRAIN_SKILL-refusal mis-scoping bug (checked only inside `Power.
 GRANT_WISH`'s own branch, not power-agnostically), a confirmed one-word
 primary-source correction (`DN_SKILL_AT_LIMIT`: "aptitude," not
 "skill"), and `ORAC_POWER`'s own real "has armies" text (superseding an
-earlier project-original sentence). Three residual pieces are still
-genuinely open, not guessed: POWMSG.X2 line 19 (plausibly a CAST_SPELL/
-ANS_PRAYER-grants-Illusory-Terrain-specific success variant, unconfirmed,
-plus a brand-new `` ` `` marker this project's prose engine has never
-needed), line 31 (GRANT_WISH's own tutorial text, likely belonging to
-this project's still-unbuilt "fdisc tier 2" Feature-discovery narration),
-and line 43 (an unrelated Fulfill-flavored sentence with an unexplained
-`0x04` control byte). `PCOND.X2`'s own remaining 5 lines describe a
-Feature's power "terms" *before* an attempt -- a real, separate
-narration opportunity this project has no established report-layer
-placement for yet, left for a future phase.
+earlier project-original sentence). **Stale as of Phases 704/796/801/
+803 -- every one of the 4 residual pieces this paragraph used to list as
+"still genuinely open" has since closed**: POWMSG.X2 line 19 (the CAST_
+SPELL/ANS_PRAYER-grants-Illusory-Terrain-specific success variant) is
+wired as `report/turn_report.py _POWMSG_CAST_SPELL_ILLUS_TERRAIN_
+SUCCESS` (Phase 704, including the new `` ` `` marker); line 31
+(GRANT_WISH's own tutorial text) is wired as `_POWMSG_GRANT_WISH_
+TUTORIAL` (Phase 801); line 43 (the Fulfill-flavored sentence with the
+`0x04` control byte) turned out to be a stale backlog-numbering
+artifact for what's really SAGE_DISC's own success text -- already
+closed by Phase 796's `_POWMSG_SAGE_DISC_SUCCESS_TEMPLATE`, confirmed
+directly by Phase 801; and `PCOND.X2`'s own remaining lines describing a
+Feature's power "terms" before an attempt are wired via `report/
+turn_report.py describe_feature_power_condition_terms()` (see the Phase
+803 addendum below for the real dispatch this closed).
 
 What *is* real and cleanly citable: the same `_EDesc`/`_MCond` block's
 neighboring `_NoMeet` procedure (~line 1266-1275), an inline (not
