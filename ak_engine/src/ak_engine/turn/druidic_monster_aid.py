@@ -63,15 +63,17 @@ exactly as the source describes.
 `DruidicMonsterAssistance` values (still keyed by column) instead of a
 bare `int` -- the strength bonus alone, with no record of which
 monster/Feature earned it. `turn/battle_orchestrator.py fight_battle()`
-consumed the bonus straight into `resolve_battle()`'s own combat math
-and discarded the rest, so there was no way to narrate MCOME.X/
-MFIGHT.X (`report/turn_report.py render_monster_reinforcement_arrives()`/
-`_helped()`, Phase 604 -- sourced and render-tested but never wired,
-see that module's own comment) with a real monster/army name after the
-fact. `strength_bonus` is unchanged in meaning and is what still feeds
-`resolve_battle()`'s own `{column: bonus}` parameter (extracted by the
-caller); `monster`/`feature_id` are new, carried through purely for
-report-layer identity.
+previously consumed the bonus straight into `resolve_battle()`'s own
+combat math and discarded the rest, so there was no way to narrate
+MCOME.X/MFIGHT.X (`report/turn_report.py render_monster_reinforcement_
+arrives()`/`_helped()`, Phase 604 -- sourced and render-tested, but with
+no caller anywhere at the time) with a real monster/army name after the
+fact. This same phase closed that gap too -- see `report/turn_report.py
+describe_battle()`'s own Phase 657 addendum for the real wiring (right
+after the leader-roster loop, before BLUCK). `strength_bonus` is
+unchanged in meaning and is what still feeds `resolve_battle()`'s own
+`{column: bonus}` parameter (extracted by the caller); `monster`/
+`feature_id` are new, carried through purely for report-layer identity.
 """
 
 from __future__ import annotations
