@@ -655,6 +655,29 @@ with no gap, not modeled" note (this docstring's own Phase 566 section)
 is also now explained, not just tolerated: it isn't a distant landmass
 packed in ad hoc -- it's an ordinary cylindrical neighbor of `x == 1`,
 rendering exactly where any neighboring column would.
+
+**Phase 871 -- every renderer's own `board_width` now threads through
+from the real `GameState.board_width`, closing a real, previously-
+shipped bug.** `DEFAULT_WIDTH` (18, `worldgen/place_map.py`'s own
+"normale" board default) was hardcoded as the cylindrical-wraparound
+width in all 6 renderers, `_cylindrical_x_min()`, and every real call
+site in `report/turn_report.py describe_map_report()` -- with no path
+anywhere to override it. But `models/game_state.py GameState.board_
+width` defaults to **30**, the Super-AK size (Phase 780's own board-
+size fix: `NORMAL_MAP_BOUNDS(30,15)` is real Super-AK, not "normale",
+and `GameState` tracks its own real board size as the source of
+truth). Every one of this module's own 6 renderers now takes an
+explicit `board_width` parameter (default `DEFAULT_WIDTH`, preserving
+every existing caller/test that never passes one), and `describe_map_
+report()` passes the real `state.board_width` through to them, to
+`select_layout_tier()`, and to `paginate_known_columns()`. Confirmed
+this was live, not theoretical: `tests/test_turn_report.py`'s own
+`test_describe_map_report_splits_into_a_far_side_page_when_too_wide`
+deliberately places provinces at columns 14-18 and 1-4 to exercise
+wraparound at column 18 -- passing only because its own `GameState`
+(board_width defaulting to 30, never overridden) and the pre-fix code
+shared the identical wrong 18-wide assumption, not because either was
+actually correct for the board it claimed to describe.
 """
 
 from __future__ import annotations
@@ -1382,7 +1405,12 @@ def paginate_known_columns(
 
 
 def render_ascii_map(
-    state: GameState, kingdom_id: int, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None
+    state: GameState,
+    kingdom_id: int,
+    *,
+    columns: set[int] | None = None,
+    visible_provinces: set[HexCoord] | None = None,
+    board_width: int = DEFAULT_WIDTH,
 ) -> list[str]:
     """Renders every province this Kingdom's own report shows on the map --
     see module docstring for the exact scope this phase covers (a single,
@@ -1411,6 +1439,11 @@ def render_ascii_map(
     provinces and `Unowned` provinces printing right alongside this
     Kingdom's own. `describe_map_report()` is the real production
     caller and passes the real `known_to_kingdom()`-derived set here.
+
+    `board_width` (Phase 871, default `DEFAULT_WIDTH`): the real
+    cylindrical wraparound width -- see module docstring's own Phase
+    871 addendum for why this must be `GameState.board_width`, not the
+    "normale" 18-wide default, for any Super-AK (30-wide) game.
     """
 
     provinces = list(state.provinces.values())
@@ -1421,7 +1454,7 @@ def render_ascii_map(
     if not provinces:
         return []
 
-    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, DEFAULT_WIDTH)
+    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, board_width)
 
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
@@ -1429,9 +1462,9 @@ def render_ascii_map(
 
     lines: list[str] = []
     for y in sorted(rows_by_y):
-        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % DEFAULT_WIDTH)
+        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % board_width)
         cells = [render_cell(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
-        columns = [cell_pixel_column(p.coord, x_min) for p in row_provinces]
+        columns = [cell_pixel_column(p.coord, x_min, board_width) for p in row_provinces]
 
         for band_row in range(6):
             line = ""
@@ -1545,7 +1578,12 @@ def render_cell_stride12(state: GameState, province: ProvinceState, *, viewing_k
 
 
 def render_ascii_map_stride12(
-    state: GameState, kingdom_id: int, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None
+    state: GameState,
+    kingdom_id: int,
+    *,
+    columns: set[int] | None = None,
+    visible_provinces: set[HexCoord] | None = None,
+    board_width: int = DEFAULT_WIDTH,
 ) -> list[str]:
     """The stride-12 layout's own analogue of `render_ascii_map()` -- see
     module docstring's own Phase 569 section. Wired into `describe_map_
@@ -1557,6 +1595,9 @@ def render_ascii_map_stride12(
 
     `visible_provinces` (Phase 628): same as `render_ascii_map()`'s own
     parameter of the same name -- the real per-Kingdom knowledge filter.
+
+    `board_width` (Phase 871): same as `render_ascii_map()`'s own
+    parameter of the same name -- the real cylindrical wraparound width.
     """
 
     provinces = list(state.provinces.values())
@@ -1567,7 +1608,7 @@ def render_ascii_map_stride12(
     if not provinces:
         return []
 
-    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, DEFAULT_WIDTH)
+    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, board_width)
 
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
@@ -1575,9 +1616,9 @@ def render_ascii_map_stride12(
 
     lines: list[str] = []
     for y in sorted(rows_by_y):
-        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % DEFAULT_WIDTH)
+        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % board_width)
         cells = [render_cell_stride12(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
-        columns = [stride12_cell_pixel_column(p.coord, x_min) for p in row_provinces]
+        columns = [stride12_cell_pixel_column(p.coord, x_min, board_width) for p in row_provinces]
 
         for band_row in range(6):
             line = ""
@@ -1652,7 +1693,12 @@ def render_cell_stride10(state: GameState, province: ProvinceState, *, viewing_k
 
 
 def render_ascii_map_stride10(
-    state: GameState, kingdom_id: int, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None
+    state: GameState,
+    kingdom_id: int,
+    *,
+    columns: set[int] | None = None,
+    visible_provinces: set[HexCoord] | None = None,
+    board_width: int = DEFAULT_WIDTH,
 ) -> list[str]:
     """The stride-10 layout's own analogue of `render_ascii_map()` -- see
     module docstring's own Phase 570 section. Wired into `describe_map_
@@ -1664,6 +1710,9 @@ def render_ascii_map_stride10(
 
     `visible_provinces` (Phase 628): same as `render_ascii_map()`'s own
     parameter of the same name -- the real per-Kingdom knowledge filter.
+
+    `board_width` (Phase 871): same as `render_ascii_map()`'s own
+    parameter of the same name -- the real cylindrical wraparound width.
     """
 
     provinces = list(state.provinces.values())
@@ -1674,7 +1723,7 @@ def render_ascii_map_stride10(
     if not provinces:
         return []
 
-    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, DEFAULT_WIDTH)
+    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, board_width)
 
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
@@ -1682,9 +1731,9 @@ def render_ascii_map_stride10(
 
     lines: list[str] = []
     for y in sorted(rows_by_y):
-        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % DEFAULT_WIDTH)
+        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % board_width)
         cells = [render_cell_stride10(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
-        columns = [stride10_cell_pixel_column(p.coord, x_min) for p in row_provinces]
+        columns = [stride10_cell_pixel_column(p.coord, x_min, board_width) for p in row_provinces]
 
         for band_row in range(6):
             line = ""
@@ -1749,7 +1798,12 @@ def render_cell_stride9(state: GameState, province: ProvinceState, *, viewing_ki
 
 
 def render_ascii_map_stride9(
-    state: GameState, kingdom_id: int, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None
+    state: GameState,
+    kingdom_id: int,
+    *,
+    columns: set[int] | None = None,
+    visible_provinces: set[HexCoord] | None = None,
+    board_width: int = DEFAULT_WIDTH,
 ) -> list[str]:
     """The stride-9 layout's own analogue of `render_ascii_map()` -- see
     module docstring's own Phase 571 section. Wired into `describe_map_
@@ -1761,6 +1815,9 @@ def render_ascii_map_stride9(
 
     `visible_provinces` (Phase 628): same as `render_ascii_map()`'s own
     parameter of the same name -- the real per-Kingdom knowledge filter.
+
+    `board_width` (Phase 871): same as `render_ascii_map()`'s own
+    parameter of the same name -- the real cylindrical wraparound width.
     """
 
     provinces = list(state.provinces.values())
@@ -1771,7 +1828,7 @@ def render_ascii_map_stride9(
     if not provinces:
         return []
 
-    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, DEFAULT_WIDTH)
+    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, board_width)
 
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
@@ -1779,9 +1836,9 @@ def render_ascii_map_stride9(
 
     lines: list[str] = []
     for y in sorted(rows_by_y):
-        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % DEFAULT_WIDTH)
+        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % board_width)
         cells = [render_cell_stride9(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
-        columns = [stride9_cell_pixel_column(p.coord, x_min) for p in row_provinces]
+        columns = [stride9_cell_pixel_column(p.coord, x_min, board_width) for p in row_provinces]
 
         for band_row in range(5):
             line = ""
@@ -1829,7 +1886,12 @@ def render_cell_stride8(state: GameState, province: ProvinceState, *, viewing_ki
 
 
 def render_ascii_map_stride8(
-    state: GameState, kingdom_id: int, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None
+    state: GameState,
+    kingdom_id: int,
+    *,
+    columns: set[int] | None = None,
+    visible_provinces: set[HexCoord] | None = None,
+    board_width: int = DEFAULT_WIDTH,
 ) -> list[str]:
     """The stride-8 layout's own analogue of `render_ascii_map()` -- see
     module docstring's own Phase 572 section. Wired into `describe_map_
@@ -1841,6 +1903,9 @@ def render_ascii_map_stride8(
 
     `visible_provinces` (Phase 628): same as `render_ascii_map()`'s own
     parameter of the same name -- the real per-Kingdom knowledge filter.
+
+    `board_width` (Phase 871): same as `render_ascii_map()`'s own
+    parameter of the same name -- the real cylindrical wraparound width.
     """
 
     provinces = list(state.provinces.values())
@@ -1851,7 +1916,7 @@ def render_ascii_map_stride8(
     if not provinces:
         return []
 
-    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, DEFAULT_WIDTH)
+    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, board_width)
 
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
@@ -1859,9 +1924,9 @@ def render_ascii_map_stride8(
 
     lines: list[str] = []
     for y in sorted(rows_by_y):
-        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % DEFAULT_WIDTH)
+        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % board_width)
         cells = [render_cell_stride8(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
-        columns = [stride8_cell_pixel_column(p.coord, x_min) for p in row_provinces]
+        columns = [stride8_cell_pixel_column(p.coord, x_min, board_width) for p in row_provinces]
 
         for band_row in range(4):
             line = ""
@@ -1877,7 +1942,12 @@ def render_ascii_map_stride8(
 
 
 def render_ascii_map_dense(
-    state: GameState, kingdom_id: int, *, columns: set[int] | None = None, visible_provinces: set[HexCoord] | None = None
+    state: GameState,
+    kingdom_id: int,
+    *,
+    columns: set[int] | None = None,
+    visible_provinces: set[HexCoord] | None = None,
+    board_width: int = DEFAULT_WIDTH,
 ) -> list[str]:
     """The dense layout's own analogue of `render_ascii_map()` -- see
     module docstring's own Phase 566 section. Wired into `describe_map_
@@ -1889,6 +1959,9 @@ def render_ascii_map_dense(
 
     `visible_provinces` (Phase 628): same as `render_ascii_map()`'s own
     parameter of the same name -- the real per-Kingdom knowledge filter.
+
+    `board_width` (Phase 871): same as `render_ascii_map()`'s own
+    parameter of the same name -- the real cylindrical wraparound width.
     """
 
     provinces = list(state.provinces.values())
@@ -1899,7 +1972,7 @@ def render_ascii_map_dense(
     if not provinces:
         return []
 
-    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, DEFAULT_WIDTH)
+    x_min = _cylindrical_x_min({p.coord.x for p in provinces}, board_width)
 
     rows_by_y: dict[int, list[ProvinceState]] = {}
     for province in provinces:
@@ -1907,9 +1980,9 @@ def render_ascii_map_dense(
 
     lines: list[str] = []
     for y in sorted(rows_by_y):
-        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % DEFAULT_WIDTH)
+        row_provinces = sorted(rows_by_y[y], key=lambda p: (p.coord.x - x_min) % board_width)
         cells = [render_cell_dense(state, p, viewing_kingdom_id=kingdom_id) for p in row_provinces]
-        columns = [dense_cell_pixel_column(p.coord, x_min) for p in row_provinces]
+        columns = [dense_cell_pixel_column(p.coord, x_min, board_width) for p in row_provinces]
 
         for band_row in range(6):
             line = ""

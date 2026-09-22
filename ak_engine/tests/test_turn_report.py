@@ -8913,6 +8913,23 @@ def test_describe_armies_report_known_mercenary_via_adjacent_leader():
     assert _ARMIES_MERCENARY_INTRO in lines
 
 
+def test_describe_armies_report_known_mercenary_uses_the_real_board_width():
+    # Phase 871: same wraparound-distance bug as the map/impulse-3
+    # cases -- a mercenary ~1 hex away under the pre-fix hardcoded-18
+    # default is genuinely 13 hexes away on GameState's own real
+    # default board (30-wide, Super-AK) -- past known_mercenary()'s
+    # own radius=1 "adjacent" gate.
+    state = _armies_state()
+    assert state.board_width == 30
+    state.add_leader(LeaderState(1, 1, "Sir Aldric", HexCoord(1, 2)))
+    state.add_province(ProvinceState(HexCoord(18, 2), Terrain.PLAINS, Race.HUMAN))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(18, 2)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert _ARMIES_MERCENARY_INTRO not in lines
+
+
 def test_describe_armies_report_unknown_mercenary_is_absent():
     state = _armies_state()
     state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN))  # unowned, far away
@@ -10392,6 +10409,12 @@ def test_describe_map_report_splits_into_a_far_side_page_when_too_wide():
     # page 2's own sits at y=5 (no trigger) -- proving the Ice-cap
     # check runs independently per page, not once globally.
     state = GameState()
+    # Phase 871: this test's own narrative assumes an 18-wide board
+    # (column 18 borders column 1) -- GameState.board_width now
+    # genuinely drives the map's own wraparound math, so that must be
+    # set explicitly instead of relying on the field's own real default
+    # of 30 (Super-AK) to accidentally not matter.
+    state.board_width = 18
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(18, 1)))
     for x in (14, 15, 16, 17, 18, 1, 2, 3, 4):
         state.add_province(
@@ -10418,6 +10441,60 @@ def test_describe_map_report_splits_into_a_far_side_page_when_too_wide():
     # page's last grid row -- no blank line in between.
     far_index = lines.index("  We also drew up this map of lands on the far side of the world: ")
     assert lines[far_index - 1].strip() != ""
+
+
+def test_describe_map_report_uses_the_real_board_width_for_wraparound_not_the_18_wide_default():
+    # Phase 871: columns 1 and 18 are only wraparound-adjacent under the
+    # pre-fix hardcoded-18-wide assumption. On GameState's own real
+    # default board (30-wide, Super-AK), they're 17 apart -- not
+    # adjacent -- so this must produce a genuine far-side split.
+    state = GameState()
+    assert state.board_width == 30
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_province(
+        ProvinceState(
+            HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Homeland", explored_percent_by_kingdom={1: 100}
+        )
+    )
+    state.add_province(
+        ProvinceState(
+            HexCoord(18, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Farland", explored_percent_by_kingdom={1: 100}
+        )
+    )
+
+    lines = describe_map_report(state, 1)
+    text = "\n".join(lines)
+
+    assert "We also drew up this map of lands on the far side of the world:" in text
+    assert "Homeland" in text
+    assert "Farland" in text
+
+
+def test_describe_map_report_wraps_at_the_real_30_wide_seam():
+    # Companion case: columns 1 and 30 genuinely ARE adjacent on a real
+    # 30-wide board (the true cylindrical seam) -- confirms wraparound
+    # still works correctly once it's keyed to the real board width,
+    # not just that it stops firing at the wrong (18-wide) one.
+    state = GameState()
+    assert state.board_width == 30
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(1, 1)))
+    state.add_province(
+        ProvinceState(
+            HexCoord(1, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Homeland", explored_percent_by_kingdom={1: 100}
+        )
+    )
+    state.add_province(
+        ProvinceState(
+            HexCoord(30, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Nearland", explored_percent_by_kingdom={1: 100}
+        )
+    )
+
+    lines = describe_map_report(state, 1)
+    text = "\n".join(lines)
+
+    assert "We also drew up this map of lands on the far side of the world:" not in text
+    assert "Homeland" in text
+    assert "Nearland" in text
 
 
 def test_compose_letter_report_places_the_map_between_provinces_and_characters():
@@ -10849,6 +10926,22 @@ def test_impulse3_candidates_excludes_a_hero_and_a_too_distant_king():
     hero = LeaderState(9, 2, "Kwoth", HexCoord(2, 1))  # distance 3, but not a King
     state.add_leader(hero)
     far_king = LeaderState(10, 2, "Far King", HexCoord(4, 1), is_king=True)  # distance 5 > 4
+    state.add_leader(far_king)
+
+    assert _impulse3_candidates(state, 1, priest=priest, orig_turn=0) == []
+
+
+def test_impulse3_candidates_uses_the_real_board_width_not_the_18_wide_default():
+    # Phase 871: columns 1 and 18 are ~1 hex apart under the pre-fix
+    # hardcoded-18-wide assumption (well within the real "within 4
+    # hexes" gate) but genuinely 13 hexes apart on GameState's own real
+    # default board (30-wide, Super-AK) -- past the gate.
+    state = GameState()
+    assert state.board_width == 30
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    priest = _priest_leader(50, 1, HexCoord(1, 2))
+    state.add_leader(priest)
+    far_king = LeaderState(10, 2, "Far King", HexCoord(18, 2), is_king=True)
     state.add_leader(far_king)
 
     assert _impulse3_candidates(state, 1, priest=priest, orig_turn=0) == []

@@ -11439,6 +11439,14 @@ def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
     unconditionally, a real gap flagged since Phase 624 (see `report/
     ascii_map.py`'s own Phase 628 addendum). This filtered set also
     drives tier selection and pagination, not just the grid itself.
+
+    Phase 871: the real `state.board_width` (not `report/ascii_map.py`'s
+    own hardcoded 18-wide `DEFAULT_WIDTH`) now drives every cylindrical-
+    wraparound computation here -- tier selection, pagination, and the
+    grid itself -- closing a real, previously-shipped bug that silently
+    mis-wrapped every Super-AK (30-wide, `GameState`'s own default) map.
+    See `report/ascii_map.py`'s own Phase 871 addendum for the full
+    account.
     """
 
     visible_provinces = {coord for coord, province in state.provinces.items() if province.known_to_kingdom(kingdom_id)}
@@ -11448,15 +11456,16 @@ def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
 
     kingdom = state.kingdoms.get(kingdom_id)
     home_x = kingdom.home_province.x if kingdom is not None else min(known_columns)
+    board_width = state.board_width
 
-    chosen_stride = select_layout_tier(known_columns, home_x)
+    chosen_stride = select_layout_tier(known_columns, home_x, board_width)
     renderer = next(render for stride, render in LAYOUT_TIERS if stride == chosen_stride)
-    pages = paginate_known_columns(known_columns, home_x, max_columns_per_page(chosen_stride))
+    pages = paginate_known_columns(known_columns, home_x, max_columns_per_page(chosen_stride), board_width)
 
     lines: list[str] = ["", "", f"  {_MAP_REPORT_INTRO} ", ""]
     for page_index, page_columns in enumerate(pages):
         columns = set(page_columns)
-        grid_lines = renderer(state, kingdom_id, columns=columns, visible_provinces=visible_provinces)
+        grid_lines = renderer(state, kingdom_id, columns=columns, visible_provinces=visible_provinces, board_width=board_width)
         region_label = map_region_label(state, columns=columns, visible_provinces=visible_provinces)
         region_lines = [region_label, MAP_REGION_LABEL_RULE] if region_label else []
 
@@ -11840,7 +11849,9 @@ def _impulse2_candidates(state: GameState, kingdom_id: int, orig_turn: int) -> l
         leader
         for leader in itertools.chain(state.leaders.values(), state.dead_leaders.values())
         if leader.leader_id != VALHALLA_VISITOR_LEADER_ID
-        and leader_location_known_to_kingdom(state, leader.leader_id, kingdom_id, orig_turn=orig_turn)
+        and leader_location_known_to_kingdom(
+            state, leader.leader_id, kingdom_id, orig_turn=orig_turn, board_width=state.board_width
+        )
     ]
     candidates.sort(key=lambda leader: leader.leader_id)
     return candidates
@@ -11861,8 +11872,10 @@ def _impulse3_candidates(state: GameState, kingdom_id: int, priest: LeaderState 
         for leader in itertools.chain(state.leaders.values(), state.dead_leaders.values())
         if leader.is_king
         and leader.leader_id != VALHALLA_VISITOR_LEADER_ID
-        and hex_distance_wrapped(priest.location, leader.location) <= 4
-        and not leader_location_known_to_kingdom(state, leader.leader_id, kingdom_id, orig_turn=orig_turn)
+        and hex_distance_wrapped(priest.location, leader.location, state.board_width) <= 4
+        and not leader_location_known_to_kingdom(
+            state, leader.leader_id, kingdom_id, orig_turn=orig_turn, board_width=state.board_width
+        )
     ]
     candidates.sort(key=lambda leader: leader.leader_id)
     return candidates
@@ -11961,10 +11974,13 @@ def _render_stranger_row(
     show_tell_align = (
         priest is not None
         and leader.alignment is not None
-        and (tell_align_distance is None or hex_distance_wrapped(priest.location, leader.location) <= tell_align_distance)
+        and (
+            tell_align_distance is None
+            or hex_distance_wrapped(priest.location, leader.location, state.board_width) <= tell_align_distance
+        )
     )
     if show_tell_align:
-        lines.append(f'  ...the Rod senses "{_tell_align(leader, priest).value}"')
+        lines.append(f'  ...the Rod senses "{_tell_align(leader, priest, board_width=state.board_width).value}"')
     return lines
 
 
@@ -12514,7 +12530,11 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
     # fallback when empty (REPORTS.PAS's own `IF strip THEN IF passtype
     # = Hired THEN WRITELN('None at present')` only ever fires for the
     # Hired pass) -- the whole block, header included, is simply absent.
-    mercenaries = [army for army in state.armies.values() if known_mercenary(state, army, kingdom_id)]
+    mercenaries = [
+        army
+        for army in state.armies.values()
+        if known_mercenary(state, army, kingdom_id, board_width=state.board_width)
+    ]
     if mercenaries:
         lines.append(_ARMIES_MERCENARY_INTRO)
         lines.append(_ARMIES_MERCENARY_CAPTION_LINE_1)
