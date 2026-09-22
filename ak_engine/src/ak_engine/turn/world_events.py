@@ -150,6 +150,24 @@ def record_kingdom_contacts(state: GameState, bounds: MapBounds) -> None:
     ever added -- ``setdefault`` so an already-stamped pair keeps its
     real first-contact turn on every later call, never overwritten to a
     later one.
+
+    **Phase 872 -- now actually wired, closing a real dead-subsystem
+    gap.** Despite the "must be called once per turn" contract above
+    dating to Phase 408, nothing anywhere ever called this function --
+    confirmed by grep, zero real call sites outside its own definition
+    and `tests/test_world_events.py`'s own unit tests. Every real game
+    this engine has ever processed therefore left ``kingdoms_met``/
+    ``kingdoms_met_since`` permanently empty, silently starving 3 real
+    downstream consumers: `turn/imperial_intelligence.py`'s own World
+    Emperor/Imperial Treasurer perks (via ``has_met_for_full_turn()``),
+    `report/turn_report.py describe_diplomacy_report()`'s own alignment
+    sentence (via ``has_met()``), and this function's own ``is_visible_
+    to()`` sibling's ``event_lev`` clause (though that one's real call
+    site never actually passes ``event_lev``, so it stays independently
+    dead regardless -- a separate, pre-existing gap, not newly closed
+    here). Now called from ``orchestrator.py process_turn()``, in the
+    same turn-global recorder cluster as ``record_battle_world_events()``
+    -- see that module's own Phase 872 addendum.
     """
 
     for coord, province in state.provinces.items():

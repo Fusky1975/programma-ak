@@ -68,6 +68,7 @@ from ak_engine.turn.assassin_guild import resolve_pending_guild_assassination
 from ak_engine.turn.emperor_election import ElectionCallOutcome, ElectionResult, process_election_turn
 from ak_engine.turn.final_standings import FinalStandingsReport, compose_final_standings_report
 from ak_engine.turn.kingdom_bridge import KingdomBridgeReport, sync_leaders_from_kingdom
+from ak_engine.turn.movement import MapBounds
 from ak_engine.turn.office_holder import commit_army_office_holders, commit_office_holders
 from ak_engine.turn.turn_processor import (
     PhaseDispatchResult,
@@ -75,6 +76,7 @@ from ak_engine.turn.turn_processor import (
     build_missed_deadline_turn_leaders,
     run_turn,
 )
+from ak_engine.turn.world_events import record_kingdom_contacts
 
 
 @dataclass(slots=True)
@@ -190,6 +192,13 @@ def process_turn(
     -- when omitted, so a caller no longer has to separately track it
     alongside ``state`` just to avoid every downstream fallback silently
     defaulting to the wrong (Super-AK) constant.
+
+    **Phase 872**: ``turn/world_events.py record_kingdom_contacts()``
+    joins the Phase 608 recorder cluster above -- also turn-global,
+    also previously uncalled from anywhere (its own docstring already
+    said "must be called once per turn," but nothing ever did). See
+    that function's own module docstring for the real downstream
+    consumers this was silently starving.
     """
 
     if rng is None:
@@ -299,6 +308,17 @@ def process_turn(
     # populates state.world_events from the wandering relocations `turn/
     # turn_processor.py run_turn()`'s own end-of-turn tail appended.
     record_wandering_world_events(state, results, rng)
+    # Phase 872 -- same once-per-turn requirement as every recorder
+    # above (`turn/world_events.py record_kingdom_contacts()`'s own
+    # docstring: "must be called once per turn"), but genuinely never
+    # had a caller anywhere before this phase -- confirmed by grep,
+    # zero call sites outside its own definition and unit tests. Every
+    # real game processed by this engine therefore left GameState.
+    # kingdoms_met/kingdoms_met_since permanently empty, silently
+    # starving World Emperor's/Imperial Treasurer's own real perks
+    # (`turn/imperial_intelligence.py`) and describe_diplomacy_report()'s
+    # own alignment sentence, all of which read that same state.
+    record_kingdom_contacts(state, MapBounds(board_width, state.board_height))
 
     letter_reports = {
         kingdom_id: compose_letter_report(

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import random
 from pathlib import Path
 from unittest.mock import patch
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import ActionCode
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader, SkillTable
 from ak_engine.models.leader import Leader
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
@@ -131,6 +132,31 @@ def test_process_turn_commits_army_office_holders_for_the_next_turns_tie_break()
         process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=ScriptedRandom([0.0], choice_indices=[0]))
 
     assert state.army_office_holders[Office.AIR_FORCE] == 101
+
+
+def test_process_turn_wires_record_kingdom_contacts_for_diplomacy_visibility():
+    # Phase 872: turn/world_events.py record_kingdom_contacts() was
+    # never wired into process_turn() at all -- GameState.kingdoms_met/
+    # kingdoms_met_since stayed permanently empty in every real game,
+    # silently starving World Emperor/Imperial Treasurer's own perks and
+    # the DIPLOMACY report's alignment sentence (report/turn_report.py
+    # describe_diplomacy_report()), all fed by this same state.
+    state = _base_state()
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.EVIL, HexCoord(1, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(HexCoord(1, 0), Terrain.PLAINS, Race.ELVEN, owner_kingdom_id=2))
+    kingdom = _kingdom(1, "Arthur", [_wait_leader(10, "Arthur"), _wait_leader(20, "Cedric")])
+
+    with patch("ak_engine.orchestrator.parse_k1_moves_file", return_value=kingdom):
+        # Two kingdoms now have real financial state to process (unlike
+        # every other test in this file, all single-kingdom) -- a real
+        # rng.Random consumes freely instead of exhausting a short
+        # ScriptedRandom script; this test only checks kingdoms_met
+        # population, not any specific RNG-driven value.
+        process_turn(state, [Path("fake.K1")], board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    assert frozenset({1, 2}) in state.kingdoms_met
+    assert frozenset({1, 2}) in state.kingdoms_met_since
 
 
 def test_process_turn_skips_a_leader_with_no_matching_leaderstate():
