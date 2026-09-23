@@ -1730,6 +1730,40 @@ def test_execute_challenge_cast_psychic_blast_bonus_attacks_can_finish_the_targe
     assert result.loser_leader_id == 2
 
 
+def test_execute_challenge_cast_psychic_blast_target_kingdom_holding_lead_lined_helmet_reaches_the_roll():
+    # Phase 883: Discovery.LEAD_LINED_HELMET -- "the spell will allow
+    # only 1-2 free attack rounds" for a target whose own Kingdom
+    # holds it.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    state.kingdoms[2].discoveries.add(Discovery.LEAD_LINED_HELMET)
+    request = _cast_request(2, Spell.PSYCHIC_BLAST)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.roll_psychic_blast_stun_rounds", return_value=0
+    ) as mock_stun, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert mock_stun.call_args.kwargs["target_has_lead_lined_helmet"] is True
+
+
+def test_execute_challenge_cast_psychic_blast_target_kingdom_without_lead_lined_helmet_uses_the_full_range():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.PSYCHIC_BLAST)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.roll_psychic_blast_stun_rounds", return_value=0
+    ) as mock_stun, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert mock_stun.call_args.kwargs["target_has_lead_lined_helmet"] is False
+
+
 def test_augur_combat_cast_first_shirks_and_flees_on_a_simulated_loss():
     state = _base_state()
     caster_leader = LeaderState(

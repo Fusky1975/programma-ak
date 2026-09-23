@@ -110,12 +110,15 @@ wired too -- `turn/encounter.py ASBESTOS_CLOTHING_DAMAGE_MULTIPLIER`,
 reducing `roll_fireball_damage()`'s own rolled damage by 67% for a
 target whose own Kingdom holds it, checked at the same two real
 Fireball-cast sites (`turn/challenge_execution.py`/`turn/search_
-execution.py`) as the submarine-monster immunity. Still genuinely
+execution.py`) as the submarine-monster immunity. **Phase 883**:
+`LEAD_LINED_HELMET` (Psychic Blast) is now wired too --
+`turn/encounter.py LEAD_LINED_HELMET_STUN_ROUNDS_RANGE` (1-2 instead
+of the ordinary 2-5), checked at the same two real Psychic-Blast-cast
+sites for a target whose own Kingdom holds it. Still genuinely
 unwired, confirmed absent everywhere in `src/` (not just under a
 different name): `ARTIFICIAL_ORGANS` (Hand of Death), `FLOOD_DAMS`
-(Flood), `DRY_ICE_FOG` (Clairvoyance), `LEAD_LINED_HELMET` (Psychic
-Blast), `ULTRAVIOLET_LENSES` (Illusory Terrain) -- a real, separate
-follow-up, not attempted here.
+(Flood), `DRY_ICE_FOG` (Clairvoyance), `ULTRAVIOLET_LENSES` (Illusory
+Terrain) -- a real, separate follow-up, not attempted here.
 
 ``REPORTS.PAS`` (~line 325-360, continuing the loop quoted above)
 confirms the full "Discoveries of the Sages" report line format and the

@@ -2071,7 +2071,15 @@ def _resolve_search_encounter(
             return None
 
         if spell is Spell.PSYCHIC_BLAST:
-            caster.bonus_unanswered_attacks += roll_psychic_blast_stun_rounds(rng)
+            # Phase 883: Discovery.LEAD_LINED_HELMET -- same narrower
+            # free-attack-round roll as turn/challenge_execution.py's
+            # own Psychic Blast branch, for a leader target (a monster
+            # target has no Kingdom either way).
+            target_kingdom = state.kingdoms.get(leader.kingdom_id) if not target_is_monster else None
+            target_has_lead_lined_helmet = target_kingdom is not None and Discovery.LEAD_LINED_HELMET in target_kingdom.discoveries
+            caster.bonus_unanswered_attacks += roll_psychic_blast_stun_rounds(
+                rng, target_has_lead_lined_helmet=target_has_lead_lined_helmet
+            )
             return None
 
         if spell is Spell.TELEK_STORM:

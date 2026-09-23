@@ -996,7 +996,14 @@ def _resolve_personal_combat_cast(
         return None
 
     if spell is Spell.PSYCHIC_BLAST:
-        caster.bonus_unanswered_attacks += roll_psychic_blast_stun_rounds(rng)
+        # Phase 883: Discovery.LEAD_LINED_HELMET -- narrows the free-
+        # attack-round roll to 1-2 for a target whose own Kingdom
+        # holds it.
+        target_kingdom = state.kingdoms.get(target_leader.kingdom_id) if target_leader is not None else None
+        target_has_lead_lined_helmet = target_kingdom is not None and Discovery.LEAD_LINED_HELMET in target_kingdom.discoveries
+        caster.bonus_unanswered_attacks += roll_psychic_blast_stun_rounds(
+            rng, target_has_lead_lined_helmet=target_has_lead_lined_helmet
+        )
         return None
 
     if spell is Spell.TELEK_STORM:

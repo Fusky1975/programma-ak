@@ -1998,15 +1998,29 @@ CHARM_FLEE_ALWAYS_SUCCEEDS = True
 # no skill-level scaling at all.
 PSYCHIC_BLAST_STUN_ROUNDS_RANGE = (2, 5)
 
+# Discovery.LEAD_LINED_HELMET (models/discovery.py, real design-doc
+# text): "The spell will allow only 1-2 free attack rounds" for a
+# target whose own Kingdom holds it -- a narrower range, not a
+# multiplier on the ordinary roll. Wired at the same two real Psychic-
+# Blast-cast call sites as every other spell-specific Discovery ward,
+# Phase 883.
+LEAD_LINED_HELMET_STUN_ROUNDS_RANGE = (1, 2)
 
-def roll_psychic_blast_stun_rounds(rng: random.Random) -> int:
+
+def roll_psychic_blast_stun_rounds(rng: random.Random, *, target_has_lead_lined_helmet: bool = False) -> int:
     """Psychic Blast's own stun effect: "stordisce il nemico guadagnando
     da 2 a 5 round supplementari d'attacco" -- one uniform roll in
     ``PSYCHIC_BLAST_STUN_ROUNDS_RANGE``, unaffected by the caster's own
     skill level (unlike Holy Symbol/Spiritwrack).
+
+    ``target_has_lead_lined_helmet`` (Phase 883) narrows the roll to
+    ``LEAD_LINED_HELMET_STUN_ROUNDS_RANGE`` (1-2) instead -- ``Discovery.
+    LEAD_LINED_HELMET``'s own real effect, see module docstring's own
+    constant comment.
     """
 
-    return rng.randint(*PSYCHIC_BLAST_STUN_ROUNDS_RANGE)
+    stun_rounds_range = LEAD_LINED_HELMET_STUN_ROUNDS_RANGE if target_has_lead_lined_helmet else PSYCHIC_BLAST_STUN_ROUNDS_RANGE
+    return rng.randint(*stun_rounds_range)
 
 
 # Telekinetic Storm [TE], module docstring's own Phase 185 addendum --

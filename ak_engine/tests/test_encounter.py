@@ -1190,6 +1190,20 @@ def test_roll_psychic_blast_stun_rounds_consumes_exactly_one_roll():
     roll_psychic_blast_stun_rounds(rng)
 
 
+def test_roll_psychic_blast_stun_rounds_lead_lined_helmet_narrows_the_range():
+    # Phase 883: Discovery.LEAD_LINED_HELMET -- "the spell will allow
+    # only 1-2 free attack rounds."
+    for scripted in (0.0, 0.25, 0.5, 0.75, 0.999):
+        rounds = roll_psychic_blast_stun_rounds(ScriptedRandom([scripted]), target_has_lead_lined_helmet=True)
+        assert 1 <= rounds <= 2
+
+
+def test_roll_psychic_blast_stun_rounds_lead_lined_helmet_is_a_no_op_by_default():
+    rng_a = ScriptedRandom([0.5])
+    rng_b = ScriptedRandom([0.5])
+    assert roll_psychic_blast_stun_rounds(rng_a) == roll_psychic_blast_stun_rounds(rng_b, target_has_lead_lined_helmet=False)
+
+
 # -- Phase 185: Telekinetic Storm [TE] --
 
 

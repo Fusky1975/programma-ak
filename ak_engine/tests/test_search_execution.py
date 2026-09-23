@@ -2107,6 +2107,31 @@ def test_execute_search_cast_psychic_blast_bonus_swing_can_end_the_encounter():
     assert not mock_shoot.called
 
 
+def test_execute_search_monster_cast_psychic_blast_leader_kingdom_holding_lead_lined_helmet_narrows_the_roll():
+    # Phase 883: Discovery.LEAD_LINED_HELMET -- "the spell will allow
+    # only 1-2 free attack rounds" for the leader target, when the
+    # leader's own Kingdom holds it (a monster caster has no Kingdom
+    # to hold it either way).
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.kingdoms[1].discoveries.add(Discovery.LEAD_LINED_HELMET)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.roll_psychic_blast_stun_rounds", return_value=0) as mock_stun, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.PSYCHIC_BLAST.value),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        )
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert mock_stun.call_args.kwargs["target_has_lead_lined_helmet"] is True
+
+
 def test_execute_search_cast_telekinetic_storm_kills_the_target():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
