@@ -53,7 +53,7 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.discovery import DISCOVERY_ABILITY_BONUS
+from ak_engine.models.discovery import DISCOVERY_ABILITY_BONUS, Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.game_type import GameType
@@ -189,6 +189,36 @@ def holder_is_immune_to_spell(state: GameState, target_leader_id: int, spell: Sp
         if any(item.treasure is amulet for item in state.items_held_by(target_leader_id)):
             return True
     return False
+
+
+def kingdom_sees_through_illusory_terrain(state: GameState, kingdom_id: int) -> bool:
+    """Phase 886: does ``kingdom_id``'s own characters personally see
+    through an active Illusory Terrain deception -- via a Crystal of
+    True Seeing (``Treasure.AMULET_ANTI_ILLUSION``) held by any of the
+    kingdom's own leaders, or ``Discovery.ULTRAVIOLET_LENSES``? Both
+    real texts converge on the identical clause (Crystal: "unaffected
+    by the spells of... Illusory Terrain"; Ultraviolet Lenses: "enable
+    them to see through an Illusory Terrain spell") -- and both are
+    equally explicit that this is a **personal-knowledge** effect, not
+    a combat one: Ultraviolet Lenses says so directly ("armies will
+    still be affected"), and this project's own already-shipped Crystal
+    wiring (``turn/battle_orchestrator.py _build_battle_units()``'s own
+    ``own_side_owns_crystal_of_true_seeing`` check, Phase 773) already
+    covers the *combat-strength* half of the Crystal's text separately
+    -- this function is deliberately never threaded into any combat-
+    strength call site, only into ``report/turn_report.py record_spell_
+    world_events()``'s own targeted reveal.
+    """
+
+    if any(
+        item.treasure is Treasure.AMULET_ANTI_ILLUSION
+        for leader in state.leaders.values()
+        if leader.kingdom_id == kingdom_id
+        for item in state.items_held_by(leader.leader_id)
+    ):
+        return True
+    kingdom = state.kingdoms.get(kingdom_id)
+    return kingdom is not None and Discovery.ULTRAVIOLET_LENSES in kingdom.discoveries
 
 
 def province_halves_spell_chance(state: GameState, province_coord: HexCoord, ability: Ability) -> bool:

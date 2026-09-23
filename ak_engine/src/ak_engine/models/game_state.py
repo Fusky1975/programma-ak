@@ -1637,6 +1637,19 @@ class GameState:
     # no explicit reset, no multi-turn game loop exists yet for it to
     # matter" convention as `world_events`/`rumors`/`turn_raid_events`.
     battle_narratives_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
+    # Phase 886 -- Discovery.ULTRAVIOLET_LENSES / Treasure.AMULET_ANTI_
+    # ILLUSION (Crystal of True Seeing): "characters ... see through the
+    # Illusory Terrain spell" (armies stay affected regardless -- see
+    # `turn/discovery_effects.py kingdom_sees_through_illusory_terrain()`).
+    # Every currently-privileged Kingdom is told the real terrain of a
+    # freshly-Illusioned province unconditionally, regardless of distance
+    # -- unlike the ordinary `world_events` reveal above, which only
+    # reaches a Kingdom already owning or adjacent to that province this
+    # turn (`turn/world_events.py is_visible_to()`). Reuses the exact
+    # same real, sourced `_STerIl` text as that ordinary reveal -- no new
+    # project-original wording. Same "accumulates for the turn, no
+    # explicit reset" convention as `battle_narratives_by_kingdom` above.
+    illusory_terrain_reveals_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
     # Phase 713 -- AdvancedAbility.SPY_BLACKMAIL's own demand-delivery
     # notice, keyed by kingdom_id -- both the blackmailer's own Kingdom
     # and the victim Kingdom receive the identical rendered text (one

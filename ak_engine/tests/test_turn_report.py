@@ -4949,6 +4949,24 @@ def test_compose_letter_report_omits_battle_narrative_for_an_uninvolved_kingdom(
     assert not any("overran" in line for line in lines_for_kingdom_3)
 
 
+def test_compose_letter_report_includes_illusory_terrain_reveal_for_a_privileged_kingdom():
+    # Phase 886: state.illusory_terrain_reveals_by_kingdom is set up
+    # directly here, isolating compose_letter_report()'s own reading/
+    # folding behavior from record_spell_world_events()'s own rendering,
+    # tested separately.
+    state = GameState()
+    state.add_kingdom(KingdomState(3, "Watchia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(2, 2)))
+    state.add_leader(LeaderState(3, 3, "Cedric", HexCoord(2, 2), is_king=True))
+    state.illusory_terrain_reveals_by_kingdom[3] = [
+        "In spring, the Plain terrain of Border Fort was magically made to appear as Mountain."
+    ]
+
+    lines_for_kingdom_3 = compose_letter_report([], state, 3, ScriptedRandom([]))
+
+    assert "ACTION REPORT" in lines_for_kingdom_3
+    assert "In spring, the Plain terrain of Border Fort was magically made to appear as Mountain." in lines_for_kingdom_3
+
+
 def test_describe_challenge_delegates_to_describe_encounter_combat():
     result = ChallengeExecutionResult(
         accepted=True,
@@ -13747,6 +13765,65 @@ def test_record_spell_world_events_records_a_successful_illus_terrain():
     event = state.world_events[0]
     assert event.coord == battle_coord
     assert event.lines == ["In spring, the Plain terrain of Border Fort was magically made to appear as Mountain."]
+
+
+def test_record_spell_world_events_illus_terrain_reveals_the_truth_to_a_privileged_kingdom():
+    # Phase 886: Discovery.ULTRAVIOLET_LENSES -- a privileged Kingdom
+    # (here, kingdom 3 "Watchia") learns the real terrain unconditionally,
+    # regardless of distance, via its own separate, targeted accumulator.
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    state.kingdoms[3].discoveries.add(Discovery.ULTRAVIOLET_LENSES)
+    state.provinces[battle_coord].illusory_terrain = Terrain.MTNS
+    request = CastRequest(spell=Spell.ILLUS_TERRAIN, target=encode_hex_number(battle_coord, board_width), terrain=Terrain.MTNS)
+    result = CastExecutionResult(request, applied=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert state.illusory_terrain_reveals_by_kingdom[3] == [
+        "In spring, the Plain terrain of Border Fort was magically made to appear as Mountain."
+    ]
+    assert state.illusory_terrain_reveals_by_kingdom.get(2, []) == []  # not privileged
+
+
+def test_record_spell_world_events_illus_terrain_reveal_excludes_the_casters_own_kingdom():
+    # The caster's own Kingdom already gets a private CAST-success line
+    # elsewhere -- it must not also receive this targeted reveal, even
+    # when it happens to hold Ultraviolet Lenses itself.
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    state.kingdoms[1].discoveries.add(Discovery.ULTRAVIOLET_LENSES)
+    state.provinces[battle_coord].illusory_terrain = Terrain.MTNS
+    request = CastRequest(spell=Spell.ILLUS_TERRAIN, target=encode_hex_number(battle_coord, board_width), terrain=Terrain.MTNS)
+    result = CastExecutionResult(request, applied=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert state.illusory_terrain_reveals_by_kingdom.get(1, []) == []
+
+
+def test_record_spell_world_events_illus_terrain_no_reveal_without_true_sight():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    state.provinces[battle_coord].illusory_terrain = Terrain.MTNS
+    request = CastRequest(spell=Spell.ILLUS_TERRAIN, target=encode_hex_number(battle_coord, board_width), terrain=Terrain.MTNS)
+    result = CastExecutionResult(request, applied=True)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert state.illusory_terrain_reveals_by_kingdom == {}
 
 
 def test_record_spell_world_events_skips_a_failed_cast():

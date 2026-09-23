@@ -1402,7 +1402,11 @@ from ak_engine.turn.imperial_intelligence import known_bordering_kingdom_tax_bas
 from ak_engine.turn.leader_visibility import known_mercenary, leader_location_known_to_kingdom
 from ak_engine.turn.movement import MapBounds, hex_distance_wrapped
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
-from ak_engine.turn.discovery_effects import effective_skill_level, emperor_holds_arcanes_valor_unification
+from ak_engine.turn.discovery_effects import (
+    effective_skill_level,
+    emperor_holds_arcanes_valor_unification,
+    kingdom_sees_through_illusory_terrain,
+)
 from ak_engine.turn.expenses import (
     MaintenanceResult,
     compute_army_maintenance,
@@ -14321,6 +14325,19 @@ def record_spell_world_events(
                 TERRAIN_NAME[province.terrain], province_name, TERRAIN_NAME[province.illusory_terrain], rng
             )
             state.record_world_event(coord, [prefix + line])
+            # Phase 886: Discovery.ULTRAVIOLET_LENSES / Treasure.
+            # AMULET_ANTI_ILLUSION -- every currently-privileged Kingdom
+            # (other than the caster's own, which already gets its own
+            # private CAST-success line) is told the real terrain
+            # unconditionally, regardless of distance/adjacency, unlike
+            # the ordinary world_event reveal above.
+            caster_leader = state.leaders.get(entry.leader_id)
+            caster_kingdom_id = caster_leader.kingdom_id if caster_leader is not None else None
+            for privileged_kingdom_id in state.kingdoms:
+                if privileged_kingdom_id == caster_kingdom_id:
+                    continue
+                if kingdom_sees_through_illusory_terrain(state, privileged_kingdom_id):
+                    state.illusory_terrain_reveals_by_kingdom.setdefault(privileged_kingdom_id, []).append(prefix + line)
         elif request.spell is Spell.FLOOD:
             state.record_world_event(coord, [prefix + render_flood_world_event(province_name, rng)])
         elif request.spell in _BYSTANDER_SPELL_NOTICE_SPELLS:
@@ -15362,6 +15379,12 @@ def compose_letter_report(
     # placement reasoning: no separate section header exists for this
     # in any confirmed real source.
     action_lines = action_lines + state.battle_narratives_by_kingdom.get(kingdom_id, [])
+    # Phase 886 -- Discovery.ULTRAVIOLET_LENSES/Crystal of True Seeing's
+    # own targeted, unconditional Illusory-Terrain reveal (`record_
+    # spell_world_events()`'s own new branch), already fully rendered at
+    # record time -- same "no separate section header exists" placement
+    # reasoning as the Valhalla/battle-narrative lines just above.
+    action_lines = action_lines + state.illusory_terrain_reveals_by_kingdom.get(kingdom_id, [])
     # Phase 713: AdvancedAbility.SPY_BLACKMAIL's own demand-delivery
     # notice -- same "both sides carry the identical, already-rendered
     # lines here" shape as the battle narrative right above.

@@ -25,6 +25,7 @@ from ak_engine.turn.discovery_effects import (
     holder_is_immune_to_spell,
     holds_bow_of_elven_kings,
     holds_monster_command_item_for,
+    kingdom_sees_through_illusory_terrain,
     province_halves_spell_chance,
     resolve_province_protection_block,
 )
@@ -399,6 +400,43 @@ def test_holder_is_immune_to_spell_false_for_phantasmal_armies_even_with_crystal
     state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=1)
 
     assert holder_is_immune_to_spell(state, 1, Spell.ILLUS_ARMIES) is False
+
+
+# -- Phase 886: kingdom_sees_through_illusory_terrain() --
+
+
+def test_kingdom_sees_through_illusory_terrain_false_by_default():
+    state = make_state()
+
+    assert kingdom_sees_through_illusory_terrain(state, 1) is False
+
+
+def test_kingdom_sees_through_illusory_terrain_true_via_crystal_of_true_seeing():
+    state = make_state()
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=1)
+
+    assert kingdom_sees_through_illusory_terrain(state, 1) is True
+
+
+def test_kingdom_sees_through_illusory_terrain_true_via_ultraviolet_lenses():
+    state = make_state()
+    state.kingdoms[1].discoveries.add(Discovery.ULTRAVIOLET_LENSES)
+
+    assert kingdom_sees_through_illusory_terrain(state, 1) is True
+
+
+def test_kingdom_sees_through_illusory_terrain_false_for_an_unrelated_kingdom():
+    state = make_state()
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HOME))
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=1)  # held by kingdom 1's own leader
+
+    assert kingdom_sees_through_illusory_terrain(state, 2) is False
+
+
+def test_kingdom_sees_through_illusory_terrain_false_for_an_unregistered_kingdom():
+    state = make_state()
+
+    assert kingdom_sees_through_illusory_terrain(state, 99) is False
 
 
 # -- Phase 535: equipped_combat_weapon / holds_bow_of_elven_kings --------

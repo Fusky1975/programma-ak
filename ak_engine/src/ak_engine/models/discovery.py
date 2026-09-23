@@ -138,10 +138,37 @@ exempting those same armies from the ongoing rest-of-turn block their
 own real "reduction" framing implies (`turn/move_execution.py
 _land_crossing_blocked()` has no per-army "already paid this turn's
 flood toll" state to represent that exemption) -- a real, separate,
-larger follow-up, not attempted here. Still genuinely unwired,
-confirmed absent everywhere in `src/` (not just under a different
-name): `DRY_ICE_FOG` (Clairvoyance), `ULTRAVIOLET_LENSES` (Illusory
-Terrain) -- a real, separate follow-up, not attempted here.
+larger follow-up, not attempted here. **Phase 886**: `ULTRAVIOLET_
+LENSES` (Illusory Terrain) is now wired too -- "characters will see
+through the Illusory terrain, but armies will still be affected."
+Investigating this found the deception has no display surface anywhere
+in this project (the PROVINCES report/ASCII map always show ground
+truth for any province a Kingdom "knows," and the one existing public
+world-event notice already reveals both the real and fake terrain to
+whoever is visible when the spell is cast) -- so "seeing through" means
+telling a privileged Kingdom the truth *unconditionally, regardless of
+distance*, the one thing an ordinary Kingdom genuinely doesn't get. New
+`turn/discovery_effects.py kingdom_sees_through_illusory_terrain()`
+(True for `Discovery.ULTRAVIOLET_LENSES` or a Kingdom leader holding
+`Treasure.AMULET_ANTI_ILLUSION`, the Crystal of True Seeing -- the
+identical "sees through" clause both real texts share, closing a
+second, independently-flagged residual at the same time, `turn/
+exploration.py`'s own Phase 540 addendum), wired into `report/turn_
+report.py record_spell_world_events()`'s Illusory-Terrain branch via a
+new targeted, per-Kingdom accumulator (`GameState.illusory_terrain_
+reveals_by_kingdom`) folded into ACTION REPORT. Reuses the exact same
+real, sourced `_STerIl` text already used for the ordinary public
+reveal -- no new, project-original wording invented. Deliberately never
+threaded into any combat-strength call site -- the Crystal's own
+combat-strength bypass (Phase 773) and Ultraviolet Lenses's own explicit
+"armies will still be affected" are both already correctly untouched by
+this. This closes the anti-spell-ward wiring list in full: all 7 wards
+Phase 880 flagged are now either wired (Infrared Goggles, Asbestos
+Clothing, Lead-Lined Helmet, Artificial Organs, Flood Dams, Ultraviolet
+Lenses) or confirmed genuinely blocked (`DRY_ICE_FOG`, Clairvoyance --
+its own real information-feed mechanism, `Set_Intel`, is confirmed dead
+code in the compiled game itself, `turn/world_events.py`'s own
+disassembly-level finding, so there is no live effect left to reduce).
 
 ``REPORTS.PAS`` (~line 325-360, continuing the loop quoted above)
 confirms the full "Discoveries of the Sages" report line format and the

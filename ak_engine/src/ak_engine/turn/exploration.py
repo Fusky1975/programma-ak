@@ -306,10 +306,15 @@ def discover_features(
     **Phase 540 -- Crystal of True Seeing** (``has_true_seeing`` above):
     a second, independently-sourced bypass of the ``magically_hidden``
     skip, alongside Hand-Held Radar. Illusory Terrain's own "sees
-    through" half of the same item stays unwired -- see ``turn/
-    strength.py``'s own docstring for why (no "does this observer know
-    the real terrain" mechanic exists for anyone yet, Crystal-holder or
-    not).
+    through" half of the same item stayed unwired until Phase 886, which
+    finally built the "does this observer know the real terrain despite
+    an active illusion" mechanism -- ``turn/discovery_effects.py
+    kingdom_sees_through_illusory_terrain()``, wired into ``report/
+    turn_report.py record_spell_world_events()``'s own targeted,
+    unconditional reveal (`GameState.illusory_terrain_reveals_by_
+    kingdom`), not into this module -- Discover_features's own province-
+    exploration flow has nothing to do with an *already-cast* Illusory
+    Terrain deception.
     """
 
     discovered: list[Feature] = []
