@@ -3794,6 +3794,49 @@ def describe_cast(
     )
 
 
+# Phase 878: Locate Object (`AdvancedAbility.LOCATE_OBJECT_SPELL`, one of
+# the 5 secret Action-Cast spells 25-34 with no `SPELL_CAST_ANNOUNCEMENT`
+# entry -- unlike Scar Terrain/Mystic Winds, whose own real success text
+# was later recovered from separate reverse-engineering documents, no
+# `SAY.PAS`/`.X2`/POWMSG source for this one survives anywhere in the
+# available corpus, confirmed by exhaustive grep). **Project-original
+# text, user-confirmed directly** (the standing convention for a real,
+# confirmed-unsourced gap) rather than left silently unwired. Reuses this
+# module's own established marker conventions: `<` caster, `[` holder,
+# `@` province, `\` single item name (the same marker `render_curator_
+# research()`/`render_take_item()` already use for one named Treasure).
+_LOCATE_OBJECT_TEMPLATE = "< divined/Rsensed that the \\ was located in @, held by [."
+
+
+def render_locate_object(caster_name: str, item_name: str, province_name: str, holder_name: str, rng: random.Random) -> str:
+    """Renders a successful Locate Object cast's own answer -- project-
+    original text, see the module comment above for why."""
+
+    values = {"<": caster_name, "\\": item_name, "@": province_name, "[": holder_name}
+    return render(_LOCATE_OBJECT_TEMPLATE, values, rng=rng)
+
+
+def describe_locate_object(result: CastExecutionResult, *, caster_name: str, state: GameState, rng: random.Random) -> list[str]:
+    """Composes Locate Object's own turn-report line from an already-
+    resolved ``CastExecutionResult`` (Phase 878). Silent (``[]``) when
+    the spell wasn't cast, or when ``locate_object()`` itself had no
+    real answer (unknown item, or one guarded by a feature/monster --
+    this project's data model can't tell those two cases apart, see
+    ``turn/cast_execution.py locate_object()``'s own docstring) -- "no
+    data, don't guess", the same stance every other composer in this
+    module already takes for a genuinely unanswerable case.
+    """
+
+    if not result.applied or result.located_object is None:
+        return []
+    item = state.items.get(result.request.target)
+    holder_name = _leader_name(state, result.located_object.holder_leader_id)
+    if item is None or holder_name is None:
+        return []
+    province_name = _province_label(state, result.located_object.location)
+    return [render_locate_object(caster_name, TREASURE_NAME[item.treasure], province_name, holder_name, rng)]
+
+
 # HostAK/TP/PROSE/SAY.PAS `_LTrack` (no standalone .X/.X2 file of its own
 # -- transcribed directly from the Pascal source, Phase 612) -- Kill
 # Enemy's own Berserk-retaliation duel (`_execute_kill_enemy()`'s own
@@ -8117,6 +8160,14 @@ def describe_turn_results(
             continue
         elif entry.action is ActionCode.CAST and isinstance(entry.result, CastExecutionResult):
             spell = entry.result.request.spell
+            if spell is Spell.LOCATE_OBJECT:
+                # Phase 878: target shape here is an item id, not a leader
+                # id -- a genuinely different resolution than every other
+                # spell this dispatch handles, so it needs its own branch
+                # rather than joining `_AUTO_RESOLVABLE_CAST_TARGET_SPELLS`
+                # (which assumes `_leader_name(state, request.target)`).
+                lines.extend(describe_locate_object(entry.result, caster_name=caster_name, state=state, rng=rng))
+                continue
             if spell not in _AUTO_RESOLVABLE_CAST_TARGET_SPELLS:
                 continue
             target_name = _leader_name(state, entry.result.request.target)

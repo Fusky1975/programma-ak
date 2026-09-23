@@ -3429,6 +3429,33 @@ def test_locate_object_returns_none_for_a_feature_or_monster_guarded_item():
     assert locate_object(state, item.item_id) is None
 
 
+# -- Phase 878: execute_cast() itself now calls locate_object() and
+# carries the answer on the result, instead of leaving it for a caller to
+# separately recompute.
+
+
+def test_execute_cast_locate_object_populates_located_object_on_success():
+    state = build_state()
+    state.add_leader(LeaderState(78, 1, "Field Commander", ELSEWHERE))
+    item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=78)
+    request = CastRequest(spell=Spell.LOCATE_OBJECT, target=item.item_id)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert result.located_object == LocateObjectResult(location=ELSEWHERE, holder_leader_id=78)
+
+
+def test_execute_cast_locate_object_leaves_located_object_none_for_an_unanswerable_target():
+    state = build_state()
+    request = CastRequest(spell=Spell.LOCATE_OBJECT, target=999)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert result.located_object is None
+
+
 # ---------------------------------------------------------------------------
 # Illusory Fog (Phase 207) -- user-supplied, one of the secret spells 25-34
 # ---------------------------------------------------------------------------

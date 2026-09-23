@@ -97,6 +97,8 @@ from ak_engine.report.turn_report import (
     describe_battle,
     describe_quality_changes,
     describe_cast,
+    describe_locate_object,
+    render_locate_object,
     describe_kill_enemy_berserk_retaliation,
     describe_challenge,
     describe_curator_research,
@@ -382,7 +384,7 @@ from ak_engine.turn.combat import Quality
 from ak_engine.turn.battle_orchestrator import BattleReport, QualityChange
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_decode import CastRequest
-from ak_engine.turn.cast_execution import CastExecutionResult
+from ak_engine.turn.cast_execution import CastExecutionResult, LocateObjectResult
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
 from ak_engine.turn.challenge_pursue_decode import ChallengeRequest, PursueRequest
 from ak_engine.turn.encounter import CombatRange, FireArrowShot, MeleeSwing
@@ -4482,6 +4484,31 @@ def test_describe_turn_results_narrates_a_successful_clairvoyance_cast():
     assert "Borin" in lines[0]
 
 
+def test_describe_turn_results_narrates_a_successful_locate_object_cast():
+    # Phase 878: Locate Object's own target is an item id, not a leader
+    # id -- confirms describe_turn_results()'s own new, dedicated branch
+    # reaches describe_locate_object() instead of trying (and failing) to
+    # resolve the item id as a leader name via _AUTO_RESOLVABLE_CAST_
+    # TARGET_SPELLS' own shared resolution path.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Sir Aldric", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, kingdom_id=1, name="Borin", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=2)
+    request = CastRequest(spell=Spell.LOCATE_OBJECT, target=item.item_id)
+    result = CastExecutionResult(
+        request=request, applied=True, located_object=LocateObjectResult(location=HexCoord(0, 0), holder_leader_id=2)
+    )
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([0.1]))
+
+    assert lines == ["Sir Aldric divined that the Wand of Fire was located in Capital City, held by Borin."]
+
+
 def test_describe_turn_results_still_ignores_an_unrelated_error():
     # Non-regression: every other exception (including this same
     # function's own "no province data" ValueError) still narrates
@@ -6594,6 +6621,71 @@ def test_describe_cast_renders_nothing_when_not_applied():
     line = describe_cast(result, caster_name="Aldric", rng=rng, target_name="Borin")
 
     assert line is None
+
+
+# -- Locate Object (Phase 878, project-original text) ------------------------
+
+
+def test_render_locate_object():
+    rng = ScriptedRandom([0.1])  # picks "divined", not the /R alternate "sensed"
+
+    line = render_locate_object("Aldric", "Wand of Fire", "Capital City", "Borin", rng)
+
+    assert line == "Aldric divined that the Wand of Fire was located in Capital City, held by Borin."
+
+
+def test_describe_locate_object_narrates_a_successful_find():
+    state = GameState()
+    state.add_leader(LeaderState(50, 1, "Borin", HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=50)
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.LOCATE_OBJECT, target=item.item_id),
+        applied=True,
+        located_object=LocateObjectResult(location=HexCoord(0, 0), holder_leader_id=50),
+    )
+    rng = ScriptedRandom([0.1])  # picks "divined", not the /R alternate "sensed"
+
+    lines = describe_locate_object(result, caster_name="Aldric", state=state, rng=rng)
+
+    assert lines == ["Aldric divined that the Wand of Fire was located in Capital City, held by Borin."]
+
+
+def test_describe_locate_object_returns_nothing_when_not_applied():
+    result = CastExecutionResult(request=CastRequest(spell=Spell.LOCATE_OBJECT, target=1), applied=False, reason="cast roll failed")
+
+    lines = describe_locate_object(result, caster_name="Aldric", state=GameState(), rng=ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_locate_object_returns_nothing_when_located_object_is_none():
+    # A real, successful cast against an item this project's data model
+    # can't answer (unknown, or feature/monster-guarded) -- "no data,
+    # don't guess", not an error.
+    result = CastExecutionResult(request=CastRequest(spell=Spell.LOCATE_OBJECT, target=999), applied=True, located_object=None)
+
+    lines = describe_locate_object(result, caster_name="Aldric", state=GameState(), rng=ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_locate_object_returns_nothing_when_the_holder_cannot_be_named():
+    # located_object names a real coord/holder_leader_id pair, but the
+    # holder is no longer resolvable (defensive -- shouldn't happen in
+    # practice, since locate_object() only ever returns a currently-real
+    # leader, but describe_locate_object() shouldn't crash if it did).
+    state = GameState()
+    item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=999)
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.LOCATE_OBJECT, target=item.item_id),
+        applied=True,
+        located_object=LocateObjectResult(location=HexCoord(0, 0), holder_leader_id=999),
+    )
+
+    lines = describe_locate_object(result, caster_name="Aldric", state=state, rng=ScriptedRandom([]))
+
+    assert lines == []
 
 
 # -- SAY.PAS _LTrack / Kill Enemy Berserk retaliation (Phase 612) ------------

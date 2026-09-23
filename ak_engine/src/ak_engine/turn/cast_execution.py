@@ -610,15 +610,22 @@ mischaracterized as already-uniform for years.
      `_roll_cast_success()` and mutates nothing (this is a pure
      information query, unlike every mutating spell above).
   2. **The actual query is a separate primitive, `locate_object(state,
-     item_id)`, deliberately outside `CastExecutionResult`'s own
-     applied/reason shape** -- `CastExecutionResult` is shared across
-     every spell in this module and carries no per-spell payload field
-     by design; a successful cast is the gate a future report layer
-     would check before calling this query, mirroring how every other
-     "confirmed effect, not yet wired to the report layer" spell above
-     keeps its own real primitive separate from `execute_cast()`'s own
-     side-effect-free dispatch. Returns `LocateObjectResult(location,
-     holder_leader_id)` for a leader-held item, `None` otherwise.
+     item_id)`** -- returns `LocateObjectResult(location, holder_
+     leader_id)` for a leader-held item, `None` otherwise. **Phase 878**:
+     wired end-to-end -- `_execute_locate_object()` now calls it itself
+     on a successful cast and stashes the result on `CastExecutionResult.
+     located_object`, the same "per-spell payload field on the shared
+     result type" convention `discovery_defended`/`kill_enemy_berserk_
+     winner`/`looted_item_ids` already established elsewhere in this
+     same dataclass (a stale, corrected claim: this paragraph used to
+     say `CastExecutionResult` "carries no per-spell payload field by
+     design," contradicted by those very fields already existing when
+     it was written). `report/turn_report.py describe_locate_object()`
+     renders it via project-original text (no `SAY.PAS`/`.X2`/POWMSG
+     source survives for this secret spell's own success message,
+     confirmed by exhaustive grep -- user-confirmed directly to author
+     replacement text, the same standing convention already used
+     elsewhere for a confirmed-unsourced gap).
   3. **Only the leader-held half of "who is guarding the item, if
      anyone" is answerable at all -- confirmed absent, not guessed.**
      `models/item.py`'s own module docstring already scopes
@@ -1054,6 +1061,15 @@ class CastExecutionResult:
     # Race.NO_RACE`` alone, since a Sea province can legitimately
     # already be NO_RACE from world generation, unrelated to this cast.
     scar_terrain_collapsed: bool = False
+    # Phase 878: a successful Locate Object cast's own real answer
+    # (``locate_object()``'s return value, called from within
+    # ``_execute_locate_object()`` itself rather than left for a caller
+    # to recompute independently). ``None`` for every other spell, and
+    # for a Locate Object cast whose own target item can't be answered
+    # at all (unknown item, or a feature/monster-guarded one -- this
+    # project's data model can't distinguish those two cases from each
+    # other, see ``locate_object()``'s own docstring).
+    located_object: LocateObjectResult | None = None
 
 
 def execute_cast(
@@ -2596,11 +2612,10 @@ def _execute_locate_object(
     state: GameState, leader_id: int, request: CastRequest, rng: random.Random, wand_skill_level: int | None = None
 ) -> CastExecutionResult:
     """A pure information spell -- mutates nothing in ``state``, unlike every
-    other spell above. Only gates the cast-success roll; the actual
-    "where is item X" answer is ``locate_object(state, request.target)``,
-    a separate query kept outside ``CastExecutionResult``'s own shared
-    applied/reason shape (see the module docstring's own Phase 206
-    addendum for why).
+    other spell above. Only gates the cast-success roll, then calls the
+    real "where is item X" answer, ``locate_object(state, request.
+    target)``, and carries it on the result (Phase 878) -- see the
+    module docstring's own Phase 206 addendum for the full mechanic.
     """
 
     caster = state.leaders[leader_id]
@@ -2608,7 +2623,7 @@ def _execute_locate_object(
     if not succeeded:
         return CastExecutionResult(request, applied=False, reason=reason)
 
-    return CastExecutionResult(request, applied=True)
+    return CastExecutionResult(request, applied=True, located_object=locate_object(state, request.target))
 
 
 # Illusory Fog [IF], module docstring's own Phase 207 addendum -- tied to
