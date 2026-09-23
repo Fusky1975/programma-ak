@@ -2230,8 +2230,20 @@ def resolve_illusory_hero_disbelief(base_chance: float, caster_skill_level: int,
 FIREBALL_DAMAGE_RANGE = (1, 8)
 FIREBALL_DAMAGE_PER_LEVEL = 1
 
+# Discovery.ASBESTOS_CLOTHING (models/discovery.py, real design-doc
+# text): "the damage caused will be reduced by 67%" for a character
+# employed by the Kingdom holding it. Applied after the ordinary roll,
+# rounded the same "no source for Trunc-vs-round, reuse this project's
+# own established round() default" way already used elsewhere for an
+# unsourced percentage-rounding choice (Phase 656's own Election Report
+# note). Wired at the same two real Fireball-cast call sites as the
+# submarine-monster immunity above, Phase 882.
+ASBESTOS_CLOTHING_DAMAGE_MULTIPLIER = 1 - 0.67
 
-def roll_fireball_damage(skill_level: int, rng: random.Random, *, target_is_immune: bool = False) -> int:
+
+def roll_fireball_damage(
+    skill_level: int, rng: random.Random, *, target_is_immune: bool = False, target_has_asbestos_clothing: bool = False
+) -> int:
     """Fireball's own damage: "da 1 a 8 punti danno, più 1 punto danno
     per livello (max 4)". Returns 0 without consuming a roll if
     ``target_is_immune`` (a submarine monster -- see ``models/monster
@@ -2239,13 +2251,20 @@ def roll_fireball_damage(skill_level: int, rng: random.Random, *, target_is_immu
     188 confirmed both spells mean the exact same real-world category).
     ``skill_level`` is capped at ``PERSONAL_COMBAT_SPELL_LEVEL_CAP``
     (Phase 181), same as Holy Symbol/Spiritwrack.
+
+    ``target_has_asbestos_clothing`` (Phase 882) reduces the rolled
+    damage by 67% -- ``Discovery.ASBESTOS_CLOTHING``'s own real effect,
+    see module docstring's own constant comment.
     """
 
     if target_is_immune:
         return 0
 
     effective_level = min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)
-    return rng.randint(*FIREBALL_DAMAGE_RANGE) + FIREBALL_DAMAGE_PER_LEVEL * effective_level
+    damage = rng.randint(*FIREBALL_DAMAGE_RANGE) + FIREBALL_DAMAGE_PER_LEVEL * effective_level
+    if target_has_asbestos_clothing:
+        damage = round(damage * ASBESTOS_CLOTHING_DAMAGE_MULTIPLIER)
+    return damage
 
 
 # Ice Suspension [IC], module docstring's own Phase 189 addendum --

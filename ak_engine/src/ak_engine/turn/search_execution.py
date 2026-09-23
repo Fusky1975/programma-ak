@@ -2146,7 +2146,15 @@ def _resolve_search_encounter(
                 target_is_immune = False
             else:
                 target_is_immune = target_is_monster and monster_species in SUBMARINE_MONSTERS
-            target.hit_points -= roll_fireball_damage(level, rng, target_is_immune=target_is_immune)
+            # Phase 882: Discovery.ASBESTOS_CLOTHING -- reduces the
+            # damage by 67% when the target is the leader (not a
+            # monster, which has no Kingdom) and their own Kingdom
+            # holds it.
+            target_kingdom = state.kingdoms.get(leader.kingdom_id) if not target_is_monster else None
+            target_has_asbestos_clothing = target_kingdom is not None and Discovery.ASBESTOS_CLOTHING in target_kingdom.discoveries
+            target.hit_points -= roll_fireball_damage(
+                level, rng, target_is_immune=target_is_immune, target_has_asbestos_clothing=target_has_asbestos_clothing
+            )
             if target.hit_points <= 0:
                 return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
             return None

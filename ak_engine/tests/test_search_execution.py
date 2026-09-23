@@ -2342,6 +2342,31 @@ def test_execute_search_monster_cast_fireball_blocked_by_leaders_anti_elemental_
     assert mock_melee.called  # falls through to Melee since the cast had no effect
 
 
+def test_execute_search_monster_cast_fireball_leader_kingdom_holding_asbestos_clothing_reduces_damage():
+    # Phase 882: Discovery.ASBESTOS_CLOTHING -- "the damage caused will
+    # be reduced by 67%" for the leader target, when the leader's own
+    # Kingdom holds it (a monster caster has no Kingdom to hold it
+    # either way).
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.kingdoms[1].discoveries.add(Discovery.ASBESTOS_CLOTHING)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.roll_fireball_damage", return_value=0) as mock_damage, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        )
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert mock_damage.call_args.kwargs["target_has_asbestos_clothing"] is True
+
+
 def test_execute_search_monster_cast_fireball_resisted_by_leaders_necro_mage_title():
     # Phase 666: Office.NECRO_MAGE's own Imp familiar -- "25% magic
     # resistance." Same dispatcher side as the amulet test above (the

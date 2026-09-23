@@ -1360,6 +1360,22 @@ def test_roll_fireball_damage_immune_target_returns_zero_without_a_roll():
     assert roll_fireball_damage(4, rng, target_is_immune=True) == 0
 
 
+def test_roll_fireball_damage_asbestos_clothing_reduces_damage_by_67_percent():
+    # Phase 882: Discovery.ASBESTOS_CLOTHING -- "the damage caused will
+    # be reduced by 67%".
+    rng = ScriptedRandom([0.0])  # base roll pinned to the range floor: 1, no level bonus
+    full_damage = roll_fireball_damage(0, ScriptedRandom([0.0]))
+    reduced_damage = roll_fireball_damage(0, rng, target_has_asbestos_clothing=True)
+    assert full_damage == 1
+    assert reduced_damage == round(1 * (1 - 0.67))
+
+
+def test_roll_fireball_damage_asbestos_clothing_is_a_no_op_by_default():
+    rng_a = ScriptedRandom([0.5])
+    rng_b = ScriptedRandom([0.5])
+    assert roll_fireball_damage(2, rng_a) == roll_fireball_damage(2, rng_b, target_has_asbestos_clothing=False)
+
+
 # -- Phase 189: Ice Suspension [IC] --
 
 

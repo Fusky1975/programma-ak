@@ -1363,6 +1363,41 @@ def test_execute_challenge_cast_fireball_kills_via_damage():
     assert result.loser_killed is True
 
 
+def test_execute_challenge_cast_fireball_target_kingdom_holding_asbestos_clothing_reaches_the_damage_roll():
+    # Phase 882: Discovery.ASBESTOS_CLOTHING -- "the damage caused will
+    # be reduced by 67%" for a target whose own Kingdom holds it.
+    # return_value=99 kills the target outright (matching the existing
+    # test_execute_challenge_cast_fireball_kills_via_damage precedent)
+    # so the encounter ends right after Fireball, with no further rng
+    # draws needed for a fall-through to Melee.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ELEMENTAL, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    state.kingdoms[2].discoveries.add(Discovery.ASBESTOS_CLOTHING)
+    request = _cast_request(2, Spell.FIREBALL)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.roll_fireball_damage", return_value=99
+    ) as mock_damage:
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert mock_damage.call_args.kwargs["target_has_asbestos_clothing"] is True
+
+
+def test_execute_challenge_cast_fireball_target_kingdom_without_asbestos_clothing_is_full_damage():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ELEMENTAL, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.FIREBALL)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.roll_fireball_damage", return_value=99
+    ) as mock_damage:
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert mock_damage.call_args.kwargs["target_has_asbestos_clothing"] is False
+
+
 def test_execute_challenge_cast_words_of_healing_heals_the_caster():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.WHITE, 5, 9)))

@@ -1043,7 +1043,13 @@ def _resolve_personal_combat_cast(
         return None
 
     if spell is Spell.FIREBALL:
-        target.hit_points -= roll_fireball_damage(level, rng, target_is_immune=False)
+        # Phase 882: Discovery.ASBESTOS_CLOTHING -- reduces the damage
+        # by 67% for a target whose own Kingdom holds it.
+        target_kingdom = state.kingdoms.get(target_leader.kingdom_id) if target_leader is not None else None
+        target_has_asbestos_clothing = target_kingdom is not None and Discovery.ASBESTOS_CLOTHING in target_kingdom.discoveries
+        target.hit_points -= roll_fireball_damage(
+            level, rng, target_is_immune=False, target_has_asbestos_clothing=target_has_asbestos_clothing
+        )
         if target.hit_points <= 0:
             return "a"
         return None

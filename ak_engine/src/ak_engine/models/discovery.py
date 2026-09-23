@@ -105,12 +105,17 @@ ordinary 50%), not a full bypass like those two. Deliberately NOT
 threaded into `weapon_defensive_hit_multiplier()`'s own Invisible-Sword
 branch (that function runs at `Combatant`-construction time, with no
 opponent known yet to check a Discovery against) -- a real, separate,
-smaller residual. Still genuinely unwired, confirmed absent everywhere
-in `src/` (not just under a different name): `ARTIFICIAL_ORGANS` (Hand
-of Death), `FLOOD_DAMS` (Flood), `ASBESTOS_CLOTHING` (Fireball),
-`DRY_ICE_FOG` (Clairvoyance), `LEAD_LINED_HELMET` (Psychic Blast),
-`ULTRAVIOLET_LENSES` (Illusory Terrain) -- a real, separate follow-up,
-not attempted here.
+smaller residual. **Phase 882**: `ASBESTOS_CLOTHING` (Fireball) is now
+wired too -- `turn/encounter.py ASBESTOS_CLOTHING_DAMAGE_MULTIPLIER`,
+reducing `roll_fireball_damage()`'s own rolled damage by 67% for a
+target whose own Kingdom holds it, checked at the same two real
+Fireball-cast sites (`turn/challenge_execution.py`/`turn/search_
+execution.py`) as the submarine-monster immunity. Still genuinely
+unwired, confirmed absent everywhere in `src/` (not just under a
+different name): `ARTIFICIAL_ORGANS` (Hand of Death), `FLOOD_DAMS`
+(Flood), `DRY_ICE_FOG` (Clairvoyance), `LEAD_LINED_HELMET` (Psychic
+Blast), `ULTRAVIOLET_LENSES` (Illusory Terrain) -- a real, separate
+follow-up, not attempted here.
 
 ``REPORTS.PAS`` (~line 325-360, continuing the loop quoted above)
 confirms the full "Discoveries of the Sages" report line format and the
