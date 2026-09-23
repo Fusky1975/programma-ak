@@ -48,6 +48,19 @@ for stacked, multi-unit columns; see its own docstring for the pairing
 interpretation. Applied *after* ``apply_tactical_switches`` in
 ``resolve_battle``, against the final post-switch lineup -- see that
 function's docstring for why.
+
+**Phase 875 -- removed confirmed-dead ``contest_columns``/``ColumnContest``**
+(a zero-caller sweep across ``turn/`` found both had no real consumer
+anywhere in ``src/``, only their own 3 direct unit tests). Both were early
+scaffolding around the same ``estimate_win_probability`` logistic curve
+this project still uses elsewhere for a genuinely different purpose
+(``turn/battle_orchestrator.py``'s own 1v1 Duel-outcome approximation) --
+but the real, per-column battle resolution has used ``turn/battle_
+resolution.py resolve_battle()``'s own deterministic BRES-score pipeline
+(Phase 370) since well before this session, which decides an actual
+winner instead of merely estimating a probability per column with no
+elimination. ``estimate_win_probability`` itself is untouched, still real
+and used.
 """
 
 from __future__ import annotations
@@ -540,42 +553,9 @@ def apply_tactical_switches(
     return attacker_switched, defender_switched
 
 
-@dataclass(slots=True)
-class ColumnContest:
-    attacker_strength: float
-    defender_strength: float
-    attacker_win_probability: float
-
-
 def estimate_win_probability(attacker_strength: float, defender_strength: float) -> float:
     """``win_probability`` with the zero-defender-strength edge case handled."""
 
     if defender_strength <= 0:
         return 1.0 if attacker_strength > 0 else 0.5
     return win_probability(attacker_strength / defender_strength)
-
-
-def contest_columns(attacker_columns: list[Column], defender_columns: list[Column]) -> list[ColumnContest]:
-    """Pair up columns and estimate each contest's attacker win probability.
-
-    "There is then a number of contests equal to the length of the battle
-    line." Does not pick a winner or eliminate anyone -- see
-    ``turn/combat.py.win_probability`` for why this is an estimate, and
-    the module docstring for what a full battle resolution still needs.
-    """
-
-    if len(attacker_columns) != len(defender_columns):
-        raise ValueError("attacker and defender must have the same number of columns")
-
-    contests = []
-    for attacker_column, defender_column in zip(attacker_columns, defender_columns):
-        attacker_strength = column_strength(attacker_column)
-        defender_strength = column_strength(defender_column)
-        contests.append(
-            ColumnContest(
-                attacker_strength=attacker_strength,
-                defender_strength=defender_strength,
-                attacker_win_probability=estimate_win_probability(attacker_strength, defender_strength),
-            )
-        )
-    return contests

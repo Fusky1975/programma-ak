@@ -14,7 +14,6 @@ from ak_engine.turn.battle_line import (
     assign_battle_lines,
     column_has_overflight_unit,
     column_strength,
-    contest_columns,
     line_length_for_battle,
     maybe_switch_front_line,
     roll_terrain_line_length_cap,
@@ -172,32 +171,6 @@ def test_switch_chance_rejects_bad_inputs():
         switch_chance(tactical_ability=1, line_length=0)
     with pytest.raises(ValueError):
         switch_chance(tactical_ability=-1, line_length=1)
-
-
-def test_contest_columns_pairs_up_and_estimates_probability():
-    attacker_columns = [[unit(ArmyType.BOWMEN, 10)]]
-    defender_columns = [[unit(ArmyType.AXEMEN, 10)]]
-
-    contests = contest_columns(attacker_columns, defender_columns)
-
-    assert len(contests) == 1
-    assert contests[0].attacker_strength == 10
-    assert contests[0].defender_strength == 10
-    assert contests[0].attacker_win_probability == pytest.approx(0.5)
-
-
-def test_contest_columns_handles_undefended_column():
-    attacker_columns = [[unit(ArmyType.BOWMEN, 10)]]
-    defender_columns = [[]]
-
-    contests = contest_columns(attacker_columns, defender_columns)
-
-    assert contests[0].attacker_win_probability == 1.0
-
-
-def test_contest_columns_requires_equal_column_counts():
-    with pytest.raises(ValueError):
-        contest_columns([[unit(ArmyType.BOWMEN, 10)]], [])
 
 
 def test_roll_terrain_line_length_cap_within_documented_range():
