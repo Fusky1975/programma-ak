@@ -135,9 +135,17 @@ line.** Two more real, standalone templates, added the same way:
   Feature-power descriptions, despite the similar name -- that part of
   the original note still holds). Rendering the rest of
   `turn/aspy_execution.py SpyReport` is mostly closed as of Phase 115 --
-  see its own addendum for the two facts (`_LSLeads`/`_LSGarr`) still
-  genuinely blocked on an unbuilt capability, the same category of gap
-  as Hide_Feature/Clairvoyance.
+  **Stale-claim correction (Phase 879)**: this used to say the two
+  remaining facts (``_LSLeads``/``_LSGarr``) were "still genuinely
+  blocked on an unbuilt capability, the same category of gap as Hide_
+  Feature/Clairvoyance" -- false even a few hundred lines below in this
+  exact same file, whose own comment right above ``render_spy_leads()``/
+  ``render_spy_garrison()`` already says plainly "Deliberately left
+  blocked in Phase 115 (before ``report/prose.py``'s own ``^L`` list-
+  insertion capability existed); unblocked in Phase 118." Both are
+  fully wired into ``describe_aspy()`` today, using real army names
+  from ``turn/aspy_execution.py``'s own ``SpottedCharacter.army_names``/
+  ``SpyReport.garrison_army_names`` (Phase 212).
 - ``SPY.X``'s own ``^B``/``^E`` markers are Turbo Pascal's
   King-exclusion narrator markers (`RUMORS.PAS Set_Person`/`Set_Alt`,
   already flagged out of scope by `report/prose.py`'s own docstring);
