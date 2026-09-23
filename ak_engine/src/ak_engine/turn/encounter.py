@@ -2398,7 +2398,9 @@ def hand_of_death_caster_melee_defense_skill(necromancy_skill_level: int) -> int
     return necromancy_skill_level
 
 
-def roll_hand_of_death_damage(skill_level: int, rng: random.Random, *, target_is_immune: bool = False) -> int:
+def roll_hand_of_death_damage(
+    skill_level: int, rng: random.Random, *, target_is_immune: bool = False, target_has_artificial_organs: bool = False
+) -> int:
     """Hand of Death's own attack: "1 punto danno più ½ punto per
     livello in magia nera" -- ``HAND_OF_DEATH_BASE_DAMAGE`` (1) plus
     ``HAND_OF_DEATH_DAMAGE_PER_LEVEL`` (0.5) per level, uncapped.
@@ -2408,9 +2410,30 @@ def roll_hand_of_death_damage(skill_level: int, rng: random.Random, *, target_is
     is a 50/50 coin flip. Returns 0 without a roll when
     ``target_is_immune`` (mechanical, Undead, or anti-holy -- see
     ``models/monster.py HAND_OF_DEATH_IMMUNE_MONSTERS``).
+
+    Phase 884: ``target_has_artificial_organs`` (``Discovery.
+    ARTIFICIAL_ORGANS``, real text: "No damage is caused to the
+    target, and archery can be used (but not spells.)") also zeroes
+    this roll, the same way ``target_is_immune`` does -- but, unlike
+    full immunity, it does NOT skip the surrounding channel in
+    ``resolve_hand_of_death_channel()``: the victim's own halved-
+    hit-chance Melee counter-attack, and the caster's own "loses
+    concentration when hit" rule, both still apply unchanged. Only
+    the caster's own squeeze damage is zeroed every round -- a
+    Discovery-holding Kingdom's character can never be killed by Hand
+    of Death, but the caster is still exposed to being hit back. The
+    Discovery's own "archery can still be used" clause is deliberately
+    NOT wired here: Hand of Death's own baseline "victim cannot cast
+    spells nor shoot with a bow" restriction (module docstring's own
+    Phase 190 addendum) is itself never threaded into ``Combatant.
+    blocked_from_cast_and_archery`` for this spell in either real
+    caller (confirmed by direct grep, unlike Spiritwrack's own call
+    sites) -- a real, separate, pre-existing gap, not something this
+    ward's own wiring should silently paper over by inventing the
+    baseline mechanic it's supposed to relax.
     """
 
-    if target_is_immune:
+    if target_is_immune or target_has_artificial_organs:
         return 0
 
     exact = HAND_OF_DEATH_BASE_DAMAGE + HAND_OF_DEATH_DAMAGE_PER_LEVEL * skill_level
@@ -4094,6 +4117,7 @@ def resolve_hand_of_death_channel(
     rng: random.Random,
     *,
     target_is_immune: bool = False,
+    target_has_artificial_organs: bool = False,
     max_rounds: int = 1000,
 ) -> EncounterCombatResult:
     """Rulebook (module docstring's Phase 190 addendum), the channeled
@@ -4120,6 +4144,16 @@ def resolve_hand_of_death_channel(
     MONSTERS`` for a monster target, or ``leader.alignment in {UNDEAD,
     ANTI_HOLY}`` for a leader target) -- "inefficace contro" mechanical/
     Undead/anti-holy targets, the spell simply never engages.
+
+    **Phase 884**: ``target_has_artificial_organs`` (``Discovery.
+    ARTIFICIAL_ORGANS``) does NOT skip the channel the way ``target_is_
+    immune`` does -- it is threaded through to ``roll_hand_of_death_
+    damage()`` instead, so the channel still runs (the victim's own
+    halved-hit-chance counter-attack can still end it, and the caster
+    is still exposed to being hit), but the caster's own squeeze always
+    deals 0 damage. See that function's own Phase 884 addendum for why
+    the Discovery's own "archery can still be used" clause is
+    deliberately not wired here.
 
     **Phase 413**: the caster's own damage from every round is now also
     recorded, in order, into the returned ``EncounterCombatResult.
@@ -4189,7 +4223,11 @@ def resolve_hand_of_death_channel(
             if caster.hit_points <= 0 or victim.hit_points <= 0:
                 continue
             if actor is caster:
-                damage = max(0, roll_hand_of_death_damage(skill_level, rng) - victim.damage_reduction)
+                damage = max(
+                    0,
+                    roll_hand_of_death_damage(skill_level, rng, target_has_artificial_organs=target_has_artificial_organs)
+                    - victim.damage_reduction,
+                )
                 squeeze_hits.append(damage)
                 victim.hit_points -= damage
                 if victim.hit_points <= 0:

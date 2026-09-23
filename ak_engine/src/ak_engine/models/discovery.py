@@ -114,11 +114,24 @@ execution.py`) as the submarine-monster immunity. **Phase 883**:
 `LEAD_LINED_HELMET` (Psychic Blast) is now wired too --
 `turn/encounter.py LEAD_LINED_HELMET_STUN_ROUNDS_RANGE` (1-2 instead
 of the ordinary 2-5), checked at the same two real Psychic-Blast-cast
-sites for a target whose own Kingdom holds it. Still genuinely
-unwired, confirmed absent everywhere in `src/` (not just under a
-different name): `ARTIFICIAL_ORGANS` (Hand of Death), `FLOOD_DAMS`
-(Flood), `DRY_ICE_FOG` (Clairvoyance), `ULTRAVIOLET_LENSES` (Illusory
-Terrain) -- a real, separate follow-up, not attempted here.
+sites for a target whose own Kingdom holds it. **Phase 884**:
+`ARTIFICIAL_ORGANS` (Hand of Death) is now wired too -- `turn/
+encounter.py roll_hand_of_death_damage()`'s own `target_has_
+artificial_organs` flag zeroes the caster's own squeeze damage for a
+target whose own Kingdom holds it, checked at the same two real
+Hand-of-Death-cast sites. Unlike full immunity, the channel itself
+still runs (the victim's own halved-hit-chance Melee counter-attack
+can still end it) -- only the damage is zeroed. The Discovery's own
+second clause ("archery can be used, but not spells") is deliberately
+NOT wired: Hand of Death's own baseline "victim cannot cast spells nor
+shoot with a bow" restriction is itself never threaded into `Combatant.
+blocked_from_cast_and_archery` for this spell in either real call site
+(confirmed by direct grep, unlike Spiritwrack's own sites) -- a real,
+separate, pre-existing gap this ward's own wiring doesn't invent a
+baseline for. Still genuinely unwired, confirmed absent everywhere in
+`src/` (not just under a different name): `FLOOD_DAMS` (Flood),
+`DRY_ICE_FOG` (Clairvoyance), `ULTRAVIOLET_LENSES` (Illusory Terrain)
+-- a real, separate follow-up, not attempted here.
 
 ``REPORTS.PAS`` (~line 325-360, continuing the loop quoted above)
 confirms the full "Discoveries of the Sages" report line format and the

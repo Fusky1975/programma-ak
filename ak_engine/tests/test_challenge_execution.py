@@ -1519,6 +1519,43 @@ def test_execute_challenge_cast_hand_of_death_enhanced_ability_overrides_the_imm
     assert mock_channel.call_args.kwargs["target_is_immune"] is False
 
 
+def test_execute_challenge_cast_hand_of_death_target_kingdom_holding_artificial_organs_reaches_the_channel():
+    # Phase 884: Discovery.ARTIFICIAL_ORGANS -- "no damage is caused"
+    # for a target whose own Kingdom holds it. A decisive winner="a"
+    # mock result ends the encounter immediately -- matches the
+    # established "return_value=99"/decisive-winner precedent (Phase
+    # 882) needed so no further RNG draws are required past an empty
+    # ScriptedRandom.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    state.kingdoms[2].discoveries.add(Discovery.ARTIFICIAL_ORGANS)
+    request = _cast_request(2, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert mock_channel.call_args.kwargs["target_has_artificial_organs"] is True
+
+
+def test_execute_challenge_cast_hand_of_death_target_kingdom_without_artificial_organs_is_unaffected():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert mock_channel.call_args.kwargs["target_has_artificial_organs"] is False
+
+
 def test_execute_challenge_cast_mirror_image_caster_wins():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ILLUSION, 4, 9)))

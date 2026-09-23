@@ -1496,6 +1496,17 @@ def test_roll_hand_of_death_damage_immune_target_returns_zero_without_a_roll():
     assert roll_hand_of_death_damage(4, rng, target_is_immune=True) == 0
 
 
+def test_roll_hand_of_death_damage_artificial_organs_returns_zero_without_a_roll():
+    # Phase 884: Discovery.ARTIFICIAL_ORGANS -- "no damage is caused".
+    rng = ScriptedRandom([])
+    assert roll_hand_of_death_damage(4, rng, target_has_artificial_organs=True) == 0
+
+
+def test_roll_hand_of_death_damage_artificial_organs_is_a_no_op_by_default():
+    rng = ScriptedRandom([])
+    assert roll_hand_of_death_damage(2, rng) == 2
+
+
 def test_hand_of_death_victim_hit_chance_multiplier_constant():
     assert HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER == 0.5
 
@@ -2124,6 +2135,35 @@ def test_resolve_hand_of_death_channel_ends_the_instant_the_caster_is_hit():
     # Phase 413: the one round the caster did get to squeeze, even though
     # the channel itself ended without a winner.
     assert result.squeeze_hits == (2,)
+
+
+def test_resolve_hand_of_death_channel_artificial_organs_zeroes_squeeze_damage_but_channel_still_runs():
+    # Phase 884: Discovery.ARTIFICIAL_ORGANS -- unlike full immunity,
+    # the channel is NOT skipped: the caster's own squeeze keeps
+    # landing every round, just for zero damage, so the victim stays
+    # exposed to being hit back and can still end the channel.
+    caster = Combatant("Caster", hit_points=10)
+    victim = Combatant("Victim", hit_points=5, melee_skill=0)
+    rng = ScriptedRandom([0.9, 0.9, 0.1, 0.5])  # victim misses twice, then lands a hit
+
+    result = resolve_hand_of_death_channel(caster, victim, 2, rng, target_has_artificial_organs=True)
+
+    assert result.winner is None
+    assert result.rounds == 3
+    assert victim.hit_points == 5  # every squeeze dealt 0 damage
+    assert result.squeeze_hits == (0, 0, 0)
+    assert caster.hit_points < 10  # the victim's own counter-attack still landed
+
+
+def test_resolve_hand_of_death_channel_artificial_organs_is_a_no_op_by_default():
+    caster = Combatant("Caster", hit_points=10)
+    victim = Combatant("Victim", hit_points=5, melee_skill=0)
+    rng = ScriptedRandom([0.9, 0.9])
+
+    result = resolve_hand_of_death_channel(caster, victim, 2, rng)
+
+    assert result.winner == "a"
+    assert victim.hit_points <= 0
 
 
 def test_resolve_hand_of_death_channel_respects_max_rounds_cap():

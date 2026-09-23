@@ -1080,7 +1080,15 @@ def _resolve_personal_combat_cast(
                 Alignment.UNDEAD,
                 Alignment.ANTI_HOLY,
             )
-        channel_result = resolve_hand_of_death_channel(caster, target, level, rng, target_is_immune=target_is_immune)
+        # Phase 884: Discovery.ARTIFICIAL_ORGANS -- zeroes the caster's
+        # own squeeze damage for a target whose own Kingdom holds it
+        # (the channel itself still runs; see turn/encounter.py
+        # roll_hand_of_death_damage()'s own Phase 884 addendum).
+        target_kingdom = state.kingdoms.get(target_leader.kingdom_id) if target_leader is not None else None
+        target_has_artificial_organs = target_kingdom is not None and Discovery.ARTIFICIAL_ORGANS in target_kingdom.discoveries
+        channel_result = resolve_hand_of_death_channel(
+            caster, target, level, rng, target_is_immune=target_is_immune, target_has_artificial_organs=target_has_artificial_organs
+        )
         if channel_result.winner is not None:
             # "a" in resolve_hand_of_death_channel's own convention always means the caster.
             return "a"

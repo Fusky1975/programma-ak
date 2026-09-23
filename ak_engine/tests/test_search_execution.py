@@ -2732,6 +2732,47 @@ def test_execute_search_cast_hand_of_death_broken_channel_falls_through_to_melee
     assert result.winner == "leader"
 
 
+def test_execute_search_monster_cast_hand_of_death_leader_kingdom_holding_artificial_organs_reaches_the_channel():
+    # Phase 884: Discovery.ARTIFICIAL_ORGANS -- "no damage is caused"
+    # for the leader target, when the leader's own Kingdom holds it (a
+    # monster caster has no Kingdom to hold it either way).
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.kingdoms[1].discoveries.add(Discovery.ARTIFICIAL_ORGANS)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_hand_of_death_channel") as mock_channel, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.HAND_OF_DEATH.value),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        )
+        mock_channel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert mock_channel.call_args.kwargs["target_has_artificial_organs"] is True
+
+
+def test_execute_search_cast_hand_of_death_target_is_monster_never_has_artificial_organs():
+    # A monster target can never hold a Discovery -- confirms the leader-
+    # as-caster direction is unaffected regardless of Kingdom data.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_channel.call_args.kwargs["target_has_artificial_organs"] is False
+
+
 def test_execute_search_cast_hand_of_death_rolls_the_necromancy_skill_level():
     leader = _skilled_leader(Ability.NECROMANCY, 4)
     state = GameState()

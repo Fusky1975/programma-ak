@@ -2208,7 +2208,16 @@ def _resolve_search_encounter(
                     target_is_immune = monster_species in HAND_OF_DEATH_IMMUNE_MONSTERS
             else:
                 target_is_immune = leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY)
-            channel_result = resolve_hand_of_death_channel(caster, target, level, rng, target_is_immune=target_is_immune)
+            # Phase 884: Discovery.ARTIFICIAL_ORGANS -- zeroes the
+            # caster's own squeeze damage for a leader target whose own
+            # Kingdom holds it (a monster target never has one). See
+            # turn/encounter.py roll_hand_of_death_damage()'s own
+            # Phase 884 addendum for what stays out of scope.
+            target_kingdom = state.kingdoms.get(leader.kingdom_id) if not target_is_monster else None
+            target_has_artificial_organs = target_kingdom is not None and Discovery.ARTIFICIAL_ORGANS in target_kingdom.discoveries
+            channel_result = resolve_hand_of_death_channel(
+                caster, target, level, rng, target_is_immune=target_is_immune, target_has_artificial_organs=target_has_artificial_organs
+            )
             if channel_result.winner is not None:
                 # "a" in resolve_hand_of_death_channel's own convention always
                 # means the caster -- translate to the leader/monster "a"/"b"
