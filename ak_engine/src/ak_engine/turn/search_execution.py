@@ -524,6 +524,7 @@ from dataclasses import dataclass, replace
 
 from ak_engine.models.advanced_ability import LAVA_POOL_IMMUNE_MONSTERS, AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.magic_feature import MagicFeature
@@ -567,6 +568,7 @@ from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     DAMP_MAGIC_CAST_CHANCE_MULTIPLIER,
     FIRE_ARROW_DAMAGE_RANGE,
+    INFRARED_GOGGLES_HIT_CHANCE_MULTIPLIER,
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
     MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT,
     MIRROR_IMAGE_MONSTER_INTELLIGENCE_TIER,
@@ -2101,8 +2103,23 @@ def _resolve_search_encounter(
             opponent_sees_through_illusion = (not caster_is_leader) and holder_is_immune_to_spell(
                 state, leader.leader_id, spell
             )
+            # Phase 881: Discovery.INFRARED_GOGGLES -- same weaker,
+            # partial carve-out as turn/challenge_execution.py's own
+            # Invisibility branch (see that module's own Phase 881
+            # comment). Only relevant when the leader plays the
+            # opponent role (a monster caster has no Kingdom to hold
+            # the Discovery either way).
+            opponent_kingdom = state.kingdoms.get(leader.kingdom_id) if not caster_is_leader else None
+            opponent_has_infrared_goggles = (
+                opponent_kingdom is not None and Discovery.INFRARED_GOGGLES in opponent_kingdom.discoveries
+            )
             if not opponent_has_witchsight and not opponent_sees_through_illusion:
-                caster.defensive_hit_multiplier *= INVISIBILITY_HIT_CHANCE_MULTIPLIER
+                multiplier = (
+                    INFRARED_GOGGLES_HIT_CHANCE_MULTIPLIER
+                    if opponent_has_infrared_goggles
+                    else INVISIBILITY_HIT_CHANCE_MULTIPLIER
+                )
+                caster.defensive_hit_multiplier *= multiplier
             caster.is_invisible = True
             return None
 

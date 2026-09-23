@@ -491,6 +491,19 @@ Two independent effects, no skill-level scaling on either:
   docstring's own Phase 506 addendum) -- superseding the earlier flat
   +15-percentage-point placeholder this addendum used to describe.
 
+**Correction (Phase 881)**: `invisibility_reduced_hit_chance()` itself
+was never actually called anywhere -- the real halving is applied
+directly to `Combatant.defensive_hit_multiplier` at the two real
+Invisibility-cast sites (`turn/challenge_execution.py`/`turn/search_
+execution.py`), reaching `fire_arrow_hit_chance()`/`resolve_one_melee_
+round()` through that shared field the same way every other personal-
+combat defensive buff does (Holy Symbol, etc.) -- not through this
+standalone helper, which stays unused. Same phase wires `Discovery.
+INFRARED_GOGGLES` in at those same two sites: "defensive protection
+will be only 20%, not 50%" for whoever's fighting the invisible caster,
+when that character's own Kingdom holds the Discovery -- see
+`INFRARED_GOGGLES_HIT_CHANCE_MULTIPLIER`'s own comment.
+
 **Phase 187 addendum -- Mirror-Image Phantasm (MI), tied to Ability.
 ILLUSION (IL), project-original (user-supplied).** By far the most
 elaborate Personal-Combat spell covered so far -- a genuine two-stage
@@ -2045,6 +2058,21 @@ def roll_telekinetic_storm_caster_damage(
 # project-original, user-supplied. No skill-level scaling on either of
 # its two independent effects.
 INVISIBILITY_HIT_CHANCE_MULTIPLIER = 0.5
+
+# Discovery.INFRARED_GOGGLES (models/discovery.py, real design-doc text):
+# "the defensive protection will be only 20%, not 50%" when the character
+# fighting an Invisible opponent belongs to a Kingdom holding this
+# Discovery -- a weaker override of the ordinary 50% halving above, not a
+# full bypass (unlike AdvancedAbility.WITCHSIGHT_TALENT/the Crystal of
+# True Seeing, both of which make the opponent completely unaffected).
+# Wired at the same two real Invisibility-cast call sites as those two
+# carve-outs (`turn/challenge_execution.py`/`turn/search_execution.py`),
+# Phase 881. Deliberately NOT wired into `weapon_defensive_hit_
+# multiplier()`'s own Invisible Sword branch below -- that function runs
+# at `Combatant`-construction time, before any specific opponent is
+# known, so it has no "who's fighting this" data to check a Discovery
+# against; a real, separate, smaller residual, not attempted here.
+INFRARED_GOGGLES_HIT_CHANCE_MULTIPLIER = 0.8
 
 
 def invisibility_reduced_hit_chance(base_hit_chance: float) -> float:

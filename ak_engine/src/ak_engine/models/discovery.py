@@ -95,12 +95,22 @@ execution.py`/`practice_execution.py`/`turn_processor.py`/`search_
 execution.py`, the most heavily-wired of the 16), `PROPAGANDA_
 MEGAPHONES` (`turn/cast_execution.py`, Oratory), `OBSERVATION_BALLOONS`
 (`turn/battle_orchestrator.py`, Phantasmal Armies), `HAND_HELD_RADAR`
-(`turn/exploration.py`, Hide Feature). Still genuinely unwired, confirmed
-absent everywhere in `src/` (not just under a different name): `ARTIFICIAL_
-ORGANS` (Hand of Death), `FLOOD_DAMS` (Flood), `ASBESTOS_CLOTHING`
-(Fireball), `DRY_ICE_FOG` (Clairvoyance), `LEAD_LINED_HELMET` (Psychic
-Blast), `ULTRAVIOLET_LENSES` (Illusory Terrain), `INFRARED_GOGGLES`
-(Invisibility) -- a real, separate follow-up, not attempted here.
+(`turn/exploration.py`, Hide Feature). **Phase 881**: `INFRARED_GOGGLES`
+(Invisibility) is now wired too -- `turn/encounter.py INFRARED_GOGGLES_
+HIT_CHANCE_MULTIPLIER`, checked at the same two real Invisibility-cast
+sites (`turn/challenge_execution.py`/`turn/search_execution.py`) as the
+`AdvancedAbility.WITCHSIGHT_TALENT`/Crystal-of-True-Seeing carve-outs --
+a weaker, partial override (20% hit-chance reduction instead of the
+ordinary 50%), not a full bypass like those two. Deliberately NOT
+threaded into `weapon_defensive_hit_multiplier()`'s own Invisible-Sword
+branch (that function runs at `Combatant`-construction time, with no
+opponent known yet to check a Discovery against) -- a real, separate,
+smaller residual. Still genuinely unwired, confirmed absent everywhere
+in `src/` (not just under a different name): `ARTIFICIAL_ORGANS` (Hand
+of Death), `FLOOD_DAMS` (Flood), `ASBESTOS_CLOTHING` (Fireball),
+`DRY_ICE_FOG` (Clairvoyance), `LEAD_LINED_HELMET` (Psychic Blast),
+`ULTRAVIOLET_LENSES` (Illusory Terrain) -- a real, separate follow-up,
+not attempted here.
 
 ``REPORTS.PAS`` (~line 325-360, continuing the loop quoted above)
 confirms the full "Discoveries of the Sages" report line format and the

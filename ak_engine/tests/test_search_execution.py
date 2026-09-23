@@ -8,6 +8,7 @@ import pytest
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
@@ -2194,6 +2195,33 @@ def test_execute_search_cast_invisibility_leader_opponent_without_witchsight_is_
 
     monster_combatant = mock_melee.call_args[0][1]
     assert monster_combatant.defensive_hit_multiplier == 0.5
+
+
+def test_execute_search_cast_invisibility_leader_opponent_kingdom_holding_infrared_goggles_is_only_reduced_to_20_percent():
+    # Phase 881: Discovery.INFRARED_GOGGLES -- a weaker, partial
+    # carve-out (20% reduction, not a full bypass) for whoever's
+    # fighting the invisible caster, when that character's own Kingdom
+    # holds the Discovery. Only relevant when the leader plays the
+    # opponent role (a monster caster has no Kingdom either way).
+    leader = _skilled_leader(Ability.NECROMANCY, 0)
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.kingdoms[1].discoveries.add(Discovery.INFRARED_GOGGLES)
+    state.add_leader(leader)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _melee_request(1)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch.dict(
+        "ak_engine.turn.search_execution.MONSTER_MAGIC_ABILITIES", {Monster.ARCHER: {Ability.ILLUSION: 5}}
+    ), patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.INVISIBILITY.value),)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    monster_combatant = mock_melee.call_args[0][1]
+    assert monster_combatant.defensive_hit_multiplier == 0.8
 
 
 def test_execute_search_cast_invisibility_leader_caster_still_halved_regardless_of_witchsight():

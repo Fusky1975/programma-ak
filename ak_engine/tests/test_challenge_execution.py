@@ -1616,6 +1616,28 @@ def test_execute_challenge_cast_invisibility_target_without_witchsight_is_halved
     assert caster_combatant.defensive_hit_multiplier == 0.5
 
 
+def test_execute_challenge_cast_invisibility_target_kingdom_holding_infrared_goggles_is_only_reduced_to_20_percent():
+    # Phase 881: Discovery.INFRARED_GOGGLES -- a weaker, partial
+    # carve-out (20% reduction, not a full bypass) for whoever's
+    # fighting the invisible caster, when that character's own Kingdom
+    # holds the Discovery.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    state.kingdoms[2].discoveries.add(Discovery.INFRARED_GOGGLES)
+    request = _cast_request(2, Spell.INVISIBILITY, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    caster_combatant = mock_melee.call_args[0][0]
+    assert caster_combatant.defensive_hit_multiplier == 0.8
+    assert caster_combatant.is_invisible is True
+
+
 def test_execute_challenge_cast_invisibility_target_holding_crystal_of_true_seeing_is_unaffected():
     # Phase 532: AKGEN_reverse_engineering_report (4).md SS8 point 3 --
     # the Crystal of True Seeing (AMULET_ANTI_ILLUSION) lets its holder

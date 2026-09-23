@@ -311,6 +311,7 @@ from ak_engine.turn.discovery_effects import (
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     FIRE_ARROW_DAMAGE_RANGE,
+    INFRARED_GOGGLES_HIT_CHANCE_MULTIPLIER,
     INVISIBILITY_HIT_CHANCE_MULTIPLIER,
     MIRROR_IMAGE_LEADER_INTELLIGENCE_TIER_DEFAULT,
     STEAL_THIEF_MASTERY_ABILITIES,
@@ -1023,8 +1024,21 @@ def _resolve_personal_combat_cast(
         opponent_sees_through_illusion = target_leader is not None and holder_is_immune_to_spell(
             state, target_leader.leader_id, spell
         )
+        # Phase 881: Discovery.INFRARED_GOGGLES -- a weaker, partial
+        # carve-out for whoever's fighting the invisible caster (not a
+        # full bypass like Witchsight/the Crystal above): "defensive
+        # protection will be only 20%, not 50%."
+        opponent_kingdom = state.kingdoms.get(target_leader.kingdom_id) if target_leader is not None else None
+        opponent_has_infrared_goggles = (
+            opponent_kingdom is not None and Discovery.INFRARED_GOGGLES in opponent_kingdom.discoveries
+        )
         if not opponent_has_witchsight and not opponent_sees_through_illusion:
-            caster.defensive_hit_multiplier *= INVISIBILITY_HIT_CHANCE_MULTIPLIER
+            multiplier = (
+                INFRARED_GOGGLES_HIT_CHANCE_MULTIPLIER
+                if opponent_has_infrared_goggles
+                else INVISIBILITY_HIT_CHANCE_MULTIPLIER
+            )
+            caster.defensive_hit_multiplier *= multiplier
         caster.is_invisible = True
         return None
 
