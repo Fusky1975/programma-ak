@@ -169,14 +169,6 @@ def test_has_met_for_full_turn_true_once_a_full_turn_has_passed():
     assert state.has_met_for_full_turn(2, 1) is True
 
 
-def test_independent_heroes_at_returns_only_ownerless_leaders_at_that_location():
-    state = make_state()
-    state.add_leader(LeaderState(50, None, "Wandering Hero", FIELD))
-    state.add_leader(LeaderState(51, 1, "Employed Leader", FIELD))
-    assert {leader.leader_id for leader in state.independent_heroes_at(FIELD)} == {50}
-    assert state.independent_heroes_at(HOME) == []
-
-
 def test_add_feature_and_features_at():
     state = make_state()
     state.add_feature(Feature(feature_id=1, coord=FIELD, kind=FeatureType.DUNGEON, guardian_monster=Monster.TROLL))

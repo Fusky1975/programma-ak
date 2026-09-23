@@ -1934,8 +1934,15 @@ class GameState:
     def mercenaries_at(self, coord: HexCoord) -> list[ArmyState]:
         return [army for army in self.armies.values() if army.location == coord and army.kingdom_id is None]
 
-    def independent_heroes_at(self, coord: HexCoord) -> list[LeaderState]:
-        return [leader for leader in self.leaders.values() if leader.location == coord and leader.kingdom_id is None]
+    # Phase 876: this class's own symmetric `independent_heroes_at(coord)`
+    # (a per-coordinate mirror of the method above, for leaders instead of
+    # armies) was removed here -- a zero-caller sweep found it had never
+    # been called by any production code. `turn/wandering_units.py
+    # resolve_wandering()` (Phase 781, the one real mechanism that could
+    # plausibly have used it) filters `state.leaders.values()` directly
+    # instead, since it needs every ownerless leader across the whole map
+    # in `leader_id` order, not grouped by coordinate -- a different query
+    # shape this per-coordinate method was never a fit for.
 
     def is_allied(self, kingdom_a: int | None, kingdom_b: int | None) -> bool:
         if kingdom_a is None or kingdom_b is None:
