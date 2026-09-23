@@ -69,13 +69,38 @@ one exception is called out at its own dict entry.
 
 Applying any of these bonuses to actual gameplay (how the ability bonus
 stacks with ``LeaderState.skills``, how the anti-spell wards actually
-modify ``turn/cast_execution.py``) is still deliberately left to a real
+modify ``turn/cast_execution.py``) was originally left to a real
 follow-up phase -- this phase only models the confirmed *data*, matching
 how ``models/office.py``/``models/weapon.py`` (Phases 81/83) started with
 vocabulary before any mechanical wiring. **Phase 268 closes the
 acquisition mechanic (`KingdomState.discoveries`, Phase 266) and, since
 Phase 268, the revenue-bonus half of this list**: `Inv_Bonus` and the
 real per-discovery FINANCES report line, both below.
+
+**Anti-spell-ward wiring status (re-audited during a later cover-to-cover
+pass, since this note was never revisited as each ward landed): 9 of the
+16 `DISCOVERY_ANTISPELL_TARGET` entries are now real, wired mechanics --
+each via its own ad-hoc `Discovery.X in kingdom.discoveries` check at its
+own real trigger site, not through `DISCOVERY_ANTISPELL_TARGET` itself
+(which has no consumer anywhere -- it exists purely to pair a Discovery
+with the `Spell` its own flavor text names, for
+`discovery_effect_description()`'s report line).** Wired: `OSTEOPATHIC_
+GERM_WARFARE` (`turn/battle_orchestrator.py`, weakens the opponent's own
+Skeletal Army), `HIDDEN_TATTOOS` (`turn/cast_execution.py`, Kill Enemy),
+`PENICILLIN` (`turn/cast_execution.py`, Plague), `GIANT_FAN` (`turn/
+cast_execution.py`, Tornado), `REINFORCED_CONCRETE` (`turn/cast_
+execution.py`, Earthquake's flat-3-gold reduction), `ANALYTICAL_
+PSYCHOLOGY` (Charm -- wired across `turn/cast_execution.py`/`challenge_
+execution.py`/`practice_execution.py`/`turn_processor.py`/`search_
+execution.py`, the most heavily-wired of the 16), `PROPAGANDA_
+MEGAPHONES` (`turn/cast_execution.py`, Oratory), `OBSERVATION_BALLOONS`
+(`turn/battle_orchestrator.py`, Phantasmal Armies), `HAND_HELD_RADAR`
+(`turn/exploration.py`, Hide Feature). Still genuinely unwired, confirmed
+absent everywhere in `src/` (not just under a different name): `ARTIFICIAL_
+ORGANS` (Hand of Death), `FLOOD_DAMS` (Flood), `ASBESTOS_CLOTHING`
+(Fireball), `DRY_ICE_FOG` (Clairvoyance), `LEAD_LINED_HELMET` (Psychic
+Blast), `ULTRAVIOLET_LENSES` (Illusory Terrain), `INFRARED_GOGGLES`
+(Invisibility) -- a real, separate follow-up, not attempted here.
 
 ``REPORTS.PAS`` (~line 325-360, continuing the loop quoted above)
 confirms the full "Discoveries of the Sages" report line format and the
