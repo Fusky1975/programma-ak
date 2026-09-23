@@ -1555,6 +1555,63 @@ def test_flood_fails_on_a_province_already_flooded_to_sea_via_override():
     assert result.reason == "target province is not a non-mountain land province"
 
 
+def test_flood_dams_deducts_one_movement_point_from_land_armies_already_in_the_province():
+    # Phase 885: Discovery.FLOOD_DAMS -- "affected armies currently in
+    # the target province will immediately lose one movement point"
+    # for a province owned by a Kingdom holding it.
+    state = build_state()
+    state.kingdoms[2].discoveries.add(Discovery.FLOOD_DAMS)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(1, 2, ArmyType.LEGION, Quality.AVERAGE, LOCATION, movement_points=3))
+    request = CastRequest(spell=Spell.FLOOD, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert result.discovery_defended is Discovery.FLOOD_DAMS
+    assert state.provinces[LOCATION].terrain_override is Terrain.SEA  # still floods
+    assert state.armies[1].movement_points == 2
+
+
+def test_flood_dams_never_touches_a_non_land_army_in_the_province():
+    state = build_state()
+    state.kingdoms[2].discoveries.add(Discovery.FLOOD_DAMS)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(1, 2, ArmyType.DRAGON_WING, Quality.AVERAGE, LOCATION, movement_points=3))
+    request = CastRequest(spell=Spell.FLOOD, target=_target(LOCATION))
+
+    execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert state.armies[1].movement_points == 3
+
+
+def test_flood_without_flood_dams_leaves_armies_untouched():
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(1, 2, ArmyType.LEGION, Quality.AVERAGE, LOCATION, movement_points=3))
+    request = CastRequest(spell=Spell.FLOOD, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert result.discovery_defended is None
+    assert state.armies[1].movement_points == 3
+
+
+def test_flood_dams_is_a_no_op_for_an_unowned_province():
+    state = build_state()
+    state.kingdoms[2].discoveries.add(Discovery.FLOOD_DAMS)
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))  # no owner
+    state.add_army(ArmyState(1, 2, ArmyType.LEGION, Quality.AVERAGE, LOCATION, movement_points=3))
+    request = CastRequest(spell=Spell.FLOOD, target=_target(LOCATION))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is True
+    assert result.discovery_defended is None
+    assert state.armies[1].movement_points == 3
+
+
 # ---------------------------------------------------------------------------
 # Tornado (Phase 59) -- Regolamento AK.txt [4.24.2]
 # ---------------------------------------------------------------------------

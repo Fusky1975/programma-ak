@@ -128,10 +128,20 @@ shoot with a bow" restriction is itself never threaded into `Combatant.
 blocked_from_cast_and_archery` for this spell in either real call site
 (confirmed by direct grep, unlike Spiritwrack's own sites) -- a real,
 separate, pre-existing gap this ward's own wiring doesn't invent a
-baseline for. Still genuinely unwired, confirmed absent everywhere in
-`src/` (not just under a different name): `FLOOD_DAMS` (Flood),
-`DRY_ICE_FOG` (Clairvoyance), `ULTRAVIOLET_LENSES` (Illusory Terrain)
--- a real, separate follow-up, not attempted here.
+baseline for. **Phase 885**: `FLOOD_DAMS` (Flood) is now wired too --
+`turn/cast_execution.py FLOOD_DAMS_MOVEMENT_POINT_PENALTY`, deducting
+1 movement point once, immediately, from every land army already
+standing in a successfully-Flooded province owned by a Kingdom holding
+it. The province still turns to Sea exactly as an unprotected cast
+would; only the one-time army penalty differs. Deliberately NOT wired:
+exempting those same armies from the ongoing rest-of-turn block their
+own real "reduction" framing implies (`turn/move_execution.py
+_land_crossing_blocked()` has no per-army "already paid this turn's
+flood toll" state to represent that exemption) -- a real, separate,
+larger follow-up, not attempted here. Still genuinely unwired,
+confirmed absent everywhere in `src/` (not just under a different
+name): `DRY_ICE_FOG` (Clairvoyance), `ULTRAVIOLET_LENSES` (Illusory
+Terrain) -- a real, separate follow-up, not attempted here.
 
 ``REPORTS.PAS`` (~line 325-360, continuing the loop quoted above)
 confirms the full "Discoveries of the Sages" report line format and the

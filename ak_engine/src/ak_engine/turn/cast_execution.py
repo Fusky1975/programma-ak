@@ -733,7 +733,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
-from ak_engine.models.army_type import OVERFLIGHT_AIR, OVERFLIGHT_SEA, SEA_ARMY_TYPES, ArmyType
+from ak_engine.models.army_type import OVERFLIGHT_AIR, OVERFLIGHT_SEA, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import FeatureType
@@ -953,6 +953,26 @@ BLESS_GRAVEYARD_CLEAR_CHANCE_PER_LEVEL = 0.10
 # [4.24.1]: eligible for Flood -- land, non-mountain (Sea is already water;
 # Mountain is explicitly excluded by the rulebook's own wording).
 _FLOOD_ELIGIBLE_TERRAIN = frozenset({Terrain.PLAINS, Terrain.DESERT, Terrain.JUNGLE, Terrain.FOREST})
+
+# Discovery.FLOOD_DAMS (Discovery.txt, Phase 885): "When it's cast on a
+# province owned by your kingdom, affected armies currently in the
+# target province will immediately lose one movement point." Read as
+# the *reduced* effect (this project's own established convention for
+# every anti-spell ward's descriptive text) -- the rulebook's own base
+# [4.24.1] clause already models the un-reduced consequence for land
+# armies caught in a Flood ("remain blocked for the rest of the turn",
+# `turn/move_execution.py is_flooded_province()`/`_land_crossing_
+# blocked()`, Phase 693/737); Flood Dams' own real effect is this
+# separate, immediate, one-time movement-point cost, applied once at
+# cast time to every land army already standing in the target
+# province. Deliberately NOT wired: exempting those same armies from
+# the ongoing rest-of-turn block their own real "reduction" framing
+# implies -- `_land_crossing_blocked()` has no per-army "already paid
+# this turn's flood toll" state to represent that exemption, and
+# adding one is a real, separate, larger follow-up, not attempted
+# here (matching Discovery.ARTIFICIAL_ORGANS's own precedent, Phase
+# 884, of wiring the tractable numeric clause and flagging the rest).
+FLOOD_DAMS_MOVEMENT_POINT_PENALTY = 1
 
 # Gate Angel (Phase 195, user-supplied VALHALLA text): "Ciascun allineamento
 # da Buono a Malvagio (quindi non Divine o Undead)" -- the 5 Alignment
@@ -2152,6 +2172,14 @@ def _execute_flood(
     addendum already corrects an earlier stale note about this same
     feature in that module; this sibling note, living in a different
     module, was simply never cross-referenced and updated to match.
+
+    **Phase 885**: `Discovery.FLOOD_DAMS` -- see `FLOOD_DAMS_MOVEMENT_
+    POINT_PENALTY`'s own citation above for the real text and what
+    stays deliberately out of scope. A successful cast against a
+    Flood-Dams-protected, Kingdom-owned province still turns the
+    province into Sea exactly as before; the only difference is a
+    one-time `-1` movement-point charge to every land army already
+    standing there, applied once, immediately, at cast time.
     """
 
     caster = state.leaders[leader_id]
@@ -2168,7 +2196,15 @@ def _execute_flood(
         return CastExecutionResult(request, applied=False, reason=reason)
 
     province.terrain_override = Terrain.SEA
-    return CastExecutionResult(request, applied=True)
+
+    owner_kingdom = state.kingdoms.get(province.owner_kingdom_id) if province.owner_kingdom_id is not None else None
+    defended = owner_kingdom is not None and Discovery.FLOOD_DAMS in owner_kingdom.discoveries
+    if defended:
+        for army in state.armies_at(_coord):
+            if is_land_army(army.army_type):
+                army.movement_points -= FLOOD_DAMS_MOVEMENT_POINT_PENALTY
+
+    return CastExecutionResult(request, applied=True, discovery_defended=Discovery.FLOOD_DAMS if defended else None)
 
 
 def _execute_tornado(
