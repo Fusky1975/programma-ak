@@ -21,8 +21,10 @@ level (or a 10% chance each if tied); practicing alone is a flat 5%
 chance. The rise chance is halved for each level beyond the character's
 aptitude, and a blocked rise has its own (skill-level-dependent) chance
 of raising aptitude instead. None of this percentage machinery is
-decoded or resolved here -- see the module-level "not yet implemented"
-note below.
+decoded or resolved *here* -- this module only turns the raw wire
+format into a ``PracticeRequest``; the actual dice-roll procedures live
+in ``turn/practice_execution.py`` (see this module's own "Stale as of
+Phase 44/46/167" addendum below for the full history of that split).
 
 **Two special-cased abilities, per the rulebook, worth flagging even at
 decode time** (real data confirms both are actually practiced -- SAGE

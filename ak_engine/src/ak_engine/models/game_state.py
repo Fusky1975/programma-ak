@@ -877,8 +877,19 @@ class LeaderState:
     # _execute_mystic_winds) -- same "persistent for the rest of the turn,
     # caller clears it" convention as oratory_boosted_this_turn/
     # phantasmal_armies_level above. See that function's own docstring for
-    # what this flag is a marker for (three of the spell's own effects are
-    # confirmed facts, not yet wired to any consumer).
+    # what this flag is a marker for. **Stale-claim correction (Phase 877)**:
+    # this note used to say "three of the spell's own effects are confirmed
+    # facts, not yet wired to any consumer" -- true when originally written,
+    # but the sibling "ends just before the leader gets involved in any
+    # military battle" fact has been wired since Phase 250 (see
+    # `turn/battle_orchestrator.py fight_battle()`'s own
+    # `_clear_mystic_winds_before_battle()`, and `_execute_mystic_winds()`'s
+    # own docstring item 4), never corrected here when that landed. Only
+    # two facts remain genuinely confirmed-but-unmodeled: "moves as an air
+    # unit" (no per-leader/per-cast override mechanism exists in this
+    # project's movement/combat pipelines) and "no fleet/air transport
+    # takes place" (there is no such mechanic anywhere in this project to
+    # negate in the first place, so nothing is actually left undone there).
     mystic_winds_active: bool = False
     # Phase 227: this leader's own cumulative Merit Point inputs -- see
     # MeritTally's own docstring and turn/merit_points.py.

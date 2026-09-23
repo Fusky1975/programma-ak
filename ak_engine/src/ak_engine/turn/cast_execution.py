@@ -334,44 +334,53 @@ mischaracterized as already-uniform for years.
      lose a later contest); the authoritative "who actually got the
      visit" fact is ``GameState.last_gate_angel_kingdom`` after the
      whole turn's dispatch completes, not any single ``CastExecutionResult``.
-  4. **Confirmed but genuinely out of scope this phase** -- each
-     requires either data this project doesn't have or a subsystem this
-     project has never built, cited so a future phase can pick them up
-     without re-deriving them:
-     - **The Valhalla hero itself is still not synthesized as a real
-       ``LeaderState``.** The user's own plan is 5 per-alignment roster
-       files (Good/Druid/Neutral/Pagan/Evil) of named legendary heroes
-       to draw from -- not yet supplied. Once supplied, the confirmed
-       structural facts to apply are already known: **leader id is
-       always ``199``** ("Il numero d'ordine... sarà sempre #199" --
-       every other ``LeaderState`` in this project gets its id via
-       ``GameState.new_army_id()``-style monotonic allocation; a
-       Valhalla visitor does not), and **spawns at the recipient King's
-       own location** ("appariranno a fianco del Re" -- found via
-       ``is_king=True`` among the winning kingdom's leaders, not
-       necessarily the casting leader).
+  4. **Stale-claim correction (Phase 877) -- every sub-bullet below
+     used to say this whole cluster was "genuinely out of scope this
+     phase," waiting on a per-hero roster the user hadn't supplied yet.
+     That roster was supplied and wired long ago (Phase 196/386, then
+     546-548/756), and nobody came back to correct this paragraph --
+     the identical staleness `turn/valhalla_execution.py`'s own module
+     docstring already flagged and fixed for its own copy of this note
+     (its "Stale as of Phase 689" addendum). Corrected here to match:**
+     - **The Valhalla hero is a real, synthesized ``LeaderState``.**
+       ``models/valhalla.py VALHALLA_ROSTER`` holds the full 5-per-
+       alignment (Good/Druid/Neutral/Pagan/Evil), 150-entry named-hero
+       roster; ``turn/valhalla_execution.py _spawn_valhalla_visitor()``
+       draws from it and materializes the visitor. Both confirmed
+       structural facts hold exactly as stated: **leader id is always
+       ``199``** (``models/valhalla.py VALHALLA_VISITOR_LEADER_ID``),
+       and it **spawns at the recipient King's own location** (falling
+       back to the Kingdom's own ``home_province`` in the one edge case
+       of no recorded King -- an unsourced but reasonable fallback,
+       not a documented rule).
      - **Escalating per-visit action allowance** (1 action turns 1-2, 2
-       actions turns 3-4, ... 5 actions from turn 9 on) is a
-       plan-*authoring* constraint (how many phases the visitor's own
-       plan may contain), and this project has no plan-authoring system
-       at all anywhere -- it only decodes/executes plans that already
-       exist as parsed ``K1`` files. No consumer exists to enforce this
-       even if modeled.
+       actions turns 3-4, ... 5 actions from turn 9 on) is recorded at
+       spawn time (``LeaderState.valhalla_allowed_phase_count``, via
+       ``models/valhalla.py _valhalla_stay_phase_count()``) and
+       enforced at dispatch (``turn/plan_dispatch.py``'s own
+       ``valhalla_cap_active`` gate, including the "only one Practice
+       phase" rule below).
      - **The visitor's fixed, always-the-same, non-transferable magic
-       item** ("un oggetto magico prefissato... che non possono dare a
-       nessuno... Se muoiono... l'oggetto sparisce alla fine del
-       turno") depends on the same unsupplied per-hero roster data
-       above (which fixed item goes with which named hero).
+       item** is created via ``GameState.add_item()`` at spawn time and
+       tracked as ``LeaderState.valhalla_fixed_item_id``;
+       ``turn/trade_execution.py`` blocks Give specifically on it.
+       Skipped entirely for the two roster heroes whose own
+       ``fixed_item`` is ``None`` (``models/valhalla.py``'s own
+       docstring names the two still-unresolved item names) -- no item
+       is fabricated in their place.
      - **Practice limited to one phase of the stay, spell-immunity
-       except Resurrection, army hand-off to the lowest-numbered
-       leader (or adjacent-province garrison commander) on departure,
-       and turn-deadline voiding** (the trailing English-language
-       paragraph the user quoted) are all real, specific, and
-       eventually implementable rules -- but every one of them
-       presupposes the hero actually exists as a ``LeaderState`` with a
-       real ``leader_id=199`` and a real stay-duration, which doesn't
-       exist yet per the point above. Recorded here as confirmed,
-       sourced facts awaiting that prerequisite, not silently dropped.
+       except Resurrection, and army hand-off to the lowest-numbered
+       leader (or adjacent-province garrison commander) on departure**
+       are all wired (the phase cap above; this module's own spell-
+       immunity check; ``turn/valhalla_execution.py process_valhalla_
+       departure()``/``_reassign_visitor_armies()`` for hand-off and
+       item/loot routing). **Turn-deadline voiding stays confirmed out
+       of scope entirely**, genuinely not a stale claim: this codebase
+       has no in-engine "did this Kingdom miss the deadline" detector
+       at all (``turn/missed_deadline.py``'s own module docstring -- an
+       external, caller-level fact nothing in ``GameState`` tracks), so
+       there is no hook to attach this one rule to without inventing an
+       external contract this project doesn't otherwise have.
 
   ``Spell.GATE_ANGEL`` is added to ``turn/cast_decode.py``'s
   ``NO_TARGET_SPELLS`` -- the rulebook text names no target field at all
