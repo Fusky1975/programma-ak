@@ -180,6 +180,9 @@ from ak_engine.turn.encounter import (
     select_monster_talk_reply,
     mercy_chance,
     resolve_beg_for_mercy,
+    REFUSAL_TO_MEET_CHANCE_RANGE,
+    refusal_to_meet_chance,
+    resolve_refusal_to_meet,
     FULFILL_COMMON_BONUS,
     FULFILL_UNRECORDED_ALIGNMENT_FALLBACK,
     fulfill_honor_threshold,
@@ -3027,6 +3030,59 @@ def test_resolve_beg_for_mercy_boundary():
     chance = mercy_chance(Alignment.NEUTRAL, Alignment.NEUTRAL)
     assert resolve_beg_for_mercy(Alignment.NEUTRAL, Alignment.NEUTRAL, ScriptedRandom([chance - 0.01])) is True
     assert resolve_beg_for_mercy(Alignment.NEUTRAL, Alignment.NEUTRAL, ScriptedRandom([chance])) is False
+
+
+# -- Phase 898: refusal-to-Meet ([5.6]/TABELLA DEI TEMPERAMENTI) --
+
+
+def test_refusal_to_meet_chance_king_never_refuses_whatever_the_temper():
+    for temper in Temper:
+        assert refusal_to_meet_chance(temper, is_king=True, opponent_leads_army=True) == 0.0
+
+
+def test_refusal_to_meet_chance_berserk_and_brave_never_refuse():
+    for temper in (Temper.BERSERK, Temper.BRAVE):
+        assert refusal_to_meet_chance(temper, is_king=False, opponent_leads_army=True) == 0.0
+        assert refusal_to_meet_chance(temper, is_king=False, opponent_leads_army=False) == 0.0
+
+
+def test_refusal_to_meet_chance_unrecorded_temper_never_refuses():
+    assert refusal_to_meet_chance(None, is_king=False, opponent_leads_army=True) == 0.0
+
+
+def test_refusal_to_meet_chance_cautious_range_by_opponent_army():
+    low, high = REFUSAL_TO_MEET_CHANCE_RANGE[Temper.CAUTIOUS]
+    assert low == pytest.approx(0.01)
+    assert high == pytest.approx(0.50)
+    assert refusal_to_meet_chance(Temper.CAUTIOUS, is_king=False, opponent_leads_army=False) == pytest.approx(low)
+    assert refusal_to_meet_chance(Temper.CAUTIOUS, is_king=False, opponent_leads_army=True) == pytest.approx(high)
+
+
+def test_refusal_to_meet_chance_cowardly_range_by_opponent_army():
+    low, high = REFUSAL_TO_MEET_CHANCE_RANGE[Temper.COWARDLY]
+    assert low == pytest.approx(0.51)
+    assert high == pytest.approx(1.00)
+    assert refusal_to_meet_chance(Temper.COWARDLY, is_king=False, opponent_leads_army=False) == pytest.approx(low)
+    assert refusal_to_meet_chance(Temper.COWARDLY, is_king=False, opponent_leads_army=True) == pytest.approx(high)
+
+
+def test_resolve_refusal_to_meet_boundary():
+    chance = refusal_to_meet_chance(Temper.CAUTIOUS, is_king=False, opponent_leads_army=True)
+    rng = ScriptedRandom([chance - 0.01])
+    assert resolve_refusal_to_meet(Temper.CAUTIOUS, is_king=False, opponent_leads_army=True, rng=rng) is True
+    rng = ScriptedRandom([chance])
+    assert resolve_refusal_to_meet(Temper.CAUTIOUS, is_king=False, opponent_leads_army=True, rng=rng) is False
+
+
+def test_resolve_refusal_to_meet_consumes_no_rng_when_chance_is_a_guaranteed_zero():
+    # A King, Berserk/Brave, or an unrecorded Temper must never touch the
+    # scripted RNG sequence at all -- an empty ScriptedRandom would raise
+    # on any real .random() call.
+    rng = ScriptedRandom([])
+    assert resolve_refusal_to_meet(Temper.CAUTIOUS, is_king=True, opponent_leads_army=True, rng=rng) is False
+    assert resolve_refusal_to_meet(Temper.BERSERK, is_king=False, opponent_leads_army=True, rng=rng) is False
+    assert resolve_refusal_to_meet(Temper.BRAVE, is_king=False, opponent_leads_army=True, rng=rng) is False
+    assert resolve_refusal_to_meet(None, is_king=False, opponent_leads_army=True, rng=rng) is False
 
 
 def test_resolve_beg_for_mercy_hellish_target_never_succeeds():

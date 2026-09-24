@@ -1440,6 +1440,30 @@ possibilità di fuggire") was already flagged and deliberately deferred
 separately (this module's own "mixed-tactic range transitions" bullet
 above cross-references it). A natural, distinct follow-up phase.
 
+**Stale as of Phase 898, two of these three claims deep.** "Implorare
+pietà" closed at Phase 749 (`mercy_chance()`/`resolve_beg_for_mercy()`
+below -- a real, disassembled formula, not the "~50%" guess this
+paragraph still names); the Cautious flee bonus closed at Phase 743
+(`WEAK_TEMPER_FLEE_CHANCE_BONUS`, `turn/challenge_execution.py`/`turn/
+search_execution.py`). This phase closes the *refusal*-to-Meet half of
+the remaining pair too -- see `refusal_to_meet_chance()`/`resolve_
+refusal_to_meet()` below, and `turn/challenge_execution.py execute_
+challenge()`'s/`turn/battle_orchestrator.py _maybe_fight_duel()`'s own
+Phase 898 addenda for the two real consumers this unblocks (the second
+of which, `_maybe_fight_duel()`'s `coward_bluff`, had been naming this
+exact primitive as its own missing dependency since Phase 389).
+**Still genuinely open, narrower than this paragraph originally scoped
+it**: only the *involuntary automatic flee* half survives -- a weak-
+tempered character fleeing without being ordered to at all
+("indipendentemente dal Piano d'Incontro"), gated on "when the risk of
+a mortal blow appears significant" (Cautious) / "when death is
+possible" (Cowardly). Unlike an explicit `Maneuver.FLEE` tactic, Beg, or
+the refusal-to-Meet check below (each resolved once, at a single,
+caller-chosen point in the tactic walk or dispatch), this needs a
+per-round "is death/a mortal blow currently at stake" risk measure this
+project has no primitive for anywhere -- a real, separate, still-open
+follow-up, not attempted here.
+
 **Phase 516 addendum -- `AdvancedAbility.MELEE_HIT_POINTS`.**
 `models/advanced_ability.py`'s own sourced text: "The Gods grant 1-5
 additional hit points in any encounter." `MELEE_HIT_POINTS_ABILITY_
@@ -5800,6 +5824,78 @@ def resolve_beg_for_mercy(
     target_alignment: Alignment | None, beggar_alignment: Alignment | None, rng: random.Random
 ) -> bool:
     return rng.random() < mercy_chance(target_alignment, beggar_alignment)
+
+
+# Rulebook [5.6]/TABELLA DEI TEMPERAMENTI's own "refusal to Meet" half of
+# the flee-probability/refusal-to-Meet mechanic this module's own Phase
+# 284 addendum (module docstring, above) deferred as "a natural, distinct
+# follow-up phase" -- Phase 898 closes it. Quoted in full:
+#
+#   I personaggi Codardi e Cauti che non siano Re possono persino
+#   rifiutare l'ordine di Incontrare un personaggio o un mostro, a
+#   seconda della forza dell'avversario.
+#   [TABELLA DEI TEMPERAMENTI -- "Fuga dal combattimento" / "Rifiuto"]
+#     Cauto     1-50%
+#     Codardo   51-100%
+#   N.B. Un Re Codardo o Cauto non rifiuterà mai il combattimento, benché
+#   possa sempre fuggire dopo essere stato colpito.
+#
+# Berserk/Brave carry no entry at all in the table's own Refusal column
+# (never refuse, 0%), and a King of any Temper never refuses either (the
+# N.B. above) -- both checked unconditionally, before Temper is even
+# consulted.
+#
+# **How "the strength of the opponent" picks a value inside each named
+# range is not stated anywhere and is this project's own documented
+# design choice**, the same treatment `turn/combat.py estimate_win_
+# probability`'s own two-anchor curve, and the pre-disassembly Battle-
+# luck/Multiple-Contingents percentages, already received (see this
+# project's README "Known-unresolved semantics" precedent): at the point
+# an Encounter is accepted or refused, no `Combatant` (and therefore no
+# strength/quality figure) exists yet for either side -- only each
+# `LeaderState` and whether either one commands an army. `opponent_
+# leads_army` reuses the exact same binary "is this a serious threat"
+# signal [3.12]'s own neighboring King/Hero acceptance rules already key
+# their own restrictions on, picking the range's low end (no army led) or
+# high end (leads an army) rather than inventing a continuous ratio this
+# project has no real input to compute. Revisit if a real AKGEN
+# disassembly of this exact mechanic ever surfaces, matching every other
+# design-choice bullet in this project's own history.
+REFUSAL_TO_MEET_CHANCE_RANGE: dict[Temper, tuple[float, float]] = {
+    Temper.CAUTIOUS: (0.01, 0.50),
+    Temper.COWARDLY: (0.51, 1.00),
+}
+
+
+def refusal_to_meet_chance(temper: Temper | None, *, is_king: bool, opponent_leads_army: bool) -> float:
+    """[5.6]'s own "refusal to Meet" chance for a non-King Cautious/Cowardly
+    character. Returns 0.0 for a King (any Temper), Berserk, Brave, or an
+    unrecorded (``None``) Temper -- see the module comment just above for
+    the ``opponent_leads_army`` design choice.
+    """
+
+    if is_king or temper not in REFUSAL_TO_MEET_CHANCE_RANGE:
+        return 0.0
+    low, high = REFUSAL_TO_MEET_CHANCE_RANGE[temper]
+    return high if opponent_leads_army else low
+
+
+def resolve_refusal_to_meet(
+    temper: Temper | None, *, is_king: bool, opponent_leads_army: bool, rng: random.Random
+) -> bool:
+    """Rolls ``refusal_to_meet_chance()`` -- ``True`` means the character
+    refuses the order to Meet outright, per [5.6].
+
+    No ``rng`` consumed when the chance is a guaranteed 0.0 (a King, an
+    unrecorded Temper, or Berserk/Brave) -- the same "no roll needed for
+    a certain outcome" convention this project's own guaranteed-escape
+    Flee-first branches already established, and the only way every
+    pre-Phase-898 test's own scripted RNG sequence (built for a
+    Temper-less fixture) stays unaffected by this new check.
+    """
+
+    chance = refusal_to_meet_chance(temper, is_king=is_king, opponent_leads_army=opponent_leads_army)
+    return chance > 0.0 and rng.random() < chance
 
 
 def loot_defeated_leader(state: GameState, *, winner_id: int, loser_id: int) -> list[ItemInstance]:

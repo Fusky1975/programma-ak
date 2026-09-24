@@ -2799,6 +2799,90 @@ def test_maybe_fight_duel_skips_when_attacker_is_unled():
     assert defender_units[0].effective_strength == 10.0  # untouched
 
 
+# -- Phase 898: coward_bluff ([7.1]/[5.6]) -------------------------------
+
+
+def test_maybe_fight_duel_coward_bluff_can_avoid_demoralization():
+    # A losing, non-King Cowardly commander's own temper "refuses combat"
+    # (opponent leads an army -> refusal_to_meet_chance is a guaranteed
+    # 100%), then a second, independent roll decides whether that avoids
+    # the demoralization penalty (2/3 chance to avoid it).
+    state = _duel_gate_state()
+    state.leaders[502].temper = Temper.COWARDLY
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+    # 0.01 -> attacker wins the duel (defender is the loser); 0.99 -> the
+    # guaranteed refusal-to-Meet roll (100% chance, any value < 1.0
+    # fires); 0.5 -> under 2/3, the coward-bluff roll avoids demoralization.
+    rng = ScriptedRandom([0.01, 0.99, 0.5])
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state,
+    )
+
+    assert outcome.loser_side == "defender"
+    assert defender_units[0].effective_strength == 10.0  # demoralization avoided
+
+
+def test_maybe_fight_duel_coward_bluff_can_still_fail_to_avoid_demoralization():
+    state = _duel_gate_state()
+    state.leaders[502].temper = Temper.COWARDLY
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+    # Same as above, but the coward-bluff roll (0.9) is >= 2/3 -> demoralization still applies.
+    rng = ScriptedRandom([0.01, 0.99, 0.9])
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state,
+    )
+
+    assert outcome.loser_side == "defender"
+    assert defender_units[0].effective_strength == 10.0 * 0.75  # DUEL_DEMORALIZATION_MULTIPLIER
+
+
+def test_maybe_fight_duel_coward_bluff_never_applies_to_a_king_loser():
+    state = _duel_gate_state()
+    state.leaders[502].temper = Temper.COWARDLY
+    state.leaders[502].is_king = True
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+    # Only the duel-winner roll is consumed -- a King's own
+    # refusal_to_meet_chance is a guaranteed 0.0, no second roll needed.
+    rng = ScriptedRandom([0.01])
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state,
+    )
+
+    assert outcome.loser_side == "defender"
+    assert defender_units[0].effective_strength == 10.0 * 0.75  # DUEL_DEMORALIZATION_MULTIPLIER
+
+
+def test_maybe_fight_duel_coward_bluff_never_applies_to_a_brave_loser():
+    state = _duel_gate_state()
+    state.leaders[502].temper = Temper.BRAVE
+    attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
+        _duel_gate_armies_and_units()
+    )
+    # Only the duel-winner roll is consumed -- Brave never refuses ([5.6]'s
+    # own table), so refusal_to_meet_chance is a guaranteed 0.0.
+    rng = ScriptedRandom([0.01])
+
+    outcome = _maybe_fight_duel(
+        attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
+        state=state,
+    )
+
+    assert outcome.loser_side == "defender"
+    assert defender_units[0].effective_strength == 10.0 * 0.75  # DUEL_DEMORALIZATION_MULTIPLIER
+
+
 # -- Phase 669: rulebook [5.10]'s own real, bidirectional Duel trigger --
 
 
