@@ -232,9 +232,20 @@ none invented past here:
   states what makes a King property "qualifying" (Phase 358's own gap).
 - **The extra mercenary band** (``worldgen.mercenary_band.py``, Phase
   363) -- its own "compatible recruit type" test and fallback type are
-  caller-supplied by design, and the natural real inputs for both (the
-  ordinary-province recruit-slot table above) are exactly the still-
-  missing piece, so wiring it here would mean guessing both.
+  caller-supplied by design. **Corrected Phase 891**: this bullet used
+  to say the natural real inputs for both were "the ordinary-province
+  recruit-slot table above... exactly the still-missing piece" -- stale,
+  self-contradicting the very bullets a few lines above this one: that
+  table has been real and wired since Phase 797/799. The *data* is no
+  longer missing; what's still genuinely unresolved is the source's own
+  silence on what "compatible" means for this specific search (race
+  match against the province's own recruit type? terrain match? any
+  non-empty slot at all?) -- `mercenary_band.py`'s own docstring already
+  states this precisely and leaves both the predicate and the fallback
+  type as caller-supplied parameters rather than guessing. Wiring this
+  module in for real still needs that one design decision made
+  explicitly (a documented interpretation, not a source-recovered rule)
+  before a real call site can be written.
 
 **Verification**: checked against a full, real-sized generation (18x9,
 ``king_count=10``) for internal consistency -- every one of the 162

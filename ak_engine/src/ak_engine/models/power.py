@@ -24,20 +24,32 @@ after one of these labels), unlike the full-sentence prose strings this
 project's other ``*_NAME`` dicts usually hold. Stored verbatim rather than
 expanded into guessed full sentences.
 
-**Confirmed real but deliberately out of scope for this phase**:
+**`mfpow1`/`mfpowf`, closed since Phase 361 -- corrected Phase 891**:
 `CTME.PAS` also declares `mfpow1`/`mfpowf` (both `array[MagicFeature] of
 power` -- a primary and a "false"/decoy power per magic feature, mirroring
 `mf1`/`mff`'s own primary/decoy split already noted in
-`models/magic_feature.py`) and an entirely separate `comfeat` enum (27
+`models/magic_feature.py`). This paragraph used to call both `mfpow1`/
+`mfpowf` and the separate `comfeat` enum below "deliberately out of scope
+for this phase, real findings for a future phase" -- stale for the
+`mfpow1`/`mfpowf` half specifically: `worldgen/internal_magical_
+locations.py candidate_power()`/`resolve_power()` (Phase 361, predating
+several later edits to this very docstring) already implement the real
+formula from this exact pair of tables in full, cross-checked
+programmatically against every one of the 21 `MagicFeature`-keyed ranges
+with zero mismatches. The `comfeat` enum below is a genuinely separate,
+still-real finding, unaffected by this correction.
+
+An entirely separate `comfeat` enum (27
 members: `CFNone, Seaweed, Whirlpool, Trees, Cliff, LavaPool, Stalacs,
 Mine, Quicksand, Corner, Pit, CPool, Stairs, Table, Gametable, Hammock,
 Rug, Fireplace, Piano, Chandelier, CWindow, HiWindow, Passages, Coffin,
 Gong, Pillar, Well`) with its own three `array[FeatureType] of comfeat`
 tables (`cfs`, `cf1`, `cff`) -- mundane, non-magical decorative/hazard
 landmarks inside a `Feature`, parallel in structure to `MagicFeature` but
-never magical. Both are real findings for a future phase, not attempted
-here -- this phase only closes the specific `power`/`powco` vocabulary
-gap `models/magic_feature.py` had already flagged.
+never magical. `models/common_feature_scenery.py` (Phase 383) already
+picked this up too, though that module's own formula genuinely remains
+unimplemented for lack of source data -- still a real, open finding,
+unlike the `mfpow1`/`mfpowf` half above.
 
 **Phase 97 addendum**: `HostAK/TP/PROSE/MCOND.X2` and `PCOND.X2` (both
 header `"7 1"`), found continuing to mine the `PROSE/` `.X2` template
