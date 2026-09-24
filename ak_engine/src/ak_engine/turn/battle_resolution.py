@@ -65,11 +65,16 @@ clean sweep" branch; a column loser on the overall-winning or
 clean-swept side is still handled by that side's own existing path, not
 by this formula -- see ``battle_orchestrator.py
 _direct_destruction_probabilities``'s own docstring for why), duels,
-pursuit (already wired, Phase 349), retreat, post-battle quality changes
-(`turn/aftermath.py`'s own real formula is likewise standalone-only
-pending formation-depth/merit-score tracking this project doesn't have
-yet), contested provinces, conquest movement cost, and multiple
-contingents.
+pursuit (already wired, Phase 349), retreat, post-battle quality
+changes (`turn/aftermath.py`'s own real formula -- **wired since Phase
+372/423, corrected Phase 892's own survey**: this paragraph used to say
+it was "standalone-only pending formation-depth/merit-score tracking
+this project doesn't have yet," stale on both counts -- Phase 372 built
+`battle_orchestrator.py _formation_divisors()` for the formation-depth
+half, Phase 423 built `_column_bres_by_army_id()` for the merit-score
+half, and `roll_quality_change()` is called with both real values at 5
+real call sites in that same module), contested provinces, conquest
+movement cost, and multiple contingents.
 """
 
 from __future__ import annotations

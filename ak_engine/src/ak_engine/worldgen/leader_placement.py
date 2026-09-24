@@ -71,11 +71,18 @@ documented gap:
   Unlike Phase 354's `place_map` spatial pipeline, this one has not
   been asked to be turned into a project-original algorithm, so it's
   left as a documented narrative gap instead.
-- "first recruit slot becomes best_atype[king race]" -- ``best_atype``
-  is a per-race "best army type" table this project hasn't sourced
-  yet (a natural fit for the still-pending province-recruit-slots
-  phase); `king_home_effects()` deliberately omits this field rather
-  than guessing a table.
+- "first recruit slot becomes best_atype[king race]" -- **closed since
+  Phase 358, corrected Phase 892's own survey**: this bullet used to
+  say ``best_atype`` was "a per-race 'best army type' table this
+  project hasn't sourced yet" -- stale, the very next phase after this
+  module shipped it (``worldgen/initial_armies.py BEST_ATYPE``, whose
+  own docstring already says plainly "this directly closes the gap
+  Phase 357's own ``king_home_effects()`` deliberately left open").
+  ``king_home_effects()`` itself still omits this field on purpose,
+  not for lack of a source any more -- ``worldgen/generate_new_game.py``
+  calls ``home_first_slot(king.race)`` (= ``BEST_ATYPE[king.race]``)
+  directly at its own King-Home province-building call site instead of
+  routing it through this function.
 - The reserved last roster entry's own attachment target ("attached
   separately to a Home" -- ambiguous which Home) -- only its *count*
   (always 1) is implemented; its placement rule isn't specified
