@@ -3255,7 +3255,13 @@ def test_execute_challenge_bravest_inspiration_also_fires_alongside_accepted_com
     # Armyless Hero-vs-Hero always accepts without consuming a roll; the
     # combat itself is scripted to a draw (same all-misses sequence as
     # test_execute_challenge_draw_credits_no_duel_encounter_merit above).
-    rng = ScriptedRandom([0.99] * 3000)
+    # Phase 898: one extra draw up front for the target's own real
+    # Temper.CAUTIOUS refusal-to-Meet roll (0.99 < 1% chance is False,
+    # so the encounter is still accepted -- the challenger leads no army
+    # here) -- 3001, not 3000, the one real behavioral difference this
+    # fixture has from test_execute_challenge_draw_credits_no_duel_
+    # encounter_merit's own Temper-less target above.
+    rng = ScriptedRandom([0.99] * 3001)
 
     result = execute_challenge(state, 1, _talk_then_melee_request(2), rng=rng)
 
@@ -4197,6 +4203,95 @@ def test_execute_challenge_sense_danger_talent_does_not_apply_to_allied_challeng
         "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
     ):
         result = execute_challenge(state, 1, _melee_request(2), rng=ScriptedRandom([0.99]))
+
+    assert result.accepted is True
+
+
+# -- execute_challenge: Phase 898 refusal-to-Meet ([5.6]) --------------
+
+
+def test_execute_challenge_cowardly_target_refuses_a_strong_challenger():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD, temper=Temper.COWARDLY)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    state.add_army(ArmyState(101, 1, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=1))
+
+    # Cowardly + a challenger who leads an army -> refusal_to_meet_chance
+    # is the range's own high end, 100% -- any roll refuses.
+    result = execute_challenge(state, 1, _melee_request(2), rng=ScriptedRandom([0.99]))
+
+    assert result.accepted is False
+    assert result.reason == "encounter refused"
+
+
+def test_execute_challenge_cowardly_target_still_accepts_when_the_refusal_roll_misses():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD, temper=Temper.COWARDLY)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    # Armyless challenger -> the range's own low end, 51%; a roll of
+    # exactly 51% does not refuse (strict `<`).
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        result = execute_challenge(state, 1, _melee_request(2), rng=ScriptedRandom([0.51]))
+
+    assert result.accepted is True
+
+
+def test_execute_challenge_king_target_never_refuses_via_temper():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="King", location=FIELD, is_king=True, temper=Temper.COWARDLY)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    state.add_army(ArmyState(101, 1, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=1))
+
+    # A King target only ever accepts via mutual_encounter ([3.12]) -- the
+    # point here is that a guaranteed-refusal Temper roll (0.99, a
+    # Cowardly target of a strong challenger) never even fires against a
+    # King, so this stays accepted.
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        result = execute_challenge(state, 1, _melee_request(2), rng=ScriptedRandom([0.99]), mutual_encounter=True)
+
+    assert result.accepted is True
+
+
+def test_execute_challenge_berserk_target_never_refuses():
+    state = _base_state()
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD, temper=Temper.BERSERK)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    state.add_army(ArmyState(101, 1, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=1))
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        result = execute_challenge(state, 1, _melee_request(2), rng=ScriptedRandom([0.0]))
+
+    assert result.accepted is True
+
+
+def test_execute_challenge_spy_assassinate_bypasses_the_temper_refusal_gate():
+    state = _base_state()
+    challenger = LeaderState(
+        1, kingdom_id=1, name="Assassin", location=FIELD, advanced_abilities={AdvancedAbility.SPY_ASSASSINATE}
+    )
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD, is_king=True, temper=Temper.COWARDLY)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    state.add_army(ArmyState(101, 1, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=1))
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        result = execute_challenge(state, 1, _melee_request(2), rng=ScriptedRandom([]))
 
     assert result.accepted is True
 

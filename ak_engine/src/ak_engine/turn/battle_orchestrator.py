@@ -207,6 +207,7 @@ from ak_engine.turn.encounter import (
     weapon_defensive_hit_multiplier,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
+    resolve_refusal_to_meet,
     weapon_grants_auto_invisibility,
     weapon_melee_damage_bonus,
     weapon_offensive_hit_multiplier,
@@ -1489,6 +1490,13 @@ def _commander_challenges(
     return sep_accepts_challenge(target_sep, state)
 
 
+# `coward_bluff` (Phase 389's own AKGEN paraphrase, closed Phase 898):
+# "entering the duel and temper refusing combat, chance 2/3 to avoid the
+# demoralization penalty." See `_maybe_fight_duel()`'s own Phase 898
+# addendum for the full derivation.
+COWARD_BLUFF_AVOID_DEMORALIZATION_CHANCE = 2 / 3
+
+
 def _maybe_fight_duel(
     attacker_commander: Commander | None,
     defender_commander: Commander | None,
@@ -1646,16 +1654,40 @@ def _maybe_fight_duel(
     own resolution remains the same still-unaddressed limitation it
     always was.
 
-    **Deliberately still not modeled, two further real, AKGEN-confirmed,
-    but genuinely blocked pieces of this same cluster:**
-    - **``coward_bluff``** ("entering the duel and temper refusing
-      combat, chance 2/3 to avoid the demoralization penalty") needs the
-      Temper Table's own flee-probability/refusal-to-Meet mechanic --
-      ``turn/encounter.py``'s own Phase 284 addendum already names this
-      exact mechanic and explicitly defers it project-wide as "a natural,
-      distinct follow-up phase," not something this function should
-      invent a bespoke version of just for Duels.
-    - A related, pre-existing (not new) ambiguity: **Charm's own "target
+    **``coward_bluff``, closed as of Phase 898** ("entering the duel and
+    temper refusing combat, chance 2/3 to avoid the demoralization
+    penalty") -- this used to be blocked on the Temper Table's own
+    flee-probability/refusal-to-Meet mechanic; ``turn/encounter.py
+    resolve_refusal_to_meet()`` is that mechanic now. Only ``state``-
+    aware calls apply it (a Temper lookup needs a real ``LeaderState``,
+    which the ``state is None`` shortcut path never has): once the loser
+    is known, if that side has a real, non-garrison commander, ``resolve_
+    refusal_to_meet(loser_leader.temper, is_king=loser_leader.is_king,
+    opponent_leads_army=True, rng=rng)`` decides whether "temper refuses
+    combat" fires at all (``opponent_leads_army=True`` unconditionally --
+    both sides of an active battle duel are real commanders/garrisons by
+    construction, never an unarmed bystander [3.12]'s own "doesn't lead
+    an army" carve-out was written for), and a second, independent
+    ``COWARD_BLUFF_AVOID_DEMORALIZATION_CHANCE = 2/3`` roll (the one
+    number this cluster's own AKGEN source states outright) decides
+    whether demoralization is actually skipped. **One documented
+    interpretation, not a second confirmed fact**: AKGEN's own paraphrase
+    names no separate formula for exactly *when* "temper refuses combat"
+    triggers inside an already-resolved duel -- reusing [5.6]'s own
+    refusal-to-Meet table for the *losing* commander's Temper (rather
+    than, say, gating on the duel's own margin) is this phase's own
+    reading of "temper refusing combat," revisit if a fuller AKGEN quote
+    ever surfaces. Still dormant in every real game today for the same
+    reason every sibling feature in this cluster is (``use_real_duel_
+    combat`` defaults ``False`` everywhere) -- **not true here**: this
+    check runs on the ``estimate_win_probability`` fallback path too,
+    since it only needs the *loser*, not real combat resolution, so it is
+    live for every ``state``-aware caller today (``turn/turn_processor.py``
+    already passes ``state`` to every real Duel).
+
+    **Deliberately still not modeled, one further real, AKGEN-confirmed,
+    but genuinely blocked piece of this same cluster:**
+    A related, pre-existing (not new) ambiguity: **Charm's own "target
       flees" and Augur Combat's own "caster flees" branches both collapse
       into the same bare ``combat_result.fled`` boolean**, with no
       direction recorded -- applying AKGEN's now-confirmed "Charm escape
@@ -1750,14 +1782,33 @@ def _maybe_fight_duel(
         attacker_wins_duel = rng.random() < estimate_win_probability(attacker_strength, defender_strength)
 
     if attacker_wins_duel:
-        loser_side, loser_units, target_list = "defender", defender_commander_units, defender_units
+        loser_side = "defender"
+        loser_units, target_list, loser_commander = defender_commander_units, defender_units, defender_commander
     else:
-        loser_side, loser_units, target_list = "attacker", attacker_commander_units, attacker_units
+        loser_side = "attacker"
+        loser_units, target_list, loser_commander = attacker_commander_units, attacker_units, attacker_commander
 
-    demoralized_by_id = {u.source_id: u for u in apply_duel_demoralization(loser_units)}
-    for index, unit in enumerate(target_list):
-        if unit.source_id in demoralized_by_id:
-            target_list[index] = demoralized_by_id[unit.source_id]
+    # Phase 898: `coward_bluff` -- see this function's own Phase 898
+    # addendum above for the full derivation. Needs a real `LeaderState`
+    # to read the loser's own recorded Temper from, so the garrison-
+    # commander fallback (`leader_id is None`) and a `state=None` caller
+    # both fall through to the unconditional demoralization this project
+    # has always applied.
+    apply_demoralization = True
+    if state is not None and loser_commander.leader_id is not None:
+        loser_leader = state.leaders.get(loser_commander.leader_id)
+        if loser_leader is not None:
+            temper_refuses_combat = resolve_refusal_to_meet(
+                loser_leader.temper, is_king=loser_leader.is_king, opponent_leads_army=True, rng=rng
+            )
+            if temper_refuses_combat and rng.random() < COWARD_BLUFF_AVOID_DEMORALIZATION_CHANCE:
+                apply_demoralization = False
+
+    if apply_demoralization:
+        demoralized_by_id = {u.source_id: u for u in apply_duel_demoralization(loser_units)}
+        for index, unit in enumerate(target_list):
+            if unit.source_id in demoralized_by_id:
+                target_list[index] = demoralized_by_id[unit.source_id]
 
     return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, loser_side)
 

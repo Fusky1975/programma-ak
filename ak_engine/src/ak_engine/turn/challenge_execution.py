@@ -333,6 +333,7 @@ from ak_engine.turn.encounter import (
     melee_mastery_offensive_hit_multiplier,
     weapon_melee_damage_bonus,
     weapon_offensive_hit_multiplier,
+    resolve_refusal_to_meet,
     control_undead_failure_new_hit_points,
     weapon_defensive_hit_multiplier,
     holy_symbol_hit_chance,
@@ -2449,6 +2450,30 @@ def execute_challenge(
     assassinate`` on the result records whenever this encounter was
     accepted via that ability's own bypass, so the report layer can
     render it right after the search line.
+
+    **Phase 898 addendum -- the Temper Table's own "refusal to Meet"
+    gate ([5.6]).** A genuinely separate rule from [3.12]'s own King/
+    Hero acceptance tree above: "I personaggi Codardi e Cauti che non
+    siano Re possono... rifiutare l'ordine di Incontrare... a seconda
+    della forza dell'avversario" -- see ``turn/encounter.py resolve_
+    refusal_to_meet()``'s own module comment for the full quote and the
+    percentage-range design choice. Checked once combat is actually
+    intended (a peaceful plan already returned above, unaffected --
+    [5.6] sits in the Flee/refusal cluster, the same combat-only scoping
+    [3.12]'s own text already carves out for its King/Hero rules),
+    keyed on the *target's* own Temper against whether the *challenger*
+    leads an army (``challenger_leads_army`` -- the target's own "how
+    strong is my opponent" signal). Deliberately skipped whenever
+    ``has_spy_assassinate``/``is_treasury_raid_attempt`` already forced
+    an accept above -- both abilities' own real text reads as an
+    unconditional override ("King characters can now encounter other
+    characters freely"), the same "bypasses every restriction below"
+    framing ``is_encounter_accepted()``'s own docstring already gives
+    them, not a narrower King-only carve-out this project should
+    re-litigate here. A refusal here reuses the exact same ``reason=
+    "encounter refused"``/merit-tally treatment as an ordinary [3.12]
+    refusal -- [5.6] gives no separate consequence for this specific
+    refusal path.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -2499,6 +2524,15 @@ def execute_challenge(
         has_sense_danger_evasion=target_evades_via_sense_danger(state, target, challenger),
         king_evasion_applies=king_challenge_evasion_applies(state, challenger, target, request),
     )
+    # Phase 898: [5.6]'s own separate Temper-based refusal gate -- see
+    # this function's own Phase 898 addendum above for why it's skipped
+    # when an unconditional-accept ability already fired.
+    if accepted and not has_spy_assassinate and not is_treasury_raid_attempt:
+        challenger_leads_army = bool(state.armies_commanded_by(challenger.leader_id))
+        if resolve_refusal_to_meet(
+            target.temper, is_king=target.is_king, opponent_leads_army=challenger_leads_army, rng=rng
+        ):
+            accepted = False
     if not accepted:
         _apply_duel_encounter_merit(
             challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
