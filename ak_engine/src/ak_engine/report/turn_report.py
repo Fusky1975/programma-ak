@@ -4584,12 +4584,16 @@ def render_mortally_wounded(defender_name: str, rng: random.Random, *, is_sea: b
 # results()`'s own `ActionCode.CAST` branch now calls the new composer
 # as a second, independent pass over the same result, the same "two
 # composers, one result" shape Pursue's own `describe_pursue()` +
-# `describe_encounter_combat()` pairing already established. One real
-# `remove_leader()` call site remains genuinely unreached by any
-# composer: `turn/assassin_guild.py`'s Grandfather of Assassins
-# resolver isn't called from production code at all yet -- wiring it
-# needs building a new narration path from scratch once (if ever) the
-# resolver itself gets a real caller, left for a future phase.
+# `describe_encounter_combat()` pairing already established. Phase 890:
+# corrected a stale claim here -- `turn/assassin_guild.py`'s Grandfather
+# of Assassins resolver was said to have "no real caller yet," but
+# `orchestrator.py process_turn()` has called `resolve_pending_guild_
+# assassination()` once per turn since Phase 614, and its own dedicated
+# `GuildAssassinationOutcome` narration branch in `describe_turn_
+# results()` (see this module's own Phase 614 addendum below) already
+# renders that outcome via `render_assassination_success()`'s own real
+# text -- this generic HORDEATH.X trailer was never meant to double up
+# on that already-covered death, so nothing was actually missing here.
 _HORDEATH_TEMPLATES: list[str] = [
     "and so it was/Rcame_to_pass that < met > unseemly/Rtragic end.",
     "thus did < {finally }die, ^A brave_end/Rdefiant_death by any standard.",
