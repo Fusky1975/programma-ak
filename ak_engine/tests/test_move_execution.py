@@ -2227,6 +2227,45 @@ def test_find_transport_illegality_march_through_floods_does_not_excuse_natural_
     assert reason == "insufficient_water_transport"
 
 
+# -- Phase 888: Discovery.FLOOD_DAMS's own per-army rest-of-turn exemption --
+
+
+def test_find_transport_illegality_flood_dams_exempt_army_may_enter_the_flooded_province():
+    bowmen = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, flood_dams_exempt_at=TARGET)
+    reason = find_transport_illegality([bowmen], [1], _land_province(ORIGIN), _flooded_province(TARGET))
+    assert reason is None
+
+
+def test_find_transport_illegality_flood_dams_exempt_army_may_leave_the_flooded_province():
+    bowmen = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, flood_dams_exempt_at=ORIGIN)
+    reason = find_transport_illegality([bowmen], [1], _flooded_province(ORIGIN), _land_province(TARGET))
+    assert reason is None
+
+
+def test_find_transport_illegality_without_flood_dams_exemption_still_blocks_a_flooded_province():
+    # Non-regression: an army that never paid this turn's Flood Dams
+    # toll (the default, ``None``) is still refused exactly as before --
+    # e.g. one that arrives at the province later in the same turn.
+    bowmen = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN)
+    reason = find_transport_illegality([bowmen], [1], _land_province(ORIGIN), _flooded_province(TARGET))
+    assert reason == "insufficient_water_transport"
+
+
+def test_find_transport_illegality_flood_dams_exemption_is_scoped_to_its_own_coord():
+    # An exemption earned at a *different* Flooded province this same
+    # turn doesn't carry over to this one.
+    other_coord = HexCoord(9, 9)
+    bowmen = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, flood_dams_exempt_at=other_coord)
+    reason = find_transport_illegality([bowmen], [1], _land_province(ORIGIN), _flooded_province(TARGET))
+    assert reason == "insufficient_water_transport"
+
+
+def test_find_transport_illegality_flood_dams_exemption_does_not_excuse_natural_sea():
+    bowmen = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, flood_dams_exempt_at=TARGET)
+    reason = find_transport_illegality([bowmen], [1], _land_province(ORIGIN), _sea_province(TARGET))
+    assert reason == "insufficient_water_transport"
+
+
 def test_find_transport_illegality_no_origin_province_treated_as_no_terrain():
     bowmen = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN)
     reason = find_transport_illegality([bowmen], [1], None, _land_province(TARGET))
@@ -2268,6 +2307,40 @@ def test_execute_move_enforced_raises_for_an_unassisted_sea_crossing():
     assert excinfo.value.origin_coord == ORIGIN
     assert excinfo.value.destination_coord == TARGET
     assert state.armies[101].location == ORIGIN  # never moved
+
+
+def test_execute_move_enforced_permits_a_flood_dams_exempt_army_to_leave_a_flooded_province():
+    # Phase 888: an army Discovery.FLOOD_DAMS already charged this
+    # turn's one-time toll to (turn/cast_execution.py _execute_flood())
+    # is excused from the ongoing rest-of-turn block for that exact
+    # province, reaching all the way through the real enforced dispatch
+    # path -- not just the unit-level find_transport_illegality() check.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Coastia", Race.HUMAN, Alignment.GOOD, TARGET))
+    state.add_province(ProvinceState(ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, terrain_override=Terrain.SEA))
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, TARGET, movement_points=3, flood_dams_exempt_at=TARGET))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=ORIGIN, enforce_transport_legality=True)
+
+    assert result.moved is True
+    assert state.armies[101].location == ORIGIN
+
+
+def test_execute_move_enforced_still_blocks_a_non_exempt_army_leaving_the_same_flooded_province():
+    # Non-regression companion: without the exemption, the identical
+    # province still blocks an ordinary land army exactly as before.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Coastia", Race.HUMAN, Alignment.GOOD, TARGET))
+    state.add_province(ProvinceState(ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, terrain_override=Terrain.SEA))
+    state.add_army(ArmyState(101, 1, ArmyType.BOWMEN, Quality.AVERAGE, TARGET, movement_points=3))
+
+    with pytest.raises(TransportIllegalMoveError) as excinfo:
+        execute_move(state, kingdom_id=1, army_ids=[101], target=ORIGIN, enforce_transport_legality=True)
+
+    assert excinfo.value.reason == "insufficient_water_transport"
+    assert state.armies[101].location == TARGET  # never moved
 
 
 def test_execute_move_enforced_permits_a_real_boarded_crossing():

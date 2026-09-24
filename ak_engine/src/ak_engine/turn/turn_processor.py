@@ -964,6 +964,13 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
       today) rather than leaving it to silently repeat the exact same
       "field forgotten, permission never expires" bug the moment a future
       phase wires a real Treat-order decoder in.
+    - ``ArmyState.flood_dams_exempt_at`` -> ``None`` (Phase 888) --
+      Discovery.FLOOD_DAMS's own rest-of-turn exemption from the
+      Flooded-province movement block (`turn/move_execution.py
+      _land_crossing_blocked()`) is scoped to "this turn," per its own
+      already-charged one-time toll being a per-cast event -- otherwise
+      an army once excused at a given coord would stay excused there
+      forever, for the rest of the game.
 
     ``GameState.gate_angel_candidates_this_turn`` is deliberately NOT
     touched here despite its own name -- it's already self-resetting,
@@ -1012,6 +1019,7 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         army.naval_bonus_applied_this_turn = False
         army.march_table_bonus_applied_this_turn = False
         army.unhireable_this_turn = False
+        army.flood_dams_exempt_at = None
     for province in state.provinces.values():
         province.recruited_this_turn = {}
         province.recruit_locked_this_turn = False

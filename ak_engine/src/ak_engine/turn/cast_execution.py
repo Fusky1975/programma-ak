@@ -965,13 +965,12 @@ _FLOOD_ELIGIBLE_TERRAIN = frozenset({Terrain.PLAINS, Terrain.DESERT, Terrain.JUN
 # blocked()`, Phase 693/737); Flood Dams' own real effect is this
 # separate, immediate, one-time movement-point cost, applied once at
 # cast time to every land army already standing in the target
-# province. Deliberately NOT wired: exempting those same armies from
+# province. **Phase 888**: the same armies are now also excused from
 # the ongoing rest-of-turn block their own real "reduction" framing
-# implies -- `_land_crossing_blocked()` has no per-army "already paid
-# this turn's flood toll" state to represent that exemption, and
-# adding one is a real, separate, larger follow-up, not attempted
-# here (matching Discovery.ARTIFICIAL_ORGANS's own precedent, Phase
-# 884, of wiring the tractable numeric clause and flagging the rest).
+# implies -- `ArmyState.flood_dams_exempt_at` (set here, consulted by
+# `turn/move_execution.py find_transport_illegality()`/`_land_crossing_
+# blocked()`) is the per-army "already paid this turn's flood toll"
+# state that field's own earlier docstring said didn't exist yet.
 FLOOD_DAMS_MOVEMENT_POINT_PENALTY = 1
 
 # Gate Angel (Phase 195, user-supplied VALHALLA text): "Ciascun allineamento
@@ -2174,12 +2173,19 @@ def _execute_flood(
     module, was simply never cross-referenced and updated to match.
 
     **Phase 885**: `Discovery.FLOOD_DAMS` -- see `FLOOD_DAMS_MOVEMENT_
-    POINT_PENALTY`'s own citation above for the real text and what
-    stays deliberately out of scope. A successful cast against a
-    Flood-Dams-protected, Kingdom-owned province still turns the
-    province into Sea exactly as before; the only difference is a
+    POINT_PENALTY`'s own citation above for the real text. A successful
+    cast against a Flood-Dams-protected, Kingdom-owned province still
+    turns the province into Sea exactly as before; the difference is a
     one-time `-1` movement-point charge to every land army already
     standing there, applied once, immediately, at cast time.
+
+    **Phase 888**: those same armies also have `ArmyState.flood_dams_
+    exempt_at` set to this province's own coord, excusing them from the
+    ongoing rest-of-turn "stuck in a Flooded province" block for the
+    rest of the turn -- `turn/move_execution.py find_transport_
+    illegality()`/`_land_crossing_blocked()` consult it the same way
+    they already consult `AdvancedAbility.MARCH_THROUGH_FLOODS`'s own
+    exemption.
     """
 
     caster = state.leaders[leader_id]
@@ -2203,6 +2209,7 @@ def _execute_flood(
         for army in state.armies_at(_coord):
             if is_land_army(army.army_type):
                 army.movement_points -= FLOOD_DAMS_MOVEMENT_POINT_PENALTY
+                army.flood_dams_exempt_at = _coord
 
     return CastExecutionResult(request, applied=True, discovery_defended=Discovery.FLOOD_DAMS if defended else None)
 

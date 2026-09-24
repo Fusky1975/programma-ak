@@ -1571,6 +1571,9 @@ def test_flood_dams_deducts_one_movement_point_from_land_armies_already_in_the_p
     assert result.discovery_defended is Discovery.FLOOD_DAMS
     assert state.provinces[LOCATION].terrain_override is Terrain.SEA  # still floods
     assert state.armies[1].movement_points == 2
+    # Phase 888: the same army is also excused from the ongoing rest-of-
+    # turn "stuck in a Flooded province" block, for this exact coord.
+    assert state.armies[1].flood_dams_exempt_at == LOCATION
 
 
 def test_flood_dams_never_touches_a_non_land_army_in_the_province():
@@ -1583,6 +1586,7 @@ def test_flood_dams_never_touches_a_non_land_army_in_the_province():
     execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
 
     assert state.armies[1].movement_points == 3
+    assert state.armies[1].flood_dams_exempt_at is None
 
 
 def test_flood_without_flood_dams_leaves_armies_untouched():
@@ -1596,6 +1600,7 @@ def test_flood_without_flood_dams_leaves_armies_untouched():
     assert result.applied is True
     assert result.discovery_defended is None
     assert state.armies[1].movement_points == 3
+    assert state.armies[1].flood_dams_exempt_at is None
 
 
 def test_flood_dams_is_a_no_op_for_an_unowned_province():
@@ -1610,6 +1615,7 @@ def test_flood_dams_is_a_no_op_for_an_unowned_province():
     assert result.applied is True
     assert result.discovery_defended is None
     assert state.armies[1].movement_points == 3
+    assert state.armies[1].flood_dams_exempt_at is None
 
 
 # ---------------------------------------------------------------------------

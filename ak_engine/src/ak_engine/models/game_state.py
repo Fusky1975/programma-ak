@@ -524,6 +524,21 @@ class ArmyState:
     # real move-integration work, a separate, not-yet-started follow-up
     # (see `turn/sea_transport.py`'s own module docstring).
     transported_by: int | None = None
+    # Phase 888: Discovery.FLOOD_DAMS's own real "reduction" framing
+    # (`turn/cast_execution.py FLOOD_DAMS_MOVEMENT_POINT_PENALTY`'s own
+    # Phase 885 citation) implies an army already charged the one-time
+    # toll should also be excused from the ongoing rest-of-turn "stuck
+    # in a Flooded province" block (`turn/move_execution.py
+    # _land_crossing_blocked()`), not just charged a movement-point cost
+    # on top of an unrelaxed block -- the same gap `AdvancedAbility.
+    # MARCH_THROUGH_FLOODS` already has a real exemption for. Set to the
+    # Flooded province's own coord by `turn/cast_execution.py
+    # _execute_flood()` at the exact moment the toll is charged;
+    # consulted by `find_transport_illegality()` for exactly that one
+    # province's own Sea-effective endpoint, for the rest of the turn.
+    # `None` for every army that never paid a Flood Dams toll. Reset at
+    # the same turn boundary as `march_bonus_applied_this_turn` etc.
+    flood_dams_exempt_at: HexCoord | None = None
 
 
 @dataclass(slots=True)

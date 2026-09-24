@@ -1030,7 +1030,9 @@ def _is_part_sea(province: ProvinceState | None) -> bool:
     return province is not None and province.terrain is Terrain.SEA and province.terrain_override is Terrain.PLAINS
 
 
-def _land_crossing_blocked(province: ProvinceState | None, is_sea: bool, has_march_through_floods: bool) -> bool:
+def _land_crossing_blocked(
+    province: ProvinceState | None, is_sea: bool, has_march_through_floods: bool, *, flood_dams_exempt: bool = False
+) -> bool:
     """Whether this one endpoint blocks an ordinary land-type army's own
     passage: Sea-effective (or `NO_TERRAIN`), and -- when it's a real
     Flood (`terrain_override = Terrain.SEA` on a province whose own base
@@ -1040,15 +1042,22 @@ def _land_crossing_blocked(province: ProvinceState | None, is_sea: bool, has_mar
     by the Flood spell" (the ability's own real, separate movement-point
     surcharge, `turn/move_execution.py`'s own Phase 693 addendum, is
     unaffected by this -- it's a cost, not a legality question, and
-    stays wired exactly as before). A genuinely natural Sea province is
-    never excused this way -- no source claims Floods helps against
-    real ocean, only against the spell's own effect.
+    stays wired exactly as before), nor (Phase 888) by `flood_dams_
+    exempt` -- `True` exactly for the specific army/province pair
+    `turn/cast_execution.py _execute_flood()` already charged Discovery.
+    FLOOD_DAMS's own one-time movement-point toll to. A genuinely
+    natural Sea province is never excused either way -- no source
+    claims either exemption helps against real ocean, only against the
+    spell's own effect.
     """
 
     if not is_sea:
         return False
-    if has_march_through_floods and province is not None and province.terrain is not Terrain.SEA:
-        return False  # a real Flood, excused by the ability
+    if province is not None and province.terrain is not Terrain.SEA:
+        if has_march_through_floods:
+            return False  # a real Flood, excused by the ability
+        if flood_dams_exempt:
+            return False  # a real Flood, this army already paid the Flood Dams toll
     return True
 
 
@@ -1083,7 +1092,12 @@ def find_transport_illegality(
     own land-to-land restriction (a Flooded endpoint already counts as
     Sea for their own purposes, so the question never arises) or
     Mermen's own rule (already sea-effective either way, flooded or
-    natural).
+    natural). Phase 888: `ArmyState.flood_dams_exempt_at` is a second,
+    independent (per-army, not per-caster) relaxation of the identical
+    check, read fresh per army inside the loop below -- an army whose
+    own Kingdom's Discovery.FLOOD_DAMS already charged it this turn's
+    toll for exactly this coord is excused the same way `has_march_
+    through_floods` excuses the whole moving party.
 
     `is_hug_coastline_hop` (Phase 819 bug fix): `execute_move()` passes
     `True` exactly when `_naval_hug_coastline_move_is_legal()` has
@@ -1131,8 +1145,14 @@ def find_transport_illegality(
             if origin_is_sea or target_is_sea or is_hug_coastline_hop:
                 continue  # entering/leaving land on its own is fine, or a real, already-verified Hug Coastline hop
             return "naval_land_hop"
-        origin_blocked = _land_crossing_blocked(origin_province, origin_is_sea, has_march_through_floods)
-        target_blocked = _land_crossing_blocked(target_province, target_is_sea, has_march_through_floods)
+        origin_flood_dams_exempt = origin_province is not None and army.flood_dams_exempt_at == origin_province.coord
+        target_flood_dams_exempt = army.flood_dams_exempt_at == target_province.coord
+        origin_blocked = _land_crossing_blocked(
+            origin_province, origin_is_sea, has_march_through_floods, flood_dams_exempt=origin_flood_dams_exempt
+        )
+        target_blocked = _land_crossing_blocked(
+            target_province, target_is_sea, has_march_through_floods, flood_dams_exempt=target_flood_dams_exempt
+        )
         if not (origin_blocked or target_blocked):
             continue  # an ordinary land move, no unexcused Sea endpoint
         if army.army_type is ArmyType.ENTS:
