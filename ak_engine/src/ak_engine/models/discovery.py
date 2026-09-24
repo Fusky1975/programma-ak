@@ -133,14 +133,17 @@ challenge_execution.py`'s own `Maneuver.SHOOT` dispatch never consulted
 `Combatant.blocked_from_cast_and_archery` at all (unlike its sibling in
 `turn/search_execution.py`), so Spiritwrack's own already-shipped
 archery half silently never took effect there -- fixed at the same
-time. The Discovery's own SECOND, narrower clause -- "archery can be
-used (but not spells)" for a target the Discovery itself protects --
-is still deliberately NOT wired: `Combatant.blocked_from_cast_and_
-archery` is a single boolean gating both actions identically, and this
-clause needs the two split apart (spells still blocked, archery
-specifically exempted) for exactly this one Discovery -- a real,
-separate, larger follow-up (splitting the field, or adding a second
-"archery-only" flag) is needed to represent it, not attempted here.
+time. **Phase 889**: the Discovery's own SECOND, narrower clause --
+"archery can be used (but not spells)" for a target the Discovery
+itself protects -- is now wired too. `Combatant.blocked_from_cast_and_
+archery`'s single boolean (which could only gate both actions
+identically) was split into two independent flags, `blocked_from_cast`/
+`blocked_from_archery`; Hand of Death's own two real call sites now
+compose them via `turn/encounter.py hand_of_death_cast_and_archery_
+block()`, which relaxes only `blocked_from_archery` for a target whose
+own Kingdom holds this Discovery, leaving `blocked_from_cast` (and
+Spiritwrack's own identical, still-unrelaxed pair) untouched. This
+closes `ARTIFICIAL_ORGANS`'s own text in full.
 **Phase 885**: `FLOOD_DAMS` (Flood) is now wired too --
 `turn/cast_execution.py FLOOD_DAMS_MOVEMENT_POINT_PENALTY`, deducting
 1 movement point once, immediately, from every land army already

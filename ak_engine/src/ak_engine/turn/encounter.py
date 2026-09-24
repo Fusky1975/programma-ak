@@ -1952,6 +1952,27 @@ def blocks_cast_and_archery(*, target_is_immune: bool = False) -> bool:
     return not target_is_immune
 
 
+def hand_of_death_cast_and_archery_block(target_is_immune: bool, target_has_artificial_organs: bool) -> tuple[bool, bool]:
+    """Hand of Death's own real baseline block (see ``blocks_cast_and_
+    archery()`` above -- "confirmed to share this exact same victim
+    effect, word for word" with Spiritwrack), narrowed by ``Discovery.
+    ARTIFICIAL_ORGANS``'s own second, real clause: "No damage is caused
+    to the target, and archery can be used (but not spells.)"
+
+    Returns ``(blocked_from_cast, blocked_from_archery)``. For a target
+    without the Discovery, both reduce to the identical base value
+    (spells and archery blocked or not, together, exactly like
+    Spiritwrack). For a target whose own Kingdom holds it, archery is
+    additionally exempted -- but only when the base block would have
+    applied at all: an immune target (``target_is_immune``, already
+    excluded from the squeeze itself) has nothing to exempt, so both
+    values are ``False`` regardless of ``target_has_artificial_organs``.
+    """
+
+    blocked = blocks_cast_and_archery(target_is_immune=target_is_immune)
+    return blocked, blocked and not target_has_artificial_organs
+
+
 def spiritwrack_melee_damage_reduction(
     skill_level: int,
     rng: random.Random,
@@ -2425,16 +2446,17 @@ def roll_hand_of_death_damage(
 
     Phase 887: Hand of Death's own baseline "victim cannot cast spells
     nor shoot with a bow" restriction (module docstring's own Phase 190
-    addendum) is now wired at both real callers too, via ``Combatant.
-    blocked_from_cast_and_archery = blocks_cast_and_archery(target_is_
-    immune=target_is_immune)`` -- the exact same helper/pattern
-    Spiritwrack's own call sites already use. The Discovery's own
-    narrower "archery can still be used (but not spells)" exemption is
-    still NOT wired: ``blocked_from_cast_and_archery`` is one boolean
-    covering both actions identically, and this Discovery specifically
-    needs the two split apart (spells still blocked, archery exempted)
-    -- a real, separate, larger follow-up (splitting the field), not
-    attempted here.
+    addendum) is now wired at both real callers too, via ``blocks_cast_
+    and_archery(target_is_immune=target_is_immune)`` -- the exact same
+    helper Spiritwrack's own call sites already use.
+
+    Phase 889: the Discovery's own narrower "archery can still be used
+    (but not spells)" exemption is now wired too, via ``hand_of_death_
+    cast_and_archery_block()`` (right below ``blocks_cast_and_archery()``
+    above) -- ``Combatant.blocked_from_cast``/``blocked_from_archery``
+    are now two independent flags instead of one shared boolean, letting
+    this exact Discovery relax archery specifically while leaving spells
+    blocked.
     """
 
     if target_is_immune or target_has_artificial_organs:
@@ -2974,7 +2996,20 @@ class Combatant:
     # Phase 209 -- Spiritwrack's "the victim cannot cast spells nor shoot
     # with a bow" effect. `turn/search_execution.py`'s own CAST/SHOOT
     # handling consults this before letting the affected side act.
-    blocked_from_cast_and_archery: bool = False
+    #
+    # Phase 889: split into two independent flags -- previously one bare
+    # `blocked_from_cast_and_archery` boolean gated both actions
+    # identically, which was correct for Spiritwrack (both are always
+    # blocked together) but couldn't represent Discovery.ARTIFICIAL_
+    # ORGANS's own real Hand of Death exemption: "No damage is caused to
+    # the target, and archery can be used (but not spells.)" -- spells
+    # stay blocked, archery specifically doesn't. Every write site sets
+    # both to the same value except Hand of Death's own Artificial-
+    # Organs-aware composition (`hand_of_death_cast_and_archery_block()`
+    # below); every CAST-tactic dispatch checks `blocked_from_cast`,
+    # every SHOOT-tactic dispatch checks `blocked_from_archery`.
+    blocked_from_cast: bool = False
+    blocked_from_archery: bool = False
     # Phase 209 -- free, unanswered Melee swings this combatant has banked
     # from a successful Psychic Blast or Ice Suspension cast, consumed by
     # `turn/search_execution.py`/`turn/challenge_execution.py _consume_

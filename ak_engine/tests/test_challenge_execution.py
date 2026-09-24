@@ -1575,7 +1575,8 @@ def test_execute_challenge_cast_hand_of_death_blocks_a_non_immune_target_from_ca
         execute_challenge(state, 1, request, rng=ScriptedRandom([]))
 
     target_combatant = mock_channel.call_args.args[1]
-    assert target_combatant.blocked_from_cast_and_archery is True
+    assert target_combatant.blocked_from_cast is True
+    assert target_combatant.blocked_from_archery is True
 
 
 def test_execute_challenge_cast_hand_of_death_does_not_block_an_immune_target():
@@ -1594,7 +1595,8 @@ def test_execute_challenge_cast_hand_of_death_does_not_block_an_immune_target():
         execute_challenge(state, 1, request, rng=ScriptedRandom([]))
 
     target_combatant = mock_channel.call_args.args[1]
-    assert target_combatant.blocked_from_cast_and_archery is False
+    assert target_combatant.blocked_from_cast is False
+    assert target_combatant.blocked_from_archery is False
 
 
 def test_execute_challenge_cast_hand_of_death_enhanced_ability_still_blocks_an_undead_target():
@@ -1614,7 +1616,30 @@ def test_execute_challenge_cast_hand_of_death_enhanced_ability_still_blocks_an_u
         execute_challenge(state, 1, request, rng=ScriptedRandom([]))
 
     target_combatant = mock_channel.call_args.args[1]
-    assert target_combatant.blocked_from_cast_and_archery is True
+    assert target_combatant.blocked_from_cast is True
+    assert target_combatant.blocked_from_archery is True
+
+
+def test_execute_challenge_cast_hand_of_death_artificial_organs_blocks_cast_only():
+    # Phase 889: Discovery.ARTIFICIAL_ORGANS's own second real clause --
+    # "No damage is caused to the target, and archery can be used (but
+    # not spells.)" -- relaxes only the archery half of the baseline
+    # block for a target whose own Kingdom holds it.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    state.kingdoms[2].discoveries.add(Discovery.ARTIFICIAL_ORGANS)
+    request = _cast_request(2, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    target_combatant = mock_channel.call_args.args[1]
+    assert target_combatant.blocked_from_cast is True
+    assert target_combatant.blocked_from_archery is False
 
 
 def test_execute_challenge_cast_mirror_image_caster_wins():
@@ -3795,17 +3820,17 @@ def test_resolve_challenge_combat_without_short_range_archery_still_blocks_shoot
     assert mock_duel.called  # falls through to the atomic fallback afterward
 
 
-# -- Phase 887: Combatant.blocked_from_cast_and_archery now gates SHOOT --
+# -- Phase 887: Combatant.blocked_from_archery now gates SHOOT --
 
 
 def test_resolve_challenge_combat_shoot_is_refused_for_a_blocked_caster_at_spell_range():
     # Real, pre-existing bug found while wiring Hand of Death's own
-    # baseline archery block: this branch never consulted
-    # blocked_from_cast_and_archery at all before this phase, so
-    # Spiritwrack's own already-shipped "cannot ... shoot with a bow"
-    # restriction silently never took effect here.
+    # baseline archery block: this branch never consulted the block
+    # flag at all before this phase, so Spiritwrack's own already-
+    # shipped "cannot ... shoot with a bow" restriction silently never
+    # took effect here.
     state, caster_leader, caster, target_leader, target = _combatants()
-    caster.blocked_from_cast_and_archery = True
+    caster.blocked_from_archery = True
     tactics = [SearchTactic(Maneuver.SHOOT)]
 
     with patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
@@ -3822,7 +3847,7 @@ def test_resolve_challenge_combat_long_range_archery_is_refused_for_a_blocked_ca
     # runs before Long Range Archery's own eligibility check.
     state, caster_leader, caster, target_leader, target = _combatants()
     caster_leader.advanced_abilities.add(AdvancedAbility.LONG_RANGE_ARCHERY)
-    caster.blocked_from_cast_and_archery = True
+    caster.blocked_from_archery = True
     tactics = [SearchTactic(Maneuver.SHOOT)]
 
     with patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
@@ -3840,7 +3865,7 @@ def test_resolve_challenge_combat_short_range_archery_is_refused_for_a_blocked_c
     state, caster_leader, caster, target_leader, target = _combatants(
         caster_kwargs={"advanced_abilities": {AdvancedAbility.SHORT_RANGE_ARCHERY}}
     )
-    caster.blocked_from_cast_and_archery = True
+    caster.blocked_from_archery = True
     tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.SHOOT)]
 
     with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(

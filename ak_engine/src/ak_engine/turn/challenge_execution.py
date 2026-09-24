@@ -325,6 +325,7 @@ from ak_engine.turn.encounter import (
     apply_temper_melee_setup,
     archery_free_attack_bonus,
     blocks_cast_and_archery,
+    hand_of_death_cast_and_archery_block,
     bow_of_elven_kings_archery_damage_bonus,
     bow_of_elven_kings_archery_hit_multiplier,
     control_undead_anti_holy_resist_chance,
@@ -795,7 +796,7 @@ def _resolve_personal_combat_cast(
     project.
     """
 
-    if caster.blocked_from_cast_and_archery:
+    if caster.blocked_from_cast:
         return None
     if caster_leader is None:
         return None
@@ -992,7 +993,7 @@ def _resolve_personal_combat_cast(
         target.melee_damage_dealt_reduction += spiritwrack_melee_damage_reduction(
             level, rng, target_is_immune=target_is_immune, target_is_animal_intelligence=False
         )
-        target.blocked_from_cast_and_archery = blocks_cast_and_archery(target_is_immune=target_is_immune)
+        target.blocked_from_cast = target.blocked_from_archery = blocks_cast_and_archery(target_is_immune=target_is_immune)
         return None
 
     if spell is Spell.PSYCHIC_BLAST:
@@ -1080,24 +1081,27 @@ def _resolve_personal_combat_cast(
                 Alignment.UNDEAD,
                 Alignment.ANTI_HOLY,
             )
-        # Phase 887: Hand of Death's own baseline "victim cannot cast
-        # spells nor shoot with a bow" restriction -- confirmed word-
-        # for-word identical to Spiritwrack's own victim effect (turn/
-        # encounter.py blocks_cast_and_archery()'s own Phase 190 rename/
-        # citation: "Hand of Death was confirmed to share this exact
-        # same victim effect, word for word") -- but never actually
-        # threaded into this call site (flagged as a real, separate gap
-        # at Phase 884). Reuses the exact same target_is_immune value
-        # the channel's own damage effect already uses just above: a
-        # target ENHANCED_COMBAT_NE_SPELLS makes non-immune to the
-        # squeeze is equally non-immune to this baseline block.
-        target.blocked_from_cast_and_archery = blocks_cast_and_archery(target_is_immune=target_is_immune)
         # Phase 884: Discovery.ARTIFICIAL_ORGANS -- zeroes the caster's
         # own squeeze damage for a target whose own Kingdom holds it
         # (the channel itself still runs; see turn/encounter.py
-        # roll_hand_of_death_damage()'s own Phase 884 addendum).
+        # roll_hand_of_death_damage()'s own Phase 884 addendum). Also
+        # (Phase 889) relaxes the archery half of the baseline block
+        # right below, per the Discovery's own real second clause.
         target_kingdom = state.kingdoms.get(target_leader.kingdom_id) if target_leader is not None else None
         target_has_artificial_organs = target_kingdom is not None and Discovery.ARTIFICIAL_ORGANS in target_kingdom.discoveries
+        # Phase 887/889: Hand of Death's own baseline "victim cannot cast
+        # spells nor shoot with a bow" restriction -- confirmed word-
+        # for-word identical to Spiritwrack's own victim effect (turn/
+        # encounter.py blocks_cast_and_archery()'s own Phase 190 rename/
+        # citation) -- narrowed by Discovery.ARTIFICIAL_ORGANS's own
+        # real "archery can be used (but not spells)" clause via
+        # hand_of_death_cast_and_archery_block(). Reuses the exact same
+        # target_is_immune value the channel's own damage effect uses
+        # just above: a target ENHANCED_COMBAT_NE_SPELLS makes non-
+        # immune to the squeeze is equally non-immune to this block.
+        target.blocked_from_cast, target.blocked_from_archery = hand_of_death_cast_and_archery_block(
+            target_is_immune, target_has_artificial_organs
+        )
         channel_result = resolve_hand_of_death_channel(
             caster, target, level, rng, target_is_immune=target_is_immune, target_has_artificial_organs=target_has_artificial_organs
         )
@@ -2042,17 +2046,17 @@ def resolve_challenge_combat(
                 # reactive Melee swing against the archer first (the
                 # user's own confirmed design choice, extending that
                 # established pattern to this ability). Phase 887: gated
-                # on `not caster.blocked_from_cast_and_archery` too --
-                # Spiritwrack/Hand of Death's own "cannot ... shoot with a
-                # bow" victim effect, mirroring turn/search_execution.py's
-                # own equivalent branch exactly (a real, pre-existing gap
-                # in this file found while wiring Hand of Death's own
+                # on `not caster.blocked_from_archery` too -- Spiritwrack/
+                # Hand of Death's own "cannot ... shoot with a bow" victim
+                # effect, mirroring turn/search_execution.py's own
+                # equivalent branch exactly (a real, pre-existing gap in
+                # this file found while wiring Hand of Death's own
                 # archery block: this branch never consulted the flag at
                 # all before this phase, so Spiritwrack's own already-
                 # shipped restriction silently never blocked Short Range
                 # Archery here).
                 if (
-                    not caster.blocked_from_cast_and_archery
+                    not caster.blocked_from_archery
                     and caster_leader is not None
                     and AdvancedAbility.SHORT_RANGE_ARCHERY in caster_leader.advanced_abilities
                 ):
@@ -2079,7 +2083,7 @@ def resolve_challenge_combat(
             # the Melee-Range branch above, checked before Long Range
             # Archery's own eligibility so a blocked caster can't reach
             # that branch either.
-            if caster.blocked_from_cast_and_archery:
+            if caster.blocked_from_archery:
                 continue
             # Phase 700: AdvancedAbility.LONG_RANGE_ARCHERY -- "may now
             # use the Fire tactic at Spell Range, with half the normal

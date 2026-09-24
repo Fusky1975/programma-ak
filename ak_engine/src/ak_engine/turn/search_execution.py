@@ -308,7 +308,7 @@ mechanic" is now corrected below.
   attempted (the new ``cast_attempt_applied`` flag, set the instant
   ``_resolve_cast_tactic()`` gets past every precondition check -- Spell
   Undead-target eligibility, Illusory Hero's own known-level gate,
-  ``blocked_from_cast_and_archery`` -- regardless of the spell's own
+  ``blocked_from_cast`` -- regardless of the spell's own
   further success/failure branches beyond that point), not on a
   rejected/ineligible target -- the same "spend only on a genuine cast"
   rule ``execute_use_mi()``'s own wand branch already follows.
@@ -590,6 +590,7 @@ from ak_engine.turn.encounter import (
     apply_temper_melee_setup,
     archery_free_attack_bonus,
     blocks_cast_and_archery,
+    hand_of_death_cast_and_archery_block,
     bow_of_elven_kings_archery_damage_bonus,
     bow_of_elven_kings_archery_hit_multiplier,
     melee_mastery_damage_bonus,
@@ -1810,7 +1811,7 @@ def _resolve_search_encounter(
 
         caster = leader_combatant if caster_is_leader else monster_combatant
         target = monster_combatant if caster_is_leader else leader_combatant
-        if caster.blocked_from_cast_and_archery:
+        if caster.blocked_from_cast:
             return None
         try:
             spell = Spell(tactic.sub_object)
@@ -1870,8 +1871,7 @@ def _resolve_search_encounter(
         # success rule (`forced_level is not None` below) -- a wand
         # can't cast a spell school the location itself blocks. No roll,
         # no `cast_attempt_applied`, same "ineligible means nothing
-        # happened" shape as `caster.blocked_from_cast_and_archery`
-        # above.
+        # happened" shape as `caster.blocked_from_cast` above.
         if feature_power_event.power is Power.DAMP_COLLEGE and ability is feature_power_event.ability_parameter:
             return None
 
@@ -2067,7 +2067,7 @@ def _resolve_search_encounter(
             target.melee_damage_dealt_reduction += spiritwrack_melee_damage_reduction(
                 level, rng, target_is_immune=target_is_immune, target_is_animal_intelligence=target_is_animal
             )
-            target.blocked_from_cast_and_archery = blocks_cast_and_archery(target_is_immune=target_is_immune)
+            target.blocked_from_cast = target.blocked_from_archery = blocks_cast_and_archery(target_is_immune=target_is_immune)
             return None
 
         if spell is Spell.PSYCHIC_BLAST:
@@ -2208,22 +2208,26 @@ def _resolve_search_encounter(
                     target_is_immune = monster_species in HAND_OF_DEATH_IMMUNE_MONSTERS
             else:
                 target_is_immune = leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY)
-            # Phase 887: Hand of Death's own baseline "victim cannot cast
-            # spells nor shoot with a bow" restriction -- confirmed word-
-            # for-word identical to Spiritwrack's own victim effect (the
-            # Spiritwrack branch right above this one already sets this
-            # same field) -- but never actually threaded into this call
-            # site (flagged as a real, separate gap at Phase 884). Reuses
-            # the exact same target_is_immune value just computed above
-            # for both the target_is_monster and leader-target branches.
-            target.blocked_from_cast_and_archery = blocks_cast_and_archery(target_is_immune=target_is_immune)
             # Phase 884: Discovery.ARTIFICIAL_ORGANS -- zeroes the
             # caster's own squeeze damage for a leader target whose own
-            # Kingdom holds it (a monster target never has one). See
-            # turn/encounter.py roll_hand_of_death_damage()'s own
-            # Phase 884 addendum for what stays out of scope.
+            # Kingdom holds it (a monster target never has one). Also
+            # (Phase 889) relaxes the archery half of the baseline block
+            # right below, per the Discovery's own real second clause.
             target_kingdom = state.kingdoms.get(leader.kingdom_id) if not target_is_monster else None
             target_has_artificial_organs = target_kingdom is not None and Discovery.ARTIFICIAL_ORGANS in target_kingdom.discoveries
+            # Phase 887/889: Hand of Death's own baseline "victim cannot
+            # cast spells nor shoot with a bow" restriction -- confirmed
+            # word-for-word identical to Spiritwrack's own victim effect
+            # (the Spiritwrack branch right above this one already sets
+            # both fields the same way) -- narrowed by Discovery.
+            # ARTIFICIAL_ORGANS's own real "archery can be used (but not
+            # spells)" clause via hand_of_death_cast_and_archery_block().
+            # Reuses the exact same target_is_immune value just computed
+            # above for both the target_is_monster and leader-target
+            # branches.
+            target.blocked_from_cast, target.blocked_from_archery = hand_of_death_cast_and_archery_block(
+                target_is_immune, target_has_artificial_organs
+            )
             channel_result = resolve_hand_of_death_channel(
                 caster, target, level, rng, target_is_immune=target_is_immune, target_has_artificial_organs=target_has_artificial_organs
             )
@@ -3248,7 +3252,7 @@ def _resolve_search_encounter(
                 # swing pattern, lines above), then the shot itself
                 # resolves one-sided at normal accuracy.
                 if (
-                    not leader_combatant.blocked_from_cast_and_archery
+                    not leader_combatant.blocked_from_archery
                     and AdvancedAbility.SHORT_RANGE_ARCHERY in leader.advanced_abilities
                 ):
                     swing_result = resolve_reactive_melee_swing(monster_combatant, leader_combatant, rng)
@@ -3276,7 +3280,7 @@ def _resolve_search_encounter(
                         return outcome
                     continue
                 continue  # [5.0]: only spells or Melee are usable in the melee zone
-            if leader_combatant.blocked_from_cast_and_archery:
+            if leader_combatant.blocked_from_archery:
                 continue
             combat_attempted = True
             # Phase 719: AdvancedAbility.LONG_RANGE_ARCHERY -- "may now use
@@ -3298,15 +3302,15 @@ def _resolve_search_encounter(
             continue  # free attacks exhausted, nobody dead -- fall through
         if tactic.maneuver is Maneuver.MELEE:
             combat_attempted = True
-            # Phase 887: a monster blocked_from_cast_and_archery (a
-            # leader's own Spiritwrack/Hand of Death cast on it earlier
-            # in the same encounter) no longer preempts with its own
-            # canned Fire Arrow tactic either -- the identical rule this
-            # phase already wires for the leader's own SHOOT tactic
-            # (this file's own gate a few lines above, and turn/
-            # challenge_execution.py's newly-fixed equivalent), applied
-            # here to the guardian's own monster_wants_shoot trigger.
-            if monster_wants_shoot and not fire_arrow_resolved and not monster_combatant.blocked_from_cast_and_archery:
+            # Phase 887: a monster blocked_from_archery (a leader's own
+            # Spiritwrack/Hand of Death cast on it earlier in the same
+            # encounter) no longer preempts with its own canned Fire
+            # Arrow tactic either -- the identical rule this phase
+            # already wires for the leader's own SHOOT tactic (this
+            # file's own gate a few lines above, and turn/challenge_
+            # execution.py's newly-fixed equivalent), applied here to
+            # the guardian's own monster_wants_shoot trigger.
+            if monster_wants_shoot and not fire_arrow_resolved and not monster_combatant.blocked_from_archery:
                 outcome = _resolve_fire_arrow_phase()
                 if outcome is not None:
                     return outcome

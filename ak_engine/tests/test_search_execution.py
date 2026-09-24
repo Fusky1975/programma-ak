@@ -2085,7 +2085,8 @@ def test_execute_search_cast_spiritwrack_debuffs_the_target():
 
     monster_combatant = mock_melee.call_args[0][1]
     assert monster_combatant.melee_damage_dealt_reduction == 1
-    assert monster_combatant.blocked_from_cast_and_archery is True
+    assert monster_combatant.blocked_from_cast is True
+    assert monster_combatant.blocked_from_archery is True
 
 
 def test_execute_search_cast_psychic_blast_bonus_swing_can_end_the_encounter():
@@ -2637,7 +2638,7 @@ def test_execute_search_guardians_own_cast_resolves_before_the_first_real_combat
     assert not mock_melee.called
 
 
-def test_execute_search_blocked_from_cast_and_archery_skips_the_guardians_own_later_cast():
+def test_execute_search_blocked_from_cast_skips_the_guardians_own_later_cast():
     # The leader's own Spiritwrack lands on the guardian first (leader-CAST
     # resolves when the walk reaches it, before any guardian-CAST
     # injection); once the guardian is blocked, its own later Fireball
@@ -2789,7 +2790,8 @@ def test_execute_search_cast_hand_of_death_blocks_a_non_immune_monster_target_fr
         execute_search(state, LEADER_ID, request, random.Random(0))
 
     target_combatant = mock_channel.call_args.args[1]
-    assert target_combatant.blocked_from_cast_and_archery is True
+    assert target_combatant.blocked_from_cast is True
+    assert target_combatant.blocked_from_archery is True
 
 
 def test_execute_search_cast_hand_of_death_does_not_block_an_immune_monster_target():
@@ -2807,7 +2809,8 @@ def test_execute_search_cast_hand_of_death_does_not_block_an_immune_monster_targ
         execute_search(state, LEADER_ID, request, random.Random(0))
 
     target_combatant = mock_channel.call_args.args[1]
-    assert target_combatant.blocked_from_cast_and_archery is False
+    assert target_combatant.blocked_from_cast is False
+    assert target_combatant.blocked_from_archery is False
 
 
 def test_execute_search_monster_cast_hand_of_death_blocks_a_non_immune_leader_target():
@@ -2829,10 +2832,39 @@ def test_execute_search_monster_cast_hand_of_death_blocks_a_non_immune_leader_ta
         execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
 
     target_combatant = mock_channel.call_args.args[1]
-    assert target_combatant.blocked_from_cast_and_archery is True
+    assert target_combatant.blocked_from_cast is True
+    assert target_combatant.blocked_from_archery is True
 
 
-def test_execute_search_monster_wanting_shoot_is_refused_once_blocked_from_cast_and_archery():
+def test_execute_search_cast_hand_of_death_artificial_organs_blocks_cast_only():
+    # Phase 889: Discovery.ARTIFICIAL_ORGANS's own second real clause --
+    # "No damage is caused to the target, and archery can be used (but
+    # not spells.)" -- relaxes only the archery half of the baseline
+    # block for a leader target whose own Kingdom holds it.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Searchia", Race.HUMAN, Alignment.GOOD, LOCATION))
+    state.kingdoms[1].discoveries.add(Discovery.ARTIFICIAL_ORGANS)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_hand_of_death_channel") as mock_channel, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.HAND_OF_DEATH.value),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        )
+        mock_channel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    target_combatant = mock_channel.call_args.args[1]
+    assert target_combatant.blocked_from_cast is True
+    assert target_combatant.blocked_from_archery is False
+
+
+def test_execute_search_monster_wanting_shoot_is_refused_once_blocked_from_archery():
     # A monster the leader's own earlier Hand of Death cast has blocked
     # from cast and archery no longer gets its own canned Fire Arrow
     # preemption either -- the identical rule this phase already wires

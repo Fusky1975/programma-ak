@@ -1996,7 +1996,8 @@ def test_combatant_phase_209_fields_default_to_no_op():
     c = Combatant("A")
     assert c.defensive_hit_multiplier == 1.0
     assert c.melee_damage_dealt_reduction == 0
-    assert c.blocked_from_cast_and_archery is False
+    assert c.blocked_from_cast is False
+    assert c.blocked_from_archery is False
     assert c.bonus_unanswered_attacks == 0
 
 
