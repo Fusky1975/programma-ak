@@ -121,14 +121,27 @@ artificial_organs` flag zeroes the caster's own squeeze damage for a
 target whose own Kingdom holds it, checked at the same two real
 Hand-of-Death-cast sites. Unlike full immunity, the channel itself
 still runs (the victim's own halved-hit-chance Melee counter-attack
-can still end it) -- only the damage is zeroed. The Discovery's own
-second clause ("archery can be used, but not spells") is deliberately
-NOT wired: Hand of Death's own baseline "victim cannot cast spells nor
-shoot with a bow" restriction is itself never threaded into `Combatant.
-blocked_from_cast_and_archery` for this spell in either real call site
-(confirmed by direct grep, unlike Spiritwrack's own sites) -- a real,
-separate, pre-existing gap this ward's own wiring doesn't invent a
-baseline for. **Phase 885**: `FLOOD_DAMS` (Flood) is now wired too --
+can still end it) -- only the damage is zeroed. **Phase 887**: Hand of
+Death's own baseline "victim cannot cast spells nor shoot with a bow"
+restriction (word-for-word identical to Spiritwrack's own victim
+effect) is now wired too, at both real call sites, reusing the exact
+same `blocks_cast_and_archery()` helper Spiritwrack's own sites already
+call -- closing the "confirmed by direct grep, unlike Spiritwrack's own
+sites" gap flagged at Phase 884. Investigating this also found and
+fixed a real, pre-existing bug in already-shipped code: `turn/
+challenge_execution.py`'s own `Maneuver.SHOOT` dispatch never consulted
+`Combatant.blocked_from_cast_and_archery` at all (unlike its sibling in
+`turn/search_execution.py`), so Spiritwrack's own already-shipped
+archery half silently never took effect there -- fixed at the same
+time. The Discovery's own SECOND, narrower clause -- "archery can be
+used (but not spells)" for a target the Discovery itself protects --
+is still deliberately NOT wired: `Combatant.blocked_from_cast_and_
+archery` is a single boolean gating both actions identically, and this
+clause needs the two split apart (spells still blocked, archery
+specifically exempted) for exactly this one Discovery -- a real,
+separate, larger follow-up (splitting the field, or adding a second
+"archery-only" flag) is needed to represent it, not attempted here.
+**Phase 885**: `FLOOD_DAMS` (Flood) is now wired too --
 `turn/cast_execution.py FLOOD_DAMS_MOVEMENT_POINT_PENALTY`, deducting
 1 movement point once, immediately, from every land army already
 standing in a successfully-Flooded province owned by a Kingdom holding

@@ -2421,16 +2421,20 @@ def roll_hand_of_death_damage(
     concentration when hit" rule, both still apply unchanged. Only
     the caster's own squeeze damage is zeroed every round -- a
     Discovery-holding Kingdom's character can never be killed by Hand
-    of Death, but the caster is still exposed to being hit back. The
-    Discovery's own "archery can still be used" clause is deliberately
-    NOT wired here: Hand of Death's own baseline "victim cannot cast
-    spells nor shoot with a bow" restriction (module docstring's own
-    Phase 190 addendum) is itself never threaded into ``Combatant.
-    blocked_from_cast_and_archery`` for this spell in either real
-    caller (confirmed by direct grep, unlike Spiritwrack's own call
-    sites) -- a real, separate, pre-existing gap, not something this
-    ward's own wiring should silently paper over by inventing the
-    baseline mechanic it's supposed to relax.
+    of Death, but the caster is still exposed to being hit back.
+
+    Phase 887: Hand of Death's own baseline "victim cannot cast spells
+    nor shoot with a bow" restriction (module docstring's own Phase 190
+    addendum) is now wired at both real callers too, via ``Combatant.
+    blocked_from_cast_and_archery = blocks_cast_and_archery(target_is_
+    immune=target_is_immune)`` -- the exact same helper/pattern
+    Spiritwrack's own call sites already use. The Discovery's own
+    narrower "archery can still be used (but not spells)" exemption is
+    still NOT wired: ``blocked_from_cast_and_archery`` is one boolean
+    covering both actions identically, and this Discovery specifically
+    needs the two split apart (spells still blocked, archery exempted)
+    -- a real, separate, larger follow-up (splitting the field), not
+    attempted here.
     """
 
     if target_is_immune or target_has_artificial_organs:

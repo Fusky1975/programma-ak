@@ -2773,6 +2773,89 @@ def test_execute_search_cast_hand_of_death_target_is_monster_never_has_artificia
     assert mock_channel.call_args.kwargs["target_has_artificial_organs"] is False
 
 
+def test_execute_search_cast_hand_of_death_blocks_a_non_immune_monster_target_from_cast_and_archery():
+    # Phase 887: Hand of Death's own baseline "victim cannot cast spells
+    # nor shoot with a bow" restriction -- word for word identical to
+    # Spiritwrack's own already-wired victim effect -- was never threaded
+    # into this call site (flagged at Phase 884).
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    target_combatant = mock_channel.call_args.args[1]
+    assert target_combatant.blocked_from_cast_and_archery is True
+
+
+def test_execute_search_cast_hand_of_death_does_not_block_an_immune_monster_target():
+    # Vampire is immune (Undead), same fixture as the immune-flag test
+    # above -- the identical target_is_immune value gates both effects.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.VAMPIRE))
+    request = _cast_request(1, Spell.HAND_OF_DEATH, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
+    ) as mock_channel, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_channel.return_value = EncounterCombatResult(winner=None, rounds=0)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    target_combatant = mock_channel.call_args.args[1]
+    assert target_combatant.blocked_from_cast_and_archery is False
+
+
+def test_execute_search_monster_cast_hand_of_death_blocks_a_non_immune_leader_target():
+    # Mirror of the above for the monster-casts-on-leader direction.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_hand_of_death_channel") as mock_channel, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.HAND_OF_DEATH.value),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        )
+        mock_channel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    target_combatant = mock_channel.call_args.args[1]
+    assert target_combatant.blocked_from_cast_and_archery is True
+
+
+def test_execute_search_monster_wanting_shoot_is_refused_once_blocked_from_cast_and_archery():
+    # A monster the leader's own earlier Hand of Death cast has blocked
+    # from cast and archery no longer gets its own canned Fire Arrow
+    # preemption either -- the identical rule this phase already wires
+    # for the leader's own SHOOT tactic (Phase 719's own gate a few
+    # lines above `monster_wants_shoot` in the source, unaffected here).
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HAND_OF_DEATH, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_hand_of_death_channel") as mock_channel, patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel"
+    ) as mock_shoot, patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_roll.return_value = (SearchTactic(maneuver=Maneuver.SHOOT),)
+        mock_channel.return_value = EncounterCombatResult(winner=None, rounds=0)
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_shoot.called
+    assert mock_melee.called
+
+
 def test_execute_search_cast_hand_of_death_rolls_the_necromancy_skill_level():
     leader = _skilled_leader(Ability.NECROMANCY, 4)
     state = GameState()

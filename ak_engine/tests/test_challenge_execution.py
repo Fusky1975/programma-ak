@@ -1556,6 +1556,67 @@ def test_execute_challenge_cast_hand_of_death_target_kingdom_without_artificial_
     assert mock_channel.call_args.kwargs["target_has_artificial_organs"] is False
 
 
+def test_execute_challenge_cast_hand_of_death_blocks_a_non_immune_target_from_cast_and_archery():
+    # Phase 887: Hand of Death's own baseline "victim cannot cast spells
+    # nor shoot with a bow" restriction -- word for word identical to
+    # Spiritwrack's own already-wired victim effect -- was never threaded
+    # into either real call site (flagged at Phase 884). The target
+    # Combatant passed to the (mocked) channel is the same object the
+    # real function already mutated one line earlier.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    target_combatant = mock_channel.call_args.args[1]
+    assert target_combatant.blocked_from_cast_and_archery is True
+
+
+def test_execute_challenge_cast_hand_of_death_does_not_block_an_immune_target():
+    # An Undead target (immune to the squeeze itself, no Enhanced Combat
+    # NE Spells) is equally immune to the baseline block -- the exact
+    # same target_is_immune value gates both effects.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.UNDEAD))
+    request = _cast_request(2, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    target_combatant = mock_channel.call_args.args[1]
+    assert target_combatant.blocked_from_cast_and_archery is False
+
+
+def test_execute_challenge_cast_hand_of_death_enhanced_ability_still_blocks_an_undead_target():
+    # AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS overrides target_is_immune
+    # to False for an Undead target -- the baseline block follows suit.
+    state = _base_state()
+    caster = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9))
+    caster.advanced_abilities.add(AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS)
+    state.add_leader(caster)
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.UNDEAD))
+    request = _cast_request(2, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    target_combatant = mock_channel.call_args.args[1]
+    assert target_combatant.blocked_from_cast_and_archery is True
+
+
 def test_execute_challenge_cast_mirror_image_caster_wins():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.ILLUSION, 4, 9)))
@@ -3732,6 +3793,67 @@ def test_resolve_challenge_combat_without_short_range_archery_still_blocks_shoot
 
     assert not mock_shoot.called
     assert mock_duel.called  # falls through to the atomic fallback afterward
+
+
+# -- Phase 887: Combatant.blocked_from_cast_and_archery now gates SHOOT --
+
+
+def test_resolve_challenge_combat_shoot_is_refused_for_a_blocked_caster_at_spell_range():
+    # Real, pre-existing bug found while wiring Hand of Death's own
+    # baseline archery block: this branch never consulted
+    # blocked_from_cast_and_archery at all before this phase, so
+    # Spiritwrack's own already-shipped "cannot ... shoot with a bow"
+    # restriction silently never took effect here.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    caster.blocked_from_cast_and_archery = True
+    tactics = [SearchTactic(Maneuver.SHOOT)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert not mock_shoot.called
+
+
+def test_resolve_challenge_combat_long_range_archery_is_refused_for_a_blocked_caster():
+    # Holding the ability doesn't bypass the block either -- the check
+    # runs before Long Range Archery's own eligibility check.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    caster_leader.advanced_abilities.add(AdvancedAbility.LONG_RANGE_ARCHERY)
+    caster.blocked_from_cast_and_archery = True
+    tactics = [SearchTactic(Maneuver.SHOOT)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert not mock_shoot.called
+
+
+def test_resolve_challenge_combat_short_range_archery_is_refused_for_a_blocked_caster():
+    # Same block at Melee Range too, before Short Range Archery's own
+    # reactive-swing-then-shot branch ever gets a chance to run.
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"advanced_abilities": {AdvancedAbility.SHORT_RANGE_ARCHERY}}
+    )
+    caster.blocked_from_cast_and_archery = True
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.SHOOT)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing"
+    ) as mock_swing, patch("ak_engine.turn.challenge_execution.resolve_fire_arrow_duel") as mock_shoot, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel"
+    ) as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert not mock_swing.called
+    assert not mock_shoot.called
 
 
 # -- Phase 702: AdvancedAbility.THIEF_TREASURY_RAIDS ---------------------

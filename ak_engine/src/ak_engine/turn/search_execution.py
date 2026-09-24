@@ -2208,6 +2208,15 @@ def _resolve_search_encounter(
                     target_is_immune = monster_species in HAND_OF_DEATH_IMMUNE_MONSTERS
             else:
                 target_is_immune = leader.alignment in (Alignment.UNDEAD, Alignment.ANTI_HOLY)
+            # Phase 887: Hand of Death's own baseline "victim cannot cast
+            # spells nor shoot with a bow" restriction -- confirmed word-
+            # for-word identical to Spiritwrack's own victim effect (the
+            # Spiritwrack branch right above this one already sets this
+            # same field) -- but never actually threaded into this call
+            # site (flagged as a real, separate gap at Phase 884). Reuses
+            # the exact same target_is_immune value just computed above
+            # for both the target_is_monster and leader-target branches.
+            target.blocked_from_cast_and_archery = blocks_cast_and_archery(target_is_immune=target_is_immune)
             # Phase 884: Discovery.ARTIFICIAL_ORGANS -- zeroes the
             # caster's own squeeze damage for a leader target whose own
             # Kingdom holds it (a monster target never has one). See
@@ -3289,7 +3298,15 @@ def _resolve_search_encounter(
             continue  # free attacks exhausted, nobody dead -- fall through
         if tactic.maneuver is Maneuver.MELEE:
             combat_attempted = True
-            if monster_wants_shoot and not fire_arrow_resolved:
+            # Phase 887: a monster blocked_from_cast_and_archery (a
+            # leader's own Spiritwrack/Hand of Death cast on it earlier
+            # in the same encounter) no longer preempts with its own
+            # canned Fire Arrow tactic either -- the identical rule this
+            # phase already wires for the leader's own SHOOT tactic
+            # (this file's own gate a few lines above, and turn/
+            # challenge_execution.py's newly-fixed equivalent), applied
+            # here to the guardian's own monster_wants_shoot trigger.
+            if monster_wants_shoot and not fire_arrow_resolved and not monster_combatant.blocked_from_cast_and_archery:
                 outcome = _resolve_fire_arrow_phase()
                 if outcome is not None:
                     return outcome
