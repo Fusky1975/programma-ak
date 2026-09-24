@@ -346,6 +346,18 @@ class BattleReport:
     # later" lesson `retreat_destination_coord` above already applies).
     attacker_home_province_leader_ids: list[int] = field(default_factory=list)
     defender_home_province_leader_ids: list[int] = field(default_factory=list)
+    # Phase 895 -- SAY.PAS `Check_BFace`'s own `_ARFan` branch (`RACE.X2`,
+    # `models/race.py RACE_FANATICISM_TITLE`): every army that actually
+    # rolled a *successful* race-loyalty-title fanaticism check (`turn/
+    # strength.py roll_title_fanaticism()`, Phase 390) this battle, as
+    # `(army_id, race, title_holder_leader_id)` -- recorded at the moment
+    # of the roll in `_build_battle_units()`, not re-derived later, since
+    # the army can be destroyed in this very battle before any report
+    # ever reads `state.armies` again (the same lesson `attacker_home_
+    # province_leader_ids` above already applies). Empty whenever
+    # `apply_fanaticism` is off or no title-race match ever rolled.
+    attacker_race_fanatic_units: tuple[tuple[int, Race, int], ...] = ()
+    defender_race_fanatic_units: tuple[tuple[int, Race, int], ...] = ()
 
 
 def _build_battle_units(
@@ -367,6 +379,7 @@ def _build_battle_units(
     duellist_side: bool = False,
     alignment_king_office: Office | None = None,
     explorer_find_water: bool = False,
+    race_fanatic_units: list[tuple[int, Race, int]] | None = None,
 ) -> list[BattleUnit]:
     """Build BattleUnits for one side of a battle at ``province_coord``.
 
@@ -483,6 +496,17 @@ def _build_battle_units(
     report (2).md``, the report this project is currently working
     through) and names a title this project hasn't otherwise identified
     yet -- a separate, still-open follow-up.
+
+    **``race_fanatic_units`` (Phase 895)**: an optional caller-supplied
+    list, appended to (never read) each time the title-based roll above
+    actually *succeeds* -- ``(army.army_id, kingdom.race, army.
+    commanded_by)``. ``fight_battle()`` uses this to populate
+    ``BattleReport.attacker_race_fanatic_units``/``defender_race_
+    fanatic_units`` so ``report/turn_report.py``'s own ``RACE_
+    FANATICISM_TITLE`` (``models/race.py``, real ``RACE.X2`` text sourced
+    since Phase 100, never called from anywhere until now) can finally
+    narrate it. ``None`` (the default, every pre-Phase-895 caller) simply
+    skips the append -- no behavior change to the roll itself.
 
     **Druidic ability** (Phase 41, rulebook [4.32]): a *led* army
     (``commanded_by`` is not ``None``) whose commander leads a race
@@ -763,6 +787,8 @@ def _build_battle_units(
             title_office = RACE_TITLE_OFFICE.get(kingdom.race)
             if title_office is not None and _title_holder_leader_id(title_office) == army.commanded_by:
                 is_fanatical = roll_title_fanaticism(title_office, rng)
+                if is_fanatical and race_fanatic_units is not None:
+                    race_fanatic_units.append((army.army_id, kingdom.race, army.commanded_by))
         druidic_shortfall = druidic_shortfall_for(army, state, kingdom.race, province_coord)
         phantasmal_armies_level = _phantasmal_armies_level_for(army, state)
         mystic_winds_active = mystic_winds_active_for(army, state)
@@ -2475,6 +2501,11 @@ def fight_battle(
         state, province_coord, defender_kingdom_ids, AdvancedAbility.EXPLORER_FIND_WATER
     )
 
+    # Phase 895: populated only when the title-fanaticism roll below
+    # actually succeeds for a given army -- see _build_battle_units()'s
+    # own docstring addendum.
+    attacker_race_fanatic_units: list[tuple[int, Race, int]] = []
+    defender_race_fanatic_units: list[tuple[int, Race, int]] = []
     attacker_units = _build_battle_units(
         attacker_armies, state, is_defender=False, terrain=terrain, province_coord=province_coord, rng=rng,
         combat_ability_level=attacker_ability_level, combat_ability_mastery_bonus=attacker_mastery_bonus,
@@ -2486,6 +2517,7 @@ def fight_battle(
         duellist_side=attacker_is_duellist_side,
         alignment_king_office=attacker_alignment_king_office,
         explorer_find_water=attacker_find_water,
+        race_fanatic_units=attacker_race_fanatic_units,
     )
     defender_units = _build_battle_units(
         defender_armies, state, is_defender=True, terrain=terrain, province_coord=province_coord, rng=rng,
@@ -2498,6 +2530,7 @@ def fight_battle(
         duellist_side=defender_is_duellist_side,
         alignment_king_office=defender_alignment_king_office,
         explorer_find_water=defender_find_water,
+        race_fanatic_units=defender_race_fanatic_units,
     )
 
     # Phase 393: Dragon/Eagle/Whale summoning-item aid, checked for both
@@ -2622,6 +2655,8 @@ def fight_battle(
         defender_monster_assistance=defender_monster_assistance,
         attacker_present_leader_ids=attacker_present_leader_ids,
         defender_present_leader_ids=defender_present_leader_ids,
+        attacker_race_fanatic_units=tuple(attacker_race_fanatic_units),
+        defender_race_fanatic_units=tuple(defender_race_fanatic_units),
     )
 
     _record_battle_merit(

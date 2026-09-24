@@ -1571,6 +1571,101 @@ def test_build_battle_units_title_fanaticism_off_by_default_never_touches_a_seco
     assert units[0].effective_strength == baseline
 
 
+def test_build_battle_units_race_fanatic_units_records_a_real_success():
+    state, army = _human_king_state()
+    collected: list[tuple[int, Race, int]] = []
+
+    _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=ScriptedRandom([0.99, 0.1]), apply_fanaticism=True, race_fanatic_units=collected,
+    )
+
+    assert collected == [(101, Race.HUMAN, 501)]
+
+
+def test_build_battle_units_race_fanatic_units_stays_empty_on_a_failed_roll():
+    state, army = _human_king_state()
+    collected: list[tuple[int, Race, int]] = []
+
+    _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=ScriptedRandom([0.99, 0.9]), apply_fanaticism=True, race_fanatic_units=collected,
+    )
+
+    assert collected == []
+
+
+def test_build_battle_units_race_fanatic_units_none_default_is_a_no_op():
+    # Every existing caller (the 4 tests above included) omits this
+    # parameter entirely -- confirms the default doesn't try to append
+    # to anything and doesn't change the roll itself.
+    state, army = _human_king_state()
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=ScriptedRandom([0.99, 0.1]), apply_fanaticism=True,
+    )
+
+    fanatical_strength = compute_effective_strength(
+        ArmyType.BOWMEN, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, is_fanatical=True
+    )
+    assert units[0].effective_strength == fanatical_strength
+
+
+def test_fight_battle_records_race_fanatic_units_end_to_end():
+    # Two leading draws (attacker army: alignment fails via NEUTRAL's own
+    # 0% chance, then the title roll succeeds at 20%) before the rest of
+    # the padded sequence takes over -- the defender's own uncommanded
+    # GARRISON army consumes one more (alignment-only) draw and never
+    # reaches the title check at all.
+    state = GameState()
+    state.turn_number = 4  # HUMAN_KING's own turn gate (RACE_TITLE_TURN_GATE)
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    king = LeaderState(
+        501, kingdom_id=1, name="King", location=FIELD, race=Race.HUMAN, is_king=True,
+        race_title_tally={Race.HUMAN: RaceTitleTally(front_line_battles_won_points=10)},
+    )
+    state.add_leader(king)
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD))
+    rng = ScriptedRandom([0.99, 0.1] + [0.9] * 30, choice_indices=[0] * 10)
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+        apply_fanaticism=True, rng=rng,
+    )
+
+    assert report.attacker_race_fanatic_units == ((101, Race.HUMAN, 501),)
+    assert report.defender_race_fanatic_units == ()
+
+
+def test_fight_battle_race_fanatic_units_empty_when_apply_fanaticism_is_off():
+    state = GameState()
+    state.turn_number = 4
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    king = LeaderState(
+        501, kingdom_id=1, name="King", location=FIELD, race=Race.HUMAN, is_king=True,
+        race_title_tally={Race.HUMAN: RaceTitleTally(front_line_battles_won_points=10)},
+    )
+    state.add_leader(king)
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD, commanded_by=501))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD))
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+        rng=_generously_padded_rng(),
+    )
+
+    assert report.attacker_race_fanatic_units == ()
+    assert report.defender_race_fanatic_units == ()
+
+
 # -- Duellist / "Captain of the Musketeers" (Phase 471) --------------------
 
 

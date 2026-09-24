@@ -49,9 +49,20 @@ wired to) the already-implemented **alignment-based** roll
 four sibling variants (`_AGFan`/`_AEFan` alignment-based via `Good_Fan`/
 `Evil_Fan`, `_ATFan` title-based via `GANG.X2`, `_ARFan` race-based via
 `RACE.X2`), selected by a story-code value this project doesn't decode.
-Only the raw template data is transcribed here, matching how every other
-`.X2`-sourced phase started; wiring `_ARFan`'s own selection condition
-and `GANG.X2`'s sibling table are left to a real follow-up phase.
+
+**Phase 895 wires `_ARFan` in full**, via a real, already-confirmed
+trigger this project independently built for an unrelated reason
+(Phase 390's own `turn/strength.py roll_title_fanaticism()`, live in
+production since Phase 744): whenever a directly-led army's own race
+matches a race-loyalty title its commander currently holds, and that
+army's independent title-based fanaticism roll succeeds,
+`turn/battle_orchestrator.py _build_battle_units()` now records it and
+`report/turn_report.py render_race_fanaticism()`/`describe_battle()`
+narrate it with this exact table's own text -- see that composer's own
+Phase 895 addendum. `GANG.X2`'s own sibling table (`_ATFan`, title-based
+fanaticism keyed by a title other than a race-loyalty one) stays a
+real, separate, still-unmodeled gap -- a different table entirely, not
+closed by this phase.
 
 **`Race.DROW`/`LIZARDMAN`/`GOBLIN` (Phase 383)**, found continuing to
 mine the AKGEN reverse-engineering material's own `tables.races` catalog

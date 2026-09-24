@@ -28,17 +28,25 @@ apparently a marker meaning "the containing geographic ``Feature`` counts
 as its own magic feature" (visiting the Feature itself *is* the magic
 landmark, no separate object to name), kept verbatim rather than guessed.
 
-**Confirmed real but deliberately out of scope for this phase**: `CTME.PAS`
-also declares `mf1`/`mff` (both `array[FeatureType] of magfeat` -- two
-separate per-``FeatureType`` magic-feature assignments, presumably a
-primary and a "false"/decoy choice used by the Search mechanic) and
-`mfpow1` (`array[magfeat] of power`, where `power` is `CTME.PAS`'s own
-rich effect-type enum: `NewSex, NewTemp, NewRace, UpSkill, UpApt, DnSkill,
-DnApt, DampCollege, DampMagic, WarpSpace, CastSpell, AnsPrayer, MapFeat,
-MapProv, SageDisc, ...`). Wiring any of this -- which magic feature a
-given `Feature` actually has, and what visiting it actually does -- needs
-real design work and is left to a real follow-up phase, matching how
-`models/discovery.py` (Phase 91) also stopped at vocabulary alone.
+**Stale-claim correction (Phase 895)**: this paragraph used to say
+`mf1`/`mff`/`mfpow1` and their real wiring into a Feature's own actual
+magic location/power were "left to a real follow-up phase" -- stale
+since Phase 361, whose own `worldgen/internal_magical_locations.py`
+already implements exactly this: `candidate_location()`/`resolve_
+visible_location()` realize `mf1[ftype] + ((feature_index + ftype) mod
+(mff[ftype] - mf1[ftype] + 1))` per `FeatureType` (`LOCATION_RANGE`,
+one first/last `MagicFeature` pair per type -- `mf1`/`mff` collapsed
+into a single inclusive range, not two independent assignments), and
+`candidate_power()`/`resolve_power()` realize `mfpow1`'s own formula
+against `models.power.Power` (`CTME.PAS`'s own `power` enum, already
+ported in full). `worldgen/generate_new_game.py` calls both and stores
+the result directly on `Feature.magic_location`/`.magic_power` for
+every real generated Feature. `turn/feature_power_execution.py` (Phase
+616-623) builds the full Feature -> Power system on top of that --
+every real `Power`'s condition/cost/effect is wired, including
+`MAP_PROV` (Phase 623, once `ProvinceState.known_to_kingdom()` gave it
+a real "known provinces" concept to reveal into). See that module's own
+docstring for the complete, closed picture.
 """
 
 from __future__ import annotations

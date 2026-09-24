@@ -1344,7 +1344,7 @@ from ak_engine.models.power import (
     PowerCondition,
 )
 from ak_engine.models.quote import quote_of_the_week
-from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
+from ak_engine.models.race import HUMANOID_RACES, RACE_FANATICISM_TITLE, RACE_NAME, Race
 from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.discovery import (
     DISCOVERY_NAME,
@@ -2580,6 +2580,13 @@ def describe_battle(
     (Phase 610) each surviving army's DECQ.X/INCQ.X quality-change
     sentence, via ``describe_quality_changes()``.
 
+    **Phase 895 -- ``_ARFan`` wiring.** ``render_race_fanaticism()``
+    (``models/race.py RACE_FANATICISM_TITLE``, sourced since Phase 100)
+    was never called from anywhere until now -- see this composer's own
+    Phase 895 addendum, right after the ``_BHome`` block, for the real
+    trigger (``BattleReport.attacker_race_fanatic_units``/``defender_
+    race_fanatic_units``) that finally reaches it.
+
     ``army_names`` (Phase 236) is synthesized internally via
     ``build_battle_army_names(state, battle_report)`` -- see that
     function's own docstring for the sourcing and the established
@@ -2710,6 +2717,31 @@ def describe_battle(
         commander_name = _leader_name(state, leader_id)
         if commander_name is not None:
             lines.append(render_homeland_defense_morale(commander_name, rng))
+
+    # Phase 895 -- _ARFan (SAY.PAS Check_BFace, RACE.X2): a race-loyalty
+    # title holder's own directly-led armies of the matching race have an
+    # independent, additive chance to become fanatical in battle (`turn/
+    # strength.py roll_title_fanaticism()`, Phase 390, real in production
+    # since Phase 744's `apply_fanaticism=True` wiring) -- `models/race.py
+    # RACE_FANATICISM_TITLE` has carried the real `RACE.X2` text since
+    # Phase 100 with zero callers anywhere until now. `BattleReport.
+    # attacker_race_fanatic_units`/`defender_race_fanatic_units` (Phase
+    # 895) record exactly which armies actually rolled the title-based
+    # success (not every army that merely qualified), captured in
+    # `_build_battle_units()` at the moment of the roll -- a fanatical
+    # army can be destroyed later in this very battle, the same "compute
+    # now, don't re-derive from state.armies later" lesson `attacker_
+    # home_province_leader_ids` above already applies. No real trigger
+    # call survives to confirm `_ARFan`'s exact position -- placed right
+    # after `_BHome`, its closest sibling (both narrate why an army's own
+    # strength was boosted this battle).
+    for army_id, race, title_holder_leader_id in (
+        battle_report.attacker_race_fanatic_units + battle_report.defender_race_fanatic_units
+    ):
+        army_name = army_names.get(army_id)
+        title_holder_name = _leader_name(state, title_holder_leader_id)
+        if army_name is not None and title_holder_name is not None:
+            lines.append(render_race_fanaticism(army_name, race, title_holder_name, rng))
 
     # Phase 739 -- _ADishK/_ADishF (SAY.PAS): the duel loser's own forces
     # become demoralized (rulebook [7.1]). No real trigger call survives
@@ -9581,6 +9613,23 @@ def render_homeland_defense_morale(commander_name: str, rng: random.Random) -> s
 
     values = {"<": commander_name}
     return render(HOMELAND_DEFENSE_MORALE_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/SAY.PAS Check_BFace's own `_ARFan` branch (RACE.X2,
+# `models/race.py RACE_FANATICISM_TITLE`) -- see this module's Phase 895
+# addendum on `describe_battle()` for the real trigger this now narrates.
+def render_race_fanaticism(army_name: str, race: Race, title_holder_name: str, rng: random.Random) -> str:
+    """Renders ``_ARFan``'s own real trailing clause: a race-loyalty
+    title holder inspires his own race's directly-led armies to
+    fanaticism in battle. The real text (``RACE_FANATICISM_TITLE``) is a
+    bare clause with no subject of its own -- concatenated directly
+    after the fanatical army's own name, the same two-``Say()``
+    concatenation already established for ``_BSpeech`` (Phase 126), not
+    rendered as a standalone sentence.
+    """
+
+    values = {"<": title_holder_name}
+    return f"{army_name}{render(RACE_FANATICISM_TITLE[race], values, rng=rng)}"
 
 
 # HostAK/TP/SAY.PAS _BRWeap -- a single, real, hardcoded template (no

@@ -296,6 +296,7 @@ from ak_engine.report.turn_report import (
     render_binoculars_preview,
     render_petrifying_gaze_missed,
     render_homeland_defense_morale,
+    render_race_fanaticism,
     render_oratory_speech,
     render_monster_threat_death,
     render_cast_announcement,
@@ -981,6 +982,83 @@ def test_describe_battle_omits_homeland_defense_morale_when_nobody_is_home():
     )
 
     assert lines == ["Aldric led Aldric's armies into the battle."]
+
+
+def test_describe_battle_renders_race_fanaticism_right_after_home_province_morale():
+    # Phase 895: attacker race-fanatic units, then defender ones, right
+    # after the _BHome block and before the duel-demoralization line.
+    state = GameState()
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Sir Roland", location=HexCoord(0, 0)))
+    column = _column(bres=3, attacker_source_id=101, defender_source_id=201)
+    battle_result = BattleResult(winner="attacker", columns=[column])
+    report = BattleReport(
+        battle_result=battle_result,
+        conquered=False,
+        attacker_race_fanatic_units=((101, Race.HUMAN, 501),),
+    )
+
+    rng = ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0, 0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=rng,
+    )
+
+    assert "101st Garrison were inspired to fanaticism by Sir Roland, their glorious Savior of Humankind." in lines
+
+
+def test_describe_battle_skips_race_fanaticism_when_the_title_holder_is_no_longer_in_state():
+    # Same "died earlier the same turn, no data, don't guess" convention
+    # _BHome's own equivalent test already established.
+    state = GameState()
+    column = _column(bres=3, attacker_source_id=101, defender_source_id=201)
+    battle_result = BattleResult(winner="attacker", columns=[column])
+    report = BattleReport(
+        battle_result=battle_result,
+        conquered=False,
+        attacker_race_fanatic_units=((101, Race.HUMAN, 999),),
+    )
+
+    rng = ScriptedRandom([0.1] * 40, choice_indices=[0, 0, 0, 0, 0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=rng,
+    )
+
+    assert not any("fanaticism" in line for line in lines)
+
+
+def test_describe_battle_skips_race_fanaticism_for_an_army_with_no_name():
+    # Same "no source_id, don't guess" convention the monster-assistance
+    # wiring right below this test already uses.
+    state = GameState()
+    state.add_leader(LeaderState(501, kingdom_id=1, name="Sir Roland", location=HexCoord(0, 0)))
+    report = BattleReport(
+        battle_result=BattleResult(),
+        conquered=False,
+        attacker_race_fanatic_units=((101, Race.HUMAN, 501),),
+    )
+
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=ScriptedRandom([]),
+    )
+
+    assert lines == []
 
 
 def test_describe_battle_renders_monster_assistance_before_everything_else():
@@ -5915,6 +5993,27 @@ def test_render_homeland_defense_morale_right_branch():
     rng = ScriptedRandom([0.9] * 10)
     result = render_homeland_defense_morale("Aldric", rng)
     assert result == "Aldric's soldiers swore to struggle like tigers for their fatherland."
+
+
+def test_render_race_fanaticism_left_branch():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_race_fanaticism("The 231st Bowmen", Race.HUMAN, "Sir Roland", rng)
+    assert result == "The 231st Bowmen were inspired to fanaticism by Sir Roland, their glorious Savior of Humankind."
+
+
+def test_render_race_fanaticism_right_branch():
+    rng = ScriptedRandom([0.9] * 10)
+    result = render_race_fanaticism("The 231st Bowmen", Race.HUMAN, "Sir Roland", rng)
+    assert (
+        result
+        == "The 231st Bowmen were exhorted to a fanatical elan by Sir Roland, their exalted Savior of Humankind."
+    )
+
+
+def test_render_race_fanaticism_dwarven_title():
+    rng = ScriptedRandom([0.1] * 10)
+    result = render_race_fanaticism("The 12th Legion", Race.DWARVEN, "King Thorin", rng)
+    assert result == "The 12th Legion were impelled to fanaticism by King Thorin, their esteemed King Under the Mountain."
 
 
 def test_render_weapon_rally_left_branch():
