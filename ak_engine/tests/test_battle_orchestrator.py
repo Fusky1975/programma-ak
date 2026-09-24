@@ -1986,9 +1986,13 @@ def test_fight_battle_grants_no_exploration_override_for_a_non_titleholder():
     assert attacker_call.kwargs["own_explored_percent"] == 0
 
 
-def test_fight_battle_grants_both_duellist_and_alignment_king_bonus_to_the_same_leader():
-    # A Supreme Commander holding both titles at once gets both real,
-    # independent grants -- no source treats them as mutually exclusive.
+def test_fight_battle_alignment_king_title_suppresses_the_duellist_bonus_when_held_together():
+    # Phase 896 (real bug fix): OFFICE_TITLE_DESCRIPTION[Office.DUELLIST]'s
+    # own real text -- "if < holds another Title giving a similar
+    # fanatical assist, the Musketeers will instead retire to a tavern
+    # instead" -- means the two bonuses do NOT stack. A Supreme Commander
+    # holding both titles at once gets only the alignment-King grant;
+    # Duellist's own grant withdraws.
     state = build_state()
     state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, tax=30))
     leader = LeaderState(501, kingdom_id=1, name="DualTitleHolder", location=FIELD, is_king=True)
@@ -2004,7 +2008,7 @@ def test_fight_battle_grants_both_duellist_and_alignment_king_bonus_to_the_same_
         )
 
     attacker_units = mock_resolve.call_args.args[0]
-    assert all(u.duellist_bonus_if_selected is not None for u in attacker_units)
+    assert all(u.duellist_bonus_if_selected is None for u in attacker_units)
     assert all(u.alignment_king_bonus_if_selected is not None for u in attacker_units)
 
 

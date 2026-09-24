@@ -678,11 +678,19 @@ def _build_battle_units(
     ``Office | None`` is enough, unlike a boolean. When given, every
     unit built for this side gets its own ``BattleUnit.alignment_king_
     bonus_if_selected`` set the same way ``duellist_bonus_if_selected``
-    is -- see that field's own docstring in ``turn/battle_line.py`` for
-    why a Supreme Commander holding *both* Duellist and an alignment-
-    King title at once is intentionally allowed to grant two
-    independent bonuses (two separate real in-world groups, no source
-    treats them as one combined grant). **Undead King's own real
+    is. **Phase 896 (real bug fix)**: a Supreme Commander holding
+    *both* Duellist and an alignment-King title does NOT get two
+    independent bonuses -- ``models/office.py OFFICE_TITLE_DESCRIPTION
+    [Office.DUELLIST]``'s own real text says plainly "(Note: if < holds
+    another Title giving a similar fanatical assist, the Musketeers
+    will instead retire to a tavern instead, as they are loathe to
+    share the limelight)". ``fight_battle()`` forces ``duellist_side``
+    to ``False`` whenever ``alignment_king_office`` resolves for the
+    same side, before either is ever passed in here -- so this function
+    itself never has to reconcile the two, it just never sees both true
+    at once. None of the 7 alignment-King titles' own texts carry a
+    matching caveat, so the suppression is one-directional: only
+    Duellist ever yields. **Undead King's own real
     "non-skeletal unit" restriction**: a skeletal army never gets this
     bonus even on an eligible Undead King side (stays ``None``) -- the
     *other* 6 titles have no such restriction, so this is checked here
@@ -2464,6 +2472,22 @@ def fight_battle(
     # defender_commander_leader (already resolved for the Mastery bonus).
     attacker_alignment_king_office = _alignment_king_office_for(state, attacker_commander_leader)
     defender_alignment_king_office = _alignment_king_office_for(state, defender_commander_leader)
+
+    # Phase 896 (real bug fix): models/office.py OFFICE_TITLE_DESCRIPTION
+    # [Office.DUELLIST]'s own real text -- "(Note: if < holds another
+    # Title giving a similar fanatical assist, the Musketeers will
+    # instead retire to a tavern instead, as they are loathe to share
+    # the limelight)" -- confirms the two bonuses do NOT stack, directly
+    # contradicting Phase 661's own "no source treats them as mutually
+    # exclusive" note. None of the 7 alignment-King titles' own texts
+    # carry a matching caveat, so the suppression is one-directional:
+    # Duellist's own grant withdraws when a commander also holds an
+    # alignment-King title; the alignment-King grant itself is
+    # unaffected either way.
+    if attacker_alignment_king_office is not None:
+        attacker_is_duellist_side = False
+    if defender_alignment_king_office is not None:
+        defender_is_duellist_side = False
 
     # Exploration advantage (Phase 69, rulebook [6.3]): each side's own
     # exploration reads province.explored_percent_by_kingdom for its own

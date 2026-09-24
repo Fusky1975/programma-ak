@@ -126,13 +126,19 @@ class BattleUnit:
     # Knights Hospitaller/Druids/berserking freedom fighters/Pagan
     # Clerics/Black Knights/Circle of Wraiths, `models/office.py
     # OFFICE_TITLE_DESCRIPTION`). Same exact shape as `duellist_bonus_
-    # if_selected` above -- a separate field (not reused) since a
-    # Supreme Commander could in principle hold both an alignment-King
-    # title and Duellist at once, each independently granting its own
-    # random fanatic unit (no source describes the two stacking rules
-    # as mutually exclusive of each other, only that the *same* grant
-    # never double-applies to the *same* unit -- see `turn/battle_
-    # orchestrator.py _build_battle_units()`'s own Phase 661 addendum).
+    # if_selected` above -- a separate field (not reused), since the two
+    # bonuses are computed and applied independently even though they
+    # never actually co-occur on the same side in practice: **Phase 896
+    # (real bug fix)** -- `OFFICE_TITLE_DESCRIPTION[Office.DUELLIST]`'s
+    # own real text ("if < holds another Title giving a similar
+    # fanatical assist, the Musketeers will instead retire to a tavern
+    # instead") confirms the two do NOT stack. `turn/battle_orchestrator.
+    # py fight_battle()` enforces this by forcing `duellist_side` to
+    # `False` whenever this side's own commander also holds an
+    # alignment-King title, before `_build_battle_units()` is ever
+    # called -- so a unit's `duellist_bonus_if_selected` and
+    # `alignment_king_bonus_if_selected` are never both non-`None` at
+    # once for the same side.
     # ``None`` for a unit whose own side isn't eligible this battle, or
     # (Undead King's own real "non-skeletal unit" restriction) for a
     # skeletal unit even on an eligible Undead King side.
