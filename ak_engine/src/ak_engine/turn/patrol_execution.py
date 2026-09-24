@@ -229,9 +229,28 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
     their own starting ``hit_points`` -- a real, silent inconsistency
     under the ARCANES game type specifically (0 for every other game,
     per that function's own docstring).
+
+    **Phase 894 -- a second drift found the same way**: this builder
+    never computed/passed ``archery_skill`` at all (silently leaving it
+    at the dataclass's own ``0`` default), unlike every one of its 5
+    sibling copies (``challenge_execution.py``, ``pursue_execution.py``,
+    ``cast_execution.py``, ``search_execution.py``, ``battle_
+    orchestrator.py``). **Confirmed currently a no-op, not a live bug**:
+    ``execute_patrol()``'s own combat resolution calls only ``resolve_
+    melee_duel()`` -- Patrol has no Fire Arrow tactic at all (that same
+    function's own Phase 686 comment already says so explicitly, "Patrol
+    has no Fire Arrow at all"), and ``archery_skill`` is read nowhere
+    outside the Fire-Arrow-specific helpers in ``turn/encounter.py``
+    (``effective_archery_skill()``/``fire_arrow_hit_chance()``/
+    ``fire_arrow_free_attacks()``). Fixed anyway, matching this project's
+    own established precedent (Phase 682/684) of closing a duplicate-
+    builder field gap the moment it's found rather than leaving a
+    correctly-computable field silently wrong for whenever a future
+    caller does start reading it off this same ``Combatant``.
     """
 
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)
+    archery_skill = effective_skill_level(state, leader, Ability.ARCHERY)
 
     neutral_bonus = False
     if leader.kingdom_id is not None:
@@ -257,6 +276,7 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         name=leader.name,
         hit_points=CHARACTER_HIT_POINTS + arcane_valor_hit_points_bonus(state, leader),
         melee_skill=melee_skill,
+        archery_skill=archery_skill,
         neutral_duelist_bonus=neutral_bonus,
         temper=leader.temper,
         damage_reduction=damage_reduction,

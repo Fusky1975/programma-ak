@@ -284,6 +284,22 @@ def test_leader_combatant_arcane_valor_bonus_is_zero_outside_arcanes():
     assert combatant.hit_points == CHARACTER_HIT_POINTS
 
 
+def test_leader_combatant_reads_archery_skill():
+    # Regression: Phase 894 found this builder never computed/passed
+    # archery_skill at all (silently defaulting to 0), unlike every one
+    # of its 5 sibling _leader_combatant() copies. Confirmed currently a
+    # no-op for real Patrol combat (execute_patrol() only ever calls
+    # resolve_melee_duel(), never Fire Arrow) -- fixed anyway to keep
+    # this builder in sync with its siblings, per that same docstring.
+    state = _base_state()
+    leader = LeaderState(1, kingdom_id=1, name="Patroller", location=HOME, skills=_skills_with(Ability.ARCHERY, 4, 5))
+    state.add_leader(leader)
+
+    combatant = _leader_combatant(leader, state)
+
+    assert combatant.archery_skill == 4
+
+
 # -- find_patrol_target: rules (a), (f) ---------------------------------
 
 
