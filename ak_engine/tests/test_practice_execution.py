@@ -46,8 +46,15 @@ from ak_engine.turn.practice_execution import (
     resolve_practice_solo,
     roll_practice_aptitude_gate,
 )
+from ak_engine.worldgen.archery_ability_level_schedule import build_archery_ability_level_schedule
+from ak_engine.worldgen.druid_ability_level_schedule import build_druid_ability_level_schedule
 from ak_engine.worldgen.explorer_ability_level_schedule import build_explorer_ability_level_schedule
-from ak_engine.worldgen.special_ability_level_schedule import MAGIC_COLLEGES, build_magic_ability_level_schedule
+from ak_engine.worldgen.melee_ability_level_schedule import build_melee_ability_level_schedule
+from ak_engine.worldgen.sage_ability_level_schedule import build_sage_ability_level_schedule
+from ak_engine.worldgen.special_ability_level_schedule import build_magic_ability_level_schedule
+from ak_engine.worldgen.spy_ability_level_schedule import build_spy_ability_level_schedule
+from ak_engine.worldgen.tactical_ability_level_schedule import build_tactical_ability_level_schedule
+from ak_engine.worldgen.thief_ability_level_schedule import build_thief_ability_level_schedule
 
 from _helpers import ScriptedRandom
 
@@ -1924,7 +1931,8 @@ def test_execute_practice_group_non_sage_ability_never_rolls_device_discovery():
     assert all(not r.device_discovered for r in results)
 
 
-# -- Phase 493: Advanced Ability grant (5 magic colleges + Explorer) -----
+# -- Phase 493/899: Advanced Ability grant (5 magic colleges + Explorer, --
+# -- then Tactical/Archery/Melee/Druid/Thief/Spy/Sage) --------------------
 
 
 def test_maybe_grant_advanced_ability_returns_none_without_a_skill_rise():
@@ -1945,9 +1953,11 @@ def test_maybe_grant_advanced_ability_returns_none_for_an_unscheduled_ability():
     leader = LeaderState(1, kingdom_id=1, name="L1", location=LOCATION)
     state.add_leader(leader)
 
-    assert Ability.MELEE not in MAGIC_COLLEGES
-    assert Ability.MELEE is not Ability.EXPLORER
-    granted = _maybe_grant_advanced_ability(state, leader, Ability.MELEE, skill_rose=True, new_skill=5)
+    # MARCH is the one category confirmed to have no real content to grant
+    # at all (zero-cost, no IRand consumed) -- NAVAL is scheduled too
+    # (Phase 787) but granted from a different real trigger entirely
+    # (turn/move_execution.py), not through this function.
+    granted = _maybe_grant_advanced_ability(state, leader, Ability.MARCH, skill_rose=True, new_skill=5)
 
     assert granted is None
     assert leader.advanced_abilities == set()
@@ -1988,6 +1998,47 @@ def test_maybe_grant_advanced_ability_grants_the_real_scheduled_explorer_ability
     expected = build_explorer_ability_level_schedule(state.game_number).get(5)
 
     granted = _maybe_grant_advanced_ability(state, leader, Ability.EXPLORER, skill_rose=True, new_skill=5)
+
+    assert granted is expected
+    assert expected is not None
+    assert expected in leader.advanced_abilities
+
+
+def test_maybe_grant_advanced_ability_returns_none_for_naval_granted_elsewhere():
+    # Scheduled since Phase 787, but granted from turn/move_execution.py's
+    # own real trigger, not from an ordinary Practice skill rise.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = LeaderState(1, kingdom_id=1, name="L1", location=LOCATION)
+    state.add_leader(leader)
+
+    granted = _maybe_grant_advanced_ability(state, leader, Ability.NAVAL, skill_rose=True, new_skill=5)
+
+    assert granted is None
+    assert leader.advanced_abilities == set()
+
+
+@pytest.mark.parametrize(
+    ("ability", "builder"),
+    [
+        (Ability.TACTICAL, build_tactical_ability_level_schedule),
+        (Ability.ARCHERY, build_archery_ability_level_schedule),
+        (Ability.MELEE, build_melee_ability_level_schedule),
+        (Ability.DRUID, build_druid_ability_level_schedule),
+        (Ability.THIEF, build_thief_ability_level_schedule),
+        (Ability.SPY, build_spy_ability_level_schedule),
+        (Ability.SAGE, build_sage_ability_level_schedule),
+    ],
+)
+def test_maybe_grant_advanced_ability_grants_the_real_phase_899_scheduled_ability(ability, builder):
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    leader = LeaderState(1, kingdom_id=1, name="L1", location=LOCATION)
+    state.add_leader(leader)
+
+    expected = builder(state.game_number).get(5)
+
+    granted = _maybe_grant_advanced_ability(state, leader, ability, skill_rose=True, new_skill=5)
 
     assert granted is expected
     assert expected is not None
@@ -2184,14 +2235,15 @@ def test_execute_practice_grants_advanced_ability_on_a_magic_college_skill_rise(
 
 
 def test_execute_practice_grants_nothing_for_a_non_magic_college_skill_rise():
-    # Same guaranteed-rise shape as the test above, but Ability.MELEE
-    # isn't one of the 5 wired categories -- see _maybe_grant_advanced_
-    # ability()'s own docstring for why (real template content for the
-    # other 10 categories was never recovered from source material).
-    state = _state_with_leader(skills=_skills_with(Ability.MELEE, skill=4, aptitude=9))
+    # Same guaranteed-rise shape as the test above, but Ability.MARCH is
+    # confirmed to have no real content to grant at all (zero-cost, no
+    # IRand consumed) -- see _maybe_grant_advanced_ability()'s own
+    # docstring for why this and Ability.NAVAL are the only two
+    # categories that never grant anything through this path.
+    state = _state_with_leader(skills=_skills_with(Ability.MARCH, skill=4, aptitude=9))
     state.leaders[1].experience_credit = 95
 
-    result = execute_practice(state, leader_id=1, ability=Ability.MELEE, rng=ScriptedRandom([0.01]))
+    result = execute_practice(state, leader_id=1, ability=Ability.MARCH, rng=ScriptedRandom([0.01]))
 
     assert result.skill_rose is True
     assert result.new_skill == 5
