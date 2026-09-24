@@ -231,21 +231,14 @@ none invented past here:
   can mark the first Home army Zomboid/Skeletal) -- the source never
   states what makes a King property "qualifying" (Phase 358's own gap).
 - **The extra mercenary band** (``worldgen.mercenary_band.py``, Phase
-  363) -- its own "compatible recruit type" test and fallback type are
-  caller-supplied by design. **Corrected Phase 891**: this bullet used
-  to say the natural real inputs for both were "the ordinary-province
-  recruit-slot table above... exactly the still-missing piece" -- stale,
-  self-contradicting the very bullets a few lines above this one: that
-  table has been real and wired since Phase 797/799. The *data* is no
-  longer missing; what's still genuinely unresolved is the source's own
-  silence on what "compatible" means for this specific search (race
-  match against the province's own recruit type? terrain match? any
-  non-empty slot at all?) -- `mercenary_band.py`'s own docstring already
-  states this precisely and leaves both the predicate and the fallback
-  type as caller-supplied parameters rather than guessing. Wiring this
-  module in for real still needs that one design decision made
-  explicitly (a documented interpretation, not a source-recovered rule)
-  before a real call site can be written.
+  363) -- **wired Phase 892**, closing the gap this same bullet flagged
+  since Phase 891's own correction (see that addendum's own history:
+  its earlier framing was found stale/self-contradicting). See the real
+  call site's own comment, right after the province/army-creation loop
+  above, for the two documented interpretation choices this needed
+  (what counts as a "compatible" recruit type; where the resulting band
+  is placed) -- neither is source-recovered, both are stated plainly as
+  project choices, not recovered facts.
 
 **Verification**: checked against a full, real-sized generation (18x9,
 ``king_count=10``) for internal consistency -- every one of the 162
@@ -340,6 +333,7 @@ from ak_engine.worldgen.magic_item_placement import (
     initial_item_cursor,
     next_item_cursor,
 )
+from ak_engine.worldgen.mercenary_band import find_mercenary_recruit_type
 from ak_engine.worldgen.pascal_random import PascalRandom
 from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH, generate_map
 from ak_engine.worldgen.province_races import draw_base_race
@@ -711,6 +705,54 @@ def generate_new_game(
                     movement_points=ARMY_TABLE[army_type].speed,
                 )
             )
+
+    # Phase 892: "create province armies and one extra mercenary band per
+    # King" -- world_generation.province_population_order's own stage 6
+    # names both halves as one stage; the province/army half above has
+    # been real since Phase 358/797/799, but `worldgen/mercenary_band.py`
+    # itself (Phase 363) was never wired in, since its own two caller-
+    # supplied parameters -- what counts as a "compatible" recruit type,
+    # and the fallback army type -- were never resolved (see this
+    # module's own Phase 891 addendum below). Resolved here as a
+    # documented interpretation, not a source-recovered rule (the source
+    # itself never states either): a candidate coordinate's own recruit
+    # type is "compatible" when the pipeline above already assigned that
+    # coordinate's own `ProvinceState` a real recruit slot -- i.e. a
+    # place the world-generation pass itself already decided could
+    # locally muster a unit, checked at whichever of its own two slots is
+    # populated; the fallback, per `mercenary_band.py`'s own docstring
+    # already suggesting it, is `home_first_slot(king.race)` (already
+    # exactly `BEST_ATYPE[king_race]`, Phase 358 -- reused directly
+    # rather than importing a second name for the identical value). The
+    # resulting band is placed at the King's own Home, uncommanded and
+    # kingdomless (`kingdom_id=None`, this project's own established
+    # "mercenary" convention -- see `GameState.mercenaries_at()`) -- the
+    # source names no other coordinate for it, and every one of this
+    # pipeline's own other per-King entities (companions, the King's own
+    # initial armies) is likewise anchored at the King's Home.
+    for king in kings:
+        home_coord = home_coord_by_king[king.leader_id]
+
+        def _compatible_recruit_type(coord: HexCoord) -> ArmyType | None:
+            province = game_state.provinces.get(coord)
+            if province is None:
+                return None
+            return province.recruit_type_1 if province.recruit_type_1 is not None else province.recruit_type_2
+
+        band_type = find_mercenary_recruit_type(
+            home_coord, bounds, _compatible_recruit_type, home_first_slot(king.race), rng
+        )
+        game_state.add_army(
+            ArmyState(
+                army_id=game_state.new_army_id(),
+                kingdom_id=None,
+                army_type=band_type,
+                quality=INITIAL_ARMY_QUALITY,
+                location=home_coord,
+                commanded_by=None,
+                movement_points=ARMY_TABLE[band_type].speed,
+            )
+        )
 
     # Phase 429: which King's own kingdom owns each Home coordinate --
     # used below to seed that King Home's own 2 features as already

@@ -18,6 +18,7 @@ from ak_engine.worldgen.king_home_placement import MIN_HOME_DISTANCE
 from ak_engine.worldgen.leader_placement import COMPANIONS_PER_KING, owner_leader_count
 from ak_engine.models.treasure import TREASURE_CATEGORY, TreasureCategory
 from ak_engine.worldgen.magic_item_placement import item_slot_count
+from ak_engine.worldgen.mercenary_band import hex_ring
 from ak_engine.worldgen.pascal_random import PascalRandom
 from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH
 from ak_engine.worldgen.province_tax import HOME_OVERRIDE_TAX
@@ -94,12 +95,64 @@ def test_king_home_gets_a_real_initial_army_using_best_atype():
     result = generate_new_game(rng, game_state, kings, gamevers=1)
 
     for king in kings:
-        armies = [a for a in result.armies.values() if a.location == king.home_coord]
+        # Phase 892: the King's own Home coordinate can now also host that
+        # King's own extra mercenary band (kingdom_id=None) -- excluded
+        # here so this test keeps checking only the King's own armies; see
+        # test_king_gets_a_real_extra_mercenary_band_at_home() below for
+        # the mercenary band itself.
+        armies = [a for a in result.armies.values() if a.location == king.home_coord and a.kingdom_id is not None]
         assert armies
         assert armies[0].army_type == BEST_ATYPE[king.race]
         for army in armies:
             assert army.commanded_by is None  # COMMANDER_NONE (255) translates to None
             assert army.kingdom_id == king.leader_id
+
+
+def test_king_gets_a_real_extra_mercenary_band_at_home():
+    # Phase 892: worldgen/mercenary_band.py's own extra-mercenary-band
+    # search, wired into generate_new_game() for the first time -- one
+    # real, uncommanded, kingdomless (this project's own established
+    # "mercenary" convention) army per King, at that King's own Home.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=3)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        bands = [
+            a for a in result.armies.values() if a.location == king.home_coord and a.kingdom_id is None
+        ]
+        assert len(bands) == 1
+        band = bands[0]
+        assert band.commanded_by is None
+        assert isinstance(band.army_type, ArmyType)
+        assert band.movement_points == ARMY_TABLE[band.army_type].speed
+
+
+def test_extra_mercenary_band_type_is_compatible_or_fallback():
+    # Phase 892: the band's own army_type must either be the documented
+    # fallback (home_first_slot(king.race), i.e. BEST_ATYPE[king.race])
+    # or a real recruit type actually present at some province within
+    # the documented radius 1..6 search around that King's own Home --
+    # proving the wiring genuinely consults real generated province data
+    # rather than picking an arbitrary type.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=3)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+    bounds = MapBounds(DEFAULT_WIDTH, DEFAULT_HEIGHT)
+
+    for king in kings:
+        band = next(a for a in result.armies.values() if a.location == king.home_coord and a.kingdom_id is None)
+        nearby_types = set()
+        for radius in range(1, 7):
+            for coord in hex_ring(king.home_coord, radius, bounds):
+                province = result.provinces.get(coord)
+                if province is None:
+                    continue
+                if province.recruit_type_1 is not None:
+                    nearby_types.add(province.recruit_type_1)
+                if province.recruit_type_2 is not None:
+                    nearby_types.add(province.recruit_type_2)
+        assert band.army_type == BEST_ATYPE[king.race] or band.army_type in nearby_types
 
 
 def test_every_generated_army_starts_with_a_full_movement_pool():

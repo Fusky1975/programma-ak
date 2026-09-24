@@ -49,7 +49,14 @@ recruit-slot pass (``humanoid_second_slot()``), the identical class of
 shift once more: the first treasure+guardian feature is now feature_id
 1, a weak ``ELE_MAGE`` guard (hp 10, melee skill 1), win seed ``11``;
 ``_BOOK_FEATURE_ID`` moved to feature_id 88, guarded by an equally weak
-``MERMAID`` (hp 10, melee skill 1), win seed ``1``.)
+``MERMAID`` (hp 10, melee skill 1), win seed ``1``.) Re-scanned again
+after Phase 892 wired ``worldgen/mercenary_band.py`` into
+``generate_new_game()`` (RNG consumption for each King's own extra
+mercenary-band search, before ``place_all_features()``, the identical
+class of shift once more): feature_id 1 is now guarded by a Banshee
+(hp 15, melee skill 1), win seed ``6``; feature_id 88 happens to keep
+the same real facts (a ``MERMAID`` guard, win seed ``1`` still wins),
+so ``_BOOK_FEATURE_ID``/``_BOOK_SEARCH_WIN_SEED`` are unchanged.
 """
 
 from __future__ import annotations
@@ -71,14 +78,15 @@ from ak_engine.worldgen.pascal_random import PascalRandom
 
 _KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
 _SEARCHER_LEADER_ID = 999
-# Phase 799 note: generate_new_game(seed=1)'s own feature roster is a
-# fixed, reproducible fact of this scenario, re-checked after Phase 799
-# added the ordinary-humanoid-province second-recruit-slot pass (RNG
-# consumption before place_all_features(), same class of shift as
-# Phase 426/427/797 before it). The first treasure+guardian feature
-# (feature_id 1) is now guarded by a weak ELE_MAGE (hp 10, melee skill
-# 1) -- a real, reproducible fact, not a tuning choice.
-_SEARCH_WIN_SEED = 11
+# Phase 892 note: generate_new_game(seed=1)'s own feature roster is a
+# fixed, reproducible fact of this scenario, re-checked after Phase 892
+# wired worldgen/mercenary_band.py's own extra-mercenary-band search
+# into the pipeline (RNG consumption before place_all_features(), same
+# class of shift as Phase 426/427/797/799 before it). The first
+# treasure+guardian feature (feature_id 1) is now guarded by a weak
+# Banshee (hp 15, melee skill 1) -- a real, reproducible fact, not a
+# tuning choice.
+_SEARCH_WIN_SEED = 6
 # feature_id 88 (MERMAID guarding BOOK_NAVAL) is the SKILL_BOOK-category
 # feature this test now targets -- picked for a weak guardian (hp 10,
 # melee skill 1) so the win seed stays small.
