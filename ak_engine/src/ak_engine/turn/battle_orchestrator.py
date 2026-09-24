@@ -581,6 +581,25 @@ def _build_battle_units(
     check above already selected. Stacks with Balloons multiplicatively
     (15% -> 5% -> 2.5%).
 
+    **Phase 897 (real gap closed) -- Detect Illusions Talent's own
+    identical second clause.** ``models/advanced_ability.py ADVANCED_
+    ABILITY_DESCRIPTION[DETECT_ILLUSIONS_TALENT]``: "...Also, the
+    Phantasmal Armies spell has only half its normal effect when the
+    Illusionist is present at a battle on the opposite side." -- the
+    exact same real-world halving as the Crystal's own clause above,
+    word-for-word ("...has only half its normal effect when [holder] is
+    present at a battle on the opposite side"), for a fourth-magic-
+    college Advanced Ability instead of a Treasure. Checked the same
+    "any leader of the opposing Kingdom" way as ``opponent_owns_
+    crystal_of_true_seeing`` (not literal per-battle presence -- the
+    Crystal's own clause uses the identical "present at a battle"
+    wording and already gets this same simplified, kingdom-wide
+    treatment, so applying it here too is consistency with an existing
+    precedent, not a new one). Stacks multiplicatively with both
+    Balloons and the Crystal, same "no sourced combined formula, halve
+    whichever rate is currently active" convention Phase 532/807 already
+    established and confirmed for the other two.
+
     **Phase 807 addendum -- closes backlog item #15 as a confirmed
     project decision, not a guess.** No source ever states a combined
     formula for Balloons ("army strength is increased by only 5% per
@@ -751,6 +770,13 @@ def _build_battle_units(
         and any(item.treasure is Treasure.AMULET_ANTI_ILLUSION for item in state.items_held_by(leader.leader_id))
         for leader in state.leaders.values()
     )
+    # Phase 897: Detect Illusions Talent's own identical "half normal
+    # effect when present at a battle on the opposite side" clause -- see
+    # this function's own Phase 897 docstring addendum.
+    opponent_owns_detect_illusions = any(
+        leader.kingdom_id in opponent_kingdom_ids and AdvancedAbility.DETECT_ILLUSIONS_TALENT in leader.advanced_abilities
+        for leader in state.leaders.values()
+    )
     # Phase 773: the mirror-image scope of the check above -- "unaffected
     # by the spells of ... Illusory Terrain" protects the Crystal-
     # holder's own side, not the opponent's. See this function's own
@@ -819,6 +845,8 @@ def _build_battle_units(
             else PHANTASMAL_ARMIES_BONUS_PER_LEVEL
         )
         if phantasmal_armies_level > 0 and opponent_owns_crystal_of_true_seeing:
+            phantasmal_armies_bonus_per_level /= 2
+        if phantasmal_armies_level > 0 and opponent_owns_detect_illusions:
             phantasmal_armies_bonus_per_level /= 2
         adapt_tactics_to_terrain = False
         if army.commanded_by is not None:

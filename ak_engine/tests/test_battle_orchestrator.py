@@ -2193,6 +2193,97 @@ def test_build_battle_units_crystal_of_true_seeing_stacks_with_observation_ballo
     assert units[0].effective_strength == pytest.approx(expected)
 
 
+def test_build_battle_units_detect_illusions_talent_halves_the_phantasmal_bonus():
+    # Phase 897: ADVANCED_ABILITY_DESCRIPTION[DETECT_ILLUSIONS_TALENT]'s
+    # own real, identical second clause -- "the Phantasmal Armies spell
+    # has only half its normal effect when the Illusionist is present at
+    # a battle on the opposite side" -- the same halving as the Crystal
+    # of True Seeing's own clause, for an Advanced Ability instead of a
+    # Treasure. 15% -> 7.5% here, no Balloons/Crystal involved.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Illusia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Seersland", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Illusionist", location=FIELD, phantasmal_armies_level=2))
+    state.add_leader(
+        LeaderState(
+            2, kingdom_id=2, name="Seer", location=FIELD,
+            advanced_abilities={AdvancedAbility.DETECT_ILLUSIONS_TALENT},
+        )
+    )
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        opponent_kingdom_ids=frozenset({2}),
+    )
+
+    expected = compute_effective_strength(
+        ArmyType.LEGION, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS,
+        phantasmal_armies_level=2, phantasmal_armies_bonus_per_level=0.075,
+    )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_detect_illusions_talent_stacks_with_balloons_and_crystal():
+    # All three wards active at once: Balloons' own 5%/level selection,
+    # halved by the Crystal to 2.5%/level, halved again by Detect
+    # Illusions Talent to 1.25%/level -- same "no sourced combined
+    # formula, halve whichever rate is currently active" stacking
+    # convention already established for the Balloons+Crystal pair.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Illusia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Warded", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    state.kingdoms[2].discoveries.add(Discovery.OBSERVATION_BALLOONS)
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Illusionist", location=FIELD, phantasmal_armies_level=2))
+    state.add_leader(
+        LeaderState(
+            2, kingdom_id=2, name="Seer", location=FIELD,
+            advanced_abilities={AdvancedAbility.DETECT_ILLUSIONS_TALENT},
+        )
+    )
+    state.add_item(Treasure.AMULET_ANTI_ILLUSION, owner_leader_id=2)
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+        opponent_kingdom_ids=frozenset({2}),
+    )
+
+    expected = compute_effective_strength(
+        ArmyType.LEGION, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS,
+        phantasmal_armies_level=2, phantasmal_armies_bonus_per_level=0.0125,
+    )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_detect_illusions_talent_on_own_side_does_not_halve_the_bonus():
+    # The Talent only reduces the effect when its holder is on the side
+    # OPPOSING the caster ("at a battle on the opposite side") -- a
+    # holder on the caster's own side (or not in opponent_kingdom_ids at
+    # all) must not trigger the halving.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Illusia", Race.HUMAN, Alignment.NEUTRAL, home_province=HexCoord(9, 9)))
+    state.add_leader(
+        LeaderState(
+            1, kingdom_id=1, name="Illusionist", location=FIELD, phantasmal_armies_level=2,
+            advanced_abilities={AdvancedAbility.DETECT_ILLUSIONS_TALENT},
+        )
+    )
+    army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, location=FIELD, commanded_by=1)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+    )
+
+    expected = compute_effective_strength(
+        ArmyType.LEGION, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS, phantasmal_armies_level=2,
+    )
+    assert units[0].effective_strength == pytest.approx(expected)
+
+
 def test_build_battle_units_osteopathic_germ_warfare_downgrades_skeletal_quality():
     # Phase 270: Osteopathic Germ Warfare (Discovery.txt) -- an opposing
     # Kingdom that owns it reduces a Skeletal Army unit by one quality
