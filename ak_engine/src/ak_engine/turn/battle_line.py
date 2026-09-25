@@ -274,14 +274,48 @@ def apply_nemesis_penalties(
     ever actually called in this genuinely ambiguous case, keeping every
     pre-Phase-65 caller's ``rng`` consumption unchanged.
 
-    **"...or outflanking" is deliberately not modeled here.** Unlike the
-    overflight half of the sentence, `RULES.AK` gives no further text
-    connecting Phase 64's numeric-superiority outflanking to nemesis
-    eligibility specifically -- whether it means an outflanking-eligible
-    *own* second-line unit becomes an eligible inflictor itself (against
-    whom?), or something else, isn't resolvable from the available
-    source without guessing. Left as a distinct, still-open gap (see
-    ``ak_engine/README.md``) rather than forcing an unconfident reading.
+    **"...or outflanking" -- confirmed NOT modeled, Phase 904
+    (``NEMESIS.md``, 2026-09-25, a byte-level disassembly of the real
+    battle-resolution routine, ``AK.OVR`` raw ``0x8CD2-0xA85A``, plus its
+    ``Nemo()`` predicate at ``AK.EXE`` raw ``0x252D5-0x253A1``).** This
+    was previously left open as "not resolvable from the available
+    source without guessing" (Phase 65); the disassembly now answers it
+    directly, not by inference: the two identified outflanking branches
+    (raw ``0x9923-0x9A13``, one per flank) only ever increment their own
+    eligibility counter, set the per-position **strength divisor** to
+    ``1`` (raw ``0xA13D-0xA146`` confirms the divide-by-this-value use --
+    already exactly this project's own ``column_strength``
+    ``outflank_second_line`` boost), and emit the "outflanked" narrative
+    code (``_AFlank`` = 4033). Neither branch ever writes an opponent
+    type or extends any candidate set. ``Nemo(ldr, at, aopp)`` (the real
+    nemesis predicate, matching ``RUMORS.PAS`` verbatim) always receives
+    exactly **one** already-resolved opponent type per unit -- normally
+    the same-column front-line opponent, or, for the already-implemented
+    overflight/rear-attack case, the opponent at the mirrored rearward
+    position (a single deterministic substitution, raw ``0x830E``, not a
+    candidate-set insertion). All 4 explicit calls to ``Nemo()`` found in
+    the disassembled path were checked; none is gated on outflanking
+    eligibility. This is a negative result for the two specific compiled
+    binaries examined (see ``NEMESIS.md``'s own SHA-256-identified
+    exemplars), not a claim about every historical build of the game --
+    but it is exactly the standard this project already applies to a
+    "confirmed structurally inapplicable" finding elsewhere (e.g. the
+    Swamp/Rohan exclusions in ``worldgen/initial_armies.py``): a real,
+    sourced negative answer, not an invented one. See
+    ``tests/test_battle_resolution.py test_resolve_battle_outflank_
+    eligibility_never_widens_nemesis_eligibility`` for the locked-in
+    regression.
+
+    **A second, related finding from the same document, deliberately not
+    acted on here**: ``NEMESIS.md`` also reports that the disassembled
+    path never located the rulebook's own "chosen at random" selection
+    among multiple eligible nemesis-inflictors at all -- the overflight
+    rear-attack substitution above is a single deterministic swap, not a
+    build-a-candidate-set-then-``rng.choice`` mechanism. That would bear
+    on this function's own Phase 65 overflight/``rng.choice`` design
+    directly, but revisiting already-shipped, already-tested behavior on
+    that basis is a separate, larger decision -- left to a future phase
+    if and when it's explicitly requested, not folded into this one.
 
     In ``resolve_battle``, this runs *after* ``apply_tactical_switches``
     (Phase 34), so "front-line" here already reflects any switch that
