@@ -18435,13 +18435,27 @@ section.
   at the same province exists at all, so this project's own simplified
   Hired-only pass can drop that guard); every later army at that
   province gets a fully blank 18-char field
-  (`_ARMIES_BLANK_PROVINCE_COLUMN`). **Still not reproduced**: the real
+  (`_ARMIES_BLANK_PROVINCE_COLUMN`). ~~**Still not reproduced**: the real
   grouping is actually keyed by province+leader (armies are iterated
   leader-by-leader, not by flat `army_id` order) -- since the column-
   suppression pattern only depends on how many armies have already
   been printed at a province, not on which leader owns them, it
   reproduces correctly regardless of iteration order, but the real
-  leader-grouping order itself is a separate, still-open gap.
+  leader-grouping order itself is a separate, still-open gap.~~ --
+  **closed in Phase 926 (found real and actionable in a re-audit of
+  this aside)**: `REPORTS.PAS Rep_Armies`'s own middle loop (`~line
+  1060`, extracted and read directly from `Programma Pascal.zip
+  HostAK/TP/REPORTS.PAS`) visits leaders by ascending array index, with
+  the `noleader`/Garrison group always visited *last* (`IF l = nleaders
+  THEN ldr:= noleader`), then that one leader's own armies in ascending
+  array-index order (`Doit`'s own inner loop). `describe_armies_report()`'s
+  Hired-pass sort key now matches: province, then `ArmyState.
+  commanded_by` (uncommanded sorts last), then `army_id` -- see
+  `turn/turn_report.py`'s own current docstring for the full derivation.
+  The Mercenary pass needs no equivalent fix (no Leader column, always
+  effectively one flat group). New regression test with two leaders'
+  armies interleaved at one province (the case the old flat `army_id`
+  sort got wrong). Test count: 7054 -> 7055.
   - Ran the full suite before writing new tests (non-breaking check:
     all pre-existing tests passed unchanged, since none of them had
     exercised more than one army at the same province). Added one new

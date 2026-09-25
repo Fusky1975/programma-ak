@@ -9038,6 +9038,30 @@ def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
     ]
 
 
+def test_describe_armies_report_same_province_groups_by_leader_index_not_army_id():
+    # Phase 926: REPORTS.PAS Rep_Armies's own middle loop visits leaders
+    # by ascending array index (Garrison/noleader always last), armies
+    # within a leader's own group in army-index order -- NOT flat
+    # army_id order across the whole province. Leader 1 (Sir Aldric)
+    # has the higher army_id but the lower leader index, so his army
+    # must render first despite army_id=3; the Garrison army (army_id=1,
+    # the lowest id of all) must render last.
+    state = _armies_state()
+    state.add_leader(LeaderState(1, 1, "Sir Aldric", HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, 1, "Lady Brenna", HexCoord(0, 0)))
+    state.add_army(ArmyState(1, 1, ArmyType.PHALANX, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_army(ArmyState(2, 1, ArmyType.AXEMEN, Quality.AVERAGE, HexCoord(0, 0), commanded_by=2))
+    state.add_army(ArmyState(3, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), commanded_by=1))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[4:] == [
+        "Capital City      Sir Aldric     Bowmen                Human  Average  Veteran",
+        "(#0)              Lady Brenna    Axemen                Human  Average  Veteran",
+        "                  Garrison       Phalanx               Human  Average  Veteran",
+    ]
+
+
 def test_describe_armies_report_suppresses_province_column_after_the_second_army():
     # Phase 436: REPORTS.PAS Check_None's own pac/none state -- the
     # first army at a province gets the full name, the second gets
