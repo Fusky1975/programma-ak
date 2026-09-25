@@ -36235,7 +36235,7 @@ supply of any of these doesn't have to be re-derived from scratch:
     `_PLAGUE_EFF_MASK`/`_ILLUS_EFF_MASK`/`_ILLUS_EXP`/`_FOG_EFF`/
     `_RAID_EFF`, sourced to `AKGEN_reverse_engineering_report (5).md`
     SS73.2 and described by `gw_world.py`'s own docstring as
-    "machine-verified." **Still genuinely open**: resolving a
+    "machine-verified." ~~**Still genuinely open**: resolving a
     `governor_leader_id`/Liege to its owning kingdom id (deliberately
     left to a `GameState`-level lookup, not this pure file parser);
     row-major province coordinate ordering (a promising but unconfirmed
@@ -36243,4 +36243,48 @@ supply of any of these doesn't have to be re-derived from scratch:
     fields (`birth_coord`'s own out-of-range companion-slot values,
     `special_effects_raw`'s (renamed from `sex_raw`, Phase 908) real
     default-by-id-band rule, both confirmed real by the disassembly but
-    not independently decoded from real data yet).
+    not independently decoded from real data yet).~~ -- **three real
+    corrections, Phase 924 (found stale/mislabeled in a re-audit of
+    this bullet)**:
+    - **Province coordinate ordering**: not "row-major," and not merely
+      "a promising lead" -- `parser/gw_world_bridge.py`'s own module
+      docstring (Phase 223) confirms **column-major** ordering
+      (`x = record_index // 9 + 1`, `y = record_index % 9 + 1`) as a
+      100%-exact match across all 63 real, de-duplicated provinces
+      findable in game 3's own 9 real turn-1 letters, zero mismatches,
+      and matching `REPORTS.PAS Rep_Provs`'s own real nested-loop
+      iteration order verbatim. `bridge_gw_world_provinces()` has
+      implemented this as real, tested code since Phase 223 -- this
+      was never an open lead to begin with by the time this bullet was
+      last touched, let alone now.
+    - **`governor_leader_id`/Liege resolution**: not a remaining gap at
+      all, mislabeled here as "genuinely open" when the surrounding
+      text already correctly says it's "deliberately left to a
+      `GameState`-level lookup" -- that lookup is `resolve_province_
+      owners()`, real and tested since **Phase 224**, right in the same
+      module (`gw_world_bridge.py`). A King resolves directly (his own
+      `leader_id` equals his `kingdom_id`); a Hero resolves via his own
+      `LeaderState.kingdom_id`; an unresolvable id is correctly left
+      `None`, not guessed. Nothing left to build here.
+    - **`special_effects_raw`'s "default-by-id-band rule"**: this was
+      never a real claim about `special_effects_raw` at all -- a
+      genuine misattribution, not just staleness. The real, confirmed
+      "default female band" id-rule (`AKGEN_reverse_engineering_
+      report.md`, byte 20 of the leader status row: ids 80-95 default
+      Female, every other id defaults Male) belongs to the *separate*
+      `sex_override_flag` field's own default half, and it's already
+      closed -- `models/hero_roster.py default_hero_sex()` implements
+      exactly this rule (Phase 339/366). Only that same rule's rare,
+      persistent per-leader *override* bit (confirmed for two specific
+      leaders in the real corpus, `Hume`/`Clarambald`) stays
+      deliberately unmodeled, by the module's own explicit choice ("no
+      known general rule for which leader acquires it or when"), not
+      for lack of decoding. `special_effects_raw` itself has no
+      id-band rule anywhere in this project's source material --
+      `gw_world.py`'s own docstring for it never claims one -- and
+      genuinely remains an undecoded raw `int`, correctly described
+      everywhere except this one bullet. `birth_coord`'s own
+      out-of-range companion-slot values (Phase 343) are the one part
+      of this old bullet that's still accurately open: real, structural
+      (`2*K + 1` reserved slots), but not independently decoded to a
+      concrete meaning from real data yet.
