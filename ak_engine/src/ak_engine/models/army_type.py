@@ -22,6 +22,37 @@ as symmetric (non-humanoid provinces can't recruit humanoid-only types
 either), which is an interpretation of the rulebook text, not a literal
 quote.
 
+**Phase 914 -- real per-province data corroborates this reading, without
+being a full disassembly-level proof.** This project's own real
+`Mod_PAT`-decoded per-province recruit slots (`ProvinceState.
+recruit_type_1`/`recruit_type_2`, Phase 278, straight from a real world
+file -- see `turn/recruit.py`'s own module docstring) already sit in
+`tests/fixtures/world/G3/GW3__T1`, unread for this specific question
+until now. Every one of that world's 27 real monstrous-race provinces
+(Dragons x4, Eagles x5, Entish x2, Mermish x4, Trollish x4, Werefolk x2,
+Whales x6) has `recruit_type_1` set to *exactly* its own native
+monstrous type and `recruit_type_2` set to the real "no second recruit
+type" sentinel, `None` -- zero exceptions, and never a humanoid type in
+either slot. Contrast this with the same world's 94 humanoid provinces,
+57 of which *do* carry a genuine second, different type in
+`recruit_type_2` (e.g. Legion+Elephants, Legion+Chariots,
+Phalanx+Camel Corps -- all still humanoid-compatible types, matching the
+rulebook's own "1 or 2 army types" [3.4] text). A monstrous province
+that could ever recruit a humanoid type too would be a natural
+candidate to show up with a genuine second slot the same way -- none
+ever does. This doesn't test `is_army_type_compatible_with_race()`
+directly (`recruit_type_1`/`recruit_type_2` only ever refine native-vs-
+double-cost for a type the race gate *already* allows through, per
+`turn/recruit_execution.py`'s own Phase 407 addendum, so a humanoid
+type would never even reach this data for a monstrous province under
+the *current* code regardless of whether the interpretation is right)
+-- but it is real, independent evidence from the game's own world
+generation about which types a monstrous province is ever expected to
+offer, and it lines up with the symmetric reading in all 27 real
+samples. Corroborating, not dispositive: a rulebook quote or a
+disassembly of the real recruit-validation routine would still settle
+it outright.
+
 **9 more real `army` ordinals, 20-28 (Phase 383)**: the AKGEN
 reverse-engineering material's own `tables.army_types` catalog gives real
 `id`/`name`/`code` entries for these ordinals -- Dinosaurs(Di),

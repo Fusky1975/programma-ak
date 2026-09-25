@@ -13,12 +13,12 @@ from pathlib import Path
 import pytest
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ArmyType
+from ak_engine.models.army_type import MONSTROUS_ARMY_RACE, ArmyType
 from ak_engine.models.feature import FeatureType
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.office import Office
-from ak_engine.models.race import Race
+from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.parser.errors import K1ParseError
@@ -228,6 +228,37 @@ def test_recruit_types_monstrous_ordinals_are_one_higher_than_this_projects_own_
     # modeled. See the module docstring's ordinal table.
     by_name = {r.name: r for r in parse_gw_world(FIXTURE)}
     assert by_name["Belladonna"].recruit_type_1 is ArmyType.WEREBEASTS
+
+
+def test_every_real_monstrous_province_has_exactly_one_native_recruit_slot():
+    # Phase 914: real per-province Mod_PAT data (already in this repo's
+    # own GW3__T1 fixture, decoded since Phase 278) as corroborating
+    # evidence for models/army_type.py's own "symmetric incompatibility"
+    # reading -- every one of this world's 27 real monstrous-race
+    # provinces has recruit_type_1 set to exactly its own native
+    # monstrous type and recruit_type_2 set to the real "no second
+    # recruit type" sentinel, never a second (let alone humanoid) type.
+    # See models/army_type.py's own Phase 914 addendum for the full
+    # reasoning and the contrasting humanoid-province figures.
+    monstrous_provinces = [r for r in parse_gw_world(FIXTURE) if r.race in MONSTROUS_ARMY_RACE.values()]
+    assert len(monstrous_provinces) == 27
+    for province in monstrous_provinces:
+        assert province.recruit_type_1 in MONSTROUS_ARMY_RACE
+        assert MONSTROUS_ARMY_RACE[province.recruit_type_1] == province.race
+        assert province.recruit_type_2 is None
+
+
+def test_humanoid_provinces_often_have_a_genuine_second_recruit_type():
+    # Phase 914: the contrasting half of the same real-data check --
+    # unlike every monstrous province, a real majority of this world's
+    # 94 humanoid provinces carry a genuine, different second type in
+    # recruit_type_2 (matching the rulebook's own "1 or 2 army types"
+    # [3.4] text), and none has recruit_type_1 unset either.
+    humanoid_provinces = [r for r in parse_gw_world(FIXTURE) if r.race in HUMANOID_RACES]
+    assert len(humanoid_provinces) == 94
+    with_two_types = [p for p in humanoid_provinces if p.recruit_type_2 is not None]
+    assert len(with_two_types) == 57
+    assert all(p.recruit_type_1 is not None for p in humanoid_provinces)
 
 
 def test_parses_all_100_leader_records():
