@@ -235,6 +235,74 @@ class SkillTable:
     K1-move-file-only field. Still genuinely blocked: would need either
     a K1 move file for one of G6's other 16 Kingdoms (never supplied) or
     a disassembly of the move-file writer covering this specific field.
+
+    **Phase 907 addendum -- the first hypothesis that survives every
+    real sample on hand (2026-09-25), from a third and fourth real
+    game.** `Desktop/PROGRAMMA AK/AK7__T1.K2`/`AK7__T2.K2` (Solrac's
+    Kingdom, `interp_vers=24` -- a genuinely different build than every
+    other sample's `27`) and `AK900T1.K0`/its own real `GW900T1`/`GW900`
+    world-save pair (Legolas's Kingdom) were supplied. The `AK7` pair
+    has no matching world-save, so its own trailing value (``3`` on both
+    turns -- confirming, again, "constant per Kingdom across turns") is
+    real but still unusable: no independently-confirmed race/alignment
+    to attach it to. `GW900T1`/`GW900` (via `parse_gw_leaders()`) *does*
+    give Legolas's real identity -- **Elven, Druidic** -- and his own
+    K1's trailing value is ``1``, exactly matching Mercino's own
+    (Human, Druidic -> ``1``) from the original 7-tuple set. Two
+    *different* races sharing the same alignment producing the *same*
+    trailing value, for the first time, is the concrete new evidence
+    here.
+
+    The 8 real tuples now on hand, testing "the trailing value is a
+    function of `Alignment` alone" (ignoring race and everything else):
+
+    - Undead -> 3 (Uga-Buga Makumb)
+    - Evil -> 3 (Josh the gentle)
+    - Neutral -> 2 (Piotr)
+    - Pagan -> 3 (Haggis Wen Yen)
+    - Neutral -> 2 (Dances)
+    - Good -> 3 (Medard)
+    - Druidic -> 1 (Mercino)
+    - Druidic -> 1 (Legolas)
+
+    **Zero contradictions across all 8** -- the first single-field
+    hypothesis to survive the full real dataset (every prior hypothesis
+    tried, including a literal alignment-ordinal reading, was falsified
+    by at least one sample). The apparent grouping is ``{Druidic} -> 1``,
+    ``{Neutral} -> 2``, ``{Good, Pagan, Evil, Undead} -> 3`` -- not a
+    literal ordinal computation (`ALIGNMENT_ORDINAL` gives Good=1,
+    Druidic=2, Neutral=3, Pagan=4, Evil=5, Undead=7, which groups
+    nothing this way), so this is an observed correlation, not yet a
+    derived formula with a known mechanism.
+
+    **User-confirmed (2026-09-25): no real Hero or King has ever had
+    `Alignment.ANTI_HOLY`/`MECHANICAL`/`SPECIAL`** -- consistent with
+    this project's own existing code, where all three are only ever
+    assigned to monsters (`models/monster.py`) or used as ordinal
+    reference points, never produced by `worldgen/hero_talent_
+    generation.py roll_alignment()` (the ordinary 5-alignment roll:
+    Good/Druidic/Neutral/Pagan/Evil) or by `turn/succession.py
+    create_king()`'s own Divine/Undead special-casing. That narrows the
+    real, reachable alignment space for this field to exactly 7 members
+    (Divine, Good, Druidic, Neutral, Pagan, Evil, Undead) -- of which
+    **6 are now tested and consistent; only `Alignment.DIVINE` has never
+    appeared in any real sample.**
+
+    **Still not promoted to a real decode function.** Three real risks
+    remain, all addressable only with more data or a disassembly, not
+    by reasoning further from what's on hand: (1) only 8 data points
+    back a 3-way grouping -- a 9th sample from `Good`/`Pagan`/`Evil`/
+    `Undead` breaking the shared `3` would falsify the grouping, not
+    just narrow it; (2) `Alignment.DIVINE`, the one untested reachable
+    member, could land on `1`, `2`, `3`, or a genuinely new 4th value;
+    (3) no sourced mechanism explains *why* four distinct alignments
+    would collapse to one value. A King of confirmed Divine alignment's
+    own K1 (plus its world-save, to confirm the alignment independently)
+    would settle point (2) outright; a disassembly of the move-file
+    writer (see the still-blocked note above) would settle all three at
+    once. Recorded here, with the real data, so neither the falsified
+    ordinal reading nor a half-considered grouping has to be
+    re-discovered from scratch.
     """
 
     raw_values: list[int]

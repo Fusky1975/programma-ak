@@ -34908,7 +34908,18 @@ rulebook before being turned into named, typed fields:
 - The exact meaning of the 31 integers on the skill-values line — expected
   15 ability pairs (30 values) based on `CTBOTH.PAS`'s `ability` enum, but
   every real sample file has exactly 31. The 31st value's meaning is
-  unconfirmed; `SkillTable.pair_for_ability()` only interprets the first 30.
+  still unconfirmed; `SkillTable.pair_for_ability()` only interprets the
+  first 30. **Phase 907 addendum**: real data from a third and fourth
+  game (`AK7__T*.K2`, `AK900T1.K0` + its own `GW900` world-save) gave
+  the first single-field hypothesis to survive every real sample on
+  hand -- the trailing value as a function of `Alignment` alone
+  (`{Druidic} -> 1`, `{Neutral} -> 2`, `{Good, Pagan, Evil, Undead} ->
+  3`, zero contradictions across 8 tuples). User-confirmed: no real
+  Hero or King ever has `Alignment.ANTI_HOLY`/`MECHANICAL`/`SPECIAL`,
+  so only `Alignment.DIVINE` (of the 7 reachable alignments) remains
+  untested. Not yet promoted to a decode function -- see
+  `models/kingdom.py SkillTable`'s own Phase 907 addendum for the full
+  derivation and exactly what would still falsify or confirm it.
 - ~~`parser/k1_moves.py` mis-parses a nested Hire/Charm/Resurrection
   plan~~ **fixed in Phase 18** — see that phase's note above for the
   fix; `PlanPhase.nested_plan` now holds the recovered embedded plan.
