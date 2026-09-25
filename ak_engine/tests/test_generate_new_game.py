@@ -12,7 +12,12 @@ from ak_engine.models.power import Power
 from ak_engine.models.race import Race
 from ak_engine.turn.movement import MapBounds, hex_distance, neighbors
 from ak_engine.worldgen.feature_generation import feature_count
-from ak_engine.worldgen.generate_new_game import STARTING_TREASURY, KingSetup, generate_new_game
+from ak_engine.worldgen.generate_new_game import (
+    STARTING_TREASURY,
+    KingSetup,
+    _special_race_army_budget,
+    generate_new_game,
+)
 from ak_engine.worldgen.initial_armies import BEST_ATYPE, COMMANDER_NONE
 from ak_engine.worldgen.king_home_placement import MIN_HOME_DISTANCE
 from ak_engine.worldgen.leader_placement import COMPANIONS_PER_KING, owner_leader_count
@@ -264,17 +269,39 @@ def test_ordinary_humanoid_provinces_now_get_a_real_second_recruit_slot_too():
     assert found_army_with_second_type
 
 
-def test_trollish_provinces_never_get_an_army_no_sourced_budget():
-    game_state, kings = _setup()
-    # A handful of seeds to reliably land at least one Trollish placement.
-    for seed in range(1, 15):
-        rng = PascalRandom(seed=seed)
+def test_special_race_army_budget_now_grants_trollish_the_ordinary_humanoid_formula():
+    # Phase 902 (TROLL.md): Trollish (race 10) has no dedicated CASE
+    # branch in province_army_routine -- it shares the exact same
+    # default budget branch as an ordinary humanoid province.
+    rng = PascalRandom(seed=7)
+    budget = _special_race_army_budget(Race.TROLLISH, tax=10, rng=rng)
+    assert budget is not None
+    assert int(10 * 0.65) + 1 <= budget <= int(10 * 0.9) + 1
+
+
+def test_trollish_provinces_can_now_get_a_real_trolls_army():
+    # Phase 902 (TROLL.md): Trollish falls through to the same default
+    # budget branch as an ordinary humanoid province -- a low-tax
+    # Trollish province can still legitimately end up with zero armies
+    # (TROLLS costs 5 strength, and budget can be as low as 1), the same
+    # already-established "cost > remaining budget, stop" rule every
+    # other special race already lives with. This proves the wiring
+    # actually fires at least once across a real spread of seeds/tax
+    # values, not that every Trollish province gets one.
+    found_trollish_army = False
+    for seed in range(1, 30):
         gs, k = _setup()
+        rng = PascalRandom(seed=seed)
         result = generate_new_game(rng, gs, k, gamevers=1)
         trollish = [p for p in result.provinces.values() if p.race is Race.TROLLISH]
         for province in trollish:
             armies_here = [a for a in result.armies.values() if a.location == province.coord]
-            assert armies_here == []
+            if any(a.army_type is ArmyType.TROLLS for a in armies_here):
+                found_trollish_army = True
+                break
+        if found_trollish_army:
+            break
+    assert found_trollish_army
 
 
 def test_feature_roster_matches_the_confirmed_count_and_carries_real_data():

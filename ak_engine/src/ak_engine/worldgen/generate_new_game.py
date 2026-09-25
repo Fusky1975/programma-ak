@@ -97,10 +97,13 @@ this project has a real, sourced formula for:
 6. Initial armies: King Home provinces via
    ``worldgen.initial_armies.home_first_slot()`` + the confirmed
    ``KING_HOME_BUDGET=7`` (Phase 358); special-race provinces via
-   ``special_race_recruit_slot()`` plus whichever of
-   ``whale_budget()``/``flying_or_special_budget()`` covers that race
-   (see the scoped-out Trollish gap below). Both feed the same
-   confirmed ``build_initial_armies()`` creation loop.
+   ``special_race_recruit_slot()`` plus whichever of ``whale_budget()``/
+   ``flying_or_special_budget()``/``ordinary_humanoid_budget()`` covers
+   that race -- Trollish uses the last of these too, since Phase 902
+   (``TROLL.md``) confirmed it falls through to the same default budget
+   branch as an ordinary humanoid province (see that phase's own
+   addendum below). All three feed the same confirmed
+   ``build_initial_armies()`` creation loop.
 7. Features: ``worldgen.feature_placement.place_all_features()``
    (Phase 364) for coordinates/monsters/types; the magic-item cursor
    (``worldgen.magic_item_placement.py``, Phase 360) in real
@@ -222,11 +225,22 @@ none invented past here:
   slot_gate()`` (a flat uniform roll where the real engine uses a
   parity-biased draw) was corrected, Phase 798 -- see that function's
   own docstring.
-- **Trollish special-race armies**: ``budget_by_race_or_owner`` only
+- ~~**Trollish special-race armies**: ``budget_by_race_or_owner`` only
   covers King_Home, Human/Elf/Dwarf/Orc-nonhome, Whale, and
   Eagle/Dragon/Merman/Ent/Werefolk -- Trollish provinces get their
   correct recruit slot (``special_race_recruit_slot(Race.TROLLISH)``)
-  but no budget formula to spend, so no army.
+  but no budget formula to spend, so no army.~~ -- **closed, Phase 902**
+  (``TROLL.md``, 2026-09-25, a targeted byte-level disassembly of this
+  exact ``province_army_routine`` 0B57:A400): race code 10 (Trollish)
+  has no dedicated ``CASE`` branch in the routine's own race dispatcher
+  -- it falls straight through to the same default budget branch an
+  ordinary humanoid province (races 0-3) already uses. This *also*
+  found the already-shipped ``ordinary_humanoid_budget()`` formula
+  itself was wrong (never independently byte-verified since its
+  original Phase 358 sourcing) -- see ``worldgen/initial_armies.py``'s
+  own Phase 902 addendum for the corrected formula and the full
+  derivation. ``_special_race_army_budget()`` now routes
+  ``Race.TROLLISH`` through ``ordinary_humanoid_budget()`` directly.
 - **The ``necromantic_home_exception``** (a "qualifying King property"
   can mark the first Home army Zomboid/Skeletal) -- the source never
   states what makes a King property "qualifying" (Phase 358's own gap).
@@ -405,12 +419,21 @@ class KingSetup:
 
 
 def _special_race_army_budget(race: Race, tax: int, rng: PascalRandom) -> int | None:
-    """``None`` when this race's budget formula isn't sourced (Trollish)."""
+    """``None`` when this race's budget formula isn't sourced -- no longer
+    ever the case for a real ``SPECIAL_RACE_BASE_COUNT`` member as of
+    Phase 902: Trollish's own real formula turned out to be ``ordinary_
+    humanoid_budget()`` itself (see that function's own Phase 902
+    addendum) -- race 10 has no dedicated dispatcher branch in
+    ``province_army_routine``, only the default one every other unlisted
+    race (including ordinary humanoids) already falls through to.
+    """
 
     if race is Race.WHALES:
         return whale_budget(tax, rng)
     if race in _FLYING_OR_SPECIAL_BUDGET_RACES:
         return flying_or_special_budget(tax, rng)
+    if race is Race.TROLLISH:
+        return ordinary_humanoid_budget(tax, rng)
     return None
 
 

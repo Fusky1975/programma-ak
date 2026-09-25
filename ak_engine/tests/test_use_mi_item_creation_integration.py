@@ -57,6 +57,14 @@ class of shift once more): feature_id 1 is now guarded by a Banshee
 (hp 15, melee skill 1), win seed ``6``; feature_id 88 happens to keep
 the same real facts (a ``MERMAID`` guard, win seed ``1`` still wins),
 so ``_BOOK_FEATURE_ID``/``_BOOK_SEARCH_WIN_SEED`` are unchanged.
+Re-scanned again after Phase 902 fixed ``worldgen/initial_armies.py
+ordinary_humanoid_budget()``'s own formula (``TROLL.md``) and wired
+Trollish provinces through it -- both changes consume real RNG (or, for
+Trollish, newly consume it at all) before ``place_all_features()``, the
+identical class of shift once more: feature_id 1 is now guarded by a
+``RAKSHASHA`` (hp 18-27, melee skill 1), win seed ``2``; the
+``SKILL_BOOK``-category feature moved to feature_id 86, guarded by a
+``GI_CLAM`` (hp 14-27, melee skill 0), win seed ``5``.
 """
 
 from __future__ import annotations
@@ -78,20 +86,20 @@ from ak_engine.worldgen.pascal_random import PascalRandom
 
 _KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
 _SEARCHER_LEADER_ID = 999
-# Phase 892 note: generate_new_game(seed=1)'s own feature roster is a
-# fixed, reproducible fact of this scenario, re-checked after Phase 892
-# wired worldgen/mercenary_band.py's own extra-mercenary-band search
-# into the pipeline (RNG consumption before place_all_features(), same
-# class of shift as Phase 426/427/797/799 before it). The first
-# treasure+guardian feature (feature_id 1) is now guarded by a weak
-# Banshee (hp 15, melee skill 1) -- a real, reproducible fact, not a
-# tuning choice.
-_SEARCH_WIN_SEED = 6
-# feature_id 88 (MERMAID guarding BOOK_NAVAL) is the SKILL_BOOK-category
-# feature this test now targets -- picked for a weak guardian (hp 10,
-# melee skill 1) so the win seed stays small.
-_BOOK_FEATURE_ID = 88
-_BOOK_SEARCH_WIN_SEED = 1
+# Phase 902 note: generate_new_game(seed=1)'s own feature roster is a
+# fixed, reproducible fact of this scenario, re-checked after Phase 902
+# fixed ordinary_humanoid_budget()'s own formula and wired Trollish
+# provinces through it (RNG consumption before place_all_features(),
+# same class of shift as Phase 426/427/797/799/892 before it). The first
+# treasure+guardian feature (feature_id 1) is now guarded by a
+# RAKSHASHA (hp 18-27, melee skill 1) -- a real, reproducible fact, not
+# a tuning choice.
+_SEARCH_WIN_SEED = 2
+# feature_id 86 (GI_CLAM guarding a Tactical skill book) is the
+# SKILL_BOOK-category feature this test now targets -- picked for a
+# weak guardian (hp 14-27, melee skill 0) so the win seed stays small.
+_BOOK_FEATURE_ID = 86
+_BOOK_SEARCH_WIN_SEED = 5
 
 
 def _generate_game(king_count: int = 10) -> GameState:
@@ -130,9 +138,9 @@ def test_world_generated_treasure_reaches_state_items_via_a_search_win():
 
 def test_a_world_generated_and_search_won_book_is_directly_usable_via_use_mi():
     # This project's real generate_new_game(seed=1) scenario places a
-    # BOOK_NAVAL on feature_id 88 (guarded by a MERMAID) -- not tuned
+    # BOOK_TACTICAL on feature_id 86 (guarded by a GI_CLAM) -- not tuned
     # for that, just what this fixed, reproducible generation run
-    # produces (see _BOOK_FEATURE_ID's own Phase 799 note above). Any
+    # produces (see _BOOK_FEATURE_ID's own Phase 902 note above). Any
     # SKILL_BOOK category member would exercise the same chain.
     state = _generate_game()
     feature = next(f for f in state.features.values() if f.feature_id == _BOOK_FEATURE_ID)

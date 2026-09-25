@@ -170,11 +170,32 @@ def test_draw_r4_stays_within_1_to_4():
 
 
 def test_ordinary_humanoid_budget_stays_within_documented_range():
+    # Phase 902 (TROLL.md): the real factor is confined to [0.65, 0.9),
+    # not the full [0, 0.9) the previously-shipped formula allowed.
     rng = PascalRandom(seed=3)
     for tax in range(0, 11):
         for _ in range(500):
             budget = ordinary_humanoid_budget(tax, rng)
-            assert 1 <= budget <= 1 + int(0.9 * tax) + 1
+            assert int(tax * 0.65) + 1 <= budget <= int(tax * 0.9) + 1
+
+
+class _FixedRandom:
+    """Minimal ``PascalRandom``-compatible stub returning a fixed ``random()``."""
+
+    def __init__(self, value: float) -> None:
+        self._value = value
+
+    def random(self) -> float:
+        return self._value
+
+
+def test_ordinary_humanoid_budget_matches_the_byte_verified_formula_exactly():
+    # Trunc(ptax * (0.9 - 0.25*Random)) + 1 -- a subtraction from a
+    # constant, not a multiplication by a uniform fraction (TROLL.md's
+    # own "Verifica decisiva del segno" section).
+    assert ordinary_humanoid_budget(10, _FixedRandom(0.0)) == int(10 * 0.9) + 1  # 10
+    assert ordinary_humanoid_budget(10, _FixedRandom(1.0)) == int(10 * 0.65) + 1  # 7
+    assert ordinary_humanoid_budget(0, _FixedRandom(0.5)) == 1
 
 
 def test_whale_budget_stays_within_documented_range():

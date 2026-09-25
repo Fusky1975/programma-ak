@@ -30,14 +30,46 @@ Sixth phase of the world-generation sub-plan. Source:
   over ``0..7``, so ``P(tax > X) == (number of the 8 values below
   tax)/8 == min(tax,8)/8`` exactly.
 - Budget formulas (``initial_armies.budget_by_race_or_owner``):
-  ``KING_HOME_BUDGET = 7``; ``ordinary_humanoid_budget()`` (``1 +
-  trunc(0.9*tax*U)``); ``draw_r4()`` (uniform integer ``1..4``, the
+  ``KING_HOME_BUDGET = 7``; ``draw_r4()`` (uniform integer ``1..4``, the
   source's own named "R4" primitive); ``whale_budget()`` (``tax + 1 +
   R4``); ``flying_or_special_budget()`` (``tax + R4a - R4b``, two
   independent R4 draws, left unclamped exactly as the source gives
   it -- a low-tax province can get a small or even negative budget,
   which `build_initial_armies()` naturally resolves to zero armies
   rather than needing a special case).
+
+  **``ordinary_humanoid_budget()``, corrected by Phase 902 (``TROLL.md``,
+  2026-09-25, a byte-level disassembly of this exact ``province_army_
+  routine`` 0B57:A400's own default budget branch, raw 216B0-21723)**:
+  the real formula is ``Trunc(ptax * (0.9 - 0.25*Random)) + 1`` --
+  **subtraction from a constant, not multiplication by a uniform
+  fraction**. The previously-shipped ``1 + trunc(0.9*tax*U)`` (undated,
+  inherited from this module's own original Phase 358 sourcing) was
+  never independently verified against the compiled bytes and is wrong:
+  it lets the factor range over the full ``[0, 0.9)``, while the real
+  factor is confined to ``[0.65, 0.9)`` -- a materially narrower, always-
+  generous range. Confirmed instruction-by-instruction, including the
+  sign of the subtraction (``TROLL.md``'s own "Verifica decisiva del
+  segno" section, tracing the real runtime's operand-swap convention at
+  raw 599AB) and the real ``0.9`` constant's own exact Real48 value
+  (``494780232499/549755813888``, indistinguishable from the plain
+  float ``0.9`` at any realistic tax magnitude). ``Random`` here is the
+  bare ``PascalRandom.random()`` call (the runtime's own real-valued
+  ``Random``, not ``IRand``'s further integer scaling) -- matching the
+  "no dedicated caller reduction" convention this file's own ``draw_r4()``
+  already established for a different real primitive.
+
+  **This same disassembly also closes the separate, previously-genuine
+  "Trollish has no budget formula" gap** (see ``worldgen/generate_
+  new_game.py``'s own Phase 902 addendum): race code 10 (Trollish) has
+  no dedicated ``CASE`` branch in this routine's own race dispatcher at
+  all -- it falls through to the exact same default branch as an
+  ordinary humanoid province (races 0-3, never special-cased either).
+  ``ordinary_humanoid_budget()`` is therefore the real, byte-confirmed
+  formula for Trollish too, not a separate one -- the function's own
+  name stays humanoid-flavored (its primary, original use), but a
+  Trollish caller reusing it is not a mismatch; it is the same compiled
+  code path.
 - ``build_initial_armies()``: the confirmed creation loop -- "start
   with recruit slot 0, create its army if affordable, subtract that
   type's strength, toggle 0/1; toggle back if the other slot is
@@ -503,9 +535,15 @@ def draw_r4(rng: PascalRandom) -> int:
 
 
 def ordinary_humanoid_budget(tax: int, rng: PascalRandom) -> int:
-    """"Human_Elf_Dwarf_Orc_nonhome: 1 + trunc(0.9*tax*U)"."""
+    """The default budget branch of ``province_army_routine`` (0B57:A400)
+    -- "Human_Elf_Dwarf_Orc_nonhome" and, per ``TROLL.md`` (Phase 902),
+    Trollish too: ``Trunc(ptax * (0.9 - 0.25*Random)) + 1``. See module
+    docstring's own Phase 902 addendum for the byte-level correction
+    this replaced (the previous formula's ``0.9*tax*U`` was never
+    independently verified and had the wrong shape).
+    """
 
-    return 1 + int(0.9 * tax * rng.random())
+    return int(tax * (0.9 - 0.25 * rng.random())) + 1
 
 
 def whale_budget(tax: int, rng: PascalRandom) -> int:
