@@ -357,8 +357,15 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.exploration import SOCIETY_MAPS_PRACTICE_COUNT_RANGE, receive_society_maps
 from ak_engine.turn.tax_base import province_tax_yield
+from ak_engine.worldgen.archery_ability_level_schedule import build_archery_ability_level_schedule
+from ak_engine.worldgen.druid_ability_level_schedule import build_druid_ability_level_schedule
 from ak_engine.worldgen.explorer_ability_level_schedule import build_explorer_ability_level_schedule
+from ak_engine.worldgen.melee_ability_level_schedule import build_melee_ability_level_schedule
+from ak_engine.worldgen.sage_ability_level_schedule import build_sage_ability_level_schedule
 from ak_engine.worldgen.special_ability_level_schedule import MAGIC_COLLEGES, build_magic_ability_level_schedule
+from ak_engine.worldgen.spy_ability_level_schedule import build_spy_ability_level_schedule
+from ak_engine.worldgen.tactical_ability_level_schedule import build_tactical_ability_level_schedule
+from ak_engine.worldgen.thief_ability_level_schedule import build_thief_ability_level_schedule
 
 # CTME.PAS: apt_rise: array[0..10] OF byte = (0,10,25,50,100,80,60,40,20,0,0);
 # Indexed by *current* skill level (0-9); indices 9-10 are unreachable
@@ -777,14 +784,19 @@ def _maybe_grant_advanced_ability(
     state: GameState, leader: LeaderState, ability: Ability, skill_rose: bool, new_skill: int | None
 ) -> AdvancedAbility | None:
     """Grants the real ``spabord`` Advanced Ability (Phase 128) for a natural skill
-    rise, using the two acquisition algorithms this project has actually verified:
-    the 5 magic colleges (``MAGIC_COLLEGES``, ``worldgen/special_ability_level_
-    schedule.py``, Phase 384) and Explorer (``worldgen/explorer_ability_level_
-    schedule.py``, Phase 508). The other 9 ``Ability`` categories' own real
-    ``spabord`` template content was never recovered from available source
-    material (see those modules' own docstrings), so this deliberately returns
-    ``None`` for them rather than guessing -- a documented, narrower scope than
-    the full 89-entry catalog, not a silent gap.
+    rise. Covers 13 of the 15 ``Ability`` categories now: the 5 magic colleges
+    (``MAGIC_COLLEGES``, ``worldgen/special_ability_level_schedule.py``, Phase
+    384) and, since Phase 899, Explorer/Tactical/Archery/Melee/Druid/Thief/
+    Spy/Sage (``worldgen/explorer_``/``tactical_``/``archery_``/``melee_``/
+    ``druid_``/``thief_``/``spy_``/``sage_ability_level_schedule.py``, Phases
+    508/899) -- see those modules' own docstrings for each one's real
+    ``spabord`` template and, for the 7 Phase 899 categories, the shared
+    confidence-level caveat (one worked example each, not independently
+    double-anchored the way Explorer/Naval are). ``Ability.MARCH`` has no
+    real content to grant (a confirmed zero-cost, no-``IRand`` category) and
+    ``Ability.NAVAL`` is granted from a different real trigger entirely
+    (``turn/move_execution.py``, not an ordinary Practice skill rise) -- both
+    deliberately excluded here, not an oversight.
 
     Fires only on an actual skill rise (never for an aptitude-only rise --
     ``spabord`` is keyed by natural skill level, and an aptitude rise alone
@@ -803,6 +815,20 @@ def _maybe_grant_advanced_ability(
         granted = schedule[ability].get(new_skill)
     elif ability is Ability.EXPLORER:
         granted = build_explorer_ability_level_schedule(state.game_number).get(new_skill)
+    elif ability is Ability.TACTICAL:
+        granted = build_tactical_ability_level_schedule(state.game_number).get(new_skill)
+    elif ability is Ability.ARCHERY:
+        granted = build_archery_ability_level_schedule(state.game_number).get(new_skill)
+    elif ability is Ability.MELEE:
+        granted = build_melee_ability_level_schedule(state.game_number).get(new_skill)
+    elif ability is Ability.DRUID:
+        granted = build_druid_ability_level_schedule(state.game_number).get(new_skill)
+    elif ability is Ability.THIEF:
+        granted = build_thief_ability_level_schedule(state.game_number).get(new_skill)
+    elif ability is Ability.SPY:
+        granted = build_spy_ability_level_schedule(state.game_number).get(new_skill)
+    elif ability is Ability.SAGE:
+        granted = build_sage_ability_level_schedule(state.game_number).get(new_skill)
     else:
         return None
 
