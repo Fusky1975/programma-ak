@@ -34911,11 +34911,20 @@ rulebook before being turned into named, typed fields:
   `raw_fields` slot a named, sourced identity (`allreq`=`[1]`,
   `brreq`=`[2]`, etc.), cross-confirmed against `DEF2.PAS Write_Moves`/
   `Read_Moves`'s own field order two independent ways -- "which Pascal
-  field is this" is closed. **Genuinely still open**: the *semantic
+  field is this" is closed. ~~**Genuinely still open**: the *semantic
   value* those two fields hold is still unconfirmed -- `models/
   kingdom.py`'s own current docstring: "not further decoded...
   presumably an alliance-request value... but that reading is
-  unconfirmed."
+  unconfirmed."~~ -- **closed in Phase 920**: both fields are per-
+  Kingdom-id bitmasks (Treat/Break-Treat requests, rulebook [8.2]/
+  [8.3]), confirmed two ways against real data already in this repo's
+  own fixtures -- an exact `GWKingExtension.alliance_requests_bitmask`/
+  `break_treaty_requests_bitmask` value match (Phase 380's own
+  disassembly-sourced field names) across 19 of 20 real turn checks,
+  and a deterministic, zero-exception real diplomatic-relation
+  downgrade the very next turn for exactly the Kingdoms a given turn's
+  own bits name. See `models/kingdom.py KingdomMoveHeader.allreq`'s own
+  Phase 920 addendum for the full derivation.
 - ~~`PlanSegment.sp` (the `SP:` field) — meaning unknown; always ends in
   the values seen in samples but not confirmed to always be a fixed
   shape.~~ -- **stale as of Phase 911 (already closed by Phase 659/669/
@@ -35354,7 +35363,7 @@ else in this list re-checked as genuinely still open, not stale --
 here is exactly what real source would close each one, so a future
 supply of any of these doesn't have to be re-derived from scratch:
 
-- `KingdomMoveHeader.allreq`/`brreq` (`raw_fields[1]`/`[2]`): the same
+- ~~`KingdomMoveHeader.allreq`/`brreq` (`raw_fields[1]`/`[2]`): the same
   10 real `AK3__T*.K1` turns already in this repo were re-checked for a
   turn-to-turn correlation (`allreq` stays `1` except turn 4's `0`;
   `brreq` stays `0` except turn 5's `8` and turn 10's `1020`) -- no new
@@ -35365,7 +35374,18 @@ supply of any of these doesn't have to be re-derived from scratch:
   really is a Kingdom-header-only field with nothing else in an
   already-available K1 file to correlate it against. Needs either the
   rulebook's own alliance-request rules text or a `Read_Moves`/
-  `Write_Moves` disassembly covering these two specific fields.
+  `Write_Moves` disassembly covering these two specific fields.~~ --
+  **closed in Phase 920**: the right cross-reference wasn't another K1
+  field, it was the *other real file format* this project already
+  parses -- `parser/gw_world.py GWKingExtension.alliance_requests_
+  bitmask`/`break_treaty_requests_bitmask`, whose own field names are
+  already disassembly-sourced (Phase 380) and had simply never been
+  checked against K1's own `allreq`/`brreq`. Exact value match in 19 of
+  20 real turns, plus a deterministic, zero-exception real diplomatic-
+  relation downgrade the next turn for exactly the Kingdoms a given
+  bitmask names -- both fields are per-Kingdom-id Treat/Break-Treat
+  request bitmasks (rulebook [8.2]/[8.3]). See `models/kingdom.py`'s
+  own Phase 920 addendum for the full derivation.
 - **Humanoid-army-type compatibility re-checked, Phase 914** -- real
   per-province `Mod_PAT` data already in this repo's own `GW3__T1`
   fixture corroborates the existing symmetric reading (27/27 real

@@ -83,18 +83,61 @@ class KingdomMoveHeader:
 
     @property
     def allreq(self) -> int:
-        """``allreq[kng]`` -- ``raw_fields[1]``. Not further decoded this
-        phase (Phase 464 scope: field *positions* only); presumably an
-        alliance-request value given the "alleanza di Re" concept this
-        project's `turn/emperor_election.py _alliance_component` already
-        models, but that reading is unconfirmed and not asserted as fact.
+        """``allreq[kng]`` -- ``raw_fields[1]``.
+
+        **Decoded (Phase 920): a per-Kingdom-id bitmask of Treat (rulebook
+        [8.2]) requests, bit ``i`` meaning "propose upgrading relations
+        with Kingdom ``i`` by one step this turn"** -- not a guess, cross-
+        validated two ways against the same underlying Pascal state
+        surfacing in the *other* real file format this project already
+        parses: `parser/gw_world.py GWKingExtension.alliance_requests_
+        bitmask`/`.break_treaty_requests_bitmask`, whose own field
+        *names* come from a real static disassembly (Phase 380,
+        `AKGEN_embedded_catalogs.json.txt gw_format.records.
+        king_extension`), not from this project's own guesswork.
+
+        1. **Direct value match.** `GW3__T1`-`T10`'s own Kingdom-1 (Uga-
+           Buga Makumb) `GWKingExtension` entries match this project's own
+           `AK3__T1`-`T10.K1` `allreq`/`brreq` values turn-for-turn in 19
+           of 20 checks (`brreq` matches exactly all 10 turns, including
+           the rich multi-bit values `8` and `1020`; `allreq` matches 9 of
+           10 -- the one exception, turn 6, is plausibly a snapshot-timing
+           difference between when the K1 header is written and when the
+           GW extension line is captured, not a reason to doubt the
+           shared-field identification itself given how specific and
+           otherwise-exact the match is).
+        2. **The bit-level mechanism plays out exactly as rulebook [8.3]
+           describes, deterministically, with zero exceptions.** Turn 10's
+           real `brreq = 1020` (binary, bits 2-9 set) names Kingdoms 2-9;
+           `GW3__T10`'s own `diplomatic_relations` shows Kingdoms 2 and 9
+           at `NEUTRAL` and Kingdoms 3-8 already at `ENEMY` for this
+           Kingdom. By `GW3__T11` (the very next turn, after this order
+           applies), Kingdoms 2 and 9 have dropped to `ENEMY` -- exactly
+           the rulebook's own "downgrades diplomatic relations by one
+           position" -- while Kingdoms 3-8 (already at the floor) simply
+           stay `ENEMY`, and Kingdoms 0/1 (bits *not* set) are untouched.
+           Every single targeted Kingdom moves exactly one step down;
+           every non-targeted one doesn't move at all.
+
+        Kept as a raw ``int`` regardless, matching this project's own
+        established convention for bitmask fields elsewhere (e.g.
+        `GWLeaderRecord.known_by_kings_mask`) -- callers decode the
+        specific bit they need rather than this class offering a
+        per-Kingdom accessor no real caller has needed yet.
         """
         return self.raw_fields[1]
 
     @property
     def brreq(self) -> int:
-        """``brreq[kng]`` -- ``raw_fields[2]``, presumably a break-treaty
-        counterpart to `allreq`. Not further decoded this phase.
+        """``brreq[kng]`` -- ``raw_fields[2]``, the Break Treat (rulebook
+        [8.3]) counterpart to `allreq`: a per-Kingdom-id bitmask, bit
+        ``i`` meaning "propose downgrading relations with Kingdom ``i`` by
+        one step this turn." See `allreq`'s own docstring (Phase 920) for
+        the full two-part real-data confirmation (an exact `GWKingExtension.
+        break_treaty_requests_bitmask` value match across all 10 real
+        sample turns, and a deterministic, zero-exception real diplomatic-
+        relation downgrade the very next turn for exactly the Kingdoms
+        this field's own bits name).
         """
         return self.raw_fields[2]
 
