@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import PurePath
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
 from ak_engine.models.leader import Leader
 
@@ -322,6 +323,42 @@ class SkillTable:
     world-save, needing only its own already-named move file. Not a new
     hypothesis and not itself a decode -- just the precise ask that
     would let one arrive.
+
+    **Phase 910 -- both files supplied, the last reachable alignment
+    confirmed, promoted to a real decode function.** `AK3__T1.K4`
+    (Hokuto) and `AK3__T1.K7` (Giovanna d'Arco) both give a trailing
+    value of ``3``, exactly the value Phase 907's grouping predicted for
+    a non-Druidic, non-Neutral alignment. Both also carry a second,
+    independent confirmation of their own Divine alignment sitting
+    right there in the same skill line, with no need to trust the
+    world-save cross-reference alone: Necromancy reads ``(0, 0)`` in
+    both -- aptitude forced to ``0`` despite ``0`` skill (which the
+    ordinary `min(5, skill + 2)` formula would otherwise put at ``2``),
+    exactly the Divine-only override `worldgen/king_talent.py
+    build_king_skill_table()` already implements from the rulebook text
+    (see this docstring's own Phase 21 paragraph). Two independent
+    signals agreeing on "these two Kings are really Divine" makes this
+    about as solid as real data gets without a disassembly.
+
+    **All 7 reachable `Alignment` members are now tested, with zero
+    contradictions across 10 real tuples**: ``{Druid} -> 1``,
+    ``{Neutral} -> 2``, ``{Good, Pagan, Evil, Undead, Divine} -> 3`` --
+    which now simplifies to "Druidic gives 1, Neutral gives 2, every
+    other reachable alignment gives 3" (`Alignment.ANTI_HOLY`/
+    `MECHANICAL`/`SPECIAL` are unreachable for a real Hero or King,
+    user-confirmed, Phase 907). Risk (2) from the paragraph above is
+    fully closed. Risks (1) (small per-bucket sample counts could still
+    be broken by a future contradiction) and (3) (no sourced mechanism
+    for *why* 5 alignments collapse to one shared value) are not closed
+    by more same-shaped data or by reasoning alone -- only a disassembly
+    of the move-file writer could close those -- but the project's own
+    established bar for promoting an empirically-derived table (every
+    currently-reachable case tested, zero contradictions, matching how
+    e.g. `worldgen/king_talent.py`'s own alignment overrides were
+    promoted from a comparably small real sample) is now met, so
+    `ALIGNMENT_TRAILING_SKILL_VALUE`/`trailing_skill_value_for_alignment()`
+    below are real, tested code, not just documentation -- user-directed
+    (2026-09-25), rather than assumed silently.
     """
 
     raw_values: list[int]
@@ -343,6 +380,42 @@ class SkillTable:
         i = ability.value * 2
         self.raw_values[i] = skill
         self.raw_values[i + 1] = aptitude
+
+
+ALIGNMENT_TRAILING_SKILL_VALUE: dict[Alignment, int] = {
+    Alignment.DRUID: 1,
+    Alignment.NEUTRAL: 2,
+    Alignment.GOOD: 3,
+    Alignment.PAGAN: 3,
+    Alignment.EVIL: 3,
+    Alignment.UNDEAD: 3,
+    Alignment.DIVINE: 3,
+}
+"""``SkillTable.raw_values[30]`` (the skill-values line's own 31st,
+trailing value) as a function of the King's ``Alignment`` alone --
+see ``SkillTable``'s own Phase 907/909/910 docstring addenda for the
+full derivation: 10 real (Kingdom, race, alignment, trailing-value)
+tuples across 4 real games, zero contradictions, all 7 reachable
+``Alignment`` members tested (``ANTI_HOLY``/``MECHANICAL``/``SPECIAL``
+never occur for a real Hero or King, user-confirmed). Deliberately a
+plain ``dict``, not a computed formula -- there is no sourced
+mechanism for *why* 5 of the 7 alignments share the value ``3``, only
+the empirical grouping itself.
+"""
+
+
+def trailing_skill_value_for_alignment(alignment: Alignment) -> int:
+    """The real ``SkillTable.raw_values[30]`` value a King of ``alignment``
+    gets, per ``ALIGNMENT_TRAILING_SKILL_VALUE`` above.
+
+    Raises ``KeyError`` for ``Alignment.ANTI_HOLY``/``MECHANICAL``/
+    ``SPECIAL`` -- deliberately, since no real Hero or King has ever had
+    one of those three (user-confirmed, Phase 907), so a caller reaching
+    this with one of them almost certainly has a bug upstream rather
+    than a real, unhandled game state.
+    """
+
+    return ALIGNMENT_TRAILING_SKILL_VALUE[alignment]
 
 
 @dataclass(slots=True)

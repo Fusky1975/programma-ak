@@ -1,6 +1,15 @@
+import pytest
+
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import ABILITY_ABBREVIATION, ABILITY_NAME, Ability, ActionCode, action_from_int
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.kingdom import VOTE_TURN_SENTINEL, Kingdom, KingdomMoveHeader, SkillTable
+from ak_engine.models.kingdom import (
+    VOTE_TURN_SENTINEL,
+    Kingdom,
+    KingdomMoveHeader,
+    SkillTable,
+    trailing_skill_value_for_alignment,
+)
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
 
 
@@ -18,6 +27,25 @@ def test_skill_table_pair_for_ability():
     table = SkillTable(raw_values=raw)
     assert table.pair_for_ability(Ability.TACTICAL) == (0, 1)
     assert table.pair_for_ability(Ability.SAGE) == (28, 29)
+
+
+def test_trailing_skill_value_for_alignment_matches_the_10_real_tuples():
+    # Phase 907/909/910: models/kingdom.py SkillTable's own docstring --
+    # 10 real (Kingdom, race, alignment, trailing-value) tuples across 4
+    # real games, zero contradictions, all 7 reachable Alignment members
+    # now tested.
+    assert trailing_skill_value_for_alignment(Alignment.DRUID) == 1
+    assert trailing_skill_value_for_alignment(Alignment.NEUTRAL) == 2
+    for alignment in (Alignment.GOOD, Alignment.PAGAN, Alignment.EVIL, Alignment.UNDEAD, Alignment.DIVINE):
+        assert trailing_skill_value_for_alignment(alignment) == 3
+
+
+def test_trailing_skill_value_for_alignment_rejects_unreachable_alignments():
+    # Alignment.ANTI_HOLY/MECHANICAL/SPECIAL never occur for a real Hero
+    # or King (user-confirmed, Phase 907) -- deliberately unhandled here.
+    for alignment in (Alignment.ANTI_HOLY, Alignment.MECHANICAL, Alignment.SPECIAL):
+        with pytest.raises(KeyError):
+            trailing_skill_value_for_alignment(alignment)
 
 
 def test_kingdom_move_header_field_order_matches_def2_pas():
