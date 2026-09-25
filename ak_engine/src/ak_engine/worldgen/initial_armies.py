@@ -206,13 +206,30 @@ Sixth phase of the world-generation sub-plan. Source:
   provinces, no Swamp terrain, no humanoid race ever on Sea terrain in
   this project's own generator).
 
+- ``necromantic_home_first_army_is_skeletal()`` (Phase 903, closes the
+  ``necromantic_home_exception`` gap): user-confirmed, 2026-09-25 --
+  "un Re di allineamento UNDEAD ottiene un primo esercito Scheletrico"
+  (the Home province's own first recruit slot, i.e.
+  ``home_first_slot(king.race)``/``army_types[0]`` from
+  ``build_initial_armies()``'s own slot-0-first alternation -- a
+  Human Undead King's is a Skeletal Legion, an Elf Undead King's a
+  Skeletal Bowmen, and so on for Dwarven/Orcish). The "qualifying King
+  property" is the King's own Kingdom's ``Alignment`` being ``UNDEAD``
+  -- this project's own pre-existing "Re Non-Morto" concept ([4.2.5],
+  ``turn/plan_dispatch.py _is_undead_king()``), not a new one invented
+  for this. Independently corroborated (not just user say-so) by
+  ``models/game_state.py ArmyState.is_skeletal``'s own pre-existing
+  docstring, which already cites ``RUMORS.PAS:354``'s own
+  ``lalign[armykng] = Undead`` check sitting right alongside the real
+  ``Zomboid`` army-state marker -- this is that exact same check,
+  simply newly wired to a real caller. Only the ``is_skeletal`` marker
+  changes; the army's own type/quality/budget are unaffected -- neither
+  the user's confirmation nor the source material names any other
+  change.
+
 **Deliberately NOT implemented here**, each a genuine, separately
 documented gap:
 
-- The ``necromantic_home_exception`` ("a qualifying King property can
-  mark the first Home army Zomboid/Skeletal") -- the source never
-  states what makes a King property "qualifying", so there is no rule
-  to implement.
 - ~~The ``extra_mercenary_band`` (one per King, found via "radii 1..6"
   radial search from Home with up to 100 retries) -- this needs the
   whole generated map plus a real distance-radius search, a spatial
@@ -242,6 +259,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TYPE_BY_ORDINAL, BASE_STRENGTH, MONSTROUS_ARMY_RACE, ArmyType
 from ak_engine.models.map import Terrain
 from ak_engine.models.race import Race
@@ -609,3 +627,15 @@ def resolve_commander(owner_leader_id: int | None, is_king_home: bool) -> int:
     if is_king_home or owner_leader_id is None:
         return COMMANDER_NONE
     return owner_leader_id
+
+
+def necromantic_home_first_army_is_skeletal(kingdom_alignment: Alignment) -> bool:
+    """The ``necromantic_home_exception``, Phase 903 -- see module
+    docstring's own Phase 903 addendum for the full derivation. Whether
+    the King Home province's own first recruit-slot army (``army_types[0]``)
+    should be raised Zomboid/Skeletal (``ArmyState.is_skeletal=True``)
+    instead of an ordinary Hired one: exactly when the King's own
+    Kingdom's ``Alignment`` is ``UNDEAD``.
+    """
+
+    return kingdom_alignment is Alignment.UNDEAD
