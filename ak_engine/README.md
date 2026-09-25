@@ -35272,11 +35272,20 @@ rulebook before being turned into named, typed fields:
   918 addendum for the full correction and derivation. ~~What the ~15%
   of non-adjacent pairs represent (some are plausibly legitimate, e.g.
   a leader chasing a distant target; one suspiciously round jump,
-  exactly 170, might be a distinct sentinel value)~~ -- **answered
-  precisely in Phase 918**: 17 of 18 known non-adjacent pairs across
-  both datasets are exactly the row-parity-sensitive diagonal case
-  above, not chasing or anything else; only the `170` jump remains a
-  genuine, unexplained outlier. **Phase 917**:
+  exactly 170, might be a distinct sentinel value)~~ -- **fully closed
+  as of Phase 919**: 17 of 18 known non-adjacent pairs across both
+  datasets are exactly the row-parity-sensitive diagonal case above
+  (Phase 918); the `170` jump itself is `Uga-Buga Makumb`'s own real
+  "chasing a distant target" order (Phase 919) -- his own real
+  coordinate across this repo's already-available `GW3__T9`-`T12`
+  fixtures shows the single-phase `1 -> 171` move was never actually
+  executed that turn (his real end-of-turn-10 position matches `P0`'s
+  own target, not `P3`'s or `P4`'s), yet by `GW3__T12`, two turns
+  later, he lands exactly one hex short of `P4`'s own original target
+  (`171`), with his own `x` coordinate constant across all 4
+  checkpoints -- a real, deliberate long-range destination, not a
+  decoding artifact or a sentinel. See `turn/hex_numbering.py`'s own
+  Phase 919 addendum for the full derivation. **Phase 917**:
   `GW3__T1`-`T12`'s own real leader coordinates (matched by name against
   each turn's own `AK3__T*.K1`) give 85 ground-truth-anchored (real
   coordinate, LMOVE target) pairs -- a genuinely independent dataset
@@ -35411,10 +35420,16 @@ supply of any of these doesn't have to be re-derived from scratch:
   74/85) -- real, consistently-directed, if modest, evidence for the
   same convention already established elsewhere. Phase 918 also
   answered the ~15%-non-adjacent question precisely: 17 of 18 known
-  cases are exactly the parity-sensitive diagonal delta, leaving only
-  the `170` jump as a genuine unexplained outlier. See
-  `turn/hex_numbering.py`'s own Phase 917/918 addenda and that bullet's
-  own updated note above for the full derivation.
+  cases are exactly the parity-sensitive diagonal delta. **Phase 919**
+  closed the last piece -- the `170` jump itself -- using this repo's
+  own already-available `GW3__T9`-`T12` fixtures: `Uga-Buga Makumb`'s
+  own real coordinate shows his `P3`/`P4` LMOVE targets that turn were
+  never actually executed (his real end-of-turn position matches `P0`'s
+  target instead), yet two turns later he lands one hex short of `P4`'s
+  own distant target -- a genuine long-range "chase" order, not a
+  decoding artifact or sentinel. See `turn/hex_numbering.py`'s own
+  Phase 917/918/919 addenda and that bullet's own updated note above
+  for the full derivation.
 
 ## Not yet implemented (by design, this phase)
 

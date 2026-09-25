@@ -343,3 +343,52 @@ def test_17_of_18_known_non_adjacent_pairs_are_the_parity_sensitive_diagonal():
     assert len(non_adjacent_deltas) == 18
     diagonal_count = sum(1 for delta in non_adjacent_deltas if delta in sensitive_deltas)
     assert diagonal_count == 17
+
+
+# -- Phase 919: the sole remaining "170 jump" outlier, resolved with real
+# data already in this repo's own GW3__T9-T12 fixtures (no new upload).
+# See the module docstring's own Phase 919 addendum for the full
+# derivation.
+
+
+def test_uga_buga_makumbs_170_jump_was_never_actually_executed_this_turn():
+    # AK3__T10.K1's own real parse: Uga-Buga Makumb's single segment is
+    # P0=LMOVE(11), P1=CAST (a nested plan), P2=LEAVE, P3=LMOVE(1),
+    # P4=LMOVE(171) -- the 1 -> 171 pair really is his own consecutive
+    # P3/P4 phases. His own real coordinate one turn later (GW3__T11,
+    # x/y-transposed per Phase 917) matches P0's own target exactly,
+    # not P3's or P4's -- P3 and P4 were never actually reached this
+    # turn.
+    kingdom = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T10.K1")
+    leader = next(l for l in kingdom.leaders if l.name == "Uga-Buga Makumb")
+    segment = leader.plan.segments[0]
+    assert segment.phases["P0"].obj == 11
+    assert segment.phases["P3"].obj == 1
+    assert segment.phases["P4"].obj == 171
+
+    coord_t11 = {r.name: r.coord for r in parse_gw_leaders(GW3_FIXTURE_DIR / "GW3__T11")}["Uga-Buga Makumb"]
+    swapped_t11 = HexCoord(coord_t11.y, coord_t11.x)
+
+    assert swapped_t11 == decode_hex_number(11, EMPIRICAL_AK3_BOARD_WIDTH)
+    assert swapped_t11 != decode_hex_number(1, EMPIRICAL_AK3_BOARD_WIDTH)
+    assert swapped_t11 != decode_hex_number(171, EMPIRICAL_AK3_BOARD_WIDTH)
+
+
+def test_uga_buga_makumb_lands_one_hex_short_of_the_170_jumps_own_target_two_turns_later():
+    # By GW3__T12, his real position is exactly one hex short of P4's
+    # own original target (171), and his x coordinate stayed at 1
+    # across all 4 checkpoints (T9-T12) -- a straight column march both
+    # before and after this order, not noise.
+    coord_t12 = {r.name: r.coord for r in parse_gw_leaders(GW3_FIXTURE_DIR / "GW3__T12")}["Uga-Buga Makumb"]
+    swapped_t12 = HexCoord(coord_t12.y, coord_t12.x)
+    target = decode_hex_number(171, EMPIRICAL_AK3_BOARD_WIDTH)
+
+    assert swapped_t12.x == target.x == 1
+    assert target.y - swapped_t12.y == 1
+
+    for turn in (9, 10, 11, 12):
+        coord = {r.name: r.coord for r in parse_gw_leaders(GW3_FIXTURE_DIR / f"GW3__T{turn}")}["Uga-Buga Makumb"]
+        # GW's own raw y is the axis that stays constant (this module's
+        # own x, once transposed per Phase 917) -- a straight column
+        # march the whole time, not coincidence.
+        assert coord.y == 1
