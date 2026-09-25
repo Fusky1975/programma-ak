@@ -262,28 +262,84 @@ def test_unswapped_leader_coordinates_fail_at_every_width():
     assert best_unswapped_score / len(pairs_unswapped) < 0.2
 
 
-def test_row_parity_is_undiscriminated_by_the_ground_truth_dataset():
-    # Every one of the 85 pairs' match status is identical whether
-    # neighbors() uses the real (Phase 314) convention or the reversed
-    # one -- a confirmed dead end for using this dataset to settle
-    # row-parity, not just an unlucky sample (see module docstring).
+# -- Phase 918: Phase 917's own row-parity comparison above had a real bug
+# (its "reversed" convention was, worked through by hand, identical to the
+# real corrected one, not its negation) -- these replace it with a
+# correctly-negated comparison. See the module docstring's own Phase 918
+# addendum for the full derivation.
+
+
+def _reversed_neighbors(coord, bounds):
     from ak_engine.turn.movement import _EVEN_ROW_OFFSETS, _ODD_ROW_OFFSETS
 
-    def neighbors_reversed(coord, bounds):
-        offsets = _ODD_ROW_OFFSETS if coord.y % 2 == 0 else _EVEN_ROW_OFFSETS
-        return [
-            HexCoord(coord.x + dx, coord.y + dy)
-            for dx, dy in offsets
-            if 0 <= coord.x + dx < bounds.width and 0 <= coord.y + dy < bounds.height
-        ]
+    # The true negation of movement.py neighbors()'s own
+    # `_EVEN_ROW_OFFSETS if coord.y % 2 else _ODD_ROW_OFFSETS`.
+    offsets = _ODD_ROW_OFFSETS if coord.y % 2 else _EVEN_ROW_OFFSETS
+    return [
+        HexCoord(coord.x + dx, coord.y + dy)
+        for dx, dy in offsets
+        if 0 <= coord.x + dx < bounds.width and 0 <= coord.y + dy < bounds.height
+    ]
 
+
+def test_row_parity_genuinely_discriminates_the_ground_truth_dataset():
+    # Corrected replacement for Phase 917's own (buggy) "undiscriminated"
+    # test: with a truly-reversed convention, 27 of the 85 pairs really
+    # do flip, and the corrected convention wins the split (16 vs 11).
+    # Uses the same generous, non-clipping bounds as the width-sweep test
+    # below -- this module's own board reaches past its declared 15-row
+    # height, so a tight bounds check would distort the comparison.
     pairs = _ground_truth_anchored_pairs()
-    corrected_matches = {
-        i for i, (coord, target) in enumerate(pairs) if coord in neighbors(decode_hex_number(target, EMPIRICAL_AK3_BOARD_WIDTH), _IGNORE_EDGES_BOUNDS)
-    }
-    reversed_matches = {
-        i
-        for i, (coord, target) in enumerate(pairs)
-        if coord in neighbors_reversed(decode_hex_number(target, EMPIRICAL_AK3_BOARD_WIDTH), _IGNORE_EDGES_BOUNDS)
-    }
-    assert corrected_matches == reversed_matches
+    corrected_hits = sum(1 for coord, target in pairs if coord in neighbors(decode_hex_number(target, EMPIRICAL_AK3_BOARD_WIDTH), _IGNORE_EDGES_BOUNDS))
+    reversed_hits = sum(
+        1 for coord, target in pairs if coord in _reversed_neighbors(decode_hex_number(target, EMPIRICAL_AK3_BOARD_WIDTH), _IGNORE_EDGES_BOUNDS)
+    )
+    assert corrected_hits == 74
+    assert reversed_hits == 69
+
+
+def test_original_59_pair_dataset_actually_favors_the_corrected_convention():
+    # The pre-existing "52 vs 50" figure (module docstring, Phase 315)
+    # had both numbers right but credited them to the wrong convention:
+    # 52 is the corrected convention's own (generous-bounds) score, not
+    # the reversed one's. Same generous bounds as the test above, for
+    # the same reason.
+    pairs = _consecutive_lmove_pairs_in_final_segments()
+    corrected_hits = sum(
+        1
+        for a, b in pairs
+        if decode_hex_number(b, EMPIRICAL_AK3_BOARD_WIDTH) in neighbors(decode_hex_number(a, EMPIRICAL_AK3_BOARD_WIDTH), _IGNORE_EDGES_BOUNDS)
+    )
+    reversed_hits = sum(
+        1
+        for a, b in pairs
+        if decode_hex_number(b, EMPIRICAL_AK3_BOARD_WIDTH) in _reversed_neighbors(decode_hex_number(a, EMPIRICAL_AK3_BOARD_WIDTH), _IGNORE_EDGES_BOUNDS)
+    )
+    assert corrected_hits == 52
+    assert reversed_hits == 50
+
+
+def test_17_of_18_known_non_adjacent_pairs_are_the_parity_sensitive_diagonal():
+    # Answers "what does the ~15% of non-adjacent pairs represent"
+    # precisely: combining both real datasets (generous bounds), all but
+    # one of the known corrected-convention failures are exactly a
+    # (+-1, +-1) diagonal step -- the same delta that differs between the
+    # two parity tables -- not chasing, not a different action, not a
+    # decode error. The sole exception is the already-known 170
+    # sentinel-like jump.
+    sensitive_deltas = {(1, 1), (-1, -1), (1, -1), (-1, 1)}
+    non_adjacent_deltas = []
+
+    for a, b in _consecutive_lmove_pairs_in_final_segments():
+        ca, cb = decode_hex_number(a, EMPIRICAL_AK3_BOARD_WIDTH), decode_hex_number(b, EMPIRICAL_AK3_BOARD_WIDTH)
+        if cb not in neighbors(ca, _IGNORE_EDGES_BOUNDS):
+            non_adjacent_deltas.append((cb.x - ca.x, cb.y - ca.y))
+
+    for coord, target in _ground_truth_anchored_pairs():
+        decoded = decode_hex_number(target, EMPIRICAL_AK3_BOARD_WIDTH)
+        if coord not in neighbors(decoded, _IGNORE_EDGES_BOUNDS):
+            non_adjacent_deltas.append((coord.x - decoded.x, coord.y - decoded.y))
+
+    assert len(non_adjacent_deltas) == 18
+    diagonal_count = sum(1 for delta in non_adjacent_deltas if delta in sensitive_deltas)
+    assert diagonal_count == 17

@@ -13427,11 +13427,14 @@ section.
   move-file numbering shares SE3's confirmed `row*100+col` report-file
   province-numbering scheme (both filename families contain a "3", but
   they turn out to be unrelated) -- scores only 23.7%, decisively
-  falsifying that plausible-looking shortcut. Row-parity remains
+  falsifying that plausible-looking shortcut. ~~Row-parity remains
   genuinely too-close-to-call from AK3 data alone (50 vs. 52 of 59 under
-  the corrected vs. old parity), so `turn/movement.py`'s narrative-
-  sourced parity (stronger ground truth than a statistical fit on move
-  targets) stays the documented default here too. No code behavior
+  the corrected vs. old parity)~~ -- **that "52" belonged to the
+  corrected side all along, not the old one (Phase 918 correction, see
+  `turn/hex_numbering.py`'s own Phase 918 addendum)** -- so
+  `turn/movement.py`'s narrative-sourced parity (stronger ground truth
+  than a statistical fit on move targets) stays the documented default
+  here too. No code behavior
   changes -- `decode_hex_number`/`encode_hex_number` and
   `EMPIRICAL_AK3_BOARD_WIDTH = 10` are unchanged; this is a
   documentation-only strengthening of the module's own empirical basis,
@@ -35255,16 +35258,25 @@ rulebook before being turned into named, typed fields:
   reaching past 17, is the real *width* axis; its `x`, bounded by
   `EMPIRICAL_AK3_BOARD_WIDTH`, is the real *height* axis) -- see that
   phase's own addendum for the full, independently-cross-checked
-  derivation. Still open: which row-parity convention applies
+  derivation. ~~Still open: which row-parity convention applies
   (genuinely too close to call from AK3 data alone -- 50 vs. 52 of 59 --
   though `turn/movement.py`'s narrative-sourced convention is used here
-  too, being the stronger evidence; **Phase 917 confirmed this is a
-  real dead end, not just an unlucky sample** -- a much larger 85-pair
-  ground-truth dataset shows literally zero pairs whose adjacency
-  verdict depends on which parity convention is used), and what the
-  ~15% of non-adjacent pairs represent (some are plausibly legitimate,
-  e.g. a leader chasing a distant target; one suspiciously round jump,
-  exactly 170, might be a distinct sentinel value). **Phase 917**:
+  too, being the stronger evidence)~~ -- **Phase 917 first wrongly
+  claimed this was a confirmed dead end (a bug in its own reversed-
+  parity comparison function), then Phase 918 corrected both that and
+  the older "50 vs. 52" figure**: properly recomputed, the corrected
+  convention wins **both** real datasets (52/59 and 74/85, not tied or
+  behind) -- a modest but genuine, consistently-directed lean
+  reinforcing the same convention `turn/movement.py`'s own narrative
+  evidence already established. See `turn/hex_numbering.py`'s own Phase
+  918 addendum for the full correction and derivation. ~~What the ~15%
+  of non-adjacent pairs represent (some are plausibly legitimate, e.g.
+  a leader chasing a distant target; one suspiciously round jump,
+  exactly 170, might be a distinct sentinel value)~~ -- **answered
+  precisely in Phase 918**: 17 of 18 known non-adjacent pairs across
+  both datasets are exactly the row-parity-sensitive diagonal case
+  above, not chasing or anything else; only the `170` jump remains a
+  genuine, unexplained outlier. **Phase 917**:
   `GW3__T1`-`T12`'s own real leader coordinates (matched by name against
   each turn's own `AK3__T*.K1`) give 85 ground-truth-anchored (real
   coordinate, LMOVE target) pairs -- a genuinely independent dataset
@@ -35380,22 +35392,29 @@ supply of any of these doesn't have to be re-derived from scratch:
 - ~~**LMOVE hex-number encoding's 3 remaining questions re-checked,
   Phase 916** (board height, row-parity, the ~15% non-adjacent pairs):
   explicitly already data-starved per Phase 315's own note (AK3 alone
-  can't tell 50-vs-52 apart).~~ **1 of 3 closed in Phase 917, 1
-  confirmed a real dead end, 1 still open**. `AK7`/`AK900`'s own
-  already-available K1 files (Phase 916) gave only a statistically weak
-  (n=1) result that didn't transfer to AK3's own board. **Phase 917**
-  found the real second dataset already sitting inside AK3 itself:
-  `GW3__T1`-`T12`'s own real leader coordinates, cross-referenced by
-  name against each turn's own `AK3__T*.K1` (85 ground-truth-anchored
-  pairs, once a real x/y-axis transpose between the two coordinate
-  systems is accounted for). This **closes the board-height question
-  outright** (this module's own `x`/`y` labels were simply swapped
-  relative to the map's real width/height axes) and **confirms
-  row-parity is a genuine dead end for any dataset like this one** (zero
-  of the 85 pairs land on a parity-sensitive delta, checked directly).
-  The ~15% non-adjacent-pairs question remains open. See
-  `turn/hex_numbering.py`'s own Phase 917 addendum and that bullet's own
-  updated note above for the full derivation.
+  can't tell 50-vs-52 apart).~~ **All 3 closed or answered as of Phase
+  918**. `AK7`/`AK900`'s own already-available K1 files (Phase 916) gave
+  only a statistically weak (n=1) result that didn't transfer to AK3's
+  own board. **Phase 917** found the real second dataset already
+  sitting inside AK3 itself: `GW3__T1`-`T12`'s own real leader
+  coordinates, cross-referenced by name against each turn's own
+  `AK3__T*.K1` (85 ground-truth-anchored pairs, once a real x/y-axis
+  transpose between the two coordinate systems is accounted for). This
+  **closed the board-height question outright** (this module's own
+  `x`/`y` labels were simply swapped relative to the map's real
+  width/height axes), but Phase 917's own row-parity conclusion (a
+  "confirmed dead end") turned out to be a bug in its own comparison
+  code. **Phase 918** fixed that bug, found the identical class of error
+  already baked into the older "50 vs. 52" figure (both numbers were
+  right, just credited to the wrong convention), and recomputed both
+  datasets properly: the corrected convention wins **both** (52/59 and
+  74/85) -- real, consistently-directed, if modest, evidence for the
+  same convention already established elsewhere. Phase 918 also
+  answered the ~15%-non-adjacent question precisely: 17 of 18 known
+  cases are exactly the parity-sensitive diagonal delta, leaving only
+  the `170` jump as a genuine unexplained outlier. See
+  `turn/hex_numbering.py`'s own Phase 917/918 addenda and that bullet's
+  own updated note above for the full derivation.
 
 ## Not yet implemented (by design, this phase)
 
