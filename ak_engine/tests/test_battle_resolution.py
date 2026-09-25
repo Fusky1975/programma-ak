@@ -308,6 +308,40 @@ def test_resolve_battle_numeric_superiority_boosts_second_line_to_full_strength(
         assert column.defender_strength == pytest.approx(10)
 
 
+def test_resolve_battle_outflank_eligibility_never_widens_nemesis_eligibility():
+    # Phase 904 (NEMESIS.md, a byte-level disassembly of the real battle
+    # routine, AK.OVR raw 0x8CD2-0xA85A): confirms this project's own
+    # "outflanking stays unmodeled for nemesis eligibility" choice
+    # (turn/battle_line.py apply_nemesis_penalties()'s own docstring) is
+    # not a guess -- the two outflanking branches (raw 0x9923-0x9A13)
+    # only ever set the strength divisor to 1 (already this project's own
+    # outflank_second_line boost below) and never write an opponent type
+    # or extend a nemesis-candidate set; Nemo() itself always receives a
+    # single, already-resolved opponent type. This test locks that in at
+    # the resolve_battle() level: the attacker's own rearward LEGION
+    # (a real nemesis-inflictor for PHALANX) sits in the very column
+    # whose second-line unit outflanking boosts to 100% strength, but the
+    # defender's front-line PHALANX must still only be checked against
+    # the attacker's own front-line BOWMEN (no nemesis relation) -- not
+    # against that boosted rearward LEGION.
+    attacker_units = [
+        unit(100, ArmyType.BOWMEN),
+        unit(90, ArmyType.BOWMEN),
+        unit(80, ArmyType.LEGION),  # rearward, column 0 -- Phalanx's real nemesis
+        unit(70, ArmyType.BOWMEN),
+    ]
+    defender_units = [unit(50, ArmyType.PHALANX), unit(40, ArmyType.BOWMEN)]
+    rng = ScriptedRandom(_luck_draws(2))
+
+    result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=5, rng=rng)
+
+    # Outflanking's own real effect still fires (100 + 80*1.0, not *0.5).
+    assert result.columns[0].attacker_strength == pytest.approx(180)
+    # But the defender's Phalanx is NOT nemesis-penalized (50, not 50*2/3)
+    # -- the rearward Legion never becomes an eligible inflictor.
+    assert result.columns[0].defender_strength == pytest.approx(50)
+
+
 def test_resolve_battle_numeric_superiority_not_eligible_when_terrain_is_the_binding_cap():
     # Same 4-vs-2 imbalance, but terrain_line_length_cap=2 equals the
     # already-capped line_length -- the line is exactly as long as the
