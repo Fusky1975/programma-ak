@@ -158,6 +158,84 @@ matched width, doesn't transfer to AK3's own data) -- closing that
 would need a second AK3-*like* multi-turn dataset (several turns of the
 same game, the way the original 10 `AK3__T*.K1` files were used), not
 just any third game's single pair.
+
+**Phase 917 -- the "second AK3-like dataset" the paragraph above asked
+for turns out to already exist inside AK3 itself, via a completely
+different real anchor: `GW3__T1`-`T12`'s own leader coordinates
+(`parser/gw_world.py parse_gw_leaders()`), matched by name against each
+turn's own `AK3__T*.K1`.** Unlike Phase 315's own within-file
+consecutive-pair method (both ends of every pair are themselves
+*decoded*, never independently verified), this gives a genuine
+ground-truth "from": whenever a leader's very first phase this turn is
+already an LMOVE (nothing earlier in their plan -- Practice, Recruit,
+Cast, etc. -- changes location), the real-world-save coordinate *is*
+their position at the moment that LMOVE target applies, with zero
+decoding involved on that side. Across all 10 turns this finds **85
+such (real coordinate, LMOVE target) pairs** -- 44% more than the
+original 59, and the first AK3 dataset with one real, undecoded
+endpoint.
+
+Naively comparing these coordinates against `decode_hex_number()`
+output scores near zero at every width from 2 to 200 -- not noisy, a
+flat, decisive failure, the kind that means "wrong basis," not "weak
+fit." **The fix is a straightforward x/y transpose**: comparing
+`HexCoord(leader_coord.y, leader_coord.x)` (not the coordinate as
+recorded) against the decoded target immediately restores the expected
+signal -- **width 10 scores 74/85 (87.1%)**, decisively the best fit
+across the full 2-200 sweep (next closest: 13/85, 15.3%), matching (and
+slightly exceeding) Phase 315's own 84.7% on a dataset with no shared
+pairs and a genuinely independent kind of ground truth. This isn't a
+bug in `GWLeaderRecord.coord`'s own parsing -- cross-checking each
+leader's *unswapped* coordinate against `parser/gw_world_bridge.py
+bridge_gw_world_provinces()`'s own column-major province grid lands
+every single one (15/15 sampled) on a province whose race matches the
+leader's own race exactly, while the swapped reading lands on
+race-mismatched or out-of-bounds provinces almost every time -- GW's
+own coordinate system (leaders and provinces alike) is internally
+self-consistent and correctly parsed as-is. The transpose is real, but
+it sits squarely *between* two independent, each-internally-correct
+real coordinate systems -- the GW world-save format's own native (x,
+y) (column, row) convention, and this module's own K1-LMOVE row-major
+decode -- which nothing before this ever had reason to compare
+numerically against each other (every prior cross-reference in this
+project matched GW leaders/Kings by *name*, never by raw coordinate
+arithmetic against a separately-decoded hex number).
+
+**This closes the board-height puzzle for AK3 outright, not just
+narrows it.** "Real data includes y values past 17, taller than the
+assumed 15-row height" (the very first open question above) dissolves
+once the transpose is accounted for: this module's own `y` (the `//
+board_width` term) is the axis that reaches past 17 in real LMOVE
+data -- and that is exactly `GW3__T1`'s own real, already-confirmed
+*width* axis (18 columns, `parser/gw_world_bridge.py
+CONFIRMED_BOARD_HEIGHT`'s own sibling constant), not a taller-than-
+expected height at all. This module's own `x` (the `% board_width`
+term, bounded by `EMPIRICAL_AK3_BOARD_WIDTH`) is the axis that
+corresponds to the real, already-confirmed *height* (9 rows) -- and
+`10` sits suspiciously close to that real `9`, close enough to notice,
+not close enough to call exact (off by one, and not confirmed as a
+general law: AK6's own empirical `20` vs. its own real height `15` is a
+looser fit, and wasn't re-checked with this same ground-truth technique
+since `GW6` isn't available in this repo/session to redo the leader
+cross-reference on). Recorded as a real, suggestive pattern worth a
+future check, not promoted to "XMULT is secretly board height."
+
+**Row-parity itself is untouched by this new dataset -- a genuine,
+confirmed dead end for this specific technique, not just an unlucky
+sample.** `_EVEN_ROW_OFFSETS`/`_ODD_ROW_OFFSETS` (`turn/movement.py`)
+share 4 of their 6 offset vectors as a set (`(1, 0)`, `(-1, 0)`, `(0,
+1)`, `(0, -1)` appear in both tables, just reassigned) -- only the two
+"far" diagonal offsets differ between them, so any move whose real
+delta lands on one of the 4 shared vectors is parity-*insensitive* by
+construction. Checked directly, not assumed: every one of the 85 pairs'
+matched/unmatched status is byte-for-byte identical whether `neighbors()`
+uses the real (Phase 314-confirmed) convention or the discredited,
+reversed one -- zero pairs land on a parity-sensitive delta. A future
+dataset would need real moves whose *unswapped* deltas happen to land
+on one of the 4 diagonal offsets that differ between the two tables
+(`(1, 1)`, `(-1, -1)`, `(1, -1)`, `(-1, 1)`) to ever discriminate this
+question; nothing currently available (AK3, AK6, AK7, AK900) offers
+one.
 """
 
 from __future__ import annotations

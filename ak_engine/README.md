@@ -35247,15 +35247,38 @@ rulebook before being turned into named, typed fields:
   the ~1-2% expected by chance. Phase 315 also ruled out one plausible
   alternative: AK3 LMOVE targets are NOT SE3-style `row*100+col` province
   numbers (23.7% match), despite both filename families sharing a "3".
-  Still open: the exact board height (real data reaches y=17, taller than
-  `turn/movement.py`'s assumed 15-row "normal" board -- this game series
-  may simply use a different board size), which row-parity convention
-  applies (genuinely too close to call from AK3 data alone -- 50 vs. 52
-  of 59 -- though `turn/movement.py`'s narrative-sourced convention is
-  used here too, being the stronger evidence), and what the ~15% of
-  non-adjacent pairs represent (some are plausibly legitimate, e.g. a
-  leader chasing a distant target; one suspiciously round jump, exactly
-  170, might be a distinct sentinel value). **Phase 916**: a third and
+  ~~Still open: the exact board height (real data reaches y=17, taller
+  than `turn/movement.py`'s assumed 15-row "normal" board -- this game
+  series may simply use a different board size)~~ -- **closed in Phase
+  917**: this module's own `x`/`y` axis *labels* are transposed relative
+  to the real map's own width/height (this module's `y`, the one
+  reaching past 17, is the real *width* axis; its `x`, bounded by
+  `EMPIRICAL_AK3_BOARD_WIDTH`, is the real *height* axis) -- see that
+  phase's own addendum for the full, independently-cross-checked
+  derivation. Still open: which row-parity convention applies
+  (genuinely too close to call from AK3 data alone -- 50 vs. 52 of 59 --
+  though `turn/movement.py`'s narrative-sourced convention is used here
+  too, being the stronger evidence; **Phase 917 confirmed this is a
+  real dead end, not just an unlucky sample** -- a much larger 85-pair
+  ground-truth dataset shows literally zero pairs whose adjacency
+  verdict depends on which parity convention is used), and what the
+  ~15% of non-adjacent pairs represent (some are plausibly legitimate,
+  e.g. a leader chasing a distant target; one suspiciously round jump,
+  exactly 170, might be a distinct sentinel value). **Phase 917**:
+  `GW3__T1`-`T12`'s own real leader coordinates (matched by name against
+  each turn's own `AK3__T*.K1`) give 85 ground-truth-anchored (real
+  coordinate, LMOVE target) pairs -- a genuinely independent dataset
+  from Phase 315's own within-file method, where neither end was ever
+  independently verified before. After discovering and correcting for a
+  real x/y-axis transpose between `GWLeaderRecord.coord`'s own
+  convention and this module's, width=10 scores **74/85 (87.1%)**,
+  decisively the best fit across 2-200 -- an even stronger, independent
+  reconfirmation of width=10 than the original 59-pair figure. See
+  `turn/hex_numbering.py`'s own Phase 917 addendum for the full
+  derivation, including why the transpose isn't a bug in either
+  coordinate system and a suggestive (not confirmed) hint that `XMULT`
+  may approximate the real board *height* rather than being unrelated
+  to the map's own dimensions. **Phase 916**: a third and
   fourth game's real move files (`AK7__T*.K2`, `AK900T1.K0` +
   `GW900T1`), already on hand from an unrelated earlier question, were
   finally checked against this one too. `AK7` stays unusable (its 2
@@ -35354,18 +35377,25 @@ supply of any of these doesn't have to be re-derived from scratch:
   battlefield itself always structurally present as a "candidate"), not
   an unsourced preference among equally-valid choices -- see that
   bullet's own updated note above for the full fix.
-- **LMOVE hex-number encoding's 3 remaining questions re-checked, Phase
-  916** (board height, row-parity, the ~15% non-adjacent pairs):
+- ~~**LMOVE hex-number encoding's 3 remaining questions re-checked,
+  Phase 916** (board height, row-parity, the ~15% non-adjacent pairs):
   explicitly already data-starved per Phase 315's own note (AK3 alone
-  can't tell 50-vs-52 apart). `AK7`/`AK900`'s own already-available K1
-  files (used for an unrelated earlier question) were checked -- `AK7`
-  is unusable outright (repeated single target, no world-save); `AK900`
-  gives one real pair whose own real board width happens to be
-  consistent with it, a genuinely new but statistically weak (n=1)
-  observation that doesn't transfer to AK3's own board -- see that
-  bullet's own updated note above. Still needs a *second real AK3-like
-  multi-turn dataset* (several turns of one game, not just any third
-  game's single pair) to settle AK3's own 3 questions outright.
+  can't tell 50-vs-52 apart).~~ **1 of 3 closed in Phase 917, 1
+  confirmed a real dead end, 1 still open**. `AK7`/`AK900`'s own
+  already-available K1 files (Phase 916) gave only a statistically weak
+  (n=1) result that didn't transfer to AK3's own board. **Phase 917**
+  found the real second dataset already sitting inside AK3 itself:
+  `GW3__T1`-`T12`'s own real leader coordinates, cross-referenced by
+  name against each turn's own `AK3__T*.K1` (85 ground-truth-anchored
+  pairs, once a real x/y-axis transpose between the two coordinate
+  systems is accounted for). This **closes the board-height question
+  outright** (this module's own `x`/`y` labels were simply swapped
+  relative to the map's real width/height axes) and **confirms
+  row-parity is a genuine dead end for any dataset like this one** (zero
+  of the 85 pairs land on a parity-sensitive delta, checked directly).
+  The ~15% non-adjacent-pairs question remains open. See
+  `turn/hex_numbering.py`'s own Phase 917 addendum and that bullet's own
+  updated note above for the full derivation.
 
 ## Not yet implemented (by design, this phase)
 
