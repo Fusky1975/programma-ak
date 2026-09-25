@@ -14133,7 +14133,8 @@ section.
     `general_merit`/`admiral_merit`/`defender_merit` (the missing data
     Phase 137's own Imperial-Office research needed and didn't have a
     parser for), `feature_discoveries`/`discovery_points`/`white_
-    magic_service_points`, `experience_progress`, `sex_raw`,
+    magic_service_points`, `experience_progress`, `sex_raw` (renamed
+    `special_effects_raw`, Phase 908),
     `sex_override_flag`, `unpaid_blackmail_penalty_exponent`, and
     `known_by_kings_mask` -- re-verified against the real `GW3__T1`
     fixture wherever possible (e.g. every King's own
@@ -14153,7 +14154,12 @@ section.
     confirmed-female Heroes (Tao-Li, Dracona) -- so it isn't what
     actually determines a character's displayed sex under normal play,
     and no real nonzero example exists yet to confirm which value would
-    mean which sex.
+    mean which sex. **Renamed `special_effects_raw` in Phase 908**:
+    `EXAMPLE.X2` (the original game author's own Valhalla-induction
+    instructions) independently labels this exact header position "S:
+    Special effects," a more natural fit for an always-`0` field than
+    "sex" -- both sourced namings are kept on record in the field's own
+    docstring rather than one overwriting the other.
   - Documented as a `"Phase 343 addendum"` directly in
     `GWLeaderRecord`'s own docstring.
   - Added 3 tests in `tests/test_gw_world_parser.py`. Full suite: 3415
@@ -35883,5 +35889,6 @@ rulebook before being turned into named, typed fields:
     row-major province coordinate ordering (a promising but unconfirmed
     lead); and a handful of named-but-unconverted `GWLeaderRecord`
     fields (`birth_coord`'s own out-of-range companion-slot values,
-    `sex_raw`'s real default-by-id-band rule, both confirmed real by
-    the disassembly but not independently decoded from real data yet).
+    `special_effects_raw`'s (renamed from `sex_raw`, Phase 908) real
+    default-by-id-band rule, both confirmed real by the disassembly but
+    not independently decoded from real data yet).

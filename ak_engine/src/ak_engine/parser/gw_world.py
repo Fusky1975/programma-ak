@@ -1619,14 +1619,27 @@ class GWLeaderRecord:
     - `experience_progress`: a `0..99` fractional accumulator toward
       this leader's next ability increase (confirmed always nonzero and
       broadly changing turn over turn in the real 12-turn corpus).
-    - `sex_raw`: the disassembly's own `sex` field (word storage) --
-      reads `0` for all 100 leaders in every real file checked so far,
-      including confirmed-female Heroes (Tao-Li, Dracona), so this
-      field is *not* what actually determines a character's displayed
-      sex under normal play (that's a separate, not-yet-parsed
-      leader-id-band default the disassembly describes) -- kept raw
-      rather than wired to `models.sex.Sex` since no real example of a
-      nonzero value exists yet to confirm which value means which sex.
+    - `special_effects_raw` (**renamed from `sex_raw`, Phase 908**):
+      previously read, from the disassembly alone, as the Pascal `sex`
+      field (word storage) -- but it reads `0` for all 100 leaders in
+      every real file checked so far, including confirmed-female Heroes
+      (Tao-Li, Dracona), so it was already flagged as *not* actually
+      determining a character's displayed sex under normal play.
+      `EXAMPLE.X2` (the original game's own author-written instructions
+      for hand-inducting a King into Valhalla, 2026-09-25) labels this
+      exact header position "S: Special effects" in its own worked
+      example (`Clarissa`'s header line), independently of the
+      disassembly -- an always-`0` "current special effect" word is a
+      far more natural fit for that description than for "sex" (a
+      female Hero reading `0` here needs no explanation at all under
+      this reading, unlike the sex one). The disassembly's own `sex`
+      naming isn't discarded as wrong outright (a data-segment address
+      can genuinely be mislabeled in reverse-engineered symbol tables,
+      or this exact word could be a repurposed/reused field across the
+      two descriptions) -- both sourced claims are kept on record rather
+      than one silently overwriting the other. Still kept as a raw
+      `int`, not wired to any enum: no real nonzero example exists yet
+      to confirm which value means which "special effect".
     - `sex_override_flag`: a moderator-toggled boolean that inverts a
       non-King leader's own default sex -- confirmed real and rare
       (2 of 1200 real Phase-342-source records) but never observed in
@@ -1683,7 +1696,7 @@ class GWLeaderRecord:
     discovery_points: int
     white_magic_service_points: int
     experience_progress: int
-    sex_raw: int
+    special_effects_raw: int
     sex_override_flag: bool
     unpaid_blackmail_penalty_exponent: int
     known_by_kings_mask: int
@@ -1756,7 +1769,7 @@ def _build_leader_record(
 ) -> GWLeaderRecord:
     values = [int(token) for token in header_tokens]
     x, y, race_ordinal = values[0], values[1], values[2]
-    sex_raw = values[3]
+    special_effects_raw = values[3]
     liege_raw = values[4]
     original_liege_raw = values[5]
     condition = values[6]
@@ -1810,7 +1823,7 @@ def _build_leader_record(
         discovery_points=discovery_points,
         white_magic_service_points=white_magic_service_points,
         experience_progress=experience_progress,
-        sex_raw=sex_raw,
+        special_effects_raw=special_effects_raw,
         sex_override_flag=sex_override_flag,
         unpaid_blackmail_penalty_exponent=unpaid_blackmail_penalty_exponent,
         known_by_kings_mask=known_by_kings_mask,
