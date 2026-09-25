@@ -1351,7 +1351,8 @@ def test_execute_move_grants_nothing_when_the_naval_credit_does_not_cross_a_leve
 def test_execute_move_a_march_credit_never_grants_a_naval_advanced_ability():
     # A land move (no Sea terrain) credits Ability.MARCH, never NAVAL --
     # even when the same scripted rise-crossing sequence is used, no
-    # Naval grant should ever be attempted.
+    # Naval grant should ever be attempted. Phase 901: it now correctly
+    # grants March's own real AdvancedAbility instead of nothing.
     state = _state_with_leader_and_army()
     leader = state.leaders[1]
     leader.skills = SkillTable([0] * 30)
@@ -1364,7 +1365,8 @@ def test_execute_move_a_march_credit_never_grants_a_naval_advanced_ability():
 
     assert leader.skills.pair_for_ability(Ability.MARCH) == (5, 5)  # the real credit still rose
     assert result.naval_advanced_ability_granted is None
-    assert leader.advanced_abilities == set()
+    assert result.march_advanced_ability_granted is AdvancedAbility.MARCH_THROUGH_FLOODS
+    assert leader.advanced_abilities == {AdvancedAbility.MARCH_THROUGH_FLOODS}
 
 
 # -- Phase 651: Illusory Fog's own movement surcharge --

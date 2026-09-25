@@ -296,6 +296,7 @@ from ak_engine.turn.movement import (
     resolve_move,
     step_toward_non_adjacent_target,
 )
+from ak_engine.worldgen.march_ability_level_schedule import build_march_ability_level_schedule
 from ak_engine.worldgen.naval_ability_level_schedule import build_naval_ability_level_schedule
 
 
@@ -632,6 +633,12 @@ class MoveExecutionResult:
     # Phase 787 addendum for why this is the only real, reachable
     # trigger for a leader's own personal Naval skill to rise at all.
     naval_advanced_ability_granted: AdvancedAbility | None = None
+    # Phase 901: the identical treatment for March -- the same Move-
+    # triggered credit branch computes a March XP rise exactly like a
+    # Naval one, but nothing granted the resulting AdvancedAbility until
+    # `worldgen/march_ability_level_schedule.py` existed to call. See
+    # this function's own Phase 901 addendum.
+    march_advanced_ability_granted: AdvancedAbility | None = None
 
 
 def _classify_hex_ownership(state: GameState, kingdom_id: int, coord: HexCoord) -> HexOwnershipTier:
@@ -1879,6 +1886,7 @@ def execute_move(
     # this function already substitutes a fresh `random.Random()` for a
     # caller that omits it.
     naval_advanced_ability_granted: AdvancedAbility | None = None
+    march_advanced_ability_granted: AdvancedAbility | None = None
     if moved and leader_id is not None and armies:
         air_count = sum(1 for army in armies if army.army_type in OVERFLIGHT_AIR)
         if 2 * air_count < len(armies):
@@ -1903,6 +1911,19 @@ def execute_move(
                     )
                     if naval_advanced_ability_granted is not None:
                         mover_leader.advanced_abilities.add(naval_advanced_ability_granted)
+                # Phase 901: the identical treatment for March, previously
+                # missing -- `Ability.MARCH` has no personal-Practice
+                # trigger either (never in `_ARMY_TRAINING_ABILITIES`),
+                # so this Move-triggered credit is its own only real,
+                # reachable trigger too. See `worldgen/march_ability_
+                # level_schedule.py`'s own module docstring for why its
+                # schedule needs no `game_number` at all.
+                elif move_experience_ability is Ability.MARCH and outcome.skill_rose:
+                    march_advanced_ability_granted = build_march_ability_level_schedule(state.game_number).get(
+                        outcome.new_skill
+                    )
+                    if march_advanced_ability_granted is not None:
+                        mover_leader.advanced_abilities.add(march_advanced_ability_granted)
 
     return MoveExecutionResult(
         moved=moved,
@@ -1920,4 +1941,5 @@ def execute_move(
         straggler_result=straggler_result,
         moved_without_armies=moved_without_armies,
         naval_advanced_ability_granted=naval_advanced_ability_granted,
+        march_advanced_ability_granted=march_advanced_ability_granted,
     )
