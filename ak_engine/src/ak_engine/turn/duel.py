@@ -8,13 +8,18 @@ present for that battle only. Before the battle, the two supreme
 commanders may fight a duel. The armies which were led by the loser of
 the duel will become demoralized and will be reduced in strength by 25%."
 
-The duel *fight itself* is explicitly out of scope here: the rulebook
+~~The duel *fight itself* is explicitly out of scope here: the rulebook
 points to "the Special Encounter Plan rules [5.10]" for it, a whole
 separate character-vs-character combat system (spells, weapon skills,
-Encounter Plans) this project hasn't built. This module only provides
-what's fully specified without that system: who the two commanders are,
-and the fixed 25% strength penalty once a loser is known by some other
-means.
+Encounter Plans) this project hasn't built.~~ -- **stale as of Phase
+930, see that addendum below: the system this paragraph called
+unbuilt has been built (`turn/encounter.py`/`turn/challenge_
+execution.py`, originally for Search/Challenge/Pursue) and is now the
+real production duel resolver.** This module itself still only
+provides what doesn't depend on that system: who the two commanders
+are, and the fixed 25% strength penalty once a loser is known by some
+other means (now: the real combat resolver in `turn/battle_
+orchestrator.py _maybe_fight_duel()`, not a formula).
 
 Phase 351 addendum: the same AK.EXE/AK.OVR static reverse engineering
 as Phase 346-350's own battle-resolution corrections independently
@@ -49,17 +54,32 @@ formula.** "Regolamento AK.txt" section 5.10 "PIANO SPECIALE D'INCONTRO"
   neutral-province-specific exception with no equivalent in this
   module (out of scope: this project has no neutral-Hero AI yet).
 
-None of this closes the actual gap `combat.py win_probability()` already
-documents (see its own Phase 911/921 addenda): who wins the "otherwise"
-fight is still unspecified anywhere in the rulebook. A real turn-report
-search (`SE3__T*.K1`, `SE6__T*.K*` -- the same fixture set that broke
-open Phases 909/914/917/919/920) turned up zero narrated Supreme
-Commander duel outcomes: one unrelated tavern-brawl "duel" flavor line
-in `SE3__T11.K1`, and several Imperial Office description hits for
-"supreme commander" (e.g. the "Angel of Death" office) that describe
-unrelated office bonuses, never an actual duel result. Confirmed dead
-end for now, same category as the Beasts-nemesis search in Phase 913 --
-documented so it isn't re-attempted without new source material.
+~~None of this closes the actual gap `combat.py win_probability()`
+already documents (see its own Phase 911/921 addenda): who wins the
+"otherwise" fight is still unspecified anywhere in the rulebook.~~ --
+**resolved in Phase 930: the premise was wrong, not just the search.**
+User-confirmed directly, citing rulebook [5.10] and a real move-file
+example (`Uga-Buga Ma[kumb]`'s own real "Special Plan: FL" line, this
+project's own already-recurring real leader from the `GW3`/`AK3`
+fixture corpus): "Non c'è una formula del duello specifica. E'
+un combattimento come quello tra mostri... Il combattimento segue
+quel piano speciale d'incontro" ("There's no specific duel formula.
+It's a fight like the one against monsters... combat follows that
+Special Encounter Plan"). [5.10]'s own silence on "who wins" was never
+a missing formula to search for -- a duel is resolved exactly like a
+Search encounter against a monster: each side's own real Special
+Encounter Plan tactics (Melee, Fire Arrow, spells, Flee, ...), fought
+out with the same character-vs-character combat this project already
+built for Search/Challenge/Pursue (`turn/encounter.py`, `turn/
+challenge_execution.py`). Nothing was actually missing except
+recognizing that connection -- `turn/battle_orchestrator.py
+_maybe_fight_duel()`'s own `use_real_duel_combat` flag already wired
+exactly this resolver in since Phase 49/669/675, just never flipped on
+by a real production caller until Phase 930 did. The Phase 913-style
+turn-report search this addendum used to cite is retracted as evidence
+of a dead end -- it was answering the wrong question (a duel-outcome
+*narration* to reverse-engineer a formula from) when no formula was
+ever the real mechanism to look for.
 """
 
 from __future__ import annotations

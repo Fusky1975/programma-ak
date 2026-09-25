@@ -400,6 +400,10 @@ def test_run_turn_multi_attacker_lmove_threads_apply_fanaticism_true():
 
     mock_fight.assert_called_once()
     assert mock_fight.call_args.kwargs["apply_fanaticism"] is True
+    # Phase 930: same call now also opts into real duel combat -- see
+    # test_execute_pursue_threads_apply_fanaticism_true_into_the_real_
+    # battle's own Phase 930 note for the full rationale.
+    assert mock_fight.call_args.kwargs["use_real_duel_combat"] is True
 
 
 def test_run_turn_multi_attacker_lmove_reports_illegal_move_from_contested():

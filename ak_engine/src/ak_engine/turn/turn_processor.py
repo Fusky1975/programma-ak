@@ -1636,6 +1636,7 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
             army_ids,
             attacker_origin=province.contested_from_coord,
             apply_fanaticism=True,
+            use_real_duel_combat=True,
             rng=rng,
         )
         # Phase 716: the cargo sinks with the carrier.
@@ -1823,7 +1824,7 @@ def _dispatch_multi_attacker_lmove(
             results.extend(_dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng))
         return results
 
-    battles = fight_multi_attacker_battle(state, target, parties, apply_fanaticism=True, rng=rng)
+    battles = fight_multi_attacker_battle(state, target, parties, apply_fanaticism=True, use_real_duel_combat=True, rng=rng)
     battle_by_leader = {leader_id: battle for battle in battles for leader_id in battle.leader_ids}
 
     for tl, segment_index, phase, army_ids, origin in valid:

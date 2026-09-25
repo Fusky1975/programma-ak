@@ -143,7 +143,7 @@ def win_probability(strength_ratio: float) -> float:
     stale.** `resolve_battle` (`turn/battle_resolution.py`) *has* been
     rewired to the real `column_bres` formula since Phase 370 -- every
     real column-vs-column battle in this project is decided by the
-    signed `BRES` sum, never by this function. The one real caller left
+    signed `BRES` sum, never by this function. ~~The one real caller left
     is `battle_orchestrator.py _maybe_fight_duel()`'s own
     `estimate_win_probability` fallback, and that's a different kind of
     gap, not the same one: `turn/duel.py`'s own module docstring already
@@ -158,19 +158,28 @@ def win_probability(strength_ratio: float) -> float:
     that separate Special-Encounter-Plan combat routine specifically to
     close this -- the column-battle disassembly already on hand doesn't,
     since it answers a different question (which side wins a *column*,
-    not a one-on-one commander duel).
+    not a one-on-one commander duel).~~
 
-    **Phase 921 addendum -- due diligence attempted, gap confirmed still
-    open.** `turn/duel.py`'s own Phase 921 addendum reads rulebook [5.10]
-    "PIANO SPECIALE D'INCONTRO" in full for the first time this project
-    (previously only paraphrased via [7.1]). It adds real detail about
-    *when* a duel triggers and its Flee-vs-fight consequences, but is
-    explicit that the actual fight ends in "the death of one of the two
-    [commanders]" with no formula, die roll, or ability comparison given
-    for which one. A real turn-report search (`SE3__T*.K1`, `SE6__T*.K*`)
-    for a narrated duel outcome also came up empty -- see that module's
-    addendum for the details. This function's approximation remains the
-    only model available; the gap described above is unchanged.
+    ~~**Phase 921 addendum -- due diligence attempted, gap confirmed still
+    open.**~~ -- **closed in Phase 930: both addenda above rested on a
+    wrong premise, not just an unsearched one.** User-confirmed directly
+    (citing rulebook [5.10] and a real move-file example): "Non c'è una
+    formula del duello specifica. E' un combattimento come quello tra
+    mostri... Il combattimento segue quel piano speciale d'incontro"
+    ("There's no specific duel formula. It's a fight like the one
+    against monsters... combat follows that Special Encounter Plan").
+    There was never a missing formula or an unbuilt subsystem to find --
+    a duel is ordinary character-vs-character combat, resolved by each
+    side's own real Special Encounter Plan tactics, using exactly the
+    engine this project already built for Search/Challenge/Pursue
+    (`turn/encounter.py`/`turn/challenge_execution.py`). That engine has
+    been reachable from `_maybe_fight_duel()` via its own
+    `use_real_duel_combat` flag since Phase 49/669/675 -- Phase 930
+    finally flips it on at every real production battle call site, so
+    this function's own approximation is no longer what decides a real
+    game's duels; it remains only as the fallback for a caller that
+    doesn't pass `use_real_duel_combat=True` (unit tests, mainly). See
+    `turn/duel.py`'s own Phase 930 addendum for the full citation.
     """
 
     if strength_ratio < 0:
