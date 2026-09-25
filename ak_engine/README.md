@@ -34926,6 +34926,16 @@ rulebook before being turned into named, typed fields:
   untested. Not yet promoted to a decode function -- see
   `models/kingdom.py SkillTable`'s own Phase 907 addendum for the full
   derivation and exactly what would still falsify or confirm it.
+  **Phase 909**: re-checking this repo's own already-present
+  `tests/fixtures/world/G3/GW3__T1` world-save for every King (not just
+  Kingdom 1's, the only one ever K1-sampled from that game) found two
+  real Divine-alignment Kings already sitting in already-available
+  data -- Kingdom 4 (`Hokuto`) and Kingdom 7 (`Giovanna d'Arco`), both
+  from the AK3 game. Neither Kingdom's own K1 move file has ever been
+  supplied. **`AK3__T1.K4` or `AK3__T1.K7`** (any turn of either) is
+  now the single precise file that would settle the last untested
+  alignment outright -- see `models/kingdom.py`'s own Phase 909
+  addendum.
 - ~~`parser/k1_moves.py` mis-parses a nested Hire/Charm/Resurrection
   plan~~ **fixed in Phase 18** — see that phase's note above for the
   fix; `PlanPhase.nested_plan` now holds the recovered embedded plan.

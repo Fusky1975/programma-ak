@@ -303,6 +303,25 @@ class SkillTable:
     once. Recorded here, with the real data, so neither the falsified
     ordinal reading nor a half-considered grouping has to be
     re-discovered from scratch.
+
+    **Phase 909 -- exactly which real file would settle point (2),
+    found without any new upload.** Re-checking the AK3 game's own
+    `tests/fixtures/world/G3/GW3__T1` world-save (already in this repo,
+    already used for the very first of the 8 tuples above) via
+    `parse_gw_leaders()` for *every* King, not just Kingdom 1's own
+    Uga-Buga Makumb, turns up **two real Divine-alignment Kings that
+    were sitting in already-available data the whole time**: Kingdom 4
+    (`Hokuto`, Human) and Kingdom 7 (`Giovanna d'Arco`, Human). Neither
+    Kingdom's own K1 move file has ever been supplied -- only Kingdom
+    1's (`AK3__T1.K1` through `AK3__T10.K1`, all 10 turns, all present
+    at this repo's root) exists on hand. **`AK3__T1.K4` or
+    `AK3__T1.K7`** (any turn of either file, since the trailing value is
+    already confirmed constant per Kingdom across turns) is therefore
+    the single most direct, no-guessing way to close this gap: an
+    already-identified real Kingdom, from an already-available
+    world-save, needing only its own already-named move file. Not a new
+    hypothesis and not itself a decode -- just the precise ask that
+    would let one arrive.
     """
 
     raw_values: list[int]
