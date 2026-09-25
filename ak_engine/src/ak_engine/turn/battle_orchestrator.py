@@ -1657,16 +1657,28 @@ def _maybe_fight_duel(
     predicates (``sep_is_aggressive``/``sep_accepts_challenge``) already
     exclude a Flee-first SEP from ever reaching a triggered duel in the
     first place, verified by tracing both predicates directly.
-    **Still genuinely out of scope**: ``use_real_duel_combat`` itself
+    ~~**Still genuinely out of scope**: ``use_real_duel_combat`` itself
     still defaults ``False`` for every production caller in this
     project (confirmed by grep) -- this is what keeps all of the above
     dormant in real games today, a separate, larger, already-repeatedly-
     deferred decision (``apply_fanaticism`` was once in this same bucket
     too, but Phase 744 resolved it -- see this module's own Phase 35/390
-    addenda above), not flipped here. A later-than-first Flee's own
-    "attempts combat first" refusal ordering during a triggered duel's
-    own resolution remains the same still-unaddressed limitation it
-    always was.
+    addenda above), not flipped here.~~ -- **flipped in Phase 930**, the
+    same way Phase 744 flipped ``apply_fanaticism``: user-confirmed
+    directly that a duel has no separate formula and is ordinary
+    Special-Encounter-Plan combat (see ``turn/duel.py``'s own Phase 930
+    addendum for the full citation), so every real production
+    ``fight_battle()``/``fight_multi_attacker_battle()`` call site
+    (``turn/move_execution.py execute_move()``, ``turn/pursue_
+    execution.py execute_pursue()``, ``turn/turn_processor.py``'s own
+    forced-rebattle call and multi-attacker-LMOVE dispatch) now passes
+    ``use_real_duel_combat=True``. This function's own default parameter
+    stays ``False`` (matching ``apply_fanaticism``'s own "opt-in only at
+    the real production call site" convention) -- every direct/unit-level
+    test calling this function on its own is unaffected. A
+    later-than-first Flee's own "attempts combat first" refusal ordering
+    during a triggered duel's own resolution remains the same
+    still-unaddressed limitation it always was.
 
     **``coward_bluff``, closed as of Phase 898** ("entering the duel and
     temper refusing combat, chance 2/3 to avoid the demoralization
@@ -2384,9 +2396,11 @@ def fight_battle(
     ``apply_fanaticism`` (Phase 35, default off) opts into real per-army
     fanaticism rolls -- see ``_build_battle_units``'s docstring for why
     this isn't on by default. ``use_real_duel_combat`` (Phase 49, default
-    off) opts into a real duel between the two Supreme Commanders instead
-    of the strength-ratio approximation -- see ``_maybe_fight_duel``'s
-    docstring for why this isn't on by default either. ``duel_maneuvers``
+    off at this function's own level -- Phase 930: every real production
+    call site now passes ``True``) opts into a real duel between the two
+    Supreme Commanders instead of the strength-ratio approximation -- see
+    ``_maybe_fight_duel``'s own Phase 930 addendum for the full
+    citation. ``duel_maneuvers``
     (Phase 273, default ``None``) optionally supplies the Special
     Encounter Plan tactic order for that real duel, so it can resolve
     Fire Arrow before Melee when the caller has real plan data -- see
@@ -3005,6 +3019,7 @@ def fight_multi_attacker_battle(
     *,
     loser_retreats: bool = True,
     apply_fanaticism: bool = False,
+    use_real_duel_combat: bool = False,
     rng: random.Random | None = None,
 ) -> list[MultiAttackerBattle]:
     """Rulebook [7.8] Multiple Contingents: partition several leaders' simultaneous
@@ -3012,6 +3027,12 @@ def fight_multi_attacker_battle(
 
     See the module docstring for how ``turn/turn_processor.py`` now
     reaches this from real multi-leader play (Phase 45).
+
+    ``use_real_duel_combat`` (Phase 930, default ``False``, matching
+    ``fight_battle()``'s own default) is threaded straight through to
+    every per-group ``fight_battle()`` call below -- this function
+    previously had no way to opt into real duel combat at all, only
+    ``apply_fanaticism``.
 
     **Which kingdom claims a jointly-won province** isn't specified by
     the rulebook for a united coalition of allied attackers -- resolved
@@ -3172,6 +3193,7 @@ def fight_multi_attacker_battle(
                 loser_retreats=loser_retreats,
                 attacker_origin=attacker_origin,
                 apply_fanaticism=apply_fanaticism,
+                use_real_duel_combat=use_real_duel_combat,
                 rng=rng,
             )
             # Phase 716: the cargo sinks with the carrier.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from unittest.mock import ANY, patch
 
 import pytest
@@ -15,6 +16,8 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
+from ak_engine.turn.battle_orchestrator import BattleReport
+from ak_engine.turn.battle_resolution import BattleResult
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.move_execution import (
@@ -773,12 +776,20 @@ def test_execute_move_wind_walking_survives_a_battle_the_same_move_triggers():
     state.armies[101].army_type = ArmyType.HVY_CAVALRY
     state.armies[101].quality = Quality.ELITE
     state.armies[101].commanded_by = 1  # so fight_battle() sees leader 1 as genuinely involved
-    # Phase 744: 2 leading 0.9s account for the per-army Fanaticism roll.
-    # Phase 768: trailing 0.99s cover the Move-triggered March/Naval
-    # experience credit's own triangular-formula draw (no assertion below
-    # depends on its exact value), plus pursuit's own r01/quality-roll
-    # draws (Phase 906) and one .choice() draw for the sole retreater.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99], choice_indices=[0])
+    # Phase 930: `commanded_by=1` above now also makes leader 1 a real
+    # Supreme Commander, so `use_real_duel_combat=True` (this project's
+    # own production default as of Phase 930) triggers a genuine duel
+    # here -- an unbounded, variable number of `rng.random()` draws
+    # (melee rounds until someone's hit points reach 0), unlike every
+    # other draw in this fixture. A real, seeded `random.Random` replaces
+    # the previous exact-count `ScriptedRandom` sequence for exactly this
+    # reason; none of this test's own assertions depend on the duel's
+    # outcome (only on wind_walking/conquest/retreat, all decided by the
+    # deterministic strength gap regardless) -- seed 0 empirically
+    # verified to satisfy every assertion below, the same "pick a real
+    # seed, verify it" convention Phase 744 already used for a sibling
+    # case.
+    rng = random.Random(0)
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=rng)
 
@@ -910,6 +921,30 @@ def test_execute_move_threads_apply_fanaticism_true_into_the_real_battle():
     assert result.battle_report is not None
     mock_roll.assert_any_call(Alignment.GOOD, rng)  # attacker, kingdom 1 (Attackia)
     mock_roll.assert_any_call(Alignment.NEUTRAL, rng)  # defender, kingdom 2 (Defendia)
+
+
+def test_execute_move_threads_use_real_duel_combat_true_into_the_real_battle():
+    # Phase 930: user-confirmed directly (rulebook [5.10]) that a Supreme
+    # Commander duel has no separate formula -- it's ordinary personal
+    # combat resolved against each side's own real Special Encounter
+    # Plan, the same engine Search/Challenge/Pursue already use. That
+    # engine (`turn/encounter.py`/`turn/challenge_execution.py`) has been
+    # fully built and reachable via `use_real_duel_combat` since Phase
+    # 49/669/675 -- only the real production call sites never flipped it
+    # on. execute_move()'s own real battle trigger now does, mirroring
+    # the "mock the shared function, assert the call kwarg" convention
+    # Phase 744 already used for `apply_fanaticism`.
+    state = base_state()
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))
+    state.armies[101].army_type = ArmyType.HVY_CAVALRY
+    state.armies[101].quality = Quality.ELITE
+
+    with patch("ak_engine.turn.move_execution.fight_battle") as mock_fight_battle:
+        mock_fight_battle.return_value = BattleReport(battle_result=BattleResult(), conquered=False)
+        execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=ScriptedRandom([]))
+
+    assert mock_fight_battle.call_args.kwargs["use_real_duel_combat"] is True
+    assert mock_fight_battle.call_args.kwargs["apply_fanaticism"] is True
 
 
 def test_raises_without_movement_points():

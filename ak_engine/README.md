@@ -35120,7 +35120,7 @@ rulebook before being turned into named, typed fields:
   `CHARIOTS`'s own `NEMESIS` entries already composed from `BEASTS`
   automatically pick up the 4 new members. See `models/army_type.py`'s
   own Phase 928 addendum for the full derivation.
-- **`win_probability` curve** (`turn/combat.py`) — the rulebook gives only
+- ~~**`win_probability` curve** (`turn/combat.py`) — the rulebook gives only
   two data points (1:1 ratio → 50% win chance, 4:1 ratio → "assured"
   victory, without a number). The implemented `ratio / (ratio + 1)` curve
   hits the first anchor exactly but gives 80%, not "assured", at 4:1 — an
@@ -35153,7 +35153,30 @@ rulebook before being turned into named, typed fields:
   own Phase 921 addendum for the full [5.10] citation and search
   details, and `turn/combat.py win_probability()`'s matching addendum.
   Still open, same as Beasts (Phase 913) -- a confirmed, documented dead
-  end, not resolved.
+  end, not resolved.~~ -- **closed in Phase 930: the "harder gap" was
+  never a formula to find.** User-confirmed directly: "Non c'è una
+  formula del duello specifica. E' un combattimento come quello tra
+  mostri... Il combattimento segue quel piano speciale d'incontro" ("No
+  specific duel formula. It's a fight like the one against monsters...
+  combat follows that Special Encounter Plan"), citing rulebook [5.10]
+  and a real move-file example. A duel is ordinary character-vs-
+  character combat resolved by each side's own real Special Encounter
+  Plan, using the same engine this project already built for Search/
+  Challenge/Pursue (`turn/encounter.py`/`turn/challenge_execution.py`)
+  -- reachable from `_maybe_fight_duel()` via its own `use_real_duel_
+  combat` flag since Phase 49/669/675, just never flipped on by a real
+  production call site until now. Every real `fight_battle()`/`fight_
+  multi_attacker_battle()` call site now passes `use_real_duel_
+  combat=True` (mirroring exactly how Phase 744 flipped
+  `apply_fanaticism` on) -- `win_probability()`'s own approximation
+  curve stays as the *fallback* for a caller that doesn't opt in (unit
+  tests, mainly), no longer what decides a real game's duels. Only 1 of
+  7060 existing tests needed fixing (a real, seeded `random.Random`
+  replacing an exact-count `ScriptedRandom` sequence, since real combat
+  consumes a variable number of draws) -- empirically measured, the
+  same rigor Phase 744's own flip used. See `turn/duel.py`/`turn/
+  combat.py win_probability()`'s own Phase 930 addenda for the full
+  citation.
 - ~~**Battle luck event percentages/ranges** (`turn/battle_luck.py`) — the
   rulebook confirms random battle events exist and gives their *shape*
   ("Each random event can as much as double the strength of the affected

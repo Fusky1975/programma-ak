@@ -1712,6 +1712,7 @@ def execute_move(
             loser_retreats=loser_retreats,
             attacker_origin=current,
             apply_fanaticism=True,
+            use_real_duel_combat=True,
             rng=rng,
         )
         # Phase 716: the cargo sinks with the carrier.

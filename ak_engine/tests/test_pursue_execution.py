@@ -904,6 +904,12 @@ def test_execute_pursue_threads_apply_fanaticism_true_into_the_real_battle():
         execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
 
     assert mock_fight_battle.call_args.kwargs["apply_fanaticism"] is True
+    # Phase 930: the same real-battle call now also opts into real duel
+    # combat (rulebook [5.10], user-confirmed: a Supreme Commander duel
+    # is ordinary personal combat run against each side's own Special
+    # Encounter Plan, the same engine Search/Challenge/Pursue already
+    # use -- not a separate, unrecoverable formula).
+    assert mock_fight_battle.call_args.kwargs["use_real_duel_combat"] is True
 
 
 # -- Phase 695: AdvancedAbility.SPY_SUPER_SLEUTH --------------------------
