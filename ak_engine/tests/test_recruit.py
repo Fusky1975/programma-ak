@@ -19,10 +19,15 @@ def test_mundane_army_type_compatible_with_any_humanoid_race():
 
 
 def test_mundane_army_type_incompatible_with_monstrous_race():
+    # Phase 929: user-confirmed directly -- "non è possibile" recruit a
+    # humanoid-compatible type (e.g. Legion) in a monstrous province.
     assert not is_army_type_compatible_with_race(ArmyType.BOWMEN, Race.DRAGONS)
 
 
 def test_monstrous_army_type_only_compatible_with_its_own_race():
+    # Phase 929: user-confirmed directly -- "non è possibile reclutare
+    # un'unità mostruosa in una provincia umanoide" (a King/Hero who has
+    # a Dragon Wing army can't recruit Dragon Wings in a human province).
     assert is_army_type_compatible_with_race(ArmyType.DRAGON_WING, Race.DRAGONS)
     assert not is_army_type_compatible_with_race(ArmyType.DRAGON_WING, Race.HUMAN)
     assert not is_army_type_compatible_with_race(ArmyType.DRAGON_WING, Race.EAGLES)

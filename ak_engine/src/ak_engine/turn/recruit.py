@@ -80,6 +80,11 @@ class RecruitResolution:
 _ELVEN_ONLY_ARMY_TYPES = frozenset({ArmyType.DINOSAURS})
 
 
+# Phase 929: the symmetric race-compatibility reading below (a monstrous
+# type only in its own native province, a humanoid-compatible type only
+# in a humanoid province) is confirmed directly by the user -- see
+# `models/army_type.py`'s own Phase 929 addendum, next to
+# `MONSTROUS_ARMY_RACE`, for the full quote. No longer an interpretation.
 def is_army_type_compatible_with_race(army_type: ArmyType, province_race: Race) -> bool:
     if army_type in _ELVEN_ONLY_ARMY_TYPES:
         return province_race is Race.ELVEN

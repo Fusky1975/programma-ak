@@ -19,8 +19,10 @@ province or vice versa"). Every other type here is a mundane/humanoid
 military unit, recruitable in any humanoid province ("You CAN recruit any
 humanoid army type in any humanoid province") -- this module treats that
 as symmetric (non-humanoid provinces can't recruit humanoid-only types
-either), which is an interpretation of the rulebook text, not a literal
-quote.
+either). **Confirmed directly by the user, Phase 929** (see this
+module's own Phase 929 addendum below, next to ``MONSTROUS_ARMY_RACE``,
+for the full quote): both directions of the symmetry are real, not
+just this project's own interpretation.
 
 **Phase 914 -- real per-province data corroborates this reading, without
 being a full disassembly-level proof.** This project's own real
@@ -52,6 +54,31 @@ offer, and it lines up with the symmetric reading in all 27 real
 samples. Corroborating, not dispositive: a rulebook quote or a
 disassembly of the real recruit-validation routine would still settle
 it outright.
+
+**Phase 929 -- confirmed directly by the user, settling it outright.**
+Asked plainly (not a Legion example specifically, but the general
+case): can a King/Hero holding, say, a Legion recruit another Legion in
+a Dragon/Troll/Ent/Werefolk/Eagle/Merfolk/Whale province? "No, non è
+possibile. Nelle province con quelle razze è possibile reclutare solo
+unità militari corrispondenti a quelle razze. In pratica solo le razze
+umanoidi (umani, nani, elfi, orchi) sono così versatili." ("No, it's
+not possible. In provinces of those races, only military units
+matching those races can be recruited. In practice only the humanoid
+races -- humans, dwarves, elves, orcs -- are that versatile.") And the
+converse: "non è possibile reclutare un'unità mostruosa in una
+provincia umanoide: esempio, un re o un eroe che ha un'unità militare
+di Dragon wings non può reclutare Dragon wings in una provincia di
+umani" ("you can't recruit a monstrous unit in a humanoid province:
+e.g. a King/Hero who has a Dragon Wing army can't recruit Dragon Wings
+in a human province"). Both directions of the symmetric reading
+`is_army_type_compatible_with_race()` (`turn/recruit.py`) already
+implements are now a direct, sourced confirmation, not an
+interpretation -- no code change needed, since the existing logic
+already matches exactly: a monstrous type's own `MONSTROUS_ARMY_RACE`
+entry already restricts it to its one native race (never a humanoid
+province), and every other (humanoid-compatible) type's own fallback
+already requires `province_race in HUMANOID_RACES` (never a monstrous
+province).
 
 **9 more real `army` ordinals, 20-28 (Phase 383)**: the AKGEN
 reverse-engineering material's own `tables.army_types` catalog gives real
