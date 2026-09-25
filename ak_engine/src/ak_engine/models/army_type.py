@@ -204,6 +204,38 @@ GARRISON_ATTACK_STRENGTH = 1
 # line.py`'s nemesis-application code to check specifically against
 # this set, not just "is this a nemesis at all" (Chariots stays a real
 # nemesis for cavalry regardless of the ability).
+#
+# Phase 913: a real, separate phase re-checked Elephants/Camel Corps
+# specifically (Dinosaurs' own membership was already sourced, Phase
+# 691, and isn't in question) -- three avenues, all confirmed dead
+# ends, not just unexamined:
+#   1. Every other `AdvancedAbility`/`Office`/rulebook-quote description
+#      already in this project that mentions "Beasts" (`DRUIDIC_HORSE_
+#      CONTROL`, `DRUIDIC_DINOSAURS`) was re-read in full -- neither
+#      enumerates the set's full membership, only confirms Dinosaurs
+#      belong and that cavalry can be exempted from it.
+#   2. The real "Camels" quote this project already has (`turn/battle_
+#      orchestrator.py`'s own "Desert without camels" [6.3] rule) is a
+#      *different* mechanic entirely (a quality penalty for lacking a
+#      supply train, not a Nemesis-column entry) -- it doesn't touch
+#      this question either way.
+#   3. Every real turn-report letter available to this project (`SE3__
+#      T*.K1` at the repo root, `tests/fixtures/reports/G6/SE6__T*.K*`)
+#      was searched for an actual battle narration pitting a real
+#      Elephants or Camel Corps unit against Light/Heavy Cavalry or
+#      Chariots -- the kind of real data that resolved the Phase 907-
+#      910 skill-line question. Both units appear repeatedly in these
+#      reports (province garrisons, roster tables, flavor-text asides
+#      like "released a herd of pink-painted elephants"), but never
+#      inside an actual battle narration against a nemesis-eligible
+#      opponent -- there is nothing to check a strength number against.
+# Still exactly what Phase 911's own consolidated note already named:
+# needs either the rulebook's own fuller Army Type Table [6.3] text, a
+# disassembly of the real nemesis-lookup routine, or a future real
+# battle report that actually pits one of these two against a
+# nemesis-eligible opponent. Kept as the same name-symmetry reading
+# (not escalated, not walked back) since nothing new was found either
+# way.
 BEASTS = frozenset({ArmyType.ELEPHANTS, ArmyType.CAMEL_CORPS, ArmyType.DINOSAURS})
 
 NEMESIS: dict[ArmyType, frozenset[ArmyType]] = {
