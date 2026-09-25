@@ -241,9 +241,16 @@ none invented past here:
   own Phase 902 addendum for the corrected formula and the full
   derivation. ``_special_race_army_budget()`` now routes
   ``Race.TROLLISH`` through ``ordinary_humanoid_budget()`` directly.
-- **The ``necromantic_home_exception``** (a "qualifying King property"
+- ~~**The ``necromantic_home_exception``** (a "qualifying King property"
   can mark the first Home army Zomboid/Skeletal) -- the source never
-  states what makes a King property "qualifying" (Phase 358's own gap).
+  states what makes a King property "qualifying" (Phase 358's own gap).~~
+  **Closed, Phase 903**: user-confirmed -- a King whose own Kingdom's
+  ``Alignment`` is ``UNDEAD`` gets a Zomboid/Skeletal first Home army
+  (``army_types[0]``) instead of an ordinary Hired one. See
+  ``worldgen/initial_armies.py necromantic_home_first_army_is_
+  skeletal()``'s own Phase 903 addendum for the full derivation
+  (independently corroborated by ``models/game_state.py ArmyState.
+  is_skeletal``'s own pre-existing ``RUMORS.PAS:354`` citation).
 - **The extra mercenary band** (``worldgen.mercenary_band.py``, Phase
   363) -- **wired Phase 892**, closing the gap this same bullet flagged
   since Phase 891's own correction (see that addendum's own history:
@@ -327,6 +334,7 @@ from ak_engine.worldgen.initial_armies import (
     home_first_slot,
     humanoid_first_slot,
     humanoid_second_slot,
+    necromantic_home_first_army_is_skeletal,
     ordinary_humanoid_budget,
     resolve_commander,
     special_race_recruit_slot,
@@ -712,7 +720,16 @@ def generate_new_game(
 
         commander = resolve_commander(None, is_king_home)
         commanded_by = None if commander == COMMANDER_NONE else commander
-        for army_type in army_types:
+        # Phase 903 (necromantic_home_exception, user-confirmed): only the
+        # King Home province's own first recruit-slot army (index 0 of
+        # `army_types`, i.e. `home_first_slot(king.race)`) can ever be
+        # raised Zomboid/Skeletal, and only for an Undead King -- see
+        # `worldgen/initial_armies.py necromantic_home_first_army_is_
+        # skeletal()`'s own docstring.
+        first_army_is_skeletal = is_king_home and owner_kingdom_id is not None and (
+            necromantic_home_first_army_is_skeletal(game_state.kingdoms[owner_kingdom_id].alignment)
+        )
+        for index, army_type in enumerate(army_types):
             game_state.add_army(
                 ArmyState(
                     army_id=game_state.new_army_id(),
@@ -726,6 +743,7 @@ def generate_new_game(
                     # every later turn's own replenishment (`turn_processor.py
                     # run_turn()`'s own start-of-turn housekeeping).
                     movement_points=ARMY_TABLE[army_type].speed,
+                    is_skeletal=index == 0 and first_army_is_skeletal,
                 )
             )
 

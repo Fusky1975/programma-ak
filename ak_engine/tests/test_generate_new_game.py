@@ -94,6 +94,37 @@ def test_king_home_effects_are_applied_to_province_and_leader():
         assert leader.birth_x == king.home_coord.x
 
 
+def test_undead_king_home_first_army_is_skeletal():
+    # Phase 903 (necromantic_home_exception, user-confirmed 2026-09-25):
+    # a King whose own Kingdom's Alignment is UNDEAD gets a Zomboid/
+    # Skeletal first Home army (the Home province's own first recruit
+    # slot, army_types[0]) instead of an ordinary Hired one. Every other
+    # army at that same Home -- the second recruit-slot army, if any, and
+    # the extra mercenary band (kingdom_id=None, excluded here the same
+    # way test_king_home_gets_a_real_initial_army_using_best_atype()
+    # excludes it) -- is unaffected.
+    game_state, kings = _setup()
+    game_state.kingdoms[0].alignment = Alignment.UNDEAD
+    rng = PascalRandom(seed=3)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    undead_king = kings[0]
+    undead_armies = [
+        a for a in result.armies.values() if a.location == undead_king.home_coord and a.kingdom_id is not None
+    ]
+    assert undead_armies
+    assert undead_armies[0].is_skeletal is True
+    for army in undead_armies[1:]:
+        assert army.is_skeletal is False
+
+    ordinary_king = kings[1]
+    ordinary_armies = [
+        a for a in result.armies.values() if a.location == ordinary_king.home_coord and a.kingdom_id is not None
+    ]
+    assert ordinary_armies
+    assert all(army.is_skeletal is False for army in ordinary_armies)
+
+
 def test_king_home_gets_a_real_initial_army_using_best_atype():
     game_state, kings = _setup()
     rng = PascalRandom(seed=3)

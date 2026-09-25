@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TYPE_BY_ORDINAL, ArmyType, MONSTROUS_ARMY_RACE
 from ak_engine.models.map import Terrain
 from ak_engine.models.race import Race
@@ -24,6 +25,7 @@ from ak_engine.worldgen.initial_armies import (
     home_first_slot,
     humanoid_first_slot,
     humanoid_second_slot,
+    necromantic_home_first_army_is_skeletal,
     ordinary_humanoid_budget,
     ordinary_second_army,
     province_random,
@@ -443,3 +445,10 @@ def test_humanoid_second_slot_desert_skips_f_with_zero_draws_then_runs_the_helpe
     rng = _StubRandomWithIrand(irand_values=[0], random_values=[0.01, 0.3, 0.1])
     result = humanoid_second_slot(Terrain.DESERT, Race.HUMAN, 0, 0, tax=8, effective_sea_neighbors=3, rng=rng)
     assert result == ArmyType.LT_CAVALRY
+
+
+def test_necromantic_home_first_army_is_skeletal_true_only_for_undead_alignment():
+    assert necromantic_home_first_army_is_skeletal(Alignment.UNDEAD) is True
+    for alignment in Alignment:
+        if alignment is not Alignment.UNDEAD:
+            assert necromantic_home_first_army_is_skeletal(alignment) is False
