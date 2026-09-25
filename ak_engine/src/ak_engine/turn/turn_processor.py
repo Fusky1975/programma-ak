@@ -267,7 +267,7 @@ from ak_engine.models.army_type import ARMY_TABLE, ArmyType
 from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
-from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.map import HexCoord
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.turn.battle_orchestrator import (
     MultiAttackerBattle,
@@ -1829,9 +1829,7 @@ def _dispatch_multi_attacker_lmove(
     for tl, segment_index, phase, army_ids, origin in valid:
         battle = battle_by_leader[tl.leader.leader_id]
         conquered = battle.report.conquered
-        cost = movement_cost_for_move(
-            is_sea_province=target_province.effective_terrain() == Terrain.SEA, battle_occurred=True, conquered=conquered
-        )
+        cost = movement_cost_for_move(battle_occurred=True, conquered=conquered)
         moved = conquered
 
         for army_id in army_ids:

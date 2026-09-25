@@ -35140,10 +35140,27 @@ rulebook before being turned into named, typed fields:
   addendum for the full reasoning. The parameter still defaults to `0`
   (the formula's own neutral case) only for a caller that doesn't pass
   one at all.
-- **Conquest + sea-battle movement-cost stacking** (`turn/conquest.py`)
+- ~~**Conquest + sea-battle movement-cost stacking** (`turn/conquest.py`)
   — the rulebook states the conquest extra-point and the sea-battle
   extra-point as two independent rules with no stated interaction for
-  when both apply. Treated as additive (both deduct).
+  when both apply. Treated as additive (both deduct).~~ -- **closed in
+  Phase 915**: the full `Regolamento AK.txt` [7.7] text (never fully
+  re-read for this specific question before) ties the sea-province
+  sentence directly back to the land one ("Come avviene nelle province
+  di terra, entrare in una di mare costa 1 Punto Movimento supplementare
+  solo se si dà luogo a una battaglia" — "as happens for land provinces,
+  entering a sea one costs 1 additional Movement Point only if a battle
+  takes place") — one rule, not two independent ones, so they never
+  stack. User-confirmed directly (2026-09-25): a battle merely
+  happening — win or lose — owes the single extra point, on any terrain.
+  This closed a real bug too, not just an interpretation gap: a *lost*
+  land battle previously cost no extra point at all (only `conquered`
+  gated it), and a *won* sea battle was double-charged (`conquered` +
+  the sea surcharge both fired, 3 total instead of the correct 2).
+  `movement_cost_for_move()` is now `battle_occurred or conquered` →
+  at most one extra point, `is_sea_province` removed from the signature
+  entirely (terrain no longer changes the answer). See
+  `turn/conquest.py`'s own Phase 915 docstring for the full derivation.
 - ~~**Multiple Contingents unite chances** (`turn/multiple_contingents.py`)
   — "very good chance" (same origin) and "probably... separate battles"
   (different directions) have no numbers; implemented as 85%/30%, a
@@ -35303,11 +35320,15 @@ supply of any of these doesn't have to be re-derived from scratch:
   "Beasts" quote, the unrelated desert-camels rule, and every real
   turn-report letter available all checked and ruled out) and exactly
   what's still needed.
-- **Conquest + sea-battle movement-cost stacking** (`turn/conquest.py`):
+- ~~**Conquest + sea-battle movement-cost stacking** (`turn/conquest.py`):
   needs the rulebook's own conquest-movement-cost rule text (currently
   only the two individual extra-point rules are quoted, not their
   interaction) or a `turn/movement.py`-equivalent disassembly of the
-  real move-point deduction routine.
+  real move-point deduction routine.~~ -- **closed in Phase 915**: the
+  rulebook's own fuller [7.7] text was the missing piece all along, not
+  a disassembly -- see that bullet's own updated note above for the
+  full fix (a real double-charge bug on a won sea battle, and a missed
+  charge on a lost land battle, both closed the same way).
 - ~~**Attacker forced-retreat "first candidate, not best"**
   (`fight_battle`): the rulebook never defines a tie-break among
   multiple valid retreat provinces at all, so this is likely
