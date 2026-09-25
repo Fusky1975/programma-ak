@@ -12556,7 +12556,7 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
       second army at the same province exists at all); every later army
       at that province gets a fully blank 18-char field
       (`_ARMIES_BLANK_PROVINCE_COLUMN`), not a repeated province name.
-      **Still not reproduced**: the real grouping is actually keyed by
+      ~~**Still not reproduced**: the real grouping is actually keyed by
       *province+leader* (the outer loop iterates leaders first, armies
       second), so a province with multiple leaders present would, in
       the real table, interleave leader-groups rather than list every
@@ -12565,7 +12565,21 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
       pattern itself only depends on how many armies have been printed
       at this province so far (not on which leader they belong to), it
       reproduces correctly regardless of iteration order, but the
-      real leader-grouping order itself is not attempted.
+      real leader-grouping order itself is not attempted.~~ -- **closed
+      in Phase 926**: `REPORTS.PAS Rep_Armies`'s own middle loop
+      (`~line 1060`, `FOR l:= 0 TO nleaders DO BEGIN IF l = nleaders
+      THEN ldr:= noleader ELSE ldr:= l; ... Doit; END`) visits leaders
+      by ascending array index, with the `noleader` (Garrison) group
+      always visited *last* (the final `l = nleaders` iteration) --
+      `Doit`'s own inner loop (`FOR an:= 0 TO narmies-1 DO IF
+      aleader[an] = ldr ...`) then walks that one leader's own armies
+      in ascending array-index order. The Hired-pass sort key now
+      matches: province, then `ArmyState.commanded_by` (`None`/Garrison
+      sorts last via `float("inf")`), then `army_id`. The Mercenary
+      pass (below) needs no equivalent change: those armies render no
+      Leader column at all and are effectively always in the single
+      `noleader` group, so flat `army_id` order within a province
+      already matches the real table there.
 
     Each army's race is resolved via `models/army_type.py
     MONSTROUS_ARMY_RACE` (the army type's fixed race for monstrous types,
@@ -12608,7 +12622,18 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
         lines.append(_ARMIES_CAPTION_LINE_1)
         lines.append(_ARMIES_COLUMN_HEADER)
 
-        owned.sort(key=lambda army: (army.location.x, army.location.y, army.army_id))
+        # Phase 926: REPORTS.PAS Rep_Armies's own middle loop (`FOR l:=
+        # 0 TO nleaders DO ... IF l = nleaders THEN ldr:= noleader ELSE
+        # ldr:= l`) groups by leader-index ascending BEFORE armies,
+        # Garrison (`noleader`) always last -- not flat `army_id` order.
+        owned.sort(
+            key=lambda army: (
+                army.location.x,
+                army.location.y,
+                army.commanded_by if army.commanded_by is not None else float("inf"),
+                army.army_id,
+            )
+        )
 
         province_index = 0
         previous_coord: HexCoord | None = None
