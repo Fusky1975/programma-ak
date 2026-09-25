@@ -112,6 +112,52 @@ This does NOT resolve AK3's own board-height/parity questions above
 fit doesn't transfer) -- but it does mean a future "which real quantity
 is XMULT" investigation should not assume it will ever equal the real
 `map_right_x - map_left_x + 1`.
+
+**Phase 916 -- a third and fourth game's real move files (`AK7__T1.K2`/
+`AK7__T2.K2`, `AK900T1.K0` + its own `GW900T1` world-save), already
+supplied for an earlier, unrelated question (Phase 907's own skill-line
+investigation) but never checked against this one until now.** Neither
+game gave the kind of multi-pair dataset AK3/AK6 did:
+
+- `AK7__T2.K2` has no plan phases at all for either leader (a
+  no-orders-submitted turn). `AK7__T1.K2`'s own 2 leaders (Ldr-2,
+  Adhemar) each issue exactly one LMOVE, both to the *same* target
+  (90) -- no second, different target to pair it against, and (as
+  already noted) this game has no matching world-save to supply a real
+  "from" coordinate either. Still unusable, for a new, more specific
+  reason than "no world-save" alone.
+- `AK900T1.K0`'s own 3 leaders (Legolas, Ashley, Negumba) likewise each
+  issue exactly one LMOVE, all to the *same* target (61) -- but this
+  game *does* have a matching world-save (`GW900T1`), which gives all
+  3 leaders' real starting coordinate directly: `(6, 2)`. That's a
+  genuine, if singular, real (origin, target) pair to test -- a
+  different kind of evidence than a within-file "consecutive pair" (a
+  ground-truth coordinate from the world-save, not an inferred one).
+  Sweeping `board_width` 2-200 the same way finds exactly 5 widths
+  where `decode_hex_number(61, width)` lands adjacent to `(6, 2)`: 18,
+  27, 28, 54, 55. **`GW900T1`'s own header gives this game's real board
+  as 18x9** (`map_right_x=17, map_bottom_y=8`) -- width 18 is real. For
+  the first time across 3 real games checked, a real board width is
+  among the widths consistent with an actual LMOVE pair.
+
+**Read this cautiously, not as a reversal of the AK3/AK6 finding.** A
+single pair can't rank candidate widths the way AK3's 59 pairs or AK6's
+15 did -- 18 is merely *consistent* here, tied with 4 other candidates
+that have no known significance, not picked out as a decisive best fit.
+It does mean the previous framing ("two independent games now each show
+`XMULT != real board width`... it is some other, still-unidentified
+per-build or per-game quantity") overreached slightly by generalizing
+from exactly 2 same-direction data points: a third game's own (weaker)
+evidence doesn't continue that pattern. The honest position is simply
+that `XMULT` varies per game/build and isn't reliably predictable from
+the map's own visible dimensions in either direction -- sometimes
+different (AK3, AK6), sometimes not distinguishable from equal to it
+(AK900, with only one pair to go on). This still doesn't resolve any of
+AK3's own 3 open questions above (a different game's board, real or
+matched width, doesn't transfer to AK3's own data) -- closing that
+would need a second AK3-*like* multi-turn dataset (several turns of the
+same game, the way the original 10 `AK3__T*.K1` files were used), not
+just any third game's single pair.
 """
 
 from __future__ import annotations

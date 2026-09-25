@@ -35255,7 +35255,22 @@ rulebook before being turned into named, typed fields:
   used here too, being the stronger evidence), and what the ~15% of
   non-adjacent pairs represent (some are plausibly legitimate, e.g. a
   leader chasing a distant target; one suspiciously round jump, exactly
-  170, might be a distinct sentinel value).
+  170, might be a distinct sentinel value). **Phase 916**: a third and
+  fourth game's real move files (`AK7__T*.K2`, `AK900T1.K0` +
+  `GW900T1`), already on hand from an unrelated earlier question, were
+  finally checked against this one too. `AK7` stays unusable (its 2
+  leaders both move to the same target, and it has no world-save
+  either). `AK900T1.K0` gives exactly one real (origin, target) pair
+  (all 3 of its leaders share both), but for the first time across 3
+  real games, that game's own *real* board width (18, from `GW900T1`'s
+  own header) is among the handful of widths consistent with it —
+  nuancing, not overturning, the earlier "two games each show `XMULT
+  != real board width`" framing (that was a real generalization from
+  only 2 same-direction data points). Doesn't resolve any of AK3's own
+  3 open questions above — a different game's data, real or matched
+  width, doesn't transfer to AK3's own. See `turn/hex_numbering.py`'s
+  own Phase 916 addendum for the full derivation and its own explicit
+  "read this cautiously" caveat (n=1, not a multi-pair sweep).
 - ~~**`is_native_to_province` approximated as race-compatibility**
   (`plan_dispatch._dispatch_recruit`) — the rulebook's real rule is
   "Each province has 1 or 2 army types that can be recruited from the
@@ -35339,13 +35354,18 @@ supply of any of these doesn't have to be re-derived from scratch:
   battlefield itself always structurally present as a "candidate"), not
   an unsourced preference among equally-valid choices -- see that
   bullet's own updated note above for the full fix.
-- **LMOVE hex-number encoding's 3 remaining questions** (board height,
-  row-parity, the ~15% non-adjacent pairs): explicitly already
-  data-starved per Phase 315's own note (AK3 alone can't tell 50-vs-52
-  apart) -- needs a *second* real game's own LMOVE-bearing K1 files
-  (not AK3's) to cross-check against, the same way Phase 909's own
-  Divine-alignment gap needed a specific second data point rather than
-  more reasoning from the first game alone.
+- **LMOVE hex-number encoding's 3 remaining questions re-checked, Phase
+  916** (board height, row-parity, the ~15% non-adjacent pairs):
+  explicitly already data-starved per Phase 315's own note (AK3 alone
+  can't tell 50-vs-52 apart). `AK7`/`AK900`'s own already-available K1
+  files (used for an unrelated earlier question) were checked -- `AK7`
+  is unusable outright (repeated single target, no world-save); `AK900`
+  gives one real pair whose own real board width happens to be
+  consistent with it, a genuinely new but statistically weak (n=1)
+  observation that doesn't transfer to AK3's own board -- see that
+  bullet's own updated note above. Still needs a *second real AK3-like
+  multi-turn dataset* (several turns of one game, not just any third
+  game's single pair) to settle AK3's own 3 questions outright.
 
 ## Not yet implemented (by design, this phase)
 
