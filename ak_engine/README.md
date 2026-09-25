@@ -14713,14 +14713,21 @@ section.
   and `INITIAL_ARMY_QUALITY` (reusing `turn.combat.Quality.AVERAGE`,
   confirming the source's own "Average (2)" exactly) round out the
   confirmed per-army defaults.
-  - **Deliberately not implemented**: the `humanoid_first_slot`'s own
-    "terrain-weighted infantry" table (named but never given); the
-    `necromantic_home_exception` (no definition of what makes a King
-    property "qualifying"); the `extra_mercenary_band`'s radial
-    search from Home (a spatial algorithm needing the whole generated
-    map, in the same vein as `place_map` and Phase 357's own
-    independent-lord placement order -- not turned into a
-    project-original algorithm this time either).
+  - **Deliberately not implemented**: ~~the `humanoid_first_slot`'s own
+    "terrain-weighted infantry" table (named but never given)~~ --
+    **closed in Phase 797** (`Desktop/COASTFLEET.md`, see that phase's
+    own note below); ~~the `necromantic_home_exception` (no definition
+    of what makes a King property "qualifying")~~ -- **closed in Phase
+    903**: user-confirmed -- a King whose own Kingdom's `Alignment` is
+    `UNDEAD` gets a Zomboid/Skeletal first Home army instead of an
+    ordinary Hired one (`worldgen/initial_armies.py
+    necromantic_home_first_army_is_skeletal()`); the `extra_mercenary_
+    band`'s radial search from Home (a spatial algorithm needing the
+    whole generated map, in the same vein as `place_map` and Phase
+    357's own independent-lord placement order -- not turned into a
+    project-original algorithm this time either) -- **wired in Phase
+    892** (`worldgen/mercenary_band.py`, see that phase's own note
+    below).
   - Added 18 tests in `tests/test_initial_armies.py`: exact-table
     checks, a Monte Carlo confirming `second_slot_gate()` against its
     hand-derived probability across several tax values, budget-range
@@ -14998,14 +15005,22 @@ section.
     "unused roster leader" source exists in this project -- real
     leaders only ever enter via a parsed `.K1` file or explicit caller
     data; companions also need names this project has no in-scope
-    generator for, a separate not-yet-integrated discrepancy); ordinary
+    generator for, a separate not-yet-integrated discrepancy) --
+    **closed in Phase 426** (see that phase's own note above). ~~ordinary
     (non-Home, non-special-race) humanoid provinces' recruit slots and
     armies (`humanoid_first_slot`'s terrain-weighted table was never
-    sourced, Phase 358's own gap); Trollish special-race armies (no
-    budget formula covers Trollish); the `necromantic_home_exception`
-    (Phase 358's own gap); the extra mercenary band (Phase 363) --
-    its "compatible recruit type" test and fallback both naturally
-    depend on the same missing ordinary-recruit-slot table.
+    sourced, Phase 358's own gap)~~ -- **closed in Phase 797/799**
+    (`Desktop/COASTFLEET.md`/`SECONDARMY.md`, see those phases' own
+    notes below). ~~Trollish special-race armies (no budget formula
+    covers Trollish)~~ -- **closed in Phase 902** (`TROLL.md`):
+    `_special_race_army_budget()` routes `Race.TROLLISH` through the
+    same, now-corrected `ordinary_humanoid_budget()` formula. ~~The
+    `necromantic_home_exception` (Phase 358's own gap)~~ -- **closed in
+    Phase 903**, see this same file's own Phase 903 note above. ~~The
+    extra mercenary band (Phase 363) -- its "compatible recruit type"
+    test and fallback both naturally depend on the same missing
+    ordinary-recruit-slot table~~ -- **wired in Phase 892**, once Phase
+    797/799 supplied that same table.
   - Added 9 tests in `tests/test_generate_new_game.py`: every one of
     the 162 provinces gets a real terrain/race/tax; every King Home
     gets tax 10, the King's own race/recruit slot, a real initial-army
@@ -34981,27 +34996,42 @@ rulebook before being turned into named, typed fields:
   `battle_orchestrator.py _combat_ability_for_terrain()` (real since
   Phase 30, `fight_battle()`'s own caller) already resolves Tactical-
   vs-Naval by terrain correctly; nothing left to close here.
-- **Cavalry classification for pursuit** (`turn/pursuit.py`
+- ~~**Cavalry classification for pursuit** (`turn/pursuit.py`
   `CAVALRY_TYPES`) — the rulebook never lists which army types count as
   "cavalry" for the 75%-pursuit-rate rule. Interpreted as the table's
   mounted/fast land types (Lt/Hvy Cavalry, Chariots, Camel Corps, Warg
   Riders); everything else (including overflight/naval types) uses the
-  25% infantry rate.
+  25% infantry rate.~~ -- **closed in Phase 906** (`PURSUIT.md`, a
+  byte-level disassembly of the real post-battle pursuit routine):
+  there is no "cavalry" classification and no 25%/75% roll in the
+  compiled game at all -- the real mechanism is a speed-driven attempt
+  loop (`max(1, speed - front_line_penalty - 1)` attempts, each testing
+  `r01() + speed(pursuer) - front_line_penalty - attempt_index >
+  speed(target)`) using the real `atspeed` table. Elephants (speed 2)
+  isn't cavalry, but Camel Corps and Warg Riders share Heavy Cavalry/
+  Chariots' own speed (3) exactly -- no clean cavalry/infantry split,
+  just one continuous speed rule. This also supersedes the very
+  "manual_average_attempt_rate" citation the next bullet's own Phase
+  349 rested on -- `PURSUIT.md` traced that claim and found no
+  recoverable address for it.
 - ~~**Pursuit catching order** (`turn/pursuit.py resolve_pursuit`) — "army
   speed is the most important factor in catching the defenders" has no
   formula. Implemented as a deterministic pairing (pursuers matched
   against the slowest retreating units first), not a probability model.~~
-  -- **stale as of Phase 406**: the same `AK.EXE`/`AK.OVR` disassembly
+  -- ~~stale as of Phase 406: the same `AK.EXE`/`AK.OVR` disassembly
   (Phase 349) replaced this with a real, confirmed piecewise curve in
   `r_p` (pursuer strength / retreater strength) -- verified against the
   source's own five worked examples (`r_p` 0.8/1.0/1.25/1.5/2.0 ->
   22.5%/50%/77.5%/91.667%/100%) -- plus a real independent `U[1,2)`
   randomizer per pairing (`draw_pursuit_random_multiplier`). The same
   disassembly also confirmed (not merely repeated) the pre-existing
-  25%/75% infantry/cavalry attempt-rate constants exactly. Which
-  *army types* count as cavalry membership-wise is still a documented
-  reading, not independently re-verified against the source -- that
-  narrower claim below stays open.
+  25%/75% infantry/cavalry attempt-rate constants exactly.~~ --
+  **Phase 349's own curve itself superseded in Phase 906**
+  (`PURSUIT.md`): the real post-catch decision is a plain strength
+  comparison (each side's own effective strength, independently scaled
+  by a `U[1,2)` multiplier per side, then strict greater-than), not a
+  probability curve; see the bullet above for the also-superseded
+  25%/75% attempt-rate claim. Nothing left open in either bullet.
 - ~~**Post-battle quality-change constants** (`turn/aftermath.py`) — the
   rulebook gives *zero* numbers here (unlike `win_probability`'s two
   anchors) — only qualitative direction ("may", "probably", "decreases as
@@ -35600,8 +35630,20 @@ rulebook before being turned into named, typed fields:
     unmodeled~~ **partly closed in Phase 65** (see above): the overflight
     half (an opposing overflight unit stacked behind the front line
     widens nemesis eligibility against your rearward units) is wired;
-    the outflanking half stays unmodeled, since `RULES.AK` gives no
-    further text connecting it to nemesis eligibility specifically.
+    ~~the outflanking half stays unmodeled, since `RULES.AK` gives no
+    further text connecting it to nemesis eligibility specifically~~.
+    **Closed in Phase 905** (superseding Phase 904's own brief
+    disassembly-based "confirmed not modeled" conclusion, `NEMESIS.md`):
+    the user directly confirmed from real play that an outflank-eligible
+    side's own boosted second-line unit *does* become an eligible
+    nemesis inflictor too -- unlike overflight, against the opposing
+    column's units at *any* depth, front line included (a front-line
+    Phalanx facing a front-line Bowmen whose own outflanking second-line
+    Legion is present still takes the nemesis penalty). Two worked
+    examples confirmed this and that it never stacks with an
+    already-applied penalty -- see `turn/battle_line.py
+    apply_nemesis_penalties()`'s own Phase 905 docstring for the full
+    derivation and the disassembly finding it supersedes.
   - ~~**`fight_multi_attacker_battle()`'s own edge case**: separate
     (non-united) groups are resolved sequentially against whatever's
     left of the province's defenders; if an earlier group cleanly
@@ -35661,16 +35703,21 @@ rulebook before being turned into named, typed fields:
   second_companion_race()`) -- once `models/hero_roster.py` (Phase 366,
   real `LNAMES.PAS` names) and `worldgen/hero_talent_generation.py`
   (Phase 385) closed the two blockers this bullet originally cited.
-  Genuinely still open: ordinary (non-Home, non-special-race) humanoid
-  provinces' recruit slots/armies
-  (unsourced infantry-weighting table), Trollish special-race armies (no
-  budget formula survives), the `necromantic_home_exception` (source
-  never states the qualifying condition), and the extra mercenary
-  band's own recruit-type inputs (caller-supplied by design, since the
-  natural real inputs are the still-missing ordinary-province table
-  above). Every `GameState` in this project's *tests* is still
-  hand-built by its caller, unchanged -- but that's a test-authoring
-  convenience, not evidence the production path is missing.
+  ~~Genuinely still open: ordinary (non-Home, non-special-race) humanoid
+  provinces' recruit slots/armies (unsourced infantry-weighting table),
+  Trollish special-race armies (no budget formula survives), the
+  `necromantic_home_exception` (source never states the qualifying
+  condition), and the extra mercenary band's own recruit-type inputs
+  (caller-supplied by design, since the natural real inputs are the
+  still-missing ordinary-province table above).~~ All four closed: the
+  ordinary-province recruit table by Phase 797/799 (`COASTFLEET.md`/
+  `SECONDARMY.md`), Trollish armies by Phase 902 (`TROLL.md`), the
+  `necromantic_home_exception` by Phase 903 (user-confirmed), and the
+  extra mercenary band's own inputs by Phase 892, once the ordinary-
+  province table existed to supply them. Every `GameState` in this
+  project's *tests* is still hand-built by its caller, unchanged -- but
+  that's a test-authoring convenience, not evidence the production path
+  is missing.
 - **Feature discovery, monsters, treasures, rumors, battlefield reports**
   (rulebook [3.2]): `resolve_explore()` only computes the deterministic
   cumulative exploration percentage. Actually discovering *what* a
