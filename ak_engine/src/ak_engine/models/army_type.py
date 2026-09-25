@@ -222,52 +222,45 @@ GARRISON_DEFENSE_STRENGTH = 3
 GARRISON_ATTACK_STRENGTH = 1
 
 # Rulebook [6.3] "Nemesis" column: each key is 2/3 strength when fighting
-# any type in its value set. "Beasts" (the rulebook doesn't define it
-# elsewhere) is interpreted here as {Elephants, Camel Corps}, the table's
-# two mounted "beast" types -- not a literal quote. Phase 691:
-# `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real description
-# independently confirms this reading directly -- "They qualify as
-# 'Beasts', the nemesis to mounted units" -- so Dinosaurs join the set
-# too, on real source confirmation rather than name-symmetry guesswork.
+# any type in its value set. "Beasts" was, through Phase 913, an
+# unsourced name-symmetry guess ({Elephants, Camel Corps}, plus Dinosaurs
+# via a separate, independently-sourced confirmation, Phase 691) --
+# Phase 913's own three-avenue due diligence (every in-project "Beasts"
+# quote, the unrelated desert-camels rule, every real turn-report letter
+# available) confirmed dead ends across the board, leaving the guess
+# neither escalated nor walked back.
+#
+# **Phase 928 -- closed for real, user-supplied direct rulebook
+# quotation of the "TABELLA DELLE UNITA' MILITARI" itself** (Regolamento
+# AK.txt, line 3062, right after the table's own Nemesis column entries
+# for Lt Cavalry/Hvy Cavalry/Chariots at lines 2977-2982): "Per Beasts si
+# intendono Cammelli, Elefanti, Bestie Mannare, Warg, Aquile e Draghi. I
+# cavalli ne hanno una gran paura." ("Beasts means Camels, Elephants,
+# Werebeasts, Wargs, Eagles and Dragons. Horses are greatly afraid of
+# them.") -- six real members, not two: Camel Corps, Elephants,
+# Werebeasts, Warg Riders, Eagle Wing, Dragon Wing. Dinosaurs join this
+# set too, exactly as Phase 691 already established via `AdvancedAbility.
+# DRUIDIC_DINOSAURS`'s own independent "They qualify as 'Beasts'" text --
+# a real, separate Druidic-only army type absent from the base 15-type
+# table for an unrelated reason (it's obtained through an Advanced
+# Ability, not ordinary Recruit), not a contradiction of this table.
 # Phase 696: made public (was `_BEASTS`) -- `AdvancedAbility.DRUIDIC_
 # HORSE_CONTROL`'s own real text ("cavalry units directly led by the
 # Druid no longer have the 'Beasts' nemesis") needs `turn/battle_
 # line.py`'s nemesis-application code to check specifically against
 # this set, not just "is this a nemesis at all" (Chariots stays a real
 # nemesis for cavalry regardless of the ability).
-#
-# Phase 913: a real, separate phase re-checked Elephants/Camel Corps
-# specifically (Dinosaurs' own membership was already sourced, Phase
-# 691, and isn't in question) -- three avenues, all confirmed dead
-# ends, not just unexamined:
-#   1. Every other `AdvancedAbility`/`Office`/rulebook-quote description
-#      already in this project that mentions "Beasts" (`DRUIDIC_HORSE_
-#      CONTROL`, `DRUIDIC_DINOSAURS`) was re-read in full -- neither
-#      enumerates the set's full membership, only confirms Dinosaurs
-#      belong and that cavalry can be exempted from it.
-#   2. The real "Camels" quote this project already has (`turn/battle_
-#      orchestrator.py`'s own "Desert without camels" [6.3] rule) is a
-#      *different* mechanic entirely (a quality penalty for lacking a
-#      supply train, not a Nemesis-column entry) -- it doesn't touch
-#      this question either way.
-#   3. Every real turn-report letter available to this project (`SE3__
-#      T*.K1` at the repo root, `tests/fixtures/reports/G6/SE6__T*.K*`)
-#      was searched for an actual battle narration pitting a real
-#      Elephants or Camel Corps unit against Light/Heavy Cavalry or
-#      Chariots -- the kind of real data that resolved the Phase 907-
-#      910 skill-line question. Both units appear repeatedly in these
-#      reports (province garrisons, roster tables, flavor-text asides
-#      like "released a herd of pink-painted elephants"), but never
-#      inside an actual battle narration against a nemesis-eligible
-#      opponent -- there is nothing to check a strength number against.
-# Still exactly what Phase 911's own consolidated note already named:
-# needs either the rulebook's own fuller Army Type Table [6.3] text, a
-# disassembly of the real nemesis-lookup routine, or a future real
-# battle report that actually pits one of these two against a
-# nemesis-eligible opponent. Kept as the same name-symmetry reading
-# (not escalated, not walked back) since nothing new was found either
-# way.
-BEASTS = frozenset({ArmyType.ELEPHANTS, ArmyType.CAMEL_CORPS, ArmyType.DINOSAURS})
+BEASTS = frozenset(
+    {
+        ArmyType.CAMEL_CORPS,
+        ArmyType.ELEPHANTS,
+        ArmyType.WEREBEASTS,
+        ArmyType.WARG_RIDERS,
+        ArmyType.EAGLE_WING,
+        ArmyType.DRAGON_WING,
+        ArmyType.DINOSAURS,
+    }
+)
 
 NEMESIS: dict[ArmyType, frozenset[ArmyType]] = {
     ArmyType.PHALANX: frozenset({ArmyType.LEGION}),
