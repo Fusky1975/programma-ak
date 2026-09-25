@@ -63,23 +63,32 @@ it confirms the formula's shape, not these per-map specifics):
   game series evidently used a different, narrower-but-taller board than
   the "normal"/"Noble" sizes named in `CTBOTH.PAS`). Board dimensions are
   therefore a caller-supplied parameter here, not a constant.
-- Whether row-parity (which of the two 6-neighbor offset sets applies to
-  even vs. odd rows) matches `turn/movement.py`'s convention or its
+- ~~Whether row-parity (which of the two 6-neighbor offset sets applies
+  to even vs. odd rows) matches `turn/movement.py`'s convention or its
   opposite -- genuinely still too close to call from AK3 data alone (50
   vs. 52 of 59 under Phase 314's corrected vs. old parity). Every one of
   the 8 non-sentinel mismatches under the corrected parity happens to be
   a diagonal (dx, dy) = (±1, ∓1) step that the *old* parity table would
   have caught -- but the old table also breaks pairs the corrected one
-  gets right, netting out lower overall (52 vs 50). This dataset can't
-  settle parity on its own; `turn/movement.py`'s convention is kept here
-  too, since it is sourced from real narrative prose naming actual
-  provinces and directions, not a statistical curve fit.
-- The ~15% of pairs that DON'T decode as adjacent: some are plausibly
+  gets right, netting out lower overall (52 vs 50).~~ **The "52 vs 50"
+  figure had its own two numbers right but swapped which convention
+  each belongs to (Phase 918): recomputed directly with bounds that
+  don't artificially clip real data past this module's own declared
+  15-row height, it's 52 (corrected) vs 50 (reversed) -- the corrected
+  convention already won this dataset, not the other way around** --
+  see that phase's own addendum below for the full correction, the real
+  (still modest, but now correctly directed) evidence from a second
+  dataset, and why this was never caught by a test until now.
+- ~~The ~15% of pairs that DON'T decode as adjacent: some are plausibly
   legitimate non-adjacent situations (a leader chasing a distant target
   across a phase gap, or another action in between moving them
   elsewhere by other means); one shows a suspiciously round jump (differs
   by exactly 170) that might be a distinct sentinel/reset value rather
-  than an ordinary hex number.
+  than an ordinary hex number.~~ **Answered precisely in Phase 918**:
+  17 of the 18 known non-adjacent pairs across both real datasets are
+  exactly the row-parity-sensitive diagonal case above, not chasing or
+  anything else; only the `170` jump remains a genuine, unexplained
+  outlier.
 
 **A second, independent game's real move files (2026-09-12): the formula's
 shape reproduces cleanly, but its own ``XMULT`` is confirmed NOT tied to
@@ -220,7 +229,7 @@ since `GW6` isn't available in this repo/session to redo the leader
 cross-reference on). Recorded as a real, suggestive pattern worth a
 future check, not promoted to "XMULT is secretly board height."
 
-**Row-parity itself is untouched by this new dataset -- a genuine,
+~~**Row-parity itself is untouched by this new dataset -- a genuine,
 confirmed dead end for this specific technique, not just an unlucky
 sample.** `_EVEN_ROW_OFFSETS`/`_ODD_ROW_OFFSETS` (`turn/movement.py`)
 share 4 of their 6 offset vectors as a set (`(1, 0)`, `(-1, 0)`, `(0,
@@ -230,12 +239,81 @@ delta lands on one of the 4 shared vectors is parity-*insensitive* by
 construction. Checked directly, not assumed: every one of the 85 pairs'
 matched/unmatched status is byte-for-byte identical whether `neighbors()`
 uses the real (Phase 314-confirmed) convention or the discredited,
-reversed one -- zero pairs land on a parity-sensitive delta. A future
-dataset would need real moves whose *unswapped* deltas happen to land
-on one of the 4 diagonal offsets that differ between the two tables
-(`(1, 1)`, `(-1, -1)`, `(1, -1)`, `(-1, 1)`) to ever discriminate this
-question; nothing currently available (AK3, AK6, AK7, AK900) offers
-one.
+reversed one -- zero pairs land on a parity-sensitive delta.~~ **This
+paragraph was wrong -- see Phase 918 immediately below.**
+
+**Phase 918 -- Phase 917's own "zero discriminating pairs" claim above
+was a real bug in that phase's own analysis, not a property of the
+data.** Investigating "what does the ~15% of non-adjacent pairs
+represent" (a still-open question the paragraph above didn't actually
+answer) meant looking at the 11 real failures in Phase 917's own
+85-pair dataset individually -- and every one of them turned out to be
+exactly a `(±1, ±1)` diagonal step, the *most* parity-sensitive delta
+there is, flatly contradicting "zero pairs land on a parity-sensitive
+delta." Re-deriving that claim's own "reversed convention" comparison
+function line by line found the bug: it read `_ODD_ROW_OFFSETS if
+coord.y % 2 == 0 else _EVEN_ROW_OFFSETS`, which -- worked through
+carefully -- assigns tables to row parities *identically* to
+`neighbors()`'s own real, corrected code (`_EVEN_ROW_OFFSETS if coord.y
+% 2 else _ODD_ROW_OFFSETS`), not the reverse of it. The comparison was
+silently testing the corrected convention against itself.
+
+**Recomputed correctly** (`_ODD_ROW_OFFSETS if coord.y % 2 else
+_EVEN_ROW_OFFSETS` -- verified by hand against `_EVEN_ROW_OFFSETS`/
+`_ODD_ROW_OFFSETS`'s own literal contents for several rows before
+trusting it again), and using bounds generous enough to never clip a
+real coordinate (`MapBounds(1000, 1000)`, the same choice the
+width-sweep test already makes below and for the same reason -- this
+module's own board reaches past its declared 15-row height, so a
+tight bounds check would silently discard real, correct matches near
+that edge and distort the comparison): the real, corrected convention
+scores **74/85 (87.1%)**; the genuinely-reversed one scores **69/85
+(81.2%)**. Of the 85 pairs, 27 are truly parity-discriminating (not
+zero) -- 16 favor the corrected convention, 11 favor the reversed one
+(59.3%/40.7%: a real lean, not a landslide, but a real one).
+
+**The older "50 vs 52" figure from the original paragraph above turned
+out to have both its numbers right but swapped between conventions,
+the same root cause -- a not-truly-reversed comparison, this time
+predating this project's own involvement with it entirely.**
+Recomputing the *original* 59-pair consecutive-pair dataset the same
+careful way, with the same generous bounds, gives the corrected
+convention **52/59 (88.1%)** and the reversed one **50/59 (84.7%)** --
+the exact two numbers the original claim already had, just credited to
+the wrong side. (Under this module's own tighter, declared bounds --
+which is what the already-passing `test_width_10_matches_over_84_
+percent_of_real_lmove_pairs` below actually measures -- the corrected
+score is 50/59, coincidentally matching the reversed convention's own
+generous-bounds score; this numeric coincidence very plausibly seeded
+the original mix-up.) Neither of these two "50"s or "52"s was ever
+behind a runnable test asserting which convention scores which, which
+is exactly why the misattribution went uncaught across Phase
+315/916/917's own repeated citations of it.
+
+**Combined across both real AK3 datasets (144 pairs total, generous
+bounds): the corrected convention scores 126 (87.5%), the reversed one
+119 (82.6%) -- both real datasets individually favor the same
+convention Phase 314's own independent SE3-narrative evidence already
+established, not just the pooled total.** Not overwhelming on its own
+(41 pairs are truly discriminating combined; 24 favor corrected, 17
+favor reversed -- 58.5%/41.5%, a real lean, not a landslide), but for
+the first time it's real, correctly-measured, consistently-directed
+signal from AK3's own move data, not an artifact, a null result, or an
+ambiguous split.
+
+**This also answers the "~15% non-adjacent" question precisely, not
+just qualitatively.** Across both real datasets (using the same
+generous bounds), exactly 18 of 144 pairs (7 of 59, 11 of 85) fail to
+decode as adjacent under the corrected convention. **17 of those 18 are
+exactly the row-parity-sensitive diagonal case above** -- genuinely
+adjacent moves that happen to fall on the 2 offsets that differ between
+the tables, not chasing, a different action type, or a decoding
+failure. The sole exception is the same one already on record:
+`Uga-Buga Makumb`'s own turn-10 jump of exactly `170`, whose round,
+suspiciously-large size looks nothing like the other 17 near-miss cases
+(all off by exactly one row) and remains a genuine, unexplained
+outlier -- still plausibly the sentinel/reset value the original
+paragraph above already floated, still not independently confirmed.
 """
 
 from __future__ import annotations
