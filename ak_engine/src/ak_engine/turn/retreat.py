@@ -13,19 +13,31 @@ Deciding *whether* a defeated army retreats at all ("little hope of
 winning a second battle") depends on factors [7.5] lists only
 qualitatively (capital status, wealth, retreat path, etc.) with no
 formula -- that decision is left to the caller. This module only answers
-"where can it go" and "what happens if it can't".
+"where can it go".
+
+**Phase 900**: this module used to also answer "what happens if it
+can't" (``RetreatResult``/``resolve_retreat()``), but that higher-level
+orchestration was confirmed dead, superseded code -- a zero-caller sweep
+(grepped both `resolve_retreat(` and the bare name `resolve_retreat`
+across all of `src/`) found no real caller anywhere outside its own
+definition and its own dedicated unit tests. `turn/battle_orchestrator.py
+_retreat_or_disband()` is the real production orchestrator (multiple
+call sites, all wired since well before this project reached its current
+phase count): it already reimplements the identical GREEN/DEPLETED-
+disband-vs-Average+-mercenary split directly against live `GameState`/
+`ArmyState` (quality changes, `unhireable_this_turn`, battle-death
+recording, an `avoid_elimination` carve-out), richer than the
+`RetreatResult` snapshot this module's own version returned. Removed
+outright, along with its own 2 dedicated tests; `find_retreat_
+destination()`/`attacker_retreat_candidates()` below are untouched --
+both are still real, tested, and actively used by `battle_orchestrator.py`
+directly.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 from ak_engine.models.map import HexCoord
-from ak_engine.turn.battle_line import BattleUnit
-from ak_engine.turn.combat import Quality
 from ak_engine.turn.movement import MapBounds, neighbors
-
-NON_IMPROVING_QUALITIES = frozenset({Quality.GREEN, Quality.DEPLETED})
 
 
 def find_retreat_destination(current: HexCoord, bounds: MapBounds, friendly_provinces: set[HexCoord]) -> HexCoord | None:
@@ -42,28 +54,3 @@ def attacker_retreat_candidates(invaded_from: HexCoord, bounds: MapBounds) -> li
     invaded from, or one adjacent to that province."""
 
     return [invaded_from, *neighbors(invaded_from, bounds)]
-
-
-@dataclass(slots=True)
-class RetreatResult:
-    destination: HexCoord | None
-    retreating_units: list[BattleUnit] = field(default_factory=list)
-    disbanded_units: list[BattleUnit] = field(default_factory=list)  # lost, into the population
-    mercenary_units: list[BattleUnit] = field(default_factory=list)  # unhireable this gameturn
-
-
-def resolve_retreat(
-    units: list[tuple[BattleUnit, Quality]],
-    current: HexCoord,
-    bounds: MapBounds,
-    friendly_provinces: set[HexCoord],
-) -> RetreatResult:
-    """Retreat to a friendly neighbor if one exists; otherwise disband/mercenary by quality."""
-
-    destination = find_retreat_destination(current, bounds, friendly_provinces)
-    if destination is not None:
-        return RetreatResult(destination=destination, retreating_units=[unit for unit, _ in units])
-
-    disbanded = [unit for unit, quality in units if quality in NON_IMPROVING_QUALITIES]
-    mercenaries = [unit for unit, quality in units if quality not in NON_IMPROVING_QUALITIES]
-    return RetreatResult(destination=None, disbanded_units=disbanded, mercenary_units=mercenaries)

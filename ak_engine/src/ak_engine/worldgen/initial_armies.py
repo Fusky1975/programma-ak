@@ -181,14 +181,19 @@ documented gap:
   mark the first Home army Zomboid/Skeletal") -- the source never
   states what makes a King property "qualifying", so there is no rule
   to implement.
-- The ``extra_mercenary_band`` (one per King, found via "radii 1..6"
+- ~~The ``extra_mercenary_band`` (one per King, found via "radii 1..6"
   radial search from Home with up to 100 retries) -- this needs the
   whole generated map plus a real distance-radius search, a spatial
   algorithm in the same vein as `place_map` (Phase 354) and the
   special-race overwrite pass (Phase 355's own documented gap); not
   requested to be turned into a project-original algorithm this
   time, so left as a documented gap like Phase 357's independent-lord
-  placement order.
+  placement order.~~ -- **stale as of Phase 900 (this sibling bullet
+  was never revisited)**: `worldgen/mercenary_band.py find_mercenary_
+  recruit_type()` (Phase 363) is exactly that spatial algorithm, and
+  `generate_new_game.py` wires it in as of Phase 892 -- see that
+  module's own Phase 892 addendum for the full derivation. Nothing
+  left open in this bullet.
 
 **Verification**: `second_slot_gate()` is Monte Carlo-checked against
 the hand-derived `min(tax,8)/8` probability for several tax values.
