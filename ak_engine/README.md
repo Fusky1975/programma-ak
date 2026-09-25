@@ -31422,8 +31422,31 @@ follow-up request after the original 431-435 plan shipped.
   was already satisfied by construction the whole time, needing no
   special-cased override to strip an item bonus back out. Docstring
   corrected to say so, distinguishing this from `turn/strength.py`'s
-  own genuinely separate, still-open "no magic-item quality modifier"
-  combat gap. Full suite unchanged (6423).
+  ~~own genuinely separate, still-open "no magic-item quality
+  modifier" combat gap~~ -- **closed in Phase 925 (found overstated in
+  a re-audit of this aside)**: rulebook [6.3] (`Regolamento AK.txt`
+  line 3111) lists this as a bare, unquantified "`+? per gli oggetti
+  magici`" ("+? for magic items") line in the quality-modifier list,
+  with no item names or numbers given -- but this project's own
+  complete, real magic-item catalog (`models/treasure.py`, 99 real
+  `Treasure` entries once the 14 `UNUSED_*` placeholders are excluded,
+  cross-checked programmatically for every description mentioning
+  "quality") has **exactly 4** items that ever grant a quality-level
+  effect: `LEADERSHIP_HUMAN`/`_ELVEN`/`_DWARVEN`/`_ORCISH` (Excalibur,
+  the Bow of the Elven Kings, the Axe of the Dwarven Lords, the
+  Scimitar of Orc Mastery -- each "any \[race\] army... has its
+  quality increased by 1 level"), and those are exactly the same 4
+  `race_item_bonus`/`RACE_LEADERSHIP_TREASURE` already wires into
+  `turn/strength.py modified_quality()`/`compute_effective_strength()`
+  since Phase 279/285. The rulebook's own unquantified "+?" already
+  matches this project's own README-explored pattern for a `Table`-
+  cross-referenced modifier with no single flat number (the same shape
+  as the Druidic-shortfall "-?" two lines above it) -- with the
+  complete real item list in hand, "which magic items" is no longer an
+  open question: none of the other 95 real items touches quality at
+  all. See `turn/strength.py`'s own current module docstring for the
+  full citation. Full suite unchanged (6423 at Phase 758; still
+  unchanged, comment-only, at Phase 925).
 
 - **Phase 759**: a thirty-sixth fresh survey found 2 more stale
   docstrings, both comment-only, no behavior change. `turn/

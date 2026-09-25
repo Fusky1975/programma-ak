@@ -67,6 +67,22 @@ as of Phase 757**, see ``compute_effective_strength()``'s own
 clause (a random race/army-type shown to an outside observer) is a
 report-layer effect, not a combat one, and stays unmodeled.
 
+**Phase 925 addendum -- the rulebook's own bare "+? per gli oggetti
+magici" ("+? for magic items") quality-modifier line, [6.3], is fully
+and exhaustively covered by ``race_item_bonus`` above, not a separate,
+still-open gap as a Phase 758 aside once called it.** The rulebook
+gives no item names or numbers for this line (the same shape as the
+Druidic-shortfall "-?" two lines above it in the source) -- but this
+project's own complete, real magic-item catalog (``models/treasure.py``,
+99 real ``Treasure`` entries once the 14 ``UNUSED_*`` placeholders are
+excluded) has exactly 4 items anywhere that grant a quality-level
+effect, and they're precisely the 4 already wired above:
+``LEADERSHIP_HUMAN``/``_ELVEN``/``_DWARVEN``/``_ORCISH``. Checked
+programmatically against every real item's own description text for
+"quality" -- no other item, common or ultra-rare, touches it. With the
+complete real item list in hand, "which magic items give a quality
+bonus" is no longer an open question.
+
 **Island provinces (Phase 282, ``is_island``)** -- a different kind of
 blended-terrain averaging from Illusory Terrain's, and NOT part of the
 rulebook pipeline above: the optional Super AK
