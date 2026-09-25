@@ -35043,6 +35043,24 @@ rulebook before being turned into named, typed fields:
   a different, harder gap than "the wrong curve shape," and not
   something the same column-battle disassembly already on hand answers.
   See `turn/combat.py win_probability()`'s own Phase 911 addendum.
+  **Phase 921**: due diligence on this specific harder gap, confirmed
+  dead end. The full rulebook text (only fully available from Phase 915
+  onward) has now been read in full at [5.10] "PIANO SPECIALE
+  D'INCONTRO" -- it gives real new detail on the duel *trigger* (an
+  aggressive Special Encounter Plan tactic with no preceding Flee order)
+  and *consequences* (Flee always works but costs 25% strength anyway;
+  otherwise the loser dies and also loses 25% strength; neutral-province
+  Heroes never challenge and always accept unless Cowardly), but is
+  explicit that the actual fight resolves with no formula, die roll, or
+  ability comparison given anywhere. A matching search of every real
+  turn-report letter this project has (`SE3__T*.K1`, `SE6__T*.K*`) for a
+  narrated Supreme Commander duel outcome also found nothing usable
+  (only an unrelated tavern-brawl "duel" line and unrelated Imperial
+  Office bonus text matching "supreme commander"). See `turn/duel.py`'s
+  own Phase 921 addendum for the full [5.10] citation and search
+  details, and `turn/combat.py win_probability()`'s matching addendum.
+  Still open, same as Beasts (Phase 913) -- a confirmed, documented dead
+  end, not resolved.
 - ~~**Battle luck event percentages/ranges** (`turn/battle_luck.py`) — the
   rulebook confirms random battle events exist and gives their *shape*
   ("Each random event can as much as double the strength of the affected

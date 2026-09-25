@@ -22,6 +22,44 @@ confirms this exact number from the compiled battle engine's own code
 -- `battle_engine.column_resolution.confirmed_multipliers.
 preliminary_duel_loser_led_units` is `0.75`, matching
 `DUEL_DEMORALIZATION_MULTIPLIER` below exactly. Zero correction needed.
+
+**Phase 921 addendum -- rulebook [5.10] now fully read (previously only
+a paraphrased [7.1] excerpt was quoted above); still no resolution
+formula.** "Regolamento AK.txt" section 5.10 "PIANO SPECIALE D'INCONTRO"
+(lines 1811-1853) gives real detail this module didn't have before:
+
+- A duel is triggered by the two supreme commanders' own Special
+  Encounter Plans: whichever of the two has an aggressive tactic with
+  no Flee order ahead of it in the Plan challenges the other. Putting
+  Flee first is the only way to avoid being challenged; a commander
+  who has Flee anywhere in the Plan never challenges voluntarily.
+- Flee always succeeds in a duel (unless the commander is incapacitated
+  or stunned) -- but using it still costs the fleeing side's troops a
+  25% strength reduction, same penalty as using the Seduction spell to
+  flee. This is a *second, independent* path to the exact same
+  `DUEL_DEMORALIZATION_MULTIPLIER` outcome already modeled below, not a
+  new number.
+- Otherwise ("altrimenti"), the duel ends with the DEATH of one of the
+  two commanders, and the loser's troops suffer the same 25% strength
+  reduction (morale collapse). This is the actual fight -- and per
+  [5.10]'s own text this is *all* it says about it: no die roll, no
+  ability comparison, no formula of any kind for which commander dies.
+- Heroes commanding neutral provinces never challenge to duel and
+  always accept one, unless their Temperament is Cowardly -- a
+  neutral-province-specific exception with no equivalent in this
+  module (out of scope: this project has no neutral-Hero AI yet).
+
+None of this closes the actual gap `combat.py win_probability()` already
+documents (see its own Phase 911/921 addenda): who wins the "otherwise"
+fight is still unspecified anywhere in the rulebook. A real turn-report
+search (`SE3__T*.K1`, `SE6__T*.K*` -- the same fixture set that broke
+open Phases 909/914/917/919/920) turned up zero narrated Supreme
+Commander duel outcomes: one unrelated tavern-brawl "duel" flavor line
+in `SE3__T11.K1`, and several Imperial Office description hits for
+"supreme commander" (e.g. the "Angel of Death" office) that describe
+unrelated office bonuses, never an actual duel result. Confirmed dead
+end for now, same category as the Beasts-nemesis search in Phase 913 --
+documented so it isn't re-attempted without new source material.
 """
 
 from __future__ import annotations
