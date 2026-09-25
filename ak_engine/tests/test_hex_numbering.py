@@ -6,6 +6,7 @@ import pytest
 
 from ak_engine.models.enums import ActionCode
 from ak_engine.models.map import HexCoord
+from ak_engine.parser.gw_world import parse_gw_leaders
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.turn.hex_numbering import (
     EMPIRICAL_AK3_BOARD_WIDTH,
@@ -15,6 +16,7 @@ from ak_engine.turn.hex_numbering import (
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, is_adjacent, neighbors
 
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
+GW3_FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "world" / "G3"
 
 
 def test_decode_matches_row_major_formula():
@@ -168,3 +170,120 @@ def test_ak900s_own_real_board_width_is_among_the_matching_widths():
 
     decoded = decode_hex_number(target_number, real_board_width)
     assert decoded in neighbors(origin, bounds)
+
+
+# -- Phase 917: ground-truth-anchored pairs from GW3__T1-T12's own real
+# leader coordinates (parse_gw_leaders()), matched by name against each
+# turn's own AK3__T*.K1 -- a genuinely independent dataset from Phase
+# 315's own within-file consecutive-pair method (neither end of a Phase
+# 315 pair is ever independently verified; here the "from" side is a
+# real, undecoded world-save coordinate). See the module docstring for
+# the full derivation, including why a straight (unswapped) comparison
+# fails and the x/y transpose that fixes it.
+
+
+def _ground_truth_anchored_pairs():
+    pairs: list[tuple[HexCoord, int]] = []
+    for turn in range(1, 11):
+        kingdom = parse_k1_moves_file(GAME_DATA_DIR / f"AK3__T{turn}.K1")
+        gw_leaders = {r.name: r.coord for r in parse_gw_leaders(GW3_FIXTURE_DIR / f"GW3__T{turn}")}
+        for leader in kingdom.leaders:
+            real_coord = gw_leaders.get(leader.name)
+            if real_coord is None or not leader.plan.segments:
+                continue
+            segment = leader.plan.segments[0]
+            target = None
+            blocked = False
+            for label in _PHASE_ORDER:
+                phase = segment.phases.get(label)
+                if phase is None:
+                    continue
+                if phase.action == ActionCode.LMOVE:
+                    target = phase.obj
+                    break
+                if phase.action in (ActionCode.PURSUE, ActionCode.TRAIL, ActionCode.SUCC_TRAIL):
+                    blocked = True
+                    break
+            if target is not None and not blocked:
+                # The transpose: GWLeaderRecord.coord's own (x, y) convention
+                # is swapped relative to this module's row-major decode --
+                # see the module docstring's own Phase 917 addendum.
+                pairs.append((HexCoord(real_coord.y, real_coord.x), target))
+    return pairs
+
+
+def test_ground_truth_anchored_dataset_has_85_pairs():
+    assert len(_ground_truth_anchored_pairs()) == 85
+
+
+def test_width_10_matches_87_percent_of_ground_truth_anchored_pairs():
+    pairs = _ground_truth_anchored_pairs()
+    matches = sum(1 for coord, target in pairs if coord in neighbors(decode_hex_number(target, EMPIRICAL_AK3_BOARD_WIDTH), _IGNORE_EDGES_BOUNDS))
+    assert matches / len(pairs) >= 0.87
+
+
+def test_width_10_decisively_beats_every_other_width_on_ground_truth_pairs():
+    pairs = _ground_truth_anchored_pairs()
+
+    def score(width: int) -> int:
+        return sum(1 for coord, target in pairs if coord in neighbors(decode_hex_number(target, width), _IGNORE_EDGES_BOUNDS))
+
+    width_10_score = score(EMPIRICAL_AK3_BOARD_WIDTH)
+    other_scores = [score(w) for w in range(2, 201) if w != EMPIRICAL_AK3_BOARD_WIDTH]
+    assert width_10_score > max(other_scores)
+
+
+def test_unswapped_leader_coordinates_fail_at_every_width():
+    # The negative half of the same finding: without the transpose, no
+    # width in 2-200 recovers a meaningful match rate -- a flat failure,
+    # not noise, which is what pointed at a wrong-basis comparison
+    # rather than a weak fit.
+    pairs_unswapped: list[tuple[HexCoord, int]] = []
+    for turn in range(1, 11):
+        kingdom = parse_k1_moves_file(GAME_DATA_DIR / f"AK3__T{turn}.K1")
+        gw_leaders = {r.name: r.coord for r in parse_gw_leaders(GW3_FIXTURE_DIR / f"GW3__T{turn}")}
+        for leader in kingdom.leaders:
+            real_coord = gw_leaders.get(leader.name)
+            if real_coord is None or not leader.plan.segments:
+                continue
+            segment = leader.plan.segments[0]
+            for label in _PHASE_ORDER:
+                phase = segment.phases.get(label)
+                if phase is None:
+                    continue
+                if phase.action == ActionCode.LMOVE:
+                    pairs_unswapped.append((real_coord, phase.obj))
+                break
+
+    def score(width: int) -> int:
+        return sum(1 for coord, target in pairs_unswapped if coord in neighbors(decode_hex_number(target, width), _IGNORE_EDGES_BOUNDS))
+
+    best_unswapped_score = max(score(w) for w in range(2, 201))
+    assert best_unswapped_score / len(pairs_unswapped) < 0.2
+
+
+def test_row_parity_is_undiscriminated_by_the_ground_truth_dataset():
+    # Every one of the 85 pairs' match status is identical whether
+    # neighbors() uses the real (Phase 314) convention or the reversed
+    # one -- a confirmed dead end for using this dataset to settle
+    # row-parity, not just an unlucky sample (see module docstring).
+    from ak_engine.turn.movement import _EVEN_ROW_OFFSETS, _ODD_ROW_OFFSETS
+
+    def neighbors_reversed(coord, bounds):
+        offsets = _ODD_ROW_OFFSETS if coord.y % 2 == 0 else _EVEN_ROW_OFFSETS
+        return [
+            HexCoord(coord.x + dx, coord.y + dy)
+            for dx, dy in offsets
+            if 0 <= coord.x + dx < bounds.width and 0 <= coord.y + dy < bounds.height
+        ]
+
+    pairs = _ground_truth_anchored_pairs()
+    corrected_matches = {
+        i for i, (coord, target) in enumerate(pairs) if coord in neighbors(decode_hex_number(target, EMPIRICAL_AK3_BOARD_WIDTH), _IGNORE_EDGES_BOUNDS)
+    }
+    reversed_matches = {
+        i
+        for i, (coord, target) in enumerate(pairs)
+        if coord in neighbors_reversed(decode_hex_number(target, EMPIRICAL_AK3_BOARD_WIDTH), _IGNORE_EDGES_BOUNDS)
+    }
+    assert corrected_matches == reversed_matches
