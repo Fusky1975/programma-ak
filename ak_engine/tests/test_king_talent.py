@@ -29,6 +29,17 @@ def test_no_allocation_still_carries_the_automatic_bonuses():
             assert aptitude == 2
 
 
+def test_trailing_31st_value_is_set_per_alignment():
+    # Phase 910: raw_values[30] used to stay at this list's `0`
+    # initializer, since the 31st value's meaning was still unconfirmed
+    # when this module was first written. models/kingdom.py SkillTable's
+    # own Phase 907/909/910 docstring addenda now confirm it.
+    assert build_king_skill_table({}, Alignment.DRUID).raw_values[30] == 1
+    assert build_king_skill_table({}, Alignment.NEUTRAL).raw_values[30] == 2
+    for alignment in (Alignment.GOOD, Alignment.PAGAN, Alignment.EVIL, Alignment.UNDEAD, Alignment.DIVINE):
+        assert build_king_skill_table({}, alignment).raw_values[30] == 3
+
+
 def test_allocated_points_add_on_top_of_the_automatic_bonus():
     table = build_king_skill_table({Ability.MELEE: 2, Ability.NECROMANCY: 1}, Alignment.NEUTRAL)
 

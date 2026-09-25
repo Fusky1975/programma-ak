@@ -54,7 +54,7 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
-from ak_engine.models.kingdom import SkillTable
+from ak_engine.models.kingdom import SkillTable, trailing_skill_value_for_alignment
 
 MAX_TALENT_POINTS = 4
 MAX_POINTS_PER_ABILITY = 2
@@ -100,5 +100,11 @@ def build_king_skill_table(talent_allocation: dict[Ability, int], alignment: Ali
             aptitude = 0
         raw_values[ability.value * 2] = level
         raw_values[ability.value * 2 + 1] = aptitude
+
+    # Phase 910: the skill-values line's own 31st (trailing) value is a
+    # function of Alignment alone (models/kingdom.py SkillTable's own
+    # Phase 907/909/910 docstring addenda) -- previously left at this
+    # list's `0` initializer since its meaning was still unconfirmed.
+    raw_values[30] = trailing_skill_value_for_alignment(alignment)
 
     return SkillTable(raw_values=raw_values)

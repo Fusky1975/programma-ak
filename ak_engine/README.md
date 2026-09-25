@@ -365,9 +365,13 @@ archive (only compiled as `AK.EXE`/`AK.OVR`).
   skill+2, capped at 5, with race/alignment overrides) matches; and every
   one of `AK3__T1.K1`'s 15 real pairs matches that formula exactly,
   including both override cases (an Undead King's `WHITE = (0, 0)`,
-  `NECROMANCY = (3, 5)`). The 31st trailing skill-line value stays
+  `NECROMANCY = (3, 5)`). ~~The 31st trailing skill-line value stays
   unconfirmed (constant `3` across all 10 sample turns -- plausibly a
-  race ordinal, not asserted since only one Kingdom's data is available).
+  race ordinal, not asserted since only one Kingdom's data is
+  available).~~ -- **decoded in Phase 910**: it's `Alignment` alone
+  (`Alignment.UNDEAD`, this sample's own King's alignment, is one of
+  the 5 reachable alignments that give `3`) -- see the "Known-unresolved
+  semantics" list's own Phase 907/909/910 notes for the full derivation.
   **Decode-only**: resolving what Practice actually does needs a
   per-leader skill/aptitude table in `GameState` (the move file only
   exposes the *King's* pairs -- 74% of real Practice instances belong to
@@ -34911,31 +34915,35 @@ rulebook before being turned into named, typed fields:
   unconfirmed."
 - `PlanSegment.sp` (the `SP:` field) — meaning unknown; always ends in the
   values seen in samples but not confirmed to always be a fixed shape.
-- The exact meaning of the 31 integers on the skill-values line — expected
-  15 ability pairs (30 values) based on `CTBOTH.PAS`'s `ability` enum, but
-  every real sample file has exactly 31. The 31st value's meaning is
-  still unconfirmed; `SkillTable.pair_for_ability()` only interprets the
-  first 30. **Phase 907 addendum**: real data from a third and fourth
-  game (`AK7__T*.K2`, `AK900T1.K0` + its own `GW900` world-save) gave
-  the first single-field hypothesis to survive every real sample on
-  hand -- the trailing value as a function of `Alignment` alone
-  (`{Druidic} -> 1`, `{Neutral} -> 2`, `{Good, Pagan, Evil, Undead} ->
-  3`, zero contradictions across 8 tuples). User-confirmed: no real
-  Hero or King ever has `Alignment.ANTI_HOLY`/`MECHANICAL`/`SPECIAL`,
-  so only `Alignment.DIVINE` (of the 7 reachable alignments) remains
-  untested. Not yet promoted to a decode function -- see
-  `models/kingdom.py SkillTable`'s own Phase 907 addendum for the full
-  derivation and exactly what would still falsify or confirm it.
-  **Phase 909**: re-checking this repo's own already-present
-  `tests/fixtures/world/G3/GW3__T1` world-save for every King (not just
-  Kingdom 1's, the only one ever K1-sampled from that game) found two
-  real Divine-alignment Kings already sitting in already-available
-  data -- Kingdom 4 (`Hokuto`) and Kingdom 7 (`Giovanna d'Arco`), both
-  from the AK3 game. Neither Kingdom's own K1 move file has ever been
-  supplied. **`AK3__T1.K4` or `AK3__T1.K7`** (any turn of either) is
-  now the single precise file that would settle the last untested
-  alignment outright -- see `models/kingdom.py`'s own Phase 909
-  addendum.
+- ~~The exact meaning of the 31 integers on the skill-values line —
+  expected 15 ability pairs (30 values) based on `CTBOTH.PAS`'s
+  `ability` enum, but every real sample file has exactly 31. The 31st
+  value's meaning is still unconfirmed; `SkillTable.pair_for_ability()`
+  only interprets the first 30.~~ **closed in Phase 910** (see
+  `models/kingdom.py SkillTable`'s own Phase 21/806/907/909/910
+  docstring addenda for the full history). **Phase 907 addendum**: real
+  data from a third and fourth game (`AK7__T*.K2`, `AK900T1.K0` + its
+  own `GW900` world-save) gave the first single-field hypothesis to
+  survive every real sample on hand -- the trailing value as a function
+  of `Alignment` alone (`{Druidic} -> 1`, `{Neutral} -> 2`, `{Good,
+  Pagan, Evil, Undead} -> 3`, zero contradictions across 8 tuples).
+  User-confirmed: no real Hero or King ever has `Alignment.ANTI_HOLY`/
+  `MECHANICAL`/`SPECIAL`, so only `Alignment.DIVINE` (of the 7 reachable
+  alignments) remained untested. **Phase 909**: re-checking this repo's
+  own already-present `tests/fixtures/world/G3/GW3__T1` world-save for
+  every King (not just Kingdom 1's, the only one ever K1-sampled from
+  that game) found two real Divine-alignment Kings already sitting in
+  already-available data -- Kingdom 4 (`Hokuto`) and Kingdom 7
+  (`Giovanna d'Arco`), both from the AK3 game, neither ever K1-sampled.
+  **Phase 910**: both `AK3__T1.K4` and `AK3__T1.K7` were supplied and
+  both give `3`, exactly as predicted, closing the last untested
+  alignment with zero contradictions across 10 real tuples and all 7
+  reachable `Alignment` members now tested -- promoted to a real decode
+  function, `models/kingdom.py ALIGNMENT_TRAILING_SKILL_VALUE`/
+  `trailing_skill_value_for_alignment()`, now wired into
+  `worldgen/king_talent.py build_king_skill_table()` so a newly-created
+  King's own `SkillTable.raw_values[30]` is populated correctly instead
+  of staying at that list's `0` initializer.
 - ~~`parser/k1_moves.py` mis-parses a nested Hire/Charm/Resurrection
   plan~~ **fixed in Phase 18** — see that phase's note above for the
   fix; `PlanPhase.nested_plan` now holds the recovered embedded plan.
