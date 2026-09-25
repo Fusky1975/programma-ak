@@ -853,12 +853,23 @@ def test_run_turn_forced_rebattle_retreat_uses_the_original_invasion_origin():
     # could never have produced it -- only reading contested_from_coord
     # can. seed=1 is a decisive defender win (GREEN attacker vs. ELITE
     # defender) found by search.
+    #
+    # Phase 906: the attacker's own army is Chariots, not Garrison as
+    # before -- turn/pursuit.py's own real, byte-confirmed mechanism now
+    # deterministically catches (and, given Garrison's own quality-down
+    # strength floor of 0, always destroys) a retreating Garrison against
+    # a front-line Heavy Cavalry pursuer, regardless of any random draw,
+    # which would leave this test with no surviving army to retreat at
+    # all. Chariots' own pursuit speed (3, matching the pursuer's own)
+    # makes a front-line Heavy Cavalry's catch test (`r01() + 2 > 3`)
+    # impossible for either value of `r01()` -- a guaranteed escape,
+    # independent of the seed.
     far_origin = HexCoord(8, 8)
     state = _base_state()
     state.add_province(ProvinceState(far_origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     state.provinces[TARGET].contested_by_kingdom_id = 1
     state.provinces[TARGET].contested_from_coord = far_origin
-    state.add_army(ArmyState(101, 1, ArmyType.GARRISON, Quality.GREEN, TARGET, movement_points=3))
+    state.add_army(ArmyState(101, 1, ArmyType.CHARIOTS, Quality.GREEN, TARGET, movement_points=3))
     state.armies[201].quality = Quality.ELITE
     state.armies[201].army_type = ArmyType.HVY_CAVALRY
 

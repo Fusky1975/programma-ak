@@ -626,7 +626,12 @@ def test_execute_move_failed_conquest_does_not_trigger_wandering_mercenary_follo
     state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
     state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET))
     state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.99, 0.99, 0.99, 0.99])
+    # Phase 906: turn/pursuit.py's own real, byte-confirmed mechanism
+    # always runs once the attacker is clean swept (no "decline" roll
+    # left) -- one extra .choice() draw (the sole retreating target) plus
+    # enough placeholder .random() draws for its own r01/multiplier
+    # consumption, whatever the eventual outcome (irrelevant here).
+    rng = ScriptedRandom([0.9] * 11, choice_indices=[0])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10, rng=rng)
 
@@ -686,7 +691,9 @@ def test_execute_move_failed_conquest_does_not_flag_a_fogged_entry():
     state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
     state.provinces[TARGET].illusory_fog_active = True
     state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET))
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.99, 0.99, 0.99, 0.99])
+    # Phase 906: see test_execute_move_failed_conquest_does_not_trigger_
+    # wandering_mercenary_following's own identical Phase 906 note.
+    rng = ScriptedRandom([0.9] * 11, choice_indices=[0])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10, rng=rng)
 
@@ -709,7 +716,12 @@ def test_move_triggers_battle_and_conquest_relocates_the_attacker():
     # roll -- see that fixture's own Phase 296 note. Phase 744: 2 more
     # leading 0.9s account for the per-army Fanaticism roll (attacker is
     # GOOD, 40% chance; defender is NEUTRAL, 0% -- 0.9 avoids both).
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # Phase 906: turn/pursuit.py's own real mechanism deterministically
+    # catches and destroys the retreating GARRISON (its own quality-down
+    # strength floors at 0) -- three placeholder draws (r01, pursuer/
+    # target multipliers) plus one .choice() draw for the sole target,
+    # replacing the old "decline to pursue" roll.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.5, 0.5, 0.5, 0.99], choice_indices=[0])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
 
@@ -750,14 +762,23 @@ def test_execute_move_wind_walking_survives_a_battle_the_same_move_triggers():
     state = base_state()
     state.add_leader(LeaderState(1, 1, "Mage", ORIGIN))
     state.leaders[1].mystic_winds_active = True
-    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))
+    # Phase 906: Chariots, not Garrison -- Garrison's own pursuit speed
+    # (1) is always caught (and, given its strength gap against an ELITE
+    # Heavy Cavalry pursuer, always destroyed) by pursuit, which would
+    # leave no army left to retreat at all. Chariots' own speed (3,
+    # matching the pursuer's) guarantees an escape instead -- see
+    # test_battle_orchestrator.py no_luck_overwhelming_attacker_rng()'s
+    # own Phase 906 note.
+    state.add_army(ArmyState(201, 2, ArmyType.CHARIOTS, Quality.GREEN, TARGET))
     state.armies[101].army_type = ArmyType.HVY_CAVALRY
     state.armies[101].quality = Quality.ELITE
     state.armies[101].commanded_by = 1  # so fight_battle() sees leader 1 as genuinely involved
     # Phase 744: 2 leading 0.9s account for the per-army Fanaticism roll.
-    # Phase 768: trailing 0.5, 0.5 account for the Move-triggered March/
-    # Naval experience credit's own triangular-formula draw.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99, 0.5, 0.5])
+    # Phase 768: trailing 0.99s cover the Move-triggered March/Naval
+    # experience credit's own triangular-formula draw (no assertion below
+    # depends on its exact value), plus pursuit's own r01/quality-roll
+    # draws (Phase 906) and one .choice() draw for the sole retreater.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99, 0.99, 0.99], choice_indices=[0])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=rng)
 
@@ -786,7 +807,10 @@ def test_execute_move_wires_battle_carrier_destruction():
     state.armies[101].army_type = ArmyType.HVY_CAVALRY
     state.armies[101].quality = Quality.ELITE
     # Phase 744: 2 leading 0.9s account for the per-army Fanaticism roll.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99])
+    # Phase 906: turn/pursuit.py's own real mechanism deterministically
+    # catches and destroys the retreating GARRISON -- three placeholder
+    # draws (r01, pursuer/target multipliers) plus one .choice() draw.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99], choice_indices=[0])
 
     with patch("ak_engine.turn.move_execution.apply_battle_carrier_destruction") as mock_cascade:
         result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
@@ -817,7 +841,10 @@ def test_move_conquest_sea_surcharge_honors_terrain_override():
     # Phase 296: leading 0.9 accounts for the new terrain-line-length-cap
     # roll -- see no_luck_overwhelming_attacker_rng()'s own Phase 296 note.
     # Phase 744: 2 more leading 0.9s account for the per-army Fanaticism roll.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # Phase 906: turn/pursuit.py's own real mechanism deterministically
+    # catches and destroys the retreating GARRISON -- three placeholder
+    # draws (r01, pursuer/target multipliers) plus one .choice() draw.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99], choice_indices=[0])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
 
@@ -832,16 +859,18 @@ def test_move_that_fails_to_conquer_leaves_attacker_at_origin():
     state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET))
     # attacker is the weak BOWMEN/AVERAGE army from base_state(); force a
     # defender win with no luck events -- a clean sweep, so the attacker
-    # retreats. The 5th value (0.99) is the attacker-clean-swept
-    # pursuit-attempt roll -- >= the 75% cavalry chance, so the sole
-    # winning HVY_CAVALRY (defender) unit declines to pursue and the
-    # retreating attacker proceeds unchanged; the 6th is that retreat's
-    # own quality-change roll; the 7th is the defender's own
-    # winner_quality_roll.
+    # retreats.
     # Phase 296: leading 0.9 accounts for the new terrain-line-length-cap
     # roll -- see no_luck_overwhelming_attacker_rng()'s own Phase 296 note.
-    # Phase 744: 2 more leading 0.9s account for the per-army Fanaticism roll.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.99, 0.99, 0.99, 0.99])
+    # Phase 744: 2 more leading 0.9s account for the per-army Fanaticism roll
+    # (7 leading draws total here: terrain cap + 4 luck + 2 fanaticism).
+    # Phase 906: turn/pursuit.py's own real mechanism always runs (no
+    # "decline" roll left) -- the front-line Heavy Cavalry defender's own
+    # catch test against this Bowmen retreater (`r01() + 2 > 2`) needs
+    # r01()=0 to fail, guaranteeing the escape this test is about; one
+    # .choice() draw for the sole retreating target, then the defender's
+    # own winner_quality_roll.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.0, 0.99, 0.99], choice_indices=[0])
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
 
@@ -861,7 +890,10 @@ def test_execute_move_threads_apply_fanaticism_true_into_the_real_battle():
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))
     state.armies[101].army_type = ArmyType.HVY_CAVALRY
     state.armies[101].quality = Quality.ELITE
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # Phase 906: turn/pursuit.py's own real mechanism deterministically
+    # catches and destroys the retreating GARRISON -- three placeholder
+    # draws (r01, pursuer/target multipliers) plus one .choice() draw.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99], choice_indices=[0])
 
     with patch("ak_engine.turn.battle_orchestrator.roll_fanaticism", return_value=False) as mock_roll:
         result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
@@ -1067,7 +1099,14 @@ def test_chase_step_triggers_battle_on_an_enemy_occupied_intermediate_hex():
     state.provinces[INTERMEDIATE].owner_kingdom_id = 2
     state.add_army(ArmyState(201, 2, ArmyType.AXEMEN, Quality.AVERAGE, INTERMEDIATE, movement_points=3))
 
-    result = execute_move(state, kingdom_id=1, army_ids=[101], target=FAR_TARGET, rng=ScriptedRandom([0.9] * 20))
+    # Phase 906: turn/pursuit.py's own real mechanism always runs once a
+    # side is clean swept -- pad with a generous, outcome-irrelevant
+    # supply of .choice()/.random() draws (this test only cares that a
+    # battle happened at all).
+    result = execute_move(
+        state, kingdom_id=1, army_ids=[101], target=FAR_TARGET,
+        rng=ScriptedRandom([0.9] * 30, choice_indices=[0, 0, 0, 0, 0]),
+    )
 
     assert result.battle_report is not None
 

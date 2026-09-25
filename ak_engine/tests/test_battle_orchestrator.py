@@ -71,17 +71,27 @@ def build_state(attacker_quality=Quality.ELITE, defender_quality=Quality.GREEN) 
     return state
 
 
-def no_luck_overwhelming_attacker_rng(
-    win_roll=0.1, pursuit_attempt_roll=0.99, winner_quality_roll=0.99, loser_quality_roll=0.99
-):
-    # pursuit_attempt_roll=0.99 (>= the 75% cavalry-pursuit chance) means
-    # the sole winning HVY_CAVALRY unit declines to attempt pursuit, so
-    # resolve_pursuit never runs (0 further rolls) and every retreating
-    # army proceeds through the ordinary retreat/disband path unchanged
-    # from before Phase 28's Pursuit wiring. This roll lands right after
-    # the battle-resolution rolls and before the attacker's own
-    # winner_quality_roll, since defender-side pursuit is checked before
-    # the attacker per-army loop runs.
+def no_luck_overwhelming_attacker_rng(win_roll=0.1, winner_quality_roll=0.99):
+    # Phase 906: turn/pursuit.py's own select_pursuers()/"decline to
+    # attempt" roll is gone -- the real, byte-confirmed pursuit mechanism
+    # (resolve_pursuit()) always runs once the defender is clean swept,
+    # with no way to opt out of it. With this exact matchup (a solo
+    # front-line HVY_CAVALRY attacker vs a solo GARRISON/GREEN defender),
+    # it deterministically both catches and destroys the retreating
+    # GARRISON regardless of its own random draws: the speed gap alone
+    # guarantees the catch (HVY_CAVALRY's own s=speed-front_line_penalty-
+    # attempt_index=1 already exceeds GARRISON's own speed 1 even with
+    # r01()=0), and GARRISON's own quality-down defender strength floors
+    # at 0 (Quality.DEPLETED), so any pursuer strength multiplier wins the
+    # post-catch standstill too. The three placeholder draws below (r01,
+    # pursuer multiplier, target multiplier) exist only because resolve_
+    # pursuit() still *consumes* them -- their values never affect the
+    # outcome here -- plus one .choice() draw for the sole retreating
+    # target. Because the target is destroyed by pursuit, it never
+    # reaches its own per-army quality-change roll (turn/battle_
+    # orchestrator.py's own per-army loop `continue`s for a pursuit-
+    # destroyed army id) -- unlike before Phase 906, there is no loser_
+    # quality_roll to supply at all.
     # Phase 296: the leading 0.9 accounts for fight_battle()'s own new
     # roll_terrain_line_length_cap() call, right before resolve_battle()
     # -- ScriptedRandom overrides .random(), which flips CPython's own
@@ -92,11 +102,20 @@ def no_luck_overwhelming_attacker_rng(
     # always exceeds every test army's own line_length), only that one
     # extra draw is consumed before the next real one.
     return ScriptedRandom(
-        [0.9, 0.9, 0.9, 0.9, win_roll, pursuit_attempt_roll, winner_quality_roll, loser_quality_roll]
+        [0.9, 0.9, 0.9, 0.9, win_roll, 0.5, 0.5, 0.5, winner_quality_roll],
+        choice_indices=[0],
     )
 
 
-def test_overwhelming_attacker_conquers_and_defender_retreats():
+def test_overwhelming_attacker_conquers_and_the_defender_is_pursuit_destroyed():
+    # Phase 906: with this exact matchup (a solo front-line HVY_CAVALRY
+    # attacker vs a solo GARRISON/GREEN defender), the real, byte-
+    # confirmed pursuit mechanism now deterministically catches and
+    # destroys the retreating GARRISON -- see no_luck_overwhelming_
+    # attacker_rng()'s own Phase 906 note for why. There is no "declines
+    # to pursue" roll left to preserve a plain, unmolested retreat with
+    # this matchup (see test_pursuit_does_not_apply_when_loser_retreats_
+    # is_false below for the one way to still get an unpursued outcome).
     state = build_state()
     rng = no_luck_overwhelming_attacker_rng()
 
@@ -105,11 +124,9 @@ def test_overwhelming_attacker_conquers_and_defender_retreats():
     assert report.conquered is True
     assert state.provinces[FIELD].owner_kingdom_id == 1
     assert state.provinces[FIELD].contested_by_kingdom_id is None
-    assert 201 in report.retreated_army_ids
-    assert state.armies[201].location == DEFENDER_HOME
-    # Phase 711: the real destination the army actually moved to is now
-    # kept on the report itself, not just applied to the army and discarded.
-    assert report.retreat_destination_coord[201] == DEFENDER_HOME
+    assert 201 in report.pursuit_destroyed_army_ids
+    assert 201 not in report.retreated_army_ids
+    assert 201 not in state.armies
     assert 101 in state.armies  # attacker survives
 
 
@@ -173,6 +190,17 @@ def test_attacker_forced_retreat_uses_the_origin_when_supplied():
     # must retreat into the same province they invaded from." seed=1 is a
     # decisive defender win (GREEN attacker vs. ELITE defender) found by
     # search -- deterministic under real_random.Random(1).
+    #
+    # Phase 906: the attacker's own army is Chariots, not Garrison as
+    # before -- turn/pursuit.py's own real, byte-confirmed mechanism now
+    # deterministically catches (and, given Garrison's own quality-down
+    # strength floor of 0, always destroys) a retreating Garrison against
+    # a front-line Heavy Cavalry pursuer, regardless of any random draw,
+    # which would leave this test with no surviving army to retreat at
+    # all. Chariots' own pursuit speed (3, matching the pursuer's own)
+    # makes a front-line Heavy Cavalry's catch test (`r01() + 2 > 3`)
+    # impossible for either value of `r01()` -- a guaranteed escape,
+    # independent of the seed.
     origin = HexCoord(0, 1)
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, origin))
@@ -184,7 +212,7 @@ def test_attacker_forced_retreat_uses_the_origin_when_supplied():
     # contest, to also verify a clean sweep clears both fields.
     state.provinces[FIELD].contested_by_kingdom_id = 1
     state.provinces[FIELD].contested_from_coord = origin
-    state.add_army(ArmyState(101, 1, ArmyType.GARRISON, Quality.GREEN, FIELD))
+    state.add_army(ArmyState(101, 1, ArmyType.CHARIOTS, Quality.GREEN, FIELD))
     state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
 
     report = fight_battle(
@@ -534,8 +562,18 @@ def test_defender_disbands_when_no_friendly_province_to_retreat_to():
     state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, FIELD))
     state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
-    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD))
-    rng = no_luck_overwhelming_attacker_rng()
+    # Phase 906: Chariots (pursuit speed 3), not Garrison (speed 1) -- a
+    # front-line Heavy Cavalry pursuer's own catch test (`r01() + 2 > 3`)
+    # is impossible for either value of `r01()`, guaranteeing this army
+    # actually reaches `_retreat_or_disband` (the path this test is
+    # about) instead of being caught (and, given Garrison's own quality-
+    # down strength floor of 0, always destroyed) by pursuit first.
+    state.add_army(ArmyState(201, 2, ArmyType.CHARIOTS, Quality.GREEN, FIELD))
+    # Leading 4 (terrain cap + 3 luck), win_roll, pursuit's own r01 (any
+    # value -- the catch is impossible regardless), attacker's own
+    # winner_quality_roll, the disbanding army's own quality-related
+    # roll, plus one .choice() draw for pursuit's sole target pick.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99], choice_indices=[0])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
@@ -543,7 +581,7 @@ def test_defender_disbands_when_no_friendly_province_to_retreat_to():
     assert 201 not in state.armies
     # Phase 60: a no-retreat-destination disband is also a real battle
     # death, recorded the same as an outright clean-swept elimination.
-    assert state.battle_graveyard[FIELD][0].army_type is ArmyType.GARRISON
+    assert state.battle_graveyard[FIELD][0].army_type is ArmyType.CHARIOTS
 
 
 # --- Whales: zero strength off-sea + guaranteed sea retreat (Phase 37) --
@@ -640,7 +678,14 @@ def test_defender_fleet_on_land_reduced_to_depleted_instead_of_disbanding():
     # No friendly province to retreat to -> would ordinarily disband (GREEN).
     state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
     state.add_army(ArmyState(201, 2, ArmyType.FLEET, Quality.GREEN, FIELD))
-    rng = no_luck_overwhelming_attacker_rng()
+    # Phase 906: Fleet's own pursuit speed (2) doesn't guarantee an escape
+    # from a front-line Heavy Cavalry pursuer the way Chariots' does
+    # elsewhere (its catch test, `r01() + 2 > 2`, succeeds whenever
+    # `r01()=1`) -- forcing r01's own underlying draw below 0.5 makes
+    # `r01()=0`, so `0+2>2` is false and this Fleet reaches the land-
+    # stranded special case this test is actually about, instead of being
+    # pursuit-destroyed first.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.0, 0.99, 0.99], choice_indices=[0])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
@@ -654,7 +699,13 @@ def test_fleet_retreats_normally_when_a_destination_exists():
     # -- no special-casing needed or applied.
     state = build_state()
     state.armies[201].army_type = ArmyType.FLEET
-    rng = no_luck_overwhelming_attacker_rng()
+    # Phase 906: Fleet's own pursuit speed (2) doesn't guarantee an escape
+    # from a front-line Heavy Cavalry pursuer the way build_state()'s own
+    # original Garrison target's speed (1) always fails to -- forcing
+    # r01's own underlying draw below 0.5 makes r01()=0, so the catch
+    # test (`0 + 2 > 2`) is false and this Fleet actually reaches the
+    # ordinary retreat path this test is about.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.0, 0.99, 0.99], choice_indices=[0])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
@@ -671,7 +722,10 @@ def test_fleet_at_average_quality_still_becomes_mercenary_when_no_retreat_destin
     state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
     state.add_army(ArmyState(201, 2, ArmyType.FLEET, Quality.AVERAGE, FIELD))
-    rng = no_luck_overwhelming_attacker_rng()
+    # Phase 906: force r01()=0 so this Fleet escapes pursuit (see
+    # test_fleet_retreats_normally_when_a_destination_exists's own note)
+    # and actually reaches the become-a-mercenary path this test is about.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.0, 0.99, 0.99], choice_indices=[0])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
@@ -725,8 +779,14 @@ def test_defender_becomes_unhireable_mercenary_when_average_quality_and_no_retre
     state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, FIELD))
     state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
-    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.AVERAGE, FIELD))
-    rng = no_luck_overwhelming_attacker_rng()
+    # Phase 906: Chariots, not Garrison -- Garrison's own pursuit speed
+    # (1) is always caught (and, given its strength gap against an ELITE
+    # Heavy Cavalry pursuer, always destroyed) by pursuit before ever
+    # reaching the become-a-mercenary path this test is about. Chariots'
+    # own speed (3, matching the pursuer's) guarantees an escape instead
+    # -- see no_luck_overwhelming_attacker_rng()'s own Phase 906 note.
+    state.add_army(ArmyState(201, 2, ArmyType.CHARIOTS, Quality.AVERAGE, FIELD))
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99], choice_indices=[0])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
@@ -2635,7 +2695,11 @@ def test_fight_battle_reads_a_led_attackers_real_tactical_skill_end_to_end():
     # Phase 296: extra 0.9 right after the duel roll accounts for the new
     # terrain-line-length-cap roll (consumed after the duel, before the
     # 3 luck rolls) -- see no_luck_overwhelming_attacker_rng()'s own note.
-    rng = ScriptedRandom([0.05, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # Phase 906: this is build_state()'s own exact deterministic pursuit-
+    # destroy matchup (see that helper's own Phase 906 note) -- three
+    # placeholder draws (r01, pursuer/target multipliers) plus one
+    # .choice() draw for the sole retreating target.
+    rng = ScriptedRandom([0.05, 0.9, 0.9, 0.9, 0.9, 0.1, 0.5, 0.5, 0.5, 0.99], choice_indices=[0])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
@@ -2649,18 +2713,12 @@ def test_fight_battle_reads_a_led_attackers_real_tactical_skill_end_to_end():
 
 
 def test_pursuit_destroys_a_caught_retreating_army():
+    # Phase 906: this exact matchup (solo HVY_CAVALRY vs solo GARRISON/
+    # GREEN) is exactly no_luck_overwhelming_attacker_rng()'s own
+    # documented deterministic pursuit-destroy case -- see that helper's
+    # own Phase 906 note for why every draw's value is a placeholder here.
     state = build_state()
-    # 3 luck, win_roll (decisive attacker win), pursuit-attempt (0.1 < the
-    # 75% cavalry chance -> the winning HVY_CAVALRY attempts pursuit),
-    # Phase 349: pursuit's own random_multiplier_each_unit draw (any
-    # value -- the pursuer already overwhelms the target so r_p
-    # saturates the destruction curve regardless), pursuit-standstill
-    # (0.1 -> destroys the far-weaker retreating GARRISON/GREEN target),
-    # attacker's own winner_quality_roll. The defender never reaches
-    # _retreat_or_disband at all, so no further rolls are consumed.
-    # Phase 296: leading 0.9 accounts for the new terrain-line-length-cap
-    # roll -- see no_luck_overwhelming_attacker_rng()'s own Phase 296 note.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.1, 0.1, 0.1, 0.99])
+    rng = no_luck_overwhelming_attacker_rng()
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
@@ -3920,7 +3978,13 @@ def test_fight_battle_with_real_duel_combat_reports_a_loser_side():
     # after the duel account for `add_experience()`'s own triangular
     # draw -- A landed at least one hit, so A's own Melee experience
     # credit fires once (B never lands a hit, so no credit/draw for B).
-    rng = ScriptedRandom([0.1, 0.5, 0.9, 0.1, 0.5] + [0.5, 0.5] + [0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # Phase 906: build_state()'s own exact deterministic pursuit-destroy
+    # matchup (see no_luck_overwhelming_attacker_rng()'s own Phase 906
+    # note) tacked onto the end -- three placeholder draws (r01, pursuer/
+    # target multipliers) plus one .choice() draw for the sole retreater.
+    rng = ScriptedRandom(
+        [0.1, 0.5, 0.9, 0.1, 0.5] + [0.5, 0.5] + [0.9, 0.9, 0.9, 0.9, 0.1, 0.5, 0.5, 0.5, 0.99], choice_indices=[0]
+    )
 
     report = fight_battle(
         state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng,
@@ -4033,11 +4097,13 @@ def test_fight_battle_reports_duel_commanders_and_demoralizes_loser():
     state.armies[101].commanded_by = 501
     state.armies[201].commanded_by = 502
     # duel roll (0.01, attacker wins), then the usual no-luck-overwhelming
-    # sequence (3 luck, win_roll, pursuit-decline, winner_quality,
-    # loser_quality for the defender's successful retreat to DEFENDER_HOME).
-    # Phase 296: extra 0.9 right after the duel roll accounts for the new
-    # terrain-line-length-cap roll.
-    rng = ScriptedRandom([0.01, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # sequence. Phase 296: extra 0.9 right after the duel roll accounts
+    # for the new terrain-line-length-cap roll. Phase 906: build_state()'s
+    # own exact deterministic pursuit-destroy matchup (see no_luck_
+    # overwhelming_attacker_rng()'s own Phase 906 note) -- three
+    # placeholder draws (r01, pursuer/target multipliers) plus one
+    # .choice() draw for the sole retreating target.
+    rng = ScriptedRandom([0.01, 0.9, 0.9, 0.9, 0.9, 0.1, 0.5, 0.5, 0.5, 0.99], choice_indices=[0])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
@@ -4270,8 +4336,12 @@ def test_fight_multi_attacker_battle_second_separate_group_claims_an_already_cle
     # (same shape as no_luck_overwhelming_attacker_rng()) clean-sweep the
     # lone defender before the second group's own turn.
     # Phase 296: extra 0.9 right after the unite-chance roll accounts for
-    # the first group's own new terrain-line-length-cap roll.
-    rng = ScriptedRandom([0.99, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # the first group's own new terrain-line-length-cap roll. Phase 906:
+    # build_state()'s own exact deterministic pursuit-destroy matchup
+    # (see no_luck_overwhelming_attacker_rng()'s own Phase 906 note) --
+    # three placeholder draws (r01, pursuer/target multipliers) plus one
+    # .choice() draw for the sole retreating target.
+    rng = ScriptedRandom([0.99, 0.9, 0.9, 0.9, 0.9, 0.1, 0.5, 0.5, 0.5, 0.99], choice_indices=[0])
 
     battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
 
@@ -4493,7 +4563,9 @@ def test_fight_battle_wires_merit_points_for_a_led_winning_attacker():
     # Phase 296: extra 0.9 right after the duel roll accounts for the new
     # terrain-line-length-cap roll (consumed after the duel, before the
     # 3 luck rolls) -- see no_luck_overwhelming_attacker_rng()'s own note.
-    rng = ScriptedRandom([0.05, 0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99])
+    # Phase 906: see test_fight_battle_reads_a_led_attackers_real_
+    # tactical_skill_end_to_end's own identical Phase 906 note.
+    rng = ScriptedRandom([0.05, 0.9, 0.9, 0.9, 0.9, 0.1, 0.5, 0.5, 0.5, 0.99], choice_indices=[0])
 
     fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
@@ -4547,14 +4619,20 @@ def test_fight_battle_numeric_superiority_outflanking_now_applies_end_to_end():
     state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD))
     # terrain-cap roll (any value >=2 works, Plains' own 5-10 range always
-    # does), no luck either side, decisive attacker win, pursuit-decline,
-    # then one winner_quality_roll per surviving attacker army (two here).
+    # does), no luck either side, decisive attacker win, then one winner_
+    # quality_roll per surviving attacker army (two here).
     # Phase 905: the attacker's own outflank eligibility also makes its
     # rearward HVY_CAVALRY an eligible nemesis-inflictor candidate against
     # the defender's lone GARRISON -- ambiguous against the front-line
-    # HVY_CAVALRY (same type), one rng.choice consumed; GARRISON is never
-    # a real nemesis match either way, so the pick is outcome-neutral.
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99], choice_indices=[0])
+    # HVY_CAVALRY (same type), one rng.choice consumed (right after the
+    # terrain-cap roll, before the 3 luck rolls); GARRISON is never a
+    # real nemesis match either way, so the pick is outcome-neutral.
+    # Phase 906: the front-line HVY_CAVALRY's own pursuit attempt against
+    # the lone GARRISON deterministically catches and destroys it (r01,
+    # then two multiplier draws) via one more .choice() (the sole
+    # target) -- the rear HVY_CAVALRY's own pursuit then finds no
+    # targets left and consumes nothing further.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.5, 0.5, 0.5, 0.99, 0.99], choice_indices=[0, 0])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101, 102], rng=rng)
 
