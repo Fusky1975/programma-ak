@@ -35075,7 +35075,7 @@ rulebook before being turned into named, typed fields:
   27 real samples with zero exceptions. See `models/army_type.py`'s own
   Phase 914 addendum for the full reasoning. Still not a rulebook quote
   or a disassembly, so still not promoted to "confirmed."
-- **"Beasts" nemesis matchup** (`models/army_type.py` `NEMESIS`) — the
+- ~~**"Beasts" nemesis matchup** (`models/army_type.py` `NEMESIS`) — the
   rulebook lists "Beasts" as a nemesis type for Lt/Hvy Cavalry and
   Chariots but never defines the term. Interpreted here as `{Elephants,
   Camel Corps}`, the table's two mounted "beast" units — a guess, not a
@@ -35091,7 +35091,24 @@ rulebook before being turned into named, typed fields:
   battle (rosters, flavor text) but never inside one, so there's no
   real strength number to check yet. See `models/army_type.py`'s own
   Phase 913 addendum next to `BEASTS` for the full search. Still open,
-  same reading kept, nothing invented either way.
+  same reading kept, nothing invented either way.~~ -- **closed in Phase
+  928**: the user supplied the rulebook's own direct definition, quoted
+  verbatim from "Regolamento AK.txt" line 3062 (right after the Army
+  Type Table's own Nemesis-column entries for Lt Cavalry/Hvy Cavalry/
+  Chariots, lines 2977-2982): "Per Beasts si intendono Cammelli,
+  Elefanti, Bestie Mannare, Warg, Aquile e Draghi. I cavalli ne hanno una
+  gran paura." ("Beasts means Camels, Elephants, Werebeasts, Wargs,
+  Eagles and Dragons. Horses are greatly afraid of them.") -- six real
+  members, not two: `Camel Corps`, `Elephants`, `Werebeasts`, `Warg
+  Riders`, `Eagle Wing`, `Dragon Wing`, plus `Dinosaurs` via the
+  separate, already-sourced `AdvancedAbility.DRUIDIC_DINOSAURS`
+  confirmation (Phase 691, unaffected -- Dinosaurs are a Druidic-only
+  army type absent from the base 15-type table for an unrelated reason,
+  not a contradiction of it). `BEASTS` now has all 7 real members; no
+  behavior change needed beyond that, since `LT_CAVALRY`/`HVY_CAVALRY`/
+  `CHARIOTS`'s own `NEMESIS` entries already composed from `BEASTS`
+  automatically pick up the 4 new members. See `models/army_type.py`'s
+  own Phase 928 addendum for the full derivation.
 - **`win_probability` curve** (`turn/combat.py`) — the rulebook gives only
   two data points (1:1 ratio → 50% win chance, 4:1 ratio → "assured"
   victory, without a number). The implemented `ratio / (ratio + 1)` curve
@@ -35496,12 +35513,15 @@ supply of any of these doesn't have to be re-derived from scratch:
   disassembly-level proof -- see that bullet's own updated note above
   for the full reasoning. Still needs the rulebook's own exact Army
   Type Table [6.3] text or a disassembly of the recruit-eligibility
-  routine to fully settle it. **"Beasts" nemesis matchup re-checked and
+  routine to fully settle it. ~~**"Beasts" nemesis matchup re-checked and
   still open, Phase 913** -- see that bullet's own updated note above
   for the 3-avenue due-diligence already spent (every in-project
   "Beasts" quote, the unrelated desert-camels rule, and every real
   turn-report letter available all checked and ruled out) and exactly
-  what's still needed.
+  what's still needed.~~ -- **closed in Phase 928**: the user supplied
+  the rulebook's own direct "Per Beasts si intendono..." definition --
+  see that bullet's own updated note above for the full quote and the
+  corrected 7-member `BEASTS` set.
 - ~~**Conquest + sea-battle movement-cost stacking** (`turn/conquest.py`):
   needs the rulebook's own conquest-movement-cost rule text (currently
   only the two individual extra-point rules are quoted, not their

@@ -142,3 +142,41 @@ def test_dinosaurs_have_phase_691_rulebook_mechanics_but_no_base_strength():
     assert NEMESIS[ArmyType.DINOSAURS] == frozenset({ArmyType.PHALANX})
     assert ArmyType.DINOSAURS not in BASE_STRENGTH
     assert ArmyType.DINOSAURS not in MONSTROUS_ARMY_RACE
+
+
+def test_beasts_matches_the_rulebooks_own_direct_definition():
+    # Phase 928: Regolamento AK.txt line 3062, right after the Army Type
+    # Table's own Nemesis column -- "Per Beasts si intendono Cammelli,
+    # Elefanti, Bestie Mannare, Warg, Aquile e Draghi." (user-supplied
+    # verbatim quote) -- six real table members, plus Dinosaurs via the
+    # separate, already-sourced AdvancedAbility.DRUIDIC_DINOSAURS
+    # confirmation (Phase 691). Replaces the old {Elephants, Camel Corps,
+    # Dinosaurs} name-symmetry guess Phase 913 could only confirm as a
+    # dead end, not resolve.
+    from ak_engine.models.army_type import BEASTS
+
+    assert BEASTS == frozenset(
+        {
+            ArmyType.CAMEL_CORPS,
+            ArmyType.ELEPHANTS,
+            ArmyType.WEREBEASTS,
+            ArmyType.WARG_RIDERS,
+            ArmyType.EAGLE_WING,
+            ArmyType.DRAGON_WING,
+            ArmyType.DINOSAURS,
+        }
+    )
+
+
+def test_beasts_are_the_nemesis_of_every_cavalry_and_chariot_type():
+    # Phase 928: "I cavalli ne hanno una gran paura" ("Horses are greatly
+    # afraid of them") -- Lt/Hvy Cavalry and Chariots (the table's own
+    # three Nemesis: Beasts entries, Regolomento AK.txt lines 2977-2982)
+    # are all weak against the full corrected 7-member set, not just the
+    # 2 previously modeled.
+    from ak_engine.models.army_type import BEASTS, NEMESIS
+
+    for cavalry_type in (ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY):
+        assert BEASTS <= NEMESIS[cavalry_type]
+        assert ArmyType.CHARIOTS in NEMESIS[cavalry_type]
+    assert NEMESIS[ArmyType.CHARIOTS] == BEASTS
