@@ -34983,7 +34983,21 @@ rulebook before being turned into named, typed fields:
   that any humanoid army type works in any humanoid province, but never
   says explicitly whether a *humanoid* type can be recruited in a
   *non-humanoid* (monstrous) province. This module assumes not (symmetric
-  incompatibility) — a reasonable reading, not a verified rule.
+  incompatibility) — a reasonable reading, not a verified rule. **Phase
+  914**: real per-province `Mod_PAT` data already in this repo's own
+  `GW3__T1` fixture (Phase 278) corroborates this without fully proving
+  it — every one of that world's 27 real monstrous-race provinces has
+  exactly one recruit slot, always its own native type, never a second
+  (let alone humanoid) one, unlike 57 of 94 humanoid provinces, which
+  genuinely do carry a second, different type. Doesn't test
+  `is_army_type_compatible_with_race()` directly (a race-compatible type
+  never even reaches this per-province refinement for a monstrous
+  province either way, per `turn/recruit_execution.py`'s own Phase 407
+  addendum), but it's real, independent evidence from the game's own
+  world generation, and it lines up with the symmetric reading in all
+  27 real samples with zero exceptions. See `models/army_type.py`'s own
+  Phase 914 addendum for the full reasoning. Still not a rulebook quote
+  or a disassembly, so still not promoted to "confirmed."
 - **"Beasts" nemesis matchup** (`models/army_type.py` `NEMESIS`) — the
   rulebook lists "Beasts" as a nemesis type for Lt/Hvy Cavalry and
   Chariots but never defines the term. Interpreted here as `{Elephants,
@@ -35276,16 +35290,19 @@ supply of any of these doesn't have to be re-derived from scratch:
   already-available K1 file to correlate it against. Needs either the
   rulebook's own alliance-request rules text or a `Read_Moves`/
   `Write_Moves` disassembly covering these two specific fields.
-- **Humanoid-army-type compatibility** (`models/army_type.py`): a
-  reading of army-type recruitment-symmetry rules the rulebook states
-  only partially. Needs the rulebook's own exact Army Type Table [6.3]
-  text (a fuller quote than what's already transcribed) or a
-  disassembly of the recruit-eligibility routine. **"Beasts" nemesis
-  matchup re-checked and still open, Phase 913** -- see that bullet's
-  own updated note above for the 3-avenue due-diligence already spent
-  (every in-project "Beasts" quote, the unrelated desert-camels rule,
-  and every real turn-report letter available all checked and ruled
-  out) and exactly what's still needed.
+- **Humanoid-army-type compatibility re-checked, Phase 914** -- real
+  per-province `Mod_PAT` data already in this repo's own `GW3__T1`
+  fixture corroborates the existing symmetric reading (27/27 real
+  monstrous provinces, zero exceptions), without being a full
+  disassembly-level proof -- see that bullet's own updated note above
+  for the full reasoning. Still needs the rulebook's own exact Army
+  Type Table [6.3] text or a disassembly of the recruit-eligibility
+  routine to fully settle it. **"Beasts" nemesis matchup re-checked and
+  still open, Phase 913** -- see that bullet's own updated note above
+  for the 3-avenue due-diligence already spent (every in-project
+  "Beasts" quote, the unrelated desert-camels rule, and every real
+  turn-report letter available all checked and ruled out) and exactly
+  what's still needed.
 - **Conquest + sea-battle movement-cost stacking** (`turn/conquest.py`):
   needs the rulebook's own conquest-movement-cost rule text (currently
   only the two individual extra-point rules are quoted, not their
