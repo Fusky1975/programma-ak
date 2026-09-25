@@ -228,7 +228,12 @@ def _nemesis_aware_strength_key(opposing_column: Column):
 
 
 def apply_nemesis_penalties(
-    attacker_columns: list[Column], defender_columns: list[Column], rng: random.Random | None = None
+    attacker_columns: list[Column],
+    defender_columns: list[Column],
+    rng: random.Random | None = None,
+    *,
+    attacker_outflank_eligible: bool = False,
+    defender_outflank_eligible: bool = False,
 ) -> None:
     """Apply the rulebook [6.3] nemesis penalty (2/3 strength) across paired columns.
 
@@ -248,7 +253,7 @@ def apply_nemesis_penalties(
     overflight or outflanking, one of them is chosen at random."
 
     For each of ``own_column``'s units, the set of *eligible* opposing
-    nemesis-inflictors (Phase 65) is:
+    nemesis-inflictors is:
 
     1. ``opposing_column``'s own front-line (depth 0) unit -- always
        eligible, against every one of ``own_column``'s units regardless
@@ -256,66 +261,77 @@ def apply_nemesis_penalties(
        eligible unit -- no ambiguity, no ``rng`` consumed -- whenever
        ``opposing_column`` has no *effectively* overflight units (Phase
        43's Druidic held-back carve-out, see ``_is_effective_overflight``)
-       beyond its own front line, which is every fixture in this
-       project's test suite prior to Phase 65.
+       and isn't outflank-eligible (rule 3 below), which is every
+       fixture in this project's test suite prior to Phase 65.
     2. Every *effectively* overflight unit anywhere in ``opposing_column``
        (any depth, since overflight "flies" regardless of position) is
        **also** eligible, but *only* against ``own_column``'s units at
        depth >= 1 ("flying against a unit **behind** the front line") --
        never against ``own_column``'s own front-line unit, which is
        already exhaustively covered by rule 1.
+    3. **``opposing_column``'s own outflank-boosted second-line unit
+       (index 1), when that side is outflank-eligible** (Phase 905,
+       user-confirmed 2026-09-25, superseding Phase 904's own
+       disassembly-based "not modeled" conclusion below) -- eligible
+       against ``own_column``'s units **at any depth, front line
+       included**. This is the one place outflanking eligibility differs
+       from overflight: an outflanking unit is physically going around
+       the enemy line, not attacking from above/below a specific rear
+       unit, so it can reach the opposing front line directly. Confirmed
+       by two worked examples from actual play: (a) a front-line Legion
+       fighting a front-line Phalanx already penalizes the Phalanx
+       (rule 1); a *second*, unrelated outflanking Legion elsewhere in
+       the same battle does **not** double that penalty -- automatic
+       here, since each of ``own_column``'s units is checked against
+       *one* chosen inflictor, never against every eligible one; (b) a
+       front-line Phalanx facing a front-line Bowmen whose own second
+       line is an outflanking Legion (terrain permits) **does** take the
+       nemesis penalty from that Legion, even though the opposing front
+       line (Bowmen) isn't itself Phalanx's nemesis -- only explained by
+       rule 3 above, since rule 1/2 alone would find no eligible
+       inflictor there at all (Bowmen isn't Legion, and the Legion isn't
+       overflight). ``attacker_outflank_eligible``/``defender_outflank_
+       eligible`` are each side's own Phase 64 numeric-superiority
+       eligibility (``resolve_battle`` computes and passes them in,
+       *before* calling this function, precisely so rule 3 has them
+       available) -- the same condition that already drives
+       ``column_strength``'s ``outflank_second_line`` 100%-strength
+       boost for that identical unit; this only widens *nemesis*
+       eligibility, using the exact same eligibility test, not a new one.
 
-    When the resulting eligible set has more than one member (only
-    possible for one of ``own_column``'s rearward units, facing an
-    opposing side with a stacked overflight unit distinct from its own
-    front-line unit), one is chosen via ``rng.choice`` -- "chosen at
-    random" -- before the nemesis-type check runs against just that
-    one. ``rng`` defaults to a fresh ``random.Random()``, but is only
-    ever actually called in this genuinely ambiguous case, keeping every
-    pre-Phase-65 caller's ``rng`` consumption unchanged.
+    When the resulting eligible set has more than one member, one is
+    chosen via ``rng.choice`` -- "chosen at random" -- before the
+    nemesis-type check runs against just that one; this is also what
+    keeps rule 3 from ever *stacking* with rule 1/2 on the same unit:
+    exactly one inflictor is checked, exactly one penalty (or none)
+    results, regardless of how many candidates were eligible. ``rng``
+    defaults to a fresh ``random.Random()``, but is only ever actually
+    called in a genuinely ambiguous case, keeping every caller that
+    passes no outflank eligibility (and faces no stacked overflight
+    unit) at its pre-Phase-65 ``rng`` consumption.
 
-    **"...or outflanking" -- confirmed NOT modeled, Phase 904
-    (``NEMESIS.md``, 2026-09-25, a byte-level disassembly of the real
-    battle-resolution routine, ``AK.OVR`` raw ``0x8CD2-0xA85A``, plus its
-    ``Nemo()`` predicate at ``AK.EXE`` raw ``0x252D5-0x253A1``).** This
-    was previously left open as "not resolvable from the available
-    source without guessing" (Phase 65); the disassembly now answers it
-    directly, not by inference: the two identified outflanking branches
-    (raw ``0x9923-0x9A13``, one per flank) only ever increment their own
-    eligibility counter, set the per-position **strength divisor** to
-    ``1`` (raw ``0xA13D-0xA146`` confirms the divide-by-this-value use --
-    already exactly this project's own ``column_strength``
-    ``outflank_second_line`` boost), and emit the "outflanked" narrative
-    code (``_AFlank`` = 4033). Neither branch ever writes an opponent
-    type or extends any candidate set. ``Nemo(ldr, at, aopp)`` (the real
-    nemesis predicate, matching ``RUMORS.PAS`` verbatim) always receives
-    exactly **one** already-resolved opponent type per unit -- normally
-    the same-column front-line opponent, or, for the already-implemented
-    overflight/rear-attack case, the opponent at the mirrored rearward
-    position (a single deterministic substitution, raw ``0x830E``, not a
-    candidate-set insertion). All 4 explicit calls to ``Nemo()`` found in
-    the disassembled path were checked; none is gated on outflanking
-    eligibility. This is a negative result for the two specific compiled
-    binaries examined (see ``NEMESIS.md``'s own SHA-256-identified
-    exemplars), not a claim about every historical build of the game --
-    but it is exactly the standard this project already applies to a
-    "confirmed structurally inapplicable" finding elsewhere (e.g. the
-    Swamp/Rohan exclusions in ``worldgen/initial_armies.py``): a real,
-    sourced negative answer, not an invented one. See
-    ``tests/test_battle_resolution.py test_resolve_battle_outflank_
-    eligibility_never_widens_nemesis_eligibility`` for the locked-in
-    regression.
-
-    **A second, related finding from the same document, deliberately not
-    acted on here**: ``NEMESIS.md`` also reports that the disassembled
-    path never located the rulebook's own "chosen at random" selection
-    among multiple eligible nemesis-inflictors at all -- the overflight
-    rear-attack substitution above is a single deterministic swap, not a
-    build-a-candidate-set-then-``rng.choice`` mechanism. That would bear
-    on this function's own Phase 65 overflight/``rng.choice`` design
-    directly, but revisiting already-shipped, already-tested behavior on
-    that basis is a separate, larger decision -- left to a future phase
-    if and when it's explicitly requested, not folded into this one.
+    **History -- Phase 904's disassembly-based "not modeled" conclusion,
+    superseded by Phase 905's direct user confirmation.** A byte-level
+    disassembly the user supplied (``NEMESIS.md``, 2026-09-25, ``AK.OVR``
+    raw ``0x8CD2-0xA85A`` plus the ``Nemo()`` predicate at ``AK.EXE`` raw
+    ``0x252D5-0x253A1``) found that routine's own two outflanking
+    branches (raw ``0x9923-0x9A13``) only set the per-position strength
+    divisor to ``1`` (matching ``column_strength``'s own boost) and never
+    write an opponent type or extend a candidate set -- a real, honestly
+    negative finding for those two specific compiled binaries, not an
+    invented one. Phase 904 briefly closed this gap on that basis. The
+    user then directly corrected this from personal play experience with
+    the two worked examples quoted in rule 3 above, which pin down a
+    real, different mechanic than the disassembled routine implements.
+    Both facts are kept on record rather than one silently overwriting
+    the other: the disassembly's own hedge ("version difference,
+    outdated description, or another not-yet-identified path" --
+    ``NEMESIS.md`` section 7) already allowed for exactly this outcome,
+    and this project treats a direct, worked-example confirmation from
+    actual play (the same standard already used for ``worldgen/
+    initial_armies.py necromantic_home_first_army_is_skeletal``, Phase
+    903) as authoritative over a hedged disassembly of one specific,
+    possibly-different build.
 
     In ``resolve_battle``, this runs *after* ``apply_tactical_switches``
     (Phase 34), so "front-line" here already reflects any switch that
@@ -339,11 +355,17 @@ def apply_nemesis_penalties(
 
     rng = rng if rng is not None else random.Random()
     for attacker_column, defender_column in zip(attacker_columns, defender_columns):
-        _apply_nemesis_to_column(attacker_column, defender_column, rng)
-        _apply_nemesis_to_column(defender_column, attacker_column, rng)
+        _apply_nemesis_to_column(
+            attacker_column, defender_column, rng, opposing_outflank_eligible=defender_outflank_eligible
+        )
+        _apply_nemesis_to_column(
+            defender_column, attacker_column, rng, opposing_outflank_eligible=attacker_outflank_eligible
+        )
 
 
-def _eligible_nemesis_inflictors(opposing_column: Column, own_depth: int) -> list[BattleUnit]:
+def _eligible_nemesis_inflictors(
+    opposing_column: Column, own_depth: int, opposing_outflank_eligible: bool = False
+) -> list[BattleUnit]:
     """The opposing units eligible to inflict a nemesis check on one of ``own_column``'s
     units at ``own_depth`` -- see ``apply_nemesis_penalties``'s own docstring.
     """
@@ -351,17 +373,21 @@ def _eligible_nemesis_inflictors(opposing_column: Column, own_depth: int) -> lis
     if not opposing_column:
         return []
 
-    candidates = [opposing_column[0]]
+    eligible_indices = {0}
     if own_depth >= 1:
-        candidates.extend(
-            unit for index, unit in enumerate(opposing_column) if index > 0 and _is_effective_overflight(unit)
+        eligible_indices.update(
+            index for index, unit in enumerate(opposing_column) if index > 0 and _is_effective_overflight(unit)
         )
-    return candidates
+    if opposing_outflank_eligible and len(opposing_column) >= 2:
+        eligible_indices.add(1)  # rule 3: any own_depth, front line included
+    return [opposing_column[index] for index in sorted(eligible_indices)]
 
 
-def _apply_nemesis_to_column(own_column: Column, opposing_column: Column, rng: random.Random) -> None:
+def _apply_nemesis_to_column(
+    own_column: Column, opposing_column: Column, rng: random.Random, *, opposing_outflank_eligible: bool = False
+) -> None:
     for index, unit in enumerate(own_column):
-        candidates = _eligible_nemesis_inflictors(opposing_column, index)
+        candidates = _eligible_nemesis_inflictors(opposing_column, index, opposing_outflank_eligible)
         if not candidates:
             continue
         inflictor = candidates[0] if len(candidates) == 1 else rng.choice(candidates)

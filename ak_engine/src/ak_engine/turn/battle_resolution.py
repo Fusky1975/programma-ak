@@ -291,12 +291,15 @@ def resolve_battle(
         attacker_columns, defender_columns, line_length, attacker_tactical_ability, defender_tactical_ability, rng
     )
 
-    apply_nemesis_penalties(attacker_columns, defender_columns, rng)
-
     # Numeric-superiority outflanking (Phase 64, RULES.AK ~line 1362): see
     # this module's own pre-Phase-370 docstring history for the
     # eligibility rule and why a None cap makes it ineligible rather than
-    # eligible. Unchanged by Phase 370.
+    # eligible. Unchanged by Phase 370. Moved before apply_nemesis_
+    # penalties (Phase 905) so that function can also consult this same
+    # eligibility for its own outflanking-widens-nemesis rule -- see its
+    # own docstring. Purely a reordering: this computation depends only on
+    # unit counts and the terrain cap, neither of which apply_nemesis_
+    # penalties (which only adjusts effective_strength) can affect.
     line_shorter_than_terrain_allows = (
         terrain_line_length_cap is not None and line_length < terrain_line_length_cap
     )
@@ -304,6 +307,14 @@ def resolve_battle(
     defender_numerically_superior = len(defender_units) > len(attacker_units)
     attacker_outflank_eligible = attacker_numerically_superior and line_shorter_than_terrain_allows
     defender_outflank_eligible = defender_numerically_superior and line_shorter_than_terrain_allows
+
+    apply_nemesis_penalties(
+        attacker_columns,
+        defender_columns,
+        rng,
+        attacker_outflank_eligible=attacker_outflank_eligible,
+        defender_outflank_eligible=defender_outflank_eligible,
+    )
 
     # Non-humanoid rear-targeting (Phase 39, rulebook [7.2]): an opposing
     # overflight unit boosts this column's own ordinary second-line unit
