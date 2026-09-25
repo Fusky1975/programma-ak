@@ -159,6 +159,18 @@ def win_probability(strength_ratio: float) -> float:
     close this -- the column-battle disassembly already on hand doesn't,
     since it answers a different question (which side wins a *column*,
     not a one-on-one commander duel).
+
+    **Phase 921 addendum -- due diligence attempted, gap confirmed still
+    open.** `turn/duel.py`'s own Phase 921 addendum reads rulebook [5.10]
+    "PIANO SPECIALE D'INCONTRO" in full for the first time this project
+    (previously only paraphrased via [7.1]). It adds real detail about
+    *when* a duel triggers and its Flee-vs-fight consequences, but is
+    explicit that the actual fight ends in "the death of one of the two
+    [commanders]" with no formula, die roll, or ability comparison given
+    for which one. A real turn-report search (`SE3__T*.K1`, `SE6__T*.K*`)
+    for a narrated duel outcome also came up empty -- see that module's
+    addendum for the details. This function's approximation remains the
+    only model available; the gap described above is unchanged.
     """
 
     if strength_ratio < 0:
