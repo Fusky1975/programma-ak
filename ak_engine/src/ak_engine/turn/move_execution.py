@@ -23,8 +23,10 @@ Wires together, in order:
 3. **Battle trigger**: if the target province holds any army not allied
    with the mover, calls ``turn/battle_orchestrator.py fight_battle()``.
 4. ``turn/conquest.py movement_cost_for_move()`` -- movement-point
-   deduction, including the extra point for conquering and/or for a sea
-   battle. **Phase 651 addendum**: a separate, per-army-type deduction
+   deduction, including the single extra point owed for conquering the
+   province or for a battle having taken place there (never both at
+   once -- Phase 915). **Phase 651 addendum**: a separate, per-army-type
+   deduction
    right alongside it for Illusory Fog's own "must expend 1 additional
    movement point when entering or leaving" the affected province
    (``turn/cast_execution.py ILLUSORY_FOG_EXTRA_MOVEMENT_COST``/``is_
@@ -1740,7 +1742,6 @@ def execute_move(
             conquered = True
 
     cost = movement_cost_for_move(
-        is_sea_province=target_province.effective_terrain() == Terrain.SEA,
         battle_occurred=occupied_by_enemy,
         conquered=conquered,
     )

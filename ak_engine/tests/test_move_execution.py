@@ -829,10 +829,16 @@ def test_execute_move_wires_battle_carrier_destruction():
 
 
 def test_move_conquest_sea_surcharge_honors_terrain_override():
-    # Phase 168: a province Part Sea'd to Sea (terrain_override) must incur
-    # the sea-battle movement surcharge on conquest, even though its base
-    # terrain is still Plains -- effective_terrain() is what movement_cost
-    # actually reads now.
+    # Phase 168: a province Part Sea'd to Sea (terrain_override) still
+    # incurs the (single) battle/conquest movement surcharge, even
+    # though its base terrain is still Plains -- effective_terrain() is
+    # what movement_cost actually reads now.
+    #
+    # Phase 915: Regolamento AK.txt [7.7]'s own full text ties the sea
+    # surcharge back to the same single land one ("Come avviene nelle
+    # province di terra..."), user-confirmed -- conquering via a won
+    # battle never stacks a second, sea-specific point on top; the cost
+    # is the same 2 (1 base + 1) whether or not the province is Sea.
     state = base_state()
     state.provinces[TARGET].terrain_override = Terrain.SEA
     state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))
@@ -849,9 +855,9 @@ def test_move_conquest_sea_surcharge_honors_terrain_override():
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=rng)
 
     assert result.battle_report.conquered is True
-    # 1 base + 1 conquest + 1 sea-battle surcharge = 3 (vs. 2 without override).
-    assert result.movement_points_spent == 3
-    assert state.armies[101].movement_points == 0
+    # 1 base + 1 (battle/conquest, never stacked) = 2, terrain-independent.
+    assert result.movement_points_spent == 2
+    assert state.armies[101].movement_points == 1
 
 
 def test_move_that_fails_to_conquer_leaves_attacker_at_origin():
@@ -877,8 +883,11 @@ def test_move_that_fails_to_conquer_leaves_attacker_at_origin():
     assert result.moved is False
     assert result.new_location is None
     assert state.armies[101].location == ORIGIN
-    # attacker wasn't clean-swept destroyer's info aside, no conquest -> cost 1
-    assert result.movement_points_spent == 1
+    # Phase 915, user-confirmed: a battle merely taking place -- won or
+    # lost -- owes the extra movement point (Regolamento AK.txt [7.7]'s
+    # own "Come avviene nelle province di terra..." text). No conquest
+    # here, but a real battle was fought, so cost is still 1 base + 1.
+    assert result.movement_points_spent == 2
 
 
 def test_execute_move_threads_apply_fanaticism_true_into_the_real_battle():
