@@ -225,7 +225,7 @@ def write_gw_leader_record(record: GWLeaderRecord) -> str:
         record.coord.x,
         record.coord.y,
         record.race.value,
-        record.sex_raw,
+        record.special_effects_raw,
         liege_raw,
         record.original_liege_raw,
         record.condition,
