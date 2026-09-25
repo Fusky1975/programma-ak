@@ -120,11 +120,23 @@ ak_engine/README.md:**
   (see that field's own docstring) -- so the wrong-rule fallback is now
   dead code for every path this project drives, kept only as a defensive
   default for a hypothetical future caller that genuinely doesn't know
-  the origin. **Still genuinely unresolved, left alone**: among the
-  origin-or-adjacent candidates the rule allows, this project always
-  picks the origin itself (``attacker_retreat_candidates(...)[0]``) --
-  the rulebook names no "best" candidate among them, so no tie-break was
-  invented. **Whales are
+  the origin. **Phase 912 closes what was left "unresolved" above --
+  it was a validity bug, not really an unsourced tie-break**: this
+  project used to always pick the origin itself
+  (``attacker_retreat_candidates(...)[0]``) with no check at all,
+  which (1) could hand the army straight to an enemy if a third
+  Kingdom had captured the origin province earlier the same turn, and
+  (2) could pick ``province_coord`` itself -- the very battlefield the
+  army is fleeing -- since it's structurally always one of the origin's
+  own neighbors (they're adjacent by definition, having just marched
+  from one to the other). ``retreat.select_attacker_retreat_destination``
+  now filters every origin-or-adjacent candidate against the same real
+  ``friendly_provinces`` set (minus ``province_coord``) the
+  ``attacker_origin is None`` branch already used, falling back to
+  ``find_retreat_destination`` only if none of them qualify. The
+  rulebook still names no "best" candidate among several *equally
+  valid* ones, and this still doesn't invent one -- it only stops an
+  invalid one from ever being picked. **Whales are
   the one exception** (Phase 37): "When fighting in any terrain other
   than Sea, they have zero strength [``compute_effective_strength``'s
   own early-return]. However, if they lose a battle in such terrain,
@@ -222,7 +234,7 @@ from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_b
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.pursuit import resolve_pursuit
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
-from ak_engine.turn.retreat import attacker_retreat_candidates, find_retreat_destination
+from ak_engine.turn.retreat import find_retreat_destination, select_attacker_retreat_destination
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.sep_decode import sep_accepts_challenge, sep_is_aggressive
@@ -2859,10 +2871,10 @@ def fight_battle(
             )
         elif attacker_clean_swept and loser_retreats:
             bounds = MapBounds(state.board_width, state.board_height)
+            friendly = state.friendly_provinces_for(attacker_kingdom_id) - {province_coord}
             if attacker_origin is not None:
-                destination = attacker_retreat_candidates(attacker_origin, bounds)[0]
+                destination = select_attacker_retreat_destination(attacker_origin, army.location, bounds, friendly)
             else:
-                friendly = state.friendly_provinces_for(attacker_kingdom_id) - {province_coord}
                 destination = find_retreat_destination(army.location, bounds, friendly)
             _retreat_or_disband(
                 army, state, report, rng, destination=destination,
