@@ -74,6 +74,39 @@ caller that doesn't pass one -- the gain formula's own documented
 defaults to a neutral, not a guessed, value" convention this project
 already uses elsewhere (see `turn/battle_orchestrator.py
 _build_battle_units`'s own exploration-advantage default).
+
+**Phase 922 addendum -- due diligence attempted on the "P = BRES"
+identity; confirmed structurally unresolvable with any data this
+project could ever recover, not just presently missing.** Unlike the
+deterministic cross-references that closed several other README
+"Known-unresolved semantics" bullets this session (Phases 915/920,
+comparing two static file formats that always encode the same fixed
+value), `P`/`score` is fed by the battle engine's own internal random
+luck draws (`r1`/`r2`, `turn/battle_luck.py`) for one specific,
+already-played historical battle. No surviving artifact -- a real
+turn-report letter's prose, a `GW`-format world-save's post-battle
+`Quality` field, or anything else this project parses -- records those
+draws or the resulting `BRES`/`P` value itself; both are purely
+internal to a single already-completed `AK.EXE` run and were never
+written to any file this project's source material includes. A real
+`Quality`-change narration (`DECQ.X`/`INCQ.X`) does appear in real
+letters (e.g. `SE3__T2.K1`'s "the 240th Bowmen proved its mettle...
+we now rate it a Veteran unit", `SE3__T11.K1`'s Trolls "severely
+mangled... fallen in stature", and several more across `SE3__T3`/`T6`-
+`T10`), confirming the mechanic itself fires in real games, but the
+sentence only reports the
+*outcome* ("we now rate it a Crack unit"), never the internal score
+that decided its probability -- so even a real example changes nothing
+here. The `AKGEN_reverse_engineering_report.md` this bullet's own
+Phase 423 addendum already quoted for `P`'s threshold behavior is
+itself not available in this project's current file set to re-read for
+a possible missed "P = BRES" statement elsewhere in it; re-deriving
+`P` from first principles would need the original `AK.EXE`/`AK.OVR`
+binary that same addendum already says isn't available either. This
+isn't a "not yet searched" gap like the Beasts/Duel bullets were before
+their own due-diligence phases -- it's a "cannot be searched with any
+real-game text or save file, ever" one. `column_bres` remains the
+project's best-motivated stand-in for `score`, unchanged.
 """
 
 from __future__ import annotations
