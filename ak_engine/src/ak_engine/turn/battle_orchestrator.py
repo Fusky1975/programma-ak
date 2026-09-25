@@ -40,13 +40,15 @@ independently-derived numbers.
 
 **Pursuit** ([7.3]): once a side is judged clean-swept and
 ``loser_retreats=True``, before its armies retreat/disband, the winning
-side's units get a chance (``turn/pursuit.py select_pursuers()``) to
-catch and destroy some of them (``resolve_pursuit()``) -- per that
-module's own documented requirement, each retreating army's strength for
-this check is recomputed one quality level down, with the defender
-bonus, via ``turn/strength.py compute_effective_strength()``. Caught
-armies are removed outright (``BattleReport.pursuit_destroyed_army_ids``)
-instead of reaching ``_retreat_or_disband`` at all.
+side's own real post-battle formation (``BattleResult.columns``, per
+column, front line first) gets a chance to catch and destroy some of the
+retreaters (``turn/pursuit.py resolve_pursuit()``, fully replaced Phase
+906 by a byte-confirmed speed-driven mechanism -- see that module's own
+docstring) -- each retreating army's strength for this check is
+recomputed one quality level down, with the defender bonus, via
+``turn/strength.py compute_effective_strength()``. Caught armies are
+removed outright (``BattleReport.pursuit_destroyed_army_ids``) instead of
+reaching ``_retreat_or_disband`` at all.
 
 **Multiple Contingents** ([7.8]): ``fight_battle()`` itself still only
 ever fights one attacking party against one province's defenders.
@@ -185,7 +187,7 @@ from ak_engine.models.race import HUMANOID_RACES, Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import MONSTER_SUMMONING_TREASURE, RACE_LEADERSHIP_TREASURE, Treasure
 from ak_engine.turn.aftermath import FORMATION_DIVISOR, roll_quality_change
-from ak_engine.turn.battle_line import BattleUnit, estimate_win_probability, line_length_for_battle, roll_terrain_line_length_cap
+from ak_engine.turn.battle_line import BattleUnit, Column, estimate_win_probability, line_length_for_battle, roll_terrain_line_length_cap
 from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit, quality_one_level_down
 from ak_engine.turn.challenge_execution import resolve_challenge_combat
@@ -218,7 +220,7 @@ from ak_engine.turn.merit_points import battle_quality_points
 from ak_engine.turn.movement import MapBounds, neighbors
 from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles, is_march_immune_party
 from ak_engine.turn.office_holder import resolve_office_holder
-from ak_engine.turn.pursuit import select_pursuers, resolve_pursuit
+from ak_engine.turn.pursuit import resolve_pursuit
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
 from ak_engine.turn.retreat import attacker_retreat_candidates, find_retreat_destination
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
@@ -1815,9 +1817,9 @@ def _maybe_fight_duel(
 
 def _apply_pursuit(
     losing_armies: list[ArmyState],
-    winner_units: list[BattleUnit],
+    winner_columns: list[Column],
     state: GameState,
-    terrain,
+    terrain: Terrain,
     report: BattleReport,
     rng: random.Random,
     *,
@@ -1830,6 +1832,13 @@ def _apply_pursuit(
     Returns the set of army ids caught and destroyed (already removed
     from ``state`` and recorded on ``report``) -- callers should skip
     ``_retreat_or_disband`` for those.
+
+    ``winner_columns`` (Phase 906) is the winning side's own real,
+    post-battle per-column formation (``BattleResult.columns``'s own
+    ``attacker_units``/``defender_units``, front line at index 0) -- see
+    ``turn/pursuit.py resolve_pursuit()``'s own docstring for why this
+    project's own byte-confirmed pursuit mechanism needs real front-line/
+    position data, not just a flat unit list.
 
     ``is_island`` (Phase 282)/``illusory_terrain``+``illusory_terrain_
     enhanced`` (Phase 724/757): the same province-level facts
@@ -1849,8 +1858,7 @@ def _apply_pursuit(
         )
         retreating_units.append(BattleUnit(army.army_type, strength, source_id=army.army_id))
 
-    pursuers = select_pursuers(winner_units, rng)
-    outcomes = resolve_pursuit(pursuers, retreating_units, rng)
+    outcomes = resolve_pursuit(winner_columns, retreating_units, terrain, rng)
 
     destroyed_ids = {o.target.source_id for o in outcomes if o.target_destroyed}
     for army_id in destroyed_ids:
@@ -2817,14 +2825,16 @@ def fight_battle(
     attacker_pursuit_destroyed: set[int] = set()
     if attacker_clean_swept and loser_retreats:
         attacker_pursuit_destroyed = _apply_pursuit(
-            attacker_armies, defender_units, state, terrain, report, rng, is_island=is_island,
-            illusory_terrain=illusory_terrain, illusory_terrain_enhanced=illusory_terrain_enhanced,
+            attacker_armies, [c.defender_units for c in battle_result.columns], state, terrain, report, rng,
+            is_island=is_island, illusory_terrain=illusory_terrain,
+            illusory_terrain_enhanced=illusory_terrain_enhanced,
         )
     defender_pursuit_destroyed: set[int] = set()
     if defender_clean_swept and loser_retreats:
         defender_pursuit_destroyed = _apply_pursuit(
-            defender_armies, attacker_units, state, terrain, report, rng, is_island=is_island,
-            illusory_terrain=illusory_terrain, illusory_terrain_enhanced=illusory_terrain_enhanced,
+            defender_armies, [c.attacker_units for c in battle_result.columns], state, terrain, report, rng,
+            is_island=is_island, illusory_terrain=illusory_terrain,
+            illusory_terrain_enhanced=illusory_terrain_enhanced,
         )
 
     for army in attacker_armies:
