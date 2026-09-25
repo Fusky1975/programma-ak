@@ -35169,7 +35169,27 @@ rulebook before being turned into named, typed fields:
   "P = BRES" as an equation) -- see `turn/aftermath.py`'s own Phase 423
   addendum for the full reasoning. The parameter still defaults to `0`
   (the formula's own neutral case) only for a caller that doesn't pass
-  one at all.
+  one at all. **Phase 922**: due diligence on this specific "P = BRES"
+  identity, confirmed structurally unresolvable, not just presently
+  unsearched. `P`/`score` is fed by the battle engine's own internal
+  random luck draws for one specific, already-played historical battle
+  -- no surviving artifact this project parses (a real turn-report
+  letter's prose, a `GW`-format world-save's post-battle `Quality`
+  field) records those draws or the resulting `BRES`/`P` value itself.
+  Real `Quality`-change narration does appear in real letters (e.g.
+  `SE3__T2.K1`'s "the 240th Bowmen proved its mettle... we now rate it
+  a Veteran unit", and several more across `SE3__T3`/`T6`-`T11`),
+  confirming the mechanic fires in real games, but the sentence only
+  reports the outcome, never the internal score that decided its
+  probability. Unlike the deterministic cross-references that closed
+  several other bullets this session (Phases 915/920, comparing two
+  static file formats that always encode the same fixed value), no
+  amount of additional real-game text or save file could ever settle
+  this one -- only the original `AK.EXE`/`AK.OVR` binary (already
+  confirmed unavailable, Phase 423) or its own disassembly report (not
+  in this project's current file set) could. See `turn/aftermath.py`'s
+  own Phase 922 addendum for the full reasoning. `column_bres` remains
+  the project's best-motivated stand-in for `score`, unchanged.
 - ~~**Conquest + sea-battle movement-cost stacking** (`turn/conquest.py`)
   — the rulebook states the conquest extra-point and the sea-battle
   extra-point as two independent rules with no stated interaction for
