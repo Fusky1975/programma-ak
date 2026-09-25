@@ -2686,6 +2686,14 @@ def describe_battle(
     # present-but-not-commanding leaders (`_BLList`'s own `lp <= cdrdex
     # [fn]` split) -- one side fully, then the other, matching the real
     # `FOR fn:=1 TO 2 DO` outer loop (attacker=fn 1, defender=fn 2).
+    # Phase 927: `_BLList`'s own third case (`IF lp = 1 THEN`, real only
+    # when a side has NO leaders present at all, commanding or not) --
+    # see `render_battle_leader_no_generals()`'s own module comment for
+    # why `defender_name` (the province owner) is used for BOTH sides,
+    # gated on `province_coord is not None` the same "was this a real
+    # battle" signal BLUCK/CLUCK already use, so the instant-conquest
+    # shortcut (no real battle, both rosters legitimately empty) never
+    # invents a "no generals" sentence.
     for commanding_ids, present_ids in (
         (battle_report.attacker_commanding_leader_ids, battle_report.attacker_present_leader_ids),
         (battle_report.defender_commanding_leader_ids, battle_report.defender_present_leader_ids),
@@ -2698,6 +2706,8 @@ def describe_battle(
             leader_name = _leader_name(state, leader_id)
             if leader_name is not None:
                 lines.append(render_battle_leader_no_command(leader_name, rng))
+        if not commanding_ids and not present_ids and battle_report.province_coord is not None:
+            lines.append(render_battle_leader_no_generals(defender_name, rng))
 
     # Phase 852 -- _BHome (SAY.PAS): rulebook [6.3]'s own "+1 if in home
     # province" quality bonus (`turn/strength.py compute_effective_
@@ -5670,6 +5680,39 @@ def render_battle_leader_no_command(leader_name: str, rng: random.Random) -> str
 
     values = {"<": leader_name}
     return render(_BATLDR_NO_COMMAND_TEMPLATE, values, rng=rng)
+
+
+# HostAK/TP/PROSE/BATLDR.X's own third real branch (Phase 927): `_BLList`'s
+# `IF lp = 1 THEN` case -- a side with *zero* leaders present at all,
+# commanding or not (`tentdex[fn] = 0`). Read directly from `SAY.PAS:
+# 1042-1045`: `_attl:= powner[_px,_py]; Say('no generals were present to
+# lead the forces of [.', S_Batt)` -- `[` is the *province owner's*
+# Kingdom, not that side's own, confirmed a deliberate real-source quirk
+# (not a decompilation artifact) by the identical unconditional
+# `_attl:= powner[_px,_py]` assignment for BOTH `fn` values in the
+# surrounding `FOR fn:= 1 TO 2 DO` loop -- even the attacking side's own
+# empty roster is narrated with the *defender's* Kingdom name. This
+# project's own `BattleReport.defender_kingdom_id` is already exactly
+# `province.owner_kingdom_id` read before this battle's own conquest
+# (see that field's own Phase 231 docstring) -- the same value `_BLList`
+# reads live from `powner` at battle-opening narration time (Phase 615's
+# own note above: `_BLList` fires immediately before `_BLuck`, real
+# battle-opening narration) -- so `describe_battle()`'s own `defender_
+# name` parameter, already built from that exact field, is reused
+# directly below rather than re-deriving anything.
+_BATLDR_NO_GENERALS_TEMPLATE = "no generals were present to lead the forces of [."
+
+
+def render_battle_leader_no_generals(kingdom_name: str, rng: random.Random) -> str:
+    """Renders BATLDR.X's own third real branch (Phase 927) -- a side with
+    no leaders present at the battle at all, commanding or not. See the
+    module comment above `_BATLDR_NO_GENERALS_TEMPLATE` for the full
+    `_BLList` derivation, including why `kingdom_name` is always the
+    *province owner's* Kingdom, even for the attacking side.
+    """
+
+    values = {"[": kingdom_name}
+    return render(_BATLDR_NO_GENERALS_TEMPLATE, values, rng=rng)
 
 
 # HostAK/TP/PROSE/MCOME.X, MFIGHT.X -- a Feature's own guardian monster
