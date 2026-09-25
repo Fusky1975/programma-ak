@@ -12,7 +12,7 @@ from ak_engine.turn.hex_numbering import (
     decode_hex_number,
     encode_hex_number,
 )
-from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, is_adjacent
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, is_adjacent, neighbors
 
 GAME_DATA_DIR = Path(__file__).resolve().parents[2]
 
@@ -124,3 +124,47 @@ def test_se3_report_style_row_times_100_plus_col_is_ruled_out_for_ak3_lmove():
         )
     )
     assert matches / len(pairs) < 0.30
+
+
+# -- Phase 916: a third/fourth real game's own LMOVE data, checked for the
+# first time against this question -- see the module docstring for the
+# full derivation and why this is weaker (n=1) evidence than the AK3/AK6
+# sweeps above, not a replacement for them. Neither AK900T1.K0 nor its
+# GW900T1 world-save is in this repo's fixtures (they were user-supplied
+# for an unrelated question, Phase 907), so the real values are inlined
+# here rather than read live, matching this project's convention for
+# real-sample regression tests whose own source file isn't committed
+# (e.g. test_king_talent.py's AK3__T1.K1 cross-check).
+
+
+def test_ak900_real_leader_coordinate_and_lmove_target_fit_five_widths():
+    # GW900T1's own parse_gw_leaders(): Legolas/Ashley/Negumba (Kingdom 0)
+    # all start turn 1 at (6, 2). AK900T1.K0's own move file: all 3 issue
+    # exactly one LMOVE, to target 61 -- the only usable (origin, target)
+    # pair this game's single available turn yields.
+    origin = HexCoord(6, 2)
+    target_number = 61
+    bounds = MapBounds(400, 400)
+
+    matching_widths = [
+        width for width in range(2, 201) if decode_hex_number(target_number, width) in neighbors(origin, bounds)
+    ]
+
+    assert matching_widths == [18, 27, 28, 54, 55]
+
+
+def test_ak900s_own_real_board_width_is_among_the_matching_widths():
+    # GW900T1's own header: map_right_x=17, map_bottom_y=8 -> an 18x9
+    # real board. Width 18 is one of the 5 candidates above -- the first
+    # of 3 real games checked (AK3, AK6, AK900) where the real board
+    # width is even consistent with an actual LMOVE pair, though with
+    # only one pair to go on this doesn't single 18 out as the best fit
+    # the way AK3's 59 pairs or AK6's 15 did for their own empirical
+    # widths.
+    real_board_width = 18  # map_right_x(17) - map_left_x(0) + 1
+    origin = HexCoord(6, 2)
+    target_number = 61
+    bounds = MapBounds(400, 400)
+
+    decoded = decode_hex_number(target_number, real_board_width)
+    assert decoded in neighbors(origin, bounds)
