@@ -35165,16 +35165,32 @@ rulebook before being turned into named, typed fields:
   now wired too** (Phase 34, see above) -- `resolve_battle` reads the
   same terrain-aware ability level as the strength bonus and Duel
   tiebreak.
-- **Attacker forced-retreat destination** (`fight_battle`
+- ~~**Attacker forced-retreat destination** (`fight_battle`
   `attacker_origin`) — when supplied, uses the rulebook-correct "back to
   the province invaded from, or adjacent to it" rule, but always picks
   the first candidate rather than a "best" one (none is defined) --
-  **still true, no tie-break invented, see Phase 409's own note above**.
-  ~~when omitted, falls back to the general nearest-friendly-neighbor
-  logic instead, which is not what the rulebook actually specifies for a
-  forced attacker retreat~~ -- **fixed as of Phase 409**: the one real
-  caller that omitted it (`turn_processor.py
-  _dispatch_contested_rebattles()`) now reads
+  still true, no tie-break invented, see Phase 409's own note above.~~
+  -- **Phase 912 reframes and closes the real part of this**: re-
+  examining it turned up two genuine correctness bugs, not just an
+  unsourced preference among several equally valid candidates -- (1)
+  the origin province could have been captured by a *third* Kingdom
+  earlier the same turn, so always retreating there could hand the army
+  straight to an enemy; (2) the origin and the battlefield are adjacent
+  by definition (the army marched from one to the other), so the
+  battlefield itself was always structurally present in the origin's
+  own neighbor list and could in principle be picked as its own "valid"
+  retreat destination. `turn/retreat.py select_attacker_retreat_
+  destination()` now filters every origin-or-adjacent candidate against
+  a real friendly-province check (and unconditionally excludes the
+  battlefield itself), falling back to the general nearest-friendly
+  logic only if none of the origin-based candidates qualify. The
+  rulebook still names no "best" candidate among several *equally
+  valid* ones, and none is invented here either -- this only stops an
+  invalid one from ever being picked. ~~when omitted, falls back to the
+  general nearest-friendly-neighbor logic instead, which is not what
+  the rulebook actually specifies for a forced attacker retreat~~ --
+  **fixed as of Phase 409**: the one real caller that omitted it
+  (`turn_processor.py _dispatch_contested_rebattles()`) now reads
   `ProvinceState.contested_from_coord` and supplies it, so every real
   path through this project uses the correct rule; the wrong-rule
   fallback is unreachable dead code for every driven path, kept only as
@@ -35259,12 +35275,16 @@ supply of any of these doesn't have to be re-derived from scratch:
   only the two individual extra-point rules are quoted, not their
   interaction) or a `turn/movement.py`-equivalent disassembly of the
   real move-point deduction routine.
-- **Attacker forced-retreat "first candidate, not best"**
+- ~~**Attacker forced-retreat "first candidate, not best"**
   (`fight_battle`): the rulebook never defines a tie-break among
   multiple valid retreat provinces at all, so this is likely
   unresolvable by more sourcing rather than genuinely blocked --
   flagged here only so a future attempt doesn't waste time looking for
-  a rule that may not exist.
+  a rule that may not exist.~~ -- **closed in Phase 912**: turned out to
+  be two real correctness bugs (an enemy-captured origin, and the
+  battlefield itself always structurally present as a "candidate"), not
+  an unsourced preference among equally-valid choices -- see that
+  bullet's own updated note above for the full fix.
 - **LMOVE hex-number encoding's 3 remaining questions** (board height,
   row-parity, the ~15% non-adjacent pairs): explicitly already
   data-starved per Phase 315's own note (AK3 alone can't tell 50-vs-52

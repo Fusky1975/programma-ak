@@ -226,6 +226,36 @@ def test_attacker_forced_retreat_uses_the_origin_when_supplied():
     assert state.provinces[FIELD].contested_from_coord is None
 
 
+def test_attacker_forced_retreat_skips_an_origin_captured_by_a_third_kingdom():
+    # Phase 912: the origin province is no longer friendly (a third
+    # Kingdom captured it earlier the same turn) -- retreating "back" to
+    # it would hand the army straight to an enemy, so
+    # select_attacker_retreat_destination() must skip it in favor of a
+    # real friendly neighbor of the origin instead. Same battle setup as
+    # test_attacker_forced_retreat_uses_the_origin_when_supplied (same
+    # seed, same Chariots-vs-Heavy-Cavalry guaranteed-escape reasoning).
+    origin = HexCoord(0, 1)
+    safe_neighbor_of_origin = HexCoord(0, 0)
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, safe_neighbor_of_origin))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_kingdom(KingdomState(3, "Interlopia", Race.HUMAN, Alignment.EVIL, origin))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+    state.add_province(ProvinceState(safe_neighbor_of_origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.CHARIOTS, Quality.GREEN, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+
+    report = fight_battle(
+        state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101],
+        attacker_origin=origin, rng=random.Random(1),
+    )
+
+    assert 101 in report.retreated_army_ids
+    assert state.armies[101].location == safe_neighbor_of_origin
+
+
 def test_fight_battle_records_contested_from_coord_on_a_mixed_result():
     # seed=32 is a genuine mixed/contested result (neither side clean
     # swept) found by search for this 3-vs-3 multi-type battle -- see
