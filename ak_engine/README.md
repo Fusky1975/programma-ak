@@ -35498,11 +35498,27 @@ supply of any of these doesn't have to be re-derived from scratch:
   **The chase-step pathfinding is implemented (Phase 78) and wired into
   `execute_move()` (Phase 85)** — see those phases' own notes above.
   `resolve_move()` itself still raises `NonAdjacentMoveError` for a
-  direct, non-chase-aware call (unchanged, by design). Still open: the
+  direct, non-chase-aware call (unchanged, by design). ~~Still open: the
   rulebook's own multi-phase persistence rule ("overrides orders in a
   subsequent phase only if the character is practicing") isn't wired
   into `turn/turn_processor.py` yet — see Phase 85's own note for the
-  two plausible readings this project couldn't disambiguate further.
+  two plausible readings this project couldn't disambiguate further.~~
+  -- **closed in Phase 632 (found stale in a Phase 923 re-audit of this
+  section)**: the user directly confirmed the broad reading (blanket
+  preemption of every subsequent order, mirroring Pursue/Trail's own
+  "for the rest of the turn" persistence, Phase 70, exactly) --
+  `turn/turn_processor.py run_turn()` now wires this in by reusing that
+  exact "PERSISTENT PURSUE/TRAIL CHASE" mechanism, just simpler, since
+  Move's own chase-stepping already lives entirely inside
+  `execute_move()` itself. See `turn/move_execution.py`'s own "Phase
+  632" docstring section and `turn/turn_processor.py`'s own "PERSISTENT
+  MOVE CHASE (Phase 632)" comment for the full derivation. This bullet
+  was left stale for nearly 300 phases (written at Phase 85, silently
+  closed at 632, never struck through here) -- the same "closed
+  elsewhere, TODO list never updated" class of staleness this project's
+  own Phase 402-406/609/911 audits keep finding, just in the sibling
+  "Not yet implemented" section rather than "Known-unresolved
+  semantics" this time.
 - **`plan_dispatch.py` dispatches 21 of 22 `ActionCode`s without raising
   `UnsupportedActionError`** -- its practical maximum (see Phase 27's
   note above). ~~LMOVE, EXPLORE, LEAVE, PICK_UP, RECRUIT (Phase 15),
@@ -35702,12 +35718,28 @@ supply of any of these doesn't have to be re-derived from scratch:
       `weapkill[Tentacles] = Squeeze`, owned by Giant Octopus, not a
       spell) -- the real caller stays unrecoverable either way, so the
       Phase 413 wiring is kept on the user's own explicit choice, not
-      settled by source. **Genuinely still open, narrower than before**:
-      `Maneuver.SQUEEZE` the enum value itself remains unwired as a
-      player-selectable tactic (`CTBOTH.PAS`'s own `maneuver` enum
+      settled by source. ~~**Genuinely still open, narrower than
+      before**: `Maneuver.SQUEEZE` the enum value itself remains unwired
+      as a player-selectable tactic (`CTBOTH.PAS`'s own `maneuver` enum
       confirms `CSqueeze` is a distinct value from `CCast`, favoring the
       Giant-Octopus reading) -- see `search_execution.py`'s own current
-      docstring comment for the full citation.
+      docstring comment for the full citation.~~ -- **closed in Phase
+      631 (found stale in a Phase 923 re-audit of this section)**:
+      re-checked directly, not just left as "narrower" -- `CSqueeze`'s
+      declaration in `CTBOTH.PAS`'s `maneuver` enum is the *only*
+      reference to it anywhere in the 13 surviving `.PAS` files (no
+      dispatch/resolution logic survives), `Regolamento AK.txt` never
+      once documents "Squeeze" as a player action, and none of this
+      project's 22 real sample `.K1` Encounter Plans ever writes `SQ`.
+      The user directly reconfirmed ("lo squeeze e' il prose dello
+      spell Hand of Death") that `CTBOTH.PAS`'s `maneuver` enum and
+      `CTME.PAS`'s per-weapon `Death` enum (`weapkill[Tentacles] =
+      Squeeze`, Giant Octopus's own natural weapon) name the *same*
+      underlying narration concept, not two competing theories -- Hand
+      of Death borrows Giant Octopus's own damage-narration category.
+      A genuine dead end, not a wiring gap: there is nothing left to
+      dispatch on. See `search_execution.py`'s own current comment
+      (right above this tactic-walk loop) for the full citation.
   - ~~**Trade's remaining gap** (see Phase 20's note above): the whole
     module, not just execution -- `obj`/`extra`'s field meanings aren't
     confirmed, so there's nothing yet to safely execute even if a
@@ -36105,14 +36137,29 @@ supply of any of these doesn't have to be re-derived from scratch:
   docstring confirms, against real fixture text (`SE3__T2.K2`), that
   the richer per-column clash narrative genuinely never appears in a
   real GIR paragraph, only the outer winner/conquest sentence does
-  (already ported, both battle and uncontested-conquest cases). Scar
+  (already ported, both battle and uncontested-conquest cases). ~~Scar
   Terrain's own bystander notice (`_STZero`/`_STFite`) is real, sourced
   text, but **Phase 411** found it permanently unreachable from this
   project's own state, not merely unwired: it only fires when `scar_
   terrain_collapse()` runs, and that needs a real per-province tax base
-  this project has no tax/revenue-collection system to supply. **Still
-  genuinely open, unreclassified**: most non-province-effect spell
-  notices. PROVINCES/CHARACTERS/IMPERIAL OFFICE REPORT each still
+  this project has no tax/revenue-collection system to supply.~~ --
+  **closed in Phase 721/722 (found stale in a Phase 923 re-audit of
+  this section)**: the "no tax/revenue-collection system" premise
+  itself went stale the very next phase after Phase 411 wrote it --
+  **Phase 412** (`turn/tax_base.py`) built exactly that system, just
+  nobody circled back to re-check this bullet across the ~300 phases in
+  between. **Phase 721** wired `scar_terrain_is_exhausted()`/
+  `apply_scar_terrain_collapse()` (which had existed and been tested
+  since Phase 201, just never called) into `cast_execution.py`'s real
+  Scar Terrain cast path, using the user-supplied `Desktop/SCAR.md`
+  disassembly-level report to fix several load-bearing assumptions
+  along the way (no "already collapsed" guard; the check fires at
+  cast-success time, not a per-turn sweep). **Phase 722** then wired the
+  real `_SANote`/`_STZero`/`_STFite` narration (`SCAR.md` section 10.2)
+  into `record_spell_world_events()`, closing the report side too. See
+  those phases' own notes above and `turn/cast_execution.py`'s current
+  docstring for the full derivation. **Still genuinely open,
+  unreclassified**: most non-province-effect spell notices. PROVINCES/CHARACTERS/IMPERIAL OFFICE REPORT each still
   render only a real subset of their own columns (see those composers'
   own docstrings, cited from `compose_letter_report()`'s own "wired
   doesn't mean complete" section).
