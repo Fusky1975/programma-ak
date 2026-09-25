@@ -34913,8 +34913,18 @@ rulebook before being turned into named, typed fields:
   kingdom.py`'s own current docstring: "not further decoded...
   presumably an alliance-request value... but that reading is
   unconfirmed."
-- `PlanSegment.sp` (the `SP:` field) — meaning unknown; always ends in the
-  values seen in samples but not confirmed to always be a fixed shape.
+- ~~`PlanSegment.sp` (the `SP:` field) — meaning unknown; always ends in
+  the values seen in samples but not confirmed to always be a fixed
+  shape.~~ -- **stale as of Phase 911 (already closed by Phase 659/669/
+  675, corrected in `models/plan.py`'s own docstring by Phase 735 --
+  this README copy was simply never struck through)**: `SP:` is
+  rulebook [5.10]'s own Special Encounter Plan (a standing tactic list
+  governing a commander's army-vs-army Duel), fully decoded by
+  `turn/sep_decode.py decode_special_encounter_plan()` (sourced to
+  `AKGEN_reverse_engineering_report (5).md` SS72, hand-verified against
+  20 real K1 samples) and consumed by real production callers in
+  `battle_orchestrator.py` (`_commander_challenges()`/
+  `_maybe_fight_duel()`). Nothing left open in this bullet.
 - ~~The exact meaning of the 31 integers on the skill-values line —
   expected 15 ability pairs (30 values) based on `CTBOTH.PAS`'s
   `ability` enum, but every real sample file has exactly 31. The 31st
@@ -34984,7 +34994,17 @@ rulebook before being turned into named, typed fields:
   victory, without a number). The implemented `ratio / (ratio + 1)` curve
   hits the first anchor exactly but gives 80%, not "assured", at 4:1 — an
   approximation flagged in the function's docstring, not a sourced
-  formula. Revisit if a real battle result ever contradicts it.
+  formula. Revisit if a real battle result ever contradicts it. **Phase
+  911 narrowing**: half of this gap is already closed and just never
+  said so here -- real column-vs-column battles have used the actual
+  `column_bres` `AK.EXE`/`AK.OVR` formula since Phase 370, never this
+  curve. The only real caller left is `_maybe_fight_duel()`'s own
+  fallback for a one-on-one commander Duel, which `turn/duel.py`'s own
+  docstring already flags as leaning on an entire unbuilt subsystem
+  (the rulebook's Special Encounter Plan spell/weapon combat, [5.10]) --
+  a different, harder gap than "the wrong curve shape," and not
+  something the same column-battle disassembly already on hand answers.
+  See `turn/combat.py win_probability()`'s own Phase 911 addendum.
 - ~~**Battle luck event percentages/ranges** (`turn/battle_luck.py`) — the
   rulebook confirms random battle events exist and gives their *shape*
   ("Each random event can as much as double the strength of the affected
@@ -35201,6 +35221,57 @@ rulebook before being turned into named, typed fields:
   (e.g. a hand-built test fixture) -- see `turn/recruit_execution.py`'s
   own Phase 407 addendum. The "never read by `execute_recruit()`"
   claim above is stale; nothing left open in this bullet.
+
+### Phase 911: full re-audit of this list -- 1 stale bullet closed, 1 scope narrowed, exactly what's still needed for the rest
+
+Every bullet in this section (and the `win_probability` narrowing note
+added to it) was re-checked directly against the current codebase, the
+same way Phase 609/735/802's own sweeps did, rather than assumed still
+accurate. Two real corrections came out of it (`PlanSegment.sp` was
+fully decoded back in Phase 659/669/675 but never struck through here;
+`win_probability`'s "not yet rewired" claim was half-stale, since
+`resolve_battle` *was* rewired to the real `column_bres` formula by
+Phase 370 -- see both bullets above for the sourced detail). Everything
+else in this list re-checked as genuinely still open, not stale --
+here is exactly what real source would close each one, so a future
+supply of any of these doesn't have to be re-derived from scratch:
+
+- `KingdomMoveHeader.allreq`/`brreq` (`raw_fields[1]`/`[2]`): the same
+  10 real `AK3__T*.K1` turns already in this repo were re-checked for a
+  turn-to-turn correlation (`allreq` stays `1` except turn 4's `0`;
+  `brreq` stays `0` except turn 5's `8` and turn 10's `1020`) -- no new
+  pattern found, and no leader-level `ActionCode` for an alliance/
+  break-treaty request exists to cross-reference against (`models/
+  enums.py ActionCode`'s 22 members are all recruit/move/combat/spy-
+  style leader orders, never a Kingdom-level diplomacy toggle), so this
+  really is a Kingdom-header-only field with nothing else in an
+  already-available K1 file to correlate it against. Needs either the
+  rulebook's own alliance-request rules text or a `Read_Moves`/
+  `Write_Moves` disassembly covering these two specific fields.
+- **Humanoid-army-type compatibility** / **"Beasts" nemesis matchup**
+  (`models/army_type.py`): both are readings of army-type rules the
+  rulebook states only partially (recruitment symmetry; what "Beasts"
+  names). Needs the rulebook's own exact Army Type Table [6.3] text (a
+  fuller quote than what's already transcribed) or a disassembly of the
+  recruit-eligibility/nemesis-lookup routines.
+- **Conquest + sea-battle movement-cost stacking** (`turn/conquest.py`):
+  needs the rulebook's own conquest-movement-cost rule text (currently
+  only the two individual extra-point rules are quoted, not their
+  interaction) or a `turn/movement.py`-equivalent disassembly of the
+  real move-point deduction routine.
+- **Attacker forced-retreat "first candidate, not best"**
+  (`fight_battle`): the rulebook never defines a tie-break among
+  multiple valid retreat provinces at all, so this is likely
+  unresolvable by more sourcing rather than genuinely blocked --
+  flagged here only so a future attempt doesn't waste time looking for
+  a rule that may not exist.
+- **LMOVE hex-number encoding's 3 remaining questions** (board height,
+  row-parity, the ~15% non-adjacent pairs): explicitly already
+  data-starved per Phase 315's own note (AK3 alone can't tell 50-vs-52
+  apart) -- needs a *second* real game's own LMOVE-bearing K1 files
+  (not AK3's) to cross-check against, the same way Phase 909's own
+  Divine-alignment gap needed a specific second data point rather than
+  more reasoning from the first game alone.
 
 ## Not yet implemented (by design, this phase)
 

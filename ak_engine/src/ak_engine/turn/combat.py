@@ -138,6 +138,27 @@ def win_probability(strength_ratio: float) -> float:
     rewired to the real formula yet -- see ``column_bres``'s own
     docstring and ``turn/battle_luck.py``'s "Phase 346 addendum" for
     why that rewire is a distinct, later phase.
+
+    **Phase 911 addendum -- half of that "not yet rewired" claim is now
+    stale.** `resolve_battle` (`turn/battle_resolution.py`) *has* been
+    rewired to the real `column_bres` formula since Phase 370 -- every
+    real column-vs-column battle in this project is decided by the
+    signed `BRES` sum, never by this function. The one real caller left
+    is `battle_orchestrator.py _maybe_fight_duel()`'s own
+    `estimate_win_probability` fallback, and that's a different kind of
+    gap, not the same one: `turn/duel.py`'s own module docstring already
+    says the duel *fight itself* -- the rulebook's own Special Encounter
+    Plan spells/weapon-skill combat system [5.10] -- is "explicitly out
+    of scope" and simply never built, so `estimate_win_probability` is a
+    deliberate stand-in for an entire unbuilt subsystem, invoked only
+    when a real `PlanSegment.sp`-decoded Special Encounter Plan doesn't
+    already settle the duel some other way (`_maybe_fight_duel`'s own
+    opt-in flag). A disassembly of the same `AK.EXE`/`AK.OVR`
+    battle-engine material that gave `column_bres` would need to cover
+    that separate Special-Encounter-Plan combat routine specifically to
+    close this -- the column-battle disassembly already on hand doesn't,
+    since it answers a different question (which side wins a *column*,
+    not a one-on-one commander duel).
     """
 
     if strength_ratio < 0:
