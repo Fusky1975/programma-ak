@@ -27498,7 +27498,7 @@ follow-up request after the original 431-435 plan shipped.
   with no change in output for every existing caller (both present
   lists default empty).
 
-  **Deliberately not attempted**: the real `_BLList`'s own third case --
+  ~~**Deliberately not attempted**: the real `_BLList`'s own third case --
   a side with *zero* leaders present at all, commanding or not
   (`tentdex[fn] = 0`), prints `"no generals were present to lead the
   forces of [."` using `_attl := powner[_px,_py]` (the *province
@@ -27507,7 +27507,35 @@ follow-up request after the original 431-435 plan shipped.
   the attacking side's own empty roster) with no further source to
   confirm it's intentional rather than a `SAY.PAS`-era quirk. A small,
   separate, well-scoped follow-up if ever picked up, not guessed at
-  here.
+  here.~~ -- **closed in Phase 927**: re-read `HostAK/TP/SAY.PAS`'s
+  `_BLList` directly (extracted from `Programma Pascal.zip`, lines
+  1033-1048) to confirm the asymmetry is real, not a transcription
+  slip -- `_attl:= powner[_px,_py]` is unconditional inside the shared
+  `FOR fn:= 1 TO 2 DO` loop body, identical for both `fn` values, so
+  it's confirmed intentional real-source behavior, not a `SAY.PAS`-era
+  quirk to second-guess. New `report/turn_report.py
+  render_battle_leader_no_generals()`, wired into `describe_battle()`'s
+  own per-side BATLDR loop: when a side's own `*_commanding_leader_ids`
+  and `*_present_leader_ids` are both empty, it renders using
+  `defender_name` for *either* side -- already exactly `_kingdom_
+  display_name(state, battle_report.defender_kingdom_id)`, itself
+  already the real `powner[_px,_py]` read before this battle's own
+  conquest (`BattleReport.defender_kingdom_id`'s own Phase 231
+  docstring) -- so no new lookup was needed, just reusing the parameter
+  already in scope. Gated on `battle_report.province_coord is not None`,
+  the same "was this a real battle" signal BLUCK/CLUCK already use, so
+  the instant-conquest shortcut (no real battle, both rosters
+  legitimately empty) never invents this sentence. 5 pre-existing
+  BLUCK/CLUCK tests whose own `BattleReport` fixtures never populated
+  either roster (irrelevant to what they were testing) now correctly
+  gain this sentence for one or both sides -- updated, not suppressed,
+  since re-reading `SAY.PAS` confirms this is genuine real-source
+  behavior for a "nobody present" battle, not an artifact to work
+  around. See `report/turn_report.py`'s own current module comment
+  above `_BATLDR_NO_GENERALS_TEMPLATE` for the full derivation. Test
+  count: 7055 -> 7058 (net +3: a render-function unit test, an
+  asymmetric-sides integration test, an instant-conquest-shortcut
+  no-op test).
 
   Test count: 5467 -> 5475 (net +8): 5 in `test_battle_orchestrator.py`
   (`fight_battle()`'s new roster -- a genuinely idle leader on each

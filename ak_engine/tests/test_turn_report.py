@@ -291,6 +291,7 @@ from ak_engine.report.turn_report import (
     render_steal_treasure_inaccessible,
     render_battle_leader_intro,
     render_battle_leader_no_command,
+    render_battle_leader_no_generals,
     render_monster_reinforcement_arrives,
     render_monster_reinforcement_helped,
     render_binoculars_preview,
@@ -905,6 +906,61 @@ def test_describe_battle_skips_a_present_leader_no_longer_in_state():
     assert lines == []
 
 
+def test_describe_battle_renders_no_generals_line_for_a_side_with_nobody_present():
+    # Phase 927: `_BLList`'s own third real case (`IF lp = 1 THEN`) -- a
+    # side with NO leaders present at all, commanding or not, is narrated
+    # with the *province owner's* (defender's) Kingdom name even when
+    # it's the attacking side's own empty roster that triggered it -- a
+    # real, sourced asymmetry (`SAY.PAS`'s own unconditional `_attl:=
+    # powner[_px,_py]` for both `fn` values), not a bug to "fix" to use
+    # each side's own Kingdom. Here only the attacker side is empty; the
+    # defender has a real commander and gets the ordinary BATLDR sentence.
+    state = GameState()
+    state.add_leader(LeaderState(1, kingdom_id=2, name="Vraxis", location=HexCoord(0, 0)))
+    report = BattleReport(
+        battle_result=BattleResult(),
+        conquered=False,
+        province_coord=HexCoord(0, 0),
+        defender_kingdom_id=2,
+        defender_commanding_leader_ids=[1],
+    )
+
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=state,
+        destination_names={},
+        rng=ScriptedRandom([0.1] * 10, choice_indices=[0]),
+    )
+
+    assert lines == [
+        "no generals were present to lead the forces of Defendia.",
+        "Vraxis led Vraxis's armies into the battle.",
+    ]
+
+
+def test_describe_battle_omits_no_generals_line_for_the_instant_conquest_shortcut():
+    # Phase 927: `province_coord=None` (the default) is this project's own
+    # established "no real battle fought" signal (the same gate BLUCK/
+    # CLUCK already use) -- both rosters being empty here must NOT invent
+    # a "no generals" sentence for a battle that never actually happened.
+    report = BattleReport(battle_result=BattleResult(), conquered=True)
+
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=ScriptedRandom([]),
+    )
+
+    assert lines == []
+
+
 def test_describe_battle_renders_homeland_defense_morale_right_after_the_leader_roster():
     # Phase 852: attacker home-province leaders, then defender home-province
     # leaders, right after the BATLDR roster (both sides) and before the
@@ -1270,6 +1326,15 @@ def test_describe_battle_prepends_bluck_and_interleaves_cluck_when_phase_is_supp
     )
 
     assert lines == [
+        # Phase 927: neither side's own `*_commanding_leader_ids`/
+        # `*_present_leader_ids` roster is populated on this fixture (only
+        # the separate, singular `attacker_commander_leader_id`/`defender_
+        # commander_leader_id` BLUCK/CLUCK fields are) -- per real
+        # `_BLList` semantics this is a genuine "no leaders present at
+        # all" case for both sides, always narrated with the province
+        # owner's (defender's) name even for the attacker.
+        "no generals were present to lead the forces of Defendia.",
+        "no generals were present to lead the forces of Defendia.",
         "no luck of great significance altered the battle.",
         # Phase 712: TACTICS.X2, right after BLUCK -- both tactical
         # abilities default to 0 here, bucket 5 (even).
@@ -1308,6 +1373,10 @@ def test_describe_battle_skips_bluck_and_cluck_when_phase_is_not_supplied():
     )
 
     assert lines == [
+        # Phase 927: same "no BATLDR roster populated on this fixture"
+        # case as the previous test -- see its own comment.
+        "no generals were present to lead the forces of Defendia.",
+        "no generals were present to lead the forces of Defendia.",
         "10th Garrison fought 20th Legion and advanced at will.",
         "the forces of Attackia broke through and were victorious.",
     ]
@@ -1376,6 +1445,15 @@ def test_describe_battle_falls_back_to_each_sides_own_king_when_unled():
     )
 
     assert lines == [
+        # Phase 927: the Kings added above are real leaders, but neither
+        # is *present at the battle province* (their own `LeaderState.
+        # location` is each Kingdom's home, not `HexCoord(3, 5)`) -- so
+        # per real `_BLList` "present" semantics (`LeaderState.location`),
+        # this is still a genuine "no leaders present" case for both
+        # sides, distinct from BLUCK/CLUCK's own separate King-fallback
+        # (which doesn't require physical presence).
+        "no generals were present to lead the forces of Defendia.",
+        "no generals were present to lead the forces of Defendia.",
         "no luck of great significance seemed to affect the overall battle before it commenced.",
         # Phase 712: TACTICS.X2, right after BLUCK.
         "as the battle developed, the tactical wit of Defendia and Attackia seemed evenly matched.",
@@ -1407,6 +1485,10 @@ def test_describe_battle_skips_bluck_and_cluck_when_no_leader_id_resolves_for_ei
     )
 
     assert lines == [
+        # Phase 927: no BATLDR roster on this fixture -- see the earlier
+        # "phase is not supplied" test's own comment.
+        "no generals were present to lead the forces of Defendia.",
+        "no generals were present to lead the forces of Defendia.",
         "10th Garrison fought 20th Legion and advanced at will.",
         "the forces of Attackia broke through and were victorious.",
     ]
@@ -1442,6 +1524,10 @@ def test_describe_battle_bluck_appears_without_cluck_for_an_ineligible_column():
     )
 
     assert lines == [
+        # Phase 927: no BATLDR roster on this fixture -- see the "phase
+        # is not supplied" test's own comment above.
+        "no generals were present to lead the forces of Defendia.",
+        "no generals were present to lead the forces of Defendia.",
         "no luck of great significance altered the battle.",
         # Phase 712: TACTICS.X2, right after BLUCK.
         "as the battle developed, the tactical wit of Defendia and Attackia seemed evenly matched.",
@@ -3374,6 +3460,15 @@ def test_render_battle_leader_no_command():
     rng = ScriptedRandom([])
     result = render_battle_leader_no_command("Aldric", rng)
     assert result == "Aldric was there, leading no armies."
+
+
+# -- BATLDR.X's own "no generals present at all" branch (Phase 927) --
+
+
+def test_render_battle_leader_no_generals():
+    rng = ScriptedRandom([])
+    result = render_battle_leader_no_generals("Defendia", rng)
+    assert result == "no generals were present to lead the forces of Defendia."
 
 
 # -- MCOME.X/MFIGHT.X (Phase 604) --
