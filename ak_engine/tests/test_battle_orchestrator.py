@@ -4549,7 +4549,12 @@ def test_fight_battle_numeric_superiority_outflanking_now_applies_end_to_end():
     # terrain-cap roll (any value >=2 works, Plains' own 5-10 range always
     # does), no luck either side, decisive attacker win, pursuit-decline,
     # then one winner_quality_roll per surviving attacker army (two here).
-    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99])
+    # Phase 905: the attacker's own outflank eligibility also makes its
+    # rearward HVY_CAVALRY an eligible nemesis-inflictor candidate against
+    # the defender's lone GARRISON -- ambiguous against the front-line
+    # HVY_CAVALRY (same type), one rng.choice consumed; GARRISON is never
+    # a real nemesis match either way, so the pick is outcome-neutral.
+    rng = ScriptedRandom([0.9, 0.9, 0.9, 0.9, 0.1, 0.99, 0.99, 0.99, 0.99], choice_indices=[0])
 
     report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101, 102], rng=rng)
 

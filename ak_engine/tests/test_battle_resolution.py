@@ -296,7 +296,13 @@ def test_resolve_battle_numeric_superiority_boosts_second_line_to_full_strength(
     # terrain allows" and the attacker (numerically superior) is eligible.
     attacker_units = [unit(10), unit(10), unit(10), unit(10)]
     defender_units = [unit(10), unit(10)]
-    rng = ScriptedRandom(_luck_draws(2))
+    # Phase 905: the attacker being outflank-eligible also makes each
+    # column's own rearward unit an eligible nemesis-inflictor candidate
+    # against the defender's lone front-line unit there -- two identical
+    # BOWMEN candidates, ambiguous, one rng.choice per column (2 columns).
+    # Neither candidate is ever a real nemesis match here, so the choice
+    # is outcome-neutral -- this is purely about not starving the script.
+    rng = ScriptedRandom(_luck_draws(2), choice_indices=[0, 0])
 
     result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=5, rng=rng)
 
@@ -308,38 +314,41 @@ def test_resolve_battle_numeric_superiority_boosts_second_line_to_full_strength(
         assert column.defender_strength == pytest.approx(10)
 
 
-def test_resolve_battle_outflank_eligibility_never_widens_nemesis_eligibility():
-    # Phase 904 (NEMESIS.md, a byte-level disassembly of the real battle
-    # routine, AK.OVR raw 0x8CD2-0xA85A): confirms this project's own
-    # "outflanking stays unmodeled for nemesis eligibility" choice
-    # (turn/battle_line.py apply_nemesis_penalties()'s own docstring) is
-    # not a guess -- the two outflanking branches (raw 0x9923-0x9A13)
-    # only ever set the strength divisor to 1 (already this project's own
-    # outflank_second_line boost below) and never write an opponent type
-    # or extend a nemesis-candidate set; Nemo() itself always receives a
-    # single, already-resolved opponent type. This test locks that in at
-    # the resolve_battle() level: the attacker's own rearward LEGION
-    # (a real nemesis-inflictor for PHALANX) sits in the very column
-    # whose second-line unit outflanking boosts to 100% strength, but the
-    # defender's front-line PHALANX must still only be checked against
-    # the attacker's own front-line BOWMEN (no nemesis relation) -- not
-    # against that boosted rearward LEGION.
-    attacker_units = [
-        unit(100, ArmyType.BOWMEN),
-        unit(90, ArmyType.BOWMEN),
-        unit(80, ArmyType.LEGION),  # rearward, column 0 -- Phalanx's real nemesis
-        unit(70, ArmyType.BOWMEN),
-    ]
-    defender_units = [unit(50, ArmyType.PHALANX), unit(40, ArmyType.BOWMEN)]
-    rng = ScriptedRandom(_luck_draws(2))
+def test_resolve_battle_outflanking_legion_inflicts_nemesis_on_the_opposing_front_line():
+    # Phase 905, user-confirmed 2026-09-25 (superseding Phase 904's own
+    # disassembly-based "not modeled" conclusion -- see turn/battle_
+    # line.py apply_nemesis_penalties()'s own docstring for the full
+    # history): a front-line Phalanx facing a front-line Bowmen whose own
+    # second line is an outflanking Legion (numerically superior, terrain
+    # permits a shorter line) DOES take the nemesis penalty from that
+    # Legion, even though Bowmen itself isn't Phalanx's nemesis -- rule
+    # 1/2 alone would find no eligible inflictor here at all.
+    attacker_units = [unit(90, ArmyType.BOWMEN), unit(80, ArmyType.LEGION)]  # column 0: front + outflanking rear
+    defender_units = [unit(50, ArmyType.PHALANX)]  # column 0: lone front line
+    rng = ScriptedRandom(_luck_draws(1), choice_indices=[1])  # the outflanking Legion (index 1) is chosen
 
     result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=5, rng=rng)
 
-    # Outflanking's own real effect still fires (100 + 80*1.0, not *0.5).
-    assert result.columns[0].attacker_strength == pytest.approx(180)
-    # But the defender's Phalanx is NOT nemesis-penalized (50, not 50*2/3)
-    # -- the rearward Legion never becomes an eligible inflictor.
-    assert result.columns[0].defender_strength == pytest.approx(50)
+    # Outflanking's own pre-existing strength effect still fires too
+    # (90 + 80*1.0, not *0.5) -- the two mechanics are independent.
+    assert result.columns[0].attacker_strength == pytest.approx(170)
+    assert result.columns[0].defender_strength == pytest.approx(50 * 2 / 3)
+
+
+def test_resolve_battle_outflanking_never_doubles_an_already_applied_nemesis_penalty():
+    # Same worked example, second half: a front-line Legion already
+    # penalizes an opposing Phalanx via rule 1 alone; a second Legion in
+    # the same column's own second line, also outflanking-eligible, does
+    # NOT double that penalty (50*2/3, never 50*(2/3)**2) -- exactly one
+    # inflictor is ever chosen and checked per own-column unit, however
+    # many candidates were eligible.
+    attacker_units = [unit(90, ArmyType.LEGION), unit(80, ArmyType.LEGION)]  # column 0: front + outflanking rear
+    defender_units = [unit(50, ArmyType.PHALANX)]
+    rng = ScriptedRandom(_luck_draws(1), choice_indices=[0])  # either candidate is the identical type
+
+    result = resolve_battle(attacker_units, defender_units, terrain_line_length_cap=5, rng=rng)
+
+    assert result.columns[0].defender_strength == pytest.approx(50 * 2 / 3)
 
 
 def test_resolve_battle_numeric_superiority_not_eligible_when_terrain_is_the_binding_cap():

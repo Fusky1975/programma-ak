@@ -441,6 +441,64 @@ def test_apply_nemesis_penalties_druidic_blocked_overflight_unit_does_not_widen_
     assert attacker_columns[0][1].effective_strength == 8
 
 
+# -- Phase 905: outflanking widens nemesis eligibility (user-confirmed) --
+
+
+def test_apply_nemesis_penalties_outflank_eligible_rear_unit_penalizes_the_opposing_front_line():
+    # User-confirmed 2026-09-25: a front-line Bowmen isn't Phalanx's
+    # nemesis, but its own outflanking second-line Legion is eligible
+    # against the opposing front line too (unlike overflight, not
+    # restricted to own_depth >= 1) -- the Phalanx gets penalized.
+    attacker_columns = [[unit(ArmyType.PHALANX, 10)]]
+    defender_columns = [[unit(ArmyType.BOWMEN, 9), unit(ArmyType.LEGION, 8)]]
+    rng = ScriptedRandom([], choice_indices=[1])
+
+    apply_nemesis_penalties(attacker_columns, defender_columns, rng, defender_outflank_eligible=True)
+
+    assert attacker_columns[0][0].effective_strength == pytest.approx(10 * 2 / 3)
+
+
+def test_apply_nemesis_penalties_outflank_eligible_flag_off_keeps_old_behavior():
+    # Same lineup, but the outflank-eligibility flag defaults to False --
+    # the rearward Legion never becomes a candidate, so the front-line
+    # Bowmen (not Phalanx's nemesis) is the sole, unambiguous candidate
+    # and no rng draw is consumed at all. Backward compatibility for
+    # every pre-Phase-905 caller.
+    attacker_columns = [[unit(ArmyType.PHALANX, 10)]]
+    defender_columns = [[unit(ArmyType.BOWMEN, 9), unit(ArmyType.LEGION, 8)]]
+    rng = ScriptedRandom([], choice_indices=[])  # must not be consumed
+
+    apply_nemesis_penalties(attacker_columns, defender_columns, rng)
+
+    assert attacker_columns[0][0].effective_strength == 10
+
+
+def test_apply_nemesis_penalties_outflank_eligibility_never_doubles_an_existing_penalty():
+    # A front-line Legion already penalizes the opposing Phalanx (rule 1
+    # alone); a second, outflanking Legion in the same column's own
+    # second line does not double it -- exactly one inflictor is chosen
+    # and checked, whatever the candidate count.
+    attacker_columns = [[unit(ArmyType.PHALANX, 10)]]
+    defender_columns = [[unit(ArmyType.LEGION, 9), unit(ArmyType.LEGION, 8)]]
+    rng = ScriptedRandom([], choice_indices=[0])
+
+    apply_nemesis_penalties(attacker_columns, defender_columns, rng, defender_outflank_eligible=True)
+
+    assert attacker_columns[0][0].effective_strength == pytest.approx(10 * 2 / 3)  # not (2/3)**2
+
+
+def test_apply_nemesis_penalties_outflank_eligible_but_no_second_line_unit_is_a_no_op():
+    # defender_outflank_eligible=True with a single-unit column (no index
+    # 1 to speak of) must not raise or otherwise misbehave.
+    attacker_columns = [[unit(ArmyType.PHALANX, 10)]]
+    defender_columns = [[unit(ArmyType.BOWMEN, 9)]]
+    rng = ScriptedRandom([], choice_indices=[])  # must not be consumed -- still unambiguous
+
+    apply_nemesis_penalties(attacker_columns, defender_columns, rng, defender_outflank_eligible=True)
+
+    assert attacker_columns[0][0].effective_strength == 10
+
+
 def test_apply_tactical_switches_swaps_the_nemesis_weak_attacker_front_line():
     # Front is Phalanx(10) vs a Legion-fronted defender -- nemesis-adjusted
     # to 6.67, which the raw-9 Heavy Cavalry rear now beats, so the switch
