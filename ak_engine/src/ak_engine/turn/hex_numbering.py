@@ -84,11 +84,14 @@ it confirms the formula's shape, not these per-map specifics):
   across a phase gap, or another action in between moving them
   elsewhere by other means); one shows a suspiciously round jump (differs
   by exactly 170) that might be a distinct sentinel/reset value rather
-  than an ordinary hex number.~~ **Answered precisely in Phase 918**:
-  17 of the 18 known non-adjacent pairs across both real datasets are
-  exactly the row-parity-sensitive diagonal case above, not chasing or
-  anything else; only the `170` jump remains a genuine, unexplained
-  outlier.
+  than an ordinary hex number.~~ **Fully closed as of Phase 919**: 17 of
+  the 18 known non-adjacent pairs across both real datasets are exactly
+  the row-parity-sensitive diagonal case above (Phase 918); the `170`
+  jump itself is a real "chasing a distant target" order whose own
+  single-phase move was never actually executed that turn -- confirmed
+  directly from this King's own real coordinate across `GW3__T9`-`T12`,
+  already in this repo's fixtures (Phase 919's own addendum below has
+  the full derivation).
 
 **A second, independent game's real move files (2026-09-12): the formula's
 shape reproduces cleanly, but its own ``XMULT`` is confirmed NOT tied to
@@ -311,9 +314,54 @@ the tables, not chasing, a different action type, or a decoding
 failure. The sole exception is the same one already on record:
 `Uga-Buga Makumb`'s own turn-10 jump of exactly `170`, whose round,
 suspiciously-large size looks nothing like the other 17 near-miss cases
-(all off by exactly one row) and remains a genuine, unexplained
-outlier -- still plausibly the sentinel/reset value the original
-paragraph above already floated, still not independently confirmed.
+(all off by exactly one row).
+
+**Phase 919 -- the `170` jump itself, resolved with real data already
+sitting in this repo's own fixtures (`GW3__T9`-`T12`), not a new
+sample.** `AK3__T10.K1`'s own real parse (`parser/k1_moves.py`, not a
+manual re-read) confirms the exact segment: `Uga-Buga Makumb`'s single
+segment is `P0=LMOVE(11)`, `P1=CAST(12)` (a nested plan -- this is what
+Phase 18's own mechanic embeds a newly-Charmed/Resurrected character's
+plan into), `P2=LEAVE`, `P3=LMOVE(1)`, `P4=LMOVE(171)` -- the `1 -> 171`
+pair really is this King's own consecutive P3/P4 phases, correctly
+identified all along, not a mis-parse.
+
+Cross-referencing his own real coordinate (via `parse_gw_leaders()`,
+the same x/y-transposed comparison Phase 917/918 already established)
+across every world-save turn this repo has for him:
+
+- `GW3__T9`: `(1, 4)`
+- `GW3__T10` (this move's own "before" state): `(1, 2)`
+- `GW3__T11` (this move's own "after" state): `(1, 1)`
+- `GW3__T12`: `(1, 16)`
+
+`T11`'s real position, `(1, 1)`, matches `decode_hex_number(11, 10)` --
+**`P0`'s own target exactly** -- not `P3`'s `(1, 0)` and certainly not
+`P4`'s `(1, 17)`. **`P3` and `P4` were never actually executed this
+turn**: whatever the precise proximate cause (this project doesn't
+model movement-point exhaustion or `LEAVE`'s own turn-ending semantics
+precisely enough to say which), the character's own real movement
+simply stopped after `P0`, so there was never a real single-phase
+`1 -> 171` hop for the adjacency check to validate in the first place --
+explaining, without a sentinel/reset hypothesis, why this pair alone
+doesn't fit the row-parity-diagonal pattern the other 17 do (a step
+that never happened has no reason to look like a real one-hex step).
+
+That doesn't make `171` meaningless, though. **By `T12`, two turns
+later, this same King's real position, `(1, 16)`, lands exactly one hex
+short of `P4`'s own original target, `(1, 17)`** -- and his own `x`
+coordinate is `1` at all four checkpoints, `T9` through `T12`, a
+perfectly straight column march the entire time, both before and after
+this order. This is strong circumstantial evidence (not a disassembly,
+but a real, precise, already-available-data coincidence too specific
+to dismiss) that `171` genuinely encoded a real, deliberate long-range
+destination -- exactly the already-floated "leader chasing a distant
+target" explanation, not a decoding artifact, a corrupted value, or a
+sentinel -- it simply wasn't an order this particular turn had enough
+movement left to complete in one phase. `AK3__T11.K1` (which would show
+what order, if any, closed most of that final one-hex gap) was never
+supplied, so the exact mechanism of the `T11`-to-`T12` leg isn't
+traceable further than this.
 """
 
 from __future__ import annotations
