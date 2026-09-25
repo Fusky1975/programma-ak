@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from ak_engine.models.alignment import Alignment
@@ -11,6 +13,11 @@ from ak_engine.models.kingdom import (
     trailing_skill_value_for_alignment,
 )
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain, province_code
+from ak_engine.parser.gw_world import DiplomaticRelation, parse_gw_king_extensions
+from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+GAME_DATA_DIR = Path(__file__).resolve().parents[2]
+GW3_FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "world" / "G3"
 
 
 def test_action_from_int_maps_known_codes():
@@ -60,6 +67,50 @@ def test_kingdom_move_header_field_order_matches_def2_pas():
     assert header.kpmode == 1
     assert header.kprevgold == 15
     assert header.ksendmeth == 1
+
+
+def test_allreq_and_brreq_match_gw_king_extensions_own_bitmasks_in_19_of_20_real_turns():
+    # Phase 920: KingdomMoveHeader.allreq/brreq (K1 move files) and
+    # GWKingExtension.alliance_requests_bitmask/break_treaty_requests_
+    # bitmask (GW world saves, Phase 380's own disassembly-sourced field
+    # names) are the same underlying Pascal state, serialized into two
+    # different real file formats -- turn-for-turn matching across all
+    # 10 real AK3 sample turns confirms it (brreq matches all 10; allreq
+    # matches 9 of 10, see models/kingdom.py's own Phase 920 addendum for
+    # the one plausible timing-related exception).
+    mismatches = 0
+    for turn in range(1, 11):
+        header = parse_k1_moves_file(GAME_DATA_DIR / f"AK3__T{turn}.K1").header
+        extension = parse_gw_king_extensions(GW3_FIXTURE_DIR / f"GW3__T{turn}")[1]  # Kingdom 1
+        if header.allreq != extension.alliance_requests_bitmask:
+            mismatches += 1
+        assert header.brreq == extension.break_treaty_requests_bitmask
+    assert mismatches == 1
+
+
+def test_brreq_bitmask_deterministically_downgrades_relations_the_next_turn():
+    # The turn-10 mass break-treat: brreq=1020 (bits 2-9) names Kingdoms
+    # 2-9. GW3__T10 shows Kingdoms 2/9 at NEUTRAL and 3-8 already at
+    # ENEMY; GW3__T11 (the very next turn) shows every named Kingdom
+    # dropped exactly one step (NEUTRAL -> ENEMY, ENEMY stays ENEMY --
+    # already at the floor), while the two untargeted Kingdoms (0, 1,
+    # bits not set) are unchanged. Zero exceptions.
+    header = parse_k1_moves_file(GAME_DATA_DIR / "AK3__T10.K1").header
+    assert header.brreq == 1020
+    targeted_kingdom_ids = {i for i in range(10) if header.brreq & (1 << i)}
+    assert targeted_kingdom_ids == {2, 3, 4, 5, 6, 7, 8, 9}
+
+    before = parse_gw_king_extensions(GW3_FIXTURE_DIR / "GW3__T10")[1].diplomatic_relations
+    after = parse_gw_king_extensions(GW3_FIXTURE_DIR / "GW3__T11")[1].diplomatic_relations
+
+    for kingdom_id in range(10):
+        if kingdom_id in targeted_kingdom_ids:
+            if before[kingdom_id] is DiplomaticRelation.ENEMY:
+                assert after[kingdom_id] is DiplomaticRelation.ENEMY  # already at the floor
+            else:
+                assert after[kingdom_id].value == before[kingdom_id].value - 1
+        else:
+            assert after[kingdom_id] == before[kingdom_id]
 
 
 def test_kingdom_number_is_the_same_slot_as_interp_vers():
