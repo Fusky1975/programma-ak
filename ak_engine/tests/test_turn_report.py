@@ -4729,6 +4729,45 @@ def test_describe_turn_results_skips_a_bless_cast_without_board_width():
     assert lines == []
 
 
+def test_describe_turn_results_narrates_a_successful_part_sea_cast():
+    # Phase 941: Spell.PART_SEA is a third province-targeted Cast spell
+    # wired into this dispatch loop, the simplest of the three -- no
+    # companion sentence (Bless) or dedicated renderer (Tornado) needed,
+    # just render_cast_announcement()'s own generic fallback. Real
+    # fixture text (SE3__T5.K1: "In spring, I cast a Part Sea spell and
+    # the waters of Mercia were magically parted.") confirms this exact
+    # wording, opening clause included.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Sir Aldric", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.SEA, Race.NO_RACE, owner_kingdom_id=1, name="Mercia"))
+    request = CastRequest(spell=Spell.PART_SEA, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == ["Sir Aldric cast a Part Sea spell and the waters of Mercia were magically parted."]
+
+
+def test_describe_turn_results_skips_a_part_sea_cast_without_board_width():
+    # Same opt-in board_width convention as Bless/Tornado above.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Sir Aldric", location=HexCoord(0, 0)))
+    request = CastRequest(spell=Spell.PART_SEA, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
 def test_describe_turn_results_narrates_a_successful_skeletal_army_cast():
     # Phase 936: Spell.SKELETAL_ARMY is a NO_TARGET_SPELLS entry -- no
     # leader/province target to resolve, so no board_width needed either,

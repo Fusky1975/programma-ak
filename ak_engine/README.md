@@ -36529,6 +36529,38 @@ supply of any of these doesn't have to be re-derived from scratch:
   No behavior changes this phase -- docstring corrections only, in
   `report/turn_report.py compose_letter_report()`'s own module-level
   docstring.
+
+  **Phase 941: `Spell.PART_SEA` closed too, a fourth province-targeted
+  Cast spell wired into `describe_turn_results()`'s own dispatch loop --
+  and the simplest one so far.** Unlike Bless/Tornado/Skeletal_Army,
+  Part_Sea needs no companion sentence and no dedicated renderer:
+  `render_cast_announcement()`'s own generic fallback already produced
+  the exact right text (`SPELL_CAST_ANNOUNCEMENT[Spell.PART_SEA]`,
+  `"the waters of @ were magically parted."`, sourced since Phase 122),
+  the gap was purely that this dispatch loop never called it for this
+  spell. Real fixture text (`SE3__T5.K1`: "In spring, I cast a Part Sea
+  spell and the waters of Mercia were magically parted.") confirms not
+  just the base wording but also the opening-clause convention already
+  coded for it (`Spell.PART_SEA` was never in `_CAST_ANNOUNCEMENT_NO_
+  OPENING_SPELLS`/`CAST_SPELL_OPENING_COMPLETE_SPELLS`, so it already
+  used the "< cast a ~ spell and " continued-opening template correctly)
+  -- this phase closes a dispatch-loop gap, not a text bug, the same
+  shape as Bless/Tornado's own Phase 935/937 fix. Note the bystander/GIR
+  side of Part_Sea was already fully wired before this phase
+  (`record_spell_world_events()`'s own `_BYSTANDER_SPELL_NOTICE_SPELLS`
+  branch, `render_bystander_spell_notice()`) -- only the caster's own
+  private ACTION REPORT line was missing. **Still genuinely open**:
+  Earthquake shares this exact simple shape (province_name only, already
+  in `_BYSTANDER_SPELL_NOTICE_SPELLS` too) but no successful real
+  Earthquake cast survives in either fixture corpus to confirm its own
+  opening-clause convention the same decisive way Part_Sea's fixture
+  did (the one real Earthquake mention found, `SE3__T9.K1`, is a
+  *fizzled* cast, a different template entirely) -- left unwired here
+  rather than asserting an unconfirmed guess. Flood/Plague (need
+  `army_names`, not yet captured by their own `_execute_*()` functions)
+  and Illus_Terrain/Hide_Feature (need `terrain_name`/`feature_name`,
+  larger gaps of their own) remain unwired for the reasons already
+  documented above.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
