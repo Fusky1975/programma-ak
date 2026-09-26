@@ -36328,11 +36328,56 @@ supply of any of these doesn't have to be re-derived from scratch:
   real `_SANote`/`_STZero`/`_STFite` narration (`SCAR.md` section 10.2)
   into `record_spell_world_events()`, closing the report side too. See
   those phases' own notes above and `turn/cast_execution.py`'s current
-  docstring for the full derivation. **Still genuinely open,
-  unreclassified**: most non-province-effect spell notices. PROVINCES/CHARACTERS/IMPERIAL OFFICE REPORT each still
-  render only a real subset of their own columns (see those composers'
-  own docstrings, cited from `compose_letter_report()`'s own "wired
-  doesn't mean complete" section).
+  docstring for the full derivation. ~~**Still genuinely open,
+  unreclassified**: most non-province-effect spell notices.~~ --
+  **Phase 935: `Spell.BLESS` closed, one of the (real, substantial)
+  remaining set.** `SPNOTE.X2`'s own 25-entry catalog (`1001+ord(sp)`
+  dispatch, `HostAK/TP/PROSE/SPNOTE.X2`) already had every one of these
+  spells' own bystander-notice text fully transcribed into this
+  project's `SPELL_CAST_ANNOUNCEMENT` dict (Phase 122) -- the missing
+  piece was never the text, only two things: (1) real fixture evidence
+  (`SE3__T4`/`T5`/`T6`/`T8`/`T9`/`T10`/`T11.K1`) that Bless's own
+  companion sentence, following its base announcement, was itself
+  wholly unwired (`_ABDestr`'s "the skeletal remains of ~ were Blessed
+  and permanently destroyed"/"the Bless affected no armies in ~", no
+  file of its own -- a real, hardcoded `Say()` call, same category as
+  `_BFun`/`_BSpeech` above), now closed via `CastExecutionResult.
+  bless_graveyard_cleared` (`turn/cast_execution.py`) and
+  `render_bless_graveyard_outcome()` (`report/turn_report.py`); and (2)
+  Bless's own *base* announcement wasn't even reachable from the main
+  per-leader turn-report dispatch (`describe_turn_results()`) at all --
+  every province-targeted Cast spell was skipped there on a stale
+  "no general province-naming system exists" premise (Phase 150) that
+  this same function's own later Phase 247/248 work (`_province_label()`,
+  `board_width` threading for SEARCH/EXPLORE/rumors) had already
+  overtaken without anyone circling back -- now wired for Bless
+  specifically. See `turn/cast_execution.py _execute_bless()`'s own
+  Phase 935 addendum and `describe_turn_results()`'s own Phase 935
+  addendum for the full derivation, including the one documented,
+  unresolved ambiguity (real fixture text shows two different groupings
+  for a multi-army graveyard clear, and no confirmed source rule
+  explains the split). **Still genuinely open**: the CTBOTH.PAS-
+  confirmed severity scale (`S_Prev=0, S_Red=1, S_Priv=2, S_PCom=3,
+  S_Adv=4, S_Batt=5, S_AA=6, S_Admin=7, S_Army=8, S_Comm=9, S_IDipl=10`)
+  places every remaining spell (Charm/Resurrection/Clairvoyance at
+  S_PCom; Kill_Enemy/Oratory/Hide_Feature at S_Adv; Skeletal_Army/
+  Tornado/Illus_Armies at S_AA) below even the corrected "S_Army or
+  higher" GIR-visibility cutoff this README's own movement-notice bullet
+  above already established -- real fixture text confirms most of these
+  DO render too (in the caster's own ACTION REPORT, third person,
+  immediately following their own private cast announcement, the same
+  shape Bless just closed), but each still needs its own per-spell
+  wiring (army_names for Tornado/Skeletal_Army's own destroyed-unit
+  list; no further per-spell data for Charm/Resurrection/Clairvoyance/
+  Kill_Enemy/Oratory/Hide_Feature beyond what `_CAST_ANNOUNCEMENT_
+  TARGET_SPELLS` already resolves, but they're leader-targeted and
+  already flow through `_AUTO_RESOLVABLE_CAST_TARGET_SPELLS` today --
+  unlike Bless, so what's left for them, if anything, needs its own
+  further audit, not assumed closed by this addendum). PROVINCES/
+  CHARACTERS/IMPERIAL OFFICE REPORT each still render only a real
+  subset of their own columns (see those composers' own docstrings,
+  cited from `compose_letter_report()`'s own "wired doesn't mean
+  complete" section).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

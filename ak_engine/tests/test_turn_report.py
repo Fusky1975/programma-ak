@@ -300,6 +300,7 @@ from ak_engine.report.turn_report import (
     render_race_fanaticism,
     render_oratory_speech,
     render_monster_threat_death,
+    render_bless_graveyard_outcome,
     render_cast_announcement,
     render_kill_enemy_berserk_onset,
     render_monster_description,
@@ -4682,6 +4683,49 @@ def test_describe_turn_results_narrates_a_successful_locate_object_cast():
     assert lines == ["Sir Aldric divined that the Wand of Fire was located in Capital City, held by Borin."]
 
 
+def test_describe_turn_results_narrates_a_successful_bless_cast():
+    # Phase 935: Spell.BLESS is province-targeted, not leader-targeted --
+    # this dedicated branch resolves province_name via decode_hex_number()/
+    # _province_label() instead of _leader_name(), the one province-
+    # targeted Cast spell wired into this dispatch loop so far. The
+    # graveyard-cleanup companion sentence (also Phase 935) appends after
+    # the base announcement.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Sir Aldric", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Sageleaf"))
+    request = CastRequest(spell=Spell.BLESS, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True, bless_graveyard_cleared=[ArmyType.LEGION])
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == [
+        "Sir Aldric cast a Bless spell.Sageleaf was magically blessed and prospered."
+        "The skeletal remains of the Legion were Blessed and permanently destroyed."
+    ]
+
+
+def test_describe_turn_results_skips_a_bless_cast_without_board_width():
+    # board_width is opt-in (same convention rumor narration already
+    # established) -- a caller that doesn't supply one gets no Bless
+    # narration at all, rather than a crash trying to decode its target.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Sir Aldric", location=HexCoord(0, 0)))
+    request = CastRequest(spell=Spell.BLESS, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
 def test_describe_turn_results_still_ignores_an_unrelated_error():
     # Non-regression: every other exception (including this same
     # function's own "no province data" ValueError) still narrates
@@ -6813,6 +6857,64 @@ def test_render_cast_announcement_unmapped_spell_raises():
     rng = ScriptedRandom([])
     with pytest.raises(ValueError, match="no SPELL_CAST_ANNOUNCEMENT entry"):
         render_cast_announcement(Spell.GATE_ANGEL, "Aldric", rng)
+
+
+# -- Bless's own graveyard-cleanup companion sentence (Phase 935) -----------
+
+
+def test_render_bless_graveyard_outcome_with_nothing_cleared():
+    rng = ScriptedRandom([])
+    result = render_bless_graveyard_outcome("Sageleaf", [], rng)
+    assert result == "The Bless affected no armies in Sageleaf."
+
+
+def test_render_bless_graveyard_outcome_with_one_army_cleared():
+    rng = ScriptedRandom([])
+    result = render_bless_graveyard_outcome("Kajaani", [ArmyType.LT_CAVALRY], rng)
+    assert result == "The skeletal remains of the Light Cavalry were Blessed and permanently destroyed."
+
+
+def test_render_bless_graveyard_outcome_with_multiple_armies_cleared():
+    # Real fixture text (SE3__T10.K1): "The skeletal remains of the 48th
+    # Chariots, the 216th Axemen and the 227th Light Cavalry were Blessed
+    # and permanently destroyed." -- no per-army ordinal survives in
+    # GraveyardEntry (see this function's own docstring), so this project
+    # renders the bare ArmyType name instead of inventing one.
+    rng = ScriptedRandom([])
+    result = render_bless_graveyard_outcome(
+        "Ngara", [ArmyType.CHARIOTS, ArmyType.AXEMEN, ArmyType.LT_CAVALRY], rng
+    )
+    assert result == (
+        "The skeletal remains of the Chariots, the Axemen and the Light Cavalry "
+        "were Blessed and permanently destroyed."
+    )
+
+
+def test_describe_cast_appends_the_bless_graveyard_outcome():
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.BLESS, target=0), applied=True,
+        bless_graveyard_cleared=[ArmyType.LEGION],
+    )
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Aldric", rng=rng, province_name="Sageleaf")
+
+    assert line == (
+        "Aldric cast a Bless spell.Sageleaf was magically blessed and prospered."
+        "The skeletal remains of the Legion were Blessed and permanently destroyed."
+    )
+
+
+def test_describe_cast_appends_the_bless_unaffected_outcome_by_default():
+    result = CastExecutionResult(request=CastRequest(spell=Spell.BLESS, target=0), applied=True)
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Aldric", rng=rng, province_name="Sageleaf")
+
+    assert line == (
+        "Aldric cast a Bless spell.Sageleaf was magically blessed and prospered."
+        "The Bless affected no armies in Sageleaf."
+    )
 
 
 def test_describe_cast_renders_the_announcement_when_applied():

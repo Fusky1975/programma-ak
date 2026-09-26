@@ -1089,6 +1089,16 @@ class CastExecutionResult:
     # project's data model can't distinguish those two cases from each
     # other, see ``locate_object()``'s own docstring).
     located_object: LocateObjectResult | None = None
+    # Phase 935: a successful Bless's own graveyard-cleanup roll (Phase
+    # 60 addendum, below) -- the ``ArmyType`` of every ``GraveyardEntry``
+    # the roll actually cleared from ``GameState.battle_graveyard[coord]``,
+    # in the same order they were stored. Empty (the default) both when
+    # the roll missed and when the province's own graveyard was already
+    # empty -- ``report/turn_report.py``'s own companion-sentence
+    # renderer treats both the same way real fixture text does (see that
+    # module's own Phase 935 addendum), so this field doesn't need to
+    # distinguish them. ``[]`` for every other spell.
+    bless_graveyard_cleared: list[ArmyType] = field(default_factory=list)
 
 
 def execute_cast(
@@ -2429,6 +2439,18 @@ def _execute_bless(
     Point table doesn't distinguish which of the two spells scores the
     +1, and the graveyard-cleanup roll's own outcome has no bearing on
     whether the cast itself counts.
+
+    **Phase 935**: the graveyard-cleanup roll's own outcome now survives
+    on ``CastExecutionResult.bless_graveyard_cleared`` (every cleared
+    entry's own ``ArmyType``, in storage order) -- previously computed
+    and discarded right here (``state.battle_graveyard.pop(coord,
+    None)``'s own return value went unread), leaving no way for
+    ``report/turn_report.py`` to render the real ``_ABDestr``/companion-
+    sentence narration real turn letters show following every Bless cast
+    (e.g. `SE3__T10.K1`: "...blessed and prospered. The skeletal remains
+    of the 48th Chariots, the 216th Axemen and the 227th Light Cavalry
+    were Blessed and permanently destroyed."). See ``render_bless_
+    graveyard_outcome()``'s own docstring for the full sourcing.
     """
 
     caster = state.leaders[leader_id]
@@ -2446,11 +2468,14 @@ def _execute_bless(
 
     cleanup_level = _caster_level(state, caster, Ability.WHITE, wand_skill_level)
     cleanup_chance = BLESS_GRAVEYARD_CLEAR_BASE_CHANCE + BLESS_GRAVEYARD_CLEAR_CHANCE_PER_LEVEL * cleanup_level
+    cleared_army_types: list[ArmyType] = []
     if rng.random() < cleanup_chance:
-        state.battle_graveyard.pop(coord, None)
+        cleared = state.battle_graveyard.pop(coord, None)
+        if cleared:
+            cleared_army_types = [entry.army_type for entry in cleared]
 
     caster.merit_tally.resurrection_bless_casts += 1
-    return CastExecutionResult(request, applied=True)
+    return CastExecutionResult(request, applied=True, bless_graveyard_cleared=cleared_army_types)
 
 
 def _execute_illus_terrain(

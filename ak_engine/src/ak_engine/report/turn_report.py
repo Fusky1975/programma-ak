@@ -3793,6 +3793,73 @@ def render_cast_announcement(
     return render(template, values, rng=rng, lists=lists or None)
 
 
+# HostAK/TP/SAY.PAS `_ABDestr`: "the skeletal remains of = were Blessed
+# and permanently destroyed." (S_Batt) -- Bless's own real graveyard-
+# cleanup companion sentence (`turn/cast_execution.py _execute_bless()`'s
+# own Phase 60 "10% + 10%/level" roll, Phase 935's own addendum for why
+# its outcome now survives on `CastExecutionResult.bless_graveyard_
+# cleared`), confirmed against real fixture text: `SE3__T10.K1`/`T8`
+# show the multi-army case ("...blessed and prospered.  The skeletal
+# remains of the 48th Chariots, the 216th Axemen and the 227th Light
+# Cavalry were Blessed and permanently destroyed."); `SE3__T4`/`T5`/`T6`/
+# `T9`/`T10`/`T11` show the "nothing to clear" case ("...blessed and
+# prospered.  The Bless affected no armies in @."), which has no
+# standalone `.X`/`.X2` file either -- both are real, hardcoded `Say()`
+# calls, the same "no file, but real and sourced" category `_BFun`/
+# `_BSpeech` (this module's own Skeletal-Army-fervor/Oratory-in-battle
+# renderers above) already established. Both sentences follow directly
+# after the base Bless announcement (`SPELL_CAST_ANNOUNCEMENT[Spell.
+# BLESS]`, already wired since Phase 122/193) with no separator, the
+# same concatenation shape this module uses everywhere.
+#
+# **No per-army ordinal survives to reproduce "48th"/"221st" verbatim**:
+# `GameState.GraveyardEntry` (Phase 60) records only `ArmyType`/
+# `Quality`/`kingdom_id` at death, not the original `army_id` -- an
+# already-documented scope limit (that model's own docstring: "not read
+# by any consumer yet"), not a new gap this phase introduces. Rendered
+# here as "the {ArmyType name}" (e.g. "the Legion"), honestly short of
+# the real fixture's own numbered designation, rather than inventing a
+# fake ordinal.
+#
+# **Real fixture evidence shows two different groupings for a multi-army
+# clear**: `SE3__T10.K1`(:1221)/`SE3__T8.K1`(:1763) both show one
+# combined sentence ("the 48th Chariots, the 216th Axemen and the 227th
+# Light Cavalry were..."), matching `_ABDestr`'s own single `Say()` call
+# with a list marker (`=`) taken literally -- but `SE3__T8.K1`'s own
+# earlier turn (:31-33) shows the *same* kind of event rendered as two
+# separate, consecutive sentences instead, one army each. No confirmed
+# rule survives in the available source to explain the split (a
+# plausible guess: entries whose own `kingdom_id` differ render
+# separately, entries sharing one render together -- consistent with
+# every example, but not independently verified against anything else).
+# This project picks the combined-list rendering as its own documented
+# default (matching `_ABDestr`'s own literal one-call-one-list source
+# shape, and the majority of the real examples), not the split,
+# unconfirmed alternative -- kept honest about the ambiguity rather than
+# silently picking the other reading and calling it settled.
+BLESS_GRAVEYARD_CLEARED_TEMPLATE = "The skeletal remains of ^L= were Blessed and permanently destroyed."
+BLESS_GRAVEYARD_UNAFFECTED_TEMPLATE = "The Bless affected no armies in @."
+
+
+def render_bless_graveyard_outcome(
+    province_name: str, cleared_army_types: list[ArmyType], rng: random.Random
+) -> str:
+    """Renders Bless's own graveyard-cleanup companion sentence -- see
+    the module comment above ``BLESS_GRAVEYARD_CLEARED_TEMPLATE`` for
+    the full sourcing, the documented multi-army grouping ambiguity, and
+    why no per-army ordinal is reproduced. ``cleared_army_types`` is
+    ``CastExecutionResult.bless_graveyard_cleared`` as-is (empty for
+    both "the roll missed" and "there was nothing to clear" -- this
+    sentence reads the same either way, matching every real fixture
+    example).
+    """
+
+    if not cleared_army_types:
+        return render(BLESS_GRAVEYARD_UNAFFECTED_TEMPLATE, {"@": province_name}, rng=rng)
+    army_names = [f"the {ARMY_TYPE_NAME[army_type]}" for army_type in cleared_army_types]
+    return render(BLESS_GRAVEYARD_CLEARED_TEMPLATE, {}, rng=rng, lists={"=": army_names})
+
+
 def describe_cast(
     result: CastExecutionResult,
     *,
@@ -3831,12 +3898,18 @@ def describe_cast(
     announcement()`` for which of ``target_name``/``province_name``/
     ``terrain_name``/``army_names``/``feature_name`` a given spell
     actually needs.
+
+    **Phase 935**: a successful ``Spell.BLESS`` cast appends its own
+    real graveyard-cleanup companion sentence right after the base
+    announcement (``render_bless_graveyard_outcome()``, reading
+    ``result.bless_graveyard_cleared``) -- see that function's own
+    docstring for the full sourcing. Every other spell is unaffected.
     """
 
     if not result.applied:
         return None
     spell = result.request.spell
-    return render_cast_announcement(
+    line = render_cast_announcement(
         spell,
         caster_name,
         rng,
@@ -3846,6 +3919,10 @@ def describe_cast(
         army_names=army_names,
         feature_name=feature_name,
     )
+    if spell is Spell.BLESS:
+        assert province_name is not None  # already required by render_cast_announcement above
+        line += render_bless_graveyard_outcome(province_name, result.bless_graveyard_cleared, rng)
+    return line
 
 
 # Phase 878: Locate Object (`AdvancedAbility.LOCATE_OBJECT_SPELL`, one of
@@ -8108,9 +8185,21 @@ def describe_turn_results(
     breakdown.
     `describe_battle()` stays out of this dispatch -- it needs a
     `BattleReport` and multi-army name maps no `PhaseDispatchResult`
-    alone carries. Province/terrain/army-list Cast spells and Use_MI's
-    skill-book path are skipped the same way, for the same reason Phase
-    150 already established: no general province-naming system exists.
+    alone carries. Terrain/army-list Cast spells and Use_MI's skill-book
+    path are skipped the same way, for the same reason Phase 150
+    already established -- each needs its own further per-spell data
+    (`army_names`/`terrain_name`/`feature_name`) this dispatch loop
+    doesn't compute. **`Spell.BLESS` is an exception, wired as of Phase
+    935** (see the `CAST` branch's own Phase 935 addendum below) --
+    Phase 150's original "no general province-naming system exists"
+    reasoning for excluding every province-targeted spell was already
+    stale by the time this docstring's own later Phase 247/248 addenda
+    added exactly that system (`_province_label()`, `board_width`
+    threading) for SEARCH/EXPLORE/rumor narration, just never revisited
+    for Cast. The other province-targeted spells (Earthquake, Flood,
+    Tornado, Illus_Terrain, Hide_Feature, Plague) still need their own
+    `army_names`/`terrain_name`/`feature_name` besides, so they stay
+    genuinely unwired here, narrower than before but real.
 
     **Phase 247 closes `EXPLORE` and rumor narration**, the two
     `describe_*` composers (Phase 244/245) built but never reached from
@@ -8258,6 +8347,34 @@ def describe_turn_results(
                 # rather than joining `_AUTO_RESOLVABLE_CAST_TARGET_SPELLS`
                 # (which assumes `_leader_name(state, request.target)`).
                 lines.extend(describe_locate_object(entry.result, caster_name=caster_name, state=state, rng=rng))
+                continue
+            if spell is Spell.BLESS:
+                # Phase 935: the one province-targeted Cast spell wired
+                # here so far -- unlike the leader-targeted spells below,
+                # its own real announcement needs `province_name`, not
+                # `_leader_name()`, resolved via the same board_width-gated
+                # `decode_hex_number()`/`_province_label()` pair this
+                # module's own rumor narration already established as the
+                # "opt-in via board_width" convention (module docstring's
+                # own Phase 247/248 addendum) -- silently skipped without
+                # one, rather than forced on every pre-existing caller.
+                # The other province/terrain/army-list Cast spells (this
+                # function's own docstring above) stay unwired here still:
+                # each needs its own further per-spell data (army_names,
+                # terrain_name, feature_name) this dispatch loop doesn't
+                # compute, a real, separate, larger gap -- not the "no
+                # general province-naming system exists" reason that
+                # docstring line gives, which is stale as of this same
+                # phase for Bless specifically (`_province_label()` is
+                # already used successfully elsewhere in this very
+                # function, e.g. SEARCH/EXPLORE above).
+                if board_width is None:
+                    continue
+                coord = decode_hex_number(entry.result.request.target, board_width)
+                province_name = _province_label(state, coord)
+                line = describe_cast(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                if line is not None:
+                    lines.append(line)
                 continue
             if spell not in _AUTO_RESOLVABLE_CAST_TARGET_SPELLS:
                 continue
