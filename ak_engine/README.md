@@ -36486,6 +36486,49 @@ supply of any of these doesn't have to be re-derived from scratch:
   REPORT each still render only a real subset of their own columns (see
   those composers' own docstrings, cited from `compose_letter_report()`'s
   own "wired doesn't mean complete" section).
+
+  **Phase 940: a full re-audit of `compose_letter_report()`'s own "wired
+  doesn't mean complete" cross-reference list (the same PROVINCES/
+  CHARACTERS/IMPERIAL OFFICE REPORT/GENERAL INTELLIGENCE REPORT bullets
+  cited immediately above), checking each bullet's own claim against the
+  composer it points to, the same "closed elsewhere, cross-reference
+  never revisited" pattern Phase 911 first found and fixed for a
+  different list.** Two of the four bullets were stale:
+  - **PROVINCES**: called tax-tier grouping "confirmed absent" -- stale
+    since Phase 288, whose own `describe_provinces_report()` docstring
+    (quoting `REPORTS.PAS Rep_Provs` directly) already documents
+    `_province_tax_tier()` as a full, sourced implementation. Nothing
+    genuinely absent remains in this bullet's own scope.
+  - **GENERAL INTELLIGENCE REPORT**: called it "only ever has
+    battle-result entries," with movement/plagues/terrain illusions/cast
+    spells "still deferred" -- stale since at least Phase 722.
+    `describe_general_intelligence_report()`'s own current docstring
+    confirms five real sources are wired into `state.world_events`
+    today, each cited against real fixture text or `SAY.PAS`: the five
+    `S_Comm` province-effect casts (Plague/Illusory Terrain/Flood/Part
+    Sea/Earthquake, Phase 232/235), Plague's own spread mechanic (Phase
+    234), Movement including the "flew over" heuristic and Mystic Winds
+    (Phase 257/634), uncontested conquest (Phase 410), and Scar Terrain's
+    bystander notices (Phase 722) -- on top of battle results. What
+    remains genuinely deferred is narrower than the stale bullet implied:
+    Skeletal Army's `S_AA` risings (confirmed below the real `S_Army`
+    GIR-visibility cutoff, not an oversight) and any other spell without
+    a confirmed `S_Army`-or-higher `SAY.PAS` notice.
+
+  The other two bullets checked out as still accurate, not stale:
+  - **CHARACTERS**: `describe_characters_report()`'s own docstring still
+    lists the per-leader treasure-list's real interleaved item+aptitude
+    row layout under "What this deliberately does NOT reproduce, and
+    why" -- a kept, deliberate Phase 287 simplification, not a closed
+    gap.
+  - **IMPERIAL OFFICE REPORT**: the bullet only defers to `turn/
+    merit_points.py`/`turn/office_holder.py`'s own docstrings for which
+    Merit Point terms are live, without itself asserting a specific
+    absent/present state to go stale.
+
+  No behavior changes this phase -- docstring corrections only, in
+  `report/turn_report.py compose_letter_report()`'s own module-level
+  docstring.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
