@@ -301,6 +301,7 @@ from ak_engine.report.turn_report import (
     render_oratory_speech,
     render_monster_threat_death,
     render_bless_graveyard_outcome,
+    render_skeletal_army_outcome,
     render_cast_announcement,
     render_kill_enemy_berserk_onset,
     render_monster_description,
@@ -4726,6 +4727,25 @@ def test_describe_turn_results_skips_a_bless_cast_without_board_width():
     assert lines == []
 
 
+def test_describe_turn_results_narrates_a_successful_skeletal_army_cast():
+    # Phase 936: Spell.SKELETAL_ARMY is a NO_TARGET_SPELLS entry -- no
+    # leader/province target to resolve, so no board_width needed either,
+    # unlike Bless above.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Sir Aldric", location=HexCoord(0, 0)))
+    request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+    raised = [ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), is_skeletal=True)]
+    result = CastExecutionResult(request=request, applied=True, skeletal_army_raised=raised)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]))
+
+    assert lines == ["Sir Aldric cast a Skeletal Army spell and the 1st Skeletal Bowmen arose from the graves of the dead!"]
+
+
 def test_describe_turn_results_still_ignores_an_unrelated_error():
     # Non-regression: every other exception (including this same
     # function's own "no province data" ValueError) still narrates
@@ -6915,6 +6935,56 @@ def test_describe_cast_appends_the_bless_unaffected_outcome_by_default():
         "Aldric cast a Bless spell.Sageleaf was magically blessed and prospered."
         "The Bless affected no armies in Sageleaf."
     )
+
+
+# -- Skeletal Army's own real cast outcome (Phase 936) -----------------------
+
+
+def test_render_skeletal_army_outcome_with_nothing_raised():
+    rng = ScriptedRandom([])
+    result = render_skeletal_army_outcome("Aldric", [], rng)
+    assert result == "Aldric cast a Skeletal Army spell and no skeletons answered the spell's call."
+
+
+def test_render_skeletal_army_outcome_with_armies_raised():
+    # Real fixture text (SE3__T10.K1): "...the 250th Skeletal Bowmen,
+    # the 172nd Skeletal Legion..." -- full "Skeletal" wording and full
+    # ARMY_TYPE_NAME designation, not the Army List table's own
+    # abbreviated "Skel"/"Lt Cav" convention (see this function's own
+    # docstring for the full sourcing).
+    rng = ScriptedRandom([])
+    raised = [
+        ArmyState(250, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), is_skeletal=True),
+        ArmyState(172, 1, ArmyType.LT_CAVALRY, Quality.AVERAGE, HexCoord(0, 0), is_skeletal=True),
+    ]
+
+    result = render_skeletal_army_outcome("Aldric", raised, rng)
+
+    assert result == (
+        "Aldric cast a Skeletal Army spell and the 250th Skeletal Bowmen "
+        "and the 172nd Skeletal Light Cavalry arose from the graves of the dead!"
+    )
+
+
+def test_describe_cast_uses_the_skeletal_army_outcome_when_nothing_raised():
+    result = CastExecutionResult(request=CastRequest(spell=Spell.SKELETAL_ARMY, target=0), applied=True)
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Aldric", rng=rng)
+
+    assert line == "Aldric cast a Skeletal Army spell and no skeletons answered the spell's call."
+
+
+def test_describe_cast_uses_the_skeletal_army_outcome_when_armies_raised():
+    raised = [ArmyState(250, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), is_skeletal=True)]
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.SKELETAL_ARMY, target=0), applied=True, skeletal_army_raised=raised,
+    )
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Aldric", rng=rng)
+
+    assert line == "Aldric cast a Skeletal Army spell and the 250th Skeletal Bowmen arose from the graves of the dead!"
 
 
 def test_describe_cast_renders_the_announcement_when_applied():

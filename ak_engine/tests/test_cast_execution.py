@@ -2516,16 +2516,26 @@ def test_skeletal_army_raises_a_unit_from_the_casters_own_province_graveyard():
     assert raised[0].commanded_by == CASTER_ID
     assert raised[0].location == LOCATION
     assert raised[0].is_skeletal is True
+    assert result.skeletal_army_raised == raised
 
 
-def test_skeletal_army_fails_when_the_provinces_graveyard_is_empty():
+def test_skeletal_army_still_succeeds_with_nothing_to_raise_when_the_graveyard_is_empty():
+    # Phase 936 correction: this used to reject the cast outright before
+    # any roll -- but real fixture text (SE3__T11.K1: "I cast a Skeletal
+    # Army spell and no skeletons answered the spell's call.") shows the
+    # real game still lets the cast succeed with 0 raised, the same
+    # observable outcome as test_skeletal_army_raises_nothing_when_
+    # caster_has_no_recorded_level() below, just reached via an empty
+    # graveyard instead of necromancy_level == 0.
     state = build_state()
     request = CastRequest(spell=Spell.SKELETAL_ARMY, target=0)
+    rng = ScriptedRandom([])  # no skills recorded -> cast succeeds free, no roll consumed
 
-    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
-    assert result.applied is False
-    assert result.reason == "no dead units in this province to raise"
+    assert result.applied is True
+    assert result.skeletal_army_raised == []
+    assert len(state.armies) == 0
 
 
 def test_skeletal_army_caps_the_raised_count_at_the_casters_necromancy_level():

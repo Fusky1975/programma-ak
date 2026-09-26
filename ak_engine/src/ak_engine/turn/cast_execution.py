@@ -1099,6 +1099,19 @@ class CastExecutionResult:
     # module's own Phase 935 addendum), so this field doesn't need to
     # distinguish them. ``[]`` for every other spell.
     bless_graveyard_cleared: list[ArmyType] = field(default_factory=list)
+    # Phase 936: a successful Skeletal Army cast's own real raised
+    # armies (``ArmyState`` references, already added to ``state.
+    # armies`` by ``_execute_skeletal_army()`` -- kept here only so
+    # ``report/turn_report.py render_skeletal_army_outcome()`` can build
+    # each one's own real "Nth Skel <ArmyType>" display name via
+    # ``turn/army_naming.py make_army_display_name()``, the same
+    # ``army_id``-based ordinal the real Army List table itself uses).
+    # Empty both when the roll missed and when ``raised_count`` was 0
+    # for any reason (empty graveyard, ``necromancy_level`` 0) -- see
+    # ``_execute_skeletal_army()``'s own Phase 936 addendum for why
+    # those two cases are no longer distinguished. ``[]`` for every
+    # other spell.
+    skeletal_army_raised: list[ArmyState] = field(default_factory=list)
 
 
 def execute_cast(
@@ -3089,10 +3102,25 @@ def _execute_skeletal_army(
     Draws from ``GameState.battle_graveyard`` (Phase 60), consuming one
     entry per army raised (arbitrary order -- "no way to choose," so
     which specific entry is picked doesn't matter). Capped at
-    ``min(caster's Necromancy level, entries available)``; if the
-    graveyard is empty for this province, the precondition itself fails
-    before any success roll, the same "check applicability first" order
-    every other spell here uses. "All its movement points" is
+    ``min(caster's Necromancy level, entries available)``.
+
+    **Phase 936 correction**: an empty graveyard used to fail this
+    precondition outright, before any success roll -- but real fixture
+    text (`SE3__T11.K1`: "I cast a Skeletal Army spell and no skeletons
+    answered the spell's call.") shows the real compiled game still lets
+    the cast attempt (and succeed) with nothing to raise, narrating a
+    real, separately-dispatched ``_SNoSkel`` sentence for it (`SAY.PAS`:
+    "no skeletons answered the spell's call.", no standalone `.X`/`.X2`
+    file, same "real, hardcoded `Say()` call" category as `_ABDestr`/
+    `_BFun`/`_BSpeech`) rather than ever reporting the spell itself as
+    having failed. This is exactly the same observable outcome (0 armies
+    raised) `test_skeletal_army_raises_nothing_when_caster_has_no_
+    recorded_level()` already covered for a *non-empty* graveyard with
+    `necromancy_level == 0` -- an empty graveyard now reaches that same
+    ``raised_count = min(necromancy_level, len(graveyard)) == 0`` path
+    naturally instead of being special-cased away first. See
+    ``report/turn_report.py render_skeletal_army_outcome()``'s own
+    docstring for the narration side. "All its movement points" is
     approximated as ``movement_points=0``, the same fresh-unit default
     every newly-recruited ``ArmyState`` gets (``turn/
     recruit_execution.py``) -- carrying over the exact remaining
@@ -3118,8 +3146,6 @@ def _execute_skeletal_army(
 
     caster = state.leaders[leader_id]
     graveyard = state.battle_graveyard.get(caster.location) or []
-    if not graveyard:
-        return CastExecutionResult(request, applied=False, reason="no dead units in this province to raise")
 
     succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
     if not succeeded:
@@ -3130,23 +3156,24 @@ def _execute_skeletal_army(
     if undead_king_holder is not None and undead_king_holder.leader_id == leader_id:
         necromancy_level += 1
     raised_count = min(necromancy_level, len(graveyard))
+    raised_armies: list[ArmyState] = []
     for _ in range(raised_count):
         entry = graveyard.pop()
-        state.add_army(
-            ArmyState(
-                state.new_army_id(),
-                kingdom_id,
-                entry.army_type,
-                entry.quality,
-                caster.location,
-                commanded_by=leader_id,
-                is_skeletal=True,
-            )
+        army = ArmyState(
+            state.new_army_id(),
+            kingdom_id,
+            entry.army_type,
+            entry.quality,
+            caster.location,
+            commanded_by=leader_id,
+            is_skeletal=True,
         )
-    if not graveyard:
+        state.add_army(army)
+        raised_armies.append(army)
+    if not graveyard and caster.location in state.battle_graveyard:
         del state.battle_graveyard[caster.location]
 
-    return CastExecutionResult(request, applied=True)
+    return CastExecutionResult(request, applied=True, skeletal_army_raised=raised_armies)
 
 
 def _offices_held_by_kingdom(state: GameState, kingdom_id: int) -> list[Office]:

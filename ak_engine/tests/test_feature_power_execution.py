@@ -1079,18 +1079,23 @@ def test_resolve_feature_power_attempt_character_target_spell_self_casts():
 def test_resolve_feature_power_attempt_no_target_spell_uses_zero_target():
     # Skeletal_Army is no-target (`cast_decode.py NO_TARGET_SPELLS`) --
     # target=0, operates on the caster's own province. No graveyard
-    # entries here, so it fails on its own real precondition (not a
-    # targeting crash), proving target=0 reaches `execute_cast()`
-    # cleanly rather than being mistaken for a province/character id.
+    # entries here, proving target=0 reaches `execute_cast()` cleanly
+    # rather than being mistaken for a province/character id. Phase 936
+    # correction: an empty graveyard no longer fails the cast outright
+    # (real fixture text shows the real game still lets it succeed with
+    # nothing to raise) -- this exact seed's own cast-success roll
+    # happens to clear its threshold, so `applied` is `True` here with
+    # zero armies actually raised.
     state = _state_with_leader()
     feature = Feature(feature_id=3, coord=LOCATION, kind=FeatureType.PYRAMID)
     state.add_feature(feature)
 
     result = resolve_feature_power_attempt(state, LEADER_ID, feature, _terrain_spell_event(Spell.SKELETAL_ARMY), random.Random(0))
 
-    assert result.applied is False
-    assert result.reason == "no dead units in this province to raise"
+    assert result.applied is True
+    assert result.reason is None
     assert result.cast_spell is Spell.SKELETAL_ARMY
+    assert len(state.armies) == 0  # nothing to raise -- no armies actually created
 
 
 def test_resolve_feature_power_attempt_kill_enemy_refuses_cleanly():

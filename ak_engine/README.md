@@ -36356,23 +36356,57 @@ supply of any of these doesn't have to be re-derived from scratch:
   addendum for the full derivation, including the one documented,
   unresolved ambiguity (real fixture text shows two different groupings
   for a multi-army graveyard clear, and no confirmed source rule
-  explains the split). **Still genuinely open**: the CTBOTH.PAS-
-  confirmed severity scale (`S_Prev=0, S_Red=1, S_Priv=2, S_PCom=3,
-  S_Adv=4, S_Batt=5, S_AA=6, S_Admin=7, S_Army=8, S_Comm=9, S_IDipl=10`)
-  places every remaining spell (Charm/Resurrection/Clairvoyance at
-  S_PCom; Kill_Enemy/Oratory/Hide_Feature at S_Adv; Skeletal_Army/
-  Tornado/Illus_Armies at S_AA) below even the corrected "S_Army or
-  higher" GIR-visibility cutoff this README's own movement-notice bullet
-  above already established -- real fixture text confirms most of these
-  DO render too (in the caster's own ACTION REPORT, third person,
-  immediately following their own private cast announcement, the same
-  shape Bless just closed), but each still needs its own per-spell
-  wiring (army_names for Tornado/Skeletal_Army's own destroyed-unit
-  list; no further per-spell data for Charm/Resurrection/Clairvoyance/
-  Kill_Enemy/Oratory/Hide_Feature beyond what `_CAST_ANNOUNCEMENT_
-  TARGET_SPELLS` already resolves, but they're leader-targeted and
-  already flow through `_AUTO_RESOLVABLE_CAST_TARGET_SPELLS` today --
-  unlike Bless, so what's left for them, if anything, needs its own
+  explains the split).
+
+  **Phase 936: `Spell.SKELETAL_ARMY` closed too, a second one down.**
+  Two real pieces, mirroring Bless's own shape: (1) a genuine mechanic
+  bug, not just a narration gap -- `_execute_skeletal_army()` used to
+  reject the cast outright (`applied=False`) whenever the province's own
+  graveyard was empty, but real fixture text (`SE3__T11.K1`: "I cast a
+  Skeletal Army spell and no skeletons answered the spell's call.")
+  shows the real game still lets the cast succeed with 0 raised --
+  exactly the same observable outcome this project's own pre-existing
+  `necromancy_level == 0` branch already produced for a *non-empty*
+  graveyard, just reached a second way; both now converge on the one
+  real `_SNoSkel` sentence. (2) `render_skeletal_army_outcome()`
+  (`report/turn_report.py`) wires the real raise narration too, using
+  each raised army's own real `army_id`-based ordinal name -- **not**
+  `turn/army_naming.py make_army_display_name()`'s "Skel"-abbreviated
+  Army-List-table convention, confirmed distinct by direct comparison:
+  the table shows "108th Skel Bowmen", but this same cast's own
+  narration reads "the 250th Skeletal Bowmen... arose from the graves of
+  the dead!" (full wording, full `ARMY_TYPE_NAME`, not
+  `ARMY_TYPE_DESIGNATION`). **One honestly-documented, unresolved
+  ambiguity of its own**: two real fixture examples show one raised army
+  in an otherwise-all-"Skeletal"-marked list narrated *without* the tag,
+  with no confirmed rule explaining which one -- `turn/army_naming.py`'s
+  own module docstring already flags the underlying real `Zomboid`
+  state's own assignment trigger as unrecoverable from the available
+  source, so this project's own "every army this spell raises is
+  Skeletal" default (already established, unconditionally, in
+  `ArmyState.is_skeletal`) is kept as the majority-supported reading, not
+  overturned by 2 counter-examples out of many consistent ones. See
+  `turn/cast_execution.py _execute_skeletal_army()`'s own Phase 936
+  addendum and `render_skeletal_army_outcome()`'s own docstring for the
+  full derivation.
+
+  **Still genuinely open**: the CTBOTH.PAS-confirmed severity scale
+  (`S_Prev=0, S_Red=1, S_Priv=2, S_PCom=3, S_Adv=4, S_Batt=5, S_AA=6,
+  S_Admin=7, S_Army=8, S_Comm=9, S_IDipl=10`) places every remaining
+  spell (Charm/Resurrection/Clairvoyance at S_PCom; Kill_Enemy/Oratory/
+  Hide_Feature at S_Adv; Tornado/Illus_Armies at S_AA) below even the
+  corrected "S_Army or higher" GIR-visibility cutoff this README's own
+  movement-notice bullet above already established -- real fixture text
+  confirms most of these DO render too (in the caster's own ACTION
+  REPORT, third person, immediately following their own private cast
+  announcement, the same shape Bless/Skeletal_Army just closed), but
+  each still needs its own per-spell wiring (army_names for Tornado's own
+  destroyed-unit list; no further per-spell data for
+  Charm/Resurrection/Clairvoyance/Kill_Enemy/Oratory/Hide_Feature beyond
+  what `_CAST_ANNOUNCEMENT_TARGET_SPELLS` already resolves, but they're
+  leader-targeted and already flow through
+  `_AUTO_RESOLVABLE_CAST_TARGET_SPELLS` today -- unlike Bless/
+  Skeletal_Army, so what's left for them, if anything, needs its own
   further audit, not assumed closed by this addendum). PROVINCES/
   CHARACTERS/IMPERIAL OFFICE REPORT each still render only a real
   subset of their own columns (see those composers' own docstrings,
