@@ -302,6 +302,7 @@ from ak_engine.report.turn_report import (
     render_monster_threat_death,
     render_bless_graveyard_outcome,
     render_skeletal_army_outcome,
+    render_tornado_outcome,
     render_cast_announcement,
     render_kill_enemy_berserk_onset,
     render_monster_description,
@@ -4746,6 +4747,28 @@ def test_describe_turn_results_narrates_a_successful_skeletal_army_cast():
     assert lines == ["Sir Aldric cast a Skeletal Army spell and the 1st Skeletal Bowmen arose from the graves of the dead!"]
 
 
+def test_describe_turn_results_narrates_a_successful_tornado_cast():
+    # Phase 937: Spell.TORNADO is province-targeted, resolved the same
+    # board_width-gated way Bless already is.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Sir Aldric", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, name="Limerick"))
+    request = CastRequest(spell=Spell.TORNADO, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    destroyed = [ArmyState(20, 2, ArmyType.LEGION, Quality.AVERAGE, HexCoord(0, 0))]
+    result = CastExecutionResult(request=request, applied=True, tornado_destroyed=destroyed)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == [
+        "Sir Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Limerick."
+        "Tornadoes sucked up the 20th Legion in Limerick and destroyed them."
+    ]
+
+
 def test_describe_turn_results_still_ignores_an_unrelated_error():
     # Non-regression: every other exception (including this same
     # function's own "no province data" ValueError) still narrates
@@ -6985,6 +7008,64 @@ def test_describe_cast_uses_the_skeletal_army_outcome_when_armies_raised():
     line = describe_cast(result, caster_name="Aldric", rng=rng)
 
     assert line == "Aldric cast a Skeletal Army spell and the 250th Skeletal Bowmen arose from the graves of the dead!"
+
+
+# -- Tornado's own real cast outcome (Phase 937) -----------------------------
+
+
+def test_render_tornado_outcome_with_nothing_destroyed():
+    rng = ScriptedRandom([])
+    result = render_tornado_outcome("Aldric", "Kajaani", [], rng)
+    assert result == (
+        "Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Kajaani."
+        "The Tornado affected no armies in Kajaani."
+    )
+
+
+def test_render_tornado_outcome_with_armies_destroyed():
+    # Real fixture text (SE3__T6.K1): each destroyed army gets its own
+    # repeated sentence, not a combined "X, Y and Z" list (see this
+    # function's own docstring for the full sourcing).
+    rng = ScriptedRandom([])
+    destroyed = [
+        ArmyState(20, 2, ArmyType.LEGION, Quality.AVERAGE, HexCoord(0, 0)),
+        ArmyState(21, 2, ArmyType.LT_CAVALRY, Quality.AVERAGE, HexCoord(0, 0)),
+    ]
+
+    result = render_tornado_outcome("Aldric", "Limerick", destroyed, rng)
+
+    assert result == (
+        "Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Limerick."
+        "Tornadoes sucked up the 20th Legion in Limerick and destroyed them."
+        "Tornadoes sucked up the 21st Light Cavalry in Limerick and destroyed them."
+    )
+
+
+def test_describe_cast_uses_the_tornado_outcome_when_nothing_destroyed():
+    result = CastExecutionResult(request=CastRequest(spell=Spell.TORNADO, target=0), applied=True)
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Aldric", rng=rng, province_name="Kajaani")
+
+    assert line == (
+        "Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Kajaani."
+        "The Tornado affected no armies in Kajaani."
+    )
+
+
+def test_describe_cast_uses_the_tornado_outcome_when_armies_destroyed():
+    destroyed = [ArmyState(20, 2, ArmyType.LEGION, Quality.AVERAGE, HexCoord(0, 0))]
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.TORNADO, target=0), applied=True, tornado_destroyed=destroyed,
+    )
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Aldric", rng=rng, province_name="Limerick")
+
+    assert line == (
+        "Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Limerick."
+        "Tornadoes sucked up the 20th Legion in Limerick and destroyed them."
+    )
 
 
 def test_describe_cast_renders_the_announcement_when_applied():

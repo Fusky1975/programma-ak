@@ -36390,28 +36390,63 @@ supply of any of these doesn't have to be re-derived from scratch:
   addendum and `render_skeletal_army_outcome()`'s own docstring for the
   full derivation.
 
+  **Phase 937: `Spell.TORNADO` closed too, a third one down -- and its
+  own real narration turned out to be structurally different from
+  what `SPELL_CAST_ANNOUNCEMENT[Spell.TORNADO]`'s own catalog entry
+  implied.** Direct `SAY.PAS` cross-check found two more real, previously
+  uncatalogued hardcoded `Say()` sentences: `_STorn` ("magical tornadoes
+  hit the defenders of @.", following directly after the caster's own
+  "I cast a Tornado spell.") and `_NoDestr` ("the ~ affected no armies in
+  @.", a **generic** template shared with Bless -- confirmed by direct
+  wording comparison, not Bless-specific as Phase 935 first assumed;
+  `NO_ARMIES_AFFECTED_TEMPLATE` now replaces that phase's own
+  Bless-only constant, output text unchanged). Extensive real fixture
+  text (`SE3__T5`/`T6`/`T8`/`T11.K1`) settles the multi-army grouping
+  question Bless's own equivalent case left ambiguous: every real
+  multi-army Tornado example (3 armies, 2 armies) repeats the whole
+  "Tornadoes sucked up the Nth &lt;ArmyType&gt; in @ and destroyed them."
+  sentence once per destroyed army, never joining them into one "X, Y
+  and Z" list the way `SPELL_CAST_ANNOUNCEMENT[Spell.TORNADO]`'s own
+  `^L=`-based entry would -- so this phase's own
+  `render_tornado_outcome()` doesn't reuse that catalog entry at all
+  (its real dispatch context, if any, stays an open question, not
+  resolved or contradicted by this finding). `_execute_tornado()` also
+  gained `CastExecutionResult.tornado_destroyed` (each destroyed army's
+  own real `ArmyState`, captured before removal -- a real `army_id`
+  survives here, unlike Bless's `GraveyardEntry`, so the exact real
+  ordinal designation is reproducible, not approximated). See
+  `turn/cast_execution.py _execute_tornado()`'s own Phase 937 addendum
+  and `render_tornado_outcome()`'s own docstring for the full
+  derivation.
+
   **Still genuinely open**: the CTBOTH.PAS-confirmed severity scale
   (`S_Prev=0, S_Red=1, S_Priv=2, S_PCom=3, S_Adv=4, S_Batt=5, S_AA=6,
   S_Admin=7, S_Army=8, S_Comm=9, S_IDipl=10`) places every remaining
   spell (Charm/Resurrection/Clairvoyance at S_PCom; Kill_Enemy/Oratory/
-  Hide_Feature at S_Adv; Tornado/Illus_Armies at S_AA) below even the
-  corrected "S_Army or higher" GIR-visibility cutoff this README's own
+  Hide_Feature at S_Adv; Illus_Armies at S_AA) below even the corrected
+  "S_Army or higher" GIR-visibility cutoff this README's own
   movement-notice bullet above already established -- real fixture text
   confirms most of these DO render too (in the caster's own ACTION
   REPORT, third person, immediately following their own private cast
-  announcement, the same shape Bless/Skeletal_Army just closed), but
-  each still needs its own per-spell wiring (army_names for Tornado's own
-  destroyed-unit list; no further per-spell data for
-  Charm/Resurrection/Clairvoyance/Kill_Enemy/Oratory/Hide_Feature beyond
-  what `_CAST_ANNOUNCEMENT_TARGET_SPELLS` already resolves, but they're
-  leader-targeted and already flow through
+  announcement, the same shape Bless/Skeletal_Army/Tornado just closed),
+  but each still needs its own per-spell wiring (no further per-spell
+  data for Charm/Resurrection/Clairvoyance/Kill_Enemy/Oratory/
+  Hide_Feature beyond what `_CAST_ANNOUNCEMENT_TARGET_SPELLS` already
+  resolves, but they're leader-targeted and already flow through
   `_AUTO_RESOLVABLE_CAST_TARGET_SPELLS` today -- unlike Bless/
-  Skeletal_Army, so what's left for them, if anything, needs its own
-  further audit, not assumed closed by this addendum). PROVINCES/
-  CHARACTERS/IMPERIAL OFFICE REPORT each still render only a real
-  subset of their own columns (see those composers' own docstrings,
-  cited from `compose_letter_report()`'s own "wired doesn't mean
-  complete" section).
+  Skeletal_Army/Tornado, so what's left for them, if anything, needs its
+  own further audit, not assumed closed by this addendum). Also still
+  open: whether Tornado's own real `_ATDestr`/`Sps(Tornado,S_AA)`
+  bystander dispatch (a *separate* real call from `_STorn` above, per
+  `SAY.PAS`'s own `_ARises`/`_ATDestr`/`_APDestr`/`_ABDestr` group) means
+  a DIFFERENT kingdom (e.g. the province's own defender, not the caster)
+  is also told about their own destroyed armies somewhere -- this phase
+  only wires the caster's own private view, the same scope boundary
+  Bless/Skeletal_Army already established. PROVINCES/CHARACTERS/
+  IMPERIAL OFFICE REPORT each still render only a real subset of their
+  own columns (see those composers' own docstrings, cited from
+  `compose_letter_report()`'s own "wired doesn't mean complete"
+  section).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
