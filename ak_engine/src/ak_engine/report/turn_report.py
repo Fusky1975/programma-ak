@@ -3688,6 +3688,14 @@ _CAST_ANNOUNCEMENT_ARMY_LIST_SPELLS = frozenset(
 # precedent to follow beyond the same required/raise-if-missing pattern
 # every other marker set below already uses.
 _CAST_ANNOUNCEMENT_FEATURE_SPELLS = frozenset({Spell.HIDE_FEATURE})
+# Phase 938: see render_cast_announcement()'s own Phase 938 correction --
+# these three get no "< cast a ~ spell and "/". " opening at all on a
+# successful cast, confirmed for Resurrection/Oratory by extensive real
+# fixture text, inferred for Clairvoyance by the same self-contained
+# "cast a ~ spell and ..." structural pattern Oratory's own entry
+# already has (no real successful Clairvoyance cast survives in this
+# project's own corpus to confirm it directly).
+_CAST_ANNOUNCEMENT_NO_OPENING_SPELLS = frozenset({Spell.RESURRECTION, Spell.ORATORY, Spell.CLAIRVOYANCE})
 
 
 def render_cast_announcement(
@@ -3712,28 +3720,49 @@ def render_cast_announcement(
     "apparent intended relationship," not force-verified as grammatical
     for every spell (that module's own docstring already flags
     ``CONTROL_UNDEAD``'s mid-word truncation as one confirmed case where
-    it isn't). ``Spell.ORATORY`` is a second such honestly-transcribed
-    oddity: its own ``SPNOTE.X2`` entry ("< cast a spell giving magical
-    powers of oratory to [.") already reads as a complete sentence, yet
-    ``_LCast1``'s own ``CASE`` only special-cases Tornado/Bless/Plague as
-    "complete" -- so Oratory still gets the "< cast a ~ spell and "
-    prefix, producing a real, redundant "cast a spell and cast a
-    spell..." double statement. Transcribed as-is, not silently
-    smoothed over, the same stance already taken for the Mermen
-    "air-transport" wording (Phase 127) and ``_LCast1``'s own
-    ``Spell.CHARM`` entry, whose leading period (".< befriended...")
-    likewise concatenates into a mid-sentence full stop.
+    it isn't).
 
-    **Phase 831**: ``Spell.CLAIRVOYANCE`` is a third such oddity, found
-    once this path was finally wired end-to-end into
-    ``describe_turn_results()`` (see that dispatch's own Phase 831 bug
-    fix note) -- its own entry ("< cast a ~ spell and could see
-    everything that happened to [.") is itself already a complete
-    "< cast a ~ spell and ..." sentence, yet Clairvoyance isn't in
-    ``CAST_SPELL_OPENING_COMPLETE_SPELLS`` either, so it too gets the
-    continuation prefix prepended, producing the identical "cast a
-    spell and cast a spell and..." double statement as Oratory.
-    Transcribed as-is for the same reason.
+    **Phase 938 correction -- `_LCast1` is scoped to the Personal-Combat
+    Encounter dispatch (Search/Challenge/Pursue's own CAST tactic), not
+    the top-level CAST *action*'s own narration.** Direct `SAY.PAS`
+    cross-check found `_LCast1` sitting inside a long, unambiguous block
+    of Encounter-only labels (Spoils, inheriting a dead character's
+    items, melee/bow tactic choices, ...) -- and, decisively, extensive
+    real fixture text across 11 letters *never once* shows a successful
+    top-level Resurrection, Charm, or Oratory cast preceded by "< cast a
+    ~ spell and "/". " (`SE3__T6/T7/T9/T11.K1`: "Ningarl was resurrected
+    by the spell cast by Teleko."/"I cast a spell giving magical powers
+    of oratory to me." -- bare, no prefix, no double "cast a spell"
+    statement either). The "I cast a ~ spell" phrasing *does* appear
+    together with these three spells' own names in real letters, but
+    only ever as part of a *failed*-cast attempt's own separate
+    narration ("I failed in my attempt to cast a Resurrection spell.",
+    `SFAIL.X`/``render_spell_cast_failed()``, already unwired here for
+    unrelated reasons -- see this function's own Phase 603 note below),
+    never alongside a successful cast's own effect sentence.
+    `_CAST_ANNOUNCEMENT_NO_OPENING_SPELLS` below (Resurrection, Oratory,
+    and, by the same self-contained "cast a spell and..." structural
+    pattern Oratory's own entry already has -- not independently
+    fixture-confirmed, no real successful Clairvoyance cast survives in
+    this project's own corpus -- Clairvoyance too) skips the opening
+    clause entirely for these three, retiring the old "double cast a
+    spell, transcribed honestly" framing this docstring used to carry:
+    that framing was itself the bug, not a real oddity.
+
+    **`Spell.CHARM` needs its own separate real text, not just no
+    opening**: SPNOTE.X2's own catalog entry (".< befriended [ and used
+    > respite to escape.", still `SPELL_CAST_ANNOUNCEMENT[Spell.CHARM]`
+    below, real and unchanged) is `_LCast1`'s own Encounter-context
+    entry too -- but a *different*, direct `Say()` call, `_SCharm`
+    ("[1 was magically charmed by <2."), is the real top-level-cast
+    text, confirmed by extensive, unanimous real fixture text (every
+    single real Charm cast across all 11 letters uses this exact
+    wording, never SPNOTE.X2's own). ``describe_cast()``'s own dedicated
+    ``render_charm_outcome()`` branch handles this -- ``Spell.CHARM``
+    never reaches this function from that real caller anymore, though
+    it remains valid to call directly (this function still works for
+    any of the 25 ``SPELL_CAST_ANNOUNCEMENT`` entries, Encounter-context
+    included).
 
     ``target_name``/``province_name``/``terrain_name``/``army_names``/
     ``feature_name`` are each required only for the spells whose own
@@ -3745,20 +3774,25 @@ def render_cast_announcement(
 
     Works for any of the 25 ``SPELL_CAST_ANNOUNCEMENT`` entries, not
     just the 15 ``turn/cast_execution.py`` can apply -- ``describe_cast()``
-    below is the only real caller, and it only ever reaches one of those
-    15 (the only spells that ever produce ``applied=True``), but this
-    function itself doesn't assume that narrower scope.
+    below is the only real caller, and (as of Phase 938, ``Spell.CHARM``
+    and ``Spell.SKELETAL_ARMY``/``Spell.TORNADO`` -- Phases 936/937 --
+    now bypassing it entirely) it reaches this function for 12 of the
+    15 spells that ever produce ``applied=True``, but this function
+    itself doesn't assume that narrower scope.
     """
 
     if spell not in SPELL_CAST_ANNOUNCEMENT:
         raise ValueError(f"no SPELL_CAST_ANNOUNCEMENT entry for {spell!r}")
 
-    opening = (
-        CAST_SPELL_OPENING_COMPLETE_TEMPLATE
-        if spell in CAST_SPELL_OPENING_COMPLETE_SPELLS
-        else CAST_SPELL_OPENING_CONTINUED_TEMPLATE
-    )
-    template = opening + SPELL_CAST_ANNOUNCEMENT[spell]
+    if spell in _CAST_ANNOUNCEMENT_NO_OPENING_SPELLS:
+        template = SPELL_CAST_ANNOUNCEMENT[spell]
+    else:
+        opening = (
+            CAST_SPELL_OPENING_COMPLETE_TEMPLATE
+            if spell in CAST_SPELL_OPENING_COMPLETE_SPELLS
+            else CAST_SPELL_OPENING_CONTINUED_TEMPLATE
+        )
+        template = opening + SPELL_CAST_ANNOUNCEMENT[spell]
 
     values = {"<": caster_name, "<2": caster_name, "~": SPELL_NAME[spell]}
     lists: dict[str, list[str]] = {}
@@ -4010,6 +4044,27 @@ def render_tornado_outcome(
     return "".join(lines)
 
 
+# HostAK/TP/SAY.PAS `_SCharm`: "[1 was magically charmed by <2." (S_PCom,
+# no standalone `.X`/`.X2` file, a direct hardcoded `Say()` call rather
+# than the generic `Sps()`/SPNOTE.X2 dispatch every other "_S*"-group
+# spell uses) -- Charm's own real, confirmed top-level-cast text (Phase
+# 938), unanimously confirmed by every one of the many real Charm casts
+# across all 11 available letters (`SE3__T2`/`T3`/`T4`/`T6.K1`: "X was
+# magically charmed by Y.", always bare, never SPNOTE.X2's own ".<
+# befriended [ and used > respite/good_luck to escape." entry -- see
+# `render_cast_announcement()`'s own Phase 938 correction for the full
+# derivation of why these two real texts serve different contexts).
+CHARM_SUCCESS_TEMPLATE = "[1 was magically charmed by <2."
+
+
+def render_charm_outcome(target_name: str, caster_name: str, rng: random.Random) -> str:
+    """Renders Charm's own real top-level-cast outcome -- see the module
+    comment above ``CHARM_SUCCESS_TEMPLATE`` for the full sourcing.
+    """
+
+    return render(CHARM_SUCCESS_TEMPLATE, {"[1": target_name, "<2": caster_name}, rng=rng)
+
+
 def describe_cast(
     result: CastExecutionResult,
     *,
@@ -4073,6 +4128,15 @@ def describe_cast(
     ``render_tornado_outcome()``'s own docstring), so this branch
     doesn't reuse ``render_cast_announcement()`` even for a real,
     non-empty destroy list.
+
+    **Phase 938**: ``Spell.CHARM`` gets the same treatment for the same
+    reason as Tornado -- ``SPELL_CAST_ANNOUNCEMENT[Spell.CHARM]`` is real
+    text, just for a different (Encounter-context) dispatch, confirmed by
+    unanimous real fixture text (see ``render_charm_outcome()``'s own
+    docstring). Every other spell this function reaches still goes
+    through ``render_cast_announcement()`` as before, including the
+    Phase 938 fix for Resurrection/Oratory/Clairvoyance's own missing
+    opening clause (handled inside that function itself, not here).
     """
 
     if not result.applied:
@@ -4084,6 +4148,10 @@ def describe_cast(
         if province_name is None:
             raise ValueError(f"{spell!r} needs province_name")
         return render_tornado_outcome(caster_name, province_name, result.tornado_destroyed, rng)
+    if spell is Spell.CHARM:
+        if target_name is None:
+            raise ValueError(f"{spell!r} needs target_name")
+        return render_charm_outcome(target_name, caster_name, rng)
     line = render_cast_announcement(
         spell,
         caster_name,
