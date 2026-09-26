@@ -2430,6 +2430,24 @@ def test_bless_clears_the_graveyard_on_a_successful_cleanup_roll():
     assert LOCATION not in state.battle_graveyard
 
 
+def test_bless_reports_every_cleared_army_type_on_a_successful_cleanup_roll():
+    # Phase 935: the cleared entries' own ArmyType now survives on the
+    # result (previously computed and discarded), for report/turn_
+    # report.py's own graveyard-cleanup companion sentence.
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    state.battle_graveyard[LOCATION] = [
+        GraveyardEntry(ArmyType.LEGION, Quality.AVERAGE, kingdom_id=2),
+        GraveyardEntry(ArmyType.LT_CAVALRY, Quality.AVERAGE, kingdom_id=2),
+    ]
+    request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
+    rng = ScriptedRandom([0.05])  # no skills recorded -> cast succeeds free; cleanup chance 10% -> hits
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.bless_graveyard_cleared == [ArmyType.LEGION, ArmyType.LT_CAVALRY]
+
+
 def test_bless_does_not_clear_the_graveyard_on_a_failed_cleanup_roll():
     state = build_state()
     state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
@@ -2442,6 +2460,23 @@ def test_bless_does_not_clear_the_graveyard_on_a_failed_cleanup_roll():
     assert result.applied is True
     assert state.provinces[LOCATION].tax_modifier_percent == 60  # tax bonus still applies
     assert len(state.battle_graveyard[LOCATION]) == 1  # graveyard untouched
+    assert result.bless_graveyard_cleared == []
+
+
+def test_bless_reports_no_cleared_army_types_when_the_graveyard_was_already_empty():
+    # A successful cleanup roll with nothing to clear (province never had
+    # a battle death) -- bless_graveyard_cleared stays empty, the same as
+    # a failed roll, matching render_bless_graveyard_outcome()'s own "both
+    # read the same" contract.
+    state = build_state()
+    state.add_province(ProvinceState(LOCATION, Terrain.PLAINS, Race.HUMAN))
+    request = CastRequest(spell=Spell.BLESS, target=_target(LOCATION))
+    rng = ScriptedRandom([0.05])  # cleanup chance 10% -> hits, but nothing stored
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert result.bless_graveyard_cleared == []
 
 
 def test_bless_cleanup_chance_scales_with_white_magic_level():
