@@ -36419,34 +36419,58 @@ supply of any of these doesn't have to be re-derived from scratch:
   and `render_tornado_outcome()`'s own docstring for the full
   derivation.
 
-  **Still genuinely open**: the CTBOTH.PAS-confirmed severity scale
-  (`S_Prev=0, S_Red=1, S_Priv=2, S_PCom=3, S_Adv=4, S_Batt=5, S_AA=6,
-  S_Admin=7, S_Army=8, S_Comm=9, S_IDipl=10`) places every remaining
-  spell (Charm/Resurrection/Clairvoyance at S_PCom; Kill_Enemy/Oratory/
-  Hide_Feature at S_Adv; Illus_Armies at S_AA) below even the corrected
-  "S_Army or higher" GIR-visibility cutoff this README's own
-  movement-notice bullet above already established -- real fixture text
-  confirms most of these DO render too (in the caster's own ACTION
-  REPORT, third person, immediately following their own private cast
-  announcement, the same shape Bless/Skeletal_Army/Tornado just closed),
-  but each still needs its own per-spell wiring (no further per-spell
-  data for Charm/Resurrection/Clairvoyance/Kill_Enemy/Oratory/
-  Hide_Feature beyond what `_CAST_ANNOUNCEMENT_TARGET_SPELLS` already
-  resolves, but they're leader-targeted and already flow through
-  `_AUTO_RESOLVABLE_CAST_TARGET_SPELLS` today -- unlike Bless/
-  Skeletal_Army/Tornado, so what's left for them, if anything, needs its
-  own further audit, not assumed closed by this addendum). Also still
-  open: whether Tornado's own real `_ATDestr`/`Sps(Tornado,S_AA)`
-  bystander dispatch (a *separate* real call from `_STorn` above, per
-  `SAY.PAS`'s own `_ARises`/`_ATDestr`/`_APDestr`/`_ABDestr` group) means
-  a DIFFERENT kingdom (e.g. the province's own defender, not the caster)
-  is also told about their own destroyed armies somewhere -- this phase
-  only wires the caster's own private view, the same scope boundary
-  Bless/Skeletal_Army already established. PROVINCES/CHARACTERS/
-  IMPERIAL OFFICE REPORT each still render only a real subset of their
-  own columns (see those composers' own docstrings, cited from
-  `compose_letter_report()`'s own "wired doesn't mean complete"
-  section).
+  Also still open: whether Tornado's own real `_ATDestr`/
+  `Sps(Tornado,S_AA)` bystander dispatch (a *separate* real call from
+  `_STorn` above, per `SAY.PAS`'s own `_ARises`/`_ATDestr`/`_APDestr`/
+  `_ABDestr` group) means a DIFFERENT kingdom (e.g. the province's own
+  defender, not the caster) is also told about their own destroyed
+  armies somewhere -- this phase only wires the caster's own private
+  view, the same scope boundary Bless/Skeletal_Army already established.
+
+  **Phase 938: the "further audit" of the already-leader-targeted
+  spells this README itself called for turned up a real, confirmed
+  narration bug, not a clean bill of health.** `SAY.PAS`'s own "_L*"
+  group (`_LCast1`'s opening clause included) turned out to be scoped to
+  the Personal-Combat *Encounter* dispatch (Search/Challenge/Pursue's
+  own CAST tactic) -- a long, unambiguous block of Encounter-only labels
+  (Spoils, inheriting a dead character's items, melee/bow tactic
+  choices...) -- not the top-level CAST *action*'s own narration this
+  project's `describe_cast()` actually renders. Decisive real fixture
+  text (11 letters) settles it: a successful top-level Resurrection or
+  Oratory cast is *never* preceded by "< cast a ~ spell and " ("Ningarl
+  was resurrected by the spell cast by Teleko."/"I cast a spell giving
+  magical powers of oratory to me." -- bare, no doubling either, unlike
+  what this project's own code previously rendered and a test explicitly
+  asserted as an "honestly transcribed" oddity). Charm goes further: its
+  own top-level text isn't just missing an opening, it's a wholly
+  *different* real sentence -- `_SCharm` ("[1 was magically charmed by
+  <2.", a direct `Say()` call, not the generic `Sps()`/SPNOTE.X2 dispatch
+  every sibling spell in that group uses) -- confirmed unanimously by
+  every single real Charm cast across all 11 letters, none of which ever
+  shows SPNOTE.X2's own ".< befriended [ and used > respite to escape."
+  text. Clairvoyance is inferred, not independently fixture-confirmed
+  (no real successful cast survives in this corpus), to follow the same
+  "no opening" pattern as Oratory by the same self-contained-sentence
+  structural argument. Kill_Enemy and Illus_Armies were re-checked too
+  and are already correct as wired (`_SKill`/`_SIllAr` both route
+  through the ordinary `Sps()` dispatch, and real fixture text confirms
+  both DO get the opening clause). See `render_cast_announcement()`'s
+  own Phase 938 correction and `render_charm_outcome()`'s own docstring
+  for the full derivation. **Still genuinely open**: Hide_Feature (needs
+  its own `feature_name` wiring this dispatch loop doesn't compute yet,
+  and no real fixture example of a successful cast survives to confirm
+  its own opening-clause question either way); the CTBOTH.PAS-confirmed
+  severity scale (`S_Prev=0, S_Red=1, S_Priv=2, S_PCom=3, S_Adv=4,
+  S_Batt=5, S_AA=6, S_Admin=7, S_Army=8, S_Comm=9, S_IDipl=10`) still
+  places Charm/Resurrection/Clairvoyance/Kill_Enemy/Oratory/Hide_Feature
+  below the corrected "S_Army or higher" GIR-visibility cutoff, so none
+  of them reach cross-kingdom GIR the way Bless/Tornado's own
+  world-events-adjacent siblings do -- only their own caster-private
+  ACTION REPORT view is wired here, matching Bless/Skeletal_Army/
+  Tornado's own scope boundary. PROVINCES/CHARACTERS/IMPERIAL OFFICE
+  REPORT each still render only a real subset of their own columns (see
+  those composers' own docstrings, cited from `compose_letter_report()`'s
+  own "wired doesn't mean complete" section).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

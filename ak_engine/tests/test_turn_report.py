@@ -303,6 +303,7 @@ from ak_engine.report.turn_report import (
     render_bless_graveyard_outcome,
     render_skeletal_army_outcome,
     render_tornado_outcome,
+    render_charm_outcome,
     render_cast_announcement,
     render_kill_enemy_berserk_onset,
     render_monster_description,
@@ -4769,6 +4770,26 @@ def test_describe_turn_results_narrates_a_successful_tornado_cast():
     ]
 
 
+def test_describe_turn_results_narrates_a_successful_charm_cast():
+    # Phase 938: Spell.CHARM already flows through
+    # _AUTO_RESOLVABLE_CAST_TARGET_SPELLS (leader-targeted) -- only
+    # describe_cast()'s own dedicated branch changed, using the real
+    # top-level-cast text instead of the Encounter-context one.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Uga-Buga Makumb", location=HexCoord(0, 0)))
+    state.add_leader(LeaderState(2, kingdom_id=1, name="Melantheus", location=HexCoord(0, 0)))
+    request = CastRequest(spell=Spell.CHARM, target=2)
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]))
+
+    assert lines == ["Melantheus was magically charmed by Uga-Buga Makumb."]
+
+
 def test_describe_turn_results_still_ignores_an_unrelated_error():
     # Non-regression: every other exception (including this same
     # function's own "no province data" ValueError) still narrates
@@ -6815,21 +6836,26 @@ def test_render_cast_announcement_skeletal_army_list_only():
 
 
 def test_render_cast_announcement_resurrection_reuses_caster_and_target_markers():
+    # Phase 938 correction: Resurrection gets no "< cast a ~ spell and "
+    # opening at all on a successful cast -- real fixture text never
+    # shows one (see render_cast_announcement()'s own Phase 938 note).
     # RESURRECTION's own SPELL_CAST_ANNOUNCEMENT entry references the caster
     # a second time via <2 and the target via [1 -- same real duplicate-marker
     # shape render_battle_winner() already established for <2 (Phase 61).
     rng = ScriptedRandom([])
     result = render_cast_announcement(Spell.RESURRECTION, "Aldric", rng, target_name="Borin")
-    assert result == "Aldric cast a Resurrection spell and Borin was resurrected by the spell cast by Aldric."
+    assert result == "Borin was resurrected by the spell cast by Aldric."
 
 
-def test_render_cast_announcement_oratory_double_cast_clause_is_transcribed_honestly():
-    # _LCast1's own CASE doesn't special-case Oratory as "complete" even
-    # though SPNOTE.X2's own entry already reads as a full sentence -- the
-    # real Pascal output really does redundantly say "cast a spell" twice.
+def test_render_cast_announcement_oratory_has_no_double_cast_clause():
+    # Phase 938 correction: this test used to assert the "cast a spell...
+    # cast a spell" double statement as an honestly-transcribed real
+    # oddity -- real fixture text (SE3__T5/T7.K1: "I cast a spell giving
+    # magical powers of oratory to me.") proves there's no opening clause
+    # at all on a successful cast, so no doubling ever happens for real.
     rng = ScriptedRandom([])
     result = render_cast_announcement(Spell.ORATORY, "Aldric", rng, target_name="Borin")
-    assert result == "Aldric cast a Oratory spell and Aldric cast a spell giving magical powers of oratory to Borin."
+    assert result == "Aldric cast a spell giving magical powers of oratory to Borin."
 
 
 def test_render_cast_announcement_charm_leading_period_and_r_choices():
@@ -6837,23 +6863,27 @@ def test_render_cast_announcement_charm_leading_period_and_r_choices():
     # transcribed oddity, the same "transcribe verbatim, don't silently fix"
     # stance already taken for CONTROL_UNDEAD's truncation and the Mermen
     # "air-transport" wording, Phase 127). 3 "/R" choices, all scripted left.
+    # Phase 938: this is the real Encounter-context text -- the top-level
+    # Cast action's own real narration uses render_charm_outcome() instead
+    # (a wholly different, confirmed-by-fixture sentence) -- see that
+    # function's own docstring. render_cast_announcement() itself still
+    # works for this entry directly, unchanged.
     rng = ScriptedRandom([0.1, 0.1, 0.1])
     result = render_cast_announcement(Spell.CHARM, "Aldric", rng, target_name="Borin")
     assert result == "Aldric cast a Charm spell and .Aldric befriended Borin and used Aldric's respite to escape."
 
 
-def test_render_cast_announcement_clairvoyance_double_cast_clause_is_transcribed_honestly():
-    # Clairvoyance's own SPNOTE.X2 entry begins with "< cast a ~ spell
-    # and..." too, so it duplicates the CONTINUED_TEMPLATE's own opening
-    # the same way Oratory does (see the docstring's oddity list above) --
-    # transcribed honestly, not silently fixed.
+def test_render_cast_announcement_clairvoyance_has_no_double_cast_clause():
+    # Phase 938 correction: this test used to assert a "cast a spell...
+    # cast a spell" double statement as an honestly-transcribed real
+    # oddity -- inferred (not directly fixture-confirmed, see
+    # render_cast_announcement()'s own Phase 938 note) to have no opening
+    # clause at all, the same as Oratory's own confirmed case. Its own
+    # SPNOTE.X2 entry already begins with "< cast a ~ spell and..." as a
+    # complete, self-contained sentence.
     rng = ScriptedRandom([])
     result = render_cast_announcement(Spell.CLAIRVOYANCE, "Aldric", rng, target_name="Borin")
-    assert (
-        result
-        == "Aldric cast a Clairvoyance spell and Aldric cast a Clairvoyance spell "
-        "and could see everything that happened to Borin."
-    )
+    assert result == "Aldric cast a Clairvoyance spell and could see everything that happened to Borin."
 
 
 def test_render_cast_announcement_hide_feature_needs_feature_and_province_name():
@@ -7066,6 +7096,21 @@ def test_describe_cast_uses_the_tornado_outcome_when_armies_destroyed():
         "Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Limerick."
         "Tornadoes sucked up the 20th Legion in Limerick and destroyed them."
     )
+
+
+def test_render_charm_outcome():
+    rng = ScriptedRandom([])
+    result = render_charm_outcome("Melantheus", "Uga-Buga Makumb", rng)
+    assert result == "Melantheus was magically charmed by Uga-Buga Makumb."
+
+
+def test_describe_cast_uses_the_charm_outcome():
+    result = CastExecutionResult(request=CastRequest(spell=Spell.CHARM, target=0), applied=True)
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Uga-Buga Makumb", rng=rng, target_name="Melantheus")
+
+    assert line == "Melantheus was magically charmed by Uga-Buga Makumb."
 
 
 def test_describe_cast_renders_the_announcement_when_applied():
