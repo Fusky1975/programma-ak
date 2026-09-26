@@ -43,8 +43,8 @@ and turn-2+ tables. These indices are narrative-only (which prose
 template a report would pick) -- they don't gate or scale `R_s` itself.
 
 `draw_global_luck`, `draw_local_luck`, `luck_strength_multiplier`,
-`bluck_event_index`, `cluck_event_index`, and `break_bres_tie` below are
-these confirmed primitives, now the sole luck mechanism
+`bluck_event_index`, `cluck_event_index`, and `apply_bres_tie_correction`
+below are these confirmed primitives, now the sole luck mechanism
 `turn/battle_resolution.py resolve_battle` uses.
 
 **Phase 388 addendum -- the actual narration text.** Phase 370 only
@@ -139,9 +139,9 @@ transcription, not left as an unrendered placeholder.
 from __future__ import annotations
 
 import random
-from typing import Literal
 
 from ak_engine.report.prose import render
+from ak_engine.turn.pursuit import draw_pursuit_r01
 
 FIRST_TURN_LUCK_COEFFICIENT = 0.75
 LATER_TURN_LUCK_COEFFICIENT = 1.5
@@ -417,25 +417,60 @@ def cluck_event_index(l_selected: float, l_other: float) -> int:
     return max(1, min(39, 20 + round(20 * (l_selected - l_other))))
 
 
-def break_bres_tie(rng: random.Random) -> Literal["side1", "side2"]:
-    """Break an exact-zero summed-`BRES` battle tie (`turn/combat.py
-    column_bres`, Phase 347) "by repeated differences of fair coins" --
-    the source's own phrase for the tie-break rule, given without a
-    fully worked example. Read literally: draw one fair coin per side,
-    repeat until the two coins disagree, and the side that landed heads
-    wins -- a `2^-n` chance of needing an `n`-th round, so this
-    terminates with probability 1 and (unlike a plain single coin flip)
-    stays faithful to the source's own "repeated" and "differences of
-    fair coins" (plural coins, one per side) wording. Kept honest about
-    the ambiguity rather than silently picking a different, unstated
-    interpretation.
+def apply_bres_tie_correction(bres: int, running_total_before: int, rng: random.Random) -> int:
+    """Phase 933: the real exact-zero summed-`BRES` tie-break -- **not**
+    an abstract "flip a coin for each side" decision (Phase 347's own
+    `break_bres_tie`, superseded outright by this function, see its own
+    replaced docstring in git history), but a direct *correction of the
+    last column's own `BRES` value*, confirmed by a user-supplied
+    byte-level disassembly of `AK.OVR` (`BRES.md`/`BRESOK.md`, raw
+    `[0x500A,0x5307)`, address `0x511E`-`0x5124`).
+
+    The real Pascal (`BRES.md`'s own reconstruction, addresses as
+    above): only ever runs for the battle's *last* column (`colonna =
+    larghezza`), and only when this column's own already-clamped `BRES`
+    would make the running battle-wide total exactly zero:
+
+    ```pascal
+    while (colonna = larghezza) and (totale + bres = 0) do begin
+      prima := R01;
+      seconda := R01;
+      bres := bres + seconda - prima;
+    end;
+    ```
+
+    `R01` (`turn/pursuit.py draw_pursuit_r01`, the same routine
+    `BRES.md` itself identifies as shared with the already-confirmed
+    Pursuit catch test, `2E5A:246D`) is a single fair `0`/`1` coin, so
+    `seconda - prima` is `-1`/`0`/`+1` at `25%`/`50%`/`25%` each -- the
+    loop repeats only on the `50%` no-op case, terminating with
+    probability 1. **No second clamp is applied after this correction**
+    (`BRES.md`'s own explicit note) -- the corrected value can land
+    outside `-5..+5` (e.g. a `+5` column corrected to `+6`), read as-is
+    by every downstream consumer of this column's own `BRES` (the
+    quality-loss test in `turn/combat.py direct_destruction_
+    probability`, the narration index, `attacker_won`), not just the
+    battle-wide winner decision.
+
+    Since `resolve_battle`'s own `line_length` is always `>= 1` (an
+    empty side is rejected outright, see this module's own caller), the
+    battle's last column always exists, so this correction -- not any
+    separate coin-flip abstraction -- is what actually prevents
+    `resolve_battle` from ever reporting an exact-zero `total_bres`:
+    the `while` loop above can only exit once `running_total_before +
+    bres != 0` holds, by construction. `running_total_before` is the
+    sum of every *earlier* column's own (already-settled) `BRES` --
+    `bres` is this last column's own value, corrected in place and
+    returned; the caller still has to add it to its own running total
+    itself, exactly as the Pascal's own `totale := totale + bres` does
+    right after this loop.
     """
 
-    while True:
-        side1_heads = rng.random() < 0.5
-        side2_heads = rng.random() < 0.5
-        if side1_heads != side2_heads:
-            return "side1" if side1_heads else "side2"
+    while running_total_before + bres == 0:
+        prima = draw_pursuit_r01(rng)
+        seconda = draw_pursuit_r01(rng)
+        bres += seconda - prima
+    return bres
 
 
 def bluck_cluck_uses_secondary_catalog(

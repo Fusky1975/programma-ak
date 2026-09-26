@@ -43,8 +43,12 @@ the source's own two worked real-game examples (``GW3_T1_K10``:
   rejection-sampling loop (draw uniformly among the 4, reject and
   redraw on a match), the same "implement the real draw-and-reject
   mechanism, not just its equivalent simplified distribution" choice
-  this project already made for `battle_luck.break_bres_tie` (Phase
-  347) and `place_map`'s own land-seed placement (Phase 354).
+  this project already made for `battle_luck.apply_bres_tie_correction`
+  (Phase 933 -- which is itself a correction of Phase 347's own
+  `break_bres_tie`, a plausible-looking coin-flip abstraction that
+  turned out to be exactly the wrong kind of "equivalent simplified
+  distribution" this citation warns against) and `place_map`'s own
+  land-seed placement (Phase 354).
 - ``independent_lord_effects()``: "province owner becomes leader id",
   "leader coordinates and born coordinates become province
   coordinates", "leader race is overwritten with province native

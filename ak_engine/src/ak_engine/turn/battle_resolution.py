@@ -42,13 +42,19 @@ that rewire. Two structural changes from the pre-Phase-370 version:
    **The overall battle winner is decided by the sum of every column's
    signed `BRES`** (not by counting how many columns each side won --
    "the engine weighs the size of each column result, not merely the
-   number of columns won"), and an exact-zero sum is broken by
-   ``break_bres_tie``'s own repeated-coin-differences rule rather than
-   ever being reported as a genuine tie. `resolve_battle` therefore
-   never returns ``winner == "tie"`` in practice; that value stays a
-   valid ``BattleResult`` state only for manually-constructed instances
-   (e.g. ``turn/battle_orchestrator.py``'s own instant-conquest
-   shortcut), not something this function itself produces.
+   number of columns won"), and an exact-zero sum is corrected away by
+   ``turn/battle_luck.py apply_bres_tie_correction`` (Phase 933) --
+   **not** a separate coin-flip-for-a-side decision (Phase 370's
+   original ``break_bres_tie``, superseded outright once a user-supplied
+   disassembly showed the real tie-break directly corrects the *last
+   column's own `BRES` value*, not some abstract side choice -- see that
+   function's own docstring for the full derivation) -- so
+   ``resolve_battle`` never reports an exact-zero ``total_bres`` in
+   practice. `resolve_battle` therefore never returns ``winner == "tie"``
+   either; that value stays a valid ``BattleResult`` state only for
+   manually-constructed instances (e.g. ``turn/battle_orchestrator.py``'s
+   own instant-conquest shortcut), not something this function itself
+   produces.
 
 Everything upstream of the column-strength numbers -- line-up,
 `apply_tactical_switches`, `apply_nemesis_penalties`, non-humanoid
@@ -96,8 +102,8 @@ from ak_engine.turn.battle_line import (
     line_length_for_battle,
 )
 from ak_engine.turn.battle_luck import (
+    apply_bres_tie_correction,
     bluck_event_index,
-    break_bres_tie,
     cluck_event_index,
     draw_global_luck,
     draw_local_luck,
@@ -139,8 +145,10 @@ class BattleResult:
     bluck_index: int = 9
     # The real decision quantity (Phase 370): sum of every column's
     # signed BRES. Positive means the attacker won, negative the
-    # defender, exact zero means ``winner`` was resolved by
-    # ``break_bres_tie`` instead.
+    # defender -- an exact-zero sum from ``resolve_battle`` itself never
+    # reaches here (Phase 933: ``apply_bres_tie_correction`` corrects the
+    # last column's own BRES before this sum is ever finalized), so this
+    # field is 0 only for a manually-constructed ``BattleResult``.
     total_bres: int = 0
     attacker_columns_won: int = 0
     defender_columns_won: int = 0
@@ -377,19 +385,26 @@ def resolve_battle(
     attacker_wins = 0
     defender_wins = 0
     total_bres = 0
-    for a_strength, d_strength, a_units, d_units, a_switched, d_switched in zip(
-        attacker_strengths,
-        defender_strengths,
-        attacker_columns,
-        defender_columns,
-        attacker_switched,
-        defender_switched,
+    for column_index, (a_strength, d_strength, a_units, d_units, a_switched, d_switched) in enumerate(
+        zip(
+            attacker_strengths,
+            defender_strengths,
+            attacker_columns,
+            defender_columns,
+            attacker_switched,
+            defender_switched,
+        )
     ):
         # One local draw per side, fresh for every column.
         l1, l2 = draw_local_luck(rng)
         r1 = luck_strength_multiplier(g1, l1, is_first_turn=is_first_turn)
         r2 = luck_strength_multiplier(g2, l2, is_first_turn=is_first_turn)
         bres = column_bres(a_strength, d_strength, r1, r2)
+        if column_index == line_length - 1:
+            # Phase 933: the real tie-break -- a correction of the last
+            # column's own BRES, not a separate coin-flip-for-a-side
+            # abstraction. See apply_bres_tie_correction's own docstring.
+            bres = apply_bres_tie_correction(bres, total_bres, rng)
         total_bres += bres
         if bres > 0:
             attacker_wins += 1
@@ -410,12 +425,13 @@ def resolve_battle(
             )
         )
 
-    if total_bres > 0:
-        winner = "attacker"
-    elif total_bres < 0:
-        winner = "defender"
-    else:
-        winner = "attacker" if break_bres_tie(rng) == "side1" else "defender"
+    # Phase 933: total_bres can never be exactly 0 here -- line_length is
+    # always >= 1 (an empty side is rejected above), so the last column
+    # always exists and always ran through apply_bres_tie_correction
+    # above whenever it would have made this sum zero; that correction's
+    # own while loop only ever exits once the sum is nonzero. See
+    # apply_bres_tie_correction's own docstring for the full derivation.
+    winner = "attacker" if total_bres > 0 else "defender"
 
     return BattleResult(
         columns=columns,
