@@ -31320,7 +31320,17 @@ follow-up request after the original 431-435 plan shipped.
   confirmed dead code, unreachable by either real caller). Shipped as a
   new, tested `island_tax()` primitive, still deliberately unwired (no
   `pt2` input exists at world-*generation* time -- the same, unchanged
-  blocker Phase 723 already documented for world-*loading*).
+  blocker Phase 723 already documented for world-*loading*). **Phase
+  931 closes this "unwired" framing outright, not as a further blocker
+  but as confirmed-correct behavior**: a user-supplied direct
+  disassembly (`ISOLE.md`) traces all 31 references to the real `pt2`
+  pointer and finds the compiled game's own *random* map generator
+  never assigns it a real terrain either -- it explicitly resets `pt2`
+  to `noterr` right after picking a cell's primary terrain. Islands
+  only ever come from the fixed "Earth" scenario map's own data table
+  (a separate, historical fixed-map import this project already
+  deliberately excludes) or from loading a save. See `worldgen/
+  province_tax.py`'s own Phase 931 addendum for the full citation.
 
   The same document also disassembles the exact address this project's
   own `IRAND_RANGE = 32768` constant was sourced from (raw
