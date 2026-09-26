@@ -36549,14 +36549,23 @@ supply of any of these doesn't have to be re-derived from scratch:
   side of Part_Sea was already fully wired before this phase
   (`record_spell_world_events()`'s own `_BYSTANDER_SPELL_NOTICE_SPELLS`
   branch, `render_bystander_spell_notice()`) -- only the caster's own
-  private ACTION REPORT line was missing. **Still genuinely open**:
+  private ACTION REPORT line was missing. ~~**Still genuinely open**:
   Earthquake shares this exact simple shape (province_name only, already
   in `_BYSTANDER_SPELL_NOTICE_SPELLS` too) but no successful real
   Earthquake cast survives in either fixture corpus to confirm its own
   opening-clause convention the same decisive way Part_Sea's fixture
   did (the one real Earthquake mention found, `SE3__T9.K1`, is a
   *fizzled* cast, a different template entirely) -- left unwired here
-  rather than asserting an unconfirmed guess. Flood/Plague (need
+  rather than asserting an unconfirmed guess.~~ -- **closed in Phase
+  942** by direct inference from the Pascal source itself, not a guess:
+  `SAY.PAS`'s own `_SQuake: Sps(Earthquake,S_Comm)` sits in the exact
+  same "_S*" dispatch group, at the same severity, with the same
+  single-call shape (no separate bystander-only label) as `_SPart:
+  Sps(Part_Sea,S_Comm)` immediately above it -- the same group Phase 938
+  already established is the top-level CAST action's own dispatch, and
+  the shape Part_Sea's own real fixture text just confirmed does get the
+  opening clause. See `describe_turn_results()`'s own Phase 942 dispatch
+  comment for the full derivation. Flood/Plague (need
   `army_names`, not yet captured by their own `_execute_*()` functions)
   and Illus_Terrain/Hide_Feature (need `terrain_name`/`feature_name`,
   larger gaps of their own) remain unwired for the reasons already
