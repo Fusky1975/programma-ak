@@ -299,6 +299,40 @@ def roll_title_fanaticism(office: Office | None, rng: random.Random) -> bool:
     return rng.random() < TITLE_FANATICISM_CHANCE.get(office, 0.0)
 
 
+def quality_modifier_delta(
+    *,
+    desert_without_camels: bool = False,
+    is_home_province: bool = False,
+    is_fanatical: bool = False,
+    druidic_shortfall: int = 0,
+    race_item_bonus: int = 0,
+) -> int:
+    """The raw, unclamped, un-based sum of every rulebook quality
+    modifier below -- ``modified_quality()`` is just ``int(base_quality)
+    + quality_modifier_delta(...)``, clamped. Split out (Phase 932) so a
+    caller that needs the *signed delta itself*, not a shifted
+    ``Quality``, has one -- see ``turn/battle_orchestrator.py
+    _qual_modfr_score_by_army_id()``'s own Phase 932 addendum for why:
+    the real compiled game's own ``Qual_Modfr`` function (rulebook
+    [7.5]'s post-battle quality-*gain* multiplier input) returns exactly
+    this kind of raw signed modifier sum, not a shifted ``Quality``.
+    ``is_fanatical`` is deliberately excluded from that reuse (see this
+    function's own Phase 932 note below) -- included here only for
+    ``modified_quality()``'s own, wider rulebook-modifier-list purpose.
+    """
+
+    delta = 0
+    if desert_without_camels:
+        delta -= 1
+    delta -= druidic_shortfall
+    if is_home_province:
+        delta += 1
+    if is_fanatical:
+        delta += 1
+    delta += race_item_bonus
+    return delta
+
+
 def modified_quality(
     base_quality: Quality,
     *,
@@ -324,15 +358,13 @@ def modified_quality(
     0 so every pre-Phase-279 call site is unaffected.
     """
 
-    level = int(base_quality)
-    if desert_without_camels:
-        level -= 1
-    level -= druidic_shortfall
-    if is_home_province:
-        level += 1
-    if is_fanatical:
-        level += 1
-    level += race_item_bonus
+    level = int(base_quality) + quality_modifier_delta(
+        desert_without_camels=desert_without_camels,
+        is_home_province=is_home_province,
+        is_fanatical=is_fanatical,
+        druidic_shortfall=druidic_shortfall,
+        race_item_bonus=race_item_bonus,
+    )
     level = max(int(Quality.DEPLETED), min(int(Quality.ELITE), level))
     return Quality(level)
 
