@@ -1321,6 +1321,7 @@ from ak_engine.models.enums import (
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import ALIGNMENT_ABBREVIATION, ALIGNMENT_BY_ORDINAL, ALIGNMENT_ORDINAL, Alignment
 from ak_engine.models.army_naming import make_army_name
+from ak_engine.turn.army_naming import make_army_ordinal
 from ak_engine.models.army_type import (
     ARMY_TYPE_DESIGNATION,
     ARMY_TYPE_NAME,
@@ -3860,6 +3861,78 @@ def render_bless_graveyard_outcome(
     return render(BLESS_GRAVEYARD_CLEARED_TEMPLATE, {}, rng=rng, lists={"=": army_names})
 
 
+# HostAK/TP/SAY.PAS `_SNoSkel`: "no skeletons answered the spell's call."
+# (S_PCom, no standalone `.X`/`.X2` file -- real, hardcoded `Say()` text,
+# the same "no file, but real and sourced" category `_ABDestr`/`_BFun`/
+# `_BSpeech` above already established) -- Skeletal Army's own real
+# "nothing to raise" outcome (`turn/cast_execution.py
+# _execute_skeletal_army()`'s own Phase 936 correction: this used to be
+# reported as a failed cast, `applied=False`, whenever the province's
+# own graveyard was empty; real fixture text (`SE3__T11.K1`: "In late
+# summer, I cast a Skeletal Army spell and no skeletons answered the
+# spell's call.") shows the cast still succeeds, narrating this sentence
+# instead of the ordinary `SPELL_CAST_ANNOUNCEMENT[Spell.SKELETAL_ARMY]`
+# one). Follows the same `CAST_SPELL_OPENING_CONTINUED_TEMPLATE` opening
+# clause as a real raise ("< cast a ~ spell and ..." -- Skeletal_Army
+# isn't one of `CAST_SPELL_OPENING_COMPLETE_SPELLS`'s 3 exceptions).
+SKELETAL_ARMY_NONE_RAISED_TEMPLATE = "no skeletons answered the spell's call."
+
+
+def render_skeletal_army_outcome(caster_name: str, raised_armies: list[ArmyState], rng: random.Random) -> str:
+    """Renders Skeletal Army's own real cast outcome -- see the module
+    comment above ``SKELETAL_ARMY_NONE_RAISED_TEMPLATE`` for the "nothing
+    raised" case's own sourcing.
+
+    A real raise (``raised_armies`` non-empty) reuses ``render_cast_
+    announcement()`` as-is, with each raised army's own real
+    ``army_id``-based ordinal name -- **not** ``turn/army_naming.py
+    make_army_display_name()`` (that function's own "Skel"-abbreviated,
+    ``ARMY_TYPE_DESIGNATION``-based form is the real Army List *table*'s
+    own column convention, confirmed distinct from this narrative-prose
+    context by direct fixture comparison: the table shows "108th Skel
+    Bowmen"/"250th Skel Bowmen", but this exact same cast's own narration
+    line reads "the 250th Skeletal Bowmen... arose from the graves of the
+    dead!" -- spelled out in full, and using ``ARMY_TYPE_NAME``'s own
+    full designation ("Light Cavalry", not ``ARMY_TYPE_DESIGNATION``'s
+    "Lt Cav") too, confirmed against `SE3__T8.K1`'s own "the 227th Light
+    Cavalry" (Bless's own graveyard-cleared list, same full-name
+    convention)). Built here directly (``make_army_ordinal()`` + literal
+    "Skeletal" + ``ARMY_TYPE_NAME``) rather than reusing that function.
+
+    **Every raised army gets "Skeletal" here, a documented, majority-
+    supported default, not a fully confirmed rule.** The large majority
+    of real multi-army examples mark every single raised army this way
+    (`SE3__T10.K1`: "the 250th Skeletal Bowmen, the 172nd Skeletal
+    Legion, the 191st Skeletal Legion and the 192nd Skeletal Chariots
+    arose..."; `SE3__T7.K1`: all 5 of one cast's own raised armies
+    marked) -- but two real counter-examples exist in the same corpus
+    where one army in an otherwise-all-marked list is narrated *without*
+    "Skeletal" (`SE3__T10.K1`: "the 20th Legion, the 74th Camel Corps,
+    the 209th Skeletal Warg Riders and the 230th Legion arose..." -- only
+    1 of 4 marked; `SE3__T8.K1`: "the 282nd Skeletal Legion, the 283rd
+    Legion and the 284th Skeletal Chariots arose..." -- 2 of 3 marked),
+    with no confirmed rule distinguishing them (`turn/army_naming.py`'s
+    own module docstring already flags the underlying real `Zomboid`
+    state's own assignment trigger as unrecoverable from the available
+    source -- this project's own ``ArmyState.is_skeletal=True`` for
+    every army this spell raises, unconditionally, is itself already
+    that same kind of best-motivated default, not a confirmed mapping).
+    Kept honest about the ambiguity rather than silently picking one
+    reading and calling it settled.
+    """
+
+    if not raised_armies:
+        return render(
+            CAST_SPELL_OPENING_CONTINUED_TEMPLATE + SKELETAL_ARMY_NONE_RAISED_TEMPLATE,
+            {"<": caster_name, "~": SPELL_NAME[Spell.SKELETAL_ARMY]},
+            rng=rng,
+        )
+    army_names = [
+        f"the {make_army_ordinal(army.army_id)} Skeletal {ARMY_TYPE_NAME[army.army_type]}" for army in raised_armies
+    ]
+    return render_cast_announcement(Spell.SKELETAL_ARMY, caster_name, rng, army_names=army_names)
+
+
 def describe_cast(
     result: CastExecutionResult,
     *,
@@ -3904,11 +3977,24 @@ def describe_cast(
     announcement (``render_bless_graveyard_outcome()``, reading
     ``result.bless_graveyard_cleared``) -- see that function's own
     docstring for the full sourcing. Every other spell is unaffected.
+
+    **Phase 936**: ``Spell.SKELETAL_ARMY`` is handled by a wholly
+    separate renderer (``render_skeletal_army_outcome()``, reading
+    ``result.skeletal_army_raised``) rather than this function's own
+    ``render_cast_announcement()`` call below -- an empty raise (a real,
+    possible outcome as of that same phase) has no ``army_names`` to
+    supply, which ``render_cast_announcement()`` itself would reject
+    outright (``_CAST_ANNOUNCEMENT_ARMY_LIST_SPELLS`` requires a
+    non-empty list), so this spell needs its own real/empty branch
+    picked *before* that call, not appended after it like Bless's own
+    companion sentence.
     """
 
     if not result.applied:
         return None
     spell = result.request.spell
+    if spell is Spell.SKELETAL_ARMY:
+        return render_skeletal_army_outcome(caster_name, result.skeletal_army_raised, rng)
     line = render_cast_announcement(
         spell,
         caster_name,
@@ -8373,6 +8459,16 @@ def describe_turn_results(
                 coord = decode_hex_number(entry.result.request.target, board_width)
                 province_name = _province_label(state, coord)
                 line = describe_cast(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                if line is not None:
+                    lines.append(line)
+                continue
+            if spell is Spell.SKELETAL_ARMY:
+                # Phase 936: a `NO_TARGET_SPELLS` entry (`cast_decode.py`)
+                # -- no leader/province target to resolve at all, so this
+                # needs neither `_leader_name()` nor `board_width` the way
+                # Bless above does; `describe_cast()`'s own dedicated
+                # branch reads `result.skeletal_army_raised` directly.
+                line = describe_cast(entry.result, caster_name=caster_name, rng=rng)
                 if line is not None:
                     lines.append(line)
                 continue
