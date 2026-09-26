@@ -4065,6 +4065,50 @@ def render_charm_outcome(target_name: str, caster_name: str, rng: random.Random)
     return render(CHARM_SUCCESS_TEMPLATE, {"[1": target_name, "<2": caster_name}, rng=rng)
 
 
+# HostAK/TP/SAY.PAS `_STerIl`: "the ~ terrain of @ was magically made to
+# appear as `." (S_Comm, `Concat(...)`, no `SPNOTE.X2` dispatch) --
+# Illusory Terrain's own real, confirmed top-level-cast text (Phase 943),
+# the exact same template `render_illus_terrain_world_event()` (below)
+# already renders for the bystander/GIR view, just with the ordinary
+# `< cast a ~ spell and ` opening prepended for the caster's own private
+# line. Confirmed by real fixture text: `SE3__T11.K1` (line 1084-1086)
+# shows "I cast a Illusory Terrain spell and the Plain terrain of Kajaani
+# was magically made to appear as Mountain." -- exactly `_STerIl`'s
+# template with the opening clause, never `SPELL_CAST_ANNOUNCEMENT[Spell.
+# ILLUS_TERRAIN]`'s own catalog entry ("X had an illusion cast upon it.
+# It was actually a Y province.").
+#
+# **That catalog entry is real text, just for a different, separate
+# dispatch**: `SAY.PAS`'s own `_LSeeI: Sps(Illus_Terrain,S_Red)` (line
+# 749) is a *different* label from `_STerIl` (line 981) -- sitting among
+# movement/exploration-context labels (far-away rumor-telling, icecap
+# movement descriptions), not the "_S*" top-level-cast group `_STerIl`/
+# `_SPart`/`_SQuake`/`_SCharm`/etc. belong to. The same two real fixture
+# hits confirm this independently: `SE3__T9.K1`/`SE3__T11.K1` both show
+# "Alaric marched his forces into Maplehaven"/"Teleko flew over to
+# Maplehaven" immediately followed by "Maplehaven had an illusion cast
+# upon it. It was actually a Forest province." -- a *movement* action
+# discovering the illusion firsthand, not a cast announcement (no "I cast
+# a ~ spell" anywhere nearby, a different kingdom's own leader in both
+# cases). This movement-discovery reveal has no wiring anywhere in this
+# project yet (Move/Explore narration has no "entered an illusioned
+# province" branch) -- a real, confirmed, still-open gap, left unbuilt
+# here rather than guessed at, the same "the text is real, the trigger
+# condition isn't modeled yet" shape as Scar Terrain's own `_STFite`
+# before Phase 721/722.
+def render_illus_terrain_cast_outcome(
+    caster_name: str, real_terrain_name: str, province_name: str, fake_terrain_name: str, rng: random.Random
+) -> str:
+    """Renders Illusory Terrain's own real top-level-cast outcome -- see
+    the module comment above for the full sourcing and the correction
+    this makes to the previously-assumed ``SPELL_CAST_ANNOUNCEMENT[Spell.
+    ILLUS_TERRAIN]`` dispatch.
+    """
+
+    opening = render(CAST_SPELL_OPENING_CONTINUED_TEMPLATE, {"<": caster_name, "~": SPELL_NAME[Spell.ILLUS_TERRAIN]}, rng=rng)
+    return opening + render_illus_terrain_world_event(real_terrain_name, province_name, fake_terrain_name, rng)
+
+
 def describe_cast(
     result: CastExecutionResult,
     *,
@@ -4073,6 +4117,7 @@ def describe_cast(
     target_name: str | None = None,
     province_name: str | None = None,
     terrain_name: str | None = None,
+    real_terrain_name: str | None = None,
     army_names: list[str] | None = None,
     feature_name: str | None = None,
 ) -> str | None:
@@ -4137,6 +4182,17 @@ def describe_cast(
     through ``render_cast_announcement()`` as before, including the
     Phase 938 fix for Resurrection/Oratory/Clairvoyance's own missing
     opening clause (handled inside that function itself, not here).
+
+    **Phase 943**: ``Spell.ILLUS_TERRAIN`` gets the same "wholly separate
+    renderer" treatment as Tornado/Charm, for the same reason --
+    ``SPELL_CAST_ANNOUNCEMENT[Spell.ILLUS_TERRAIN]``'s own catalog entry
+    turned out to be real text for a *different* dispatch (``_LSeeI``, a
+    still-unwired movement-discovery reveal), not the top-level CAST
+    action's own text (``_STerIl``, see ``render_illus_terrain_cast_
+    outcome()``'s own docstring for the full derivation). Needs a new
+    ``real_terrain_name`` this function's other callers never needed --
+    Illusory Terrain is the only spell whose real text names *two*
+    different terrains (the true one and the illusory one).
     """
 
     if not result.applied:
@@ -4152,6 +4208,10 @@ def describe_cast(
         if target_name is None:
             raise ValueError(f"{spell!r} needs target_name")
         return render_charm_outcome(target_name, caster_name, rng)
+    if spell is Spell.ILLUS_TERRAIN:
+        if province_name is None or terrain_name is None or real_terrain_name is None:
+            raise ValueError(f"{spell!r} needs province_name, real_terrain_name, and terrain_name")
+        return render_illus_terrain_cast_outcome(caster_name, real_terrain_name, province_name, terrain_name, rng)
     line = render_cast_announcement(
         spell,
         caster_name,
@@ -4486,6 +4546,7 @@ def describe_use_mi(
     target_name: str | None = None,
     province_name: str | None = None,
     terrain_name: str | None = None,
+    real_terrain_name: str | None = None,
     army_names: list[str] | None = None,
     book_name: str | None = None,
     ability_name: str | None = None,
@@ -4533,6 +4594,7 @@ def describe_use_mi(
             target_name=target_name,
             province_name=province_name,
             terrain_name=terrain_name,
+            real_terrain_name=real_terrain_name,
             army_names=army_names,
         )
     if result.ability_boosted is not None and book_name is not None and ability_name is not None:
@@ -8694,6 +8756,38 @@ def describe_turn_results(
                 coord = decode_hex_number(entry.result.request.target, board_width)
                 province_name = _province_label(state, coord)
                 line = describe_cast(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                if line is not None:
+                    lines.append(line)
+                continue
+            if spell is Spell.ILLUS_TERRAIN:
+                # Phase 943: a fifth province-targeted Cast spell wired
+                # here -- unlike Bless/Tornado/Earthquake/Part_Sea, needs
+                # two terrain names (the real one, read from `province.
+                # terrain` the same way `record_spell_world_events()`
+                # already does for the bystander/GIR view; the fake one,
+                # from `request.terrain`, `cast_decode.py`'s own
+                # `phase.extra[1]`), not just `province_name`. Silently
+                # skipped (like the other branches) without board_width,
+                # or if the province itself is unknown, or if the request
+                # carries no valid `Terrain` (an undecodable `phase.
+                # extra[1]`, `cast_decode.py`'s own documented fallback).
+                if board_width is None:
+                    continue
+                coord = decode_hex_number(entry.result.request.target, board_width)
+                province = state.provinces.get(coord)
+                if province is None or not isinstance(entry.result.request.terrain, Terrain):
+                    continue
+                province_name = _province_label(state, coord)
+                real_terrain_name = TERRAIN_NAME[province.terrain]
+                fake_terrain_name = TERRAIN_NAME[entry.result.request.terrain]
+                line = describe_cast(
+                    entry.result,
+                    caster_name=caster_name,
+                    rng=rng,
+                    province_name=province_name,
+                    terrain_name=fake_terrain_name,
+                    real_terrain_name=real_terrain_name,
+                )
                 if line is not None:
                     lines.append(line)
                 continue
