@@ -5248,6 +5248,24 @@ def test_compose_letter_report_includes_illusory_terrain_reveal_for_a_privileged
     assert "In spring, the Plain terrain of Border Fort was magically made to appear as Mountain." in lines_for_kingdom_3
 
 
+def test_compose_letter_report_includes_tornado_victim_notice_for_the_affected_kingdom():
+    # Phase 939: state.tornado_victim_notices_by_kingdom is set up
+    # directly here, isolating compose_letter_report()'s own reading/
+    # folding behavior from record_spell_world_events()'s own rendering,
+    # tested separately.
+    state = GameState()
+    state.add_kingdom(KingdomState(3, "Watchia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(2, 2)))
+    state.add_leader(LeaderState(3, 3, "Cedric", HexCoord(2, 2), is_king=True))
+    state.tornado_victim_notices_by_kingdom[3] = [
+        "In spring, Tornadoes sucked up the 20th Legion in Border Fort and destroyed them."
+    ]
+
+    lines_for_kingdom_3 = compose_letter_report([], state, 3, ScriptedRandom([]))
+
+    assert "ACTION REPORT" in lines_for_kingdom_3
+    assert "In spring, Tornadoes sucked up the 20th Legion in Border Fort and destroyed them." in lines_for_kingdom_3
+
+
 def test_describe_challenge_delegates_to_describe_encounter_combat():
     result = ChallengeExecutionResult(
         accepted=True,
@@ -14459,7 +14477,11 @@ def test_record_spell_world_events_records_a_successful_earthquake():
     assert state.world_events[0].lines == ["In spring, Border Fort was devastated by an earthquake!"]
 
 
-def test_record_spell_world_events_still_skips_tornado():
+def test_record_spell_world_events_still_skips_tornado_world_events_with_nothing_destroyed():
+    # Tornado never populates state.world_events (no S_Comm dispatch
+    # exists for it) -- unchanged by Phase 939's own new S_AA victim-
+    # notice branch below, which only fires when tornado_destroyed is
+    # non-empty (see the dedicated tests for that).
     state, battle_coord, _watcher_coord = _gir_state()
     board_width = NORMAL_MAP_BOUNDS[0]
     request = CastRequest(spell=Spell.TORNADO, target=encode_hex_number(battle_coord, board_width))
@@ -14471,6 +14493,65 @@ def test_record_spell_world_events_still_skips_tornado():
     record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
 
     assert state.world_events == []
+    assert state.tornado_victim_notices_by_kingdom == {}
+
+
+def test_record_spell_world_events_tornado_notifies_a_victim_kingdom():
+    # Phase 939: SAY.PAS's own real _ATDestr (Sps(Tornado,S_AA)) --
+    # confirmed by real fixture text showing this exact sentence appear
+    # bare inside the VICTIM's own letter, not the caster's.
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    state.add_kingdom(KingdomState(9, "Victimia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
+    request = CastRequest(spell=Spell.TORNADO, target=encode_hex_number(battle_coord, board_width))
+    destroyed = [ArmyState(20, 9, ArmyType.LEGION, Quality.AVERAGE, battle_coord)]
+    result = CastExecutionResult(request, applied=True, tornado_destroyed=destroyed)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert state.world_events == []  # still no S_Comm/GIR visibility
+    notices = state.tornado_victim_notices_by_kingdom[9]
+    assert len(notices) == 1
+    assert notices[0].endswith("Tornadoes sucked up the 20th Legion in Border Fort and destroyed them.")
+
+
+def test_record_spell_world_events_tornado_excludes_the_casters_own_kingdom():
+    # The caster's own kingdom (leader_id=1 -> kingdom_id=1, see
+    # _gir_state()) already sees every destroyed army via their own
+    # private describe_cast() view -- no duplicate notice here.
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    request = CastRequest(spell=Spell.TORNADO, target=encode_hex_number(battle_coord, board_width))
+    destroyed = [ArmyState(20, 1, ArmyType.LEGION, Quality.AVERAGE, battle_coord)]
+    result = CastExecutionResult(request, applied=True, tornado_destroyed=destroyed)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert state.tornado_victim_notices_by_kingdom == {}
+
+
+def test_record_spell_world_events_tornado_skips_an_unowned_destroyed_army():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    request = CastRequest(spell=Spell.TORNADO, target=encode_hex_number(battle_coord, board_width))
+    destroyed = [ArmyState(20, None, ArmyType.LEGION, Quality.AVERAGE, battle_coord)]
+    result = CastExecutionResult(request, applied=True, tornado_destroyed=destroyed)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert state.tornado_victim_notices_by_kingdom == {}
 
 
 # -- Phase 722: render_scar_terrain_cast_notice() / render_scar_terrain_zero() /
