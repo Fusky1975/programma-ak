@@ -1638,6 +1638,7 @@ def test_tornado_destroys_units_that_roll_under_the_per_level_chance():
     assert result.applied is True
     assert 1 not in state.armies  # own army destroyed too -- no ownership exemption
     assert 2 in state.armies
+    assert [a.army_id for a in result.tornado_destroyed] == [1]
 
 
 def test_tornado_destroys_nothing_when_caster_has_no_recorded_level():
@@ -1651,6 +1652,7 @@ def test_tornado_destroys_nothing_when_caster_has_no_recorded_level():
 
     assert result.applied is True
     assert 1 in state.armies  # unknown level -> 0% chance, nothing destroyed
+    assert result.tornado_destroyed == []
 
 
 def test_tornado_giant_fan_downgrades_quality_instead_of_destroying():

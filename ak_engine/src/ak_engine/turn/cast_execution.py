@@ -1112,6 +1112,18 @@ class CastExecutionResult:
     # those two cases are no longer distinguished. ``[]`` for every
     # other spell.
     skeletal_army_raised: list[ArmyState] = field(default_factory=list)
+    # Phase 937: a successful Tornado's own real destroyed armies
+    # (``ArmyState`` snapshots taken right before ``state.remove_army()``
+    # -- the ``ArmyState`` objects themselves are otherwise gone from
+    # ``state.armies`` by the time a caller could read this). Needed by
+    # ``report/turn_report.py render_tornado_outcome()`` to build each
+    # one's own real "the Nth <ArmyType>" display name. Empty both when
+    # the roll missed and when nothing was actually destroyed (every
+    # army present was Giant-Fan-defended, or there were no armies at
+    # all in the target province) -- that companion sentence reads the
+    # same either way, matching Bless's own identical convention.
+    # ``[]`` for every other spell.
+    tornado_destroyed: list[ArmyState] = field(default_factory=list)
 
 
 def execute_cast(
@@ -2257,6 +2269,17 @@ def _execute_tornado(
     ``kingdom_id`` (the rulebook's "own and allied units aren't exempt"
     reading applies equally to which armies get the *defended* outcome:
     each army's own Kingdom decides, not the province owner's).
+
+    **Phase 937**: every actually-destroyed ``ArmyState`` (captured
+    *before* ``state.remove_army()``) now survives on
+    ``CastExecutionResult.tornado_destroyed`` -- previously computed
+    only as a state mutation with no record kept, leaving
+    ``report/turn_report.py`` with no way to render the real
+    "Tornadoes sucked up the Nth <ArmyType> in @ and destroyed them."
+    sentence real fixture text confirms (`SE3__T5`/`T6`/`T8.K1`). See
+    ``render_tornado_outcome()``'s own docstring for the full
+    derivation, including why it's repeated once per destroyed army
+    rather than joined into one list.
     """
 
     caster = state.leaders[leader_id]
@@ -2272,6 +2295,7 @@ def _execute_tornado(
 
     chance = TORNADO_DESTROY_CHANCE_PER_LEVEL * _caster_level(state, caster, Ability.ELEMENTAL, wand_skill_level)
     defended = False
+    destroyed: list[ArmyState] = []
     for army in list(state.armies_at(coord)):
         if army.kingdom_id is not None and Discovery.GIANT_FAN in state.kingdoms[army.kingdom_id].discoveries:
             defended = True
@@ -2279,9 +2303,10 @@ def _execute_tornado(
                 army.quality = quality_one_level_down(army.quality)
             continue
         if rng.random() < chance:
+            destroyed.append(army)
             state.remove_army(army.army_id)
     return CastExecutionResult(
-        request, applied=True, discovery_defended=Discovery.GIANT_FAN if defended else None
+        request, applied=True, discovery_defended=Discovery.GIANT_FAN if defended else None, tornado_destroyed=destroyed
     )
 
 

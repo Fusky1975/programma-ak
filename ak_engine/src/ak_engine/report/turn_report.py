@@ -3838,8 +3838,16 @@ def render_cast_announcement(
 # shape, and the majority of the real examples), not the split,
 # unconfirmed alternative -- kept honest about the ambiguity rather than
 # silently picking the other reading and calling it settled.
+#
+# **Phase 937 cross-check**: Tornado's own real "nothing destroyed"
+# sentence ("The Tornado affected no armies in @.") is worded identically
+# apart from the spell name -- both are `SAY.PAS`'s own shared, generic
+# `_NoDestr: Say('the ~ affected no armies in @.', S_AA)` (`~` = the
+# spell's own display name), not a Bless-specific sentence as first
+# assumed here. `NO_ARMIES_AFFECTED_TEMPLATE` below replaces this
+# function's own original Bless-only constant; output text is unchanged.
 BLESS_GRAVEYARD_CLEARED_TEMPLATE = "The skeletal remains of ^L= were Blessed and permanently destroyed."
-BLESS_GRAVEYARD_UNAFFECTED_TEMPLATE = "The Bless affected no armies in @."
+NO_ARMIES_AFFECTED_TEMPLATE = "The ~ affected no armies in @."
 
 
 def render_bless_graveyard_outcome(
@@ -3856,7 +3864,7 @@ def render_bless_graveyard_outcome(
     """
 
     if not cleared_army_types:
-        return render(BLESS_GRAVEYARD_UNAFFECTED_TEMPLATE, {"@": province_name}, rng=rng)
+        return render(NO_ARMIES_AFFECTED_TEMPLATE, {"~": SPELL_NAME[Spell.BLESS], "@": province_name}, rng=rng)
     army_names = [f"the {ARMY_TYPE_NAME[army_type]}" for army_type in cleared_army_types]
     return render(BLESS_GRAVEYARD_CLEARED_TEMPLATE, {}, rng=rng, lists={"=": army_names})
 
@@ -3933,6 +3941,75 @@ def render_skeletal_army_outcome(caster_name: str, raised_armies: list[ArmyState
     return render_cast_announcement(Spell.SKELETAL_ARMY, caster_name, rng, army_names=army_names)
 
 
+# HostAK/TP/SAY.PAS `_STorn`: "magical tornadoes hit the defenders of @."
+# (S_AA, no standalone `.X`/`.X2` file -- same "real, hardcoded Say()"
+# category as every other module comment above) -- Tornado's own real
+# effect-announcement sentence, confirmed to follow directly after
+# `< cast a ~ spell.` (Tornado is one of `CAST_SPELL_OPENING_COMPLETE_
+# SPELLS`'s 3 exceptions) by extensive real fixture text (`SE3__T5`/`T6`/
+# `T8`/`T11.K1`: "...I cast a Tornado spell.  Magical tornadoes hit the
+# defenders of @.  ...").
+#
+# **Per-destroyed-army repetition, not a combined `^L=` list.** Unlike
+# Bless's own still-ambiguous grouping question, every real multi-army
+# Tornado example is unambiguous and consistent: `SE3__T6.K1` repeats the
+# whole "Tornadoes sucked up the Nth <ArmyType> in @ and destroyed them."
+# sentence 3 times in a row (one per destroyed army); `SE3__T8.K1` twice.
+# Not one single real example joins multiple destroyed armies into one
+# "X, Y and Z" sentence. So this function does *not* reuse
+# `SPELL_CAST_ANNOUNCEMENT[Spell.TORNADO]`'s own `^L=`-based catalog
+# entry at all -- that entry's real dispatch context (if it's ever
+# actually used this way for any spell) remains an open question, not
+# resolved or contradicted by this finding.
+#
+# **No per-army ordinal survives for a Bless-style destroy this project
+# didn't already track** -- unlike Bless's `GraveyardEntry` (no
+# `army_id`), Tornado destroys already-live `ArmyState` objects with a
+# real `army_id`, so the exact real designation *is* reproducible here
+# (see ``render_tornado_outcome()``'s own docstring for why the "Skel"
+# Army-List-table convention still isn't reused).
+#
+# The "nothing destroyed" case reuses the shared `_NoDestr` template
+# (``NO_ARMIES_AFFECTED_TEMPLATE`` above, "The Tornado affected no armies
+# in @." -- confirmed identical wording to Bless's own, up to the spell
+# name) -- always present after the base announcement, whether or not
+# anything was actually destroyed (`SE3__T5.K1`/`T11.K1` both show it
+# immediately after "Magical tornadoes hit the defenders of @.").
+TORNADO_HIT_DEFENDERS_TEMPLATE = "Magical tornadoes hit the defenders of @."
+TORNADO_DESTROYED_TEMPLATE = "Tornadoes sucked up the = in @ and destroyed them."
+
+
+def render_tornado_outcome(
+    caster_name: str, province_name: str, destroyed_armies: list[ArmyState], rng: random.Random
+) -> str:
+    """Renders Tornado's own real cast outcome in full -- see the module
+    comment above ``TORNADO_HIT_DEFENDERS_TEMPLATE`` for the full
+    sourcing, including why every destroyed army gets its own repeated
+    sentence rather than a combined list.
+
+    Each destroyed army's own real designation is built the same way
+    Bless's own graveyard-cleared list is (``ARMY_TYPE_NAME``, no
+    "Skel"/"Skeletal" tag -- no real fixture example shows a Tornado
+    destroying an already-skeletal army with any such marker, unlike
+    Skeletal Army's own raise narration), but *with* the real ``army_id``-
+    based ordinal this time, since Tornado destroys already-live
+    ``ArmyState`` objects (a real id survives) rather than reading a
+    ``GraveyardEntry`` (which never recorded one).
+    """
+
+    lines = [
+        render(CAST_SPELL_OPENING_COMPLETE_TEMPLATE, {"<": caster_name, "~": SPELL_NAME[Spell.TORNADO]}, rng=rng),
+        render(TORNADO_HIT_DEFENDERS_TEMPLATE, {"@": province_name}, rng=rng),
+    ]
+    if not destroyed_armies:
+        lines.append(render(NO_ARMIES_AFFECTED_TEMPLATE, {"~": SPELL_NAME[Spell.TORNADO], "@": province_name}, rng=rng))
+    else:
+        for army in destroyed_armies:
+            name = f"{make_army_ordinal(army.army_id)} {ARMY_TYPE_NAME[army.army_type]}"
+            lines.append(render(TORNADO_DESTROYED_TEMPLATE, {"=": name, "@": province_name}, rng=rng))
+    return "".join(lines)
+
+
 def describe_cast(
     result: CastExecutionResult,
     *,
@@ -3988,6 +4065,14 @@ def describe_cast(
     non-empty list), so this spell needs its own real/empty branch
     picked *before* that call, not appended after it like Bless's own
     companion sentence.
+
+    **Phase 937**: ``Spell.TORNADO`` gets the same "wholly separate
+    renderer" treatment as Skeletal Army, for a different reason --
+    ``SPELL_CAST_ANNOUNCEMENT[Spell.TORNADO]``'s own catalog entry turned
+    out not to match Tornado's real narration at all (see
+    ``render_tornado_outcome()``'s own docstring), so this branch
+    doesn't reuse ``render_cast_announcement()`` even for a real,
+    non-empty destroy list.
     """
 
     if not result.applied:
@@ -3995,6 +4080,10 @@ def describe_cast(
     spell = result.request.spell
     if spell is Spell.SKELETAL_ARMY:
         return render_skeletal_army_outcome(caster_name, result.skeletal_army_raised, rng)
+    if spell is Spell.TORNADO:
+        if province_name is None:
+            raise ValueError(f"{spell!r} needs province_name")
+        return render_tornado_outcome(caster_name, province_name, result.tornado_destroyed, rng)
     line = render_cast_announcement(
         spell,
         caster_name,
@@ -8454,6 +8543,18 @@ def describe_turn_results(
                 # phase for Bless specifically (`_province_label()` is
                 # already used successfully elsewhere in this very
                 # function, e.g. SEARCH/EXPLORE above).
+                if board_width is None:
+                    continue
+                coord = decode_hex_number(entry.result.request.target, board_width)
+                province_name = _province_label(state, coord)
+                line = describe_cast(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                if line is not None:
+                    lines.append(line)
+                continue
+            if spell is Spell.TORNADO:
+                # Phase 937: a second province-targeted Cast spell wired
+                # here, the same `board_width`-gated `decode_hex_number()`/
+                # `_province_label()` pair Bless above already uses.
                 if board_width is None:
                     continue
                 coord = decode_hex_number(entry.result.request.target, board_width)
