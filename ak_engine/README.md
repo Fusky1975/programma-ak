@@ -35729,7 +35729,7 @@ supply of any of these doesn't have to be re-derived from scratch:
       own note above) added exactly this gate
       (`RecruitExecutionResult.territory_blocked`), sourced from the
       same [3.4] paragraph this bullet already cited.
-    - **"1-2 recruitable types per province isn't tracked"** is only
+    - ~~**"1-2 recruitable types per province isn't tracked"** is only
       half true now. The real per-province data (`Mod_PAT(px,py,0)`/
       `Mod_PAT(px,py,1)`) genuinely *is* tracked with precision as of
       **Phase 278** -- `ProvinceState.recruit_type_1`/
@@ -35747,7 +35747,24 @@ supply of any of these doesn't have to be re-derived from scratch:
       is never enforced -- levying a real province's *third*,
       race-compatible-but-not-`Mod_PAT`-listed army type still
       succeeds today, when the rulebook's own Recruiting Types table
-      says it shouldn't.
+      says it shouldn't.~~ -- **Phase 934: this exact duplicate copy of
+      the same finding this section's own opening bullet already warns
+      about ("closed elsewhere, TODO list never updated") -- fully
+      closed as of Phase 407 (found stale in a Phase 410-607 re-audit,
+      Phase 609), and correctly recorded as closed in this README's
+      sibling "Known-unresolved semantics" section's own
+      `is_native_to_province` bullet, but never updated here too.**
+      `execute_recruit()` now reads `ProvinceState.recruit_type_1`/
+      `recruit_type_2` directly whenever a province was bridged from a
+      real `GW3` world file, falling back to the looser
+      `is_army_type_compatible_with_race()` reading only when that data
+      isn't available (e.g. a hand-built test fixture) -- a
+      race-compatible-but-unlisted type still recruits, at double cost
+      (`RecruitResolution.is_double_cost`, a mechanic Phase 4 had
+      already built for exactly this case but that this precise data
+      could never reach until now). See `turn/recruit_execution.py`'s
+      own Phase 407 addendum for the full derivation. Nothing left open
+      in this bullet.
   - **Hire's remaining gaps** (see Phase 17's note above): a Hero's own
     "required pay" (may be less than the offer, depends on
     temper/race/alignment compatibility -- `models/temper.py Temper`
