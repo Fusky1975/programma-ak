@@ -89,13 +89,44 @@ to an equivalent float threshold).
 **Deliberately NOT implemented here**, each a genuine, separately
 documented gap:
 
-- ``island_tax()``'s own wiring: the *formula* is fully resolved (see
+- ~~``island_tax()``'s own wiring: the *formula* is fully resolved (see
   above), but ``place_map`` (Phase 354) only ever assigns one terrain
   per cell at world-*creation* time -- this generator still has no
   ``pt2`` input to feed the function. A real, separate, still-open gap
   in world *generation* (this module), distinct from the world-
   *loading* ``pt2`` bridge Phase 723 already built (``ProvinceState.
-  is_island``, ``parser/gw_world_bridge.py bridge_gw_world_provinces()``).
+  is_island``, ``parser/gw_world_bridge.py bridge_gw_world_provinces()``).~~
+  -- **closed in Phase 931: not a gap, confirmed correct as-is.**
+  User-supplied disassembly (``ISOLE.md``, direct static analysis of
+  ``AKGEN.EXE``, SHA-256 ``f0b3c28f...1bc7d``) traces every one of the
+  31 direct references to the ``pt2`` far-pointer (``DS:941B``) in the
+  binary and classifies each one: initialization to ``noterr``, a
+  reset to ``noterr`` immediately after the *random* terrain-picker
+  routine assigns a primary terrain (raw ``0x2053E``/``0x20569`` --
+  the exact routine this module's own ``place_map``/``terrain_picker``
+  sourcing already reimplements), an import from the fixed **Earth**
+  scenario map file (``gametyp=3``, raw ``0x105D5``, a literal
+  per-province second digit read from ``EARTH.TXT``, no RNG call
+  anywhere between the read and the write), and an import from a saved
+  game's own state file (the already-handled ``ProvinceState.is_island``
+  loading path). No unclassified reference remains that could hide a
+  random secondary-terrain draw. **The compiled *random* map generator
+  this project actually reimplements genuinely never assigns ``pt2`` a
+  real terrain at all -- it explicitly resets it to ``noterr`` every
+  time.** Islands only ever exist in that build via the fixed Earth
+  scenario's own 450-province data table (42 of them, real coordinates
+  and secondary terrains fully inventoried in ``ISOLE.md``) -- a
+  separate, historical fixed-map import this project already
+  deliberately excludes (see ``worldgen/map_shape.py``'s own "the fixed
+  Europe/Earth maps this project doesn't parse" note). So this
+  project's own random generator correctly has no ``pt2`` input to
+  feed ``island_tax()`` -- matching the real compiled game's own random
+  branch exactly, not an incomplete port of it. `island_tax()` stays
+  shipped as a standalone, tested primitive for the world-*loading*
+  path (Phase 723) and for a possible future Earth-scenario-import
+  feature, should this project ever add one -- neither needs the
+  formula to change, only a real ``pt2`` source to feed it, which the
+  random generator itself was never going to have.
 - The interactive ``+``/``-`` placement override (bounded 0..10) --
   this is a human game-master UI action during map setup, not part of
   automatic generation; this project has no interactive placement
