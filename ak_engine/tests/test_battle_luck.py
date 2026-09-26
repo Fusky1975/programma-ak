@@ -12,9 +12,9 @@ from ak_engine.turn.battle_luck import (
     LATER_TURN_LUCK_COEFFICIENT,
     LUCKINT2_TEMPLATE,
     LUCKINT_TEMPLATE,
+    apply_bres_tie_correction,
     bluck_cluck_uses_secondary_catalog,
     bluck_event_index,
-    break_bres_tie,
     cluck_event_index,
     column_narration_eligible,
     draw_global_luck,
@@ -99,31 +99,59 @@ def test_bluck_and_cluck_distributions_match_the_akgen_probability_tables():
     assert abs(cluck_neutral / n * 100 - 4.9375) < 0.5
 
 
-# -- Phase 347: break_bres_tie() -- the summed-BRES tie-break ------------
+# -- Phase 933: apply_bres_tie_correction() -- the real last-column
+# BRES tie-break, superseding Phase 347's own break_bres_tie() coin-flip-
+# for-a-side guess (see that function's own docstring in git history) --
 
 
-def test_break_bres_tie_always_returns_one_of_the_two_sides():
-    rng = random.Random(347)
-    for _ in range(1000):
-        assert break_bres_tie(rng) in ("side1", "side2")
+def test_apply_bres_tie_correction_is_a_noop_when_not_actually_tied():
+    # running_total_before + bres != 0 -- the while loop's own condition
+    # is never true, so no rng draw happens at all and bres is returned
+    # unchanged (an rng that raises on any draw proves this).
+    class _ExplodingRandom(random.Random):
+        def random(self):
+            raise AssertionError("should not draw when there's no tie to break")
+
+    assert apply_bres_tie_correction(3, running_total_before=2, rng=_ExplodingRandom()) == 3
+    assert apply_bres_tie_correction(-1, running_total_before=0, rng=_ExplodingRandom()) == -1
 
 
-def test_break_bres_tie_is_roughly_50_50_over_many_calls():
-    rng = random.Random(3470)
-    winners = [break_bres_tie(rng) for _ in range(TRIALS)]
-    side1_share = sum(1 for w in winners if w == "side1") / len(winners)
-    assert abs(side1_share - 0.5) < TOLERANCE
+def test_apply_bres_tie_correction_corrects_an_exact_zero_sum():
+    # prima=0 (0.1 -> Trunc(2*0.1)=0), seconda=1 (0.9 -> Trunc(2*0.9)=1):
+    # bres = 0 + (1-0) = 1 -- the same real R01 pair this project's own
+    # _luck_draws()/ScriptedRandom test fixtures already script for a
+    # forced tie (test_battle_resolution.py).
+    rng = ScriptedRandom([0.1, 0.9])
+
+    assert apply_bres_tie_correction(0, running_total_before=0, rng=rng) == 1
 
 
-def test_break_bres_tie_terminates_even_when_the_coin_always_lands_the_same():
-    # A degenerate rng that always returns the same value would make
-    # `side1_heads == side2_heads` forever -- guard against an infinite
-    # loop by bounding the number of draws a real random.Random needs in
+def test_apply_bres_tie_correction_never_returns_a_sum_that_is_still_zero():
+    rng = random.Random(933)
+    for running_total_before in range(-3, 4):
+        corrected = apply_bres_tie_correction(-running_total_before, running_total_before, rng)
+        assert running_total_before + corrected != 0
+
+
+def test_apply_bres_tie_correction_applies_no_second_clamp():
+    # BRES.md's own explicit note: no clamp after the tie-break. A last
+    # column already at the +5 clamp ceiling, with a running total that
+    # makes -5+5=0 a tie, gets corrected by +1 (prima=0, seconda=1) to
+    # +6 -- outside column_bres's own -5..5 range, and left that way.
+    rng = ScriptedRandom([0.1, 0.9])
+
+    assert apply_bres_tie_correction(5, running_total_before=-5, rng=rng) == 6
+
+
+def test_apply_bres_tie_correction_terminates_even_when_the_coin_always_lands_the_same():
+    # A degenerate rng that always draws the same R01 value keeps
+    # seconda-prima == 0 forever -- guard against an infinite loop by
+    # bounding the number of draws a real random.Random needs in
     # practice (expected 2 draws per round, astronomically unlikely to
     # need more than a few hundred).
     rng = random.Random(999)
-    for _ in range(50):
-        break_bres_tie(rng)
+    for running_total_before in range(-5, 6):
+        apply_bres_tie_correction(-running_total_before, running_total_before, rng)
 
 
 # -- Phase 388/584: BLUCK/CLUCK/CLUCK2 narration text --------------------

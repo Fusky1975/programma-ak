@@ -26,9 +26,10 @@ def _luck_draws(num_columns: int, *, g1: float = 0.5, g2: float = 0.5, local: fl
     column (Phase 370's real, always-applied luck consumption order),
     followed by a 2-value safety pair (`0.1, 0.9`) appended at the end:
     if a scripted battle's own summed `BRES` nets to exactly zero,
-    `break_bres_tie` needs a couple more draws, and `0.1, 0.9` guarantees
-    an immediate mismatch (side1 heads, side2 tails) on its first round
-    rather than running the scripted rng dry.
+    `apply_bres_tie_correction` (Phase 933) draws exactly this pair as
+    the last column's own `prima`/`seconda` R01 coins (`0.1 ->
+    Trunc(2*0.1)=0`, `0.9 -> Trunc(2*0.9)=1`, correcting that column's
+    `BRES` by `+1`) rather than running the scripted rng dry.
     """
 
     draws = [g1, g2]
@@ -97,8 +98,9 @@ def test_resolve_battle_defender_column_bonus_adds_directly_to_that_columns_stre
 
 def test_resolve_battle_column_bonus_out_of_range_index_is_ignored():
     # Equal raw strength with no real bonus applied nets to a BRES tie,
-    # needing break_bres_tie()'s own extra draws -- same 0.1/0.9 safety
-    # pair convention as this module's own _luck_draws() helper.
+    # needing apply_bres_tie_correction()'s own extra draws -- same
+    # 0.1/0.9 safety pair convention as this module's own _luck_draws()
+    # helper.
     rng = ScriptedRandom([0.0, 0.0, 0.0, 0.0, 0.1, 0.9])
 
     result = resolve_battle([unit(10)], [unit(10)], attacker_column_bonus={5: 100}, rng=rng)
@@ -112,6 +114,43 @@ def test_resolve_battle_no_column_bonus_by_default():
     result = resolve_battle([unit(10)], [unit(10)], rng=rng)
 
     assert result.columns[0].attacker_strength == 10
+
+
+def test_resolve_battle_only_corrects_a_tie_on_the_battles_own_last_column():
+    # Phase 933: two equal-raw-strength, neutral-luck columns both raw-
+    # tie (bres=0). The first column's own tie is left genuinely alone
+    # (it isn't the last column, so apply_bres_tie_correction never even
+    # looks at it) -- only the second (last) column, whose own tie would
+    # make the running total exactly zero, gets corrected (prima=0,
+    # seconda=1 -> +1).
+    rng = ScriptedRandom([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.9])
+
+    result = resolve_battle([unit(10), unit(10)], [unit(10), unit(10)], rng=rng)
+
+    assert result.columns[0].bres == 0  # a genuine, uncorrected column tie
+    assert result.columns[0].attacker_won is False
+    assert result.columns[1].bres == 1  # the last column: corrected
+    assert result.columns[1].attacker_won is True
+    assert result.total_bres == 1
+    assert result.winner == "attacker"
+
+
+def test_resolve_battle_wires_apply_bres_tie_correction_into_the_last_column():
+    # Phase 933: an exact-zero raw BRES (equal strength, neutral luck) on
+    # a single-column (so necessarily last-column) battle is corrected in
+    # place -- prima=0 (0.1), seconda=1 (0.9) -> bres = 0 + (1-0) = 1 --
+    # not left as an uncorrected column tie, and not resolved by a
+    # separate coin-flip-for-a-side decision either: the corrected value
+    # is what total_bres/winner/attacker_won all read.
+    rng = ScriptedRandom([0.0, 0.0, 0.0, 0.0, 0.1, 0.9])
+
+    result = resolve_battle([unit(10)], [unit(10)], rng=rng)
+
+    assert result.columns[0].bres == 1
+    assert result.columns[0].attacker_won is True
+    assert result.total_bres == 1
+    assert result.attacker_columns_won == 1
+    assert result.winner == "attacker"
     assert result.columns[0].defender_strength == 10
 
 
@@ -179,13 +218,16 @@ def test_resolve_battle_structural_invariants_with_real_rng_multi_column():
     # bound line_length from above, they don't have to sum to it.
     assert result.attacker_columns_won + result.defender_columns_won <= line_length
     assert result.total_bres == sum(column.bres for column in result.columns)
+    # Phase 933: apply_bres_tie_correction makes an exact-zero total_bres
+    # provably unreachable from resolve_battle itself (see that
+    # function's own docstring) -- so this branch is never hit for any
+    # real rng, but the assertion stays as a structural invariant, not a
+    # guess at what "should" happen if it somehow were.
     if result.total_bres > 0:
         assert result.winner == "attacker"
     elif result.total_bres < 0:
         assert result.winner == "defender"
     else:
-        # break_bres_tie always resolves an exact-zero sum to one side or
-        # the other -- resolve_battle itself never reports "tie".
         assert result.winner in ("attacker", "defender")
     for column in result.columns:
         assert column.attacker_strength >= 0

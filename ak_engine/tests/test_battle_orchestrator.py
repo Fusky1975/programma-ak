@@ -257,11 +257,14 @@ def test_attacker_forced_retreat_skips_an_origin_captured_by_a_third_kingdom():
 
 
 def test_fight_battle_records_contested_from_coord_on_a_mixed_result():
-    # seed=32 is a genuine mixed/contested result (neither side clean
-    # swept) found by search for this 3-vs-3 multi-type battle -- see
-    # ProvinceState.contested_from_coord's own docstring for why this
-    # needs persisting (a later forced rebattle has no other way to learn
-    # the original invasion origin).
+    # seed=55 (Phase 933 re-search -- the real last-column tie-break
+    # correction changed which seeds land a genuine mixed/contested
+    # result here, see apply_bres_tie_correction's own docstring) is a
+    # genuine mixed/contested result (neither side clean swept) found by
+    # search for this 3-vs-3 multi-type battle -- see ProvinceState.
+    # contested_from_coord's own docstring for why this needs persisting
+    # (a later forced rebattle has no other way to learn the original
+    # invasion origin).
     origin = HexCoord(0, 1)
     state = GameState()
     state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, origin))
@@ -278,7 +281,7 @@ def test_fight_battle_records_contested_from_coord_on_a_mixed_result():
 
     fight_battle(
         state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101, 102, 103],
-        attacker_origin=origin, rng=random.Random(32),
+        attacker_origin=origin, rng=random.Random(55),
     )
 
     assert state.provinces[FIELD].contested_by_kingdom_id == 1
@@ -1296,19 +1299,31 @@ def test_fight_battle_find_water_present_leader_removes_desert_penalty():
         state.add_army(ArmyState(201, 2, ArmyType.BOWMEN, Quality.AVERAGE, location=FIELD))
         return state
 
+    # Phase 933: seed 1 (not 0) -- this is a single-column battle, so
+    # that sole column is always the battle's own *last* column, and
+    # apply_bres_tie_correction now always resolves an exact-zero BRES
+    # there for real (see that function's own docstring) rather than
+    # ever leaving a genuine, unresolved tie on the table. Seed 1 gives
+    # a real, empirically-found example where the weaker (without-
+    # ability) side's own raw tie corrects to a clean *defender* win
+    # (bres=-1), while the stronger (with-ability) side wins outright
+    # without needing any correction at all (bres=+1, no raw tie to
+    # begin with) -- still a clean before/after flip, just no longer
+    # via an uncorrected "tie" state that the real engine never leaves
+    # standing on the battle's own last column.
     without_ability = make_state()
-    report_without = fight_battle(without_ability, 1, FIELD, [101], rng=random.Random(0))
+    report_without = fight_battle(without_ability, 1, FIELD, [101], rng=random.Random(1))
 
     with_ability = make_state()
     scout = LeaderState(1, kingdom_id=1, name="Scout", location=FIELD)
     scout.advanced_abilities.add(AdvancedAbility.EXPLORER_FIND_WATER)
     with_ability.add_leader(scout)
-    report_with = fight_battle(with_ability, 1, FIELD, [101], rng=random.Random(0))
+    report_with = fight_battle(with_ability, 1, FIELD, [101], rng=random.Random(1))
 
     # Both battles are otherwise identical (same seed, same armies) -- the
     # attacker's own column strength doubles (2.0 -> 4.0) once the Desert
-    # penalty is removed, flipping that column's own BRES from a tie
-    # (attacker_won=False) to a clear attacker win.
+    # penalty is removed, flipping that column's own BRES from a
+    # defender win (attacker_won=False) to a clear attacker win.
     assert report_without.battle_result.columns[0].attacker_strength == pytest.approx(2.0)
     assert report_with.battle_result.columns[0].attacker_strength == pytest.approx(4.0)
     assert report_without.battle_result.columns[0].attacker_won is False
