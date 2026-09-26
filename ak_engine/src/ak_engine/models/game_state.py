@@ -1674,6 +1674,24 @@ class GameState:
     # blackmail_narratives()`, the same "before any `compose_letter_
     # report()` call" contract as that sibling dict.
     blackmail_narratives_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
+    # Phase 939 -- Tornado's own real bystander notice (`SAY.PAS`
+    # `_ATDestr: Sps(Tornado,S_AA)`, a separate real dispatch from the
+    # caster's own `_STorn`-based view `turn/cast_execution.py
+    # _execute_tornado()`/`report/turn_report.py render_tornado_
+    # outcome()` already wire, Phase 937): each destroyed army's own
+    # *owning* Kingdom (when different from the caster's own, who
+    # already sees every destroyed army via their own private view) is
+    # told about it here too, in their own ACTION REPORT -- confirmed by
+    # real fixture text showing this exact sentence appear bare, with no
+    # caster attribution, inside the *victim's* own letter (`SE3__T5.K1`:
+    # "Tornadoes sucked up the 272nd Dragons in Bronzeleaf and destroyed
+    # them." -- no "I cast a Tornado spell" anywhere nearby, unlike every
+    # one of the caster's own examples). Populated once per turn by
+    # `report/turn_report.py record_spell_world_events()`'s own Phase 939
+    # addendum, the same "before any `compose_letter_report()` call"
+    # contract as `battle_narratives_by_kingdom`/`illusory_terrain_
+    # reveals_by_kingdom` above.
+    tornado_victim_notices_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
     # Phase 408 -- mirrors `RUMORS.PAS`/`REPORTS.PAS`'s own `kkmet` bitmask
     # (`Check_KKSugg`, `REPORTS.PAS` ~173-202): once two kingdoms' own
     # territories have ever bordered each other, `frozenset({a, b})` is

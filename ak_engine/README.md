@@ -36419,13 +36419,28 @@ supply of any of these doesn't have to be re-derived from scratch:
   and `render_tornado_outcome()`'s own docstring for the full
   derivation.
 
-  Also still open: whether Tornado's own real `_ATDestr`/
+  ~~Also still open: whether Tornado's own real `_ATDestr`/
   `Sps(Tornado,S_AA)` bystander dispatch (a *separate* real call from
   `_STorn` above, per `SAY.PAS`'s own `_ARises`/`_ATDestr`/`_APDestr`/
   `_ABDestr` group) means a DIFFERENT kingdom (e.g. the province's own
   defender, not the caster) is also told about their own destroyed
   armies somewhere -- this phase only wires the caster's own private
-  view, the same scope boundary Bless/Skeletal_Army already established.
+  view, the same scope boundary Bless/Skeletal_Army already
+  established.~~ -- **closed in Phase 939**: confirmed by real fixture
+  text showing this exact sentence ("Tornadoes sucked up the 272nd
+  Dragons in Bronzeleaf and destroyed them.") appear bare -- no caster
+  attribution, no "I cast a Tornado spell" anywhere nearby -- inside a
+  *different* Kingdom's own letter than the one that actually cast
+  Tornado (`SE3__T5.K1`). Every destroyed army whose own `kingdom_id`
+  differs from the caster's now gets this same real per-army sentence
+  in their own ACTION REPORT (`state.tornado_victim_notices_by_kingdom`,
+  populated by `record_spell_world_events()`'s own new branch, read by
+  `compose_letter_report()` the same way `battle_narratives_by_kingdom`/
+  `illusory_terrain_reveals_by_kingdom` already are). An unowned
+  destroyed army (a monster, an independent mercenary) has no Kingdom to
+  notify and is silently skipped -- it still appears in the caster's own
+  view either way. See `record_spell_world_events()`'s own Phase 939
+  addendum for the full derivation.
 
   **Phase 938: the "further audit" of the already-leader-targeted
   spells this README itself called for turned up a real, confirmed

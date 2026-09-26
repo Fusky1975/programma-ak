@@ -14783,16 +14783,42 @@ def record_spell_world_events(
     **Why not the other cast spells**: every other real `Sps(...)`
     dispatch in `SAY.PAS` is tagged a narrower severity than `S_Comm`
     -- confirmed by reading every `Sps(...)` call site directly, not
-    assumed: Skeletal Army/Tornado/Illusory Armies are `S_AA` (kingdom-
-    only, needing this project's still-missing army-naming system
-    besides), Charm/Resurrection/Clairvoyance/the personal-combat
-    spells are `S_PCom`, Oratory/Hide_Feature/Kill_Enemy are `S_Adv`,
-    Bless is `S_Admin` (plausibly commonly-visible in spirit, but not
-    confirmed `S_Comm` in the source, so not guessed here). Scar
-    Terrain is now covered (Phase 722), via its own separate `SANOTE.X2`
-    ability-ordinal-keyed dispatch, not this generic `Sps()` mechanism.
-    See `render_bystander_spell_notice()`'s own module-level comment for
+    assumed: Skeletal Army/Tornado/Illusory Armies are `S_AA` ("kingdom-
+    only" -- Tornado's own real `S_AA` dispatch is now covered too, see
+    the Phase 939 addendum below; Skeletal Army/Illusory Armies stay
+    genuinely unwired for this cross-kingdom `S_AA` sense specifically,
+    though their own caster-private view is wired since Phases 936/938),
+    Charm/Resurrection/Clairvoyance/the personal-combat spells are
+    `S_PCom`, Oratory/Hide_Feature/Kill_Enemy are `S_Adv`, Bless is
+    `S_Admin` (plausibly commonly-visible in spirit, but not confirmed
+    `S_Comm` in the source, so not guessed here). Scar Terrain is now
+    covered (Phase 722), via its own separate `SANOTE.X2` ability-
+    ordinal-keyed dispatch, not this generic `Sps()` mechanism. See
+    `render_bystander_spell_notice()`'s own module-level comment for
     the full breakdown of what's still excluded.
+
+    **Phase 939 addendum -- Tornado's own real `S_AA` bystander notice
+    (`_ATDestr: Sps(Tornado,S_AA)`), a *separate* real dispatch from the
+    caster's own `_STorn`-based view (Phase 937).** Confirmed by real
+    fixture text showing the exact same "tornadoes sucked up ~ in @ and
+    destroyed them." sentence appear bare (no caster attribution, no "I
+    cast a Tornado spell" nearby) inside a *different* Kingdom's own
+    letter than the one that actually cast Tornado (`SE3__T5.K1`:
+    "Tornadoes sucked up the 272nd Dragons in Bronzeleaf and destroyed
+    them." -- Bronzeleaf's own garrison, not the letter's own King's
+    army, mid-exploration narrative, no cast announcement anywhere
+    nearby). For every army `Spell.TORNADO` destroys (`CastExecutionResult.
+    tornado_destroyed`, Phase 937) whose own `kingdom_id` differs from
+    the caster's, this now appends the same real per-army sentence
+    (``render_tornado_outcome()``'s own `TORNADO_DESTROYED_TEMPLATE`,
+    reused directly rather than duplicated) to
+    ``state.tornado_victim_notices_by_kingdom[victim_kingdom_id]`` --
+    the caster's own kingdom is excluded here since their own private
+    view (``describe_cast()``/``render_tornado_outcome()``) already
+    lists every destroyed army regardless of ownership. An unowned
+    (``kingdom_id is None``, e.g. a monster or independent mercenary)
+    destroyed army has no Kingdom to notify, so it's silently skipped
+    here -- it still appears in the caster's own view either way.
 
     ``CastExecutionResult`` itself carries no caster/coord -- ``leader_
     id`` comes from the owning ``PhaseDispatchResult`` (each entry is
@@ -14843,6 +14869,22 @@ def record_spell_world_events(
                     state.illusory_terrain_reveals_by_kingdom.setdefault(privileged_kingdom_id, []).append(prefix + line)
         elif request.spell is Spell.FLOOD:
             state.record_world_event(coord, [prefix + render_flood_world_event(province_name, rng)])
+        elif request.spell is Spell.TORNADO and result.tornado_destroyed:
+            # Phase 939: _ATDestr's own real S_AA bystander notice -- see
+            # this function's own Phase 939 addendum for the full
+            # sourcing. Each destroyed army's own owning Kingdom (if
+            # different from the caster's, who already sees every
+            # destroyed army via their own private describe_cast() view)
+            # gets this same real per-army sentence in their own ACTION
+            # REPORT.
+            caster_leader = state.leaders.get(entry.leader_id)
+            caster_kingdom_id = caster_leader.kingdom_id if caster_leader is not None else None
+            for army in result.tornado_destroyed:
+                if army.kingdom_id is None or army.kingdom_id == caster_kingdom_id:
+                    continue
+                name = f"{make_army_ordinal(army.army_id)} {ARMY_TYPE_NAME[army.army_type]}"
+                line = render(TORNADO_DESTROYED_TEMPLATE, {"=": name, "@": province_name}, rng=rng)
+                state.tornado_victim_notices_by_kingdom.setdefault(army.kingdom_id, []).append(prefix + line)
         elif request.spell in _BYSTANDER_SPELL_NOTICE_SPELLS:
             line = render_bystander_spell_notice(request.spell, province_name, rng)
             state.record_world_event(coord, [prefix + line])
@@ -15892,6 +15934,11 @@ def compose_letter_report(
     # notice -- same "both sides carry the identical, already-rendered
     # lines here" shape as the battle narrative right above.
     action_lines = action_lines + state.blackmail_narratives_by_kingdom.get(kingdom_id, [])
+    # Phase 939: Tornado's own real S_AA bystander notice for a Kingdom
+    # whose own army was destroyed by someone else's Tornado cast --
+    # already fully rendered at record time, same placement reasoning as
+    # every other per-kingdom notice list above.
+    action_lines = action_lines + state.tornado_victim_notices_by_kingdom.get(kingdom_id, [])
     _emit_section("ACTION REPORT", action_lines)
 
     letter_lines = describe_letter_reports(
