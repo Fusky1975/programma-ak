@@ -15635,14 +15635,24 @@ def compose_letter_report(
       bullet still called "per-kingdom Discovery tracking" confirmed
       absent here -- stale, closed by Phase 268, as this same
       composer's own docstring already correctly states.
-    - PROVINCES itself is only partially wired -- see `describe_
+    - ~~PROVINCES itself is only partially wired -- see `describe_
       provinces_report()`'s own docstring for exactly which columns
       render (name, race, terrain, percent explored; as of Phase 278,
       Tax/Recruiting Types once a `GameState` has been bridged from a
       real `GW3` world file; as of Phase 282/283, the `pt2`-derived
       "(Sea)" parenthetical, project-original rather than sourced -- see that
       docstring's own Phase 282 section) and which is still confirmed
-      absent (only the tax-tier grouping presentation now).
+      absent (only the tax-tier grouping presentation now).~~ --
+      **stale as of Phase 288 (this bullet was never revisited after
+      that phase closed the exact gap it names)**: `describe_provinces_
+      report()`'s own current docstring, under its own "Fixed-width
+      columns and tax-tier grouping, Phase 288" heading, quotes
+      `REPORTS.PAS Rep_Provs` directly and confirms tax-tier grouping is
+      fully implemented (`_province_tax_tier()`, descending-tier sort
+      with an ascending-coordinate tie-break, no per-tier subheading --
+      that same phase also corrected this project's own earlier,
+      overstated "subheadings per tier" claim). Nothing genuinely absent
+      remains in this bullet's own scope.
     - The real ASCII map (Phase 562) is now wired too -- `describe_
       map_report()` below, appended directly after PROVINCES (the real
       map has no section header of its own; see that function's own
@@ -15669,14 +15679,36 @@ def compose_letter_report(
       office_report()`'s own docstring for exactly which Merit Point
       terms are fully live today versus still waiting on a future
       battle/encounter/cast wiring phase.
-    - GENERAL INTELLIGENCE REPORT (Phase 231) only ever has battle-result
+    - ~~GENERAL INTELLIGENCE REPORT (Phase 231) only ever has battle-result
       entries to show -- see `describe_general_intelligence_report()`'s
       own docstring for the confirmed-real event types (movement,
       plagues, terrain illusions, cast spells...) still deferred, and
       `record_battle_world_events()`'s docstring for why this composer
       needs that separate function called once per turn *before* this
       one -- `state.world_events` isn't populated by anything in this
-      function's own call chain.
+      function's own call chain.~~ -- **stale as of at least Phase 722
+      (this bullet was never revisited as each source was wired in)**:
+      `describe_general_intelligence_report()`'s own current docstring
+      confirms battle results are only ONE of several real sources this
+      project populates into `state.world_events` today -- five real
+      `S_Comm` province-effect casts (Plague, Illusory Terrain, Flood,
+      Part Sea, Earthquake, Phases 232/235), Plague's own spread-to-
+      adjacent-provinces mechanic (Phase 234), Movement including the
+      "flew over" overflight heuristic and Mystic Winds wind-walking
+      (Phase 257/634), uncontested conquest (Phase 410), and Scar
+      Terrain's own bystander notices (Phase 722) -- each cited against
+      real fixture text or the real Pascal source in that same
+      docstring. What remains genuinely deferred is narrower than this
+      bullet claimed: Skeletal Army risings (`S_AA`, confirmed below
+      `S_Army` on the real severity scale, not a threshold miscount) and
+      any other spell without a confirmed `S_Army`-or-higher `SAY.PAS`
+      notice, plus the richer per-column battle clash narrative that
+      real GIR paragraphs never show in the first place (`record_battle_
+      world_events()`'s own docstring). `record_battle_world_events()`'s
+      docstring still correctly explains why this composer needs that
+      (and the other `record_*_world_events()`) functions called once
+      per turn *before* this one -- that part of the bullet was never
+      stale.
 
     **Phase 275 -- closing audit for six report identifiers' own Pascal
     *declarations* (not their data).** A fresh, systematic re-check (not
