@@ -63,50 +63,55 @@ P<=-3") -- the exact same `-5..+5`-anchored thresholds
 report's own `BRES` writeup. The report still never writes "P = BRES"
 as an equation, and no raw `AK.EXE`/`AK.OVR` binary is available in
 this project to disassemble further and settle it either way -- so
-`turn/battle_orchestrator.py _column_bres_by_army_id()` now feeds
+`turn/battle_orchestrator.py _column_bres_by_army_id()` fed
 `column_bres` in as `score` anyway, explicitly labeled (in its own
 docstring and this one) as the project's best-motivated guess at what
-`P` is, not a confirmed identity. A future phase that finds a real,
-sourced answer should replace it outright, not treat this as settled.
+`P` is, not a confirmed identity.
+
+**Phase 922 addendum -- due diligence attempted on the "P = BRES"
+identity; declared (wrongly, see Phase 932 below) structurally
+unresolvable with any data this project could ever recover.** Unlike
+the deterministic cross-references that closed several other README
+"Known-unresolved semantics" bullets this session (Phases 915/920,
+comparing two static file formats that always encode the same fixed
+value), `P`/`score` looked like it was fed by the battle engine's own
+internal random luck draws (`r1`/`r2`, `turn/battle_luck.py`) for one
+specific, already-played historical battle, with no surviving artifact
+recording those draws or the resulting value. This addendum concluded
+no raw `AK.EXE`/`AK.OVR` binary was available in this project to
+disassemble and settle it either way -- **that premise turned out to be
+false**, not just the conclusion built on it: see Phase 932 below.
+
+**Phase 932 addendum -- "P = BRES" identity disproven outright by a
+user-supplied byte-level disassembly; `P` is `Qual_Modfr`, a separate,
+fully deterministic function, not `BRES` at all.** A user-supplied
+reverse-engineering document (`BRESOK.md`) disassembles both
+`AK.OVR`/`AK.EXE` directly -- proving Phase 922's "no raw binary
+available, ever" premise wrong -- and traces the gain multiplier's real
+input through two separate far calls: `AK.OVR 0x59AF`-`0x59C3` computes
+`threshold = 100 + 40*P` and compares it against a *fresh* `Random(100)`
+draw, exactly reproducing this module's own pre-existing
+`MERIT_MULTIPLIER`/`quality_gain_merit_multiplier` shape unchanged
+(`100+40*0=100%`, `100+40*(-1)=60%`, `100+40*(-2)=20%`, clamped `0%`
+below that). `P` itself comes from a *different* far call
+(`AK.OVR 0x212D` -> `AK.EXE 35EB:2C42`), the real Pascal `Qual_Modfr`
+function (confirmed by name via `RUMORS.PAS`'s own real call site) --
+fully deterministic, no RNG inside its own body, and definitively not
+`column_bres` (a wholly different far call, driven by the battle's own
+random luck draws). Only the `score` *input* was ever wrong; the
+`MERIT_MULTIPLIER`/`base_quality_change_percent` formulas in this
+module needed no changes at all. See `turn/battle_orchestrator.py
+_qual_modfr_score_by_army_id()`'s own Phase 932 docstring for the full
+address-level derivation and this project's own pre-existing
+`Qual_Modfr` reconstruction (`turn/army_quality.py
+compute_army_modified_quality()`, Phase 279) that the new function
+reuses via `turn/strength.py quality_modifier_delta()`.
 `roll_quality_change`'s `score` parameter still defaults to `0` for any
 caller that doesn't pass one -- the gain formula's own documented
 "score >= 0 --> multiplier 1.0" neutral case, the same "missing data
 defaults to a neutral, not a guessed, value" convention this project
 already uses elsewhere (see `turn/battle_orchestrator.py
 _build_battle_units`'s own exploration-advantage default).
-
-**Phase 922 addendum -- due diligence attempted on the "P = BRES"
-identity; confirmed structurally unresolvable with any data this
-project could ever recover, not just presently missing.** Unlike the
-deterministic cross-references that closed several other README
-"Known-unresolved semantics" bullets this session (Phases 915/920,
-comparing two static file formats that always encode the same fixed
-value), `P`/`score` is fed by the battle engine's own internal random
-luck draws (`r1`/`r2`, `turn/battle_luck.py`) for one specific,
-already-played historical battle. No surviving artifact -- a real
-turn-report letter's prose, a `GW`-format world-save's post-battle
-`Quality` field, or anything else this project parses -- records those
-draws or the resulting `BRES`/`P` value itself; both are purely
-internal to a single already-completed `AK.EXE` run and were never
-written to any file this project's source material includes. A real
-`Quality`-change narration (`DECQ.X`/`INCQ.X`) does appear in real
-letters (e.g. `SE3__T2.K1`'s "the 240th Bowmen proved its mettle...
-we now rate it a Veteran unit", `SE3__T11.K1`'s Trolls "severely
-mangled... fallen in stature", and several more across `SE3__T3`/`T6`-
-`T10`), confirming the mechanic itself fires in real games, but the
-sentence only reports the
-*outcome* ("we now rate it a Crack unit"), never the internal score
-that decided its probability -- so even a real example changes nothing
-here. The `AKGEN_reverse_engineering_report.md` this bullet's own
-Phase 423 addendum already quoted for `P`'s threshold behavior is
-itself not available in this project's current file set to re-read for
-a possible missed "P = BRES" statement elsewhere in it; re-deriving
-`P` from first principles would need the original `AK.EXE`/`AK.OVR`
-binary that same addendum already says isn't available either. This
-isn't a "not yet searched" gap like the Beasts/Duel bullets were before
-their own due-diligence phases -- it's a "cannot be searched with any
-real-game text or save file, ever" one. `column_bres` remains the
-project's best-motivated stand-in for `score`, unchanged.
 """
 
 from __future__ import annotations

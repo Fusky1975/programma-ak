@@ -31,13 +31,13 @@ from ak_engine.turn.battle_orchestrator import (
     _apply_werebeast_bites,
     _apply_wingman_merit,
     _build_battle_units,
-    _column_bres_by_army_id,
     _commander_combatant,
     _direct_destruction_probabilities,
     _combined_arms_for,
     _formation_divisors,
     _maybe_fight_duel,
     _mastery_bonus_for,
+    _qual_modfr_score_by_army_id,
     _record_battle_merit,
     _select_side_commander,
     _side_has_present_leader_with_ability,
@@ -4709,11 +4709,14 @@ def test_fight_battle_winning_army_led_by_insufficient_druid_passes_the_penalty_
         report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=rng)
 
     assert report.battle_result.winner == "attacker"
-    # Phase 423: score= is the attacker's own column's real BRES (a
-    # documented, unconfirmed interpretation -- see aftermath.py's own
-    # docstring), threaded alongside formation_divisor now.
+    # Phase 932: score= is the army's own real, deterministic Qual_Modfr
+    # score (turn/battle_orchestrator.py _qual_modfr_score_by_army_id) --
+    # this same fixture's own full Druidic shortfall (4, see this test's
+    # own docstring) is the only nonzero term here (Plains terrain, away
+    # from Dragonia's own home province, no race-matching item), so
+    # score = -4, threaded alongside formation_divisor as before.
     mock_roll.assert_called_once_with(
-        Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True, formation_divisor=1, score=1,
+        Quality.ELITE, rng, is_winner=True, led_by_insufficient_druid=True, formation_divisor=1, score=-4,
     )
 
 
@@ -4979,59 +4982,83 @@ def test_formation_divisors_covers_both_sides_across_multiple_columns():
     }
 
 
-# -- Phase 423: score= for roll_quality_change's own gain-side merit
-# multiplier -- a documented, unconfirmed interpretation of column_bres
-# as the source's own unnamed "P" (see _column_bres_by_army_id's own
-# docstring), not a recovered formula --
+# -- Phase 932: score= for roll_quality_change's own gain-side merit
+# multiplier -- the real, deterministic Qual_Modfr score (see
+# _qual_modfr_score_by_army_id's own docstring), superseding Phase 423's
+# unconfirmed "column_bres as P" guess outright --
 
 
-def test_column_bres_by_army_id_orients_score_by_side():
-    # bres favors the attacker (+3): the attacker's own army keeps that
-    # sign ("my side did well"), the defender's own army gets the
-    # opposite sign ("my side did poorly in this column").
-    column = BattleColumnResult(
-        attacker_strength=20.0, defender_strength=5.0, bres=3, attacker_won=True, cluck_index=20,
-        attacker_units=[BattleUnit(ArmyType.HVY_CAVALRY, 20.0, source_id=101)],
-        defender_units=[BattleUnit(ArmyType.GARRISON, 5.0, source_id=201)],
-    )
-    battle_result = BattleResult(columns=[column], winner="attacker", total_bres=3)
-
-    scores = _column_bres_by_army_id(battle_result)
-
-    assert scores == {101: 3, 201: -3}
-
-
-def test_column_bres_by_army_id_covers_both_sides_across_multiple_columns():
-    column_one = BattleColumnResult(
-        attacker_strength=10.0, defender_strength=10.0, bres=2, attacker_won=True, cluck_index=20,
-        attacker_units=[BattleUnit(ArmyType.HVY_CAVALRY, 10.0, source_id=101)],
-        defender_units=[BattleUnit(ArmyType.GARRISON, 5.0, source_id=201)],
-    )
-    column_two = BattleColumnResult(
-        attacker_strength=10.0, defender_strength=10.0, bres=-4, attacker_won=False, cluck_index=20,
-        attacker_units=[BattleUnit(ArmyType.HVY_CAVALRY, 10.0, source_id=102)],
-        defender_units=[BattleUnit(ArmyType.GARRISON, 5.0, source_id=202)],
-    )
-    battle_result = BattleResult(columns=[column_one, column_two], winner="attacker", total_bres=-2)
-
-    scores = _column_bres_by_army_id(battle_result)
-
-    assert scores == {101: 2, 201: -2, 102: -4, 202: 4}
-
-
-def test_fight_battle_uses_real_per_column_bres_as_the_gain_side_merit_score():
-    # Two winning attacker armies, each front-line in its own column: 101's
-    # own column went well (bres=+5, score=5 -> full 1.0 merit multiplier),
-    # 102's own column went badly despite the overall attacker win
-    # (bres=-3, score=-3 -> the source's own "P<=-3" 0.0 multiplier, no
-    # gain possible at all regardless of the roll). AVERAGE's own real
-    # front-line improve chance is 30% -- a scripted roll of 0.25 clears
-    # 101's own (unmodified) 30% chance but can never clear 102's own
-    # forced-to-zero chance, proving score reaches roll_quality_change
-    # through a real fight_battle() call with the right per-army sign.
+def test_qual_modfr_score_by_army_id_gives_plus_one_for_home_province():
     state = build_state()
-    state.armies[101].quality = Quality.AVERAGE
+    state.kingdoms[1].home_province = FIELD
+    army = state.armies[101]
+
+    scores = _qual_modfr_score_by_army_id(
+        [army], state, terrain=Terrain.PLAINS, province_coord=FIELD, explorer_find_water=False,
+    )
+
+    assert scores == {101: 1}
+
+
+def test_qual_modfr_score_by_army_id_gives_minus_one_for_desert_without_camels():
+    state = build_state()
+    army = state.armies[101]
+
+    scores = _qual_modfr_score_by_army_id(
+        [army], state, terrain=Terrain.DESERT, province_coord=FIELD, explorer_find_water=False,
+    )
+
+    assert scores == {101: -1}
+
+
+def test_qual_modfr_score_by_army_id_is_per_army_not_per_side():
+    # Both armies are on the same side (so share the same side-wide
+    # desert_without_camels value), but only 101 has a commanding Hero
+    # holding the race-matching LEADERSHIP_HUMAN item -- proving the
+    # race_item_bonus term (and so the whole score) is resolved per army,
+    # not once for the whole side.
+    state = build_state()
+    state.provinces[FIELD].terrain = Terrain.DESERT
     state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.AVERAGE, FIELD))
+    state.add_leader(LeaderState(1, 1, "Hero", FIELD))
+    state.add_item(Treasure.LEADERSHIP_HUMAN, owner_leader_id=1)
+    state.armies[101].commanded_by = 1
+
+    scores = _qual_modfr_score_by_army_id(
+        [state.armies[101], state.armies[102]], state, terrain=Terrain.DESERT, province_coord=FIELD,
+        explorer_find_water=False,
+    )
+
+    assert scores == {101: 0, 102: -1}  # 101: -1 desert + 1 item; 102: -1 desert alone
+
+
+def test_fight_battle_uses_real_qual_modfr_score_as_the_gain_side_merit_score():
+    # Desert terrain (no Find Water, no Camel Corps) gives every attacker
+    # army a real -1 Qual_Modfr penalty (desert_without_camels), shared by
+    # both attacking armies since it's resolved once for the whole side --
+    # but 102 belongs to a *second* attacking kingdom (a mixed-kingdom
+    # attacking party, like `multiple_contingents.py`'s own multi-attacker
+    # battles) whose own home_province happens to be this exact battle
+    # province, a real +1 that exactly cancels the desert penalty back to
+    # score=0 (full 1.0 merit multiplier) for 102, while 101's own
+    # kingdom's home is elsewhere, leaving it at the plain -1 (0.6
+    # multiplier). Deliberately no leader/commanded_by anywhere in this
+    # fixture -- see _select_side_commander's own docstring: any real
+    # commander on the attacking side (which has no garrison fallback)
+    # combined with the defender's own GARRISON-army fallback commander
+    # would trigger a real Duel, consuming rng draws this test doesn't
+    # script for. AVERAGE's own real front-line improve chance is 30% --
+    # a scripted roll of 0.25 clears 102's own full 30% chance but not
+    # 101's own reduced 18% (30%*0.6) chance, proving score reaches
+    # roll_quality_change through a real fight_battle() call with the
+    # right real, deterministic per-army value (Phase 932 -- superseding
+    # Phase 423's own per-column BRES guess, see
+    # _qual_modfr_score_by_army_id's own docstring).
+    state = build_state()
+    state.provinces[FIELD].terrain = Terrain.DESERT
+    state.armies[101].quality = Quality.AVERAGE
+    state.add_kingdom(KingdomState(3, "Homeland", Race.HUMAN, Alignment.GOOD, home_province=FIELD))
+    state.add_army(ArmyState(102, 3, ArmyType.HVY_CAVALRY, Quality.AVERAGE, FIELD))
     column_one = BattleColumnResult(
         attacker_strength=20.0, defender_strength=5.0, bres=5, attacker_won=True, cluck_index=20,
         attacker_units=[BattleUnit(ArmyType.HVY_CAVALRY, 20.0, source_id=101)],
@@ -5057,8 +5084,8 @@ def test_fight_battle_uses_real_per_column_bres_as_the_gain_side_merit_score():
             loser_retreats=False, rng=rng,
         )
 
-    assert state.armies[101].quality == Quality.VETERAN  # score=5: full 30% chance, 0.25 < 0.30 -- improved
-    assert state.armies[102].quality == Quality.AVERAGE  # score=-3: 0% chance -- unchanged regardless of roll
+    assert state.armies[101].quality == Quality.AVERAGE  # score=-1: 18% chance, 0.25 >= 0.18 -- unchanged
+    assert state.armies[102].quality == Quality.VETERAN  # score=0: full 30% chance, 0.25 < 0.30 -- improved
 
 
 def test_fight_battle_uses_real_formation_depth_for_a_winning_seconds_line_army():

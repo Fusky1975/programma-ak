@@ -35295,7 +35295,7 @@ rulebook before being turned into named, typed fields:
   "P = BRES" as an equation) -- see `turn/aftermath.py`'s own Phase 423
   addendum for the full reasoning. The parameter still defaults to `0`
   (the formula's own neutral case) only for a caller that doesn't pass
-  one at all. **Phase 922**: due diligence on this specific "P = BRES"
+  one at all. ~~**Phase 922**: due diligence on this specific "P = BRES"
   identity, confirmed structurally unresolvable, not just presently
   unsearched. `P`/`score` is fed by the battle engine's own internal
   random luck draws for one specific, already-played historical battle
@@ -35313,9 +35313,30 @@ rulebook before being turned into named, typed fields:
   amount of additional real-game text or save file could ever settle
   this one -- only the original `AK.EXE`/`AK.OVR` binary (already
   confirmed unavailable, Phase 423) or its own disassembly report (not
-  in this project's current file set) could. See `turn/aftermath.py`'s
-  own Phase 922 addendum for the full reasoning. `column_bres` remains
-  the project's best-motivated stand-in for `score`, unchanged.
+  in this project's current file set) could.~~ **Resolved outright,
+  Phase 932: Phase 922's own premise was wrong, not just its
+  conclusion.** A user-supplied byte-level disassembly of both
+  `AK.EXE`/`AK.OVR` (`BRESOK.md`) proved a raw binary *was* available to
+  disassemble after all, and traced the gain multiplier's real input
+  through two separate far calls: `AK.OVR 0x59AF`-`0x59C3` computes
+  `threshold = 100 + 40*P` against a *fresh* `Random(100)` draw --
+  exactly reproducing this project's own pre-existing
+  `MERIT_MULTIPLIER`/`base_quality_change_percent` formulas unchanged --
+  while `P` itself comes from a wholly different far call
+  (`AK.OVR 0x212D` -> `AK.EXE 35EB:2C42`), the real Pascal `Qual_Modfr`
+  function (confirmed by name via `RUMORS.PAS`'s own real call site):
+  fully deterministic, no RNG inside its own body, and definitively
+  *not* `column_bres` (a separate far call driven by the battle's own
+  random luck draws). `column_bres` was never `P` at all -- only the
+  `score` *input* was wrong; the gain-percent formulas needed no
+  changes. `battle_orchestrator.py _qual_modfr_score_by_army_id()` now
+  computes the real score per army, reusing this project's own
+  pre-existing `Qual_Modfr` reconstruction (`turn/army_quality.py
+  compute_army_modified_quality()`, Phase 279, built independently by
+  cross-referencing the ARMIES report) via `turn/strength.py
+  quality_modifier_delta()`. See that function's own Phase 932
+  docstring for the full address-level derivation, and `turn/
+  aftermath.py`'s own Phase 932 addendum for the module-level summary.
 - ~~**Conquest + sea-battle movement-cost stacking** (`turn/conquest.py`)
   — the rulebook states the conquest extra-point and the sea-battle
   extra-point as two independent rules with no stated interaction for

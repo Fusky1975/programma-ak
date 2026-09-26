@@ -71,8 +71,11 @@ changes (`turn/aftermath.py`'s own real formula -- **wired since Phase
 it was "standalone-only pending formation-depth/merit-score tracking
 this project doesn't have yet," stale on both counts -- Phase 372 built
 `battle_orchestrator.py _formation_divisors()` for the formation-depth
-half, Phase 423 built `_column_bres_by_army_id()` for the merit-score
-half, and `roll_quality_change()` is called with both real values at 5
+half, Phase 423 built `_column_bres_by_army_id()` for a first,
+unconfirmed guess at the merit-score half (superseded outright by
+Phase 932's `_qual_modfr_score_by_army_id()`, once a user-supplied
+disassembly proved the real merit score is `Qual_Modfr`, not `BRES`),
+and `roll_quality_change()` is called with both real values at 5
 real call sites in that same module), contested provinces, conquest
 movement cost, and multiple contingents.
 """

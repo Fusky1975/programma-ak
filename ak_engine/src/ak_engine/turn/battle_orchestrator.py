@@ -242,6 +242,7 @@ from ak_engine.turn.strength import (
     PHANTASMAL_ARMIES_BONUS_PER_LEVEL,
     compute_druidic_shortfall,
     compute_effective_strength,
+    quality_modifier_delta,
     roll_dinosaurs_strength,
     roll_elephants_strength,
     roll_fanaticism,
@@ -2091,45 +2092,99 @@ def _formation_divisors(battle_result: BattleResult) -> dict[int, int]:
     return divisors
 
 
-def _column_bres_by_army_id(battle_result: BattleResult) -> dict[int, int]:
-    """Phase 423: each army's own column's real `BRES` score (`turn/
-    combat.py column_bres`), oriented to *that army's own side* and
-    keyed by `army_id`, for `turn/aftermath.py roll_quality_change`'s
-    own `score` parameter.
+def _qual_modfr_score_by_army_id(
+    armies: list[ArmyState],
+    state: GameState,
+    *,
+    terrain: Terrain,
+    province_coord: HexCoord,
+    explorer_find_water: bool,
+) -> dict[int, int]:
+    """Phase 932: each army's own real `Qual_Modfr` score, keyed by
+    `army_id`, for `turn/aftermath.py roll_quality_change`'s own `score`
+    parameter (rulebook [7.5]'s post-battle quality-*gain* multiplier).
 
-    **A documented, unconfirmed interpretation -- not a recovered
-    formula.** `AKGEN_reverse_engineering_report.md`'s own battle-engine
-    section (the same disassembly `column_bres` itself comes from)
-    describes the quality-*gain* multiplier's own input as a value it
-    calls `P` ("100% se il confronto effettivo restituisce P>=0, 60% con
-    P=-1, 20% con P=-2, 0% con P<=-3"), sitting immediately after its own
-    `BRES` writeup and sharing the same `-5..+5`-scale thresholds
-    `MERIT_MULTIPLIER` already uses -- but the report never writes the
-    equation "P = BRES" outright, and no raw `AK.EXE`/`AK.OVR` binary is
-    available in this project to disassemble further and settle it. This
-    function assumes the two are the same value, which is the only real
-    per-column performance number this project has, rather than leaving
-    `score` at its own neutral default forever -- explicitly flagged
-    here (and in `roll_quality_change`'s own call sites below) so a
-    future phase that finds a real, sourced answer can replace it
-    outright, not silently build on top of a guess mistaken for fact.
+    **Supersedes Phase 423's `_column_bres_by_army_id` outright --
+    that function's own "BRES assumed to be P" guess is now disproven,
+    not just superseded.** A user-supplied reverse-engineering document
+    (`BRESOK.md`, disassembling `AK.EXE`/`AK.OVR` at the byte level --
+    contradicting Phase 922's own "no raw binary available, ever" claim,
+    which this addendum retracts) traces the gain multiplier's real
+    input through two separate far calls: `AK.OVR` address `0x59AF`-
+    `0x59C3` computes `threshold = 100 + 40*P` and compares it against a
+    *fresh* `Random(100)` draw (`JGE` at `0x59C3`) -- exactly reproducing
+    this project's own pre-existing `MERIT_MULTIPLIER`/
+    `quality_gain_merit_multiplier` shape (`100+40*0=100%`,
+    `100+40*(-1)=60%`, `100+40*(-2)=20%`, clamped `0%` below that) with
+    no change needed there. `P` itself is computed by a *different* far
+    call, `AK.OVR 0x212D` -> `AK.EXE 35EB:2C42` (raw `0x43192`-
+    `0x431FD`), a function `BRESOK.md` traces back to `RUMORS.PAS`'s own
+    real call `Qual_Modfr(an,ldr,kng,oppkng,((pt = Desert) and (not
+    campres)))` -- fully deterministic, no RNG inside its own body, and
+    definitively *not* `column_bres` (a different far call entirely,
+    `0x1135`, computed from the battle's own random luck draws). Its
+    body (`0x43192`-`0x431FD`) is `P = A - B - thirsty` when leader-id
+    `>= 254` (no leader/garrison), else `P = A - B + C - thirsty`, where
+    `A = helper_430CC(context)` (0 or 1), `B = helper_42E82(unit,
+    leader)` (a penalty), `C = helper_43036(unit,leader)` (0 or 1
+    bonus) -- `BRESOK.md` disassembles these three helpers' raw bytes
+    but does not itself name what each one means semantically.
 
-    `BRES > 0` favors side 1 (attacker) in `column_bres`'s own
-    convention (confirmed by `battle_resolution.py`'s own `winning_units
-    = column.attacker_units if column.bres > 0 else column.defender_
-    units`) -- so an attacker's own army keeps `bres` as-is, and a
-    defender's own army gets `-bres`, both oriented so a positive value
-    means "my own side did well in this column."
+    This project already has an independent, semantically-named
+    reconstruction of that exact same modifier list: `turn/army_quality.py
+    compute_army_modified_quality()` (Phase 279, built by cross-referencing
+    the ARMIES report's own real "Modified Quality" column against real
+    report data, not by disassembling `Qual_Modfr` itself) uses
+    `desert_without_camels` (-1), `is_home_province` (+1), a Druidic
+    shortfall penalty, and a race-item bonus (+1, but *only* when
+    `army.commanded_by is not None`) -- the last condition matches
+    `BRESOK.md`'s own "`C` skipped when leader `>= 254`" clause exactly,
+    which is why this function reuses `turn/strength.py
+    quality_modifier_delta()` (itself split out of `modified_quality()`
+    for this exact reuse) rather than re-deriving the mapping from
+    scratch: `A` = home-province, `B` = Druidic shortfall, `C` =
+    race-item bonus, `thirsty` = desert-without-camels. Not 100%
+    name-confirmed against the raw helper bytes themselves, but strongly
+    evidenced by the structural match, and reuses code this project
+    already trusted for an unrelated report column.
+
+    `desert_without_camels`/`is_home_province`/`druidic_shortfall`/
+    `race_item_bonus` are each computed exactly as `_build_battle_units`
+    already computes them for the same army (province_coord-based home
+    check, same camel-corps/Find-Water carve-out, same
+    `druidic_shortfall_for`, same `RACE_LEADERSHIP_TREASURE` check) --
+    deliberately duplicated rather than threaded through as extra
+    `BattleUnit` fields, since `_build_battle_units` builds *combat*
+    units (no `army_id` back-reference needed beyond `source_id`) while
+    this function needs a plain `army_id`-keyed dict computed once,
+    orthogonally to unit-building. `is_fanatical` is deliberately
+    excluded -- `Qual_Modfr`'s own real signature has no fanatical-flag
+    argument, see `quality_modifier_delta()`'s own docstring.
     """
 
     scores: dict[int, int] = {}
-    for column in battle_result.columns:
-        for unit in column.attacker_units:
-            if unit.source_id is not None:
-                scores[unit.source_id] = column.bres
-        for unit in column.defender_units:
-            if unit.source_id is not None:
-                scores[unit.source_id] = -column.bres
+    for army in armies:
+        kingdom = state.kingdoms[army.kingdom_id]
+        is_home = province_coord == kingdom.home_province
+        desert_without_camels = (
+            terrain is Terrain.DESERT
+            and not explorer_find_water
+            and not any(a.army_type is ArmyType.CAMEL_CORPS for a in armies)
+        )
+        druidic_shortfall = druidic_shortfall_for(army, state, kingdom.race, province_coord)
+        race_item_bonus = 0
+        if army.commanded_by is not None:
+            needed_treasure = RACE_LEADERSHIP_TREASURE.get(kingdom.race)
+            if needed_treasure is not None and any(
+                item.treasure == needed_treasure for item in state.items_held_by(army.commanded_by)
+            ):
+                race_item_bonus = 1
+        scores[army.army_id] = quality_modifier_delta(
+            desert_without_camels=desert_without_camels,
+            is_home_province=is_home,
+            druidic_shortfall=druidic_shortfall,
+            race_item_bonus=race_item_bonus,
+        )
     return scores
 
 
@@ -2842,11 +2897,20 @@ def fight_battle(
     # new state, just reading data this project already had.
     formation_divisor_by_army_id = _formation_divisors(battle_result)
 
-    # Phase 423: score= for roll_quality_change's own gain-side merit
-    # multiplier -- see _column_bres_by_army_id's own docstring for why
-    # this is a documented, unconfirmed interpretation (BRES assumed to
-    # be the source's own unnamed "P"), not a recovered formula.
-    score_by_army_id = _column_bres_by_army_id(battle_result)
+    # Phase 932: score= for roll_quality_change's own gain-side merit
+    # multiplier -- see _qual_modfr_score_by_army_id's own docstring for
+    # the real Qual_Modfr mechanism this replaces Phase 423's BRES guess
+    # with.
+    score_by_army_id = {
+        **_qual_modfr_score_by_army_id(
+            attacker_armies, state, terrain=terrain, province_coord=province_coord,
+            explorer_find_water=attacker_find_water,
+        ),
+        **_qual_modfr_score_by_army_id(
+            defender_armies, state, terrain=terrain, province_coord=province_coord,
+            explorer_find_water=defender_find_water,
+        ),
+    }
 
     attacker_pursuit_destroyed: set[int] = set()
     if attacker_clean_swept and loser_retreats:
