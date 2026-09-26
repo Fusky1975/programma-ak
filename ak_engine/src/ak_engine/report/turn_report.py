@@ -8631,6 +8631,31 @@ def describe_turn_results(
                 if line is not None:
                     lines.append(line)
                 continue
+            if spell is Spell.PART_SEA:
+                # Phase 941: a third province-targeted Cast spell wired
+                # here, the simplest of the three -- `render_cast_
+                # announcement()`'s generic fallback already handles it
+                # (needs only `province_name`, no companion sentence or
+                # dedicated renderer the way Bless/Tornado need), so this
+                # branch is just the same board_width-gated resolution
+                # calling `describe_cast()` with no extra fields. Real
+                # fixture confirmation: `SE3__T5.K1` ("In spring, I cast a
+                # Part Sea spell and the waters of Mercia were magically
+                # parted.") confirms both the base text and the "< cast a
+                # ~ spell and " opening clause exactly as already coded
+                # (`Spell.PART_SEA` was never in `_CAST_ANNOUNCEMENT_NO_
+                # OPENING_SPELLS`/`CAST_SPELL_OPENING_COMPLETE_SPELLS`, so
+                # it already used `CAST_SPELL_OPENING_CONTINUED_TEMPLATE`
+                # correctly -- this phase only closes the dispatch-loop
+                # gap, not a text bug).
+                if board_width is None:
+                    continue
+                coord = decode_hex_number(entry.result.request.target, board_width)
+                province_name = _province_label(state, coord)
+                line = describe_cast(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                if line is not None:
+                    lines.append(line)
+                continue
             if spell is Spell.SKELETAL_ARMY:
                 # Phase 936: a `NO_TARGET_SPELLS` entry (`cast_decode.py`)
                 # -- no leader/province target to resolve at all, so this
