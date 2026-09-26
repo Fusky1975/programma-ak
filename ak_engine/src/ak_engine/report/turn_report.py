@@ -8656,6 +8656,47 @@ def describe_turn_results(
                 if line is not None:
                     lines.append(line)
                 continue
+            if spell is Spell.EARTHQUAKE:
+                # Phase 942: a fourth province-targeted Cast spell wired
+                # here, structurally identical to Part_Sea above (needs
+                # only `province_name`, same generic `render_cast_
+                # announcement()` fallback, same board_width gating).
+                # **Inferred, not independently fixture-confirmed**: no
+                # successful real Earthquake cast survives in either
+                # fixture corpus (the one real mention, `SE3__T9.K1`,
+                # is a *fizzled* cast -- a different template entirely,
+                # per `describe_cast()`'s own Phase 603 note on SFAIL.X).
+                # The inference rests on `SAY.PAS`'s own source structure,
+                # not a guess: `_SQuake: Sps(Earthquake,S_Comm)` sits in
+                # the exact same "_S*" dispatch group as `_SPart:
+                # Sps(Part_Sea,S_Comm)` immediately above it -- same
+                # label group, same call shape (`Sps(sp,S_Comm)`, a single
+                # call site each, no separate bystander-only label the
+                # way Tornado's `_STorn`/`_ATDestr` pair has), same
+                # severity. Phase 938 already established this "_S*"
+                # group is the top-level CAST action's own dispatch (not
+                # an Encounter-only or bystander-only context) for every
+                # other spell examined there (Resurrection/Kill_Enemy/
+                # Charm/Oratory/Clairvoyance) -- Part_Sea's own real
+                # fixture text (`SE3__T5.K1`) then confirmed, for this
+                # exact same dispatch shape, that the top-level view DOES
+                # get the "< cast a ~ spell and " opening clause already
+                # coded (`Spell.EARTHQUAKE` was likewise never added to
+                # `_CAST_ANNOUNCEMENT_NO_OPENING_SPELLS`/
+                # `CAST_SPELL_OPENING_COMPLETE_SPELLS`). This is the same
+                # "same dispatch shape as an already-confirmed sibling"
+                # inference Phase 938 used for Clairvoyance (there, a
+                # weaker "self-contained sentence" structural argument;
+                # here, the identical single-call `Sps(sp,S_Comm)` shape
+                # Part_Sea's own fixture already validated directly).
+                if board_width is None:
+                    continue
+                coord = decode_hex_number(entry.result.request.target, board_width)
+                province_name = _province_label(state, coord)
+                line = describe_cast(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                if line is not None:
+                    lines.append(line)
+                continue
             if spell is Spell.SKELETAL_ARMY:
                 # Phase 936: a `NO_TARGET_SPELLS` entry (`cast_decode.py`)
                 # -- no leader/province target to resolve at all, so this

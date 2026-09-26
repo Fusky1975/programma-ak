@@ -4768,6 +4768,47 @@ def test_describe_turn_results_skips_a_part_sea_cast_without_board_width():
     assert lines == []
 
 
+def test_describe_turn_results_narrates_a_successful_earthquake_cast():
+    # Phase 942: Spell.EARTHQUAKE is a fourth province-targeted Cast spell
+    # wired into this dispatch loop, structurally identical to Part_Sea
+    # above -- same generic render_cast_announcement() fallback, same
+    # board_width gating. Inferred (not independently fixture-confirmed:
+    # no successful real Earthquake cast survives) from Part_Sea's own
+    # already-confirmed identical SAY.PAS dispatch shape (`_SQuake:
+    # Sps(Earthquake,S_Comm)`, the same "_S*" group, same single-call
+    # shape, as `_SPart: Sps(Part_Sea,S_Comm)`) -- see this dispatch
+    # branch's own Phase 942 comment for the full derivation.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Sir Aldric", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, name="Limerick"))
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == ["Sir Aldric cast a Earthquake spell and Limerick was devastated by an earthquake!"]
+
+
+def test_describe_turn_results_skips_an_earthquake_cast_without_board_width():
+    # Same opt-in board_width convention as Bless/Tornado/Part_Sea above.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Sir Aldric", location=HexCoord(0, 0)))
+    request = CastRequest(spell=Spell.EARTHQUAKE, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
 def test_describe_turn_results_narrates_a_successful_skeletal_army_cast():
     # Phase 936: Spell.SKELETAL_ARMY is a NO_TARGET_SPELLS entry -- no
     # leader/province target to resolve, so no board_width needed either,
