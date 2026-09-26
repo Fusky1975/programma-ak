@@ -36565,11 +36565,48 @@ supply of any of these doesn't have to be re-derived from scratch:
   already established is the top-level CAST action's own dispatch, and
   the shape Part_Sea's own real fixture text just confirmed does get the
   opening clause. See `describe_turn_results()`'s own Phase 942 dispatch
-  comment for the full derivation. Flood/Plague (need
+  comment for the full derivation. ~~Flood/Plague (need
   `army_names`, not yet captured by their own `_execute_*()` functions)
   and Illus_Terrain/Hide_Feature (need `terrain_name`/`feature_name`,
   larger gaps of their own) remain unwired for the reasons already
-  documented above.
+  documented above.~~
+
+  **Phase 943: `Spell.ILLUS_TERRAIN` closed too, a fifth province-
+  targeted Cast spell wired in -- and a real narration-attribution bug
+  found and fixed along the way, not just a dispatch-loop gap.**
+  `SPELL_CAST_ANNOUNCEMENT[Spell.ILLUS_TERRAIN]`'s own catalog entry
+  ("X had an illusion cast upon it. It was actually a Y province.") was
+  never the top-level CAST action's own text at all -- real fixture text
+  settles this decisively. `SE3__T11.K1` (line 1084-1086) shows a
+  successful cast's own real line: "I cast a Illusory Terrain spell and
+  the Plain terrain of Kajaani was magically made to appear as Mountain."
+  -- exactly `SAY.PAS _STerIl`'s template (`"the ~ terrain of @ was
+  magically made to appear as \`."`, `S_Comm`, no `SPNOTE.X2` dispatch)
+  with the ordinary opening clause prepended, the *same* text this
+  project's own `render_illus_terrain_world_event()` already renders for
+  the bystander/GIR view (Phase 232) -- just missing the "< cast a ~
+  spell and " prefix there. The catalog entry is real too, just for a
+  *different* dispatch: `SAY.PAS`'s own `_LSeeI: Sps(Illus_Terrain,
+  S_Red)` (line 749) sits among movement/exploration-context labels, not
+  the "_S*" top-level-cast group `_STerIl` belongs to -- and two other
+  real fixture hits (`SE3__T9.K1`/`SE3__T11.K1`) independently confirm
+  this is a *movement* action discovering the illusion firsthand
+  ("Alaric marched his forces into Maplehaven. Maplehaven had an
+  illusion cast upon it...", a different Kingdom's own leader, no cast
+  announcement nearby), not a cast announcement -- this project has no
+  "entered an illusioned province" branch anywhere yet, so this
+  particular text stays a real, confirmed, still-open gap rather than
+  a guess. `describe_cast()` gets a new dedicated `render_illus_terrain_
+  cast_outcome()` branch (the same "wholly separate renderer" treatment
+  Tornado/Charm already got in Phases 937/938, for the same reason: the
+  catalog entry doesn't match the real top-level text), needing a new
+  `real_terrain_name` parameter alongside the existing (fake-terrain)
+  `terrain_name` -- Illusory Terrain is the only spell whose real
+  top-level text names two different terrains at once. Flood/Plague
+  (need `army_names`, not yet captured by their own `_execute_*()`
+  functions) and Hide_Feature (needs `feature_name`, and no real fixture
+  example of a successful cast survives either way, per Phase 938) are
+  the two remaining unwired province/army-list Cast spells.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

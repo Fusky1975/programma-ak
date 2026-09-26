@@ -304,6 +304,7 @@ from ak_engine.report.turn_report import (
     render_skeletal_army_outcome,
     render_tornado_outcome,
     render_charm_outcome,
+    render_illus_terrain_cast_outcome,
     render_cast_announcement,
     render_kill_enemy_berserk_onset,
     render_monster_description,
@@ -4809,6 +4810,72 @@ def test_describe_turn_results_skips_an_earthquake_cast_without_board_width():
     assert lines == []
 
 
+def test_describe_turn_results_narrates_a_successful_illus_terrain_cast():
+    # Phase 943: Spell.ILLUS_TERRAIN is a fifth province-targeted Cast
+    # spell wired into this dispatch loop -- needs two terrain names
+    # (real, from province.terrain; fake, from request.terrain), unlike
+    # Bless/Tornado/Earthquake/Part_Sea's province_name-only shape.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Teleko", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Kajaani"))
+    request = CastRequest(
+        spell=Spell.ILLUS_TERRAIN, target=encode_hex_number(HexCoord(0, 0), board_width=10), terrain=Terrain.MTNS
+    )
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == [
+        "Teleko cast a Illusory Terrain spell and the Plain terrain of Kajaani was magically made to appear as Mountain."
+    ]
+
+
+def test_describe_turn_results_skips_an_illus_terrain_cast_without_board_width():
+    # Same opt-in board_width convention as Bless/Tornado/Part_Sea/
+    # Earthquake above.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Teleko", location=HexCoord(0, 0)))
+    request = CastRequest(
+        spell=Spell.ILLUS_TERRAIN, target=encode_hex_number(HexCoord(0, 0), board_width=10), terrain=Terrain.MTNS
+    )
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_turn_results_skips_an_illus_terrain_cast_with_unknown_province():
+    # Same "province not found" guard the other province-targeted
+    # branches don't need a dedicated test for (their own describe_cast()
+    # calls tolerate a missing province_name gracefully via _province_
+    # label()'s own fallback) -- this branch needs its own real
+    # ProvinceState to read the real terrain from, so an unknown coord
+    # is skipped explicitly before ever calling describe_cast().
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Teleko", location=HexCoord(0, 0)))
+    request = CastRequest(
+        spell=Spell.ILLUS_TERRAIN, target=encode_hex_number(HexCoord(0, 0), board_width=10), terrain=Terrain.MTNS
+    )
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == []
+
+
 def test_describe_turn_results_narrates_a_successful_skeletal_army_cast():
     # Phase 936: Spell.SKELETAL_ARMY is a NO_TARGET_SPELLS entry -- no
     # leader/province target to resolve, so no board_width needed either,
@@ -7209,6 +7276,31 @@ def test_describe_cast_uses_the_charm_outcome():
     line = describe_cast(result, caster_name="Uga-Buga Makumb", rng=rng, target_name="Melantheus")
 
     assert line == "Melantheus was magically charmed by Uga-Buga Makumb."
+
+
+def test_render_illus_terrain_cast_outcome():
+    # Phase 943: Illusory Terrain's own real top-level-cast text is
+    # _STerIl's (the same one render_illus_terrain_world_event() already
+    # renders for the bystander/GIR view), not SPELL_CAST_ANNOUNCEMENT[
+    # Spell.ILLUS_TERRAIN]'s own catalog entry (that one is real too, just
+    # for a different dispatch -- _LSeeI, a still-unwired movement-
+    # discovery reveal). Real fixture text (SE3__T11.K1): "I cast a
+    # Illusory Terrain spell and the Plain terrain of Kajaani was
+    # magically made to appear as Mountain."
+    rng = ScriptedRandom([])
+    result = render_illus_terrain_cast_outcome("Teleko", "Plain", "Kajaani", "Mountain", rng)
+    assert result == "Teleko cast a Illusory Terrain spell and the Plain terrain of Kajaani was magically made to appear as Mountain."
+
+
+def test_describe_cast_uses_the_illus_terrain_cast_outcome():
+    result = CastExecutionResult(request=CastRequest(spell=Spell.ILLUS_TERRAIN, target=0), applied=True)
+    rng = ScriptedRandom([])
+
+    line = describe_cast(
+        result, caster_name="Teleko", rng=rng, province_name="Kajaani", terrain_name="Mountain", real_terrain_name="Plain"
+    )
+
+    assert line == "Teleko cast a Illusory Terrain spell and the Plain terrain of Kajaani was magically made to appear as Mountain."
 
 
 def test_describe_cast_renders_the_announcement_when_applied():
