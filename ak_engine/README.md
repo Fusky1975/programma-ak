@@ -36647,11 +36647,65 @@ supply of any of these doesn't have to be re-derived from scratch:
   level." -- a different verb clause than the destroy sentence, and
   `CastExecutionResult` has no field recording which armies took this
   outcome yet) -- left unwired this phase, the same "confirmed text, no
-  data to feed it yet" shape as Hide_Feature's own gap. Flood (needs
+  data to feed it yet" shape as Hide_Feature's own gap. ~~Flood (needs
   `army_names`, not yet captured by its own `_execute_flood()`) and
   Hide_Feature (needs `feature_name`, no real fixture example of a
   successful cast survives either way, per Phase 938) remain the two
-  unwired province/army-list Cast spells.
+  unwired province/army-list Cast spells.~~
+
+  **Phase 945: `Spell.FLOOD` closed too, a seventh province-targeted
+  Cast spell wired in -- and the simplest of them all, plus a second
+  confirmed "catalog entry is real but for a different, still-unwired
+  dispatch" finding.** The `army_names` premise the previous phase's
+  own note rested on turned out to be unnecessary: real fixture text
+  (`SE3__T6.K1`: "I cast a Flood spell and Limerick was magically
+  flooded."; `SE3__T7.K1`: "Clarambald cast a Flood spell and Ngara was
+  magically flooded.") shows Flood's own real top-level-cast text is
+  `SAY.PAS _SFlood`'s ("@ was magically flooded.", `S_Comm`) -- the
+  exact same template `render_flood_world_event()` already renders for
+  the bystander/GIR view, with the ordinary opening clause prepended --
+  never `SPELL_CAST_ANNOUNCEMENT[Spell.FLOOD]`'s own catalog entry ("the
+  Flood slowed ^L= in @, causing them to lose one movement point."), the
+  same "shared `S_Comm` text between the caster's own view and
+  bystanders" shape Illusory Terrain's own Phase 943 fix and Part_Sea's
+  own Phase 941 fix both already established. No new
+  `CastExecutionResult` field needed at all.
+
+  **The catalog entry is real too, just for a different dispatch --
+  though, unlike Illusory Terrain's `_LSeeI`, with zero confirmed real
+  fixture occurrences anywhere to pin down its own trigger condition.**
+  `SAY.PAS`'s own `_ASlow: Sps(Flood,S_Batt)` (line 862) sits in a
+  distinct "_A*" end-of-turn per-army-effect label group (alongside
+  `_ARecr`/`_ADisb`/`_ARedu`/`_ADesert`/`_ARises`/`_ATDestr`/`_APDestr`/
+  `_ABDestr`), not the "_S*" top-level-cast group `_SFlood` belongs to.
+  The only real fixture text naming a per-unit movement-point deduction
+  (`SE3__T5.K1`'s own "MARCH THROUGH FLOODS" Advanced Ability
+  *description*) is a "Congratulations, new ability" block, not a live
+  cast or move narration -- consistent with this being real, sourced
+  text for a separate mechanic (an army using `AdvancedAbility.MARCH_
+  THROUGH_FLOODS` to cross a Flooded province on a *later* turn, already
+  wired mechanically in `turn/move_execution.py`) that Move narration
+  doesn't render yet -- left unbuilt here, the same "text is real,
+  trigger isn't modeled" shape as Illusory Terrain's own `_LSeeI` gap.
+
+  **Two further, smaller findings surfaced along the way, left for a
+  future phase, not this one**: (1) `SAY.PAS`'s own "_A*" group also has
+  `_APDestr: Sps(Plague,S_AA)` -- a Plague-specific victim-kingdom
+  bystander notice exactly parallel to Tornado's own `_ATDestr` (Phase
+  939), meaning Plague likely needs the same
+  `tornado_victim_notices_by_kingdom`-style wiring Tornado already got;
+  (2) `_APSick,_ATTorn: Say('the ~ spell struck = in @ and reduced them
+  by one quality level.',S_AA)` confirms the exact real label for
+  Plague's own already-documented (Phase 944) quality-downgrade text,
+  and its shared naming with Tornado (`_ATTorn`) suggests Tornado may
+  have an analogous, currently-unmodeled quality-downgrade outcome of
+  its own worth checking.
+
+  This closes every `_CAST_ANNOUNCEMENT_PROVINCE_SPELLS`/
+  `_CAST_ANNOUNCEMENT_ARMY_LIST_SPELLS` entry in this dispatch loop
+  except `Spell.HIDE_FEATURE` -- a confirmed dead end (Phase 938): no
+  real fixture example of a successful cast survives in either corpus
+  to confirm its own text either way.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

@@ -306,6 +306,7 @@ from ak_engine.report.turn_report import (
     render_charm_outcome,
     render_illus_terrain_cast_outcome,
     render_plague_outcome,
+    render_flood_cast_outcome,
     render_cast_announcement,
     render_kill_enemy_berserk_onset,
     render_monster_description,
@@ -4918,6 +4919,42 @@ def test_describe_turn_results_skips_a_plague_cast_without_board_width():
     assert lines == []
 
 
+def test_describe_turn_results_narrates_a_successful_flood_cast():
+    # Phase 945: Spell.FLOOD is a seventh province-targeted Cast spell
+    # wired into this dispatch loop, the simplest of all of them --
+    # describe_cast()'s own dedicated branch needs only province_name.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Clarambald", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Ngara"))
+    request = CastRequest(spell=Spell.FLOOD, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == ["Clarambald cast a Flood spell and Ngara was magically flooded."]
+
+
+def test_describe_turn_results_skips_a_flood_cast_without_board_width():
+    # Same opt-in board_width convention as the other province-targeted
+    # Cast branches above.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Clarambald", location=HexCoord(0, 0)))
+    request = CastRequest(spell=Spell.FLOOD, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
 def test_describe_turn_results_narrates_a_successful_skeletal_army_cast():
     # Phase 936: Spell.SKELETAL_ARMY is a NO_TARGET_SPELLS entry -- no
     # leader/province target to resolve, so no board_width needed either,
@@ -7381,6 +7418,28 @@ def test_describe_cast_uses_the_plague_outcome():
         "Alaric cast a Plague spell.Cascadia was hit by a plague."
         "The plague struck the 55th Garrison in Cascadia and destroyed them."
     )
+
+
+def test_render_flood_cast_outcome():
+    # Phase 945: Flood's own real top-level-cast text is _SFlood's (the
+    # same one render_flood_world_event() already renders for the
+    # bystander/GIR view), not SPELL_CAST_ANNOUNCEMENT[Spell.FLOOD]'s own
+    # catalog entry (that one is real too, just for a different, still-
+    # unwired dispatch -- _ASlow, whose own trigger condition has zero
+    # confirmed real fixture occurrences). Real fixture text (SE3__T6.K1):
+    # "I cast a Flood spell and Limerick was magically flooded."
+    rng = ScriptedRandom([])
+    result = render_flood_cast_outcome("Aldric", "Limerick", rng)
+    assert result == "Aldric cast a Flood spell and Limerick was magically flooded."
+
+
+def test_describe_cast_uses_the_flood_cast_outcome():
+    result = CastExecutionResult(request=CastRequest(spell=Spell.FLOOD, target=0), applied=True)
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Clarambald", rng=rng, province_name="Ngara")
+
+    assert line == "Clarambald cast a Flood spell and Ngara was magically flooded."
 
 
 def test_describe_cast_renders_the_announcement_when_applied():
