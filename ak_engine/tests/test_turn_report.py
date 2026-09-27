@@ -305,6 +305,7 @@ from ak_engine.report.turn_report import (
     render_tornado_outcome,
     render_charm_outcome,
     render_illus_terrain_cast_outcome,
+    render_plague_outcome,
     render_cast_announcement,
     render_kill_enemy_berserk_onset,
     render_monster_description,
@@ -4876,6 +4877,47 @@ def test_describe_turn_results_skips_an_illus_terrain_cast_with_unknown_province
     assert lines == []
 
 
+def test_describe_turn_results_narrates_a_successful_plague_cast():
+    # Phase 944: Spell.PLAGUE is a sixth province-targeted Cast spell
+    # wired into this dispatch loop, the same board_width-gated shape as
+    # Bless/Tornado/Earthquake/Part_Sea -- describe_cast()'s own
+    # dedicated branch reads result.plague_destroyed directly.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Alaric", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Cascadia"))
+    request = CastRequest(spell=Spell.PLAGUE, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    destroyed = [ArmyState(55, 2, ArmyType.GARRISON, Quality.AVERAGE, HexCoord(0, 0))]
+    result = CastExecutionResult(request=request, applied=True, plague_destroyed=destroyed)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == [
+        "Alaric cast a Plague spell.Cascadia was hit by a plague."
+        "The plague struck the 55th Garrison in Cascadia and destroyed them."
+    ]
+
+
+def test_describe_turn_results_skips_a_plague_cast_without_board_width():
+    # Same opt-in board_width convention as the other province-targeted
+    # Cast branches above.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Alaric", location=HexCoord(0, 0)))
+    request = CastRequest(spell=Spell.PLAGUE, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
 def test_describe_turn_results_narrates_a_successful_skeletal_army_cast():
     # Phase 936: Spell.SKELETAL_ARMY is a NO_TARGET_SPELLS entry -- no
     # leader/province target to resolve, so no board_width needed either,
@@ -7301,6 +7343,44 @@ def test_describe_cast_uses_the_illus_terrain_cast_outcome():
     )
 
     assert line == "Teleko cast a Illusory Terrain spell and the Plain terrain of Kajaani was magically made to appear as Mountain."
+
+
+def test_render_plague_outcome_with_nothing_destroyed():
+    rng = ScriptedRandom([])
+    result = render_plague_outcome("Aldric", "Sageleaf", [], rng)
+    assert result == "Aldric cast a Plague spell.Sageleaf was hit by a plague.The Plague affected no armies in Sageleaf."
+
+
+def test_render_plague_outcome_with_armies_destroyed():
+    # Phase 944: real fixture text (SE3__T7.K1/T10.K1) shows the same
+    # repeated-sentence pattern Tornado already established as this
+    # project's own majority-supported default for a multi-army destroy
+    # list, not SPELL_CAST_ANNOUNCEMENT[Spell.PLAGUE]'s own joined `^L=`
+    # catalog entry.
+    destroyed = [
+        ArmyState(244, 2, ArmyType.HVY_CAVALRY, Quality.AVERAGE, HexCoord(0, 0)),
+        ArmyState(276, 2, ArmyType.HVY_CAVALRY, Quality.AVERAGE, HexCoord(0, 0)),
+    ]
+    rng = ScriptedRandom([])
+    result = render_plague_outcome("Aldric", "Kajaani", destroyed, rng)
+    assert result == (
+        "Aldric cast a Plague spell.Kajaani was hit by a plague."
+        "The plague struck the 244th Heavy Cavalry in Kajaani and destroyed them."
+        "The plague struck the 276th Heavy Cavalry in Kajaani and destroyed them."
+    )
+
+
+def test_describe_cast_uses_the_plague_outcome():
+    destroyed = [ArmyState(55, 2, ArmyType.GARRISON, Quality.AVERAGE, HexCoord(0, 0))]
+    result = CastExecutionResult(request=CastRequest(spell=Spell.PLAGUE, target=0), applied=True, plague_destroyed=destroyed)
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Alaric", rng=rng, province_name="Cascadia")
+
+    assert line == (
+        "Alaric cast a Plague spell.Cascadia was hit by a plague."
+        "The plague struck the 55th Garrison in Cascadia and destroyed them."
+    )
 
 
 def test_describe_cast_renders_the_announcement_when_applied():

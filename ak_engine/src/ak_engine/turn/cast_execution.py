@@ -1124,6 +1124,17 @@ class CastExecutionResult:
     # same either way, matching Bless's own identical convention.
     # ``[]`` for every other spell.
     tornado_destroyed: list[ArmyState] = field(default_factory=list)
+    # Phase 944: a successful Plague's own real destroyed armies, the same
+    # "``ArmyState`` snapshot before ``state.remove_army()``" idiom as
+    # ``tornado_destroyed`` above (via ``apply_plague_exposure()``'s own
+    # Phase 944 return value). Empty when the roll missed, when the
+    # province's own plague was already active (a repeat cast, no-op --
+    # see ``_execute_plague()``'s own docstring), or when nothing was
+    # actually destroyed (every army present was immune/Penicillin-
+    # protected/missed its own roll). Needed by ``report/turn_report.py
+    # render_plague_outcome()`` to build each one's own real "the Nth
+    # <ArmyType>" display name. ``[]`` for every other spell.
+    plague_destroyed: list[ArmyState] = field(default_factory=list)
 
 
 def execute_cast(
@@ -2809,7 +2820,7 @@ def quality_one_level_down(quality: Quality) -> Quality:
     return Quality(max(Quality.DEPLETED.value, quality.value - 1))
 
 
-def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng: random.Random) -> None:
+def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng: random.Random) -> list[ArmyState]:
     """Tests every eligible army at ``coord`` against one Plague exposure --
     rulebook [4.25.3], shared by the initial cast (``_execute_plague()``)
     and the spread mechanic (``turn/plague_spread.py resolve_plague_
@@ -2854,6 +2865,22 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
     Good King titleholder's own Kingdom; an army is protected if it
     belongs to that Kingdom, or sits in a province that Kingdom owns,
     regardless of the army's own owner.
+
+    **Phase 944**: every actually-destroyed ``ArmyState`` (captured
+    *before* ``state.remove_army()``, the same idiom Tornado's own
+    Phase 937 fix uses) is now returned -- previously computed and
+    discarded, with no way for either real caller (``_execute_plague()``
+    below, ``turn/plague_spread.py resolve_plague_spread()``) to narrate
+    which armies actually died. Only ``_execute_plague()`` consumes this
+    return value so far (into ``CastExecutionResult.plague_destroyed``);
+    ``resolve_plague_spread()`` still discards it -- the spread
+    mechanic's own narration is a separate, deferred gap (see that
+    module's own docstring). The quality-downgrade branches (Penicillin,
+    already-immune) are NOT captured here -- real fixture text confirms
+    a separate, distinct sentence for that outcome ("The Plague spell
+    struck the ~ in @ and reduced them by one quality level.",
+    `SE3__T11.K1`), a confirmed-real but still-unwired follow-up, not
+    attempted this phase.
     """
 
     province = state.provinces.get(coord)
@@ -2868,6 +2895,7 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
         good_king_leader = state.leaders.get(good_king_holder.leader_id)
         good_king_kingdom_id = good_king_leader.kingdom_id if good_king_leader is not None else None
 
+    destroyed: list[ArmyState] = []
     for army in list(state.armies_at(coord)):
         if army.kingdom_id is None:
             continue
@@ -2891,9 +2919,11 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
                 army.quality = quality_one_level_down(army.quality)
             continue
         if rng.random() < army_chance:
+            destroyed.append(army)
             state.remove_army(army.army_id)
         else:
             army.plague_immune = True
+    return destroyed
 
 
 def _execute_plague(
@@ -2938,8 +2968,8 @@ def _execute_plague(
     chance = PLAGUE_BASE_DESTROY_CHANCE + PLAGUE_DESTROY_CHANCE_PER_LEVEL * _caster_level(
         state, caster, Ability.NECROMANCY, wand_skill_level
     )
-    apply_plague_exposure(state, coord, chance, rng)
-    return CastExecutionResult(request, applied=True)
+    destroyed = apply_plague_exposure(state, coord, chance, rng)
+    return CastExecutionResult(request, applied=True, plague_destroyed=destroyed)
 
 
 def _execute_scar_terrain(

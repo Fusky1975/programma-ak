@@ -2211,6 +2211,10 @@ def test_plague_destroys_humanoid_units_that_roll_under_the_chance():
 
     assert result.applied is True
     assert 1 not in state.armies
+    # Phase 944: the destroyed ArmyState itself survives on the result,
+    # captured before state.remove_army() -- needed by report/turn_
+    # report.py render_plague_outcome() for the real per-army narration.
+    assert [army.army_id for army in result.plague_destroyed] == [1]
 
 
 def test_plague_skips_non_humanoid_and_mercenary_armies():
@@ -2254,6 +2258,7 @@ def test_plague_recast_on_an_already_active_province_is_a_no_op():
 
     assert result.applied is True
     assert 1 in state.armies  # untouched -- no cumulative effect
+    assert result.plague_destroyed == []
 
 
 def test_apply_plague_exposure_immunizes_a_survivor():
@@ -2261,10 +2266,11 @@ def test_apply_plague_exposure_immunizes_a_survivor():
     state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
     rng = ScriptedRandom([0.5])  # misses a 0.2 destroy chance -- survives
 
-    apply_plague_exposure(state, LOCATION, 0.2, rng)
+    destroyed = apply_plague_exposure(state, LOCATION, 0.2, rng)
 
     assert 1 in state.armies
     assert state.armies[1].plague_immune is True
+    assert destroyed == []
 
 
 def test_apply_plague_exposure_destroys_a_non_immune_army_on_a_hit():
@@ -2272,9 +2278,12 @@ def test_apply_plague_exposure_destroys_a_non_immune_army_on_a_hit():
     state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
     rng = ScriptedRandom([0.01])  # hits a 0.2 destroy chance
 
-    apply_plague_exposure(state, LOCATION, 0.2, rng)
+    destroyed = apply_plague_exposure(state, LOCATION, 0.2, rng)
 
     assert 1 not in state.armies
+    # Phase 944: the destroyed ArmyState survives in the returned list,
+    # captured before state.remove_army() removed it from state.armies.
+    assert [army.army_id for army in destroyed] == [1]
 
 
 def test_apply_plague_exposure_penicillin_never_destroys_only_downgrades():

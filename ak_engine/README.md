@@ -36602,11 +36602,56 @@ supply of any of these doesn't have to be re-derived from scratch:
   catalog entry doesn't match the real top-level text), needing a new
   `real_terrain_name` parameter alongside the existing (fake-terrain)
   `terrain_name` -- Illusory Terrain is the only spell whose real
-  top-level text names two different terrains at once. Flood/Plague
+  top-level text names two different terrains at once. ~~Flood/Plague
   (need `army_names`, not yet captured by their own `_execute_*()`
   functions) and Hide_Feature (needs `feature_name`, and no real fixture
   example of a successful cast survives either way, per Phase 938) are
-  the two remaining unwired province/army-list Cast spells.
+  the two remaining unwired province/army-list Cast spells.~~
+
+  **Phase 944: `Spell.PLAGUE` closed too, a sixth province-targeted Cast
+  spell wired in -- with the same real, documented multi-army-list
+  ambiguity Tornado's own Phase 937 finding already established for a
+  different spell, independently re-confirmed here, not assumed by
+  analogy.** `apply_plague_exposure()` (shared by `_execute_plague()`
+  and the spread mechanic, `turn/plague_spread.py`) used to compute and
+  discard every destroyed army -- now returns them (the same "snapshot
+  before `state.remove_army()`" idiom Tornado's Phase 937 fix uses),
+  captured into a new `CastExecutionResult.plague_destroyed` by
+  `_execute_plague()` specifically (the spread mechanic's own call site
+  still discards the return -- its own narration is a separate,
+  deferred gap). A careful re-classification of every real "cast a
+  Plague spell" fixture hit across both corpora -- disentangling the
+  caster's own direct-cast view from plague-*spread* narration (no
+  opening clause, arrives disconnected from any cast mention, e.g.
+  `SE3__T6.K1`'s own "Tebessa was hit by a plague..." with no preceding
+  cast) and foreign-kingdom GIR content (`SE3__T8.K1`'s own "Kingdom of
+  Hokuto (#4):" block) -- leaves exactly 3 confirmed clean direct-cast
+  multi-army examples: `SE3__T7.K1` (5 armies) and `SE3__T10.K1` (2
+  armies) repeat the whole "The plague struck the Nth &lt;ArmyType&gt;
+  in @ and destroyed them." sentence once per army, while `SE3__T9.K1`
+  (4 armies) instead joins them into one "X, the Y, the Z and the W"
+  list -- 2 real examples against 1, so the same "repeated sentence"
+  majority-supported default already chosen for Tornado/Skeletal_Army is
+  kept here too, not overturned by a single counter-example, per this
+  project's own documented-ambiguity convention. `describe_cast()` gets
+  the same "wholly separate renderer" treatment as Tornado
+  (`render_plague_outcome()`, reusing `render_plague_world_event()`
+  directly for the "@ was hit by a plague." line shared with the
+  bystander/GIR view -- confirmed identical wording by direct fixture
+  comparison) rather than `SPELL_CAST_ANNOUNCEMENT[Spell.PLAGUE]`'s own
+  joined-list catalog entry. **A third, confirmed-real but still-unwired
+  outcome, found in the same fixture search**: `apply_plague_exposure()`'s
+  own already-immune/Penicillin quality-downgrade branches have their
+  own distinct real sentence (`SE3__T11.K1`: "The Plague spell struck
+  the 209th Warg Riders in Rejaf and reduced them by one quality
+  level." -- a different verb clause than the destroy sentence, and
+  `CastExecutionResult` has no field recording which armies took this
+  outcome yet) -- left unwired this phase, the same "confirmed text, no
+  data to feed it yet" shape as Hide_Feature's own gap. Flood (needs
+  `army_names`, not yet captured by its own `_execute_flood()`) and
+  Hide_Feature (needs `feature_name`, no real fixture example of a
+  successful cast survives either way, per Phase 938) remain the two
+  unwired province/army-list Cast spells.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
