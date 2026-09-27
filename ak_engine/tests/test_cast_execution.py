@@ -1674,6 +1674,10 @@ def test_tornado_giant_fan_downgrades_quality_instead_of_destroying():
     assert result.discovery_defended is Discovery.GIANT_FAN
     assert 2 in state.armies  # never destroyed
     assert state.armies[2].quality == Quality.GREEN  # one level down from AVERAGE
+    # Phase 948: captured for report/turn_report.py render_tornado_outcome()'s
+    # own quality-downgrade narration.
+    assert result.tornado_destroyed == []
+    assert [army.army_id for army in result.tornado_quality_downgraded] == [2]
 
 
 # ---------------------------------------------------------------------------
@@ -2266,11 +2270,12 @@ def test_apply_plague_exposure_immunizes_a_survivor():
     state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
     rng = ScriptedRandom([0.5])  # misses a 0.2 destroy chance -- survives
 
-    destroyed = apply_plague_exposure(state, LOCATION, 0.2, rng)
+    destroyed, quality_downgraded = apply_plague_exposure(state, LOCATION, 0.2, rng)
 
     assert 1 in state.armies
     assert state.armies[1].plague_immune is True
     assert destroyed == []
+    assert quality_downgraded == []
 
 
 def test_apply_plague_exposure_destroys_a_non_immune_army_on_a_hit():
@@ -2278,12 +2283,13 @@ def test_apply_plague_exposure_destroys_a_non_immune_army_on_a_hit():
     state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
     rng = ScriptedRandom([0.01])  # hits a 0.2 destroy chance
 
-    destroyed = apply_plague_exposure(state, LOCATION, 0.2, rng)
+    destroyed, quality_downgraded = apply_plague_exposure(state, LOCATION, 0.2, rng)
 
     assert 1 not in state.armies
     # Phase 944: the destroyed ArmyState survives in the returned list,
     # captured before state.remove_army() removed it from state.armies.
     assert [army.army_id for army in destroyed] == [1]
+    assert quality_downgraded == []
 
 
 def test_apply_plague_exposure_penicillin_never_destroys_only_downgrades():
@@ -2295,11 +2301,15 @@ def test_apply_plague_exposure_penicillin_never_destroys_only_downgrades():
     state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
     rng = ScriptedRandom([0.49])  # hits the flat 50% downgrade chance
 
-    apply_plague_exposure(state, LOCATION, 1.0, rng)  # chance=100% would otherwise always destroy
+    destroyed, quality_downgraded = apply_plague_exposure(state, LOCATION, 1.0, rng)  # chance=100% would otherwise always destroy
 
     assert 1 in state.armies  # never destroyed
     assert state.armies[1].quality == Quality.GREEN
     assert state.armies[1].plague_immune is False  # Penicillin's own branch, not the immunity path
+    # Phase 948: captured for report/turn_report.py render_plague_outcome()'s
+    # own quality-downgrade narration.
+    assert destroyed == []
+    assert [army.army_id for army in quality_downgraded] == [1]
 
 
 def test_apply_plague_exposure_penicillin_protects_an_ally_in_the_owners_own_province():
@@ -2342,11 +2352,13 @@ def test_apply_plague_exposure_drops_an_immune_armys_quality_instead_of_killing_
     state.add_army(army)
     rng = ScriptedRandom([0.01])  # hits the 0.2 chance -- but immune, so quality drops instead
 
-    apply_plague_exposure(state, LOCATION, 0.2, rng)
+    destroyed, quality_downgraded = apply_plague_exposure(state, LOCATION, 0.2, rng)
 
     assert 1 in state.armies
     assert state.armies[1].quality is Quality.AVERAGE  # one level below Veteran
     assert state.armies[1].plague_immune is True
+    assert destroyed == []
+    assert [army.army_id for army in quality_downgraded] == [1]
 
 
 def test_apply_plague_exposure_immune_army_at_depleted_stays_depleted():

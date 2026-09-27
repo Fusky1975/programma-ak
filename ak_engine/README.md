@@ -36698,8 +36698,8 @@ supply of any of these doesn't have to be re-derived from scratch:
   real label for Plague's own already-documented (Phase 944)
   quality-downgrade text, and its shared naming with Tornado (`_ATTorn`)
   suggests Tornado may have an analogous, currently-unmodeled
-  quality-downgrade outcome of its own worth checking -- **still open**,
-  not attempted this phase either.
+  quality-downgrade outcome of its own worth checking -- **(2) closed in
+  Phase 948** too.
 
   **Phase 947: Plague's own real victim-kingdom notice wired too, the
   same `_APDestr: Sps(Plague,S_AA)` finding Phase 945 surfaced but
@@ -36711,7 +36711,9 @@ supply of any of these doesn't have to be re-derived from scratch:
   own PROVINCES table, to belong to this Kingdom, with no "cast a Plague
   spell" mention anywhere nearby) -- both the "was hit by a plague" line
   *and* the destroy sentence(s) travel together, unlike Tornado's own
-  notice (destroy sentences only). This isn't an inconsistency: GIR
+  notice (destroy sentences only, or -- as of Phase 948 -- quality-
+  downgrade sentences too, but still no equivalent province-wide "hit
+  by" line of its own). This isn't an inconsistency: GIR
   structurally never shows a Kingdom news about its own already-owned
   province (`describe_general_intelligence_report()`'s own `owner ==
   kingdom_id` exclusion), so without carrying the "hit by" line too, the
@@ -36724,6 +36726,44 @@ supply of any of these doesn't have to be re-derived from scratch:
   owning Kingdom, the same caster-exclusion/unowned-army-skip rules
   Tornado's notice already established), read by `compose_letter_
   report()` the same way every sibling per-kingdom notice bucket is.
+
+  **Phase 948: Tornado's and Plague's own shared quality-downgrade
+  outcome wired too, closing the second smaller finding Phase 945/947
+  surfaced but didn't pursue.** `SAY.PAS`'s own `_APSick,_ATTorn` is one
+  Pascal `CASE` arm shared by *two* labels, both dispatching the exact
+  same generic, spell-name-parameterized text: "the ~ spell struck the
+  = in @ and reduced them by one quality level." `_APSick` ("AP" =
+  Army-Plague, the same prefix `_APDestr` established) is Plague's own,
+  fixture-confirmed directly (`SE3__T11.K1`'s own Rejaf paragraph: a
+  destroy sentence for one army immediately followed by this exact
+  sentence for a different army in the same province, closing Phase
+  944's own "confirmed text, no data to feed it yet" finding).
+  `_ATTorn` ("AT" = Army-Tornado, the same prefix `_ATDestr`
+  established) is inferred to be Tornado's own version -- not
+  independently fixture-confirmed, but on solid mechanical grounds:
+  `Discovery.GIANT_FAN`'s own real effect ("Armies hit by Tornadoes will
+  have a 50% chance of losing one level of quality" instead of being
+  destroyed, Discovery.txt, Phase 270) was *already* fully modeled in
+  `_execute_tornado()`, computed and silently discarded -- this shared
+  label is simply the missing narration for a mechanic this project
+  already had, the same "text is real, wire it to an already-modeled
+  mechanic" shape as Scar Terrain's own Phase 721/722 fix, not a guess
+  at a new one.
+
+  `apply_plague_exposure()` now returns `(destroyed, quality_downgraded)`
+  (both the already-existing Penicillin and already-immune downgrade
+  branches captured), and `_execute_tornado()` captures its own Giant-
+  Fan-protected downgrades the same way -- new `CastExecutionResult.
+  plague_quality_downgraded`/`tornado_quality_downgraded` fields. Both
+  `render_plague_outcome()`/`render_tornado_outcome()` now render every
+  downgraded army via the new shared `render_quality_downgrade_notice()`,
+  destroy lines always first (the one confirmed real ordering), and
+  their own "no armies affected" line now correctly requires *nothing at
+  all* to have happened (neither a destroy nor a downgrade), not just an
+  empty destroy list. Both spells' own victim-kingdom notice mechanisms
+  (Phase 939/947) are extended the same way, on the same reasoning: a
+  foreign-owned army merely downgraded instead of destroyed is exactly
+  as real a piece of news to its own Kingdom as one destroyed outright.
 
   ~~This closes every `_CAST_ANNOUNCEMENT_PROVINCE_SPELLS`/
   `_CAST_ANNOUNCEMENT_ARMY_LIST_SPELLS` entry in this dispatch loop

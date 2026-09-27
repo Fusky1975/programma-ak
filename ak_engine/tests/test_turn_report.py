@@ -7356,7 +7356,7 @@ def test_describe_cast_uses_the_skeletal_army_outcome_when_armies_raised():
 
 def test_render_tornado_outcome_with_nothing_destroyed():
     rng = ScriptedRandom([])
-    result = render_tornado_outcome("Aldric", "Kajaani", [], rng)
+    result = render_tornado_outcome("Aldric", "Kajaani", [], [], rng)
     assert result == (
         "Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Kajaani."
         "The Tornado affected no armies in Kajaani."
@@ -7373,7 +7373,7 @@ def test_render_tornado_outcome_with_armies_destroyed():
         ArmyState(21, 2, ArmyType.LT_CAVALRY, Quality.AVERAGE, HexCoord(0, 0)),
     ]
 
-    result = render_tornado_outcome("Aldric", "Limerick", destroyed, rng)
+    result = render_tornado_outcome("Aldric", "Limerick", destroyed, [], rng)
 
     assert result == (
         "Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Limerick."
@@ -7406,6 +7406,23 @@ def test_describe_cast_uses_the_tornado_outcome_when_armies_destroyed():
     assert line == (
         "Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Limerick."
         "Tornadoes sucked up the 20th Legion in Limerick and destroyed them."
+    )
+
+
+def test_describe_cast_uses_the_tornado_outcome_when_a_giant_fan_army_is_downgraded():
+    # Phase 948: result.tornado_quality_downgraded reaches describe_cast()
+    # too, not just the destroy list.
+    quality_downgraded = [ArmyState(21, 2, ArmyType.LT_CAVALRY, Quality.AVERAGE, HexCoord(0, 0))]
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.TORNADO, target=0), applied=True, tornado_quality_downgraded=quality_downgraded,
+    )
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Aldric", rng=rng, province_name="Limerick")
+
+    assert line == (
+        "Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Limerick."
+        "The Tornado spell struck the 21st Light Cavalry in Limerick and reduced them by one quality level."
     )
 
 
@@ -7451,7 +7468,7 @@ def test_describe_cast_uses_the_illus_terrain_cast_outcome():
 
 def test_render_plague_outcome_with_nothing_destroyed():
     rng = ScriptedRandom([])
-    result = render_plague_outcome("Aldric", "Sageleaf", [], rng)
+    result = render_plague_outcome("Aldric", "Sageleaf", [], [], rng)
     assert result == "Aldric cast a Plague spell.Sageleaf was hit by a plague.The Plague affected no armies in Sageleaf."
 
 
@@ -7466,11 +7483,40 @@ def test_render_plague_outcome_with_armies_destroyed():
         ArmyState(276, 2, ArmyType.HVY_CAVALRY, Quality.AVERAGE, HexCoord(0, 0)),
     ]
     rng = ScriptedRandom([])
-    result = render_plague_outcome("Aldric", "Kajaani", destroyed, rng)
+    result = render_plague_outcome("Aldric", "Kajaani", destroyed, [], rng)
     assert result == (
         "Aldric cast a Plague spell.Kajaani was hit by a plague."
         "The plague struck the 244th Heavy Cavalry in Kajaani and destroyed them."
         "The plague struck the 276th Heavy Cavalry in Kajaani and destroyed them."
+    )
+
+
+def test_render_plague_outcome_with_quality_downgraded_armies():
+    # Phase 948: real fixture text (SE3__T11.K1's own Rejaf paragraph)
+    # shows a destroy sentence and a quality-downgrade sentence together
+    # in one cast's own outcome, destroy first.
+    destroyed = [ArmyState(109, 2, ArmyType.HVY_CAVALRY, Quality.AVERAGE, HexCoord(0, 0))]
+    quality_downgraded = [ArmyState(209, 2, ArmyType.WARG_RIDERS, Quality.AVERAGE, HexCoord(0, 0))]
+    rng = ScriptedRandom([])
+    result = render_plague_outcome("Aldric", "Rejaf", destroyed, quality_downgraded, rng)
+    assert result == (
+        "Aldric cast a Plague spell.Rejaf was hit by a plague."
+        "The plague struck the 109th Heavy Cavalry in Rejaf and destroyed them."
+        "The Plague spell struck the 209th Warg Riders in Rejaf and reduced them by one quality level."
+    )
+
+
+def test_render_tornado_outcome_with_quality_downgraded_armies():
+    # Phase 948: Tornado's own inferred quality-downgrade text (Giant
+    # Fan), same shape as Plague's own fixture-confirmed version.
+    destroyed = [ArmyState(20, 2, ArmyType.LEGION, Quality.AVERAGE, HexCoord(0, 0))]
+    quality_downgraded = [ArmyState(21, 2, ArmyType.LT_CAVALRY, Quality.AVERAGE, HexCoord(0, 0))]
+    rng = ScriptedRandom([])
+    result = render_tornado_outcome("Aldric", "Limerick", destroyed, quality_downgraded, rng)
+    assert result == (
+        "Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Limerick."
+        "Tornadoes sucked up the 20th Legion in Limerick and destroyed them."
+        "The Tornado spell struck the 21st Light Cavalry in Limerick and reduced them by one quality level."
     )
 
 
@@ -7484,6 +7530,23 @@ def test_describe_cast_uses_the_plague_outcome():
     assert line == (
         "Alaric cast a Plague spell.Cascadia was hit by a plague."
         "The plague struck the 55th Garrison in Cascadia and destroyed them."
+    )
+
+
+def test_describe_cast_uses_the_plague_outcome_with_a_quality_downgraded_army():
+    # Phase 948: result.plague_quality_downgraded reaches describe_cast()
+    # too, not just the destroy list.
+    quality_downgraded = [ArmyState(209, 2, ArmyType.WARG_RIDERS, Quality.AVERAGE, HexCoord(0, 0))]
+    result = CastExecutionResult(
+        request=CastRequest(spell=Spell.PLAGUE, target=0), applied=True, plague_quality_downgraded=quality_downgraded
+    )
+    rng = ScriptedRandom([])
+
+    line = describe_cast(result, caster_name="Alaric", rng=rng, province_name="Rejaf")
+
+    assert line == (
+        "Alaric cast a Plague spell.Rejaf was hit by a plague."
+        "The Plague spell struck the 209th Warg Riders in Rejaf and reduced them by one quality level."
     )
 
 
@@ -14932,6 +14995,29 @@ def test_record_spell_world_events_tornado_skips_an_unowned_destroyed_army():
     assert state.tornado_victim_notices_by_kingdom == {}
 
 
+def test_record_spell_world_events_tornado_notifies_a_victim_kingdom_of_a_quality_downgrade():
+    # Phase 948: _ATTorn's own real S_AA victim-kingdom notice for a
+    # Giant-Fan-protected foreign army, the same treatment _ATDestr
+    # already gets (Phase 939).
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    state.add_kingdom(KingdomState(9, "Victimia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
+    request = CastRequest(spell=Spell.TORNADO, target=encode_hex_number(battle_coord, board_width))
+    quality_downgraded = [ArmyState(21, 9, ArmyType.LT_CAVALRY, Quality.AVERAGE, battle_coord)]
+    result = CastExecutionResult(request, applied=True, tornado_quality_downgraded=quality_downgraded)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    notices = state.tornado_victim_notices_by_kingdom[9]
+    assert notices == [
+        "In spring, The Tornado spell struck the 21st Light Cavalry in Border Fort and reduced them by one quality level."
+    ]
+
+
 def test_record_spell_world_events_plague_notifies_a_victim_kingdom():
     # Phase 947: SAY.PAS's own real _APDestr (Sps(Plague,S_AA)) --
     # confirmed by real fixture text (SE3__T6.K1) showing the "was hit by
@@ -14979,6 +15065,35 @@ def test_record_spell_world_events_plague_groups_multiple_destroyed_armies_for_o
         "In spring, Border Fort was hit by a plague."
         "The plague struck the 96th Bowmen in Border Fort and destroyed them."
         "The plague struck the 269th Bowmen in Border Fort and destroyed them."
+    ]
+
+
+def test_record_spell_world_events_plague_notifies_a_victim_kingdom_of_a_quality_downgrade():
+    # Phase 948: _APSick's own real S_AA victim-kingdom notice, destroy
+    # lines ordered first when a single cast affects both a destroyed and
+    # a quality-downgraded army of the same victim Kingdom -- the one
+    # confirmed real ordering (SE3__T11.K1's own Rejaf paragraph).
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    state.add_kingdom(KingdomState(9, "Victimia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
+    request = CastRequest(spell=Spell.PLAGUE, target=encode_hex_number(battle_coord, board_width))
+    destroyed = [ArmyState(109, 9, ArmyType.HVY_CAVALRY, Quality.AVERAGE, battle_coord)]
+    quality_downgraded = [ArmyState(209, 9, ArmyType.WARG_RIDERS, Quality.AVERAGE, battle_coord)]
+    result = CastExecutionResult(
+        request, applied=True, plague_destroyed=destroyed, plague_quality_downgraded=quality_downgraded
+    )
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    notices = state.plague_victim_notices_by_kingdom[9]
+    assert notices == [
+        "In spring, Border Fort was hit by a plague."
+        "The plague struck the 109th Heavy Cavalry in Border Fort and destroyed them."
+        "The Plague spell struck the 209th Warg Riders in Border Fort and reduced them by one quality level."
     ]
 
 
