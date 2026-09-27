@@ -1124,6 +1124,18 @@ class CastExecutionResult:
     # same either way, matching Bless's own identical convention.
     # ``[]`` for every other spell.
     tornado_destroyed: list[ArmyState] = field(default_factory=list)
+    # Phase 948: a successful Tornado's own real Giant-Fan-defended
+    # quality-downgrade outcome (``Discovery.GIANT_FAN``, `_execute_
+    # tornado()`'s own already-existing mechanic, previously computed and
+    # discarded) -- ``SAY.PAS``'s own shared `_APSick,_ATTorn` label
+    # (`"the ~ spell struck = in @ and reduced them by one quality
+    # level."`) confirms Tornado shares Plague's exact real template for
+    # this outcome, structurally inferred (no independent Tornado-
+    # specific fixture example survives) from Plague's own fixture-
+    # confirmed version of the identical text. ``[]`` for every other
+    # spell, and whenever no Giant-Fan-protected army actually rolled the
+    # downgrade this cast.
+    tornado_quality_downgraded: list[ArmyState] = field(default_factory=list)
     # Phase 944: a successful Plague's own real destroyed armies, the same
     # "``ArmyState`` snapshot before ``state.remove_army()``" idiom as
     # ``tornado_destroyed`` above (via ``apply_plague_exposure()``'s own
@@ -1135,6 +1147,14 @@ class CastExecutionResult:
     # render_plague_outcome()`` to build each one's own real "the Nth
     # <ArmyType>" display name. ``[]`` for every other spell.
     plague_destroyed: list[ArmyState] = field(default_factory=list)
+    # Phase 948: a successful Plague's own real quality-downgrade outcome
+    # (Penicillin-protected or already-immune, `apply_plague_exposure()`'s
+    # own Phase 948 second return value) -- real fixture text confirms a
+    # distinct sentence for this ("The Plague spell struck the 209th Warg
+    # Riders in Rejaf and reduced them by one quality level.",
+    # `SE3__T11.K1`, immediately after that same cast's own destroy
+    # sentence for a different army). ``[]`` for every other spell.
+    plague_quality_downgraded: list[ArmyState] = field(default_factory=list)
 
 
 def execute_cast(
@@ -2291,6 +2311,18 @@ def _execute_tornado(
     ``render_tornado_outcome()``'s own docstring for the full
     derivation, including why it's repeated once per destroyed army
     rather than joined into one list.
+
+    **Phase 948**: every Giant-Fan-protected army that actually rolled
+    the quality downgrade above now also survives, on
+    ``CastExecutionResult.tornado_quality_downgraded`` -- the same
+    "computed, mutated, discarded" gap Phase 937 closed for the destroy
+    side. `SAY.PAS`'s own shared `_APSick,_ATTorn` label confirms
+    Tornado shares Plague's exact real narration template for this
+    outcome (`report/turn_report.py`'s own `QUALITY_DOWNGRADE_TEMPLATE`)
+    -- inferred from Plague's own fixture-confirmed version of the
+    identical text, since no independent Tornado-specific fixture
+    example survives (see that constant's own module comment for the
+    full derivation).
     """
 
     caster = state.leaders[leader_id]
@@ -2307,17 +2339,23 @@ def _execute_tornado(
     chance = TORNADO_DESTROY_CHANCE_PER_LEVEL * _caster_level(state, caster, Ability.ELEMENTAL, wand_skill_level)
     defended = False
     destroyed: list[ArmyState] = []
+    quality_downgraded: list[ArmyState] = []
     for army in list(state.armies_at(coord)):
         if army.kingdom_id is not None and Discovery.GIANT_FAN in state.kingdoms[army.kingdom_id].discoveries:
             defended = True
             if rng.random() < GIANT_FAN_QUALITY_DOWNGRADE_CHANCE:
                 army.quality = quality_one_level_down(army.quality)
+                quality_downgraded.append(army)
             continue
         if rng.random() < chance:
             destroyed.append(army)
             state.remove_army(army.army_id)
     return CastExecutionResult(
-        request, applied=True, discovery_defended=Discovery.GIANT_FAN if defended else None, tornado_destroyed=destroyed
+        request,
+        applied=True,
+        discovery_defended=Discovery.GIANT_FAN if defended else None,
+        tornado_destroyed=destroyed,
+        tornado_quality_downgraded=quality_downgraded,
     )
 
 
@@ -2820,7 +2858,9 @@ def quality_one_level_down(quality: Quality) -> Quality:
     return Quality(max(Quality.DEPLETED.value, quality.value - 1))
 
 
-def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng: random.Random) -> list[ArmyState]:
+def apply_plague_exposure(
+    state: GameState, coord: HexCoord, chance: float, rng: random.Random
+) -> tuple[list[ArmyState], list[ArmyState]]:
     """Tests every eligible army at ``coord`` against one Plague exposure --
     rulebook [4.25.3], shared by the initial cast (``_execute_plague()``)
     and the spread mechanic (``turn/plague_spread.py resolve_plague_
@@ -2875,12 +2915,19 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
     return value so far (into ``CastExecutionResult.plague_destroyed``);
     ``resolve_plague_spread()`` still discards it -- the spread
     mechanic's own narration is a separate, deferred gap (see that
-    module's own docstring). The quality-downgrade branches (Penicillin,
-    already-immune) are NOT captured here -- real fixture text confirms
-    a separate, distinct sentence for that outcome ("The Plague spell
-    struck the ~ in @ and reduced them by one quality level.",
-    `SE3__T11.K1`), a confirmed-real but still-unwired follow-up, not
-    attempted this phase.
+    module's own docstring).
+
+    **Phase 948**: the two quality-downgrade branches (Penicillin,
+    already-immune) now also return every affected ``ArmyState`` (a
+    second list, the same before-mutation-doesn't-matter capture as the
+    destroy list, since quality changes in place and the object identity
+    survives) -- real fixture text confirms a separate, distinct
+    sentence for this outcome ("The Plague spell struck the 209th Warg
+    Riders in Rejaf and reduced them by one quality level.",
+    `SE3__T11.K1`, immediately after that same cast's own destroy
+    sentence for a different army in the same province), now rendered by
+    ``report/turn_report.py render_plague_outcome()``. Returns
+    ``(destroyed, quality_downgraded)``.
     """
 
     province = state.provinces.get(coord)
@@ -2896,6 +2943,7 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
         good_king_kingdom_id = good_king_leader.kingdom_id if good_king_leader is not None else None
 
     destroyed: list[ArmyState] = []
+    quality_downgraded: list[ArmyState] = []
     for army in list(state.armies_at(coord)):
         if army.kingdom_id is None:
             continue
@@ -2908,6 +2956,7 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
         if protected_by_penicillin:
             if rng.random() < PENICILLIN_QUALITY_DOWNGRADE_CHANCE:
                 army.quality = quality_one_level_down(army.quality)
+                quality_downgraded.append(army)
             continue
         army_chance = chance
         if good_king_kingdom_id is not None and (
@@ -2917,13 +2966,14 @@ def apply_plague_exposure(state: GameState, coord: HexCoord, chance: float, rng:
         if army.plague_immune:
             if rng.random() < army_chance:
                 army.quality = quality_one_level_down(army.quality)
+                quality_downgraded.append(army)
             continue
         if rng.random() < army_chance:
             destroyed.append(army)
             state.remove_army(army.army_id)
         else:
             army.plague_immune = True
-    return destroyed
+    return destroyed, quality_downgraded
 
 
 def _execute_plague(
@@ -2968,8 +3018,10 @@ def _execute_plague(
     chance = PLAGUE_BASE_DESTROY_CHANCE + PLAGUE_DESTROY_CHANCE_PER_LEVEL * _caster_level(
         state, caster, Ability.NECROMANCY, wand_skill_level
     )
-    destroyed = apply_plague_exposure(state, coord, chance, rng)
-    return CastExecutionResult(request, applied=True, plague_destroyed=destroyed)
+    destroyed, quality_downgraded = apply_plague_exposure(state, coord, chance, rng)
+    return CastExecutionResult(
+        request, applied=True, plague_destroyed=destroyed, plague_quality_downgraded=quality_downgraded
+    )
 
 
 def _execute_scar_terrain(

@@ -4014,12 +4014,18 @@ TORNADO_DESTROYED_TEMPLATE = "Tornadoes sucked up the = in @ and destroyed them.
 
 
 def render_tornado_outcome(
-    caster_name: str, province_name: str, destroyed_armies: list[ArmyState], rng: random.Random
+    caster_name: str,
+    province_name: str,
+    destroyed_armies: list[ArmyState],
+    quality_downgraded_armies: list[ArmyState],
+    rng: random.Random,
 ) -> str:
     """Renders Tornado's own real cast outcome in full -- see the module
     comment above ``TORNADO_HIT_DEFENDERS_TEMPLATE`` for the full
     sourcing, including why every destroyed army gets its own repeated
-    sentence rather than a combined list.
+    sentence rather than a combined list, and above
+    ``QUALITY_DOWNGRADE_TEMPLATE`` for the Giant-Fan quality-downgrade
+    outcome (Phase 948) this function now also renders.
 
     Each destroyed army's own real designation is built the same way
     Bless's own graveyard-cleared list is (``ARMY_TYPE_NAME``, no
@@ -4029,18 +4035,26 @@ def render_tornado_outcome(
     based ordinal this time, since Tornado destroys already-live
     ``ArmyState`` objects (a real id survives) rather than reading a
     ``GraveyardEntry`` (which never recorded one).
+
+    **Phase 948**: the "no armies affected" line only fires when
+    *nothing at all* happened -- neither a destroy nor a quality
+    downgrade -- the same correction ``render_plague_outcome()``'s own
+    Phase 948 addendum makes, for the same reason.
     """
 
     lines = [
         render(CAST_SPELL_OPENING_COMPLETE_TEMPLATE, {"<": caster_name, "~": SPELL_NAME[Spell.TORNADO]}, rng=rng),
         render(TORNADO_HIT_DEFENDERS_TEMPLATE, {"@": province_name}, rng=rng),
     ]
-    if not destroyed_armies:
+    if not destroyed_armies and not quality_downgraded_armies:
         lines.append(render(NO_ARMIES_AFFECTED_TEMPLATE, {"~": SPELL_NAME[Spell.TORNADO], "@": province_name}, rng=rng))
     else:
         for army in destroyed_armies:
             name = f"{make_army_ordinal(army.army_id)} {ARMY_TYPE_NAME[army.army_type]}"
             lines.append(render(TORNADO_DESTROYED_TEMPLATE, {"=": name, "@": province_name}, rng=rng))
+        for army in quality_downgraded_armies:
+            name = f"{make_army_ordinal(army.army_id)} {ARMY_TYPE_NAME[army.army_type]}"
+            lines.append(render_quality_downgrade_notice(Spell.TORNADO, name, province_name, rng))
     return "".join(lines)
 
 
@@ -4087,29 +4101,83 @@ def render_tornado_outcome(
 # Hide_Feature's own still-open gap.
 PLAGUE_DESTROYED_TEMPLATE = "The plague struck the = in @ and destroyed them."
 
+# HostAK/TP/SAY.PAS `_APSick,_ATTorn` (line 863) -- a single Pascal `CASE`
+# arm shared by *two* labels, both dispatching the exact same generic,
+# spell-name-parameterized text: "the ~ spell struck the = in @ and
+# reduced them by one quality level." Confirmed real and used by Plague
+# (`_APSick`, "AP" = Army-Plague, the same prefix `_APDestr` above
+# already established) by direct fixture text (`SE3__T11.K1`: "The
+# Plague spell struck the 209th Warg Riders in Rejaf and reduced them by
+# one quality level." -- appearing directly after that same cast's own
+# destroy sentence for a different army in the same province, Phase
+# 944's own "confirmed text, no data to feed it yet" finding, now
+# closed).
+#
+# **`_ATTorn` ("AT" = Army-Tornado, the same prefix `_ATDestr` above
+# already established) is Tornado's own version of this identical
+# outcome** -- inferred, not independently fixture-confirmed (no
+# Tornado-specific example of this text survives in either corpus), but
+# on solid mechanical grounds, not a guess: `Discovery.GIANT_FAN`'s own
+# real effect ("Armies hit by Tornadoes will have a 50% chance of losing
+# one level of quality" instead of being destroyed, Discovery.txt, Phase
+# 270) is *already* fully modeled in `turn/cast_execution.py
+# _execute_tornado()` -- this shared Pascal label is simply the missing
+# narration for a mechanic this project has had all along, the same
+# "text is real, wire it to an already-modeled mechanic" shape as Scar
+# Terrain's own Phase 721/722 fix, not an invented mechanic of its own.
+QUALITY_DOWNGRADE_TEMPLATE = "The ~ spell struck the = in @ and reduced them by one quality level."
 
-def render_plague_outcome(caster_name: str, province_name: str, destroyed_armies: list[ArmyState], rng: random.Random) -> str:
+
+def render_quality_downgrade_notice(spell: Spell, army_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders one army's own real quality-downgrade outcome -- see the
+    module comment above ``QUALITY_DOWNGRADE_TEMPLATE`` for the full
+    sourcing, shared verbatim between Plague and Tornado.
+    """
+
+    return render(QUALITY_DOWNGRADE_TEMPLATE, {"~": SPELL_NAME[spell], "=": army_name, "@": province_name}, rng=rng)
+
+
+def render_plague_outcome(
+    caster_name: str,
+    province_name: str,
+    destroyed_armies: list[ArmyState],
+    quality_downgraded_armies: list[ArmyState],
+    rng: random.Random,
+) -> str:
     """Renders Plague's own real cast outcome in full -- see the module
     comment above ``PLAGUE_DESTROYED_TEMPLATE`` for the full sourcing,
-    including the documented multi-army-list ambiguity and the still-
-    unwired quality-downgrade outcome.
+    including the documented multi-army-list ambiguity, and above
+    ``QUALITY_DOWNGRADE_TEMPLATE`` for the quality-downgrade outcome
+    (Phase 948) this function now also renders.
 
     Built the same way ``render_tornado_outcome()`` is (``ARMY_TYPE_
     NAME``, the real ``army_id``-based ordinal -- Plague, like Tornado,
     destroys already-live ``ArmyState`` objects with a real id, unlike
     Bless's ``GraveyardEntry``).
+
+    **Phase 948**: the "no armies affected" line only fires when
+    *nothing at all* happened -- neither a destroy nor a quality
+    downgrade -- matching `_NoDestr`'s own real meaning ("the ~ affected
+    no armies," not "no armies were destroyed"). Every quality-downgrade
+    line follows every destroy line, the one confirmed real ordering
+    (`SE3__T11.K1`'s own Rejaf paragraph: the 109th Heavy Cavalry's own
+    destroy sentence, then the 209th Warg Riders' own downgrade
+    sentence), not an arbitrary choice.
     """
 
     lines = [
         render(CAST_SPELL_OPENING_COMPLETE_TEMPLATE, {"<": caster_name, "~": SPELL_NAME[Spell.PLAGUE]}, rng=rng),
         render_plague_world_event(province_name, rng),
     ]
-    if not destroyed_armies:
+    if not destroyed_armies and not quality_downgraded_armies:
         lines.append(render(NO_ARMIES_AFFECTED_TEMPLATE, {"~": SPELL_NAME[Spell.PLAGUE], "@": province_name}, rng=rng))
     else:
         for army in destroyed_armies:
             name = f"{make_army_ordinal(army.army_id)} {ARMY_TYPE_NAME[army.army_type]}"
             lines.append(render(PLAGUE_DESTROYED_TEMPLATE, {"=": name, "@": province_name}, rng=rng))
+        for army in quality_downgraded_armies:
+            name = f"{make_army_ordinal(army.army_id)} {ARMY_TYPE_NAME[army.army_type]}"
+            lines.append(render_quality_downgrade_notice(Spell.PLAGUE, name, province_name, rng))
     return "".join(lines)
 
 
@@ -4329,6 +4397,14 @@ def describe_cast(
     action's own text. Simpler than every other bypass above: no
     ``CastExecutionResult`` field needed at all, since the real top-level
     text names no army.
+
+    **Phase 948**: ``Spell.TORNADO``/``Spell.PLAGUE`` both now also
+    render their own real quality-downgrade outcome (``Discovery.
+    GIANT_FAN``/Penicillin-or-immune respectively), reading ``result.
+    tornado_quality_downgraded``/``result.plague_quality_downgraded`` --
+    see ``QUALITY_DOWNGRADE_TEMPLATE``'s own module comment for the full
+    sourcing (fixture-confirmed for Plague, structurally inferred for
+    Tornado from the identical shared Pascal label).
     """
 
     if not result.applied:
@@ -4339,7 +4415,9 @@ def describe_cast(
     if spell is Spell.TORNADO:
         if province_name is None:
             raise ValueError(f"{spell!r} needs province_name")
-        return render_tornado_outcome(caster_name, province_name, result.tornado_destroyed, rng)
+        return render_tornado_outcome(
+            caster_name, province_name, result.tornado_destroyed, result.tornado_quality_downgraded, rng
+        )
     if spell is Spell.CHARM:
         if target_name is None:
             raise ValueError(f"{spell!r} needs target_name")
@@ -4351,7 +4429,9 @@ def describe_cast(
     if spell is Spell.PLAGUE:
         if province_name is None:
             raise ValueError(f"{spell!r} needs province_name")
-        return render_plague_outcome(caster_name, province_name, result.plague_destroyed, rng)
+        return render_plague_outcome(
+            caster_name, province_name, result.plague_destroyed, result.plague_quality_downgraded, rng
+        )
     if spell is Spell.FLOOD:
         if province_name is None:
             raise ValueError(f"{spell!r} needs province_name")
@@ -15241,6 +15321,18 @@ def record_spell_world_events(
     armies' own destroy sentence) rather than one entry per sentence,
     since the "hit by" line is said only once per victim, not once per
     army.
+
+    **Phase 948 addendum -- both Tornado's and Plague's own victim
+    notices now also cover the quality-downgrade outcome
+    (`_ATTorn`/`_APSick`, `QUALITY_DOWNGRADE_TEMPLATE`).** A foreign-
+    owned army that a Giant-Fan-protected Tornado (or a Penicillin-
+    protected/already-immune Plague) merely downgrades instead of
+    destroying gets the exact same victim-kingdom treatment as one that
+    was destroyed -- read from `CastExecutionResult.tornado_quality_
+    downgraded`/`plague_quality_downgraded` (Phase 948), destroy lines
+    always ordered first within a given victim's own combined notice,
+    matching the one confirmed real destroy-then-downgrade ordering
+    (`SE3__T11.K1`'s own Rejaf paragraph).
     """
 
     effective_board_width = board_width if board_width is not None else state.board_width
@@ -15259,28 +15351,41 @@ def record_spell_world_events(
         if request.spell is Spell.PLAGUE:
             hit_line = render_plague_world_event(province_name, rng)
             state.record_world_event(coord, [prefix + hit_line])
-            if result.plague_destroyed:
+            if result.plague_destroyed or result.plague_quality_downgraded:
                 # Phase 947: _APDestr's own real S_AA victim-kingdom
                 # notice -- see `GameState.plague_victim_notices_by_
                 # kingdom`'s own Phase 947 addendum for the full
-                # sourcing. Grouped by each destroyed army's own owning
+                # sourcing. Grouped by each affected army's own owning
                 # Kingdom (excluding the caster's, who already sees every
-                # destroyed army via their own private `describe_cast()`
-                # view) since a single cast can destroy armies belonging
-                # to more than one foreign Kingdom at once.
+                # affected army via their own private `describe_cast()`
+                # view) since a single cast can affect armies belonging
+                # to more than one foreign Kingdom at once. **Phase 948**:
+                # a quality-downgraded army (`_APSick`, the same shared
+                # `QUALITY_DOWNGRADE_TEMPLATE` `render_plague_outcome()`
+                # now renders for the caster's own view) gets the same
+                # victim-kingdom treatment as a destroyed one, destroy
+                # lines first, matching the one confirmed real ordering.
                 caster_leader = state.leaders.get(entry.leader_id)
                 caster_kingdom_id = caster_leader.kingdom_id if caster_leader is not None else None
-                armies_by_kingdom: dict[int, list[ArmyState]] = {}
+                destroyed_by_kingdom: dict[int, list[ArmyState]] = {}
                 for army in result.plague_destroyed:
                     if army.kingdom_id is None or army.kingdom_id == caster_kingdom_id:
                         continue
-                    armies_by_kingdom.setdefault(army.kingdom_id, []).append(army)
-                for victim_kingdom_id, armies in armies_by_kingdom.items():
-                    destroy_lines = []
-                    for army in armies:
+                    destroyed_by_kingdom.setdefault(army.kingdom_id, []).append(army)
+                downgraded_by_kingdom: dict[int, list[ArmyState]] = {}
+                for army in result.plague_quality_downgraded:
+                    if army.kingdom_id is None or army.kingdom_id == caster_kingdom_id:
+                        continue
+                    downgraded_by_kingdom.setdefault(army.kingdom_id, []).append(army)
+                for victim_kingdom_id in {*destroyed_by_kingdom, *downgraded_by_kingdom}:
+                    victim_lines = []
+                    for army in destroyed_by_kingdom.get(victim_kingdom_id, []):
                         name = f"{make_army_ordinal(army.army_id)} {ARMY_TYPE_NAME[army.army_type]}"
-                        destroy_lines.append(render(PLAGUE_DESTROYED_TEMPLATE, {"=": name, "@": province_name}, rng=rng))
-                    notice = prefix + hit_line + "".join(destroy_lines)
+                        victim_lines.append(render(PLAGUE_DESTROYED_TEMPLATE, {"=": name, "@": province_name}, rng=rng))
+                    for army in downgraded_by_kingdom.get(victim_kingdom_id, []):
+                        name = f"{make_army_ordinal(army.army_id)} {ARMY_TYPE_NAME[army.army_type]}"
+                        victim_lines.append(render_quality_downgrade_notice(Spell.PLAGUE, name, province_name, rng))
+                    notice = prefix + hit_line + "".join(victim_lines)
                     state.plague_victim_notices_by_kingdom.setdefault(victim_kingdom_id, []).append(notice)
         elif request.spell is Spell.ILLUS_TERRAIN and province.illusory_terrain is not None:
             line = render_illus_terrain_world_event(
@@ -15302,14 +15407,17 @@ def record_spell_world_events(
                     state.illusory_terrain_reveals_by_kingdom.setdefault(privileged_kingdom_id, []).append(prefix + line)
         elif request.spell is Spell.FLOOD:
             state.record_world_event(coord, [prefix + render_flood_world_event(province_name, rng)])
-        elif request.spell is Spell.TORNADO and result.tornado_destroyed:
+        elif request.spell is Spell.TORNADO and (result.tornado_destroyed or result.tornado_quality_downgraded):
             # Phase 939: _ATDestr's own real S_AA bystander notice -- see
             # this function's own Phase 939 addendum for the full
-            # sourcing. Each destroyed army's own owning Kingdom (if
+            # sourcing. Each affected army's own owning Kingdom (if
             # different from the caster's, who already sees every
-            # destroyed army via their own private describe_cast() view)
+            # affected army via their own private describe_cast() view)
             # gets this same real per-army sentence in their own ACTION
-            # REPORT.
+            # REPORT. **Phase 948**: a Giant-Fan-protected quality-
+            # downgraded army (`_ATTorn`, the same shared
+            # `QUALITY_DOWNGRADE_TEMPLATE` `render_tornado_outcome()` now
+            # renders for the caster's own view) gets the same treatment.
             caster_leader = state.leaders.get(entry.leader_id)
             caster_kingdom_id = caster_leader.kingdom_id if caster_leader is not None else None
             for army in result.tornado_destroyed:
@@ -15317,6 +15425,12 @@ def record_spell_world_events(
                     continue
                 name = f"{make_army_ordinal(army.army_id)} {ARMY_TYPE_NAME[army.army_type]}"
                 line = render(TORNADO_DESTROYED_TEMPLATE, {"=": name, "@": province_name}, rng=rng)
+                state.tornado_victim_notices_by_kingdom.setdefault(army.kingdom_id, []).append(prefix + line)
+            for army in result.tornado_quality_downgraded:
+                if army.kingdom_id is None or army.kingdom_id == caster_kingdom_id:
+                    continue
+                name = f"{make_army_ordinal(army.army_id)} {ARMY_TYPE_NAME[army.army_type]}"
+                line = render_quality_downgrade_notice(Spell.TORNADO, name, province_name, rng)
                 state.tornado_victim_notices_by_kingdom.setdefault(army.kingdom_id, []).append(prefix + line)
         elif request.spell in _BYSTANDER_SPELL_NOTICE_SPELLS:
             line = render_bystander_spell_notice(request.spell, province_name, rng)
