@@ -36701,11 +36701,59 @@ supply of any of these doesn't have to be re-derived from scratch:
   have an analogous, currently-unmodeled quality-downgrade outcome of
   its own worth checking.
 
-  This closes every `_CAST_ANNOUNCEMENT_PROVINCE_SPELLS`/
+  ~~This closes every `_CAST_ANNOUNCEMENT_PROVINCE_SPELLS`/
   `_CAST_ANNOUNCEMENT_ARMY_LIST_SPELLS` entry in this dispatch loop
   except `Spell.HIDE_FEATURE` -- a confirmed dead end (Phase 938): no
   real fixture example of a successful cast survives in either corpus
-  to confirm its own text either way.
+  to confirm its own text either way.~~
+
+  **Phase 946: `Spell.HIDE_FEATURE` closed too, the eighth and last
+  `_CAST_ANNOUNCEMENT_PROVINCE_SPELLS` entry -- not a dead end after
+  all, on closer, more careful re-examination, though a genuinely
+  narrower one than every spell before it.** Re-checked again against
+  both corpora: still zero real fixture examples of a successful
+  Hide_Feature cast survive anywhere, so the "confirmed dead end" label
+  for *fixture confirmation specifically* was accurate as far as it
+  went -- but this project's own already-accepted precedent (Phase
+  938's Clairvoyance inference, Phase 942's Earthquake inference) is
+  that a spell can still be wired on a solid *structural* argument
+  when no direct fixture survives, provided that argument is made
+  explicit and distinct from a guess.
+
+  **The structural argument here is sharper than Clairvoyance's own**:
+  `SPELL_CAST_ANNOUNCEMENT[Spell.HIDE_FEATURE]` ("the & in @ was
+  magically hidden.") names neither the caster nor the cast itself,
+  unlike Resurrection ("X was resurrected by the spell cast by Y") or
+  Oratory ("I cast a spell giving..."), whose own texts *would* create a
+  literal doubled mention if the ordinary opening clause were prepended
+  -- confirmed as the actual, decisive reason Phase 938 excluded exactly
+  those two (and, by structural analogy only, Clairvoyance) from the
+  opening clause. Hide_Feature's text has no such redundancy risk:
+  prepending it reads as one ordinary, ungrammatical-free sentence ("I
+  cast a Hide Feature spell and the Tomb in Sageleaf was magically
+  hidden."), the same shape as every one of the 7 already-confirmed
+  province-targeted spells closed in Phases 935-945. `Spell.HIDE_FEATURE`
+  was never added to `_CAST_ANNOUNCEMENT_NO_OPENING_SPELLS`/
+  `CAST_SPELL_OPENING_COMPLETE_SPELLS`, so it already defaulted to the
+  ordinary continued-opening template -- this phase found no reason to
+  change that default, only to finally wire it into the dispatch loop.
+
+  **The real, still-open gap is different and smaller than the old
+  bullet implied**: `_execute_hide_feature()`'s own docstring already
+  documents that Hide_Feature hides *every* `Feature` in the target
+  province at once ([3.2]: "There can sometimes be more than 1 feature
+  in a province"), with no way to disambiguate which one `&` should
+  name for a multi-feature cast. Unlike Tornado/Plague's own multi-army
+  ambiguity (Phase 937/944), where real fixture text exists for *both*
+  a repeated-sentence and a joined-list reading, letting a majority-
+  supported default be picked, here there is no fixture data at all to
+  weigh a default against -- so `describe_turn_results()`'s new branch
+  reads `state.features_at(coord)` directly (no new `CastExecutionResult`
+  field, the same "read fresh from state" shape Illusory Terrain's own
+  Phase 943 fix already uses) and wires only the single-feature case,
+  silently skipping a multi-feature cast rather than inventing a
+  grouping rule. This is the one genuinely open piece left in this
+  entire 935-946 run.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
