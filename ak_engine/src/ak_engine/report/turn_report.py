@@ -4044,6 +4044,75 @@ def render_tornado_outcome(
     return "".join(lines)
 
 
+# HostAK/TP/SAY.PAS `_PPlague`: "plague ravaged the province of @." (S_Comm)
+# is a DIFFERENT real text from either the caster's own top-level line or
+# `_SPlague`'s bystander notice -- see `PLAGUE_WORLD_EVENT_TEMPLATE`'s own
+# module comment above for why that one, not this one, is what real
+# fixture text confirms for both contexts. Plague's own top-level cast
+# text (Phase 944) is `CAST_SPELL_OPENING_COMPLETE_TEMPLATE` (Plague is
+# one of the 3 `CAST_SPELL_OPENING_COMPLETE_SPELLS`, same as Tornado/
+# Bless) + `render_plague_world_event()`'s own "@ was hit by a plague."
+# (confirmed identical wording between the caster's own view and the
+# bystander/GIR view by direct fixture comparison -- `SE3__T10.K1`: "I
+# cast a Plague spell.  Kajaani was hit by a plague." vs. `SE3__T8.K1`'s
+# own foreign-GIR "Cretacia was hit by a plague.") + one destroy sentence
+# per actually-destroyed army.
+#
+# **The multi-army destroy list has the exact same real, unresolved
+# ambiguity Tornado's own Phase 937 finding already documented for a
+# different spell** -- confirmed independently here, not assumed by
+# analogy: most real multi-army examples repeat the whole "The plague
+# struck the Nth <ArmyType> in @ and destroyed them." sentence once per
+# destroyed army (`SE3__T7.K1`: 5 separate sentences for Sherwood;
+# `SE3__T10.K1`: 2 separate sentences for Kajaani), but one real
+# counter-example instead joins them into a single "X, Y, Z and W" list
+# (`SE3__T9.K1`: "The plague struck the 109th Heavy Cavalry, the 240th
+# Bowmen, the 241st Bowmen and the 292nd Legion in Quantara Roo and
+# destroyed them.") -- the same "repeated sentence" majority-supported
+# default already established for Tornado/Skeletal_Army is kept here too
+# (2 real examples vs. 1), not overturned by a single counter-example,
+# consistent with this project's own documented-ambiguity convention.
+#
+# **A third, confirmed-real outcome this phase does NOT wire**:
+# `apply_plague_exposure()`'s own already-immune/Penicillin quality-
+# downgrade branches have their own distinct real sentence, found in the
+# same fixture search that confirmed the above (`SE3__T11.K1`: "The
+# Plague spell struck the 209th Warg Riders in Rejaf and reduced them by
+# one quality level." -- note the different verb clause, "Plague spell"
+# not bare "plague", and "reduced them by one quality level" instead of
+# "destroyed them") -- `CastExecutionResult` has no field recording which
+# armies took this outcome yet (`apply_plague_exposure()`'s own Phase 944
+# addendum only captures destroyed armies), so this real text stays
+# unwired, the same "confirmed text, no data to feed it yet" shape as
+# Hide_Feature's own still-open gap.
+PLAGUE_DESTROYED_TEMPLATE = "The plague struck the = in @ and destroyed them."
+
+
+def render_plague_outcome(caster_name: str, province_name: str, destroyed_armies: list[ArmyState], rng: random.Random) -> str:
+    """Renders Plague's own real cast outcome in full -- see the module
+    comment above ``PLAGUE_DESTROYED_TEMPLATE`` for the full sourcing,
+    including the documented multi-army-list ambiguity and the still-
+    unwired quality-downgrade outcome.
+
+    Built the same way ``render_tornado_outcome()`` is (``ARMY_TYPE_
+    NAME``, the real ``army_id``-based ordinal -- Plague, like Tornado,
+    destroys already-live ``ArmyState`` objects with a real id, unlike
+    Bless's ``GraveyardEntry``).
+    """
+
+    lines = [
+        render(CAST_SPELL_OPENING_COMPLETE_TEMPLATE, {"<": caster_name, "~": SPELL_NAME[Spell.PLAGUE]}, rng=rng),
+        render_plague_world_event(province_name, rng),
+    ]
+    if not destroyed_armies:
+        lines.append(render(NO_ARMIES_AFFECTED_TEMPLATE, {"~": SPELL_NAME[Spell.PLAGUE], "@": province_name}, rng=rng))
+    else:
+        for army in destroyed_armies:
+            name = f"{make_army_ordinal(army.army_id)} {ARMY_TYPE_NAME[army.army_type]}"
+            lines.append(render(PLAGUE_DESTROYED_TEMPLATE, {"=": name, "@": province_name}, rng=rng))
+    return "".join(lines)
+
+
 # HostAK/TP/SAY.PAS `_SCharm`: "[1 was magically charmed by <2." (S_PCom,
 # no standalone `.X`/`.X2` file, a direct hardcoded `Say()` call rather
 # than the generic `Sps()`/SPNOTE.X2 dispatch every other "_S*"-group
@@ -4193,6 +4262,15 @@ def describe_cast(
     ``real_terrain_name`` this function's other callers never needed --
     Illusory Terrain is the only spell whose real text names *two*
     different terrains (the true one and the illusory one).
+
+    **Phase 944**: ``Spell.PLAGUE`` gets the same "wholly separate
+    renderer" treatment as Tornado, for the same reason --
+    ``SPELL_CAST_ANNOUNCEMENT[Spell.PLAGUE]``'s own catalog entry uses a
+    joined ``^L=`` army list, but real fixture text shows the repeated-
+    sentence pattern (Tornado's own convention) as the majority case
+    instead, with the same kind of single documented counter-example
+    (see ``render_plague_outcome()``'s own docstring). Reads
+    ``result.plague_destroyed`` directly.
     """
 
     if not result.applied:
@@ -4212,6 +4290,10 @@ def describe_cast(
         if province_name is None or terrain_name is None or real_terrain_name is None:
             raise ValueError(f"{spell!r} needs province_name, real_terrain_name, and terrain_name")
         return render_illus_terrain_cast_outcome(caster_name, real_terrain_name, province_name, terrain_name, rng)
+    if spell is Spell.PLAGUE:
+        if province_name is None:
+            raise ValueError(f"{spell!r} needs province_name")
+        return render_plague_outcome(caster_name, province_name, result.plague_destroyed, rng)
     line = render_cast_announcement(
         spell,
         caster_name,
@@ -8788,6 +8870,20 @@ def describe_turn_results(
                     terrain_name=fake_terrain_name,
                     real_terrain_name=real_terrain_name,
                 )
+                if line is not None:
+                    lines.append(line)
+                continue
+            if spell is Spell.PLAGUE:
+                # Phase 944: a sixth province-targeted Cast spell wired
+                # here, the same `board_width`-gated resolution Bless/
+                # Tornado/Earthquake/Part_Sea already use -- `describe_
+                # cast()`'s own dedicated branch reads `result.plague_
+                # destroyed` directly, the same shape as Tornado.
+                if board_width is None:
+                    continue
+                coord = decode_hex_number(entry.result.request.target, board_width)
+                province_name = _province_label(state, coord)
+                line = describe_cast(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
                 if line is not None:
                     lines.append(line)
                 continue
