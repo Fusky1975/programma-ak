@@ -14932,6 +14932,114 @@ def test_record_spell_world_events_tornado_skips_an_unowned_destroyed_army():
     assert state.tornado_victim_notices_by_kingdom == {}
 
 
+def test_record_spell_world_events_plague_notifies_a_victim_kingdom():
+    # Phase 947: SAY.PAS's own real _APDestr (Sps(Plague,S_AA)) --
+    # confirmed by real fixture text (SE3__T6.K1) showing the "was hit by
+    # a plague"/destroy-sentence pair appear together inside the
+    # VICTIM's own letter, not the caster's, with that same letter's own
+    # PROVINCES table confirming ownership of the affected province.
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    state.add_kingdom(KingdomState(9, "Victimia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
+    request = CastRequest(spell=Spell.PLAGUE, target=encode_hex_number(battle_coord, board_width))
+    destroyed = [ArmyState(96, 9, ArmyType.BOWMEN, Quality.AVERAGE, battle_coord)]
+    result = CastExecutionResult(request, applied=True, plague_destroyed=destroyed)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    notices = state.plague_victim_notices_by_kingdom[9]
+    assert notices == [
+        "In spring, Border Fort was hit by a plague.The plague struck the 96th Bowmen in Border Fort and destroyed them."
+    ]
+
+
+def test_record_spell_world_events_plague_groups_multiple_destroyed_armies_for_one_victim():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    state.add_kingdom(KingdomState(9, "Victimia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
+    request = CastRequest(spell=Spell.PLAGUE, target=encode_hex_number(battle_coord, board_width))
+    destroyed = [
+        ArmyState(96, 9, ArmyType.BOWMEN, Quality.AVERAGE, battle_coord),
+        ArmyState(269, 9, ArmyType.BOWMEN, Quality.AVERAGE, battle_coord),
+    ]
+    result = CastExecutionResult(request, applied=True, plague_destroyed=destroyed)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    notices = state.plague_victim_notices_by_kingdom[9]
+    assert notices == [
+        "In spring, Border Fort was hit by a plague."
+        "The plague struck the 96th Bowmen in Border Fort and destroyed them."
+        "The plague struck the 269th Bowmen in Border Fort and destroyed them."
+    ]
+
+
+def test_record_spell_world_events_plague_excludes_the_casters_own_kingdom():
+    # The caster's own kingdom (leader_id=1 -> kingdom_id=1, see
+    # _gir_state()) already sees every destroyed army via their own
+    # private describe_cast()/render_plague_outcome() view -- no
+    # duplicate notice here.
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    request = CastRequest(spell=Spell.PLAGUE, target=encode_hex_number(battle_coord, board_width))
+    destroyed = [ArmyState(96, 1, ArmyType.BOWMEN, Quality.AVERAGE, battle_coord)]
+    result = CastExecutionResult(request, applied=True, plague_destroyed=destroyed)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert state.plague_victim_notices_by_kingdom == {}
+
+
+def test_record_spell_world_events_plague_skips_an_unowned_destroyed_army():
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    request = CastRequest(spell=Spell.PLAGUE, target=encode_hex_number(battle_coord, board_width))
+    destroyed = [ArmyState(96, None, ArmyType.BOWMEN, Quality.AVERAGE, battle_coord)]
+    result = CastExecutionResult(request, applied=True, plague_destroyed=destroyed)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    assert state.plague_victim_notices_by_kingdom == {}
+
+
+def test_compose_letter_report_includes_plague_victim_notice_for_the_affected_kingdom():
+    # Phase 947: state.plague_victim_notices_by_kingdom is set up
+    # directly here, isolating compose_letter_report()'s own reading/
+    # folding behavior from record_spell_world_events()'s own rendering,
+    # tested separately.
+    state = GameState()
+    state.add_kingdom(KingdomState(3, "Watchia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(2, 2)))
+    state.add_leader(LeaderState(3, 3, "Cedric", HexCoord(2, 2), is_king=True))
+    state.plague_victim_notices_by_kingdom[3] = [
+        "In spring, Tebessa was hit by a plague."
+        "The plague struck the 96th Bowmen in Tebessa and destroyed them."
+    ]
+
+    lines_for_kingdom_3 = compose_letter_report([], state, 3, ScriptedRandom([]))
+
+    assert "ACTION REPORT" in lines_for_kingdom_3
+    assert (
+        "In spring, Tebessa was hit by a plague."
+        "The plague struck the 96th Bowmen in Tebessa and destroyed them."
+    ) in lines_for_kingdom_3
+
+
 # -- Phase 722: render_scar_terrain_cast_notice() / render_scar_terrain_zero() /
 # render_scar_terrain_fite() / record_spell_world_events() (Scar Terrain) --
 
