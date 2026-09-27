@@ -4955,6 +4955,73 @@ def test_describe_turn_results_skips_a_flood_cast_without_board_width():
     assert lines == []
 
 
+def test_describe_turn_results_narrates_a_successful_hide_feature_cast():
+    # Phase 946: Spell.HIDE_FEATURE is the eighth and last province-
+    # targeted Cast spell wired here -- reads state.features_at(coord)
+    # directly rather than a new CastExecutionResult field, since
+    # _execute_hide_feature() itself never records which feature(s) it
+    # hid. Only the single-feature case is wired (see this branch's own
+    # Phase 946 comment for why the multi-feature case is a deliberate,
+    # documented exception).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Sageleaf"))
+    state.add_feature(Feature(feature_id=1, coord=HexCoord(0, 0), kind=FeatureType.DUNGEON))
+    request = CastRequest(spell=Spell.HIDE_FEATURE, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == ["Aldric cast a Hide Feature spell and the Dungeon in Sageleaf was magically hidden."]
+
+
+def test_describe_turn_results_skips_a_hide_feature_cast_without_board_width():
+    # Same opt-in board_width convention as the other province-targeted
+    # Cast branches above.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    state.add_feature(Feature(feature_id=1, coord=HexCoord(0, 0), kind=FeatureType.DUNGEON))
+    request = CastRequest(spell=Spell.HIDE_FEATURE, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]))
+
+    assert lines == []
+
+
+def test_describe_turn_results_skips_a_hide_feature_cast_with_more_than_one_feature():
+    # Phase 946: the deliberate, documented multi-feature exception --
+    # no real fixture example of a successful Hide_Feature cast survives
+    # to confirm the real grouping rule for more than one feature, so
+    # this stays silently unwired rather than guessed at (the same
+    # "no data to weigh a default against" reasoning this branch's own
+    # comment gives, unlike Tornado/Plague's own resolved multi-army
+    # ambiguity).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Sageleaf"))
+    state.add_feature(Feature(feature_id=1, coord=HexCoord(0, 0), kind=FeatureType.DUNGEON))
+    state.add_feature(Feature(feature_id=2, coord=HexCoord(0, 0), kind=FeatureType.CAVE))
+    request = CastRequest(spell=Spell.HIDE_FEATURE, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == []
+
+
 def test_describe_turn_results_narrates_a_successful_skeletal_army_cast():
     # Phase 936: Spell.SKELETAL_ARMY is a NO_TARGET_SPELLS entry -- no
     # leader/province target to resolve, so no board_width needed either,

@@ -8634,21 +8634,26 @@ def describe_turn_results(
     breakdown.
     `describe_battle()` stays out of this dispatch -- it needs a
     `BattleReport` and multi-army name maps no `PhaseDispatchResult`
-    alone carries. Terrain/army-list Cast spells and Use_MI's skill-book
-    path are skipped the same way, for the same reason Phase 150
-    already established -- each needs its own further per-spell data
-    (`army_names`/`terrain_name`/`feature_name`) this dispatch loop
-    doesn't compute. **`Spell.BLESS` is an exception, wired as of Phase
-    935** (see the `CAST` branch's own Phase 935 addendum below) --
+    alone carries. Use_MI's skill-book path is skipped the same way, for
+    the same reason Phase 150 already established -- it needs its own
+    further per-spell data (`book_name`/`ability_name`) this dispatch
+    loop doesn't compute.
+
+    **~~Terrain/army-list Cast spells... stay genuinely unwired here~~
+    -- stale as of Phase 946 (this paragraph was never revisited across
+    the 8-phase run, 935-946, that closed almost everything it names).**
     Phase 150's original "no general province-naming system exists"
     reasoning for excluding every province-targeted spell was already
     stale by the time this docstring's own later Phase 247/248 addenda
     added exactly that system (`_province_label()`, `board_width`
-    threading) for SEARCH/EXPLORE/rumor narration, just never revisited
-    for Cast. The other province-targeted spells (Earthquake, Flood,
-    Tornado, Illus_Terrain, Hide_Feature, Plague) still need their own
-    `army_names`/`terrain_name`/`feature_name` besides, so they stay
-    genuinely unwired here, narrower than before but real.
+    threading) for SEARCH/EXPLORE/rumor narration -- `Spell.BLESS` was
+    the first to get it (Phase 935), followed by Tornado (937), Earthquake
+    (942), Illus_Terrain (943), Plague (944), Flood (945), and finally
+    Hide_Feature (946, single-feature case only -- see the `CAST`
+    branch's own Phase 946 addendum below for why the multi-feature case
+    is a deliberate, documented exception, not an oversight). Every
+    `_CAST_ANNOUNCEMENT_PROVINCE_SPELLS`/`_CAST_ANNOUNCEMENT_ARMY_LIST_
+    SPELLS` entry is now wired in this dispatch loop.
 
     **Phase 247 closes `EXPLORE` and rumor narration**, the two
     `describe_*` composers (Phase 244/245) built but never reached from
@@ -8953,16 +8958,57 @@ def describe_turn_results(
                 # Phase 945: a seventh province-targeted Cast spell wired
                 # here, the simplest of all of them -- `describe_cast()`'s
                 # own dedicated branch needs only `province_name`, no
-                # army list or dedicated result field at all. Closes every
-                # `_CAST_ANNOUNCEMENT_PROVINCE_SPELLS` entry in this
-                # dispatch loop except `Spell.HIDE_FEATURE` (a confirmed
-                # dead end, Phase 938 -- no real fixture example of a
-                # successful cast survives to confirm its own text).
+                # army list or dedicated result field at all.
                 if board_width is None:
                     continue
                 coord = decode_hex_number(entry.result.request.target, board_width)
                 province_name = _province_label(state, coord)
                 line = describe_cast(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                if line is not None:
+                    lines.append(line)
+                continue
+            if spell is Spell.HIDE_FEATURE:
+                # Phase 946: the eighth and last `_CAST_ANNOUNCEMENT_
+                # PROVINCE_SPELLS` entry -- no dedicated bypass branch
+                # needed at all, since `_CAST_ANNOUNCEMENT_FEATURE_SPELLS`
+                # already made `render_cast_announcement()`'s generic
+                # fallback support `feature_name` (Phase 193). Reads
+                # `state.features_at(coord)` directly (the same "read
+                # fresh from state, no new CastExecutionResult field"
+                # shape Illusory Terrain's own Phase 943 fix already
+                # uses) rather than storing anything on the result --
+                # `_execute_hide_feature()` itself never distinguishes
+                # *which* feature(s) it hid.
+                #
+                # **Deliberately scoped to the single-feature case only**:
+                # `_execute_hide_feature()`'s own docstring already
+                # documents that a province can hold more than one
+                # `Feature` ([3.2]), and this spell hides *all* of them at
+                # once with no way to disambiguate which one `&` should
+                # name -- unlike Tornado/Plague's own multi-army ambiguity
+                # (Phase 937/944), where real fixture text exists for
+                # *both* a repeated-sentence and a joined-list reading,
+                # letting a majority-supported default be picked, here
+                # zero real fixture example of a successful Hide_Feature
+                # cast survives in either corpus (confirmed again this
+                # phase) -- there is no data to weigh a default against,
+                # so a multi-feature cast is silently skipped rather than
+                # guessed at.
+                if board_width is None:
+                    continue
+                coord = decode_hex_number(entry.result.request.target, board_width)
+                features = state.features_at(coord)
+                if len(features) != 1:
+                    continue
+                province_name = _province_label(state, coord)
+                feature_name = FEATURE_TYPE_NAMES[features[0].kind]
+                line = describe_cast(
+                    entry.result,
+                    caster_name=caster_name,
+                    rng=rng,
+                    province_name=province_name,
+                    feature_name=feature_name,
+                )
                 if line is not None:
                     lines.append(line)
                 continue
