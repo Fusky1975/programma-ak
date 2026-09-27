@@ -15213,6 +15213,34 @@ def record_spell_world_events(
     **Phase 257**: every recorded line is now prefixed with its own "In
     <season>, " (``_season_phrase_for_phase_label()``), keyed off this
     entry's own ``phase_label`` -- see that function's own docstring.
+
+    **Phase 947 addendum -- Plague's own real `S_AA` victim-kingdom
+    notice (`_APDestr: Sps(Plague,S_AA)`), exactly parallel to Tornado's
+    own `_ATDestr` above.** Confirmed by real fixture text showing the
+    "was hit by a plague"/destroy-sentence pair appear together, with no
+    caster attribution, inside the *victim*'s own letter (`SE3__T6.K1`:
+    "Tebessa was hit by a plague.  The plague struck the 96th Bowmen and
+    the 269th Bowmen in Tebessa and destroyed them." -- confirmed via
+    that same letter's own PROVINCES table that Tebessa belongs to this
+    letter's own Kingdom, with no "cast a Plague spell" mention anywhere
+    nearby). **Unlike Tornado's victim notice, this one must also carry
+    the "hit by" line itself, not just the destroy sentence(s)**: GIR
+    structurally never shows a Kingdom news about its own already-owned
+    province (`describe_general_intelligence_report()`'s own `owner ==
+    kingdom_id` exclusion), so without this, the affected/owning Kingdom
+    would have no way to learn of a foreign Kingdom's Plague striking
+    their own territory at all -- a gap Tornado's own victim notice
+    never had to close, since it carries no equivalent "province-wide"
+    line of its own. Grouped by each destroyed army's own owning Kingdom
+    (`CastExecutionResult.plague_destroyed`, Phase 944), the same
+    exclusions as Tornado's own notice (the caster's own Kingdom,
+    already covered by their own private ``describe_cast()``/
+    ``render_plague_outcome()`` view; an unowned army, with no Kingdom to
+    notify) -- but each victim's own list holds one already-concatenated
+    string (the "hit by" line plus every one of their own destroyed
+    armies' own destroy sentence) rather than one entry per sentence,
+    since the "hit by" line is said only once per victim, not once per
+    army.
     """
 
     effective_board_width = board_width if board_width is not None else state.board_width
@@ -15229,7 +15257,31 @@ def record_spell_world_events(
         prefix = _season_phrase_for_phase_label(entry.phase_label)
 
         if request.spell is Spell.PLAGUE:
-            state.record_world_event(coord, [prefix + render_plague_world_event(province_name, rng)])
+            hit_line = render_plague_world_event(province_name, rng)
+            state.record_world_event(coord, [prefix + hit_line])
+            if result.plague_destroyed:
+                # Phase 947: _APDestr's own real S_AA victim-kingdom
+                # notice -- see `GameState.plague_victim_notices_by_
+                # kingdom`'s own Phase 947 addendum for the full
+                # sourcing. Grouped by each destroyed army's own owning
+                # Kingdom (excluding the caster's, who already sees every
+                # destroyed army via their own private `describe_cast()`
+                # view) since a single cast can destroy armies belonging
+                # to more than one foreign Kingdom at once.
+                caster_leader = state.leaders.get(entry.leader_id)
+                caster_kingdom_id = caster_leader.kingdom_id if caster_leader is not None else None
+                armies_by_kingdom: dict[int, list[ArmyState]] = {}
+                for army in result.plague_destroyed:
+                    if army.kingdom_id is None or army.kingdom_id == caster_kingdom_id:
+                        continue
+                    armies_by_kingdom.setdefault(army.kingdom_id, []).append(army)
+                for victim_kingdom_id, armies in armies_by_kingdom.items():
+                    destroy_lines = []
+                    for army in armies:
+                        name = f"{make_army_ordinal(army.army_id)} {ARMY_TYPE_NAME[army.army_type]}"
+                        destroy_lines.append(render(PLAGUE_DESTROYED_TEMPLATE, {"=": name, "@": province_name}, rng=rng))
+                    notice = prefix + hit_line + "".join(destroy_lines)
+                    state.plague_victim_notices_by_kingdom.setdefault(victim_kingdom_id, []).append(notice)
         elif request.spell is Spell.ILLUS_TERRAIN and province.illusory_terrain is not None:
             line = render_illus_terrain_world_event(
                 TERRAIN_NAME[province.terrain], province_name, TERRAIN_NAME[province.illusory_terrain], rng
@@ -16352,6 +16404,9 @@ def compose_letter_report(
     # already fully rendered at record time, same placement reasoning as
     # every other per-kingdom notice list above.
     action_lines = action_lines + state.tornado_victim_notices_by_kingdom.get(kingdom_id, [])
+    # Phase 947: Plague's own real S_AA victim-kingdom notice, the same
+    # placement reasoning as Tornado's own sibling list right above.
+    action_lines = action_lines + state.plague_victim_notices_by_kingdom.get(kingdom_id, [])
     _emit_section("ACTION REPORT", action_lines)
 
     letter_lines = describe_letter_reports(

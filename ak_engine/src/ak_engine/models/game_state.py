@@ -1692,6 +1692,36 @@ class GameState:
     # contract as `battle_narratives_by_kingdom`/`illusory_terrain_
     # reveals_by_kingdom` above.
     tornado_victim_notices_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
+    # Phase 947 -- Plague's own real victim-kingdom notice (`SAY.PAS`
+    # `_APDestr: Sps(Plague,S_AA)`, exactly parallel to Tornado's own
+    # `_ATDestr` above), each destroyed army's own *owning* Kingdom (when
+    # different from the caster's) told about it in their own ACTION
+    # REPORT -- confirmed by real fixture text showing the "was hit by a
+    # plague"/destroy-sentence pair appear together, with no caster
+    # attribution, inside the *victim*'s own letter, whose own PROVINCES
+    # section confirms they own the affected province (`SE3__T6.K1`:
+    # "Tebessa was hit by a plague.  The plague struck the 96th Bowmen
+    # and the 269th Bowmen in Tebessa and destroyed them." -- Tebessa is
+    # this same letter's own kingdom's province per its PROVINCES table,
+    # no "cast a Plague spell" anywhere nearby). **Unlike Tornado's own
+    # victim notice, this one includes the "was hit by a plague" line
+    # too** -- GIR structurally never shows a kingdom news about its own
+    # already-owned province (`describe_general_intelligence_report()`'s
+    # own `owner == kingdom_id: continue` filter), so without this field
+    # the affected/owning Kingdom would have no way to learn of it at
+    # all, unlike the caster's own kingdom (already told via GIR, since
+    # for them `owner != kingdom_id`) or a wholly foreign kingdom. Each
+    # entry is one already-concatenated string (the "hit by" line plus
+    # every one of that Kingdom's own destroyed armies' own destroy
+    # sentence, joined with no separator, the same internal-concatenation
+    # convention `report/turn_report.py render_plague_outcome()`'s own
+    # caster-facing string already uses) rather than one list entry per
+    # sentence the way `tornado_victim_notices_by_kingdom` is, since the
+    # "hit by" line needs saying only once per victim, not once per army.
+    # Populated once per turn by `report/turn_report.py record_spell_
+    # world_events()`'s own Phase 947 addendum, the same "before any
+    # `compose_letter_report()` call" contract as every sibling dict here.
+    plague_victim_notices_by_kingdom: dict[int, list[str]] = field(default_factory=dict)
     # Phase 408 -- mirrors `RUMORS.PAS`/`REPORTS.PAS`'s own `kkmet` bitmask
     # (`Check_KKSugg`, `REPORTS.PAS` ~173-202): once two kingdoms' own
     # territories have ever bordered each other, `frozenset({a, b})` is

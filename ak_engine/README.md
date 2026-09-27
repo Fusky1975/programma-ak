@@ -36688,18 +36688,42 @@ supply of any of these doesn't have to be re-derived from scratch:
   doesn't render yet -- left unbuilt here, the same "text is real,
   trigger isn't modeled" shape as Illusory Terrain's own `_LSeeI` gap.
 
-  **Two further, smaller findings surfaced along the way, left for a
-  future phase, not this one**: (1) `SAY.PAS`'s own "_A*" group also has
-  `_APDestr: Sps(Plague,S_AA)` -- a Plague-specific victim-kingdom
-  bystander notice exactly parallel to Tornado's own `_ATDestr` (Phase
-  939), meaning Plague likely needs the same
-  `tornado_victim_notices_by_kingdom`-style wiring Tornado already got;
-  (2) `_APSick,_ATTorn: Say('the ~ spell struck = in @ and reduced them
-  by one quality level.',S_AA)` confirms the exact real label for
-  Plague's own already-documented (Phase 944) quality-downgrade text,
-  and its shared naming with Tornado (`_ATTorn`) suggests Tornado may
-  have an analogous, currently-unmodeled quality-downgrade outcome of
-  its own worth checking.
+  ~~Two further, smaller findings surfaced along the way, left for a
+  future phase, not this one~~: **(1) closed in Phase 947** --
+  `SAY.PAS`'s own "_A*" group also has `_APDestr: Sps(Plague,S_AA)` -- a
+  Plague-specific victim-kingdom bystander notice exactly parallel to
+  Tornado's own `_ATDestr` (Phase 939); see that phase's own addendum
+  for the full wiring. (2) `_APSick,_ATTorn: Say('the ~ spell struck =
+  in @ and reduced them by one quality level.',S_AA)` confirms the exact
+  real label for Plague's own already-documented (Phase 944)
+  quality-downgrade text, and its shared naming with Tornado (`_ATTorn`)
+  suggests Tornado may have an analogous, currently-unmodeled
+  quality-downgrade outcome of its own worth checking -- **still open**,
+  not attempted this phase either.
+
+  **Phase 947: Plague's own real victim-kingdom notice wired too, the
+  same `_APDestr: Sps(Plague,S_AA)` finding Phase 945 surfaced but
+  didn't pursue.** Real fixture text confirms it's a genuine parallel to
+  Tornado's own Phase 939 fix, but with one real difference: `SE3__T6.K1`
+  shows "Tebessa was hit by a plague.  The plague struck the 96th Bowmen
+  and the 269th Bowmen in Tebessa and destroyed them." inside the
+  *victim*'s own letter (Tebessa is confirmed, via that same letter's
+  own PROVINCES table, to belong to this Kingdom, with no "cast a Plague
+  spell" mention anywhere nearby) -- both the "was hit by a plague" line
+  *and* the destroy sentence(s) travel together, unlike Tornado's own
+  notice (destroy sentences only). This isn't an inconsistency: GIR
+  structurally never shows a Kingdom news about its own already-owned
+  province (`describe_general_intelligence_report()`'s own `owner ==
+  kingdom_id` exclusion), so without carrying the "hit by" line too, the
+  affected/owning Kingdom would have no way to learn of a foreign
+  Kingdom's Plague striking their own territory at all -- a gap
+  Tornado's own notice never had to close, since it carries no
+  equivalent "province-wide" line of its own. New `GameState.
+  plague_victim_notices_by_kingdom`, populated by `record_spell_world_
+  events()`'s own new branch (grouped by each destroyed army's own
+  owning Kingdom, the same caster-exclusion/unowned-army-skip rules
+  Tornado's notice already established), read by `compose_letter_
+  report()` the same way every sibling per-kingdom notice bucket is.
 
   ~~This closes every `_CAST_ANNOUNCEMENT_PROVINCE_SPELLS`/
   `_CAST_ANNOUNCEMENT_ARMY_LIST_SPELLS` entry in this dispatch loop
