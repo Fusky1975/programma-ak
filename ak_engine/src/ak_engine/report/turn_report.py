@@ -4178,6 +4178,55 @@ def render_illus_terrain_cast_outcome(
     return opening + render_illus_terrain_world_event(real_terrain_name, province_name, fake_terrain_name, rng)
 
 
+# HostAK/TP/SAY.PAS `_SFlood`: "@ was magically flooded." (S_Comm, no
+# `SPNOTE.X2` dispatch) -- Flood's own real, confirmed top-level-cast
+# text (Phase 945), the exact same template `render_flood_world_event()`
+# (above) already renders for the bystander/GIR view, just with the
+# ordinary `< cast a ~ spell and ` opening prepended for the caster's own
+# private line -- the same "shared S_Comm text, opening clause only for
+# the caster" shape Illusory Terrain's own Phase 943 fix already
+# established. Confirmed by real fixture text: `SE3__T6.K1` ("I cast a
+# Flood spell and Limerick was magically flooded.") and `SE3__T7.K1`
+# ("Clarambald cast a Flood spell and Ngara was magically flooded.") --
+# two independent direct casts, never `SPELL_CAST_ANNOUNCEMENT[Spell.
+# FLOOD]`'s own catalog entry ("the Flood slowed ^L= in @, causing them
+# to lose one movement point.").
+#
+# **That catalog entry is real Pascal text, from a genuinely different
+# dispatch -- but, unlike Illusory Terrain's `_LSeeI`, has zero confirmed
+# real fixture occurrences anywhere in either corpus to pin down its own
+# trigger condition.** `SAY.PAS`'s own `_ASlow: Sps(Flood,S_Batt)` (line
+# 862) sits in a distinct "_A*" label group (`_ARecr`/`_ADisb`/`_ARedu`/
+# `_ADesert`/`_ARises`/`_ATDestr`/`_APDestr`/`_ABDestr`/..., end-of-turn
+# per-army effect notices) at `S_Batt` ("battle") severity -- not the
+# "_S*" top-level-cast group `_SFlood` belongs to, confirmed structurally
+# distinct the same way Phase 943 distinguished `_STerIl`/`_LSeeI`. The
+# only real fixture text naming a per-unit movement-point deduction
+# (`SE3__T5.K1`: "MARCH THROUGH FLOODS: ...it becomes possible for
+# armies to enter or leave any province affected by the Flood spell.
+# One movement point is deducted from all units which have to use this
+# ability, after they have moved.") is an Advanced Ability *description*
+# (a "Congratulations, new ability" block), not a live cast or move
+# narration -- consistent with this being a real, sourced text for a
+# genuinely separate mechanic (an army *using* `AdvancedAbility.
+# MARCH_THROUGH_FLOODS` to cross a Flooded province on a LATER turn, per
+# `turn/move_execution.py`'s own already-wired mechanic) that this
+# project's Move narration doesn't render yet -- a real, confirmed,
+# still-open gap, left unbuilt here rather than guessed at, the same
+# "the text is real, the trigger condition isn't modeled yet" shape
+# Scar Terrain's own `_STFite` had before Phase 721/722 and Illusory
+# Terrain's own `_LSeeI` still has.
+def render_flood_cast_outcome(caster_name: str, province_name: str, rng: random.Random) -> str:
+    """Renders Flood's own real top-level-cast outcome -- see the module
+    comment above for the full sourcing and the correction this makes to
+    the previously-assumed ``SPELL_CAST_ANNOUNCEMENT[Spell.FLOOD]``
+    dispatch.
+    """
+
+    opening = render(CAST_SPELL_OPENING_CONTINUED_TEMPLATE, {"<": caster_name, "~": SPELL_NAME[Spell.FLOOD]}, rng=rng)
+    return opening + render_flood_world_event(province_name, rng)
+
+
 def describe_cast(
     result: CastExecutionResult,
     *,
@@ -4271,6 +4320,15 @@ def describe_cast(
     instead, with the same kind of single documented counter-example
     (see ``render_plague_outcome()``'s own docstring). Reads
     ``result.plague_destroyed`` directly.
+
+    **Phase 945**: ``Spell.FLOOD`` gets the same "wholly separate
+    renderer" treatment as Illusory Terrain, for the same reason --
+    ``SPELL_CAST_ANNOUNCEMENT[Spell.FLOOD]``'s own catalog entry is real
+    text for a *different*, still-unwired dispatch (see ``render_flood_
+    cast_outcome()``'s own module comment), not the top-level CAST
+    action's own text. Simpler than every other bypass above: no
+    ``CastExecutionResult`` field needed at all, since the real top-level
+    text names no army.
     """
 
     if not result.applied:
@@ -4294,6 +4352,10 @@ def describe_cast(
         if province_name is None:
             raise ValueError(f"{spell!r} needs province_name")
         return render_plague_outcome(caster_name, province_name, result.plague_destroyed, rng)
+    if spell is Spell.FLOOD:
+        if province_name is None:
+            raise ValueError(f"{spell!r} needs province_name")
+        return render_flood_cast_outcome(caster_name, province_name, rng)
     line = render_cast_announcement(
         spell,
         caster_name,
@@ -8879,6 +8941,23 @@ def describe_turn_results(
                 # Tornado/Earthquake/Part_Sea already use -- `describe_
                 # cast()`'s own dedicated branch reads `result.plague_
                 # destroyed` directly, the same shape as Tornado.
+                if board_width is None:
+                    continue
+                coord = decode_hex_number(entry.result.request.target, board_width)
+                province_name = _province_label(state, coord)
+                line = describe_cast(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                if line is not None:
+                    lines.append(line)
+                continue
+            if spell is Spell.FLOOD:
+                # Phase 945: a seventh province-targeted Cast spell wired
+                # here, the simplest of all of them -- `describe_cast()`'s
+                # own dedicated branch needs only `province_name`, no
+                # army list or dedicated result field at all. Closes every
+                # `_CAST_ANNOUNCEMENT_PROVINCE_SPELLS` entry in this
+                # dispatch loop except `Spell.HIDE_FEATURE` (a confirmed
+                # dead end, Phase 938 -- no real fixture example of a
+                # successful cast survives to confirm its own text).
                 if board_width is None:
                     continue
                 coord = decode_hex_number(entry.result.request.target, board_width)
