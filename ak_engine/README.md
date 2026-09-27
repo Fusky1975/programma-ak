@@ -36471,10 +36471,15 @@ supply of any of these doesn't have to be re-derived from scratch:
   through the ordinary `Sps()` dispatch, and real fixture text confirms
   both DO get the opening clause). See `render_cast_announcement()`'s
   own Phase 938 correction and `render_charm_outcome()`'s own docstring
-  for the full derivation. **Still genuinely open**: Hide_Feature (needs
+  for the full derivation. ~~**Still genuinely open**: Hide_Feature (needs
   its own `feature_name` wiring this dispatch loop doesn't compute yet,
   and no real fixture example of a successful cast survives to confirm
-  its own opening-clause question either way); the CTBOTH.PAS-confirmed
+  its own opening-clause question either way)~~ -- **closed in Phase 946**
+  for the single-feature case (a structural, redundancy-test argument
+  settled the opening-clause question without needing a fixture; the
+  multi-feature grouping question stays genuinely open, no fixture data
+  exists to resolve it either way -- see that phase's own addendum).
+  The CTBOTH.PAS-confirmed
   severity scale (`S_Prev=0, S_Red=1, S_Priv=2, S_PCom=3, S_Adv=4,
   S_Batt=5, S_AA=6, S_Admin=7, S_Army=8, S_Comm=9, S_IDipl=10`) still
   places Charm/Resurrection/Clairvoyance/Kill_Enemy/Oratory/Hide_Feature
