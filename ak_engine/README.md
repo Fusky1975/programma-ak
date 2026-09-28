@@ -36900,6 +36900,25 @@ supply of any of these doesn't have to be re-derived from scratch:
   is_male`), blank only when none of the three apply.
 
   No behavior changes this phase either -- docstring corrections only.
+
+  **Phase 952: continuing into `turn/` (battle/merit modules) finds one
+  more stale cross-reference.** `turn/merit_points.py`'s own "6
+  terrain-King titles" bullet cited Curator/Assassin/Duellist as a
+  shared example of the "merit counter wired first, `effect_while_held`
+  bonus deferred" precedent -- stale for Duellist specifically: **Phase
+  471** wired its own real battlefield effect too (`models/office.py
+  GANG_TEMPLATE[Office.DUELLIST]`'s fanatic-unit bonus, `turn/battle_
+  orchestrator.py fight_battle()`), so Duellist has had both halves live
+  since well before this bullet's own most recent wording. Corrected the
+  citation to Assassin's own still-genuinely-unwired Guild free-attempt
+  perk instead (verified still accurate), and added a cross-reference
+  note to the `DUELLIST` merit-tally bullet itself pointing at its own
+  separate Phase 471 effect. Checked roughly 15 more `turn/` modules
+  this phase (`battle_orchestrator.py`, `army_quality.py`,
+  `trail_execution.py`, `hire_pay.py`, `use_mi_decode.py`, and others);
+  every other "still open"/"confirmed absent" claim found held up.
+
+  No behavior changes this phase either -- docstring corrections only.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
