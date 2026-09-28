@@ -91,8 +91,12 @@ documented gap:
   separately to a Home" -- ambiguous which Home) -- only its *count*
   (always 1) is implemented; its placement rule isn't specified
   precisely enough to code.
-- The special-race tax recompute interaction, already deferred
-  alongside the special-race placement pass itself (Phase 355/356).
+- ~~The special-race tax recompute interaction, already deferred
+  alongside the special-race placement pass itself (Phase 355/356).~~ --
+  **closed in Phase 362** (already correctly recorded as closed in
+  `worldgen/province_tax.py`'s own docstring, but never cross-linked
+  back here): `worldgen/special_race_placement.py recompute_tax()`,
+  wired from `worldgen/generate_new_game.py`, does exactly this.
 
 **Verification**: the four count formulas above are checked directly
 against both of the source's own worked examples (exact integers, no
