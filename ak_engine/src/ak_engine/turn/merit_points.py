@@ -373,9 +373,15 @@ already exists:
   parameter, applied unconditionally (partial or full Explore alike)
   at all 4 real call sites. Neither this nor the 4 magic-school titles
   above have their own `"effect_while_held"` bonus (auto-Flee, double-
-  speed terrain exploration, etc.) wired -- deliberately deferred, same
-  "merit counter first, effect later" precedent as Curator/Assassin/
-  Duellist below.
+  speed terrain exploration, etc.) wired -- deliberately deferred, the
+  same "merit counter first, effect later" precedent Assassin's own
+  still-unwired Guild free-attempt perk shows below. ~~Duellist below~~
+  is no longer a fitting example of that precedent: Phase 471 wired its
+  own real `"effect_while_held"` bonus too (`models/office.py
+  GANG_TEMPLATE[Office.DUELLIST]`'s fanatic-unit battlefield effect,
+  `turn/battle_orchestrator.py fight_battle()`), so Duellist now has
+  both halves live, not just the merit tally this bullet's own sibling
+  entry below describes.
 - **`BATTLE_FOOL`** (id 37, "Fool of Battles"): `-(lgenp+ladmp)` --
   the *negative* of the combined land-and-naval battle-merit total,
   i.e. whoever has the *worst* combined record. Computed directly from
@@ -411,7 +417,11 @@ already exists:
   _apply_duel_encounter_merit()` at the personal CHALLENGE encounter's
   own close point: winner +stake/loser -stake, stake 2 for a decisive
   combat or 1 for an ordinary refusal (`AKGEN_reverse_engineering_report
-  (2).md` SS17).
+  (2).md` SS17). Its own separate `"effect_while_held"` battlefield bonus
+  (§17.7's fanatic-unit assist) is live too, as of **Phase 471** --
+  `models/office.py GANG_TEMPLATE[Office.DUELLIST]`, `turn/battle_
+  orchestrator.py fight_battle()` -- the merit tally above and this
+  bonus are two independently-wired halves of the same title.
 - **`WINGMAN`** (id 48, "Air Force Commander"): `Tit_Pts` -- **live as of
   Phase 444**, credited by `turn/battle_orchestrator.py _apply_wingman_
   merit()`: +1 to the leader commanding a winning Dragons/Eagles unit in
