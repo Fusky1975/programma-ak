@@ -642,8 +642,15 @@ here is a single, real, hardcoded `Say(...)` (no `.X` file), the report
   siblings (`T_LSteal`/`T_MSteal`/`G_LSteal`/`G_MSteal`, a larger
   Steal-outcome cluster around lines 558-580 whose `T_`/`G_` prefix
   semantics aren't confirmed by any comment in the available source)
-  are actually dispatched -- not pursued here, left for a future phase
-  once that prefix distinction can be sourced rather than guessed.
+  are actually dispatched. ~~Not pursued here, left for a future phase
+  once that prefix distinction can be sourced rather than guessed.~~ --
+  **closed in Phase 590** (see that phase's own module comment above
+  `render_stunned()`, and Phase 858/859's own correction of an
+  intervening "fully unresolved" regression): `T_*`/`G_*` read as list-
+  vs-no-list (`^L\\` present or absent), not independently sourced but a
+  documented, non-arbitrary reading, and both the `*Steal`/`*Spoils`
+  halves are wired into `describe_steal()`/`describe_encounter_combat()`
+  (Phase 777).
 - `_LTakeG: FD('takeg',S_PCom,2)` -> `TAKEG.X` (header `"3 1"`, 3 real
   templates): a successful gold theft. `render_take_gold()`.
 - `_LInher` has a real `IF _attl = _defl THEN ... ELSE ...` branch:
