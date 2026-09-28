@@ -66,7 +66,7 @@ with no further terrain gating" was also incomplete -- several of those
 27 are gated to one *specific* land terrain, not "any land", something
 Phase 242 never modeled at all.
 
-**Deliberately NOT implemented here**: the full spatial placement loop
+~~**Deliberately NOT implemented here**: the full spatial placement loop
 (``later_placement``'s random-coordinate-with-King-Home-rejection draw,
 and the ``rejection_rule``'s "propose everything again on terrain
 mismatch" retry) -- this needs a live generated map (``place_map``,
@@ -74,7 +74,13 @@ Phase 354) plus per-coordinate occupancy tracking to run against, the
 same category of integration work already deferred for the special-race
 overwrite pass (Phase 355) and the extra mercenary band (Phase 358).
 This phase supplies every formula that loop will need; wiring it into a
-real placement loop is left for a later phase.
+real placement loop is left for a later phase.~~ -- **closed in Phase
+364** (``worldgen/feature_placement.py``, which calls this module's own
+``propose_monster()``/``propose_feature_type()``/``is_terrain_
+compatible()`` directly, the same "turn the narrative into an
+algorithm" treatment ``place_map``/``special_race_placement``/
+``mercenary_band`` already got): see that module's own docstring for
+the full placement-loop derivation.
 
 **Verification**: `propose_monster()` is Monte Carlo-checked for
 uniformity over the 60 real species. `propose_feature_type()` is

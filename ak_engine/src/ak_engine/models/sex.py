@@ -22,9 +22,17 @@ own real "M/F" column (`REPORTS.PAS`'s CHARACTERS-section header,
 quoted above) now reads this field -- correcting that composer's own
 Phase 432 claim that "no `Gender()` concept or field exists anywhere in
 this project," stale even when written (Phase 260 predates Phase 432).
-Blank for any leader whose own `sex` was never set (i.e. everyone but a
-succession-created King) -- see `describe_characters_report()`'s own
-Phase 635 addendum for why a second real Gender source, `parser/
+~~Blank for any leader whose own `sex` was never set (i.e. everyone but a
+succession-created King)~~ -- **incomplete even at the time this was
+written**: `parser/gw_world_bridge.py bridge_new_game_state()`'s own
+Phase 339 addendum (chronologically earlier than this Phase 635 note)
+is a second, real writer -- a roster-matched Hero (`STANDARD_HERO_
+SEX_BY_NAME`, keyed by name) gets `sex` set directly when a `GameState`
+is bridged from a real world file, not just a succession-created King.
+Blank only for a leader covered by neither writer (an ordinary,
+non-roster-matched Hero, or any leader in a hand-built `GameState` never
+bridged from a real file) -- see `describe_characters_report()`'s own
+Phase 635 addendum for why a *third* real Gender source, `parser/
 gw_world.py GWKingExtension.is_male` (a King's own real save-file
 Gender byte), stays deliberately unbridged into this field for now.
 """

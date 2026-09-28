@@ -36860,6 +36860,46 @@ supply of any of these doesn't have to be re-derived from scratch:
   `turn_processor.py`, `encounter.py`, and `challenge_execution.py`)
   held up against the current code and other cross-referencing
   docstrings -- these two were the only stale ones found.
+
+  **Phase 951: continuing the audit into `worldgen/`, `parser/`, and
+  `models/` finds four more genuinely stale cross-references, one of
+  them a real, non-trivial factual error, not just a missing
+  strikethrough.** (1) `worldgen/leader_placement.py`'s own "Deliberately
+  NOT implemented" list still named "the special-race tax recompute
+  interaction" as deferred -- `worldgen/province_tax.py`'s own docstring
+  already correctly records this as closed by Phase 362
+  (`special_race_placement.py recompute_tax()`), just never linked back
+  from this sibling module's own copy of the same claim. (2)
+  `worldgen/feature_generation.py`'s own "Deliberately NOT implemented"
+  note said the full spatial feature-placement loop was "left for a
+  later phase" -- Phase 364 (`worldgen/feature_placement.py`) built
+  exactly that loop, calling this module's own `propose_monster()`/
+  `propose_feature_type()`/`is_terrain_compatible()` directly, the same
+  "turn the narrative into an algorithm" treatment `place_map`/
+  `special_race_placement`/`mercenary_band` already got -- again never
+  cross-linked back.
+
+  **(3)/(4) are the same real factual error, found in two places.**
+  `parser/gw_world.py`'s own Phase 320 addendum said "this project
+  doesn't currently model character gender anywhere" -- stale since
+  Phase 260 (`models/sex.py Sex`, `LeaderState.sex`, which predates
+  Phase 320 by 60 phase numbers). Tracing the consumer side turned up a
+  second, compounding error: both `models/sex.py`'s own Phase 635
+  addendum and `report/turn_report.py describe_characters_report()`'s
+  own matching Phase 635 correction claimed `LeaderState.sex` has
+  "exactly one real writer, `turn/succession.py create_king()`" --
+  **incomplete even when written**: `parser/gw_world_bridge.py
+  bridge_new_game_state()`'s own Phase 339 addendum (chronologically
+  *earlier* than this Phase 635 claim) is a second real writer,
+  populating a roster-matched Hero's own `sex` from `STANDARD_HERO_
+  SEX_BY_NAME` whenever a `GameState` is bridged from a real world
+  file -- confirmed directly in the bridge's own code, not just its
+  docstring. All three files now cross-reference the same corrected
+  picture: two real writers (succession, roster-bridge), one confirmed-
+  real but deliberately unbridged third source (`GWKingExtension.
+  is_male`), blank only when none of the three apply.
+
+  No behavior changes this phase either -- docstring corrections only.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

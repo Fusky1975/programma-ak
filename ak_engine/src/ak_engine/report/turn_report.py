@@ -13069,19 +13069,26 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     stale even when written -- `models/sex.py Sex`/`LeaderState.sex`
     have existed since Phase 260, this composer's own `Sex` import at
     the top of this module already being used for an unrelated NEW_SEX
-    power message. `LeaderState.sex` currently has exactly one real
-    writer, `turn/succession.py create_king()` (a Royal Heir's sex is
-    chosen at succession, confirmed with the user, `models/sex.py`'s own
-    docstring); every other leader (anyone not created via succession
-    during this project's own simulated turns) reads `None` and renders
-    blank here, the same "no data, don't guess" convention this column
-    already used. **A second, real Gender data source exists but is
-    deliberately not bridged here**: `parser/gw_world.py GWKingExtension.
-    is_male` (Phase 320/380) parses a King's own real Gender byte
-    straight from a `GW*` save file, but nothing in this project bridges
-    `GWKingExtension` records into `GameState`/`LeaderState` at all yet
-    (confirmed: grepped every caller outside `parser/gw_world_writer.py`'s
-    own round-trip serializer -- none) -- building that bridge would also
+    power message. ~~`LeaderState.sex` currently has exactly one real
+    writer, `turn/succession.py create_king()`~~ -- **incomplete even at
+    the time this was written**: `parser/gw_world_bridge.py bridge_new_
+    game_state()`'s own Phase 339 addendum (chronologically earlier than
+    this Phase 635 correction) is a second real writer -- a roster-
+    matched Hero (`STANDARD_HERO_SEX_BY_NAME`, keyed by name) gets `sex`
+    set directly whenever a `GameState` is bridged from a real world
+    file, not just a succession-created King (confirmed with the user,
+    `models/sex.py`'s own docstring, which carries the same correction).
+    Blank only for a leader covered by neither writer (an ordinary,
+    non-roster-matched Hero, or any leader in a hand-built `GameState`
+    never bridged from a real file), and renders blank here, the same
+    "no data, don't guess" convention this column already used. **A
+    third, real Gender data source exists but is deliberately not
+    bridged here**: `parser/gw_world.py GWKingExtension.is_male` (Phase
+    320/380) parses a King's own real Gender byte straight from a `GW*`
+    save file, but nothing in this project bridges `GWKingExtension`
+    records into `GameState`/`LeaderState` at all yet (confirmed:
+    grepped every caller outside `parser/gw_world_writer.py`'s own
+    round-trip serializer -- none) -- building that bridge would also
     need to solve associating each extension record with the right King
     (the parser discards the name it used for detection), a real,
     separate, larger follow-up this phase doesn't attempt); race name

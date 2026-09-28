@@ -402,9 +402,16 @@ Marco Calabresi, already confirmed as King #8's own kingdom in Phase
 318's own addendum) -- both unambiguously female in-game character
 names, chosen by male real-world players, matching the `"F"` tag
 exactly. Every `"M"`-tagged leader (Babba Sissoko, Bradipo I, Kwoth,
-...) has a male or gender-neutral name. Not yet given a project enum --
+...) has a male or gender-neutral name. ~~Not yet given a project enum --
 this project doesn't currently model character gender anywhere, so
-adding one is deferred to whichever future phase actually consumes it.
+adding one is deferred to whichever future phase actually consumes it.~~
+-- **stale since Phase 260** (`models/sex.py Sex`, `LeaderState.sex`):
+a real project enum for exactly this field now exists, though populated
+today only by King-creation via Royal Heir succession
+(`turn/succession.py create_king()`), not bridged from this parsed
+`GWKingExtension.is_male` field (Phase 380's own formal parsing of this
+same "M"/"F" line) -- see `models/sex.py`'s own Phase 635 addendum for
+why that bridge stays a separate, still-open task.
 
 The long line's own third token (right after `"<M|F> 10 "`) varies
 leader to leader with no obvious pattern yet (`2` for Babba Sissoko,
