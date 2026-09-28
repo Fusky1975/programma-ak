@@ -36823,6 +36823,43 @@ supply of any of these doesn't have to be re-derived from scratch:
   silently skipping a multi-feature cast rather than inventing a
   grouping rule. This is the one genuinely open piece left in this
   entire 935-946 run.
+
+  **Phase 950: a fresh systematic audit of other composers' own
+  docstrings (not `compose_letter_report()`'s cross-reference list
+  again, already fully re-audited in Phase 940/949) turned up two more
+  "closed elsewhere, never revisited" stale notes, the same pattern.**
+  (1) `report/turn_report.py`'s own module-introduction docstring (the
+  Phase 117 addendum on `_LSteal`'s `T_`/`G_`-prefixed siblings) still
+  said "not pursued here, left for a future phase once that prefix
+  distinction can be sourced" -- stale since Phase 590 (`T_*`/`G_*`
+  read as list-vs-no-list, `^L\\` present or absent) and Phase 777
+  (both the `*Steal`/`*Spoils` halves wired into `describe_steal()`/
+  `describe_encounter_combat()`), with an intervening Phase 858/859
+  correction of its own already on record a few thousand lines later in
+  the same file -- this earlier paragraph was simply never linked to
+  that later resolution. (2) `report/ascii_map.py`'s own module
+  docstring still listed "Multiple maps ('far side of the world') --
+  only a single, continuous map is rendered" under "Explicitly NOT
+  modeled this phase" -- stale since **Phase 624** (pagination itself,
+  a pure print-width-overflow trigger, verified 27/27 against every
+  real sample with a second map) and **Phase 628** (per-Kingdom
+  province visibility, a real gap Phase 624 found while building this),
+  documented in full detail *later in the same file* but never
+  cross-linked back to this earlier "not modeled" bullet -- the two
+  pieces Phase 624 genuinely did leave open (the layout-tier
+  *selection* trigger, Phase 627's own 82% best-effort approximation;
+  and `paginate_known_columns()`'s own home-anchored windowing, a
+  documented interpretation not fully provable from available data)
+  are correctly still named as open, both by this correction and by
+  Phase 624/627's own text.
+
+  No behavior changes this phase -- docstring corrections only. Every
+  other composer docstring's own "still open"/"not yet"/"confirmed
+  absent" claim checked this phase (roughly 20 across `turn_report.py`
+  plus spot checks of `ascii_map.py`, `plague_spread.py`,
+  `turn_processor.py`, `encounter.py`, and `challenge_execution.py`)
+  held up against the current code and other cross-referencing
+  docstrings -- these two were the only stale ones found.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

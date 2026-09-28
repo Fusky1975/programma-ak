@@ -452,9 +452,18 @@ in `README.md` for the full account):
   every cell at a uniform 6 lines with no row-budget juggling. This is
   a deliberate simplification, not an attempt to reproduce the real
   wrap-and-drop behavior.
-- Multiple maps ("far side of the world") -- only a single, continuous
+- ~~Multiple maps ("far side of the world") -- only a single, continuous
   map is rendered. (The region label, "Ice cap", is implemented as of
-  Phase 577 -- see that section above.)
+  Phase 577 -- see that section above.)~~ -- **closed in Phase 624**
+  (pagination itself, a pure print-width overflow trigger, 27/27 against
+  every real sample with a second map) and **Phase 628** (per-Kingdom
+  province visibility, the real gap Phase 624 found while building this).
+  See those phases' own addenda below for the full derivation, including
+  the two pieces Phase 624 deliberately left for later: the layout-tier
+  *selection* trigger itself (Phase 627, shipped as an 82% best-effort
+  approximation, not a discovered formula) and `paginate_known_columns()`'s
+  own home-anchored windowing (a documented, user-approved interpretation,
+  not fully provable without real per-turn discovery-order data).
 - **The real trigger for which of the (at least) 6 distinct cell-width
   layouts a given report uses.** Phase 567 surveyed every one of this
   project's own 107 real `Desktop/SE3__T*.K*` samples (turns 1-11,
