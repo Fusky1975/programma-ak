@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Feature ({{ feature.coord.x }}, {{ feature.coord.y }}) -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('features_list', slug=meta.slug) }}">&larr; Special Features</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Feature ({{ feature.coord.x }}, {{ feature.coord.y }})</h2>
+
+  <form method="post" action="{{ url_for('feature_save', slug=meta.slug, feature_id=feature.feature_id) }}">
+    <p>
+      <label for="kind">Type</label><br>
+      <select id="kind" name="kind">
+        {% for kind in feature_types %}
+          <option value="{{ kind.name }}" {% if feature.kind == kind %}selected{% endif %}>{{ kind.name.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="guardian_monster">Guardian Monster</label><br>
+      <select id="guardian_monster" name="guardian_monster">
+        <option value="">-- None --</option>
+        {% for monster in monsters %}
+          <option value="{{ monster.name }}" {% if feature.guardian_monster == monster %}selected{% endif %}>{{ monster.name.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="guardian_alignment">Guardian Alignment</label><br>
+      <select id="guardian_alignment" name="guardian_alignment">
+        <option value="">-- Unset --</option>
+        {% for alignment in alignments %}
+          <option value="{{ alignment.name }}" {% if feature.guardian_alignment == alignment %}selected{% endif %}>{{ alignment.name.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="treasure">Treasure</label><br>
+      <select id="treasure" name="treasure">
+        <option value="">-- None --</option>
+        {% for treasure in treasures %}
+          <option value="{{ treasure.name }}" {% if feature.treasure == treasure %}selected{% endif %}>{{ treasure.name.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="magic_location">Magic Location</label><br>
+      <select id="magic_location" name="magic_location">
+        <option value="">-- Unset --</option>
+        {% for location in magic_locations %}
+          <option value="{{ location.name }}" {% if feature.magic_location == location %}selected{% endif %}>{{ location.name.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="magic_power">Magic Power</label><br>
+      <select id="magic_power" name="magic_power">
+        <option value="">-- None --</option>
+        {% for power in powers %}
+          <option value="{{ power.name }}" {% if feature.magic_power == power %}selected{% endif %}>{{ power.name.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <button type="submit">Save Feature</button>
+  </form>
+</div>
+
+{% endblock %}

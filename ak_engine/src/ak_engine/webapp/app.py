@@ -21,11 +21,16 @@ from flask import Flask, redirect, render_template, request, url_for
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.feature import FeatureType
+from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import Monster
 from ak_engine.models.office import OFFICE_NAME, Office
+from ak_engine.models.power import Power
 from ak_engine.models.race import Race
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
+from ak_engine.models.treasure import Treasure
 from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES
 from ak_engine.webapp.games import (
     DuplicateGameNameError,
@@ -416,5 +421,86 @@ def create_app(games_root: Path | None = None) -> Flask:
         leader.sex = sex
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
+    @app.get("/games/<slug>/features")
+    def features_list(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        features = sorted(state.features.values(), key=lambda feature: (feature.coord.y, feature.coord.x))
+        return render_template(
+            "world_features.html",
+            meta=meta,
+            state=state,
+            features=features,
+            error=request.args.get("error"),
+        )
+
+    @app.get("/games/<slug>/features/<int:feature_id>")
+    def feature_edit(slug: str, feature_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        feature = state.features.get(feature_id)
+        if feature is None:
+            return redirect(url_for("features_list", slug=slug, error="Feature not found."))
+        return render_template(
+            "feature_edit.html",
+            meta=meta,
+            state=state,
+            feature=feature,
+            feature_types=list(FeatureType),
+            monsters=list(Monster),
+            alignments=list(Alignment),
+            treasures=list(Treasure),
+            magic_locations=list(MagicFeature),
+            powers=list(Power),
+            error=request.args.get("error"),
+        )
+
+    @app.post("/games/<slug>/features/<int:feature_id>")
+    def feature_save(slug: str, feature_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        feature = state.features.get(feature_id)
+        if feature is None:
+            return redirect(url_for("features_list", slug=slug, error="Feature not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id, error=message))
+
+        try:
+            kind = FeatureType[request.form.get("kind", "")]
+        except KeyError:
+            return _edit_error("Please choose a valid feature type.")
+
+        def _optional_enum(cls, field: str):
+            raw = request.form.get(field, "")
+            return cls[raw] if raw else None
+
+        try:
+            guardian_monster = _optional_enum(Monster, "guardian_monster")
+            guardian_alignment = _optional_enum(Alignment, "guardian_alignment")
+            treasure = _optional_enum(Treasure, "treasure")
+            magic_location = _optional_enum(MagicFeature, "magic_location")
+            magic_power = _optional_enum(Power, "magic_power")
+        except KeyError:
+            return _edit_error("Please choose valid values.")
+
+        feature.kind = kind
+        feature.guardian_monster = guardian_monster
+        feature.guardian_alignment = guardian_alignment
+        feature.treasure = treasure
+        feature.magic_location = magic_location
+        feature.magic_power = magic_power
+        save_game(root, slug, state)
+        return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id))
 
     return app

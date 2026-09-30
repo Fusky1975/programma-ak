@@ -37530,6 +37530,33 @@ supply of any of these doesn't have to be re-derived from scratch:
   missing-leader error paths), plus a real-browser Playwright pass
   confirming both the King and the world-generated companions/lords all
   appear and edit correctly. Full suite: 7200 passed (10 new tests).
+
+  **Phase 971: World Editor, special-feature screen (`/games/<slug>/
+  features` routes) -- the third and last of Phase 5's editor screens,
+  closing out the plan's "editing every generated province/hero/feature
+  attribute" requirement.** A table lists every `Feature` a freshly
+  generated world actually carries (128 for a real 2-King, 18x9 game --
+  dungeons, tombs, pyramids and the like, each already given a real
+  guardian monster and treasure by `generate_new_game()`'s own world-
+  generation pipeline) with type/guardian/treasure/magic-power columns;
+  the edit form changes type, guardian monster, guardian alignment,
+  treasure, internal magic location, and magic power directly on the
+  live `Feature` object -- the full set of "cosa si trova dentro" data
+  the plan's own opening request named, all optional/clearable back to
+  "None"/"Unset" the same way the hero editor's fields are.
+
+  With this phase, Phase 5 (World Editor) is complete -- province, hero,
+  and feature screens all reachable from the "Create World" summary once
+  a world exists.
+
+  Verified with new `test_webapp_app.py` route tests (list before/after
+  world creation, edit-form prefill, a full save round trip across all
+  six fields, and the invalid-type/missing-feature error paths), plus a
+  real-browser Playwright pass over a real generated world's own features
+  (confirming, among other things, that `Power.PNONE` rendering as
+  "Pnone" is the enum's own real name with no underscore to split on --
+  not a display bug to chase, unlike Phase 969's genuine one). Full
+  suite: 7208 passed (8 new tests).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

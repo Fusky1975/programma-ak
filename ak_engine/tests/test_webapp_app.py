@@ -602,3 +602,116 @@ def test_save_leader_missing_leader_shows_an_error_not_a_crash(tmp_path):
 
     assert response.status_code == 200
     assert b"Hero not found" in response.data
+
+
+def test_features_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/features")
+
+    assert response.status_code == 200
+    assert b"no world yet" in response.data
+
+
+def test_features_list_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/features", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_features_list_shows_generated_features(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/features")
+
+    assert response.status_code == 200
+    assert b"<table" in response.data
+
+
+def _first_feature_id(tmp_path, slug):
+    _, state = open_game(tmp_path, slug)
+    return next(iter(state.features))
+
+
+def test_feature_edit_shows_the_current_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+
+    response = client.get(f"/games/{meta.slug}/features/{feature_id}")
+
+    assert response.status_code == 200
+    assert b'<select id="kind" name="kind">' in response.data
+
+
+def test_feature_edit_missing_feature_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/features/999999", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Feature not found" in response.data
+
+
+def test_save_feature_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+
+    response = client.post(
+        f"/games/{meta.slug}/features/{feature_id}",
+        data={
+            "kind": "DUNGEON",
+            "guardian_monster": "GR_DRAGON",
+            "guardian_alignment": "EVIL",
+            "treasure": "GOLD_HOARD_HUGE",
+            "magic_location": "",
+            "magic_power": "",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    feature = state.features[feature_id]
+    assert feature.kind.name == "DUNGEON"
+    assert feature.guardian_monster.name == "GR_DRAGON"
+    assert feature.guardian_alignment.name == "EVIL"
+    assert feature.treasure.name == "GOLD_HOARD_HUGE"
+    assert feature.magic_location is None
+    assert feature.magic_power is None
+
+
+def test_save_feature_with_invalid_kind_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+
+    response = client.post(
+        f"/games/{meta.slug}/features/{feature_id}",
+        data={"kind": "NOT_A_KIND"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid feature type" in response.data
+
+
+def test_save_feature_missing_feature_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/features/999999",
+        data={"kind": "DUNGEON"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Feature not found" in response.data
