@@ -130,6 +130,16 @@ header.app-header h1 {
   font-style: italic;
 }
 
+.status-ok {
+  color: var(--phase-players);
+  font-weight: bold;
+}
+
+.status-warning {
+  color: var(--color-danger);
+  font-weight: bold;
+}
+
 form.inline {
   display: flex;
   gap: 0.75rem;

@@ -102,3 +102,111 @@ def test_interface_is_declared_english(tmp_path):
     response = client.get("/")
 
     assert b'lang="en"' in response.data
+
+
+def test_games_list_open_link_leads_to_player_setup(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.get("/")
+
+    assert f"/games/{meta.slug}/players".encode() in response.data
+
+
+def test_player_setup_shows_below_minimum_warning_on_a_fresh_game(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/players")
+
+    assert response.status_code == 200
+    assert b"0 of 2-12 Kings added" in response.data
+
+
+def test_player_setup_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/players", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_add_king_via_form_persists_it(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.post(
+        f"/games/{meta.slug}/players",
+        data={"name": "Bram Ironhand", "race": "HUMAN", "alignment": "GOOD"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Bram Ironhand" in response.data
+    assert b"1 of 2-12 Kings added" in response.data
+
+
+def test_add_king_with_blank_name_shows_an_error_not_a_crash(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.post(
+        f"/games/{meta.slug}/players",
+        data={"name": "   ", "race": "HUMAN", "alignment": "GOOD"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Please enter a King" in response.data
+
+
+def test_add_king_with_a_non_playable_race_shows_an_error(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.post(
+        f"/games/{meta.slug}/players",
+        data={"name": "Smaug", "race": "DRAGONS", "alignment": "EVIL"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Human, Elven, Dwarven, or Orcish" in response.data
+    assert b"Smaug" not in response.data
+
+
+def test_remove_king_via_form_removes_it(tmp_path):
+    # A name that doesn't overlap the Add-King form's own placeholder text
+    # ("e.g. Aldric the Bold"), so this only matches the roster listing.
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+    client.post(f"/games/{meta.slug}/players", data={"name": "Bram Ironhand", "race": "HUMAN", "alignment": "GOOD"})
+
+    response = client.post(f"/games/{meta.slug}/players/0/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Bram Ironhand" not in response.data
+    assert b"0 of 2-12 Kings added" in response.data
+
+
+def test_remove_unknown_king_shows_an_error_not_a_crash(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.post(f"/games/{meta.slug}/players/99/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"King not found" in response.data
+
+
+def test_player_setup_shows_ok_status_within_bounds(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+    client.post(f"/games/{meta.slug}/players", data={"name": "Aldric", "race": "HUMAN", "alignment": "GOOD"})
+    client.post(f"/games/{meta.slug}/players", data={"name": "Elara", "race": "ELVEN", "alignment": "NEUTRAL"})
+
+    response = client.get(f"/games/{meta.slug}/players")
+
+    assert b"2 of 2-12 Kings added" in response.data
+    assert b"Ready to continue" in response.data

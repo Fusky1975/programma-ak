@@ -37343,6 +37343,57 @@ supply of any of these doesn't have to be re-derived from scratch:
   ".[webapp]"`, `pyproject.toml`), not a hard dependency of the engine
   itself. No engine behavior changes. Full suite: 7144 passed (19 new
   tests).
+
+  **Phase 965: translated the GM interface (Phase 964) from Italian to
+  English.** The user's very next instruction after Phase 964 shipped: the
+  game itself, and every one of its reports (`report/turn_report.py`'s
+  composers, all `SAY.PAS`/`.X2`-sourced English prose), is English
+  throughout, so an Italian GM screen sitting in front of English reports
+  was its own, needless inconsistency -- one this session had introduced
+  by defaulting to the conversation's own language instead of the game's.
+  Translated `games_list.html`/`base.html`'s user-facing text, `app.py`'s
+  redirect error messages and module docstring, and `games.py`'s
+  `_slugify()` empty-name fallback (`"partita"` -> `"game"`); rewrote both
+  test files' sample data/assertions to match. Added
+  `test_interface_is_declared_english` (asserts `lang="en"` on the
+  rendered page) as a standing regression guard, since nothing else would
+  catch a future phase quietly reverting to Italian. No design/behavior
+  changes beyond the text itself -- reverified with a second real-browser
+  Playwright screenshot pass. Full suite: 7145 passed (20 webapp tests).
+
+  **Phase 966: Player Setup (`webapp/players.py` + `webapp/app.py`'s
+  `/games/<slug>/players` routes) -- the second step of the plan's
+  incremental build, letting the GM add/remove a game's Kings (2-12 per
+  the rulebook) before the world exists.** Deliberately does *not* create
+  real `KingdomState`/`LeaderState` entries yet, an adjustment from the
+  original plan text ("provincia natale opzionale") made once building
+  this screen surfaced a real constraint the plan hadn't accounted for:
+  `KingdomState.home_province` (`models/game_state.py`) is a required
+  field with no default, but a Home coordinate is meaningless before a
+  map exists -- and the map's own dimensions aren't chosen until the
+  "Create World" step (Phase 4 of the plan) that hasn't been built yet.
+  So this phase stores the roster as its own small JSON sidecar
+  (`players.json`, alongside `state.pkl`/`meta.json`) holding just
+  name/race/alignment; the real `KingdomState`/`LeaderState`/`KingSetup`
+  objects get constructed all at once when "Create World" runs, exactly
+  as `cli.py _cmd_new_game` already does today, with `KingSetup.home_coord
+  =None` for any King the GM didn't pin to an explicit province, deferring
+  automatic Home placement to the engine's own already-sourced
+  `worldgen/king_home_placement.py` at that point.
+
+  Player-created Kings are restricted to the four "humanoid" races (Human,
+  Elven, Dwarven, Orcish) in the race dropdown -- not a rules choice made
+  for this phase, but a hard engine constraint discovered and confirmed
+  directly: `worldgen/initial_armies.py`'s own `BEST_ATYPE` dict (the real
+  `home_first_slot()`/"forced best_atype[king race]" table) only has
+  entries for those four, so `generate_new_game()` would `KeyError` on any
+  other race chosen for a King's Home province. All 10 `Alignment` members
+  are offered (no equivalent engine restriction found for alignment).
+  Verified with `tests/test_webapp_players.py` (roster CRUD, the
+  `MAX_PLAYERS` bound, the playable-races set) and new route tests in
+  `test_webapp_app.py` (add/remove via form, validation errors, the
+  2-12 status banner), plus a real-browser Playwright pass. Full suite:
+  7161 passed (36 webapp tests).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

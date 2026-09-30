@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Kings -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('games_list') }}">&larr; My Games</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-players);">
+  <h2>{{ meta.name }} &mdash; Kings</h2>
+
+  {% set count = players|length %}
+  {% if count < min_players %}
+    <p class="status-warning">{{ count }} of {{ min_players }}-{{ max_players }} Kings added &mdash; add at least {{ min_players - count }} more to start the game.</p>
+  {% elif count > max_players %}
+    <p class="status-warning">{{ count }} Kings added &mdash; a game can have at most {{ max_players }}.</p>
+  {% else %}
+    <p class="status-ok">{{ count }} of {{ min_players }}-{{ max_players }} Kings added. Ready to continue once the next phase (optional titles) is built.</p>
+  {% endif %}
+
+  {% if players %}
+    <ul class="game-list">
+      {% for player in players %}
+        <li>
+          <div>
+            <div class="game-name">{{ player.name }}</div>
+            <div class="game-meta">{{ player.race.title() }} &middot; {{ player.alignment.replace('_', ' ').title() }}</div>
+          </div>
+          <form class="inline" method="post" action="{{ url_for('players_remove', slug=meta.slug, player_id=player.player_id) }}"
+                onsubmit="return confirm('Remove King &quot;{{ player.name }}&quot;?');">
+            <button type="submit" class="danger">Remove</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No Kings added yet. Add the first one below.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-world);">
+  <h2>Add a King</h2>
+  <form class="inline" method="post" action="{{ url_for('players_add', slug=meta.slug) }}">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" placeholder="e.g. Aldric the Bold" required>
+
+    <label for="race">Race</label>
+    <select id="race" name="race" required>
+      {% for race in playable_races %}
+        <option value="{{ race.name }}">{{ race.name.title() }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="alignment">Alignment</label>
+    <select id="alignment" name="alignment" required>
+      {% for alignment in alignments %}
+        <option value="{{ alignment.name }}">{{ alignment.name.replace('_', ' ').title() }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit">Add King</button>
+  </form>
+</div>
+
+{% endblock %}
