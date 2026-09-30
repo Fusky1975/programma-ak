@@ -316,7 +316,7 @@ class Feature:
     # Phase 670: `fstate[fn]`'s real, full guardian-engagement state
     # (`Desktop/THUNDERBIRD.md`) -- `MERCENARY` ("alive, ordinary
     # guardian, not yet Bold") is the sensible default every existing
-    # fixture and `worldgen/world_generation.py _create_feature()`
+    # fixture and `turn/world_generation.py _create_feature()`
     # picks up automatically. Deliberately independent of `looted`
     # (still the one true "is this guardian dead" bit) -- raid/
     # maturation logic in `turn/monster_raids.py` checks `not looted`

@@ -11,8 +11,14 @@ mechanic as "no recoverable trigger probability or magnitude anywhere in
 the source" -- both now resolved with real, sourced formulas.
 
 **Season -> phase mapping, user-confirmed directly (2026-08-28)**: this
-project has no ``Season``/calendar concept anywhere (``models/turn.py
-Turn.season`` is an unused, never-instantiated stub). The 5 named seasons
+project has no ``Season``/calendar concept anywhere. ~~(``models/turn.py
+Turn.season`` is an unused, never-instantiated stub).~~ -- **stale as of
+Phase 867**: that stub is gone outright, not merely unused -- ``models/
+turn.py``'s own ``Turn`` class was deleted in full (Phase 867's "remove
+confirmed-dead stub `models/army.py`/`turn.py`" sweep), this module's
+own citation of it simply never got a strikethrough when that landed.
+The broader claim stands unchanged: no replacement Season/calendar
+concept exists anywhere, then or now. The 5 named seasons
 (Spring/Early Summer/Late Summer/Fall/Early Winter) are simply this
 project's own existing 5 phases per turn, in order -- ``P0=Spring,
 P1=Early Summer, P2=Late Summer, P3=Fall, P4=Early Winter`` ("mimics

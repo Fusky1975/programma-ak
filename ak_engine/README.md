@@ -37239,6 +37239,31 @@ supply of any of these doesn't have to be re-derived from scratch:
   test functions in total -- with zero further findings beyond what
   Phases 958-960 already fixed, confirming the test suite is clean
   across this whole methodology.
+
+  **Phase 962: extends Phase 961's dangling-reference hunt to
+  module-path citations** (`` `turn/xyz.py` ``/`` `models/xyz.py` ``-style
+  paths, as opposed to bare function names) -- checked all 144 distinct
+  paths cited across `src/ak_engine` against the files that actually
+  exist. Two genuinely broken: **`turn/monster_raids.py`'s own "no
+  Season/calendar concept" paragraph cited `models/turn.py Turn.season`
+  as "an unused, never-instantiated stub"** -- true when this paragraph
+  was written (Phase ~679-727), but git history confirms Phase 867
+  deleted `models/turn.py`/`Turn` outright ("remove confirmed-dead stub
+  `models/army.py`/`turn.py`"), so the file this citation names hasn't
+  existed for a long time; the broader claim (no replacement calendar
+  concept exists) still holds and is unaffected. **`models/feature.py`'s
+  own `guardian_state` field comment cited `worldgen/world_generation.py
+  _create_feature()`** -- `world_generation.py` has always lived in
+  `turn/`, not `worldgen/` (confirmed by Phase 957's own investigation of
+  that exact module); simple wrong-directory typo, fixed. Tried a third,
+  broader pattern -- bare `` `X`'s own `` citations with no `()`, checked
+  against every defined name plus every module-level constant/field
+  (5569 total) -- but this turned up ~150 hits that were overwhelmingly
+  real Pascal source identifiers (`Say_Options`, `Write_List`,
+  `Plan_Intent`, `_BLList`, ...) and real fixture/place names (`Shasta`,
+  `Macondo`, `GW3__T1`, ...), not project code references; too noisy to
+  be worth pursuing further without a much sharper filter. No behavior
+  changes -- docstring/comment corrections only. Full suite: 7125 passed.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
