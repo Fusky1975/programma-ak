@@ -20,6 +20,8 @@ from pathlib import Path
 from flask import Flask, redirect, render_template, request, url_for
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_type import ArmyType
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import OFFICE_NAME, Office
 from ak_engine.models.race import Race
 from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES
@@ -248,5 +250,90 @@ def create_app(games_root: Path | None = None) -> Flask:
         except WorldAlreadyCreatedError:
             return redirect(url_for("world_setup", slug=slug, error="This game's world has already been created."))
         return redirect(url_for("world_setup", slug=slug))
+
+    @app.get("/games/<slug>/provinces")
+    def provinces_list(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        provinces = sorted(state.provinces.values(), key=lambda p: (p.coord.y, p.coord.x))
+        return render_template(
+            "world_provinces.html",
+            meta=meta,
+            state=state,
+            provinces=provinces,
+            error=request.args.get("error"),
+        )
+
+    @app.get("/games/<slug>/provinces/<int:x>/<int:y>")
+    def province_edit(slug: str, x: int, y: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        province = state.provinces.get(HexCoord(x, y))
+        if province is None:
+            return redirect(url_for("provinces_list", slug=slug, error="Province not found."))
+        return render_template(
+            "province_edit.html",
+            meta=meta,
+            state=state,
+            province=province,
+            terrains=list(Terrain),
+            races=list(Race),
+            army_types=list(ArmyType),
+            error=request.args.get("error"),
+        )
+
+    @app.post("/games/<slug>/provinces/<int:x>/<int:y>")
+    def province_save(slug: str, x: int, y: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        coord = HexCoord(x, y)
+        province = state.provinces.get(coord)
+        if province is None:
+            return redirect(url_for("provinces_list", slug=slug, error="Province not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("province_edit", slug=slug, x=x, y=y, error=message))
+
+        try:
+            terrain = Terrain[request.form.get("terrain", "")]
+        except KeyError:
+            return _edit_error("Please choose a valid terrain.")
+        try:
+            race = Race[request.form.get("race", "")]
+        except KeyError:
+            return _edit_error("Please choose a valid race.")
+
+        tax_raw = request.form.get("tax", "").strip()
+        try:
+            tax = int(tax_raw) if tax_raw else None
+        except ValueError:
+            return _edit_error("Tax must be a whole number.")
+
+        def _army_type(field: str) -> ArmyType | None:
+            raw = request.form.get(field, "")
+            return ArmyType[raw] if raw else None
+
+        try:
+            recruit_type_1 = _army_type("recruit_type_1")
+            recruit_type_2 = _army_type("recruit_type_2")
+        except KeyError:
+            return _edit_error("Please choose valid recruitable unit types.")
+
+        province.terrain = terrain
+        province.race = race
+        province.tax = tax
+        province.recruit_type_1 = recruit_type_1
+        province.recruit_type_2 = recruit_type_2
+        save_game(root, slug, state)
+        return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 
     return app

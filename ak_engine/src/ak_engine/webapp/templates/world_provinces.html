@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Provinces -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('world_setup', slug=meta.slug) }}">&larr; World</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Provinces</h2>
+
+  {% if provinces %}
+    <p>{{ provinces|length }} provinces on a {{ state.board_width }}x{{ state.board_height }} map.</p>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Coord</th>
+          <th>Terrain</th>
+          <th>Race</th>
+          <th>Owner</th>
+          <th>Tax</th>
+          <th>Recruit 1</th>
+          <th>Recruit 2</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for province in provinces %}
+          <tr>
+            <td>({{ province.coord.x }}, {{ province.coord.y }})</td>
+            <td>{{ province.terrain.name.replace('_', ' ').title() }}</td>
+            <td>{{ province.race.name.replace('_', ' ').title() }}</td>
+            <td>{{ state.kingdoms[province.owner_kingdom_id].name if province.owner_kingdom_id in state.kingdoms else '--' }}</td>
+            <td>{{ province.tax if province.tax is not none else '--' }}</td>
+            <td>{{ province.recruit_type_1.name.replace('_', ' ').title() if province.recruit_type_1 else '--' }}</td>
+            <td>{{ province.recruit_type_2.name.replace('_', ' ').title() if province.recruit_type_2 else '--' }}</td>
+            <td><a class="button" href="{{ url_for('province_edit', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">Edit</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">This game has no world yet -- <a href="{{ url_for('world_setup', slug=meta.slug) }}">create it first</a>.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

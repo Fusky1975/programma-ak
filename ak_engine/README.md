@@ -37474,6 +37474,32 @@ supply of any of these doesn't have to be re-derived from scratch:
   provinces, 54 armies, distinct auto-placed Homes) end to end from the
   roster screen. Full suite: 7181 passed (11 new webapp/world-creation
   tests, 1 new engine regression test).
+
+  **Phase 969: World Editor, province screen (`/games/<slug>/provinces`
+  routes) -- the first of Phase 5's three planned editor screens (province,
+  hero, special feature), all thin CRUD layers over `GameState` fields
+  that already exist, per the plan's own "no new data structures needed"
+  design.** A sortable table lists every generated province (coordinate,
+  terrain, race, owning Kingdom, tax, both recruitable unit slots) with
+  an Edit link each; the edit form lets the GM change terrain, race, tax,
+  and both recruit types directly on the live `ProvinceState`, saved
+  immediately via the existing `save_game()`. Deliberately narrower than
+  a full map view -- no visual hex grid, just a text table -- matching
+  this interface's own established "text-first, defer a real map
+  rendering" scope boundary; the coordinate column and Edit links are
+  enough for a GM to navigate to any of a world's (up to 450) provinces
+  by hand.
+
+  Verified with new `test_webapp_app.py` route tests (list before/after
+  world creation, edit-form prefill, a full save round-trip including
+  clearing an optional recruit slot back to "None", and both invalid-
+  input paths -- an unparseable terrain/race enum value, a non-numeric
+  tax). Caught one display bug of its own during the real-browser
+  Playwright pass: `Race.NO_RACE`/`ArmyType.EAGLE_WING`-style names
+  rendered as `"No_Race"`/`"Eagle_Wing"` (a bare `.title()` call, not
+  this project's own established `.replace('_', ' ').title()` convention
+  every other enum-display site already uses) -- fixed before commit, not
+  left for a later phase. Full suite: 7190 passed (9 new tests).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

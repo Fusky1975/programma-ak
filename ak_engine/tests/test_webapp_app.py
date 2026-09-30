@@ -3,6 +3,7 @@ screen only; later phases add their own route tests)."""
 
 from __future__ import annotations
 
+from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
 from ak_engine.webapp.app import create_app
 from ak_engine.webapp.games import create_game, list_games, open_game
@@ -347,3 +348,128 @@ def test_create_world_with_non_numeric_seed_shows_an_error_not_a_crash(tmp_path)
 
     assert response.status_code == 200
     assert b"whole numbers" in response.data
+
+
+def _game_with_world(tmp_path, client):
+    meta = create_game(tmp_path, "Third Campaign")
+    _add_king(client, meta.slug, "Aldric", "HUMAN", "GOOD")
+    _add_king(client, meta.slug, "Elara", "ELVEN", "NEUTRAL")
+    client.post(f"/games/{meta.slug}/world", data={"seed": "1"})
+    return meta
+
+
+def test_provinces_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/provinces")
+
+    assert response.status_code == 200
+    assert b"no world yet" in response.data
+
+
+def test_provinces_list_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/provinces", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_provinces_list_shows_every_generated_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/provinces")
+
+    assert response.status_code == 200
+    assert b"(0, 0)" in response.data
+
+
+def test_province_edit_shows_the_current_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/provinces/0/0")
+
+    assert response.status_code == 200
+    assert b'<select id="terrain" name="terrain">' in response.data
+
+
+def test_province_edit_missing_province_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/provinces/999/999", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Province not found" in response.data
+
+
+def test_save_province_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0",
+        data={
+            "terrain": "JUNGLE",
+            "race": "TROLLISH",
+            "tax": "7",
+            "recruit_type_1": "PHALANX",
+            "recruit_type_2": "",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    province = state.provinces[HexCoord(0, 0)]
+    assert province.terrain.name == "JUNGLE"
+    assert province.race.name == "TROLLISH"
+    assert province.tax == 7
+    assert province.recruit_type_1.name == "PHALANX"
+    assert province.recruit_type_2 is None
+
+
+def test_save_province_with_invalid_terrain_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0",
+        data={"terrain": "NOT_A_TERRAIN", "race": "HUMAN"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid terrain" in response.data
+
+
+def test_save_province_with_non_numeric_tax_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0",
+        data={"terrain": "PLAINS", "race": "HUMAN", "tax": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"whole number" in response.data
+
+
+def test_save_province_missing_province_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/999/999",
+        data={"terrain": "PLAINS", "race": "HUMAN"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Province not found" in response.data

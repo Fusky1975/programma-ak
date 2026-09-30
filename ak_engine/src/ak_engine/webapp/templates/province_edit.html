@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Province ({{ province.coord.x }}, {{ province.coord.y }}) -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('provinces_list', slug=meta.slug) }}">&larr; Provinces</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Province ({{ province.coord.x }}, {{ province.coord.y }})</h2>
+  {% if province.name %}<p>{{ province.name }}</p>{% endif %}
+
+  <form method="post" action="{{ url_for('province_save', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">
+    <p>
+      <label for="terrain">Terrain</label><br>
+      <select id="terrain" name="terrain">
+        {% for terrain in terrains %}
+          <option value="{{ terrain.name }}" {% if province.terrain == terrain %}selected{% endif %}>{{ terrain.name.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="race">Race</label><br>
+      <select id="race" name="race">
+        {% for race in races %}
+          <option value="{{ race.name }}" {% if province.race == race %}selected{% endif %}>{{ race.name.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="tax">Tax</label><br>
+      <input type="number" id="tax" name="tax" value="{{ province.tax if province.tax is not none else '' }}">
+    </p>
+
+    <p>
+      <label for="recruit_type_1">Recruitable Unit 1</label><br>
+      <select id="recruit_type_1" name="recruit_type_1">
+        <option value="">-- None --</option>
+        {% for army_type in army_types %}
+          <option value="{{ army_type.name }}" {% if province.recruit_type_1 == army_type %}selected{% endif %}>{{ army_type.name.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="recruit_type_2">Recruitable Unit 2</label><br>
+      <select id="recruit_type_2" name="recruit_type_2">
+        <option value="">-- None --</option>
+        {% for army_type in army_types %}
+          <option value="{{ army_type.name }}" {% if province.recruit_type_2 == army_type %}selected{% endif %}>{{ army_type.name.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <button type="submit">Save Province</button>
+  </form>
+</div>
+
+{% endblock %}
