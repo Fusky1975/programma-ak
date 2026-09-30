@@ -255,6 +255,7 @@ def test_roll_monster_alignment_two_option_species_consumes_exactly_one_roll():
     # A second .random() call would raise IndexError if consumed.
     rng = ScriptedRandom([0.1])
     roll_monster_alignment(Monster.GIANT, rng)
+    assert rng._randoms == []  # and confirms it wasn't skipped either -- exactly one
 
 
 def test_roll_monster_alignment_three_option_species_walks_cumulative_thresholds():
@@ -296,6 +297,7 @@ def test_roll_gate_demon_type_walks_cumulative_thresholds():
 def test_roll_gate_demon_type_consumes_exactly_one_roll():
     rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
     roll_gate_demon_type(rng)
+    assert rng._randoms == []  # and confirms it wasn't skipped either -- exactly one
 
 
 def test_roll_gate_demon_type_every_result_is_one_of_the_seven_anti_holy_demons():
