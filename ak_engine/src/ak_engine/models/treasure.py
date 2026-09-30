@@ -397,8 +397,10 @@ TREASURE_BOOK_ABILITY: dict[Treasure, Ability] = {Treasure(52 + ability.value): 
 # Phase 530: the 5 Anti-Magic Amulets (44-48), 1:1 positional with the 5
 # Magical abilities in their own declared order (White=5..Illusion=9,
 # offset by 39 -- AMULET_ANTI_WHITE=44 through AMULET_ANTI_ILLUSION=48).
-# See ``turn/discovery_effects.py holds_anti_magic_amulet()`` for the
-# actual immunity check wired into cast resolution.
+# See ``turn/discovery_effects.py holder_is_immune_to_spell()`` (renamed
+# from ``holds_anti_magic_amulet()`` by that same function's own Phase
+# 531 correction, never updated here) for the actual immunity check
+# wired into cast resolution.
 ANTI_MAGIC_AMULET_BY_ABILITY: dict[Ability, Treasure] = {
     ability: Treasure(39 + ability.value)
     for ability in (Ability.WHITE, Ability.NECROMANCY, Ability.ELEMENTAL, Ability.PSYCHIC, Ability.ILLUSION)

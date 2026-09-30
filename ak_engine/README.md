@@ -37184,6 +37184,61 @@ supply of any of these doesn't have to be re-derived from scratch:
   kingdom.get(1) == 1`. All three hardened tests pass against the real
   code -- this closes test-coverage gaps, not production bugs. Full
   suite: 7125 passed.
+
+  **Phase 961: back to production docstrings, with a new, fourth audit
+  angle -- finding dangling function-name cross-references left behind
+  by a rename.** Every backtick-quoted `` `name()` ``/```` ``name()`` ````
+  citation across all of `src/ak_engine` was extracted and checked
+  against the full set of actually-defined function/class names
+  (1550 of them). After filtering out real Pascal-source citations
+  (`Say()`, `IRand()`, `Trunc()`, `FD()`, `LKing()`, `Rank()`, ...),
+  Python builtins cited literally (`max()`, `round()`, `str()`, ...),
+  deliberate shared-prefix shorthand already used consistently in pairs
+  (`render_monster_reinforcement_arrives()`/`` `_helped()` `` for
+  `render_monster_reinforcement_helped()`; `known_bordering_kingdom_tax_
+  bases()`/`` `_treasuries()` `` for `known_bordering_kingdom_
+  treasuries()`), and citations to Pascal-dossier pseudocode names
+  (`resolve_TA_to_monster()`) or to functions already correctly
+  documented as removed/superseded (`apply_defender_bonus()`,
+  `resolve_terrain_spell_candidate()`, `resolve_retreat()`,
+  `select_pursuers()`, `render_cluck2_event()`, `roll_cluck_reversal()`,
+  the old `scar_terrain_collapse()` stub, `_column_bres_by_army_id()`,
+  `_gate_angel_alignment_group()`), **three genuinely broken, live
+  cross-references remained**:
+  - `models/treasure.py`'s own Phase 530 comment pointed to
+    `turn/discovery_effects.py holds_anti_magic_amulet()` -- that
+    function was renamed to `holder_is_immune_to_spell()` by its own
+    Phase 531 correction (already correctly self-documented at the
+    definition site), but this second, independent pointer to it was
+    never updated.
+  - `report/turn_report.py describe_rumor()`'s own docstring cited
+    `describe_bystander_spell_notice()` -- the real function is
+    `render_bystander_spell_notice()` (confirmed by definition and by
+    its own dedicated test, `test_render_bystander_spell_notice_raises_
+    for_an_unsupported_spell`); the `describe_`/`render_` prefix was
+    simply wrong.
+  - `report/turn_report.py render_cluck_narration()`'s own docstring and
+    `turn/battle_luck.py render_cluck_event()`'s own docstring both cited
+    a `render_battle_column()` that was never defined anywhere -- the
+    real function, immediately above the first citation in the very same
+    file, is `render_column_clash()`.
+
+  All three corrected to the real, current name. Also verified
+  `_gate_angel_due_alignment()` (cited in `models/game_state.py`) against
+  the real, public `turn/cast_execution.py gate_angel_due_alignment()`
+  (no leading underscore) and fixed the stray underscore. No behavior
+  changes -- docstring/comment corrections only. Full suite: 7125 passed.
+
+  Between Phases 960 and 961, the same test-audit battery (duplicate
+  names, no-verification, isinstance-only assertions, nested/uncollected
+  tests, the RNG-consumption idiom, and the staleness-keyword sweep) was
+  also run across every remaining test file grouped by area --
+  `worldgen/`+`parser/` (17 files), `report/`'s remaining two
+  (`test_ascii_map.py`, `test_prose.py`), the full `turn/` set (84
+  files), and the remaining `models/` set (21 files), ~3800 additional
+  test functions in total -- with zero further findings beyond what
+  Phases 958-960 already fixed, confirming the test suite is clean
+  across this whole methodology.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

@@ -2013,7 +2013,7 @@ def render_cluck_narration(
     affects the column's own combat outcome even when it goes
     unnarrated. ``army_name`` is the column's own affected army (`=` in
     the source template) -- which side that is isn't resolved here, the
-    same "caller already knows" posture `render_battle_column()` already
+    same "caller already knows" posture `render_column_clash()` already
     takes for its own `attacker_army_name`/`defender_army_name`.
 
     **Phase 605 correction**: this used to append a CLUCK2 "fortune
@@ -11331,7 +11331,7 @@ def describe_rumor(rumor: Rumor, state: GameState, character_name: str, board_wi
     ``Rumor`` (``turn/rumor.py resolve_rumor_generation()``, Phase 243).
 
     Unlike ``describe_give()``/``describe_hire()``, this takes ``state``
-    directly (matching ``describe_bystander_spell_notice()``'s own
+    directly (matching ``render_bystander_spell_notice()``'s own
     "needs to re-resolve a coordinate" precedent) rather than plain
     caller-supplied strings for every field: the feature's own *kind*
     is never falsified by Phase 243's own design (only the guardian/

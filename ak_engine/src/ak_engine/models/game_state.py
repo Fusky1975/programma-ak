@@ -163,7 +163,8 @@ for the full rule text and design rationale; summarized here:
   cycle; cleared once all 5 have had their turn.
 - ``gate_angel_due_alignment``/``gate_angel_due_alignment_turn``: this
   turn's randomly-chosen due alignment (see
-  ``_gate_angel_due_alignment()``), cached once per ``turn_number`` so
+  ``turn/cast_execution.py gate_angel_due_alignment()``), cached once
+  per ``turn_number`` so
   multiple same-turn casters all see the same answer -- **replaces**
   Phase 194's original ``gate_angel_alignment_cooldown: dict[Alignment,
   int]`` (an independent-per-alignment 5-turn cooldown), which modeled

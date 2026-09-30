@@ -516,7 +516,7 @@ def render_cluck_event(index: int, army_name: str, rng: random.Random, *, second
     """One column's own local CLUCK narration sentence for
     `cluck_event_index`'s own 1..39 index (real `CLUCK.X2` prose, Phase
     584). `=` is the affected army, the same marker `report/
-    turn_report.py render_battle_column()` already uses for the margin
+    turn_report.py render_column_clash()` already uses for the margin
     templates. `secondary` (Phase 605) picks `CLUCK2_TEMPLATE` instead
     -- see `bluck_cluck_uses_secondary_catalog()`; this replaces the
     former separate `render_cluck2_event()`.
