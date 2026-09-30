@@ -1666,7 +1666,7 @@ def resolve_challenge_combat(
     already sourced primitives with no leader-vs-monster assumption
     baked in.
 
-    **Gold theft's own magnitude is still not modeled** -- ``turn/
+    ~~**Gold theft's own magnitude is still not modeled** -- ``turn/
     encounter.py``'s own Phase 239 addendum already confirmed this
     formula "confirmed absent" for the King-victim case specifically,
     noting "a future Challenge/Pursue-side Steal would still need it";
@@ -1674,7 +1674,15 @@ def resolve_challenge_combat(
     number to build against. Generalizing further: only a King's own
     ``KingdomState.treasury`` is a real gold pool in this project's
     model at all (an ordinary Hero holds no gold of his own), so gold
-    theft stays unmodeled for every target, not just Kings.
+    theft stays unmodeled for every target, not just Kings.~~ --
+    **partially closed as of Phase 702**: ``AdvancedAbility.THIEF_
+    TREASURY_RAIDS``'s own text supplied a real magnitude after all
+    ("up to half of the treasury"), for a holder targeting a foreign
+    King specifically -- see ``_apply_successful_theft()``'s own Phase
+    702 addendum just below and ``_apply_treasury_raid()``. Gold theft
+    stays genuinely unmodeled only for the remaining case: an ordinary
+    thief with no ``THIEF_TREASURY_RAIDS`` (or any thief targeting a
+    non-King, who holds no gold pool to begin with).
     ``_apply_successful_theft()`` below models the other half of "oro o
     uno o piu' oggetti magici" instead -- item theft, which has both a
     clean mechanism (``GameState.transfer_item()``, Phase 140) and no

@@ -36960,6 +36960,36 @@ supply of any of these doesn't have to be re-derived from scratch:
   its own "stale as of Phase N" note).
 
   No behavior changes this phase either -- docstring corrections only.
+
+  **Phase 954: a full staleness-keyword sweep across every `turn/*.py`
+  file (~70 modules) finds two more stale cross-references, both the
+  "closed later in this very same file, never linked back" shape.** (1)
+  `turn/feature_power_execution.py`'s own module-introduction docstring
+  still said "Only POWMSG.X2 choice 18's own Illusory-Terrain hypothesis
+  remains open" -- stale since **Phase 801**, wired in this same module:
+  `power_terrain_parameter()` (`worldgen/internal_magical_locations.py`),
+  the `cast_spell`/`cast_illusory_terrain` result fields declared further
+  down in this exact file, and `report/turn_report.py`'s own
+  `_POWMSG_CAST_SPELL_ILLUS_TERRAIN_SUCCESS` all close it -- the
+  introduction was simply never revisited when those landed. (2)
+  `turn/challenge_execution.py`'s own module docstring still said "gold
+  theft stays unmodeled for every target, not just Kings" -- stale since
+  **Phase 702**: `AdvancedAbility.THIEF_TREASURY_RAIDS`'s own text
+  supplied a real magnitude ("up to half of the treasury") for a holder
+  targeting a foreign King, already correctly documented by
+  `_apply_successful_theft()`'s own Phase 702 addendum a few hundred
+  lines later in the same file. Corrected to note gold theft is now only
+  genuinely unmodeled for the remaining case (an ordinary thief with no
+  `THIEF_TREASURY_RAIDS`, or any thief targeting a non-King). Every other
+  file the keyword sweep flagged (`plan_dispatch.py`, `cast_execution.py`,
+  `battle_orchestrator.py`, `turn_processor.py`, `encounter.py`,
+  `use_mi_decode.py`, `search_execution.py`, `sep_decode.py`,
+  `trail_execution.py`, `plague_spread.py`, `hire_pay.py`,
+  `army_quality.py`) was already correctly self-corrected or genuinely
+  still open -- this sweep is now exhaustive across every `turn/*.py`
+  module for this keyword set, not just a spot-check.
+
+  No behavior changes this phase either -- docstring corrections only.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

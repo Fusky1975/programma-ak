@@ -207,8 +207,16 @@ now closed -- see `report/turn_report.py describe_feature_power_
 oracle_power_armies()`, the real per-army `_ArmSay` enumeration
 (Desktop/POWMSG.md Approfondimento 10, byte-verified). No change was
 needed in this module: `oracle_target_leader_id`/`oracle_armies` were
-already the exact data that new composer needed. Only POWMSG.X2 choice
-18's own Illusory-Terrain hypothesis remains open.
+already the exact data that new composer needed. ~~Only POWMSG.X2 choice
+18's own Illusory-Terrain hypothesis remains open.~~ -- **closed as of
+Phase 801, in this very module**: the trigger this paragraph called
+unconfirmed turned out to be `CAST_SPELL`/`ANS_PRAYER` granting a
+derived `Spell.ILLUS_TERRAIN` specifically -- see this module's own
+`power_terrain_parameter()` (`worldgen/internal_magical_locations.py`),
+the `cast_spell`/`cast_illusory_terrain` fields below, and
+`report/turn_report.py`'s own `_POWMSG_CAST_SPELL_ILLUS_TERRAIN_SUCCESS`
+-- this module's own later Phase 801 additions closed the gap this
+introduction never came back to update.
 """
 
 from __future__ import annotations
