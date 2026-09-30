@@ -343,9 +343,13 @@ def test_reveal_adjacent_provinces_skips_neighbors_with_no_real_province_data():
     state = base_state()
     bounds = MapBounds(*NORMAL_MAP_BOUNDS)
     # No error even though most of TARGET's own geometric neighbors have
-    # no ProvinceState entry at all in this small test world.
+    # no ProvinceState entry at all in this small test world -- and the
+    # one real neighbor that does exist, DEFENDER_HOME, still gets its
+    # floor set despite the others being skipped.
 
     reveal_adjacent_provinces(state, state.provinces[TARGET], kingdom_id=1, bounds=bounds)
+
+    assert state.provinces[DEFENDER_HOME].explored_percent_by_kingdom.get(1) == 1
 
 
 def test_execute_move_reveals_a_real_neighbor_of_the_destination():
@@ -366,9 +370,9 @@ def test_record_kingdom_exploration_without_state_skips_discovery():
     # Phase 242: state=None (the default) is the pre-Phase-242 behavior --
     # no discovery roll at all, even if a feature happens to be present.
     province = ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2)
-    record_kingdom_exploration(province, kingdom_id=1, explorer_skill=9, partial=False)
-    # No assertion possible against a feature since none was ever created --
-    # this just confirms the call succeeds without a state argument.
+    result = record_kingdom_exploration(province, kingdom_id=1, explorer_skill=9, partial=False)
+    assert result.new_percent == 100  # Plains basic=50, doubled by max skill 9
+    assert result.discovered_features == []
 
 
 def test_record_kingdom_exploration_with_state_rolls_discovery():
