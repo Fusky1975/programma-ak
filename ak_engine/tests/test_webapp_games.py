@@ -25,31 +25,31 @@ def test_list_games_on_a_fresh_root_is_empty(tmp_path):
 
 
 def test_create_game_makes_it_listable(tmp_path):
-    meta = create_game(tmp_path, "Terza Campagna")
+    meta = create_game(tmp_path, "Third Campaign")
 
-    assert meta.slug == "terza-campagna"
+    assert meta.slug == "third-campaign"
     assert meta.turn_number == 1  # GameState.turn_number's own real default
     assert meta.kingdom_count == 0
 
     listed = list_games(tmp_path)
     assert len(listed) == 1
-    assert listed[0].name == "Terza Campagna"
+    assert listed[0].name == "Third Campaign"
 
 
 def test_create_game_with_duplicate_name_raises(tmp_path):
-    create_game(tmp_path, "Terza Campagna")
+    create_game(tmp_path, "Third Campaign")
     with pytest.raises(DuplicateGameNameError):
-        create_game(tmp_path, "Terza Campagna")
+        create_game(tmp_path, "Third Campaign")
 
 
 def test_create_game_slugifies_distinct_names_differently(tmp_path):
-    create_game(tmp_path, "Partita Uno")
-    create_game(tmp_path, "Partita Due")
-    assert {g.slug for g in list_games(tmp_path)} == {"partita-uno", "partita-due"}
+    create_game(tmp_path, "Game One")
+    create_game(tmp_path, "Game Two")
+    assert {g.slug for g in list_games(tmp_path)} == {"game-one", "game-two"}
 
 
 def test_open_game_round_trips_the_real_state(tmp_path):
-    meta = create_game(tmp_path, "Terza Campagna")
+    meta = create_game(tmp_path, "Third Campaign")
     _, state = open_game(tmp_path, meta.slug)
     assert isinstance(state, GameState)
     assert state.kingdoms == {}
@@ -57,11 +57,11 @@ def test_open_game_round_trips_the_real_state(tmp_path):
 
 def test_open_game_missing_slug_raises(tmp_path):
     with pytest.raises(GameNotFoundError):
-        open_game(tmp_path, "non-esiste")
+        open_game(tmp_path, "does-not-exist")
 
 
 def test_save_game_refreshes_meta_from_the_real_state(tmp_path):
-    meta = create_game(tmp_path, "Terza Campagna")
+    meta = create_game(tmp_path, "Third Campaign")
     _, state = open_game(tmp_path, meta.slug)
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
     state.turn_number = 3
@@ -70,7 +70,7 @@ def test_save_game_refreshes_meta_from_the_real_state(tmp_path):
 
     assert updated.kingdom_count == 1
     assert updated.turn_number == 3
-    assert updated.name == "Terza Campagna"  # name/created_at survive, not overwritten
+    assert updated.name == "Third Campaign"  # name/created_at survive, not overwritten
 
     _, reloaded = open_game(tmp_path, meta.slug)
     assert reloaded.turn_number == 3
@@ -78,31 +78,31 @@ def test_save_game_refreshes_meta_from_the_real_state(tmp_path):
 
 
 def test_delete_game_removes_it_from_the_list(tmp_path):
-    meta = create_game(tmp_path, "Terza Campagna")
+    meta = create_game(tmp_path, "Third Campaign")
     delete_game(tmp_path, meta.slug)
     assert list_games(tmp_path) == []
 
 
 def test_delete_game_missing_slug_raises(tmp_path):
     with pytest.raises(GameNotFoundError):
-        delete_game(tmp_path, "non-esiste")
+        delete_game(tmp_path, "does-not-exist")
 
 
 def test_list_games_skips_a_directory_with_no_real_meta_json(tmp_path):
     # A stray/corrupt directory shouldn't take down the whole list screen.
     (tmp_path / "not-a-game").mkdir()
-    create_game(tmp_path, "Vera Partita")
+    create_game(tmp_path, "Real Game")
 
     listed = list_games(tmp_path)
 
     assert len(listed) == 1
-    assert listed[0].name == "Vera Partita"
+    assert listed[0].name == "Real Game"
 
 
 def test_list_games_orders_newest_first(tmp_path):
-    create_game(tmp_path, "Prima")
-    create_game(tmp_path, "Seconda")
+    create_game(tmp_path, "First")
+    create_game(tmp_path, "Second")
 
     listed = list_games(tmp_path)
 
-    assert [g.name for g in listed] == ["Seconda", "Prima"]
+    assert [g.name for g in listed] == ["Second", "First"]

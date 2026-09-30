@@ -53,7 +53,7 @@ class GameMeta:
 
 def _slugify(name: str) -> str:
     slug = _SLUG_RE.sub("-", name.strip().lower()).strip("-")
-    return slug or "partita"
+    return slug or "game"
 
 
 def _game_dir(root: Path, slug: str) -> Path:

@@ -2,8 +2,13 @@
 
 Later phases add the player-setup/optional-titles/world-creation/editor/
 turn-cycle routes on top of this same app; this phase only wires the
-"Le mie partite" (my games) screen -- list, create, delete -- as the
-entry point every later flow hangs off of.
+"My Games" screen -- list, create, delete -- as the entry point every
+later flow hangs off of.
+
+**The interface is English throughout**, matching the game itself: every
+composer in ``report/turn_report.py`` already renders English prose
+(``SAY.PAS``/``.X2``-sourced), so an Italian GM screen sitting in front
+of English reports would be its own, needless inconsistency.
 """
 
 from __future__ import annotations
@@ -37,11 +42,11 @@ def create_app(games_root: Path | None = None) -> Flask:
         root: Path = app.config["GAMES_ROOT"]
         name = request.form.get("name", "").strip()
         if not name:
-            return redirect(url_for("games_list", error="Inserisci un nome per la partita."))
+            return redirect(url_for("games_list", error="Please enter a game name."))
         try:
             create_game(root, name)
         except DuplicateGameNameError:
-            return redirect(url_for("games_list", error=f"Esiste già una partita chiamata «{name}»."))
+            return redirect(url_for("games_list", error=f'A game named "{name}" already exists.'))
         return redirect(url_for("games_list"))
 
     @app.post("/games/<slug>/delete")
@@ -50,7 +55,7 @@ def create_app(games_root: Path | None = None) -> Flask:
         try:
             delete_game(root, slug)
         except GameNotFoundError:
-            return redirect(url_for("games_list", error="Partita non trovata."))
+            return redirect(url_for("games_list", error="Game not found."))
         return redirect(url_for("games_list"))
 
     return app
