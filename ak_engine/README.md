@@ -37042,6 +37042,34 @@ supply of any of these doesn't have to be re-derived from scratch:
   or an accurate historical fact, not stale project-state claims).
 
   No behavior changes this phase either -- docstring corrections only.
+
+  **Phase 957: a third audit angle -- cross-checking a module's own
+  "this still needs rewiring" claims against whether the real pipeline
+  actually rewired it -- finds the largest stale claim of this whole
+  audit run.** `turn/world_generation.py`'s own Phase 359/360 addenda
+  said its `generate_world_features()` function was "deliberately left
+  unchanged for now," pending "the whole spatial placement loop," with
+  the implication that this same function would eventually be rewired to
+  the real, disassembly-confirmed formulas once that loop existed. That
+  loop *was* built -- **Phase 364**, `worldgen/feature_placement.py
+  place_all_features()` -- and the treasure-cursor wiring this module's
+  own Phase 360 addendum called missing landed **Phase 365** too (already
+  correctly recorded by `worldgen/magic_item_placement.py`'s own Phase
+  365 correction, found and fixed back in Phase 951). But neither piece
+  was ever wired into *this* module: `worldgen/generate_new_game.py`
+  calls `place_all_features()` directly, and `generate_world_features()`
+  itself has no live caller anywhere in `ak_engine` today -- only its own
+  dedicated test file exercises it. The real pipeline didn't rewire this
+  function; it replaced it outright with a parallel implementation, the
+  same "turn the narrative into an algorithm, replace it outright if the
+  exact routine is ever recovered" treatment `place_map`/
+  `special_race_placement`/`mercenary_band` already got (`worldgen/
+  feature_placement.py`'s own module docstring says as much directly).
+  Corrected both addenda to say so -- `generate_world_features()` is this
+  project's original, since-superseded guess at the mechanic, not a
+  function still awaiting integration.
+
+  No behavior changes this phase either -- docstring corrections only.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
