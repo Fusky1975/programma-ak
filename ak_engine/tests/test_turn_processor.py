@@ -2409,6 +2409,8 @@ def test_run_turn_clears_illusory_fog_active_at_the_end():
 
     run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
 
+    assert state.provinces[ORIGIN].illusory_fog_active is False
+
 
 # -- Phase 674: _dispatch_mutual_encounter() picks up the non-initiator's
 # own real Special Encounter Plan automatically, via execute_challenge()'s

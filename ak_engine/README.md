@@ -37148,6 +37148,42 @@ supply of any of these doesn't have to be re-derived from scratch:
     ineligible-race construction, confirming the real MERCHERO
     RNG-fidelity behavior for the scenario the original test meant to
     cover but didn't). Full suite: 7125 passed (net +1 test).
+
+  **Phase 960: the same AST-based "no real verification" scan (no
+  `assert`, no `pytest.raises`, no Mock `.assert_*`) run across the
+  entire `tests/` directory, not just the RNG-consumption subset --
+  finds two more tests whose own names promised a check the body never
+  performed.** Five candidates matched; three were legitimate "does this
+  crash/hang" tests needing no further check (`test_battle_luck.py`'s
+  infinite-loop-termination guard; `test_gw_world_writer.py`'s
+  `try`/`except ValueError`/`else: raise AssertionError(...)` pattern,
+  equivalent to `pytest.raises` but not recognized by the AST scan's
+  narrower check). Two were genuine gaps:
+  - `test_move_execution.py test_record_kingdom_exploration_without_
+    state_skips_discovery`'s own name claims "skips discovery," but the
+    call's return value was discarded entirely -- added
+    `assert result.discovered_features == []` (the actual, direct check
+    of the claim) and `assert result.new_percent == 100` (Plains basic
+    50, doubled by max skill 9), both verified against the real function
+    first.
+  - `test_turn_processor.py test_run_turn_clears_illusory_fog_active_
+    at_the_end` never asserted anything at all, despite its own name and
+    its sibling test two lines above
+    (`test_replenish_turn_scoped_state_clears_illusory_fog_active`,
+    which tests the same fact one layer down) both making the same
+    claim -- added the missing
+    `assert state.provinces[ORIGIN].illusory_fog_active is False`.
+
+  Also strengthened `test_move_execution.py test_reveal_adjacent_
+  provinces_skips_neighbors_with_no_real_province_data` (found via the
+  same read-through, not the AST scan): identical setup to its own
+  sibling test `..._sets_a_previously_unknown_neighbor_to_the_floor`,
+  but missing that sibling's own assertion, making it a same-input
+  duplicate that verified nothing beyond "doesn't crash" -- added the
+  matching `assert state.provinces[DEFENDER_HOME].explored_percent_by_
+  kingdom.get(1) == 1`. All three hardened tests pass against the real
+  code -- this closes test-coverage gaps, not production bugs. Full
+  suite: 7125 passed.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
