@@ -37013,6 +37013,35 @@ supply of any of these doesn't have to be re-derived from scratch:
   genuinely still an open research lead.
 
   No behavior changes this phase either -- docstring corrections only.
+
+  **Phase 956: a new audit angle -- verifying every "the only real
+  consumer/caller/writer" claim across the codebase against the actual
+  current call graph, not just the keyword-staleness sweep -- finds one
+  imprecise claim.** `report/turn_report.py render_cast_announcement()`'s
+  own docstring said "`describe_cast()` below is the only real caller,"
+  immediately followed by its own note that Skeletal Army "now bypass[es]
+  it entirely" as of Phase 936 -- but `render_skeletal_army_outcome()`
+  (Skeletal Army's own dedicated renderer, introduced by that very phase)
+  still calls back into `render_cast_announcement()` directly for its own
+  "armies raised" case, as its own docstring already correctly documents.
+  "The only real caller" was true only at the `describe_cast()`
+  *dispatch* level, not literally -- corrected to say so, and to note
+  only Charm/Tornado bypass it in full at every outcome, not Skeletal
+  Army. Also updated the stale "12 of the 15 spells" count to the
+  current 9 (Phases 943-948 moved Illus_Terrain/Plague/Flood to their
+  own dedicated renderers too, after this docstring's own count was last
+  written). Checked every other "the only real consumer/caller/writer"
+  claim in the codebase (`turn/scientific_treaty.py`'s
+  `discoveries_first_found_by` claim, `turn/cast_execution.py`'s
+  `wand_skill_level`/`forced_level` claims, `models/game_state.py`'s
+  `discovery_exchanged_from` claim, `report/turn_report.py`'s dead-code
+  Clairvoyance-watcher note) against the real call graph -- all held up
+  exactly as stated. Also spot-checked the `tests/` suite's own docstring
+  comments for the same staleness-keyword set (4 files matched, all
+  literal references to the real `"power not yet wired"` result string
+  or an accurate historical fact, not stale project-state claims).
+
+  No behavior changes this phase either -- docstring corrections only.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

@@ -3781,11 +3781,18 @@ def render_cast_announcement(
 
     Works for any of the 25 ``SPELL_CAST_ANNOUNCEMENT`` entries, not
     just the 15 ``turn/cast_execution.py`` can apply -- ``describe_cast()``
-    below is the only real caller, and (as of Phase 938, ``Spell.CHARM``
-    and ``Spell.SKELETAL_ARMY``/``Spell.TORNADO`` -- Phases 936/937 --
-    now bypassing it entirely) it reaches this function for 12 of the
-    15 spells that ever produce ``applied=True``, but this function
-    itself doesn't assume that narrower scope.
+    below is the only *dispatch-level* caller (as of Phase 938,
+    ``Spell.CHARM`` and ``Spell.SKELETAL_ARMY``/``Spell.TORNADO`` --
+    Phases 936/937 -- no longer dispatched here directly), and by Phase
+    948 (``Spell.ILLUS_TERRAIN``/``Spell.PLAGUE``/``Spell.FLOOD``, Phases
+    943/944/945/948) it reaches this function directly for 9 of the 15
+    spells that ever produce ``applied=True``, but this function itself
+    doesn't assume that narrower scope. ~~"Bypassing it entirely"~~ is
+    imprecise for Skeletal Army specifically: ``render_skeletal_army_
+    outcome()``'s own dedicated renderer still calls back into this
+    function for its own "armies raised" case (see that function's own
+    docstring) -- only Charm and Tornado bypass it in full, at every
+    outcome.
     """
 
     if spell not in SPELL_CAST_ANNOUNCEMENT:
