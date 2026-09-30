@@ -37109,6 +37109,45 @@ supply of any of these doesn't have to be re-derived from scratch:
   `resolve_augur_combat_shirk`) -- all 9 still pass, confirming the real
   production functions were already correct; this closes a test-coverage
   gap, not a production bug.
+
+  **Phase 959: generalizing Phase 958's "consumes exactly one roll"
+  hardening pattern across the whole `tests/` directory finds one test
+  whose own claim was actually false -- not just unverified.** Grepping
+  every test file for the same "a second `.random()` call would raise
+  IndexError" marker (11 files matched) and adding the missing
+  `assert rng._randoms == []` to every genuinely bare instance (no
+  return-value assertion already covering it) turned up:
+  - Three clean hardenings with no surprises: `test_monster.py`'s
+    `roll_monster_alignment`/`roll_gate_demon_type` two-option tests,
+    `test_monster_encounter_plan.py`'s multi-variant-species test --
+    all three still pass, confirming the real functions already consume
+    exactly one roll.
+  - `test_practice_execution.py`'s `resolve_practice_solo` gate-failure
+    test also still passes, but the case is subtler: with zero levels
+    beyond aptitude the gate's own probability is 100%, so
+    `rng.random() < 1.0` holds for *any* drawn value -- the existing
+    return-value asserts would have passed even if the gate roll were
+    silently skipped. The hardening closes that specific blind spot.
+  - `test_wandering_units.py`'s own `test_resolve_wandering_ineligible_
+    hero_still_consumes_its_access_roll` **failed** once hardened: the
+    "ineligible" Hero it built was *employed* (`kingdom_id is not None`),
+    but `resolve_wandering()` filters employed Heroes out of the
+    candidate population before the access-roll loop even starts --
+    `hero_eligible_for_wander()`'s own later gates (race, army command,
+    King-orders-flag) are a separate, later check the docstring's own
+    MERCHERO section 12.4 point 4 citation actually refers to. The old
+    test's `relocations == []` assertion passed for the right *symptom*
+    but the wrong *mechanism*, and its own name's claim ("still consumes
+    its access roll") was simply false for an employed Hero -- zero
+    rolls are drawn for one, not one. Split it into two correct tests:
+    `test_resolve_wandering_employed_hero_never_reaches_the_access_roll`
+    (an employed Hero, `ScriptedRandom([])`, confirming zero rolls) and
+    `test_resolve_wandering_race_ineligible_independent_hero_still_
+    consumes_its_access_roll` (an independent but `Race.TROLLISH` Hero,
+    matching `test_hero_eligible_for_wander_race_gate`'s own established
+    ineligible-race construction, confirming the real MERCHERO
+    RNG-fidelity behavior for the scenario the original test meant to
+    cover but didn't). Full suite: 7125 passed (net +1 test).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

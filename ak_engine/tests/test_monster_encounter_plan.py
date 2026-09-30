@@ -136,3 +136,4 @@ def test_roll_monster_encounter_plan_two_variant_species_below_and_above_thresho
 def test_roll_monster_encounter_plan_multi_variant_species_consumes_exactly_one_roll():
     rng = ScriptedRandom([0.1])  # a second .random() call would raise IndexError
     roll_monster_encounter_plan(Monster.VAMPIRE, rng)
+    assert rng._randoms == []  # and confirms it wasn't skipped either -- exactly one

@@ -144,6 +144,10 @@ def test_resolve_practice_solo_gate_failure_within_aptitude_never_rolls_for_apti
     assert outcome.skill_rose is False
     assert outcome.new_skill == 2
     assert outcome.new_credit == PRACTICE_CREDIT_SOLO_GAIN
+    # A gate with zero levels-beyond-aptitude always succeeds regardless of
+    # the drawn value, so the asserts above would hold even if the gate roll
+    # were silently skipped -- this confirms it wasn't.
+    assert rng._randoms == []
 
 
 def test_resolve_practice_solo_gate_failure_beyond_aptitude_rolls_for_aptitude_increase():

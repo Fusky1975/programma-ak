@@ -398,14 +398,34 @@ def test_resolve_wandering_no_independent_entities_is_a_no_op():
     assert relocations == []
 
 
-def test_resolve_wandering_ineligible_hero_still_consumes_its_access_roll():
+def test_resolve_wandering_employed_hero_never_reaches_the_access_roll():
+    # An employed Hero (kingdom_id is not None) is filtered out of the
+    # candidate population before the access-roll loop even starts --
+    # `resolve_wandering()`'s own docstring "unconditionally, even for an
+    # object the eligibility gates will reject" scopes only to the
+    # *independent* population it rolls over, not to employment itself.
     state = build_state()
-    state.add_leader(LeaderState(1, 1, "Employed", HOME))  # not independent, ineligible
-    # Only one .random() call should be consumed (the access roll) -- an
-    # empty script after that would raise IndexError if a second draw
-    # were attempted, proving the ineligible leader short-circuits.
-    relocations = resolve_wandering(state, {}, ScriptedRandom([0.0]))
+    state.add_leader(LeaderState(1, 1, "Employed", HOME))
+    rng = ScriptedRandom([])  # any .random() call here would raise IndexError
+    relocations = resolve_wandering(state, {}, rng)
     assert relocations == []
+
+
+def test_resolve_wandering_race_ineligible_independent_hero_still_consumes_its_access_roll():
+    # MERCHERO section 12.4 point 4's own RNG-fidelity warning: the access
+    # roll is drawn for every *independent* Hero, even one the later race
+    # gate will reject -- Troll is independent but not in
+    # WANDER_ELIGIBLE_RACES (see test_hero_eligible_for_wander_race_gate).
+    state = build_state()
+    state.add_leader(LeaderState(1, None, "Troll Hero", HOME, race=Race.TROLLISH))
+    # A single accessed roll (< HERO_WANDER_ACCESS_CHANCE) -- a second
+    # .random() call would raise IndexError.
+    rng = ScriptedRandom([0.0])
+    relocations = resolve_wandering(state, {}, rng)
+    assert relocations == []
+    # `relocations == []` alone would also hold if the access roll were
+    # never drawn at all -- this confirms it genuinely was.
+    assert rng._randoms == []
 
 
 def test_resolve_wandering_relocates_an_eligible_hero_and_updates_location():
