@@ -79,20 +79,31 @@ to dispatch automatically:
   separate `Hire`-specific procedure survives either; only `_LHire`'s
   own narrative dispatch code (`SAY.PAS` -> `acchire.x`, already
   modeled as `render_hire_accepted()`, Phase 114) exists in the
-  archive. **Phase 162 supplies a formula anyway**, not transcribed
+  archive. ~~**Phase 162 supplies a formula anyway**, not transcribed
   from Pascal source (none survives) but designed from the player's
   manual text the user quoted directly plus one real, hard data point
-  ("a Good King generally cannot hire a Pagan Hero") -- see
-  ``turn/hire_pay.py``'s own docstring for the full derivation.
-  ``_dispatch_hire`` now looks up the kingdom's own King
+  ("a Good King generally cannot hire a Pagan Hero")~~ -- **superseded
+  by Phase 505**: a disassembly-based reverse-engineering pass the user
+  supplied directly (``AKGEN.EXE``/``AK.OVR``) recovered the real,
+  sourced ``LCost`` formula after all -- see ``turn/hire_pay.py``'s own
+  docstring for the full derivation and why the Phase 162
+  manual-derived approximation is no longer what runs. ``_dispatch_hire``
+  now looks up the kingdom's own King
   (``LeaderState.is_king``), computes ``required_pay(hero, king)``, and
   charges *that* amount (not the raw offer) -- refusing outright when
   the alignment gap is too wide (``pay >= 5``, unreachable via any
   legal <=4-gold offer) or when the offer is below the computed pay
-  (a genuine, narratable price counter-offer). Recurring per-turn pay
+  (a genuine, narratable price counter-offer). ~~Recurring per-turn pay
   (only the one-time hiring charge is modeled, matching Recruit's own
   established simplification) remains unmodeled -- no sourced formula
-  for it exists either. See ``README.md`` for the full research trail.
+  for it exists either.~~ -- **closed as of Phase 280**:
+  ``turn/expenses.py leader_pay()`` reuses this same ``required_pay()``
+  for a Hero's real recurring per-turn pay ("Ini" in the real CHARACTERS
+  table), summed into ``compute_leader_maintenance()`` (``LCost``) and
+  actually debited by ``apply_turn_maintenance()`` (Phase 404/527) --
+  only the one-time hiring *charge* and the per-turn upkeep *pay* were
+  ever distinct concepts; both are modeled now. See ``README.md`` for
+  the full research trail.
   **Phase 143**: ``_dispatch_fire`` returns a real
   ``FireExecutionResult`` (``fired``/``reason``) instead of a bare
   ``FireRequest`` -- the caller previously had no signal at all for
