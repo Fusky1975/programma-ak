@@ -1,0 +1,188 @@
+/* GM interface design system (Phase 1).
+   Base font size is 18px everywhere by design (the interface's own
+   stated requirement) -- set once here on :root, never overridden
+   smaller by an individual page/component. Every later phase's own
+   screen reuses these variables instead of hardcoding colors. */
+
+:root {
+  --font-size-base: 18px;
+  --font-family: Georgia, "Palatino Linotype", Palatino, "Book Antiqua", serif;
+
+  --color-bg: #f4ecd8;
+  --color-bg-panel: #fffaf0;
+  --color-text: #2b1d0e;
+  --color-text-muted: #6b5638;
+  --color-border: #8b5e34;
+
+  --color-accent-primary: #7a1f1f;
+  --color-accent-primary-hover: #96302f;
+  --color-accent-gold: #b8860b;
+  --color-danger: #8b2f2f;
+  --color-danger-hover: #a53c3c;
+
+  /* One accent per phase of the GM flow, for nav/breadcrumb highlighting
+     as later phases add their own screens. */
+  --phase-games: #2c5f8a;
+  --phase-players: #2f6f4f;
+  --phase-titles: #5b3a8c;
+  --phase-world: #b8860b;
+  --phase-editor: #8b5e34;
+  --phase-report: #7a1f1f;
+  --phase-turns: #1f3a5f;
+
+  --radius: 10px;
+  --shadow: 0 2px 6px rgba(43, 29, 14, 0.25);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: var(--font-size-base);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+header.app-header {
+  background: var(--color-accent-primary);
+  color: #fdf6e3;
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--shadow);
+}
+
+header.app-header h1 {
+  margin: 0;
+  font-size: 1.8rem;
+  letter-spacing: 0.02em;
+}
+
+.panel {
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.panel h2 {
+  margin-top: 0;
+  color: var(--color-accent-primary);
+  border-bottom: 2px solid var(--color-accent-gold);
+  padding-bottom: 0.5rem;
+}
+
+.error-banner {
+  background: #f8d7d7;
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  font-weight: bold;
+}
+
+.game-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.game-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #fff;
+  margin-bottom: 0.75rem;
+}
+
+.game-list .game-name {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: var(--color-accent-primary);
+}
+
+.game-list .game-meta {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.empty-state {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+form.inline {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+label {
+  font-weight: bold;
+}
+
+input[type="text"],
+input[type="number"],
+select {
+  font-family: var(--font-family);
+  font-size: 1rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--color-text);
+}
+
+button,
+.button {
+  font-family: var(--font-family);
+  font-size: 1rem;
+  font-weight: bold;
+  padding: 0.6rem 1.25rem;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--color-accent-primary);
+  color: #fdf6e3;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+button:hover,
+.button:hover {
+  background: var(--color-accent-primary-hover);
+}
+
+button.danger {
+  background: var(--color-danger);
+}
+
+button.danger:hover {
+  background: var(--color-danger-hover);
+}
+
+.button-outline {
+  background: transparent;
+  color: var(--color-accent-primary);
+  border: 2px solid var(--color-accent-primary);
+}

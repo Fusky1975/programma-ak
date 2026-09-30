@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Le mie partite -- Interfaccia GM{% endblock %}
+{% block content %}
+
+<div class="panel" style="border-left: 6px solid var(--phase-games);">
+  <h2>Le mie partite</h2>
+
+  {% if games %}
+    <ul class="game-list">
+      {% for game in games %}
+        <li>
+          <div>
+            <div class="game-name">{{ game.name }}</div>
+            <div class="game-meta">
+              Turno {{ game.turn_number }} &middot;
+              {{ game.kingdom_count }} Regn{{ 'o' if game.kingdom_count == 1 else 'i' }} &middot;
+              creata il {{ game.created_at[:10] }}
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <a class="button" href="#">Apri</a>
+            <form class="inline" method="post" action="{{ url_for('games_delete', slug=game.slug) }}"
+                  onsubmit="return confirm('Eliminare definitivamente la partita «{{ game.name }}»?');">
+              <button type="submit" class="danger">Elimina</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">Nessuna partita ancora creata. Creane una qui sotto per iniziare.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-players);">
+  <h2>Nuova partita</h2>
+  <form class="inline" method="post" action="{{ url_for('games_create') }}">
+    <label for="name">Nome della partita</label>
+    <input type="text" id="name" name="name" placeholder="es. Terza Campagna" required>
+    <button type="submit">Crea partita</button>
+  </form>
+</div>
+
+{% endblock %}
