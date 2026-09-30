@@ -145,8 +145,17 @@ for a future phase, not lost; see `Desktop/MOSTRI con statistiche.txt`
 for the full table if that phase gets picked up). Troll regeneration and
 the three missile-narration footnotes were later closed (Phases 155 and
 175); Alignment distribution is closed below (Phase 176); Magic
-Abilities counts are closed below (Phase 177). Flavor-text descriptions
-remain unmodeled.
+Abilities counts are closed below (Phase 177). ~~Flavor-text descriptions
+remain unmodeled.~~ -- **closed, via a different real source, as of
+Phase 579/613**: this specific compiled document's own flavor-text
+column was never transcribed, but the underlying gap it names (no
+per-species descriptive prose anywhere in this project) closed when a
+byte-faithful reverse-engineering pass recovered the real Pascal prose
+file itself (`HostAK/TP/PROSE/MONSTERS.X2`, `MONSTER_DESCRIPTION` below)
+and wired it into discovery narration (`report/turn_report.py
+render_monster_description()`, consumed by `describe_feature_discovery()`
+since Phase 613) -- see `MONSTER_DESCRIPTION`'s own Phase 579 addendum
+below for the full sourcing.
 
 **Phase 176 addendum -- Alignment distribution, project-original,
 same source.** Every one of the 60 real species' own Alignment column

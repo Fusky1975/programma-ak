@@ -36919,6 +36919,47 @@ supply of any of these doesn't have to be re-derived from scratch:
   every other "still open"/"confirmed absent" claim found held up.
 
   No behavior changes this phase either -- docstring corrections only.
+
+  **Phase 953: continuing into `turn/movement.py`, `turn/move_execution.py`,
+  and the remaining `models/*.py` files finds two more stale cross-references,
+  one of them a genuine two-file, mutually-reinforcing factual error.**
+  `turn/movement.py`, `turn/move_execution.py`, and `turn/combat.py` all
+  came back clean (no stale claim found). (1) `models/temper.py`'s own
+  introduction said "Hire's own formula turned out to have no surviving
+  source at all (Phase 161) -- confirmed absent, not merely still
+  unmodeled" -- true as of Phase 162 (the manual-text-derived
+  approximation `turn/hire_pay.py` ran for years), but stale since
+  **Phase 505**: a disassembly-based reverse-engineering pass the user
+  supplied directly (`AKGEN.EXE`/`AK.OVR`) recovered the real, sourced
+  `LCost` formula, which explicitly uses this very `Temper` enum (a
+  hero/king temper mismatch drives the formula's own `temper_penalty`
+  term). `turn/plan_dispatch.py`'s own matching Phase 162 note repeated
+  the identical stale framing -- both corrected, cross-linked to `turn/
+  hire_pay.py`'s own already-correct Phase 505 docstring. (2) The same
+  `plan_dispatch.py` paragraph also still said "Recurring per-turn pay
+  ... remains unmodeled -- no sourced formula for it exists either" --
+  stale since **Phase 280**: `turn/expenses.py leader_pay()` reuses this
+  same `required_pay()` for a Hero's real recurring per-turn pay ("Ini"
+  in the real CHARACTERS table), summed into `compute_leader_maintenance()`
+  and actually debited every turn by `apply_turn_maintenance()` (Phase
+  404/527) -- the one-time hiring charge and the per-turn upkeep pay are
+  both modeled now, not just the former. (3) `models/monster.py`'s own
+  Phase 154 addendum said a user-supplied source document's own
+  per-species flavor-text column "remain[ed] unmodeled" -- that specific
+  document's text was indeed never transcribed, but the underlying gap
+  it names (no per-monster descriptive prose anywhere in this project)
+  closed via a *different* real source: `MONSTER_DESCRIPTION` (Phase 579,
+  a byte-faithful reverse-engineering pass over `HostAK/TP/PROSE/
+  MONSTERS.X2`), consumed by `report/turn_report.py
+  render_monster_description()` since Phase 613. Checked the remaining
+  `models/*.py` files not yet individually audited (`monster_encounter_
+  plan.py`, `race.py`, `office.py`, `discovery.py`, `hero_roster.py`,
+  `game_state.py`, `power.py`, `valhalla.py`, `sex.py`) -- every other
+  "still open"/"unmodeled"/"confirmed absent" claim found there held up
+  (either genuinely still open, or already self-corrected inline with
+  its own "stale as of Phase N" note).
+
+  No behavior changes this phase either -- docstring corrections only.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

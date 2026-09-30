@@ -29,10 +29,17 @@ armies led" -- isn't assembled, and temper doesn't exist on
 "we don't even have the vocabulary" half of both gaps -- neither gap's
 actual formula/logic is attempted here. **Trail's gap has since
 narrowed** (`LeaderState.temper`, Phase 139; `turn/trail_execution.py`
-now reports it on a successful spy, Phase 159). **Hire's own formula
+now reports it on a successful spy, Phase 159). ~~**Hire's own formula
 turned out to have no surviving source at all** (Phase 161,
 `turn/plan_dispatch.py`'s own note) -- confirmed absent, not merely
-still unmodeled.
+still unmodeled.~~ -- **stale as of Phase 505**: that Phase 161 finding
+was accurate for the 13 `.PAS` files available at the time, but a later
+disassembly-based reverse-engineering pass the user supplied directly
+(``AKGEN.EXE``/``AK.OVR``) recovered the real ``LCost`` formula, which
+*does* use this very enum (a hero/king ``Temper`` mismatch drives its
+own ``temper_penalty`` term) -- see `turn/hire_pay.py`'s own module
+docstring for the full, sourced formula and `turn/plan_dispatch.py`'s
+own corrected note.
 
 **A ruled-out, closely-related trap found while researching this**: the
 same declaration block's `{$ELSE}` (Noble) branch also declares a
