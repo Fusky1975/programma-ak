@@ -20,6 +20,7 @@
         </li>
       {% endfor %}
     </ul>
+    <p><a class="button" href="{{ url_for('turns_hub', slug=meta.slug) }}">Continue to Process Turns &rarr;</a></p>
   {% else %}
     <p class="empty-state">This game has no world yet -- <a href="{{ url_for('world_setup', slug=meta.slug) }}">create it first</a>.</p>
   {% endif %}

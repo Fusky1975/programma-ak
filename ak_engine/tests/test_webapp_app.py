@@ -3,6 +3,9 @@ screen only; later phases add their own route tests)."""
 
 from __future__ import annotations
 
+from io import BytesIO
+from pathlib import Path
+
 from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
 from ak_engine.webapp.app import create_app
@@ -808,3 +811,202 @@ def test_turn_zero_reports_do_not_advance_the_turn_number(tmp_path):
 
     _, state = open_game(tmp_path, meta.slug)
     assert state.turn_number == 1
+
+
+_REAL_MOVE_FILE = (Path(__file__).resolve().parents[2] / "AK3__T1.K1").read_bytes()
+
+
+def _upload_move_file(client, slug, filename, content=_REAL_MOVE_FILE):
+    return client.post(
+        f"/games/{slug}/turns/upload",
+        data={"move_file": (BytesIO(content), filename)},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+
+def test_turns_hub_before_world_creation_shows_a_message_not_a_crash(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/turns")
+
+    assert response.status_code == 200
+    assert b"no world yet" in response.data
+
+
+def test_turns_hub_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/turns", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_turns_hub_shows_not_uploaded_for_every_kingdom(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns")
+
+    assert response.status_code == 200
+    assert b"Turn 1" in response.data
+    assert b"Not uploaded" in response.data
+
+
+def test_upload_move_file_shows_it_as_uploaded(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = _upload_move_file(client, meta.slug, "AK3__T1.K1")
+
+    assert response.status_code == 200
+    assert b"AK3__T1.K1" in response.data
+    assert b"Not uploaded" in response.data  # still true for the other Kingdom (K2)
+
+
+def test_upload_move_file_with_no_file_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/turns/upload", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Please choose a move file" in response.data
+
+
+def test_upload_invalid_move_file_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = _upload_move_file(client, meta.slug, "garbage.K1", content=b"not a real move file")
+
+    assert response.status_code == 200
+    assert b"not a valid move file" in response.data
+
+
+def test_remove_uploaded_move_file_removes_it(tmp_path):
+    # The upload form's own instructional text also mentions "AK3__T1.K1"
+    # as an example filename, so check the upload-status count instead of
+    # the filename's bare absence.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _upload_move_file(client, meta.slug, "AK3__T1.K1")
+
+    response = client.post(f"/games/{meta.slug}/turns/1/remove", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert response.data.count(b"Not uploaded") == 2
+
+
+def test_turns_upload_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = _upload_move_file(client, "does-not-exist", "AK3__T1.K1")
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_process_turn_advances_state_and_redirects_to_the_report(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _upload_move_file(client, meta.slug, "AK3__T1.K1")
+
+    response = client.post(f"/games/{meta.slug}/turns/process", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Turn 1 Reports" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.turn_number == 2
+
+
+def test_process_turn_without_a_world_shows_an_error_not_a_crash(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.post(f"/games/{meta.slug}/turns/process", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"no world yet" in response.data
+
+
+def test_process_turn_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/turns/process", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_turn_report_list_for_unprocessed_turn_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/report", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"hasn&#39;t been processed yet" in response.data or b"hasn't been processed yet" in response.data
+
+
+def test_turn_report_list_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/turns/1/report", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_turn_report_view_and_download_after_processing(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _upload_move_file(client, meta.slug, "AK3__T1.K1")
+    client.post(f"/games/{meta.slug}/turns/process")
+
+    view = client.get(f"/games/{meta.slug}/turns/1/report/1")
+    download = client.get(f"/games/{meta.slug}/turns/1/report/1/download")
+
+    assert view.status_code == 200
+    assert b"PROVINCES" in view.data
+    assert download.status_code == 200
+    assert download.mimetype == "text/plain"
+    assert "attachment" in download.headers["Content-Disposition"]
+
+
+def test_turn_report_view_missing_report_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _upload_move_file(client, meta.slug, "AK3__T1.K1")
+    client.post(f"/games/{meta.slug}/turns/process")
+
+    response = client.get(f"/games/{meta.slug}/turns/1/report/999", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Report not found" in response.data
+
+
+def test_turn_report_view_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/turns/1/report/1", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_processing_a_turn_with_a_missing_kingdom_still_succeeds(tmp_path):
+    # Only Kingdom 1 uploads -- Kingdom 2 gets the real missed-deadline
+    # Defend/Wait auto-fill (process_turn()'s own existing behavior), not
+    # an error.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _upload_move_file(client, meta.slug, "AK3__T1.K1")
+
+    response = client.post(f"/games/{meta.slug}/turns/process", follow_redirects=True)
+
+    assert response.status_code == 200
+    view = client.get(f"/games/{meta.slug}/turns/1/report/2")
+    assert view.status_code == 200

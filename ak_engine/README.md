@@ -37606,6 +37606,66 @@ supply of any of these doesn't have to be re-derived from scratch:
   download, both missing-game and unknown-Kingdom error paths, the
   download's own `Content-Disposition` attachment header). Full suite:
   7222 passed (14 new tests).
+
+  **Phase 973: the Turn Processing Cycle (`webapp/turn_processing.py` +
+  `/games/<slug>/turns` routes) -- Phase 7, the plan's final phase,
+  closing the whole GM interface loop.** The GM uploads each Kingdom's
+  real move-submission file for the current turn (preserving its own
+  filename -- `models/kingdom.py Kingdom.kingdom_id` is parsed from that
+  file's own trailing `.K<N>` suffix, not its content, confirmed directly
+  from that property's own docstring before relying on it), then one
+  "Process Turn N" button runs the existing `orchestrator.process_turn()`
+  against every upload at once, saves the resulting letter reports to
+  disk, and advances the game to the next turn -- the exact same
+  upload/process screen then serves the following turn, repeating until
+  the game ends.
+
+  A Kingdom with no uploaded file when the GM processes the turn is not
+  an error: `process_turn()` already gives it the real rulebook-mandated
+  missed-deadline Defend/Wait auto-fill, so the GM can process a turn
+  with only some Kingdoms having submitted, matching real GM discretion
+  over deadlines (confirmed both by a unit test and by the real-browser
+  pass below, where the second Kingdom's own report shows Aldric alone
+  contesting -- and winning -- every Imperial Office because Elara never
+  submitted).
+
+  **A processed turn's own report can't be regenerated later on demand**,
+  unlike Phase 6's `turn_zero_report()`: it reflects one real, RNG-driven
+  `run_turn()` dispatch that already happened and permanently mutated
+  `state`, so `process_and_save_current_turn()` writes each Kingdom's
+  `TurnOutcome.letter_reports` entry to its own text file immediately,
+  under that turn's own number (the number *before* `process_turn()`'s
+  own increment, not after), rather than leaving a later "view" request
+  to recompute something no longer reproducible.
+
+  Real-browser Playwright verification drove the complete cycle end to
+  end against an actual 2-King generated game: uploaded the repo's own
+  real `AK3__T1.K1` sample (correctly bucketed to "Aldric," the Kingdom
+  its own `.K1` suffix names, regardless of the sample's own internal
+  King name), clicked "Process Turn 1," and got back a genuine, complete
+  Turn 1 letter report -- ACTION REPORT (real travel/rumor narration),
+  IMPERIAL OFFICE REPORT (Aldric winning every office uncontested, since
+  Elara never submitted), FINANCES, PROVINCES, CHARACTERS, ARMIES,
+  ADVENTURE, an actual Emperor coronation, and FINAL STANDINGS -- with no
+  special-casing beyond what `process_turn()`/`compose_letter_report()`
+  already do, confirming the whole GM interface (Phases 1-7) genuinely
+  drives the real engine from an empty "My Games" list through a
+  processed turn.
+
+  Verified with new `tests/test_webapp_turn_processing.py` (upload/parse/
+  remove against the repo's own real move-file fixture, invalid-file
+  cleanup, per-turn scoping, the full process-and-save round trip) and
+  new `test_webapp_app.py` route tests (the upload form, both upload
+  error paths, remove, process, the missed-Kingdom auto-fill case, the
+  report list/view/download screens and their own not-found/missing-game
+  paths). Full suite: 7248 passed (26 new tests).
+
+  **With this phase, the GM interface plan is complete**: a GM can now go
+  from an empty games list through player setup, optional titles, world
+  creation, full world editing, Turn 0 reports, and a repeating real
+  turn-processing cycle, entirely from the browser, with no engine logic
+  duplicated anywhere in `webapp/` -- every screen is a thin, tested
+  layer over functions the engine already had.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

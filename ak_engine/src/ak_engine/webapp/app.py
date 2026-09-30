@@ -53,6 +53,15 @@ from ak_engine.webapp.players import (
     remove_player,
 )
 from ak_engine.webapp.reports import turn_zero_report
+from ak_engine.webapp.turn_processing import (
+    InvalidMoveFileError,
+    load_turn_report,
+    process_and_save_current_turn,
+    processed_turn_numbers,
+    remove_uploaded_move_file,
+    save_uploaded_move_file,
+    uploaded_move_files,
+)
 from ak_engine.webapp.world_creation import (
     RosterOutOfBoundsError,
     WorldAlreadyCreatedError,
@@ -544,6 +553,108 @@ def create_app(games_root: Path | None = None) -> Flask:
             "\n".join(lines),
             mimetype="text/plain",
             headers={"Content-Disposition": f'attachment; filename="SE_T0_{kingdom_name}.txt"'},
+        )
+
+    @app.get("/games/<slug>/turns")
+    def turns_hub(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        directory = game_dir(root, slug)
+        uploads = uploaded_move_files(directory, state.turn_number)
+        return render_template(
+            "turns_hub.html",
+            meta=meta,
+            state=state,
+            uploads=uploads,
+            processed_turns=processed_turn_numbers(directory),
+            error=request.args.get("error"),
+        )
+
+    @app.post("/games/<slug>/turns/upload")
+    def turns_upload(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        upload = request.files.get("move_file")
+        if upload is None or not upload.filename:
+            return redirect(url_for("turns_hub", slug=slug, error="Please choose a move file to upload."))
+        try:
+            save_uploaded_move_file(game_dir(root, slug), state.turn_number, upload.filename, upload.read())
+        except InvalidMoveFileError as exc:
+            return redirect(url_for("turns_hub", slug=slug, error=f"{upload.filename}: not a valid move file ({exc})."))
+        return redirect(url_for("turns_hub", slug=slug))
+
+    @app.post("/games/<slug>/turns/<int:kingdom_id>/remove")
+    def turns_remove_upload(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        remove_uploaded_move_file(game_dir(root, slug), state.turn_number, kingdom_id)
+        return redirect(url_for("turns_hub", slug=slug))
+
+    @app.post("/games/<slug>/turns/process")
+    def turns_process(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        if not state.kingdoms:
+            return redirect(url_for("turns_hub", slug=slug, error="This game has no world yet."))
+        processed_turn_number = state.turn_number
+        process_and_save_current_turn(root, slug, state, game_dir(root, slug))
+        return redirect(url_for("turn_report_list", slug=slug, turn_number=processed_turn_number))
+
+    @app.get("/games/<slug>/turns/<int:turn_number>/report")
+    def turn_report_list(slug: str, turn_number: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        if turn_number not in processed_turn_numbers(game_dir(root, slug)):
+            return redirect(url_for("turns_hub", slug=slug, error=f"Turn {turn_number} hasn't been processed yet."))
+        return render_template(
+            "turn_report_list.html", meta=meta, state=state, turn_number=turn_number, error=request.args.get("error")
+        )
+
+    @app.get("/games/<slug>/turns/<int:turn_number>/report/<int:kingdom_id>")
+    def turn_report_view(slug: str, turn_number: int, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        lines = load_turn_report(game_dir(root, slug), turn_number, kingdom_id)
+        if lines is None:
+            return redirect(url_for("turn_report_list", slug=slug, turn_number=turn_number, error="Report not found."))
+        kingdom_name = state.kingdoms[kingdom_id].name if kingdom_id in state.kingdoms else f"Kingdom #{kingdom_id}"
+        return render_template(
+            "turn_report_view.html", meta=meta, turn_number=turn_number, kingdom_id=kingdom_id, kingdom_name=kingdom_name, lines=lines
+        )
+
+    @app.get("/games/<slug>/turns/<int:turn_number>/report/<int:kingdom_id>/download")
+    def turn_report_download(slug: str, turn_number: int, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        lines = load_turn_report(game_dir(root, slug), turn_number, kingdom_id)
+        if lines is None:
+            return redirect(url_for("turn_report_list", slug=slug, turn_number=turn_number, error="Report not found."))
+        kingdom_name = (state.kingdoms[kingdom_id].name if kingdom_id in state.kingdoms else f"Kingdom_{kingdom_id}").replace(" ", "_")
+        return Response(
+            "\n".join(lines),
+            mimetype="text/plain",
+            headers={"Content-Disposition": f'attachment; filename="SE_T{turn_number}_{kingdom_name}.txt"'},
         )
 
     return app

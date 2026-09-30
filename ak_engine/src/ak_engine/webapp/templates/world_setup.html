@@ -23,7 +23,10 @@
       <a class="button" href="{{ url_for('leaders_list', slug=meta.slug) }}">Edit Heroes &rarr;</a>
       <a class="button" href="{{ url_for('features_list', slug=meta.slug) }}">Edit Special Features &rarr;</a>
     </p>
-    <p><a class="button" href="{{ url_for('turn_zero_list', slug=meta.slug) }}">View Turn 0 Reports &rarr;</a></p>
+    <p>
+      <a class="button" href="{{ url_for('turn_zero_list', slug=meta.slug) }}">View Turn 0 Reports &rarr;</a>
+      <a class="button" href="{{ url_for('turns_hub', slug=meta.slug) }}">Process Turns &rarr;</a>
+    </p>
   </div>
 {% else %}
   <div class="panel" style="border-left: 6px solid var(--phase-world);">
