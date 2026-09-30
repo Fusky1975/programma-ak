@@ -13989,6 +13989,20 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
     else:
         lines.append(_IMPERIAL_OFFICE_REPORT_PRE_ELECTION_INTRO)
     for office in ALL_OFFICES:
+        # GM interface Phase 3: an optional title (anything past the 8
+        # mandatory Imperial Offices) the GM excluded from this game via
+        # `GameState.enabled_optional_offices` doesn't get a row at all --
+        # not even "None at present" -- rather than the ordinary "nobody
+        # qualifies yet" suppression below, which is about a title that
+        # *is* in play but currently unheld. `None` (not configured, or
+        # every game/test predating this field) keeps every title shown,
+        # this composer's own original, unfiltered behavior.
+        if (
+            office.value > Office.MAGE.value
+            and state.enabled_optional_offices is not None
+            and office not in state.enabled_optional_offices
+        ):
+            continue
         office_name = f"{OFFICE_NAME[office]:<26}"
         top = resolve_office_holder(state, office) if election_settled else kingdom_best_candidate(state, office, kingdom_id)
 
@@ -14014,6 +14028,11 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
     # separate loop rather than folded into ALL_OFFICES above, since
     # every ranking/candidate primitive above assumes `leader_id`.
     for office in ARMY_RANKED_OFFICES:
+        # GM interface Phase 3: all 3 army-scoped titles are optional too
+        # (none is among the 8 mandatory Imperial Offices) -- same
+        # whole-row exclusion as the leader-scoped loop above.
+        if state.enabled_optional_offices is not None and office not in state.enabled_optional_offices:
+            continue
         office_name = f"{OFFICE_NAME[office]:<26}"
         army_top = (
             resolve_army_office_holder(state, office)

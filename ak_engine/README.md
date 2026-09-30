@@ -37394,6 +37394,38 @@ supply of any of these doesn't have to be re-derived from scratch:
   `test_webapp_app.py` (add/remove via form, validation errors, the
   2-12 status banner), plus a real-browser Playwright pass. Full suite:
   7161 passed (36 webapp tests).
+
+  **Phase 967: Optional Titles (`webapp/app.py`'s `/games/<slug>/titles`
+  routes) -- the third step of the plan, letting the GM choose which of
+  the game's optional titles are in play, beyond the 8 always-mandatory
+  Imperial Offices.** Added `GameState.enabled_optional_offices: set[
+  Office] | None` (`models/game_state.py`) -- `None` (every pre-existing
+  game/test) means "not configured yet," preserving `report/turn_report.py
+  describe_imperial_office_report()`'s own original, unfiltered behavior
+  exactly; once the GM saves a choice on this screen it becomes a concrete
+  set, and that composer's two office loops (leader-scoped and the 3
+  army-scoped titles) now skip an excluded title's row entirely -- not
+  the ordinary "None at present" suppression, which is about a title
+  that's in play but currently unheld.
+
+  The screen's own "42 optional titles" is not the rulebook's own rough
+  "circa 35" estimate -- it's the real, exact count this project actually
+  models: `turn/office_holder.py ALL_OFFICES` (47 total) minus the 8
+  mandatory ones (39), plus `ARMY_RANKED_OFFICES` (3, Air Force/Praetor/
+  Flagship, kept in a separate loop since they're military-unit-scoped
+  rather than leader-scoped). Cross-checked directly against that same
+  composer's own already-existing "39 offices past the 8 majors" comment
+  (`office.value > Office.MAGE.value`), confirming this session's
+  understanding of "optional" matches the code already governing which
+  titles get the extra display-suppression gate, not a guess. Verified
+  with new `tests/test_turn_report.py` cases (an excluded title gets no
+  row at all; `None` keeps every title shown, unchanged) and new
+  `test_webapp_app.py` route tests (mandatory offices always listed,
+  every optional title checked by default, a saved subset persists and
+  redisplays correctly, submitting none disables every optional title),
+  plus a real-browser Playwright pass confirming checkbox state survives
+  a save/reload round trip. Full suite: 7169 passed (42 webapp tests, 2
+  new `describe_imperial_office_report()` tests).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

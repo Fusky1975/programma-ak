@@ -13909,6 +13909,38 @@ def test_describe_imperial_office_report_none_at_present_for_every_office_with_n
     assert len(lines) == 52  # header + pre-election framing + 47 leader offices + 3 army offices
 
 
+def test_describe_imperial_office_report_omits_disabled_optional_titles():
+    # GM interface Phase 3: an optional title the GM excluded from this
+    # game gets no row at all -- not even "None at present" -- while the
+    # 8 mandatory Imperial Offices are unaffected by the same setting.
+    state = _armies_state()
+    state.enabled_optional_offices = {Office.EVIL_KING}  # excludes every other optional title
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert not any(line.startswith("Prince of Thieves") for line in lines)
+    assert not any(line.startswith("Savior of Humankind") for line in lines)
+    assert not any(line.startswith("Royal Air Force") for line in lines)
+    assert not any(line.startswith("Praetorian Guard") for line in lines)
+    assert not any(line.startswith("Imperial Flag Squadron") for line in lines)
+    # Kept: an explicitly-enabled optional title, and the 8 mandatory ones.
+    assert lines.count("King of Pain              None at present") == 1
+    assert lines.count("World Emperor             None at present") == 1
+    assert lines.count("Arch-Mage Palatine        None at present") == 1
+
+
+def test_describe_imperial_office_report_unset_enabled_optional_offices_shows_everything():
+    # None (never configured -- every pre-existing game/test) must keep
+    # this composer's original, unfiltered behavior.
+    state = _armies_state()
+    assert state.enabled_optional_offices is None
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert lines.count("Dragon Lord               None at present") == 1
+    assert lines.count("Royal Air Force           None at present") == 1
+
+
 def test_describe_imperial_office_report_shows_a_real_office_holder():
     # Phase 440: name/points now come with real rank/Riv% too -- "None"
     # for Riv% since nobody outside Testland is even a candidate.

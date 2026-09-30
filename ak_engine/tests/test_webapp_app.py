@@ -3,8 +3,9 @@ screen only; later phases add their own route tests)."""
 
 from __future__ import annotations
 
+from ak_engine.models.office import Office
 from ak_engine.webapp.app import create_app
-from ak_engine.webapp.games import create_game, list_games
+from ak_engine.webapp.games import create_game, list_games, open_game
 
 
 def _client(tmp_path):
@@ -209,4 +210,73 @@ def test_player_setup_shows_ok_status_within_bounds(tmp_path):
     response = client.get(f"/games/{meta.slug}/players")
 
     assert b"2 of 2-12 Kings added" in response.data
-    assert b"Ready to continue" in response.data
+    assert f'/games/{meta.slug}/titles'.encode() in response.data
+
+
+def test_titles_setup_shows_mandatory_offices_and_all_optional_checked_by_default(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/titles")
+
+    assert response.status_code == 200
+    assert b"World Emperor" in response.data
+    assert b"Arch-Mage Palatine" in response.data
+    assert b"King of Pain" in response.data
+    # Nothing has been saved yet (enabled_optional_offices is still None),
+    # so every optional title's checkbox starts checked.
+    assert b'name="office" value="EVIL_KING" checked' in response.data
+
+
+def test_titles_setup_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/titles", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_save_titles_persists_the_chosen_subset(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.post(
+        f"/games/{meta.slug}/titles",
+        data={"office": ["EVIL_KING", "THIEF_PRINCE"]},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.enabled_optional_offices == {Office.EVIL_KING, Office.THIEF_PRINCE}
+
+
+def test_save_titles_with_none_checked_disables_every_optional_title(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    client.post(f"/games/{meta.slug}/titles", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.enabled_optional_offices == set()
+
+
+def test_titles_setup_reflects_a_previously_saved_selection(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+    client.post(f"/games/{meta.slug}/titles", data={"office": ["EVIL_KING"]})
+
+    response = client.get(f"/games/{meta.slug}/titles")
+
+    assert b'name="office" value="EVIL_KING" checked' in response.data
+    assert b'name="office" value="THIEF_PRINCE" >' in response.data
+
+
+def test_save_titles_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/titles", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data

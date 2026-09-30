@@ -13,7 +13,9 @@
   {% elif count > max_players %}
     <p class="status-warning">{{ count }} Kings added &mdash; a game can have at most {{ max_players }}.</p>
   {% else %}
-    <p class="status-ok">{{ count }} of {{ min_players }}-{{ max_players }} Kings added. Ready to continue once the next phase (optional titles) is built.</p>
+    <p class="status-ok">{{ count }} of {{ min_players }}-{{ max_players }} Kings added.
+      <a class="button" href="{{ url_for('titles_setup', slug=meta.slug) }}">Continue to Optional Titles &rarr;</a>
+    </p>
   {% endif %}
 
   {% if players %}

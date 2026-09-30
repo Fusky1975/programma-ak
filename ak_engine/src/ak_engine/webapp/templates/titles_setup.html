@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Optional Titles -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('players_setup', slug=meta.slug) }}">&larr; Kings</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-titles);">
+  <h2>{{ meta.name }} &mdash; Imperial Offices</h2>
+  <p>The 8 Imperial Offices below are always part of the game (rulebook [10.1]).</p>
+  <ul class="game-list">
+    {% for office in mandatory_offices %}
+      <li><div class="game-name">{{ office_name[office] }}</div></li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-titles);">
+  <h2>Optional Titles</h2>
+  <p>Choose which of the game's {{ optional_offices|length }} optional titles to include. Unchecked titles won't appear in Imperial Office Reports.</p>
+  <form method="post" action="{{ url_for('titles_save', slug=meta.slug) }}">
+    <ul class="game-list">
+      {% for office in optional_offices %}
+        <li>
+          <label style="display: flex; align-items: center; gap: 0.75rem; width: 100%;">
+            <input type="checkbox" name="office" value="{{ office.name }}" {% if is_enabled(office) %}checked{% endif %}>
+            {{ office_name[office] }}
+          </label>
+        </li>
+      {% endfor %}
+    </ul>
+    <button type="submit">Save Optional Titles</button>
+  </form>
+</div>
+
+{% endblock %}

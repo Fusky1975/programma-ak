@@ -1813,6 +1813,20 @@ class GameState:
     # for the turn are already resolved by then, matching the real "end
     # of phase 5, after battles" resolution timing).
     pending_guild_target: int | None = None
+    # GM interface Phase 3 (`webapp/app.py` titles_* routes): which of the
+    # 39 leader-scoped + 3 army-scoped optional titles (every real
+    # `turn/office_holder.py ALL_OFFICES`/`ARMY_RANKED_OFFICES` entry past
+    # the 8 mandatory Imperial Offices, rulebook [10.1]) the GM chose to
+    # include in this game, shown/hidden as a whole row in
+    # `report/turn_report.py describe_imperial_office_report()`. `None`
+    # (every existing game/test, and any new game before the GM has ever
+    # visited that screen) means "not configured yet" -- treated as "every
+    # optional title is in play," this report composer's own unfiltered
+    # behavior before this field existed, so no game that never sets this
+    # sees any change. The 8 mandatory offices are never gated by this
+    # field at all: they show unconditionally, matching the rulebook's
+    # own framing of them as compulsory rather than a GM choice.
+    enabled_optional_offices: set[Office] | None = None
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
         self.kingdoms[kingdom.kingdom_id] = kingdom

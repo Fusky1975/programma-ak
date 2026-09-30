@@ -2,9 +2,9 @@
 
 Phase 1 wires the "My Games" screen -- list, create, delete -- as the
 entry point every later flow hangs off of. Phase 2 adds the player/King
-roster screen every game's "Open" link now leads to. Later phases add
-optional-titles/world-creation/editor/turn-cycle routes on top of this
-same app.
+roster screen every game's "Open" link now leads to. Phase 3 adds the
+optional-titles screen. Later phases add world-creation/editor/turn-cycle
+routes on top of this same app.
 
 **The interface is English throughout**, matching the game itself: every
 composer in ``report/turn_report.py`` already renders English prose
@@ -19,7 +19,9 @@ from pathlib import Path
 from flask import Flask, redirect, render_template, request, url_for
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.office import OFFICE_NAME, Office
 from ak_engine.models.race import Race
+from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES
 from ak_engine.webapp.games import (
     DuplicateGameNameError,
     GameNotFoundError,
@@ -28,6 +30,7 @@ from ak_engine.webapp.games import (
     game_dir,
     list_games,
     open_game,
+    save_game,
 )
 from ak_engine.webapp.players import (
     MAX_PLAYERS,
@@ -39,6 +42,14 @@ from ak_engine.webapp.players import (
     list_players,
     remove_player,
 )
+
+# The 8 mandatory Imperial Offices (rulebook [10.1]) vs. every other real,
+# modeled title the GM may opt in or out of for this game -- see
+# GameState.enabled_optional_offices's own docstring for why these are
+# the two groups (`report/turn_report.py describe_imperial_office_report()`
+# is the consumer this screen's choice feeds).
+MANDATORY_OFFICES: tuple[Office, ...] = tuple(o for o in ALL_OFFICES if o.value <= Office.MAGE.value)
+OPTIONAL_OFFICES: tuple[Office, ...] = tuple(o for o in ALL_OFFICES if o.value > Office.MAGE.value) + ARMY_RANKED_OFFICES
 
 DEFAULT_GAMES_ROOT = Path.home() / "ak_games"
 
@@ -139,5 +150,41 @@ def create_app(games_root: Path | None = None) -> Flask:
         except PlayerNotFoundError:
             return redirect(url_for("players_setup", slug=slug, error="King not found."))
         return redirect(url_for("players_setup", slug=slug))
+
+    @app.get("/games/<slug>/titles")
+    def titles_setup(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        enabled = state.enabled_optional_offices
+        return render_template(
+            "titles_setup.html",
+            meta=meta,
+            mandatory_offices=MANDATORY_OFFICES,
+            optional_offices=OPTIONAL_OFFICES,
+            office_name=OFFICE_NAME,
+            is_enabled=(lambda office: enabled is None or office in enabled),
+            error=request.args.get("error"),
+        )
+
+    @app.post("/games/<slug>/titles")
+    def titles_save(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        try:
+            selected = {Office[name] for name in request.form.getlist("office")}
+        except KeyError:
+            return redirect(url_for("titles_setup", slug=slug, error="Please choose valid titles."))
+
+        state.enabled_optional_offices = selected
+        save_game(root, slug, state)
+        return redirect(url_for("titles_setup", slug=slug))
 
     return app
