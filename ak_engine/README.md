@@ -37264,6 +37264,36 @@ supply of any of these doesn't have to be re-derived from scratch:
   `Macondo`, `GW3__T1`, ...), not project code references; too noisy to
   be worth pursuing further without a much sharper filter. No behavior
   changes -- docstring/comment corrections only. Full suite: 7125 passed.
+
+  **Phase 963: a fifth angle on the same hunt -- cross-checking "see
+  `X.py`'s own Phase N" citations against whether `X.py` actually
+  contains that phase number anywhere -- had a high false-positive rate,
+  but still found one genuine, if subtle, inaccuracy.** Of 135 citations
+  checked, 5 came back with no matching "Phase N" text in the target
+  file; 4 turned out to be false positives once traced by hand: two
+  cited a phase number that genuinely is that file's real, README-
+  confirmed origin phase (`models/power.py`'s Phase 95,
+  `models/feature.py MONSTER_GUARDED_FEATURE_TYPES`'s Phase 79) but
+  simply never echoes the literal digits anywhere in its own body; one
+  (`turn/battle_line.py`) describes its own sibling bug fix as "(this
+  phase)" rather than spelling out the number `turn/duel.py` cites for
+  it, which is correct but invisible to a literal-text search; and one
+  was a same-two-files/two-phase-numbers list (`models/office.py`/
+  `turn/encounter.py`'s own Phase 578/581 additions) that my script
+  mismatched to the wrong file, when both numbers are in fact exactly
+  where they belong. The one real finding: `turn/search_execution.py`
+  said "See `turn/encounter.py`'s own Phase 173 addendum for the full
+  quote" -- but that quote (the Fire-Arrow-exhaustion user clarification)
+  has lived in `encounter.py`'s own *original* Phase 48 module docstring
+  since that module was first written, never as a separately-numbered
+  Phase 173 addendum; Phase 173 is `search_execution.py`'s own phase for
+  reusing the same fact, not a tag that exists on the other side.
+  Corrected the citation to point at the real location and clarify the
+  number's actual scope. Given the false-positive rate this pattern
+  produced, it isn't a promising vein to keep mining further without a
+  much better way to confirm a phase number's true origin than grepping
+  for its literal digits. No behavior changes -- docstring/comment
+  corrections only. Full suite: 7125 passed.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

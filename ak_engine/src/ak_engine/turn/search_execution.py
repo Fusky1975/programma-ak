@@ -71,8 +71,11 @@ resolves"**:
   nel piano d'incontro" ("combatants move to the next phase, determined
   by the tactic list in the Encounter Plan") -- exactly this walk's own
   design, now sourced rather than inferred solely from [11.3]'s worked
-  examples. See ``turn/encounter.py``'s own Phase 173 addendum for the
-  full quote.
+  examples. See ``turn/encounter.py``'s own module docstring (Phase 48's
+  "What happens after Fire Arrow's free attacks run out" bullet, the
+  same user clarification quoted there directly, not a separate,
+  Phase-173-tagged addendum -- that number is this module's own, for
+  reusing the fact here) for the full quote.
 - **Fire Arrow (Phase 170, rulebook [5.2]).** "The base chance to hit is
   30%, plus 10% per Archery level, and the damage is 1-6 hit points."
   Previously left unwired specifically because "nothing in any available
