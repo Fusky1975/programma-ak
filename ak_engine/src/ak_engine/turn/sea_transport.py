@@ -160,7 +160,7 @@ def can_board(
             # a mounted unit already aboard fills the Fleet outright.
             return False
         if cargo_type in FLEET_MOUNTED_ARMY_TYPES:
-            return not current_cargo_types
+            return len(current_cargo_types) < FLEET_MOUNTED_CAPACITY
         if cargo_type in FLEET_INFANTRY_ARMY_TYPES:
             infantry_aboard = sum(1 for t in current_cargo_types if t in FLEET_INFANTRY_ARMY_TYPES)
             return infantry_aboard < FLEET_INFANTRY_CAPACITY
