@@ -36990,6 +36990,29 @@ supply of any of these doesn't have to be re-derived from scratch:
   module for this keyword set, not just a spot-check.
 
   No behavior changes this phase either -- docstring corrections only.
+
+  **Phase 955: extends the staleness-keyword sweep to `parser/*.py`,
+  `worldgen/*.py` (both re-checked in full, not just the files touched
+  by earlier phases), and the three root-level modules (`cli.py`,
+  `orchestrator.py`, `persistence.py`), finding one more stale
+  cross-reference.** `worldgen/province_tax.py`'s own Phase 755
+  `island_tax` paragraph still said the function was "still deliberately
+  unwired -- see the 'Deliberately NOT implemented' note below for the
+  separate, still-open blocker" -- but that very note, a few lines
+  further down in the same file, was already corrected by **Phase 931**
+  to say the "blocker" isn't one: a user-supplied disassembly trace
+  (`ISOLE.md`) confirmed the real compiled random map generator never
+  assigns a secondary `pt2` terrain at all, so there is nothing for
+  `island_tax()` to be wired *to* in this generator -- it stays unwired
+  correctly, not provisionally. The Phase 755 paragraph's own forward
+  reference was simply never revisited once Phase 931 closed what it
+  pointed at. Every other hit this sweep found (`parser/gw_world.py`'s
+  own several "still open" research notes, `worldgen/initial_armies.py`,
+  `worldgen/magic_item_placement.py`, `worldgen/generate_new_game.py`,
+  `orchestrator.py`) was already correctly self-corrected inline or
+  genuinely still an open research lead.
+
+  No behavior changes this phase either -- docstring corrections only.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

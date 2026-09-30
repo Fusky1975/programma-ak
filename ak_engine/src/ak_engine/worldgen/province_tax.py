@@ -71,8 +71,15 @@ Fourth phase of the world-generation sub-plan. Source:
   already redirect ``effective_terrain`` to ``pt2`` beforehand, so that
   branch is never reached in practice. This closes the *formula*
   question in full; ``island_tax()`` is shipped here as a standalone,
-  tested primitive, still deliberately unwired -- see the "Deliberately
-  NOT implemented" note below for the separate, still-open blocker.
+  tested primitive. ~~Still deliberately unwired -- see the "Deliberately
+  NOT implemented" note below for the separate, still-open blocker.~~ --
+  **stale as of Phase 931**: that note's own "still-open blocker" has
+  since closed -- not by wiring ``island_tax()`` into this generator,
+  but by confirming there is nothing to wire it *to*: the real compiled
+  random map generator this module reimplements never assigns ``pt2`` a
+  real terrain at all (see that note's own Phase 931 addendum for the
+  full disassembly trace). ``island_tax()`` stays unwired here
+  correctly, not provisionally.
 - ``HOME_OVERRIDE_TAX = 10``: a King's home province always taxes 10,
   overriding every formula above.
 
