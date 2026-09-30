@@ -943,6 +943,7 @@ def test_resolve_spell_disruption_matches_the_worked_example():
 def test_resolve_spell_disruption_consumes_exactly_one_roll_when_damaged():
     rng = ScriptedRandom([0.99])  # a second .random() call would raise IndexError
     resolve_spell_disruption(2, rng)
+    assert rng._randoms == []  # and confirms it wasn't skipped either -- exactly one
 
 
 def test_spell_disruption_chance_from_missed_attack_matches_rules_ak():
@@ -960,6 +961,7 @@ def test_resolve_spell_disruption_from_missed_attack_always_consumes_a_roll():
     # there's no "zero" shortcut here.
     rng = ScriptedRandom([0.99])
     resolve_spell_disruption_from_missed_attack(rng)
+    assert rng._randoms == []
 
 
 # -- Phase 416: resolve_reactive_melee_swing()'s own hit-vs-damage split --
@@ -1191,6 +1193,7 @@ def test_roll_psychic_blast_stun_rounds_stays_within_range():
 def test_roll_psychic_blast_stun_rounds_consumes_exactly_one_roll():
     rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
     roll_psychic_blast_stun_rounds(rng)
+    assert rng._randoms == []  # and confirms it wasn't skipped either -- exactly one
 
 
 def test_roll_psychic_blast_stun_rounds_lead_lined_helmet_narrows_the_range():
@@ -1549,6 +1552,7 @@ def test_roll_control_undead_failure_hp_increase_stays_within_range():
 def test_roll_control_undead_failure_hp_increase_consumes_exactly_one_roll():
     rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
     roll_control_undead_failure_hp_increase(rng)
+    assert rng._randoms == []  # and confirms it wasn't skipped either -- exactly one
 
 
 def test_control_undead_failure_new_hit_points_at_the_low_end_of_the_range():
@@ -1769,6 +1773,7 @@ def test_resolve_words_of_healing_disruption_uses_the_halved_chance():
 def test_resolve_words_of_healing_disruption_consumes_exactly_one_roll_when_hits_taken():
     rng = ScriptedRandom([0.99])  # a second .random() call would raise IndexError
     resolve_words_of_healing_disruption(2, rng)
+    assert rng._randoms == []  # and confirms it wasn't skipped either -- exactly one
 
 
 def test_words_of_healing_disruption_chance_from_missed_attack_is_half_the_normal_rate():
@@ -1783,8 +1788,9 @@ def test_resolve_words_of_healing_disruption_from_missed_attack_uses_the_halved_
 
 
 def test_resolve_words_of_healing_disruption_from_missed_attack_always_consumes_a_roll():
-    rng = ScriptedRandom([0.99])
+    rng = ScriptedRandom([0.99])  # a second .random() call would raise IndexError
     resolve_words_of_healing_disruption_from_missed_attack(rng)
+    assert rng._randoms == []  # and confirms it wasn't skipped either -- exactly one
 
 
 def test_words_of_healing_heal_restores_to_full():
@@ -1834,6 +1840,7 @@ def test_resolve_gate_demon_refusal_at_or_above_the_50_percent_threshold_fights(
 def test_resolve_gate_demon_refusal_consumes_exactly_one_roll():
     rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
     resolve_gate_demon_refusal(rng)
+    assert rng._randoms == []  # and confirms it wasn't skipped either -- exactly one
 
 
 # -- Phase 203: Lava Pool [LP] --
@@ -1874,6 +1881,7 @@ def test_resolve_lava_pool_escape_slow_speed_never_escapes():
 def test_resolve_lava_pool_escape_consumes_exactly_one_roll():
     rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
     resolve_lava_pool_escape(MonsterSpeed.MEDIUM, rng)
+    assert rng._randoms == []  # and confirms it wasn't skipped either -- exactly one
 
 
 # -- Phase 205: Augur Combat [AC] --
@@ -1912,6 +1920,7 @@ def test_resolve_augur_combat_shirk_berserk_threshold():
 def test_resolve_augur_combat_shirk_consumes_exactly_one_roll():
     rng = ScriptedRandom([0.5])  # a second .random() call would raise IndexError
     resolve_augur_combat_shirk(Temper.BRAVE, rng)
+    assert rng._randoms == []  # and confirms it wasn't skipped either -- exactly one
 
 
 def test_resolve_augur_combat_never_shirks_on_a_simulated_win():

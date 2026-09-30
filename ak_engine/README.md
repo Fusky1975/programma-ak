@@ -37070,6 +37070,45 @@ supply of any of these doesn't have to be re-derived from scratch:
   function still awaiting integration.
 
   No behavior changes this phase either -- docstring corrections only.
+
+  **Phase 958: a user-directed audit of the test suite itself
+  (`test_turn_report.py`/`test_search_execution.py`/
+  `test_cast_execution.py`/`test_encounter.py`), applying a battery of
+  structural checks distinct from the docstring-staleness sweep** --
+  duplicate test-function names (a duplicate silently shadows the
+  earlier test), tests with no real verification (no `assert`, no
+  `pytest.raises`, no Mock `.assert_*` call), test functions nested
+  where pytest wouldn't collect them, non-standard test-class naming,
+  and pytest's own collected-test count sanity-checked against a plain
+  AST function count. All four files came back clean on every one of
+  those. A byte-for-byte cross-check of every real `SE3__T*.K1`/
+  `AK3__T*.K1` fixture quote cited in test comments (`test_turn_report.py`:
+  7 citations across Part Sea/Oratory/Bless/Skeletal Army/Illusory
+  Terrain/Flood/Plague; `test_cast_execution.py`: 1 citation) against the
+  actual fixture files in the repo found zero drift, including the
+  Discovery-modifier marker's exact 0-indexed column (53) matching
+  `marker_row.index("^") == 53` precisely.
+
+  **One genuine, if narrow, test-rigor gap found in `test_encounter.py`**:
+  9 tests named `..._consumes_exactly_one_roll`/`..._always_consumes_a_roll`
+  verified "not *more* than one roll" (a second `ScriptedRandom.random()`
+  call raises `IndexError` on the exhausted script) but never verified
+  "not *fewer* than one roll" -- a future regression that silently
+  skipped the roll entirely would have left every one of these 9 tests
+  passing, contrary to their own names' claim. This project's own test
+  suite already has the stronger, correct pattern elsewhere
+  (`test_monster_raids.py`/`test_turn_processor.py`'s own
+  `assert rng._randoms == []`, and this same file's own
+  `test_resolve_augur_combat_never_shirks_on_a_simulated_win` correctly
+  uses an *empty* `ScriptedRandom([])` to verify the zero-roll case) --
+  these 9 simply never adopted it. Added `assert rng._randoms == []` to
+  each of the 9 (`resolve_spell_disruption`/`_from_missed_attack`,
+  `roll_psychic_blast_stun_rounds`, `roll_control_undead_failure_hp_
+  increase`, `resolve_words_of_healing_disruption`/`_from_missed_attack`,
+  `resolve_gate_demon_refusal`, `resolve_lava_pool_escape`,
+  `resolve_augur_combat_shirk`) -- all 9 still pass, confirming the real
+  production functions were already correct; this closes a test-coverage
+  gap, not a production bug.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
