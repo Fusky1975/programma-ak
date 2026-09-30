@@ -37426,6 +37426,54 @@ supply of any of these doesn't have to be re-derived from scratch:
   plus a real-browser Playwright pass confirming checkbox state survives
   a save/reload round trip. Full suite: 7169 passed (42 webapp tests, 2
   new `describe_imperial_office_report()` tests).
+
+  **Phase 968: Create World (`webapp/world_creation.py` + `webapp/app.py`'s
+  `/games/<slug>/world` routes) -- the fourth step, turning the Phase 2
+  roster into a real, fully generated game.** `create_world()` builds the
+  real `KingdomState`/`LeaderState`/`KingSetup` for every roster entry (a
+  placeholder `HexCoord(0, 0)` Home, immediately overwritten -- see the
+  companion engine fix below) and runs the existing `generate_new_game()`
+  pipeline against them -- the exact same one-shot construction `cli.py
+  _cmd_new_game` already does from a JSON roster, run here from the
+  webapp's own `players.json` instead. Every King's Home province is
+  auto-placed (`KingSetup.home_coord=None`): there's no map yet at
+  roster-entry time (Phase 2) for the GM to have pinned an explicit
+  coordinate to, so this phase doesn't offer one. Guards against the two
+  real misuses a screen (rather than a one-shot CLI script) makes
+  newly possible: creating a world twice for the same game
+  (`WorldAlreadyCreatedError`, checked via `state.kingdoms` -- the second
+  attempt is refused rather than silently discarding the real, already
+  in-progress game) and creating one outside the rulebook's own 2-12
+  King bound (`RosterOutOfBoundsError`).
+
+  **A real, if narrow, pre-existing engine bug found and fixed while
+  building this**: `generate_new_game()` (`worldgen/generate_new_game.py`)
+  auto-places a King's Home via `choose_king_home()` when
+  `KingSetup.home_coord=None` (Phase 427), and correctly updates that
+  King's own `LeaderState.location` to the real, chosen coordinate -- but
+  never updated `GameState.kingdoms[...].home_province` to match, leaving
+  it silently stuck at whatever placeholder the caller had constructed
+  the `KingdomState` with. Invisible until now because no real caller
+  had ever actually exercised the `home_coord=None` path (`cli.py` always
+  supplies an explicit Home from its JSON roster) -- only
+  `tests/test_generate_new_game.py`'s own auto-placement tests did, and
+  none of them happened to assert anything about `home_province` itself,
+  reading `leader.location` instead. Fixed by writing `home_province`
+  in the same per-King loop that already sets `leader.location`/
+  `leader.birth_x`/`leader.birth_y`, using the same already-in-scope
+  `home_coord` -- a no-op for the one real path that already passed an
+  explicit `home_coord` (it was already the same value), so no observed
+  behavior changes for any existing caller. New regression test:
+  `test_auto_selected_king_home_updates_the_kingdoms_own_home_province`.
+
+  Verified with `tests/test_webapp_world_creation.py` (population,
+  persistence, auto-placed Homes, both guard errors) and new
+  `test_webapp_app.py` route tests (the below-minimum warning replacing
+  the form entirely, the real generated summary, both error paths), plus
+  a real-browser Playwright pass creating an actual 3-King world (162
+  provinces, 54 armies, distinct auto-placed Homes) end to end from the
+  roster screen. Full suite: 7181 passed (11 new webapp/world-creation
+  tests, 1 new engine regression test).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

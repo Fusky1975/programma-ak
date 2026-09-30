@@ -3,8 +3,8 @@
 Phase 1 wires the "My Games" screen -- list, create, delete -- as the
 entry point every later flow hangs off of. Phase 2 adds the player/King
 roster screen every game's "Open" link now leads to. Phase 3 adds the
-optional-titles screen. Later phases add world-creation/editor/turn-cycle
-routes on top of this same app.
+optional-titles screen. Phase 4 adds "Create World". Later phases add the
+world editor and the turn-cycle routes on top of this same app.
 
 **The interface is English throughout**, matching the game itself: every
 composer in ``report/turn_report.py`` already renders English prose
@@ -14,6 +14,7 @@ of English reports would be its own, needless inconsistency.
 
 from __future__ import annotations
 
+import random
 from pathlib import Path
 
 from flask import Flask, redirect, render_template, request, url_for
@@ -42,6 +43,12 @@ from ak_engine.webapp.players import (
     list_players,
     remove_player,
 )
+from ak_engine.webapp.world_creation import (
+    RosterOutOfBoundsError,
+    WorldAlreadyCreatedError,
+    create_world,
+)
+from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH
 
 # The 8 mandatory Imperial Offices (rulebook [10.1]) vs. every other real,
 # modeled title the GM may opt in or out of for this game -- see
@@ -186,5 +193,60 @@ def create_app(games_root: Path | None = None) -> Flask:
         state.enabled_optional_offices = selected
         save_game(root, slug, state)
         return redirect(url_for("titles_setup", slug=slug))
+
+    @app.get("/games/<slug>/world")
+    def world_setup(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        return render_template(
+            "world_setup.html",
+            meta=meta,
+            state=state,
+            player_count=len(list_players(game_dir(root, slug))),
+            min_players=MIN_PLAYERS,
+            max_players=MAX_PLAYERS,
+            default_width=DEFAULT_WIDTH,
+            default_height=DEFAULT_HEIGHT,
+            error=request.args.get("error"),
+        )
+
+    @app.post("/games/<slug>/world")
+    def world_create(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _parse_int(field: str, default: int) -> int:
+            raw = request.form.get(field, "").strip()
+            return default if not raw else int(raw)
+
+        try:
+            width = _parse_int("width", DEFAULT_WIDTH)
+            height = _parse_int("height", DEFAULT_HEIGHT)
+            seed = _parse_int("seed", random.randint(1, 2**31 - 1))
+        except ValueError:
+            return redirect(url_for("world_setup", slug=slug, error="Width, height, and seed must be whole numbers."))
+        if width < 1 or height < 1:
+            return redirect(url_for("world_setup", slug=slug, error="Width and height must be positive."))
+
+        try:
+            create_world(root, slug, width=width, height=height, seed=seed)
+        except RosterOutOfBoundsError as exc:
+            return redirect(
+                url_for(
+                    "world_setup",
+                    slug=slug,
+                    error=f"Need {MIN_PLAYERS}-{MAX_PLAYERS} Kings to create the world "
+                    f"(currently {exc.player_count}).",
+                )
+            )
+        except WorldAlreadyCreatedError:
+            return redirect(url_for("world_setup", slug=slug, error="This game's world has already been created."))
+        return redirect(url_for("world_setup", slug=slug))
 
     return app

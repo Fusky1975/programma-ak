@@ -586,6 +586,16 @@ def generate_new_game(
         leader.location = effects.leader_current_coord
         leader.birth_x = effects.leader_born_coord.x
         leader.birth_y = effects.leader_born_coord.y
+        # GM interface Phase 4: a caller-supplied KingSetup.home_coord was
+        # always already this same value (the only path any real caller
+        # exercised before now, e.g. cli.py's own _cmd_new_game), so this
+        # is a no-op for that path -- but a `None` home_coord (auto-placed
+        # above via `choose_king_home()`) previously left this Kingdom's
+        # own `home_province` stuck at whatever placeholder the caller
+        # constructed it with, silently disagreeing with the King's real,
+        # just-chosen `leader.location`. Closing that gap here, the one
+        # place both values are already in scope together.
+        game_state.kingdoms[leader.kingdom_id].home_province = home_coord
         game_state.kingdoms[leader.kingdom_id].treasury = STARTING_TREASURY
 
     # Phase 426: independent lords + King companions ("place Kings,

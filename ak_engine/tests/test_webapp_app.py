@@ -280,3 +280,70 @@ def test_save_titles_missing_game_shows_an_error_not_a_crash(tmp_path):
 
     assert response.status_code == 200
     assert b"Game not found" in response.data
+
+
+def _add_king(client, slug, name, race="HUMAN", alignment="GOOD"):
+    client.post(f"/games/{slug}/players", data={"name": name, "race": race, "alignment": alignment})
+
+
+def test_world_setup_below_min_players_shows_a_warning_not_a_form(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+    _add_king(client, meta.slug, "Aldric")
+
+    response = client.get(f"/games/{meta.slug}/world")
+
+    assert response.status_code == 200
+    assert b"need 2-12" in response.data
+    assert b'name="seed"' not in response.data
+
+
+def test_world_setup_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/world", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_create_world_via_form_populates_and_shows_a_summary(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+    _add_king(client, meta.slug, "Aldric", "HUMAN", "GOOD")
+    _add_king(client, meta.slug, "Elara", "ELVEN", "NEUTRAL")
+
+    response = client.post(f"/games/{meta.slug}/world", data={"seed": "1"}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"World Created" in response.data
+    assert b"Aldric" in response.data
+    assert b"Elara" in response.data
+    assert b"2 Kingdoms" in response.data
+
+
+def test_create_world_twice_shows_an_error_not_a_crash(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+    _add_king(client, meta.slug, "Aldric", "HUMAN", "GOOD")
+    _add_king(client, meta.slug, "Elara", "ELVEN", "NEUTRAL")
+    client.post(f"/games/{meta.slug}/world", data={"seed": "1"})
+
+    response = client.post(f"/games/{meta.slug}/world", data={"seed": "2"}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"already been created" in response.data
+    # Still shows the original (seed=1) world, not a fresh regeneration.
+    assert b"World Created" in response.data
+
+
+def test_create_world_with_non_numeric_seed_shows_an_error_not_a_crash(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+    _add_king(client, meta.slug, "Aldric", "HUMAN", "GOOD")
+    _add_king(client, meta.slug, "Elara", "ELVEN", "NEUTRAL")
+
+    response = client.post(f"/games/{meta.slug}/world", data={"seed": "not-a-number"}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"whole numbers" in response.data

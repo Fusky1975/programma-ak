@@ -549,6 +549,23 @@ def test_auto_selected_non_naval_king_second_slot_matches_the_terrain_rule():
             assert province.recruit_type_2 in {ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY, ArmyType.CHARIOTS}
 
 
+def test_auto_selected_king_home_updates_the_kingdoms_own_home_province():
+    # GM interface Phase 4: KingdomState.home_province must track the
+    # real, auto-chosen Home -- not stay stuck at whatever placeholder
+    # the caller constructed the Kingdom with before generate_new_game()
+    # ever ran (every King here starts with home_province=(0, 0), per
+    # _setup_naval(), which no real King's actual auto-placed Home ever
+    # legitimately lands on -- MIN_HOME_DISTANCE keeps them apart, and a
+    # (0, 0) corner is not a real placement candidate).
+    game_state, kings = _setup_naval()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        leader = result.leaders[king.leader_id]
+        assert result.kingdoms[leader.kingdom_id].home_province == leader.location
+
+
 def test_every_kings_home_starts_fully_explored():
     # Phase 428: confirmed verbatim ("Expl% 100%") across four independent
     # real Turn-0 PROVINCES sections -- SE0__T0.K0.txt "Acacia", SE3__

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Create World -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('titles_setup', slug=meta.slug) }}">&larr; Optional Titles</a></p>
+
+{% if state.kingdoms %}
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>{{ meta.name }} &mdash; World Created</h2>
+    <p class="status-ok">{{ state.kingdoms|length }} Kingdoms &middot; {{ state.provinces|length }} provinces &middot; {{ state.armies|length }} armies &middot; {{ state.board_width }}x{{ state.board_height }} map.</p>
+    <ul class="game-list">
+      {% for kingdom_id, kingdom in state.kingdoms.items() %}
+        <li>
+          <div>
+            <div class="game-name">{{ kingdom.name }}</div>
+            <div class="game-meta">{{ kingdom.race.name.title() }} &middot; {{ kingdom.alignment.name.replace('_', ' ').title() }} &middot; Home at ({{ kingdom.home_province.x }}, {{ kingdom.home_province.y }})</div>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% else %}
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>{{ meta.name }} &mdash; Create World</h2>
+
+    {% if player_count < min_players or player_count > max_players %}
+      <p class="status-warning">{{ player_count }} Kings on the roster &mdash; need {{ min_players }}-{{ max_players }} before the world can be created.</p>
+    {% else %}
+      <p class="status-ok">{{ player_count }} Kings ready. Every King's Home province is placed automatically.</p>
+      <form class="inline" method="post" action="{{ url_for('world_create', slug=meta.slug) }}">
+        <label for="width">Map width</label>
+        <input type="number" id="width" name="width" min="1" placeholder="{{ default_width }}">
+
+        <label for="height">Map height</label>
+        <input type="number" id="height" name="height" min="1" placeholder="{{ default_height }}">
+
+        <label for="seed">Random seed</label>
+        <input type="number" id="seed" name="seed" placeholder="random">
+
+        <button type="submit">Create World</button>
+      </form>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% endblock %}
