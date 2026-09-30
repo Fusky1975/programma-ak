@@ -37294,6 +37294,55 @@ supply of any of these doesn't have to be re-derived from scratch:
   much better way to confirm a phase number's true origin than grepping
   for its literal digits. No behavior changes -- docstring/comment
   corrections only. Full suite: 7125 passed.
+
+  **Phase 964: the first piece of a new GM web interface
+  (`src/ak_engine/webapp/`), sitting entirely on top of the existing
+  engine with no game logic duplicated in it.** User-directed feature
+  work, not an audit phase -- see the plan this session wrote
+  (`/root/.claude/plans/temporal-swimming-acorn.md`) for the full
+  multi-phase design: a local Flask app (chosen over a native desktop
+  UI for ease of local use and testing) guiding the GM through player
+  setup (2-12 Kings), optional-title selection, world creation/editing,
+  and the per-turn move/report cycle, with a fantasy-themed color
+  palette and an 18px-minimum base font size throughout (the
+  interface's own explicit requirement, enforced by its own test
+  against the real stylesheet, not just eyeballed).
+
+  This phase is the skeleton every later screen hangs off: `webapp/
+  games.py` (a folder-per-game local registry -- `create_game()`/
+  `open_game()`/`save_game()`/`delete_game()`/`list_games()`, each game
+  a subdirectory holding a pickled `GameState` via the existing
+  `persistence.py` unchanged, plus a small `meta.json` sidecar so the
+  list screen can show name/turn/Kingdom-count without unpickling every
+  game), `webapp/app.py` (the Flask app factory and the "Le mie
+  partite" list/create/delete routes), and `webapp/static/style.css` +
+  `webapp/templates/` (the shared design system: CSS custom properties
+  for the parchment/bordeaux/gold palette and the `--font-size-base:
+  18px` variable every later screen will reuse, plus one accent color
+  per planned phase of the GM flow for visual orientation). Verified
+  both automatically (`tests/test_webapp_games.py`/
+  `test_webapp_app.py`, using Flask's own test client) and by actually
+  starting the dev server and driving it in a real headless-Chromium
+  browser (Playwright, already available in this environment) to
+  confirm the color/typography design genuinely renders as intended,
+  not just that the HTML contains the expected strings.
+
+  **One real bug caught by the tests, not just written around**:
+  `create_game()`'s first draft built its own `GameMeta` by hand
+  (hardcoding `turn_number=0`) and returned that, instead of the
+  `GameMeta` `save_game()` itself computes from the real, freshly
+  constructed `GameState` (whose own real default is `turn_number=1`,
+  confirmed directly rather than assumed) -- a genuine, if narrow,
+  data-integrity bug (the returned/displayed metadata would have
+  silently disagreed with what was actually saved to disk) caught by
+  `test_create_game_makes_it_listable` before it shipped. Fixed by
+  having `create_game()` return exactly what `save_game()` computed,
+  removing the duplicate hand-built object entirely.
+
+  Declared as a new optional dependency group (`pip install -e
+  ".[webapp]"`, `pyproject.toml`), not a hard dependency of the engine
+  itself. No engine behavior changes. Full suite: 7144 passed (19 new
+  tests).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
