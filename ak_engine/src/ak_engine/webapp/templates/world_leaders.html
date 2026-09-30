@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Heroes -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('world_setup', slug=meta.slug) }}">&larr; World</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Kings &amp; Heroes</h2>
+
+  {% if leaders %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Kingdom</th>
+          <th>Race</th>
+          <th>Alignment</th>
+          <th>Temper</th>
+          <th>Sex</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for leader in leaders %}
+          <tr>
+            <td>{{ leader.name }}{% if leader.is_king %} (King){% endif %}</td>
+            <td>{{ state.kingdoms[leader.kingdom_id].name if leader.kingdom_id in state.kingdoms else 'Independent' }}</td>
+            <td>{{ leader.race.name.replace('_', ' ').title() }}</td>
+            <td>{{ leader.alignment.name.replace('_', ' ').title() if leader.alignment else '--' }}</td>
+            <td>{{ leader.temper.name.title() if leader.temper else '--' }}</td>
+            <td>{{ leader.sex.name.title() if leader.sex else '--' }}</td>
+            <td><a class="button" href="{{ url_for('leader_edit', slug=meta.slug, leader_id=leader.leader_id) }}">Edit</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">This game has no world yet -- <a href="{{ url_for('world_setup', slug=meta.slug) }}">create it first</a>.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

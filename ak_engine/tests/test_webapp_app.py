@@ -473,3 +473,132 @@ def test_save_province_missing_province_shows_an_error_not_a_crash(tmp_path):
 
     assert response.status_code == 200
     assert b"Province not found" in response.data
+
+
+def test_leaders_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/leaders")
+
+    assert response.status_code == 200
+    assert b"no world yet" in response.data
+
+
+def test_leaders_list_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/leaders", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_leaders_list_shows_every_kings_own_name(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders")
+
+    assert response.status_code == 200
+    assert b"Aldric" in response.data
+    assert b"Elara" in response.data
+    assert b"(King)" in response.data
+
+
+def test_leader_edit_shows_the_current_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert response.status_code == 200
+    assert b'value="Aldric"' in response.data
+
+
+def test_leader_edit_missing_leader_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders/999", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Hero not found" in response.data
+
+
+def test_save_leader_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1",
+        data={"name": "Aldric the Wise", "race": "HUMAN", "alignment": "EVIL", "temper": "BERSERK", "sex": "MALE"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    leader = state.leaders[1]
+    assert leader.name == "Aldric the Wise"
+    assert leader.alignment.name == "EVIL"
+    assert leader.temper.name == "BERSERK"
+    assert leader.sex.name == "MALE"
+
+
+def test_save_leader_can_clear_optional_fields_back_to_unset(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(
+        f"/games/{meta.slug}/leaders/1",
+        data={"name": "Aldric", "race": "HUMAN", "alignment": "EVIL", "temper": "BERSERK", "sex": "MALE"},
+    )
+
+    client.post(f"/games/{meta.slug}/leaders/1", data={"name": "Aldric", "race": "HUMAN"})
+
+    _, state = open_game(tmp_path, meta.slug)
+    leader = state.leaders[1]
+    assert leader.alignment is None
+    assert leader.temper is None
+    assert leader.sex is None
+
+
+def test_save_leader_with_blank_name_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1",
+        data={"name": "   ", "race": "HUMAN"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Please enter a name" in response.data
+
+
+def test_save_leader_with_invalid_race_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1",
+        data={"name": "Aldric", "race": "NOT_A_RACE"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid race" in response.data
+
+
+def test_save_leader_missing_leader_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/999",
+        data={"name": "Nobody", "race": "HUMAN"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Hero not found" in response.data

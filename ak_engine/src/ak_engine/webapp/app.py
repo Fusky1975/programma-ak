@@ -24,6 +24,8 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import OFFICE_NAME, Office
 from ak_engine.models.race import Race
+from ak_engine.models.sex import Sex
+from ak_engine.models.temper import Temper
 from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES
 from ak_engine.webapp.games import (
     DuplicateGameNameError,
@@ -335,5 +337,84 @@ def create_app(games_root: Path | None = None) -> Flask:
         province.recruit_type_2 = recruit_type_2
         save_game(root, slug, state)
         return redirect(url_for("province_edit", slug=slug, x=x, y=y))
+
+    @app.get("/games/<slug>/leaders")
+    def leaders_list(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leaders = sorted(state.leaders.values(), key=lambda leader: (leader.kingdom_id is None, leader.kingdom_id or 0, leader.name))
+        return render_template(
+            "world_leaders.html",
+            meta=meta,
+            state=state,
+            leaders=leaders,
+            error=request.args.get("error"),
+        )
+
+    @app.get("/games/<slug>/leaders/<int:leader_id>")
+    def leader_edit(slug: str, leader_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leader = state.leaders.get(leader_id)
+        if leader is None:
+            return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+        return render_template(
+            "leader_edit.html",
+            meta=meta,
+            state=state,
+            leader=leader,
+            races=list(Race),
+            alignments=list(Alignment),
+            tempers=list(Temper),
+            sexes=list(Sex),
+            error=request.args.get("error"),
+        )
+
+    @app.post("/games/<slug>/leaders/<int:leader_id>")
+    def leader_save(slug: str, leader_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leader = state.leaders.get(leader_id)
+        if leader is None:
+            return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id, error=message))
+
+        name = request.form.get("name", "").strip()
+        if not name:
+            return _edit_error("Please enter a name.")
+        try:
+            race = Race[request.form.get("race", "")]
+        except KeyError:
+            return _edit_error("Please choose a valid race.")
+
+        def _optional_enum(cls, field: str):
+            raw = request.form.get(field, "")
+            return cls[raw] if raw else None
+
+        try:
+            alignment = _optional_enum(Alignment, "alignment")
+            temper = _optional_enum(Temper, "temper")
+            sex = _optional_enum(Sex, "sex")
+        except KeyError:
+            return _edit_error("Please choose valid values.")
+
+        leader.name = name
+        leader.race = race
+        leader.alignment = alignment
+        leader.temper = temper
+        leader.sex = sex
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 
     return app

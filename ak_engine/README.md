@@ -37500,6 +37500,36 @@ supply of any of these doesn't have to be re-derived from scratch:
   this project's own established `.replace('_', ' ').title()` convention
   every other enum-display site already uses) -- fixed before commit, not
   left for a later phase. Full suite: 7190 passed (9 new tests).
+
+  **Phase 970: World Editor, hero screen (`/games/<slug>/leaders` routes) --
+  the second of Phase 5's three editor screens.** A table lists every
+  `LeaderState` in the game -- both Kings and the independent lords/
+  companions `generate_new_game()` itself already populates, not just the
+  GM-entered Kings -- with Kingdom (or "Independent"), race, alignment,
+  temper, and sex; the edit form changes name/race/alignment/temper/sex
+  directly on the live object. Race offers the full 18-member `Race` enum
+  here (not the Phase 2 roster form's 4-race `PLAYABLE_RACES` subset) --
+  a Hero, unlike a player-created King, is never run through
+  `home_first_slot()`'s own `BEST_ATYPE` lookup, so the engine constraint
+  that narrows a King's race doesn't apply. Alignment/temper/sex are
+  editable back to "Unset" (`None`), matching how `LeaderState` already
+  represents "no data recorded" for a Hero the world-gen pipeline never
+  populated these for.
+
+  Confirmed while testing that a King's own `LeaderState.alignment` and
+  his Kingdom's `KingdomState.alignment` are genuinely two separate
+  fields, not a display duplicate -- Phase 4's `create_world()` only ever
+  sets the latter (from the Phase 2 roster), so every King's own
+  `leader.alignment` legitimately starts `None` until the GM sets it
+  here, confirmed by a real-browser screenshot showing exactly that for
+  a freshly created game, not a bug to chase.
+
+  Verified with new `test_webapp_app.py` route tests (list before/after
+  world creation, edit-form prefill, a full save round trip, clearing the
+  three optional fields back to "Unset", and the blank-name/invalid-race/
+  missing-leader error paths), plus a real-browser Playwright pass
+  confirming both the King and the world-generated companions/lords all
+  appear and edit correctly. Full suite: 7200 passed (10 new tests).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ leader.name }} -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('leaders_list', slug=meta.slug) }}">&larr; Kings &amp; Heroes</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; {{ leader.name }}{% if leader.is_king %} (King){% endif %}</h2>
+  <p class="game-meta">Kingdom: {{ state.kingdoms[leader.kingdom_id].name if leader.kingdom_id in state.kingdoms else 'Independent' }} &middot; Location: ({{ leader.location.x }}, {{ leader.location.y }})</p>
+
+  <form method="post" action="{{ url_for('leader_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <p>
+      <label for="name">Name</label><br>
+      <input type="text" id="name" name="name" value="{{ leader.name }}" required>
+    </p>
+
+    <p>
+      <label for="race">Race</label><br>
+      <select id="race" name="race">
+        {% for race in races %}
+          <option value="{{ race.name }}" {% if leader.race == race %}selected{% endif %}>{{ race.name.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="alignment">Alignment</label><br>
+      <select id="alignment" name="alignment">
+        <option value="">-- Unset --</option>
+        {% for alignment in alignments %}
+          <option value="{{ alignment.name }}" {% if leader.alignment == alignment %}selected{% endif %}>{{ alignment.name.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="temper">Temper</label><br>
+      <select id="temper" name="temper">
+        <option value="">-- Unset --</option>
+        {% for temper in tempers %}
+          <option value="{{ temper.name }}" {% if leader.temper == temper %}selected{% endif %}>{{ temper.name.title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="sex">Sex</label><br>
+      <select id="sex" name="sex">
+        <option value="">-- Unset --</option>
+        {% for sex in sexes %}
+          <option value="{{ sex.name }}" {% if leader.sex == sex %}selected{% endif %}>{{ sex.name.title() }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <button type="submit">Save Hero</button>
+  </form>
+</div>
+
+{% endblock %}

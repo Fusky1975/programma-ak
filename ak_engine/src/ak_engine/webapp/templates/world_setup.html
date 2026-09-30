@@ -18,7 +18,10 @@
         </li>
       {% endfor %}
     </ul>
-    <p><a class="button" href="{{ url_for('provinces_list', slug=meta.slug) }}">Edit Provinces &rarr;</a></p>
+    <p>
+      <a class="button" href="{{ url_for('provinces_list', slug=meta.slug) }}">Edit Provinces &rarr;</a>
+      <a class="button" href="{{ url_for('leaders_list', slug=meta.slug) }}">Edit Heroes &rarr;</a>
+    </p>
   </div>
 {% else %}
   <div class="panel" style="border-left: 6px solid var(--phase-world);">
