@@ -64,10 +64,12 @@ against it:
 - **Density is confirmed wrong.** The real generator produces a fixed
   *total* feature count for the whole map (128 or 230, by
   ``gamevers``), placed by rejection-sampled random coordinates -- not
-  this module's own per-province independent 60%/20%/10% chances. This
+  this module's own per-province independent 60%/20%/10% chances. ~~This
   module's density model has not been rewired to the real one yet
   (that needs a live generated map to place features onto, the same
-  integration gap `worldgen.place_map`'s own callers still have).
+  integration gap `worldgen.place_map`'s own callers still have).~~ --
+  **see the Phase 364 correction below the three bullets**: that
+  integration gap closed, just not by rewiring this module.
 - **``MAG_POOL`` ("Magic Pool") is confirmed wrong as Sea-only.** This
   module's own inference (every sourced guardian monster for it is
   aquatic) doesn't hold: the real generator's own terrain table lists
@@ -91,13 +93,31 @@ against it:
   species are exactly the ones whose real ``mfeat1..mfeat2`` range is
   ``MAG_POOL..MAELSTROM``.
 
-This module's actual generator function (`generate_world_features`) is
+~~This module's actual generator function (`generate_world_features`) is
 deliberately left unchanged for now -- rewiring it to the real formulas
 needs the whole spatial placement loop (`later_placement`/
 `rejection_rule`), which itself needs a live generated map to run
 against, consistent with every other worldgen phase's own "formulas
 now, spatial wiring later" split (Phase 353/354, Phase 355's
-special-race pass, Phase 358's extra mercenary band).
+special-race pass, Phase 358's extra mercenary band).~~
+
+**Stale as of Phase 364 -- the "whole spatial placement loop" this
+paragraph called a blocker was built, closing the integration gap in
+full, but as an entirely separate module, not by rewiring this
+function.** `worldgen/feature_placement.py place_all_features()`
+implements `first_2k_placement`/`later_placement`/`rejection_rule`
+directly against `worldgen/feature_generation.py`'s own already-confirmed
+`propose_monster()`/`propose_feature_type()`/`is_terrain_compatible()`
+(Phase 359), and `worldgen/generate_new_game.py` calls *that* function
+(`from ak_engine.worldgen.feature_placement import place_all_features`)
+for the real generation pipeline -- never this module's own
+`generate_world_features()`, which today is exercised only by
+`tests/test_world_generation.py` and has no live caller anywhere in
+`ak_engine`. This module's own density/terrain/guardian-selection
+formulas above were correctly superseded, not merely left pending --
+`generate_world_features()` is this project's original, since-replaced
+guess at the mechanic, kept for its own historical test coverage, not a
+function still awaiting integration.
 
 **Phase 360 addendum**: the real magic-item/treasure assignment has
 also now been found (``world_generation.magic_item_province_placement``
@@ -119,10 +139,18 @@ this module's own treasure draw was guessed wrong too:
   -- an item id from the source maps directly onto those ordinals with
   no new data needed.
 
-As with the feature-terrain correction above, `generate_world_features`
+~~As with the feature-terrain correction above, `generate_world_features`
 itself is left unchanged -- wiring the shared cursor in needs features
 processed in their real generation order, the same spatial-integration
-gap already noted.
+gap already noted.~~ -- **stale as of Phase 365, the same "closed
+elsewhere" shape as the Phase 364 correction above**: `worldgen/
+magic_item_placement.py`'s own docstring records that `worldgen/
+generate_new_game.py` (~lines 642-648) now calls `initial_item_cursor()`/
+`feature_gets_item_slot()`/`cursor_to_treasure()`/`next_item_cursor()`
+in sequence, iterating `placements` from `place_all_features()`'s own
+real generation order -- exactly the wiring this paragraph called
+missing, landed the very next phase, again in the separate real
+pipeline rather than in this module.
 """
 
 from __future__ import annotations
