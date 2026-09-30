@@ -715,3 +715,96 @@ def test_save_feature_missing_feature_shows_an_error_not_a_crash(tmp_path):
 
     assert response.status_code == 200
     assert b"Feature not found" in response.data
+
+
+def test_turn_zero_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/turn0")
+
+    assert response.status_code == 200
+    assert b"no world yet" in response.data
+
+
+def test_turn_zero_list_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/turn0", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_turn_zero_list_shows_every_kingdom(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turn0")
+
+    assert response.status_code == 200
+    assert b"Aldric" in response.data
+    assert b"Elara" in response.data
+
+
+def test_turn_zero_view_shows_the_report_and_no_action_report_section(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turn0/1")
+
+    assert response.status_code == 200
+    assert b"PROVINCES" in response.data
+    assert b"ACTION REPORT" not in response.data
+
+
+def test_turn_zero_view_unknown_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turn0/999", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Kingdom not found" in response.data
+
+
+def test_turn_zero_view_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/turn0/1", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_turn_zero_download_serves_a_text_attachment(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turn0/1/download")
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/plain"
+    assert "attachment" in response.headers["Content-Disposition"]
+    assert b"PROVINCES" in response.data
+
+
+def test_turn_zero_download_unknown_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turn0/999/download", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Kingdom not found" in response.data
+
+
+def test_turn_zero_reports_do_not_advance_the_turn_number(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    client.get(f"/games/{meta.slug}/turn0/1")
+    client.get(f"/games/{meta.slug}/turn0/1/download")
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.turn_number == 1

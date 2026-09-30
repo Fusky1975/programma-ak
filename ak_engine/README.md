@@ -37557,6 +37557,55 @@ supply of any of these doesn't have to be re-derived from scratch:
   "Pnone" is the enum's own real name with no underscore to split on --
   not a display bug to chase, unlike Phase 969's genuine one). Full
   suite: 7208 passed (8 new tests).
+
+  **Phase 972: Turn 0 Reports (`webapp/reports.py` + `/games/<slug>/turn0`
+  routes) -- Phase 6 of the plan, the step between "Create World" and the
+  turn-processing cycle Phase 7 will add.** Every King's own starting
+  letter report, viewable and downloadable as plain text, meant to be
+  handed to that player so they can prepare real Turn 1 moves in the
+  already-supported text format.
+
+  **A real design decision, not just an implementation detail**:
+  `process_turn(state, [])` (zero move files) was tried first, since the
+  plan's own "Scoperte chiave" section flagged it as the likely candidate
+  for a turn-0 report and asked for it to be verified against a real
+  freshly generated world before assuming it works. It doesn't, for this
+  purpose -- confirmed by actually running it: despite zero orders, it
+  still executes a full turn's own random dispatch (a real "visited by a
+  Hero from Valhalla" event fired in testing) and advances `state.
+  turn_number` from 1 to 2, which is correct for "a turn nobody moved in"
+  but wrong for a report meant to show only the world's own just-
+  generated starting state before any turn has run. `webapp/reports.py
+  turn_zero_report()` instead calls `report/turn_report.py
+  compose_letter_report()` directly with an empty `results` list (no
+  `PhaseDispatchResult` -- no orders have ever existed) and no
+  `run_turn()` call at all, so `turn_number` never moves and ACTION
+  REPORT renders as no section at all (confirmed empty, not a "None at
+  present" row) rather than a fabricated one.
+
+  Real-browser Playwright verification against an actual 2-King
+  generated world produced a report indistinguishable in *shape* from a
+  genuine `SE3__T*.K*` sample -- LETTER REPORTS, STATE OF THE NATION,
+  DIPLOMACY, FINANCES (a real "Gold in treasury: 10" line), PROVINCES,
+  CHARACTERS (including the world-gen's own independent Heroes, not just
+  the King), ARMIES, IMPERIAL OFFICE REPORT, ADVENTURE (real monster
+  lairs/treasures from the just-created Features), ELECTION STATUS --
+  confirming `compose_letter_report()`'s own existing section set
+  produces a genuinely complete, realistic report from nothing but a
+  freshly generated `GameState`, with no special-casing needed beyond
+  the empty `results` list.
+
+  Per the plan's own explicit v1 scope decision, this same per-Kingdom
+  report (already containing that Kingdom's full PROVINCES/CHARACTERS/
+  ARMIES status) is offered as the stand-in for the real, still
+  unreverse-engineered binary XK export -- the screen says so explicitly
+  rather than silently presenting one as the other. Verified with new
+  `tests/test_webapp_reports.py` (turn number never advances, no ACTION
+  REPORT section, reflects a live World Editor edit, genuinely differs
+  per Kingdom) and new `test_webapp_app.py` route tests (list/view/
+  download, both missing-game and unknown-Kingdom error paths, the
+  download's own `Content-Disposition` attachment header). Full suite:
+  7222 passed (14 new tests).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

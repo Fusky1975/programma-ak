@@ -17,7 +17,7 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, Response, redirect, render_template, request, url_for
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
@@ -52,6 +52,7 @@ from ak_engine.webapp.players import (
     list_players,
     remove_player,
 )
+from ak_engine.webapp.reports import turn_zero_report
 from ak_engine.webapp.world_creation import (
     RosterOutOfBoundsError,
     WorldAlreadyCreatedError,
@@ -502,5 +503,47 @@ def create_app(games_root: Path | None = None) -> Flask:
         feature.magic_power = magic_power
         save_game(root, slug, state)
         return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id))
+
+    @app.get("/games/<slug>/turn0")
+    def turn_zero_list(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        return render_template("turn_zero_list.html", meta=meta, state=state, error=request.args.get("error"))
+
+    @app.get("/games/<slug>/turn0/<int:kingdom_id>")
+    def turn_zero_view(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        if kingdom_id not in state.kingdoms:
+            return redirect(url_for("turn_zero_list", slug=slug, error="Kingdom not found."))
+        return render_template(
+            "turn_zero_view.html",
+            meta=meta,
+            kingdom=state.kingdoms[kingdom_id],
+            lines=turn_zero_report(state, kingdom_id),
+        )
+
+    @app.get("/games/<slug>/turn0/<int:kingdom_id>/download")
+    def turn_zero_download(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        if kingdom_id not in state.kingdoms:
+            return redirect(url_for("turn_zero_list", slug=slug, error="Kingdom not found."))
+        lines = turn_zero_report(state, kingdom_id)
+        kingdom_name = state.kingdoms[kingdom_id].name.replace(" ", "_")
+        return Response(
+            "\n".join(lines),
+            mimetype="text/plain",
+            headers={"Content-Disposition": f'attachment; filename="SE_T0_{kingdom_name}.txt"'},
+        )
 
     return app
