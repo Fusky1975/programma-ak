@@ -8,6 +8,7 @@ from ak_engine.models.hero_roster import STANDARD_HERO_ROSTER
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.province_names import PROVINCE_NAME_POOLS
 from ak_engine.models.power import Power
 from ak_engine.models.race import Race
 from ak_engine.turn.movement import MapBounds, hex_distance, neighbors
@@ -716,6 +717,42 @@ def test_every_kings_home_also_reveals_its_own_real_neighbors_to_that_kingdom():
             neighbor_province = result.provinces.get(neighbor_coord)
             assert neighbor_province is not None
             assert neighbor_province.known_to_kingdom(kingdom_id)
+
+
+def test_every_province_gets_a_real_name_not_left_unnamed():
+    # Phase 983: no call site here ever set ProvinceState.name before
+    # this phase, so every province fell back to its own (x, y)
+    # coordinate everywhere a report/the webapp displays one.
+    # turn/rename_province.py assign_province_name() and models/
+    # province_names.py's own real, fixture-verified PRNAMES.PAS pools
+    # already existed -- this just wires them in.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for province in result.provinces.values():
+        assert province.name
+
+
+def test_every_province_name_comes_from_its_own_terrain_pool():
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for province in result.provinces.values():
+        assert province.name in PROVINCE_NAME_POOLS[province.terrain]
+
+
+def test_province_names_are_reproducible_for_the_same_seed():
+    game_state_a, kings_a = _setup()
+    result_a = generate_new_game(PascalRandom(seed=1), game_state_a, kings_a, gamevers=1)
+
+    game_state_b, kings_b = _setup()
+    result_b = generate_new_game(PascalRandom(seed=1), game_state_b, kings_b, gamevers=1)
+
+    assert {coord: p.name for coord, p in result_a.provinces.items()} == {
+        coord: p.name for coord, p in result_b.provinces.items()
+    }
 
 
 def test_every_kings_home_carries_exactly_two_features():

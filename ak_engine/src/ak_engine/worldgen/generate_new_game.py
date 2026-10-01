@@ -362,6 +362,7 @@ the real reports exactly, instead of "None at present".
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 
 from ak_engine.models.alignment import Alignment
@@ -378,6 +379,7 @@ from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_HERO_BY_NAME
 from ak_engine.turn.move_execution import reveal_adjacent_provinces
 from ak_engine.turn.movement import MapBounds
+from ak_engine.turn.rename_province import assign_province_name
 from ak_engine.turn.strength import ELEPHANTS_STRENGTH_RANGE
 from ak_engine.worldgen.feature_placement import place_all_features
 from ak_engine.worldgen.hero_talent_generation import roll_alignment, roll_skill_and_aptitude_table, roll_temper
@@ -906,6 +908,31 @@ def generate_new_game(
         king_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
         home_coord = home_coord_by_king[king.leader_id]
         reveal_adjacent_provinces(game_state, game_state.provinces[home_coord], king_kingdom_id, bounds)
+
+    # Phase 983: every generated province gets a real name -- confirmed
+    # missing here directly: no call site anywhere in this function ever
+    # set `ProvinceState.name`, so every province fell back to its own
+    # `(x, y)` coordinate everywhere a report/the webapp displays one
+    # (the PROVINCES table, the Phase 981 home-province neighbor
+    # paragraph, the hex map tooltip). `turn/rename_province.py
+    # assign_province_name()` and `models/province_names.py`'s own
+    # terrain-keyed pools (`PRNAMES.PAS`, real and already fixture-
+    # verified -- see that module's own docstring) already existed,
+    # fully built, just never called from world generation. Uses a
+    # fresh `random.Random` seeded from this same call's own
+    # `PascalRandom` stream (one more `irand()` draw) rather than the
+    # `PascalRandom` itself, which has no `choice()` method and isn't
+    # what `assign_province_name()` expects -- no real source documents
+    # a selection formula here anyway (that function's own docstring:
+    # "no real source documents how the original engine avoided
+    # collisions, since it never generated names at runtime at all").
+    # Seeding from `rng.irand()` instead of an unseeded `random.Random()`
+    # keeps `generate_new_game(PascalRandom(seed=N), ...)` fully
+    # reproducible for a given `N`, matching every other RNG consumption
+    # in this function.
+    naming_rng = random.Random(rng.irand())
+    for coord in game_state.provinces:
+        assign_province_name(game_state, coord, naming_rng)
 
     # Phase 892: "create province armies and one extra mercenary band per
     # King" -- world_generation.province_population_order's own stage 6
