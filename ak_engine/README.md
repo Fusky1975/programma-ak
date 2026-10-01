@@ -37760,6 +37760,46 @@ supply of any of these doesn't have to be re-derived from scratch:
   real Turn 1 processing run that crowns one) and a real-browser
   Playwright screenshot against the live Turn 7 demo state. Full suite:
   7265 passed (2 new tests).
+
+  **Phase 976: a real packaging bug, found while building a one-click
+  Windows launcher for the user to try the GM interface themselves.**
+  The user asked for a double-clickable Windows file; since a launcher
+  with no local source checkout to point at has to run a genuine
+  non-editable `pip install` (there's nothing to `-e .` back to), this
+  session built and ran one end to end as a pre-flight check before
+  handing it over -- and hit a real `jinja2.exceptions.TemplateNotFound:
+  games_list.html` on the very first page load. `pyproject.toml` had no
+  `[tool.setuptools.package-data]` entry at all, so setuptools only ever
+  packaged this project's `.py` files; `webapp/templates/*.html` and
+  `webapp/static/*.css` were silently excluded from any real install.
+
+  Invisible throughout Phases 964-975: every workflow that ever ran this
+  app -- the dev server, every `pytest` run, every manual/Playwright
+  browser check across this whole GM-interface build -- used either the
+  source tree directly or an editable install (`pip install -e .`),
+  both of which just point back at those same on-disk files regardless
+  of any packaging declaration. A real non-editable install was never
+  actually exercised until this session needed one for an end user who
+  has no source checkout at all.
+
+  Fixed by adding the missing `package-data` declaration
+  (`"ak_engine.webapp" = ["templates/*.html", "static/*.css"]`). Verified
+  by rebuilding the install from scratch in a clean virtualenv and
+  confirming both a real page (`GET /`) and the stylesheet
+  (`GET /static/style.css`) now return 200 from the installed package,
+  not just the source tree -- the exact gap a source-tree-only check
+  could never have caught. New `tests/test_packaging.py` guards the
+  `pyproject.toml` declaration itself plus that its glob patterns still
+  cover every real template/static file this package ships, so a future
+  new template under a different extension can't silently fall outside
+  it again. Full suite: 7267 passed (2 new tests).
+
+  Also delivered, outside this repository (a Windows `.bat` launcher +
+  README isn't source code this project tracks): a standalone launcher
+  script that downloads this branch as a zip (no `git` required on the
+  user's machine), installs it with `pip install ".[webapp]"`, and opens
+  the GM interface in the browser -- the real artifact this packaging
+  fix was needed for in the first place.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
