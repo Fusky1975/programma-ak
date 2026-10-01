@@ -20,7 +20,7 @@ from ak_engine.worldgen.generate_new_game import (
 )
 from ak_engine.worldgen.initial_armies import BEST_ATYPE, COMMANDER_NONE
 from ak_engine.worldgen.king_home_placement import MIN_HOME_DISTANCE
-from ak_engine.worldgen.leader_placement import COMPANIONS_PER_KING, owner_leader_count
+from ak_engine.worldgen.leader_placement import COMPANIONS_PER_KING, RESERVED_ROSTER_COUNT, owner_leader_count
 from ak_engine.models.treasure import TREASURE_CATEGORY, TreasureCategory
 from ak_engine.worldgen.magic_item_placement import item_slot_count
 from ak_engine.worldgen.mercenary_band import hex_ring
@@ -429,6 +429,23 @@ def test_every_king_gets_exactly_two_companions_at_their_own_home():
             assert companion.name == STANDARD_HERO_ROSTER[companion.leader_id]
 
 
+def _lords(result, kings):
+    # Phase 979: generate_new_game() now also places "remaining mercenary
+    # heroes" (kingdom_id=None, same as a lord) at coordinates not tied to
+    # any humanoid province, so kingdom_id=None alone no longer uniquely
+    # identifies a lord. Both roles draw from the same ascending-id
+    # unused_hero_ids iterator, lords first, so a lord's own id is always
+    # lower than every mercenary's -- the lowest lord_count independent
+    # ids are exactly the lords.
+    king_ids = {king.leader_id for king in kings}
+    humanoid_count = sum(1 for province in result.provinces.values() if province.race in _HUMANOID_RACES)
+    lord_count = owner_leader_count(humanoid_count, 100, len(kings)) - len(kings)
+    independent_ids = sorted(
+        leader.leader_id for leader in result.leaders.values() if leader.leader_id not in king_ids and leader.kingdom_id is None
+    )
+    return [result.leaders[leader_id] for leader_id in independent_ids[:lord_count]]
+
+
 def test_independent_lords_govern_free_humanoid_provinces_as_independent_heroes():
     # Phase 426: "le altre province umanoidi libere ricevono un leader
     # non ancora usato. Il leader diventa Hired... la propria razza
@@ -439,11 +456,8 @@ def test_independent_lords_govern_free_humanoid_provinces_as_independent_heroes(
     rng = PascalRandom(seed=1)
     result = generate_new_game(rng, game_state, kings, gamevers=1)
 
-    king_ids = {king.leader_id for king in kings}
     king_homes = {king.home_coord for king in kings}
-    lords = [
-        leader for leader in result.leaders.values() if leader.leader_id not in king_ids and leader.kingdom_id is None
-    ]
+    lords = _lords(result, kings)
     assert lords
     for lord in lords:
         assert lord.location not in king_homes
@@ -455,18 +469,25 @@ def test_independent_lords_govern_free_humanoid_provinces_as_independent_heroes(
         assert lord.name == STANDARD_HERO_ROSTER[lord.leader_id]
 
 
-def test_lord_count_matches_the_confirmed_owner_leader_count_formula():
+def test_total_leader_count_matches_leader_count_minus_king_count_minus_reserved():
+    # Phase 979: "remaining mercenary heroes" (leftover hero_pool ids
+    # beyond lords+companions) are now materialized too, so the total
+    # leader count should equal leader_count(100) - king_count, minus the
+    # one still-unmaterialized RESERVED_ROSTER_COUNT slot (its own name
+    # source is a separate, still-open gap -- see generate_new_game.py's
+    # own docstring) -- independently confirmed against two real GW world
+    # files from different actual historical games, each showing the
+    # *full* leader_count - king_count (90 for a 10-King/v3 game, 247 for
+    # a 3-King/v4/250-slot game) once that one reserved slot is counted
+    # back in.
     game_state, kings = _setup()
     rng = PascalRandom(seed=1)
     result = generate_new_game(rng, game_state, kings, gamevers=1)
 
-    king_ids = {king.leader_id for king in kings}
-    lord_count = sum(
-        1 for leader in result.leaders.values() if leader.leader_id not in king_ids and leader.kingdom_id is None
-    )
-    humanoid_count = sum(1 for province in result.provinces.values() if province.race in _HUMANOID_RACES)
-    expected_lord_count = owner_leader_count(humanoid_count, 100, len(kings)) - len(kings)
-    assert lord_count == expected_lord_count
+    # Kings occupy the same id range heroes otherwise would, one-for-one,
+    # so the *total* materialized leader count (Kings + Heroes) is simply
+    # leader_count minus the still-reserved slot, independent of king_count.
+    assert len(result.leaders) == 100 - RESERVED_ROSTER_COUNT
 
 
 def test_no_leader_id_is_reused_across_kings_lords_and_companions():
@@ -481,6 +502,42 @@ def test_no_leader_id_is_reused_across_kings_lords_and_companions():
     )
     companion_count = COMPANIONS_PER_KING * len(kings)
     assert non_king_count == lord_count + companion_count
+
+
+def _mercenaries(result, kings):
+    """The complement of `_lords()` among kingdom_id=None non-King leaders --
+    see `_lords()`'s own docstring comment for why id order distinguishes them."""
+
+    king_ids = {king.leader_id for king in kings}
+    lord_ids = {lord.leader_id for lord in _lords(result, kings)}
+    return [
+        leader
+        for leader in result.leaders.values()
+        if leader.leader_id not in king_ids and leader.kingdom_id is None and leader.leader_id not in lord_ids
+    ]
+
+
+def test_remaining_mercenary_heroes_are_placed_off_sea_and_off_king_homes():
+    # Phase 979: closes the "remaining mercenary heroes" gap -- every
+    # hero_pool id left over after lords and companions is now a real
+    # LeaderState, independent (kingdom_id=None like a lord), placed via
+    # worldgen/leader_placement.py's own confirmed draw_mercenary_
+    # relocation_coordinate() ("redraw while on Sea or in a King-owned
+    # province; sharing a lord-owned province is allowed").
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    king_homes = {king.home_coord for king in kings}
+    mercenaries = _mercenaries(result, kings)
+    assert mercenaries
+    for mercenary in mercenaries:
+        assert mercenary.location not in king_homes
+        assert result.provinces[mercenary.location].terrain is not Terrain.SEA
+        assert mercenary.race == result.provinces[mercenary.location].race
+        assert mercenary.skills is not None
+        assert mercenary.alignment is not None
+        assert mercenary.name == STANDARD_HERO_ROSTER[mercenary.leader_id]
 
 
 def _setup_naval(king_count: int = 3) -> tuple[GameState, list[KingSetup]]:

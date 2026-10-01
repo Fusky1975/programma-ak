@@ -195,22 +195,66 @@ specific Hero ends up where as a project-original convention, not a
 recovered fact; the *counts*, *race rules*, and *talent formula* are
 all real and sourced as described above.
 
+10. **Remaining mercenary heroes (Phase 979)** -- "place Kings,
+    independent lords, companions and remaining mercenary heroes"'s own
+    fourth and last role. **Reverses this module's own earlier Phase
+    426 conclusion that this was unsourced and therefore left
+    unmaterialized** -- found stale while chasing a real user-reported
+    bug (a 2-King webapp game producing only 27 total leaders, far
+    below the ~96 their own real historical games showed):
+    ``worldgen/leader_placement.py``'s own ``draw_mercenary_relocation_
+    coordinate()`` ("redraw coordinates while on Sea or in a King-owned
+    province; sharing a lord-owned province is allowed") is listed in
+    that module's own docstring under "Confirmed exactly and
+    implemented here, each cross-checked against the source's own two
+    worked real-game examples" -- the very same two examples
+    ``remaining_mercenary_count()`` is checked against, including
+    ``GW900_K4``'s own non-zero ``remaining_mercenaries: 46`` -- yet it
+    sat unused, the exact same "confirmed formula, never wired into the
+    orchestrator" shape as ``worldgen/king_talent.py
+    build_king_skill_table()`` before this same investigation. The
+    earlier "Earth_V-mode repositioning, not ordinary-mode starting
+    location" caveat is not repeated here as settled fact -- it
+    contradicts the sibling module's own, more specific sourcing
+    citation, and this project has no surviving primary document in
+    this environment to adjudicate between the two; a human with the
+    original ``AKGEN`` reverse-engineering material should correct this
+    if the caveat turns out to be right after all. Race is overwritten
+    to the landing coordinate's own native race, reusing
+    ``independent_lord_effects()``'s own convention for the one other
+    non-Home leader role (no source covers a mercenary's race
+    specifically). **Independently verified against two real, user-
+    supplied ``GW`` world files from two different actual historical
+    games** (3-King/``game_version=4``/250-slot roster: 247 real heroes;
+    10-King/``game_version=3``/100-slot roster, cross-referenced against
+    the pre-existing ``GW3__T1`` fixture): both match ``leader_count -
+    king_count`` exactly, with zero unexplained gap -- this phase closes
+    that gap for every king count, not just the ones with zero leftover
+    mercenaries (``GW3_T1_K10``'s own worked example happens to have
+    ``remaining_mercenaries: 0``, so it alone could never have caught
+    this).
+
 **Deliberately NOT implemented here**, each a genuine, separately
 documented gap carried over from the phases that already found it --
 none invented past here:
 
-- **Remaining mercenary heroes**: after lords and companions, any
-  leftover roster ids (``remaining_mercenary_count()``) are simply never
-  materialized as a ``LeaderState`` -- their non-``Earth_V`` "resting"
-  location is confirmed absent from the source (only the ``Earth_V``-
-  mode *repositioning* rule survived, not where an ordinary-mode
-  mercenary starts before it), so inventing one would be a guess.
 - **The reserved last roster id**: excluded from ``hero_pool`` entirely
   (no talents rolled, no ``LeaderState`` created) -- its own "attached
   separately to a Home" placement rule was already flagged by Phase 357
   as too ambiguous to code (this is the Valhalla-visitor-reserved slot,
   ``models/valhalla.py``'s own separate mechanic, not a King-loadable
-  Hero).
+  Hero). **Phase 979 addendum**: both real ``GW`` files checked for the
+  remaining-mercenary fix above independently confirm this slot *is*
+  always populated in a real game, and by a name that really is in
+  ``models/valhalla.py VALHALLA_ROSTER`` (not a coincidence -- "Kitralus"
+  in the 10-King/``v3`` game, "Kelderek" in the 3-King/``v4`` game, both
+  verified present there), strengthening rather than resolving the
+  existing gap note. One further, unconfirmed pattern spotted in
+  passing, not acted on: both are the *last* entry of their own
+  Alignment's bucket tuple (``Kitralus`` closes ``Alignment.NEUTRAL``,
+  ``Kelderek`` closes ``Alignment.PAGAN``) -- two data points, not
+  enough to name a selection rule, but a concrete lead for whoever
+  revisits this.
 - **Ordinary (non-Home, non-special-race) humanoid provinces' first
   recruit slot and army**: **closed, Phase 797** (backlog #22's own
   land-side half) -- ``worldgen/initial_armies.py humanoid_first_slot()``
@@ -344,6 +388,7 @@ from ak_engine.worldgen.internal_magical_locations import resolve_power, resolve
 from ak_engine.worldgen.king_home_placement import choose_king_home, king_is_naval, second_recruit_slot
 from ak_engine.worldgen.leader_placement import (
     COMPANIONS_PER_KING,
+    draw_mercenary_relocation_coordinate,
     draw_second_companion_race,
     independent_lord_effects,
     king_home_effects,
@@ -659,6 +704,40 @@ def generate_new_game(
                     race=companion_race,
                 )
             )
+
+    # Phase 979: "remaining mercenary heroes" -- the third and last of
+    # "place Kings, independent lords, companions and remaining
+    # mercenary heroes"'s own four roles, closing the gap this module's
+    # own docstring previously left open. worldgen/leader_placement.py's
+    # own `draw_mercenary_relocation_coordinate()` ("redraw coordinates
+    # while on Sea or in a King-owned province; sharing a lord-owned
+    # province is allowed") is already confirmed and Monte Carlo-tested
+    # against the real GW900_K4 example -- the same worked example whose
+    # own `remaining_mercenaries: 46` is what `remaining_mercenary_
+    # count()` matches exactly -- but was never actually called from
+    # here. Race is overwritten to the landing province's own native
+    # race, the same convention independent_lord_effects() already uses
+    # for a lord (no sourced rule covers a non-owning mercenary's race
+    # specifically, so this reuses the one other role's own precedent
+    # rather than inventing a new one).
+    is_sea = lambda coord: grid[coord] is Terrain.SEA  # noqa: E731
+    is_king_owned = lambda coord: coord in king_home_set  # noqa: E731
+    for hero_id in unused_hero_ids:
+        alignment, skills = hero_pool[hero_id]
+        coord = draw_mercenary_relocation_coordinate(rng, width, height, is_sea, is_king_owned)
+        game_state.add_leader(
+            LeaderState(
+                leader_id=hero_id,
+                kingdom_id=None,
+                name=STANDARD_HERO_ROSTER[hero_id],
+                location=coord,
+                skills=skills,
+                birth_x=coord.x,
+                birth_y=coord.y,
+                alignment=alignment,
+                race=race_grid[coord],
+            )
+        )
 
     for coord, terrain in grid.items():
         race = race_grid[coord]

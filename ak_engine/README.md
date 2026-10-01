@@ -37889,6 +37889,70 @@ supply of any of these doesn't have to be re-derived from scratch:
   open pending the user confirming real hero-count figures that don't
   yet reconcile with the already-fixture-verified `leader_count=100`
   formula.
+
+  **Phase 979: the "remaining mercenary heroes" gap above, closed --
+  with two real, user-supplied `GW` world files from different actual
+  historical games settling the question Phase 978 left open.** Neither
+  matched the user's own recalled hero counts (96 for 2 Kings, 86 for
+  12) exactly, but both independently confirmed the *shape* of the
+  formula with zero discrepancy once checked directly: a 10-King/
+  `game_version=3`/100-slot-roster file (cross-referenced against this
+  project's own pre-existing `GW3__T1` fixture, byte-identical but for
+  line endings) shows exactly 90 Heroes; a freshly-supplied 3-King/
+  `game_version=4`/250-slot-roster file shows exactly 247 -- both
+  exactly `leader_count - king_count`, the same formula `remaining_
+  mercenary_count()`/`owner_leader_count()`/`companion_count()` already
+  implemented and tested since Phase 357, just never fully wired into
+  `generate_new_game()`.
+
+  The missing piece was sitting unused in the same sibling module:
+  `worldgen/leader_placement.py draw_mercenary_relocation_coordinate()`
+  ("redraw coordinates while on Sea or in a King-owned province; sharing
+  a lord-owned province is allowed") is listed in that module's own
+  docstring as "confirmed exactly... cross-checked against the source's
+  own two worked real-game examples" -- the same two examples `remaining_
+  mercenary_count()` is checked against -- yet nothing ever called it,
+  the identical "confirmed formula, never wired into the orchestrator"
+  shape as Phase 978's own `build_king_skill_table()` finding one phase
+  earlier. `generate_new_game()` now places every leftover roster id
+  this way, race set to the landing coordinate's own native race
+  (reusing `independent_lord_effects()`'s own convention, the one other
+  non-Home role, since no source covers a mercenary's race specifically).
+  This reverses this module's own prior Phase 426 conclusion that the
+  location was unrecoverable ("only the Earth_V-mode repositioning rule
+  survived") -- that caveat directly contradicts the sibling module's
+  own, more specific sourcing citation, and this project has no
+  surviving primary document in this environment to adjudicate between
+  them; flagged in the code for a human with the original material to
+  correct if the older caveat turns out to be right after all.
+
+  One slot deliberately still isn't materialized: the reserved last
+  roster id (Phase 357's own "attached separately to a Home, too
+  ambiguous to code"). Both real files independently strengthen that
+  gap rather than closing it: each shows this slot real and populated,
+  by a name genuinely found in `models/valhalla.py`'s own `VALHALLA_
+  ROSTER` ("Kitralus" for the 10-King game, "Kelderek" for the 3-King
+  one) -- not `STANDARD_HERO_ROSTER`, confirming Phase 357's "separate
+  mechanic" guess was right, though not yet how one gets selected. Both
+  happen to be the *last* entry of their own Alignment's bucket tuple --
+  a concrete lead, not a confirmed rule from just two data points, left
+  for whoever revisits this with more real files.
+
+  A 2-King game (the user's own original test scenario) now generates
+  97 Heroes (99 of 100 roster slots filled, only the reserved slot
+  still open) instead of 27. Verified with a new `test_generate_new_
+  game.py` test (`test_remaining_mercenary_heroes_are_placed_off_sea_
+  and_off_king_homes`) plus a total-count invariant test against the
+  newly-confirmed formula; two pre-existing tests that had silently
+  conflated "every independent (`kingdom_id=None`) leader is a lord"
+  needed their own filtering corrected now that mercenaries share that
+  same property (lords and mercenaries draw from the same ascending-id
+  pool, lords first, so id order still separates them cleanly). Two
+  unrelated integration tests with hardcoded seed-dependent feature
+  facts (`test_use_mi_item_creation_integration.py`) needed the same
+  "re-scan after a new RNG draw lands earlier in the pipeline" update
+  this project has already done after five earlier phases for the exact
+  same reason. Full suite: 7283 passed (3 new tests, 2 re-scanned).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
