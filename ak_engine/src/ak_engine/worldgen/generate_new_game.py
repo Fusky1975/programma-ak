@@ -373,12 +373,14 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import roll_monster_alignment
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.models.valhalla import VALHALLA_HERO_BY_NAME
+from ak_engine.turn.move_execution import reveal_adjacent_provinces
 from ak_engine.turn.movement import MapBounds
 from ak_engine.turn.strength import ELEPHANTS_STRENGTH_RANGE
 from ak_engine.worldgen.feature_placement import place_all_features
-from ak_engine.worldgen.hero_talent_generation import roll_alignment, roll_skill_and_aptitude_table
+from ak_engine.worldgen.hero_talent_generation import roll_alignment, roll_skill_and_aptitude_table, roll_temper
 from ak_engine.worldgen.initial_armies import (
     COMMANDER_NONE,
     INITIAL_ARMY_QUALITY,
@@ -660,12 +662,17 @@ def generate_new_game(
     # here versus still deferred (mercenaries, the reserved roster slot).
     king_leader_ids = frozenset(king.leader_id for king in kings)
     reserved_roster_id = leader_count - 1
-    hero_pool: dict[int, tuple[Alignment, SkillTable]] = {}
+    hero_pool: dict[int, tuple[Alignment, SkillTable, Temper]] = {}
     for hero_id in range(leader_count):
         if hero_id in king_leader_ids or hero_id == reserved_roster_id:
             continue
         alignment = roll_alignment(rng)
-        hero_pool[hero_id] = (alignment, roll_skill_and_aptitude_table(hero_id, alignment, rng))
+        # Phase 982: roll_temper()'s own docstring explains why this
+        # draw (unlike roll_alignment() right above it) has no real
+        # source -- a uniform pick added only to close the "every
+        # ordinary generated hero's CHARACTERS row says Unkn" gap,
+        # user-confirmed over leaving it unset.
+        hero_pool[hero_id] = (alignment, roll_skill_and_aptitude_table(hero_id, alignment, rng), roll_temper(rng))
     unused_hero_ids = iter(sorted(hero_pool))
 
     humanoid_coords = [coord for coord in grid if race_grid[coord] in _HUMANOID_RACES]
@@ -676,7 +683,7 @@ def generate_new_game(
         hero_id = next(unused_hero_ids, None)
         if hero_id is None:
             break
-        alignment, skills = hero_pool[hero_id]
+        alignment, skills, temper = hero_pool[hero_id]
         lord_effects = independent_lord_effects(hero_id, coord, race_grid[coord])
         game_state.add_leader(
             LeaderState(
@@ -688,6 +695,7 @@ def generate_new_game(
                 birth_x=lord_effects.leader_born_coord.x,
                 birth_y=lord_effects.leader_born_coord.y,
                 alignment=alignment,
+                temper=temper,
                 race=lord_effects.leader_race,
             )
         )
@@ -699,7 +707,7 @@ def generate_new_game(
             hero_id = next(unused_hero_ids, None)
             if hero_id is None:
                 break
-            alignment, skills = hero_pool[hero_id]
+            alignment, skills, temper = hero_pool[hero_id]
             companion_race = king.race if companion_index == 0 else draw_second_companion_race(king.race, rng)
             game_state.add_leader(
                 LeaderState(
@@ -711,6 +719,7 @@ def generate_new_game(
                     birth_x=home_coord.x,
                     birth_y=home_coord.y,
                     alignment=alignment,
+                    temper=temper,
                     race=companion_race,
                 )
             )
@@ -733,7 +742,7 @@ def generate_new_game(
     is_sea = lambda coord: grid[coord] is Terrain.SEA  # noqa: E731
     is_king_owned = lambda coord: coord in king_home_set  # noqa: E731
     for hero_id in unused_hero_ids:
-        alignment, skills = hero_pool[hero_id]
+        alignment, skills, temper = hero_pool[hero_id]
         coord = draw_mercenary_relocation_coordinate(rng, width, height, is_sea, is_king_owned)
         game_state.add_leader(
             LeaderState(
@@ -745,6 +754,7 @@ def generate_new_game(
                 birth_x=coord.x,
                 birth_y=coord.y,
                 alignment=alignment,
+                temper=temper,
                 race=race_grid[coord],
             )
         )
@@ -876,6 +886,26 @@ def generate_new_game(
                     is_skeletal=index == 0 and first_army_is_skeletal,
                 )
             )
+
+    # Phase 982: a King starts physically present in their own Home
+    # province, the same real "known provinces" floor `turn/move_
+    # execution.py reveal_adjacent_provinces()` already grants any
+    # Kingdom entering a province during a turn (Phase 623) -- confirmed
+    # missing here directly: every real Turn-0 report the user supplied
+    # describes the Home province's own 6 real neighbors by name/race/
+    # ruler (`report/turn_report.py describe_home_province_neighbors()`,
+    # Phase 981), which requires each neighbor to already be `known_to_
+    # kingdom()` (>=1% explored) at world-creation time -- before this,
+    # only the Home province itself ever got an `explored_percent_by_
+    # kingdom` entry, so `describe_map_report()`'s own ASCII map showed
+    # just that one cell. Run once per King, after every `ProvinceState`
+    # above already exists (`reveal_adjacent_provinces()` looks up each
+    # neighbor's own real `ProvinceState`, which the loop above may not
+    # have reached yet mid-iteration).
+    for king in kings:
+        king_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
+        home_coord = home_coord_by_king[king.leader_id]
+        reveal_adjacent_provinces(game_state, game_state.provinces[home_coord], king_kingdom_id, bounds)
 
     # Phase 892: "create province armies and one extra mercenary band per
     # King" -- world_generation.province_population_order's own stage 6

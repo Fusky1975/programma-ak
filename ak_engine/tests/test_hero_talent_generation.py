@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
+from ak_engine.models.temper import Temper
 from ak_engine.worldgen.hero_talent_generation import (
     FAVORED_ALIGNMENT,
     INDEPENDENT_TRAINING_ABILITIES,
     ORDINARY_ALIGNMENT_ROLL,
+    TEMPER_ROLL,
     primary_increment,
     raw_aptitude_increment,
     roll_alignment,
@@ -13,8 +15,26 @@ from ak_engine.worldgen.hero_talent_generation import (
     roll_primary_ability,
     roll_skill_and_aptitude_table,
     roll_skill_table,
+    roll_temper,
 )
 from ak_engine.worldgen.pascal_random import PascalRandom
+
+
+def test_temper_roll_covers_all_four_real_tempers():
+    assert set(TEMPER_ROLL) == set(Temper)
+
+
+def test_roll_temper_matches_a_uniform_25_percent_split():
+    # Phase 982: no real source for this draw (unlike roll_alignment()
+    # above) -- user-confirmed uniform-random stopgap, see roll_temper()'s
+    # own docstring.
+    rng = PascalRandom(seed=1)
+    n = 100_000
+    counts = {t: 0 for t in TEMPER_ROLL}
+    for _ in range(n):
+        counts[roll_temper(rng)] += 1
+    for temper in TEMPER_ROLL:
+        assert abs(counts[temper] / n - 0.25) < 0.01
 
 
 def test_ordinary_alignment_roll_excludes_divine_and_undead():

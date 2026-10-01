@@ -469,6 +469,26 @@ def test_independent_lords_govern_free_humanoid_provinces_as_independent_heroes(
         assert lord.name == STANDARD_HERO_ROSTER[lord.leader_id]
 
 
+def test_every_ordinary_hero_gets_a_real_temper_not_left_unknown():
+    # Phase 982: no real source covers a generated hero's own starting
+    # Temper (unlike Alignment, roll_alignment() above) -- user-
+    # confirmed uniform-random roll_temper() over leaving it unset,
+    # which previously rendered every ordinary hero's own CHARACTERS row
+    # as "Unkn". Kings (player-chosen at setup) and the reserved roster
+    # slot (a fixed real Valhalla stat, checked separately above) are
+    # excluded -- this covers every lord/companion/mercenary instead.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    king_leader_ids = {king.leader_id for king in kings}
+    reserved_roster_id = len(result.leaders) - 1
+    for leader_id, leader in result.leaders.items():
+        if leader_id in king_leader_ids or leader_id == reserved_roster_id:
+            continue
+        assert leader.temper is not None
+
+
 def test_total_leader_count_matches_leader_count_exactly():
     # Phase 979 (+ its own addendum): "remaining mercenary heroes" and
     # the reserved last roster id are both materialized now, so for
@@ -672,6 +692,30 @@ def test_every_kings_home_starts_fully_explored():
         province = result.provinces[home_coord]
         assert province.explored_percent == 100
         assert province.explored_percent_by_kingdom.get(kingdom_id) == 100
+
+
+def test_every_kings_home_also_reveals_its_own_real_neighbors_to_that_kingdom():
+    # Phase 982: a King starts physically present in their own Home --
+    # the same real "known provinces" floor `turn/move_execution.py
+    # reveal_adjacent_provinces()` already grants any Kingdom entering a
+    # province during a turn (Phase 623), now also applied once at
+    # world-creation time. Every real Turn-0 report the user supplied
+    # names the Home province's own 6 real neighbors
+    # (`report/turn_report.py describe_home_province_neighbors()`, Phase
+    # 981) -- which needs each neighbor already `known_to_kingdom()`
+    # (>=1% explored), not just the Home province itself (Phase 428).
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+    bounds = MapBounds(result.board_width, result.board_height)
+
+    for king in kings:
+        home_coord = result.leaders[king.leader_id].location
+        kingdom_id = result.leaders[king.leader_id].kingdom_id
+        for neighbor_coord in neighbors(home_coord, bounds):
+            neighbor_province = result.provinces.get(neighbor_coord)
+            assert neighbor_province is not None
+            assert neighbor_province.known_to_kingdom(kingdom_id)
 
 
 def test_every_kings_home_carries_exactly_two_features():

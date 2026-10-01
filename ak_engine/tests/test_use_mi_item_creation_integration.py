@@ -85,6 +85,17 @@ prior rescan's, ``827``, rather than the usual small one; the
 ``SKILL_BOOK``-category feature keeps feature_id 95/``GI_CLAM``/win
 seed ``5`` unchanged (that specific treasure+guardian pairing wasn't
 affected by this particular shift).
+
+Re-scanned again after Phase 982 added ``roll_temper()`` (one
+``PascalRandom`` draw per ordinary generated hero, consumed in the same
+``hero_pool``-building loop ``roll_alignment()``'s own draw already
+sits in, well before ``place_all_features()``), the identical class of
+shift once more: feature_id 1 keeps its own real facts unchanged (still
+a ``MINOTAUR``, win seed ``827`` still wins -- this particular shift
+happened not to move that specific pairing); the ``SKILL_BOOK``-category
+feature moved to feature_id 13, still guarded by a ``GI_CLAM`` (the
+same real monster as every prior rescan, just a new feature id and a
+different book, ``BOOK_SAGE``), win seed ``5`` unchanged.
 """
 
 from __future__ import annotations
@@ -116,10 +127,10 @@ _SEARCHER_LEADER_ID = 999
 # -- a real, reproducible fact, not a tuning choice; its own win seed is
 # correspondingly large for an unskilled Searcher.
 _SEARCH_WIN_SEED = 827
-# feature_id 95 (GI_CLAM guarding a Tactical skill book) is the
+# feature_id 13 (GI_CLAM guarding a Sage skill book) is the
 # SKILL_BOOK-category feature this test now targets -- picked for a
 # weak guardian (hp 14-27, melee skill 0) so the win seed stays small.
-_BOOK_FEATURE_ID = 95
+_BOOK_FEATURE_ID = 13
 _BOOK_SEARCH_WIN_SEED = 5
 
 
@@ -159,9 +170,9 @@ def test_world_generated_treasure_reaches_state_items_via_a_search_win():
 
 def test_a_world_generated_and_search_won_book_is_directly_usable_via_use_mi():
     # This project's real generate_new_game(seed=1) scenario places a
-    # BOOK_TACTICAL on feature_id 95 (guarded by a GI_CLAM) -- not tuned
+    # BOOK_SAGE on feature_id 13 (guarded by a GI_CLAM) -- not tuned
     # for that, just what this fixed, reproducible generation run
-    # produces (see _BOOK_FEATURE_ID's own Phase 979 note above). Any
+    # produces (see _BOOK_FEATURE_ID's own Phase 982 note above). Any
     # SKILL_BOOK category member would exercise the same chain.
     state = _generate_game()
     feature = next(f for f in state.features.values() if f.feature_id == _BOOK_FEATURE_ID)
