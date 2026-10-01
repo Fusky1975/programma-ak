@@ -686,7 +686,7 @@ def create_app(games_root: Path | None = None) -> Flask:
         except GameNotFoundError:
             return redirect(url_for("games_list", error="Game not found."))
         directory = game_dir(root, slug)
-        uploads = uploaded_move_files(directory, state.turn_number)
+        uploads = uploaded_move_files(directory, state.turn_number, state.kingdoms.keys())
         return render_template(
             "turns_hub.html",
             meta=meta,
@@ -707,7 +707,9 @@ def create_app(games_root: Path | None = None) -> Flask:
         if upload is None or not upload.filename:
             return redirect(url_for("turns_hub", slug=slug, error="Please choose a move file to upload."))
         try:
-            save_uploaded_move_file(game_dir(root, slug), state.turn_number, upload.filename, upload.read())
+            save_uploaded_move_file(
+                game_dir(root, slug), state.turn_number, upload.filename, upload.read(), state.kingdoms.keys()
+            )
         except InvalidMoveFileError as exc:
             return redirect(url_for("turns_hub", slug=slug, error=f"{upload.filename}: not a valid move file ({exc})."))
         return redirect(url_for("turns_hub", slug=slug))
@@ -719,7 +721,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             meta, state = open_game(root, slug)
         except GameNotFoundError:
             return redirect(url_for("games_list", error="Game not found."))
-        remove_uploaded_move_file(game_dir(root, slug), state.turn_number, kingdom_id)
+        remove_uploaded_move_file(game_dir(root, slug), state.turn_number, kingdom_id, state.kingdoms.keys())
         return redirect(url_for("turns_hub", slug=slug))
 
     @app.post("/games/<slug>/turns/process")

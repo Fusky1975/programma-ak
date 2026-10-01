@@ -37800,6 +37800,35 @@ supply of any of these doesn't have to be re-derived from scratch:
   user's machine), installs it with `pip install ".[webapp]"`, and opens
   the GM interface in the browser -- the real artifact this packaging
   fix was needed for in the first place.
+
+  **Phase 977: a second real bug found by a self-review pass of the Turn
+  Processing Cycle -- an uploaded move file's own ``.K<N>`` suffix was
+  never checked against this game's real Kingdoms.** Confirmed
+  concretely before fixing: a plain copy of the repo's own real
+  `AK3__T1.K1` sample, renamed to the unrelated `AK3__T1.K99`, parses
+  without error (`Kingdom.kingdom_id` is read straight off the filename,
+  not validated against anything) and would have been accepted by the
+  upload form outright. Processing a turn with that file on disk would
+  have fed it straight into `process_turn()`, whose own `turn/kingdom_
+  bridge.py sync_leaders_from_kingdom()` trusts the filename-derived
+  Kingdom id unconditionally -- reassigning a real leader (matched by
+  `leader_id`, found in `state.leaders` regardless of which Kingdom they
+  actually belong to) to Kingdom #99, which doesn't exist in this game.
+  `webapp/turn_processing.py`'s own `uploaded_move_files()`/`save_
+  uploaded_move_file()`/`remove_uploaded_move_file()` now all take the
+  game's real `valid_kingdom_ids` (`state.kingdoms.keys()`) and reject or
+  filter out anything outside it -- at upload time (a clear "not a valid
+  move file" error, same path a parse failure already used) and, as a
+  second layer, in the listing itself (so a file that reached the folder
+  some other way, e.g. a GM editing it directly on disk, still can't
+  surface).
+
+  Verified with new `tests/test_webapp_turn_processing.py` cases (the
+  upload-time rejection and cleanup, the listing-level filter for a file
+  placed directly on disk) and a new `test_webapp_app.py` route test
+  confirming the real upload form rejects such a file with neither real
+  Kingdom showing a spurious upload. Full suite: 7270 passed (3 new
+  tests).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

@@ -43,42 +43,65 @@ def _generated_state():
 
 
 def test_uploaded_move_files_on_a_fresh_dir_is_empty(tmp_path):
-    assert uploaded_move_files(tmp_path, 1) == {}
+    assert uploaded_move_files(tmp_path, 1, {1}) == {}
 
 
 def test_save_uploaded_move_file_makes_it_listable_by_its_real_kingdom_id(tmp_path):
-    kingdom_id = save_uploaded_move_file(tmp_path, 1, "AK3__T1.K1", _REAL_MOVE_FILE)
+    kingdom_id = save_uploaded_move_file(tmp_path, 1, "AK3__T1.K1", _REAL_MOVE_FILE, {1})
 
     assert kingdom_id == 1
-    files = uploaded_move_files(tmp_path, 1)
+    files = uploaded_move_files(tmp_path, 1, {1})
     assert list(files.keys()) == [1]
     assert files[1].name == "AK3__T1.K1"
 
 
 def test_save_uploaded_move_file_with_garbage_content_raises_and_cleans_up(tmp_path):
     with pytest.raises(InvalidMoveFileError):
-        save_uploaded_move_file(tmp_path, 1, "AK3__T1.K1", b"not a real move file at all")
+        save_uploaded_move_file(tmp_path, 1, "AK3__T1.K1", b"not a real move file at all", {1})
 
-    assert uploaded_move_files(tmp_path, 1) == {}
+    assert uploaded_move_files(tmp_path, 1, {1}) == {}
 
 
 def test_save_uploaded_move_file_with_no_k_suffix_raises(tmp_path):
     with pytest.raises(InvalidMoveFileError):
-        save_uploaded_move_file(tmp_path, 1, "not_a_move_file.txt", _REAL_MOVE_FILE)
+        save_uploaded_move_file(tmp_path, 1, "not_a_move_file.txt", _REAL_MOVE_FILE, {1})
+
+
+def test_save_uploaded_move_file_for_a_kingdom_not_in_this_game_raises_and_cleans_up(tmp_path):
+    # A copy of a real sample renamed to an unrelated .K99 suffix parses
+    # cleanly on its own -- only the valid_kingdom_ids check catches it.
+    # Without this, process_turn()'s own sync_leaders_from_kingdom() would
+    # trust the stray number and reassign a real leader's kingdom_id to
+    # a Kingdom that doesn't exist in this game.
+    with pytest.raises(InvalidMoveFileError):
+        save_uploaded_move_file(tmp_path, 1, "AK3__T1.K99", _REAL_MOVE_FILE, {1, 2})
+
+    assert uploaded_move_files(tmp_path, 1, {1, 2, 99}) == {}
 
 
 def test_remove_uploaded_move_file_removes_it(tmp_path):
-    save_uploaded_move_file(tmp_path, 1, "AK3__T1.K1", _REAL_MOVE_FILE)
+    save_uploaded_move_file(tmp_path, 1, "AK3__T1.K1", _REAL_MOVE_FILE, {1})
 
-    remove_uploaded_move_file(tmp_path, 1, 1)
+    remove_uploaded_move_file(tmp_path, 1, 1, {1})
 
-    assert uploaded_move_files(tmp_path, 1) == {}
+    assert uploaded_move_files(tmp_path, 1, {1}) == {}
 
 
 def test_uploaded_move_files_are_scoped_per_turn_number(tmp_path):
-    save_uploaded_move_file(tmp_path, 1, "AK3__T1.K1", _REAL_MOVE_FILE)
+    save_uploaded_move_file(tmp_path, 1, "AK3__T1.K1", _REAL_MOVE_FILE, {1})
 
-    assert uploaded_move_files(tmp_path, 2) == {}
+    assert uploaded_move_files(tmp_path, 2, {1}) == {}
+
+
+def test_uploaded_move_files_filters_out_a_kingdom_not_in_this_game(tmp_path):
+    # Simulates a file that reached disk some other way (e.g. a GM editing
+    # the folder directly) rather than through save_uploaded_move_file()'s
+    # own guard -- the listing itself must still never surface it.
+    moves_dir = tmp_path / "moves" / "turn_1"
+    moves_dir.mkdir(parents=True)
+    (moves_dir / "AK3__T1.K99").write_bytes(_REAL_MOVE_FILE)
+
+    assert uploaded_move_files(tmp_path, 1, {1, 2}) == {}
 
 
 def test_process_and_save_current_turn_advances_turn_number_and_saves_reports(tmp_path):

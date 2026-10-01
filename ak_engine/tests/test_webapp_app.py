@@ -918,6 +918,23 @@ def test_upload_invalid_move_file_shows_an_error_not_a_crash(tmp_path):
     assert b"not a valid move file" in response.data
 
 
+def test_upload_move_file_for_an_unknown_kingdom_shows_an_error_and_does_not_affect_real_kingdoms(tmp_path):
+    # A copy of a real sample renamed to an unrelated .K99 parses cleanly
+    # on its own (confirmed) -- without a Kingdom-membership check, it
+    # would be accepted and, on processing, sync_leaders_from_kingdom()
+    # would reassign a real leader's kingdom_id to the nonexistent #99.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)  # Kingdoms 1 (Aldric) and 2 (Elara) only
+
+    response = _upload_move_file(client, meta.slug, "AK3__T1.K99")
+
+    assert response.status_code == 200
+    assert b"not a valid move file" in response.data
+    # Neither real Kingdom shows an upload -- the bad file was rejected
+    # outright, not silently attributed to one of them.
+    assert response.data.count(b"Not uploaded") == 2
+
+
 def test_remove_uploaded_move_file_removes_it(tmp_path):
     # The upload form's own instructional text also mentions "AK3__T1.K1"
     # as an example filename, so check the upload-status count instead of
