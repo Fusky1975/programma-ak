@@ -43,6 +43,25 @@ behavior a simple always-on/always-off race term could never reproduce.
     else:
         LCost = base_cost
 
+**Phase 984 exclusion, not part of the dossier above -- a real-sample-
+confirmed correction to this project's own reuse of the formula**: the
+surcharge's own "born in a province the King now owns" condition is
+true of a King's own two starting companions by construction (both are
+born at the King's own Home, `worldgen/generate_new_game.py`'s own
+`COMPANIONS_PER_KING` loop), not because of any conquest -- and 2 of
+the 4 real Turn-0 samples this project has (K1's Teleko/Evil under
+Uga-Buga/Undead, K3's Garin/Pagan under Kwoth/Neutral) show exactly
+this situation (a starting companion whose own real Alignment
+genuinely differs from their King's), yet both report that companion
+paying the *same* gold as their own aligned companion counterpart --
+the surcharge the formula would otherwise add there is simply never
+observed. `LeaderState.is_starting_companion` (set only by that same
+`COMPANIONS_PER_KING` loop) now gates the surcharge off for exactly
+this one case, confirmed with the user directly (2026-10-01) after a
+user-reported "5 gold pay" anomaly traced to exactly this gap. Every
+other real Hire scenario the dossier's own disassembly covers (a Lord/
+mercenary Hero, `is_starting_companion` always `False`) is unaffected.
+
 ``h``/``k`` are the real engine's own internal leader indices (``LKing``
 resolves a King to *his own* leader index, not a separate "kingdom id"
 concept the Pascal source doesn't have) -- this project's own
@@ -176,6 +195,10 @@ def required_pay(state: GameState, hero: LeaderState, king: LeaderState | None) 
     (``None`` if no King is currently recorded for the kingdom -- treated
     as "no data," the same permissive default as a missing alignment or
     temper).
+
+    ``hero.is_starting_companion`` (Phase 984) skips the "conquest
+    surcharge" term -- see module docstring's own Phase 984 addendum for
+    the real-sample evidence this exclusion is based on.
     """
 
     if king is None:
@@ -187,7 +210,8 @@ def required_pay(state: GameState, hero: LeaderState, king: LeaderState | None) 
     king_alignment = king.alignment
     hero_alignment = hero.alignment
     if (
-        king_alignment is not None
+        not hero.is_starting_companion
+        and king_alignment is not None
         and king_alignment is not Alignment.DIVINE
         and hero_alignment is not None
         and hero_alignment != king_alignment

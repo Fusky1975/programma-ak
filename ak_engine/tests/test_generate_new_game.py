@@ -428,6 +428,10 @@ def test_every_king_gets_exactly_two_companions_at_their_own_home():
             assert companion.alignment is not None
             assert companion.is_king is False
             assert companion.name == STANDARD_HERO_ROSTER[companion.leader_id]
+            # Phase 984: gates turn/hire_pay.py required_pay()'s own
+            # conquest surcharge off for a starting companion -- see
+            # that function's own Phase 984 docstring addendum.
+            assert companion.is_starting_companion is True
 
 
 def _lords(result, kings):
@@ -468,6 +472,10 @@ def test_independent_lords_govern_free_humanoid_provinces_as_independent_heroes(
         assert lord.skills is not None
         assert lord.alignment is not None
         assert lord.name == STANDARD_HERO_ROSTER[lord.leader_id]
+        # Phase 984: only a King's own two starting companions get this
+        # flag -- an independent Lord was never placed into a King's
+        # own service at all, so the question doesn't even arise.
+        assert lord.is_starting_companion is False
 
 
 def test_every_ordinary_hero_gets_a_real_temper_not_left_unknown():

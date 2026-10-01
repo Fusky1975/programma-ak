@@ -723,6 +723,12 @@ def generate_new_game(
                     alignment=alignment,
                     temper=temper,
                     race=companion_race,
+                    # Phase 984: turn/hire_pay.py required_pay()'s own
+                    # "conquest surcharge" would otherwise fire for a
+                    # misaligned starting companion simply for being
+                    # born at the King's own Home -- real-sample-
+                    # confirmed wrong, see that function's own docstring.
+                    is_starting_companion=True,
                 )
             )
 

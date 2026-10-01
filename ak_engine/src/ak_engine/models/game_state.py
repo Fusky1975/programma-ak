@@ -864,6 +864,29 @@ class LeaderState:
     # `KingdomState.alignment` existed; `turn/hire_pay.py`'s
     # required-pay formula is this field's first real consumer.
     alignment: Alignment | None = None
+    # Phase 984: True only for a King's own two starting companions,
+    # placed directly into his service at world generation
+    # (`worldgen/generate_new_game.py`'s own `COMPANIONS_PER_KING` loop)
+    # -- never set for a Lord/mercenary Hero, who always starts with
+    # `kingdom_id=None` until a real Hire order (if any) later assigns
+    # one. `turn/hire_pay.py required_pay()`'s own "conquest surcharge"
+    # (a misaligned Hero born in a province the King now owns pays +1)
+    # is confirmed, from 4 real Turn-0 samples, to NOT apply to a
+    # starting companion: two of those samples have a starting
+    # companion whose Alignment genuinely differs from their own King's
+    # (K1's Teleko/Evil under Uga-Buga/Undead, K3's Garin/Pagan under
+    # Kwoth/Neutral), yet both report that companion paying *exactly*
+    # the same gold as their own aligned companion counterpart -- the
+    # surcharge the formula would otherwise add is simply never
+    # present. The surcharge's own real condition ("born in a province
+    # the King now owns") is true of every starting companion by
+    # construction (born at the King's own Home), not because of any
+    # conquest -- this flag lets `required_pay()` tell the two cases
+    # apart without guessing from `kingdom_id`/`birth_x`/`birth_y` alone,
+    # which look identical for both. Confirmed with the user directly
+    # (2026-10-01) after a user-reported "5 gold pay" anomaly traced to
+    # exactly this gap.
+    is_starting_companion: bool = False
     # Phase 193: kingdom ids currently watching this leader via a successful
     # Clairvoyance cast -- see module docstring. Not auto-cleared.
     clairvoyance_watchers: set[int] = field(default_factory=set)

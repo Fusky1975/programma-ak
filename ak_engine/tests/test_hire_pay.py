@@ -38,6 +38,7 @@ def _leader(
     birth_y: int | None = None,
     is_king: bool = False,
     skills: SkillTable | None = None,
+    is_starting_companion: bool = False,
 ) -> LeaderState:
     return LeaderState(
         leader_id,
@@ -51,6 +52,7 @@ def _leader(
         birth_x=birth_x,
         birth_y=birth_y,
         skills=skills,
+        is_starting_companion=is_starting_companion,
     )
 
 
@@ -198,6 +200,25 @@ def test_required_pay_conquest_surcharge_skipped_without_a_recorded_birth_coordi
     hero = _leader(_HERO_ID, alignment=Alignment.DRUID, temper=Temper.BRAVE, race=Race.HUMAN)  # no birth_x/birth_y
 
     assert required_pay(state, hero, king) == 2
+
+
+def test_required_pay_conquest_surcharge_skipped_for_a_starting_companion():
+    # Phase 984: a King's own starting companion is born at his own Home
+    # by construction, not by conquest -- 2 of the 4 real Turn-0 samples
+    # this project has (K1's Teleko/Evil under Uga-Buga/Undead, K3's
+    # Garin/Pagan under Kwoth/Neutral) show a misaligned starting
+    # companion paying the *same* gold as their own aligned companion
+    # counterpart, confirming the surcharge never actually applies here.
+    state = make_state()
+    state.provinces[HexCoord(7, 7)] = ProvinceState(HexCoord(7, 7), terrain=Terrain.PLAINS, race=Race.HUMAN, owner_kingdom_id=1)
+    king = _leader(_KING_ID, kingdom_id=1, alignment=Alignment.GOOD, temper=Temper.BRAVE, is_king=True, skills=HIGH_SKILL)
+    companion = _leader(
+        _HERO_ID, alignment=Alignment.DRUID, temper=Temper.BRAVE, race=Race.HUMAN, birth_x=7, birth_y=7, is_starting_companion=True
+    )
+    ordinary_hero = _leader(_HERO_ID, alignment=Alignment.DRUID, temper=Temper.BRAVE, race=Race.HUMAN, birth_x=7, birth_y=7)
+
+    assert required_pay(state, companion, king) == 3
+    assert required_pay(state, ordinary_hero, king) == 4  # same inputs, surcharge still applies
 
 
 # -- Phase 264: "In rare occasioni..." bypass --------------------------------
