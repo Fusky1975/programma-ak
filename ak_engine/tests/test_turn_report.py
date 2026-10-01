@@ -35,6 +35,7 @@ from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import TREASURE_NAME, Treasure
 from ak_engine.turn.feature_power_execution import FeaturePowerAttemptResult
+from ak_engine.turn.movement import Direction, neighbor_in_direction_wrapped
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.random_encounter_execution import RandomEncounterResult
 from ak_engine.report.turn_report import (
@@ -90,6 +91,7 @@ from ak_engine.report.turn_report import (
     describe_diplomacy_report,
     describe_feature_discovery,
     describe_finances_report,
+    describe_home_province_neighbors,
     describe_letter_reports,
     describe_provinces_report,
     describe_aspy,
@@ -11254,6 +11256,142 @@ def test_describe_provinces_report_uses_effective_terrain_not_illusory():
     lines = describe_provinces_report(state, 1)
 
     assert lines[-1] == _province_row("Drowned Fen", "Human", "Plain", 0)
+
+
+# -- Phase 981: describe_home_province_neighbors() --
+
+
+def _neighbor_coord(home: HexCoord, direction: Direction, state: GameState) -> HexCoord:
+    coord = neighbor_in_direction_wrapped(home, direction, state.board_width, state.board_height)
+    assert coord is not None
+    return coord
+
+
+def test_describe_home_province_neighbors_intro_names_the_home_province():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+
+    lines = describe_home_province_neighbors(state, 1)
+
+    assert any("The province of Capital City belongs to your Majesty." in line for line in lines)
+
+
+def test_describe_home_province_neighbors_names_a_claimed_humanoid_neighbor_with_full_army_names():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    state.add_kingdom(KingdomState(2, "Elfland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=2, name="Thranduil", location=HexCoord(0, 0), is_king=True, race=Race.ELVEN))
+    neighbor = _neighbor_coord(home, Direction.E, state)
+    state.add_province(
+        ProvinceState(
+            neighbor,
+            Terrain.FOREST,
+            Race.ELVEN,
+            owner_kingdom_id=2,
+            name="Elftown",
+            recruit_type_1=ArmyType.BOWMEN,
+            recruit_type_2=ArmyType.HVY_CAVALRY,
+        )
+    )
+
+    paragraph = " ".join(describe_home_province_neighbors(state, 1))
+
+    assert "Elftown" in paragraph
+    assert "It is ruled by Thranduil." in paragraph
+    assert "Their Elven warriors fight as Bowmen and Heavy Cavalry." in paragraph
+
+
+def test_describe_home_province_neighbors_unclaimed_humanoid_neighbor_still_gets_a_warriors_sentence():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    neighbor = _neighbor_coord(home, Direction.W, state)
+    state.add_province(
+        ProvinceState(neighbor, Terrain.JUNGLE, Race.ORCISH, owner_kingdom_id=None, name="Macondo", recruit_type_1=ArmyType.PHALANX)
+    )
+
+    paragraph = " ".join(describe_home_province_neighbors(state, 1))
+
+    assert "where no one rules" in paragraph
+    assert "Their Orcish warriors fight as Phalanx." in paragraph
+
+
+def test_describe_home_province_neighbors_unclaimed_monster_neighbor_gets_a_muster_sentence():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    neighbor = _neighbor_coord(home, Direction.NE, state)
+    state.add_province(ProvinceState(neighbor, Terrain.MTNS, Race.EAGLES, owner_kingdom_id=None, name="Shasta"))
+
+    paragraph = " ".join(describe_home_province_neighbors(state, 1))
+
+    assert "no one rules there" in paragraph
+    assert "If need be, they can muster an army of Eagles to defend their province." in paragraph
+
+
+def test_describe_home_province_neighbors_omits_a_no_race_neighbor():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    neighbor = _neighbor_coord(home, Direction.NE, state)
+    state.add_province(ProvinceState(neighbor, Terrain.SEA, Race.NO_RACE, owner_kingdom_id=None))
+
+    paragraph = " ".join(describe_home_province_neighbors(state, 1))
+
+    assert "no races" not in paragraph
+
+
+def test_describe_home_province_neighbors_top_edge_uses_the_icy_expanse_line_and_drops_the_northeast_sentence():
+    state = GameState()
+    home = HexCoord(5, 0)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Birchwood"))
+
+    lines = describe_home_province_neighbors(state, 1)
+    paragraph = " ".join(lines)
+
+    assert "To the north lay an icy expanse which extends as far as the eye can see." in paragraph
+    assert "northeast" not in paragraph
+
+
+def test_describe_home_province_neighbors_empty_when_home_province_missing():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(5, 5)))
+    # No ProvinceState ever added at (5, 5).
+
+    assert describe_home_province_neighbors(state, 1) == []
+
+
+# -- Phase 981: compose_letter_report()'s own include_home_province_narrative flag --
+
+
+def test_compose_letter_report_omits_home_province_narrative_by_default():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+
+    lines = compose_letter_report([], state, 1, random.Random(1))
+
+    assert not any("belongs to your Majesty" in line for line in lines)
+
+
+def test_compose_letter_report_includes_home_province_narrative_when_requested():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+
+    lines = compose_letter_report([], state, 1, random.Random(1), include_home_province_narrative=True)
+
+    assert any("The province of Capital City belongs to your Majesty." in line for line in lines)
 
 
 # -- Phase 278: Tax + Recruiting Types columns --

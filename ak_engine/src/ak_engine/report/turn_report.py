@@ -1312,6 +1312,7 @@ from __future__ import annotations
 
 import itertools
 import random
+import textwrap
 from typing import Sequence
 
 from ak_engine.models.enums import (
@@ -1352,7 +1353,14 @@ from ak_engine.models.power import (
     PowerCondition,
 )
 from ak_engine.models.quote import quote_of_the_week
-from ak_engine.models.race import HUMANOID_RACES, RACE_FANATICISM_TITLE, RACE_NAME, Race
+from ak_engine.models.race import (
+    HUMANOID_RACES,
+    RACE_ADJECTIVE,
+    RACE_FANATICISM_TITLE,
+    RACE_NAME,
+    RACE_PLURAL_NAME,
+    Race,
+)
 from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.discovery import (
     DISCOVERY_NAME,
@@ -1408,7 +1416,7 @@ from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalM
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.imperial_intelligence import known_bordering_kingdom_tax_bases, known_bordering_kingdom_treasuries
 from ak_engine.turn.leader_visibility import known_mercenary, leader_location_known_to_kingdom
-from ak_engine.turn.movement import MapBounds, hex_distance_wrapped
+from ak_engine.turn.movement import Direction, MapBounds, hex_distance_wrapped, neighbor_in_direction_wrapped
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 from ak_engine.turn.discovery_effects import (
     effective_skill_level,
@@ -12393,6 +12401,213 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
     return lines
 
 
+# Phase 981: the Birthright (Turn 0) report's own per-direction home-
+# province neighbor paragraph -- real, sourced text that was never wired
+# into this composer at all before this phase. `turn/movement.py`'s own
+# Phase 314 addendum already quotes this exact paragraph (from 5 real
+# `SE3__T0.K*` samples the user supplied directly), but only as evidence
+# for reverse-engineering hex adjacency -- it never actually generated
+# this paragraph in a report. Cross-referencing all 5 samples (24
+# individual neighbor descriptions total) against each other confirms:
+#
+# - **A fixed opening clause per compass position** (not per-report --
+#   the same position always opens the same way within one sample, the
+#   real variation is *between* different Kings' own reports, which
+#   this implementation doesn't reproduce -- see below).
+# - **The ending sentence depends on the neighbor's own race, not on
+#   whether it's currently claimed**: a `HUMANOID_RACES` neighbor (Human/
+#   Elf/Dwarf/Orc) always ends "Their <adjective> warriors fight as
+#   <recruit types>." -- even when unclaimed (real example: Macondo
+#   (#205), Orcs, "where no one rules.  Their Orcish warriors prefer to
+#   fight in the style of Phalanx."). A non-humanoid neighbor (Eagles,
+#   Dragons, Were-Beasts in the real samples) always ends "...they can
+#   muster an army of <race> to defend their province." instead -- real
+#   monster races have no organized "warriors" of their own.
+# - **"Ruled by no one"** is independent of the above -- any unclaimed
+#   neighbor's ruler clause says so, civilized or not.
+# - **The board's own top/bottom edge collapses the NE+NW (or,
+#   symmetrically, SE+SW) pair into one line**: confirmed directly for
+#   the north case (a home province on `y == 0` drops its NE sentence
+#   entirely and replaces NW's with "To the north lay an icy expanse
+#   which extends as far as the eye can see." -- real sample, Birchwood
+#   (#0301)). The south case is this project's own inference by hex-
+#   geometric symmetry (`_EVEN_ROW_OFFSETS`/`_ODD_ROW_OFFSETS` both give
+#   NE/NW the same `dy` and SE/SW the same, opposite `dy`, regardless of
+#   row parity -- see `turn/movement.py neighbor_in_direction_wrapped()`),
+#   not independently confirmed by a real sample reaching the board's
+#   own bottom row.
+#
+# **Deliberately not reproduced** (documented gaps, not oversights):
+# - The real reports vary several synonyms this implementation fixes to
+#   one choice per slot: the opening verb ("Looking to"/"Turning to" the
+#   northeast), the ruled-by/owed-allegiance verb for the home province's
+#   own intro sentence, "warriors"/"fighters", "fight as"/"array
+#   themselves as"/"array themselves in the style of", and the muster
+#   sentence's own "an army of"/"a host of"/"they can call on". A
+#   prosperity adjective ("rich"/"poor"/"prosperous"/"scenic", seen on
+#   both the home province's own intro and some neighbors) isn't
+#   reproduced either -- no reliable tax-tier-to-adjective formula could
+#   be calibrated from only 5 samples, and showing one sometimes and not
+#   others would look like a bug, not a feature.
+# - One real sample (Belladonna, #0302) shows a neighbor at the SE
+#   position using what is everywhere else this project's own NW-shaped
+#   template ("a Forest area owned by no one, where Werefolk dwell")
+#   instead of SE's own usual shape -- a single anomalous data point out
+#   of 24, read as further confirmation of inter-report randomization
+#   this implementation doesn't attempt to reproduce (see above), not a
+#   second per-direction shape to add.
+# - The real paragraph is a raw, column-wrapped character stream (even
+#   splitting one real word, "southwestern", mid-word across a line
+#   break) -- `textwrap.wrap()` below word-wraps instead, matching the
+#   real ~77-column width without that artifact.
+
+_NEIGHBOR_OPENERS: dict[Direction, str] = {
+    Direction.NE: "Looking to the northeast, one can see",
+    Direction.E: "To the east lies",
+    Direction.SE: "Southeast of here lies",
+    Direction.SW: "Viewing the southwestern horizon, one can see",
+    Direction.W: "To the west there lies",
+    Direction.NW: "Northwest of here is",
+}
+
+_NORTH_ICE_CAP_LINE = "To the north lay an icy expanse which extends as far as the eye can see."
+_SOUTH_ICE_CAP_LINE = "To the south lay an icy expanse which extends as far as the eye can see."
+
+
+def _real_province_number(coord: HexCoord) -> str:
+    """The real province-number convention confirmed by `turn/movement.py`'s
+    own Phase 314 addendum (`x*100 + y`, each zero-padded to 2 digits
+    before concatenation, e.g. ``(3, 5)`` -> ``"0305"``) -- distinct
+    from, and not reusing, `turn/hex_numbering.py encode_hex_number()`'s
+    own row-major formula, an earlier hypothesis Phase 314 superseded.
+    """
+
+    return f"{coord.x:02d}{coord.y:02d}"
+
+
+def _neighbor_ending(race: Race, race_plural: str, race_adjective: str, province: ProvinceState) -> str:
+    if race in HUMANOID_RACES:
+        # The real paragraph's own full army-type names ("Heavy
+        # Cavalry") -- not `ARMY_TYPE_DESIGNATION`'s abbreviated table
+        # column form ("Hvy Cav") the PROVINCES table above uses.
+        type1 = ARMY_TYPE_NAME[province.recruit_type_1] if province.recruit_type_1 is not None else None
+        type2 = ARMY_TYPE_NAME[province.recruit_type_2] if province.recruit_type_2 is not None else None
+        types = " and ".join(t for t in (type1, type2) if t)
+        if types:
+            return f"Their {race_adjective} warriors fight as {types}."
+        return f"Their {race_adjective} warriors stand ready to defend their province."
+    return f"If need be, they can muster an army of {race_plural} to defend their province."
+
+
+def _describe_neighbor_sentence(direction: Direction, coord: HexCoord, state: GameState) -> str | None:
+    province = state.provinces.get(coord)
+    if province is None:
+        return None
+    if province.race is Race.NO_RACE:
+        # None of the 5 real samples this paragraph was sourced from
+        # ever shows an uninhabited neighbor -- every real ArmyType
+        # template below expects an actual race, so there's no sourced
+        # text to render here rather than the broken "populated by no
+        # races" this would otherwise produce. Omitted entirely, same
+        # "nothing to say" convention as a missing province above.
+        return None
+
+    name = province.name if province.name else f"({coord.x}, {coord.y})"
+    number = _real_province_number(coord)
+    terrain_name = TERRAIN_NAME[province.effective_terrain()]
+    race_plural = RACE_PLURAL_NAME[province.race]
+    race_adjective = RACE_ADJECTIVE[province.race]
+    owner = state.kingdoms.get(province.owner_kingdom_id) if province.owner_kingdom_id is not None else None
+    ruler_name = _leader_name(state, _king_leader_id(state, owner.kingdom_id)) if owner is not None else None
+    ending = _neighbor_ending(province.race, race_plural, race_adjective, province)
+
+    if direction is Direction.NE:
+        ruler_clause = f"{ruler_name} rules there" if ruler_name else "no one rules there"
+        return (
+            f"{_NEIGHBOR_OPENERS[direction]} a {terrain_name} area, which is known as {name} "
+            f"(#{number}).  It is populated by {race_plural} and {ruler_clause}.  {ending}"
+        )
+    if direction is Direction.E:
+        ruled_clause = f"It is ruled by {ruler_name}." if ruler_name else "It is ruled by no one."
+        return (
+            f"{_NEIGHBOR_OPENERS[direction]} a {terrain_name} area called {name} (#{number}), "
+            f"populated by {race_plural}.  {ruled_clause}  {ending}"
+        )
+    if direction is Direction.SE:
+        ruled_by = ruler_name if ruler_name else "no one"
+        return (
+            f"{_NEIGHBOR_OPENERS[direction]} the province of {name} (#{number}), ruled by {ruled_by}.  "
+            f"It is said to be a {terrain_name} province inhabited by {race_plural}.  {ending}"
+        )
+    if direction is Direction.SW:
+        reigns_clause = f"It is said that {ruler_name} reigns there." if ruler_name else "It is said that no one reigns there."
+        return (
+            f"{_NEIGHBOR_OPENERS[direction]} a {terrain_name} province known as {name} (#{number}).  "
+            f"{reigns_clause}  It is known to be populated by {race_plural}.  {ending}"
+        )
+    if direction is Direction.W:
+        rules_clause = f"where {ruler_name} rules" if ruler_name else "where no one rules"
+        return (
+            f"{_NEIGHBOR_OPENERS[direction]} a {terrain_name} province known as {name} (#{number}), "
+            f"a land of {race_plural} {rules_clause}.  {ending}"
+        )
+    # Direction.NW
+    ruled_by_clause = f"ruled by {ruler_name}" if ruler_name else "owned by no one"
+    return (
+        f"{_NEIGHBOR_OPENERS[direction]} {name} (#{number}), a {terrain_name} area {ruled_by_clause}, "
+        f"where {race_plural} dwell.  {ending}"
+    )
+
+
+def describe_home_province_neighbors(state: GameState, kingdom_id: int) -> list[str]:
+    """The Birthright (Turn 0) report's own home-province neighbor
+    paragraph -- see the module-level Phase 981 comment above for the
+    full sourcing, what's reproduced, and what's deliberately not.
+
+    Returns an empty list when this Kingdom has no home province on
+    record, or that coordinate isn't a real province in `state` -- the
+    same "nothing to say, omit the section" convention every other
+    composer here already follows.
+    """
+
+    kingdom = state.kingdoms.get(kingdom_id)
+    if kingdom is None:
+        return []
+    home_coord = kingdom.home_province
+    home_province = state.provinces.get(home_coord)
+    if home_province is None:
+        return []
+
+    home_name = home_province.name if home_province.name else f"({home_coord.x}, {home_coord.y})"
+    sentences = [f"The province of {home_name} belongs to your Majesty."]
+
+    board_width = state.board_width
+    board_height = state.board_height
+    north_missing = neighbor_in_direction_wrapped(home_coord, Direction.NE, board_width, board_height) is None
+    south_missing = neighbor_in_direction_wrapped(home_coord, Direction.SW, board_width, board_height) is None
+
+    for direction in (Direction.NE, Direction.E, Direction.SE, Direction.SW, Direction.W, Direction.NW):
+        if direction is Direction.NE and north_missing:
+            continue  # dropped entirely -- NW's own sentence below covers "to the north" instead
+        if direction is Direction.SE and south_missing:
+            continue  # dropped entirely -- SW's own sentence below covers "to the south" instead
+        if direction is Direction.NW and north_missing:
+            sentences.append(_NORTH_ICE_CAP_LINE)
+            continue
+        if direction is Direction.SW and south_missing:
+            sentences.append(_SOUTH_ICE_CAP_LINE)
+            continue
+        neighbor_coord = neighbor_in_direction_wrapped(home_coord, direction, board_width, board_height)
+        if neighbor_coord is None:
+            continue
+        sentence = _describe_neighbor_sentence(direction, neighbor_coord, state)
+        if sentence is not None:
+            sentences.append(sentence)
+
+    paragraph = "  ".join(sentences)
+    return textwrap.wrap(paragraph, width=77, initial_indent="  ", subsequent_indent="")
+
+
 # The real "royal scribe" intro (Phase 562), verbatim, confirmed
 # byte-for-byte identical across every real sample checked this phase
 # (`SE3__T1.K2`/`T4.K6`/`T5.K2` and others). Unlike every other section
@@ -16160,10 +16375,13 @@ def compose_letter_report(
     ability_names: dict[Ability, str] | None = None,
     board_width: int | None = None,
     election_outcome: "ElectionResult | ElectionCallOutcome | None" = None,
+    include_home_province_narrative: bool = False,
 ) -> list[str]:
     """Assembles a single King's own end-of-turn letter report (Phase 215) by
     stitching together this project's already-built section composers, in
-    the real section order -- confirmed directly against actual generated
+    the real section order (see `include_home_province_narrative` below
+    for the one Phase 981 addition to this list, gated off by default) --
+    confirmed directly against actual generated
     turn-report output, not guessed: the Desktop's real `SE3__T*.K*` files
     (e.g. `SE3__T2.K2`, section headers at lines 31/174/313/319/352/367/
     416/450/471/491/506) show ACTION REPORT, LETTER REPORTS, STATE OF THE
@@ -16204,6 +16422,16 @@ def compose_letter_report(
     of this function's own two `imperial_office_lines` call sites
     actually fires this turn -- both are the same real procedure call,
     just repositioned pre/post-election per Phase 561 above.
+
+    **Phase 981**: a new optional `include_home_province_narrative`
+    keyword parameter (default `False`, every pre-existing caller/test
+    unaffected) appends `describe_home_province_neighbors()`'s own
+    paragraph directly after PROVINCES, no header of its own, the same
+    "continuation" shape the map below already has. Off by default
+    because the only real samples confirming this paragraph are Turn 0
+    "Birthright" reports -- `webapp/reports.py turn_zero_report()` is
+    the one caller that passes `True`; a regular turn's own report
+    (every other caller) is unaffected.
 
     **All 10 real sections were wired here as of Phase 231** (STATE OF THE
     NATION makes 11, Phase 561) -- ACTION REPORT, LETTER REPORTS, STATE OF
@@ -16605,6 +16833,19 @@ def compose_letter_report(
     provinces_lines = describe_provinces_report(state, kingdom_id)
     if provinces_lines:
         _emit_section(provinces_lines[0], provinces_lines[1:])
+
+    # Phase 981: the home-province neighbor paragraph -- real text, no
+    # header of its own, a direct continuation of PROVINCES exactly like
+    # the map below -- gated by include_home_province_narrative (default
+    # off) since the only real samples confirming it are Turn 0
+    # "Birthright" reports; see describe_home_province_neighbors()'s own
+    # docstring. webapp/reports.py turn_zero_report() is the one caller
+    # that passes True today.
+    if include_home_province_narrative and lines:
+        neighbor_lines = describe_home_province_neighbors(state, kingdom_id)
+        if neighbor_lines:
+            lines.append("")
+            lines.extend(neighbor_lines)
 
     # Phase 562: the real map has no header of its own -- a direct
     # continuation of PROVINCES (see describe_map_report()'s own

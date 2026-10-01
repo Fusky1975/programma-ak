@@ -69,3 +69,32 @@ def test_turn_zero_report_is_per_kingdom():
     lines_2 = turn_zero_report(state, 2)
 
     assert lines_1 != lines_2
+
+
+def test_turn_zero_report_opens_with_the_birthright_title_and_kings_name():
+    state = _generated_state()
+
+    lines = turn_zero_report(state, 1)
+
+    title_index = next(i for i, line in enumerate(lines) if "BIRTHRIGHT REPORT" in line)
+    name_index = next(i for i, line in enumerate(lines) if line.strip() == "K1")
+    assert title_index < name_index
+    assert any(line.strip() == "FOR" for line in lines[title_index:name_index])
+
+
+def test_turn_zero_report_includes_a_quote_of_the_week():
+    state = _generated_state()
+
+    lines = turn_zero_report(state, 1)
+
+    assert any(line.strip() == "Quote of the Week:" for line in lines)
+
+
+def test_turn_zero_report_includes_the_home_province_neighbor_paragraph():
+    state = _generated_state()
+    home = state.leaders[1].location
+    state.provinces[home].name = "Edited Capital"
+
+    lines = turn_zero_report(state, 1)
+
+    assert any("The province of Edited Capital belongs to your Majesty." in line for line in lines)

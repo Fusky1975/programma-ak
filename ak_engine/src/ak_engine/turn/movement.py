@@ -194,6 +194,33 @@ def neighbor_in_direction(coord: HexCoord, direction: Direction, bounds: MapBoun
     return candidate if bounds.contains(candidate) else None
 
 
+def neighbor_in_direction_wrapped(
+    coord: HexCoord, direction: Direction, board_width: int, board_height: int
+) -> HexCoord | None:
+    """Like ``neighbor_in_direction()``, but ``x`` wraps around the real
+    horizontal cylindrical board instead of being treated as a hard edge
+    -- the same wraparound ``hex_distance_wrapped()`` already applies to
+    distance, now needed by Phase 981's own per-direction neighbor
+    narrative (``report/turn_report.py describe_home_province_
+    neighbors()``). Unlike ``x``, ``y`` genuinely has no wraparound on
+    this board (every citation ``hex_distance_wrapped()`` itself already
+    makes) -- running off the top/bottom is a real absence, returned as
+    ``None`` here exactly like ``neighbor_in_direction()``'s own edge
+    case, and confirmed by a real sample: a home province on the board's
+    own top row (``y == 0``) has its report replace both its NE and NW
+    neighbor sentences with one "To the north lay an icy expanse..."
+    line (see that composer's own docstring) rather than naming a real
+    neighbor in either direction.
+    """
+
+    offsets = _EVEN_ROW_OFFSETS if coord.y % 2 else _ODD_ROW_OFFSETS
+    dx, dy = offsets[direction.value]
+    y = coord.y + dy
+    if not (0 <= y < board_height):
+        return None
+    return HexCoord((coord.x + dx) % board_width, y)
+
+
 def direction_between(a: HexCoord, b: HexCoord) -> Direction | None:
     """Which ``Direction`` value's own offset (from ``a``'s own row-
     parity table) produces ``b``, or ``None`` if ``b`` isn't one of

@@ -14,6 +14,7 @@ from ak_engine.turn.movement import (
     hex_distance,
     is_adjacent,
     neighbor_in_direction,
+    neighbor_in_direction_wrapped,
     neighbors,
     resolve_move,
     step_toward_non_adjacent_target,
@@ -78,6 +79,41 @@ def test_direction_between_resolves_every_real_neighbor():
 
 def test_direction_between_returns_none_for_a_non_adjacent_pair():
     assert direction_between(HexCoord(5, 5), HexCoord(20, 10)) is None
+
+
+# -- Phase 981: neighbor_in_direction_wrapped() --
+
+
+def test_neighbor_in_direction_wrapped_matches_the_unwrapped_version_away_from_edges():
+    origin = HexCoord(5, 5)
+    for direction in Direction:
+        assert neighbor_in_direction_wrapped(origin, direction, BOUNDS.width, BOUNDS.height) == neighbor_in_direction(
+            origin, direction, BOUNDS
+        )
+
+
+def test_neighbor_in_direction_wrapped_wraps_x_at_the_left_edge():
+    origin = HexCoord(0, 4)
+    for direction in (Direction.W,):
+        wrapped = neighbor_in_direction_wrapped(origin, direction, BOUNDS.width, BOUNDS.height)
+        assert wrapped is not None
+        assert wrapped.x == BOUNDS.width - 1
+
+
+def test_neighbor_in_direction_wrapped_wraps_x_at_the_right_edge():
+    origin = HexCoord(BOUNDS.width - 1, 4)
+    wrapped = neighbor_in_direction_wrapped(origin, Direction.E, BOUNDS.width, BOUNDS.height)
+    assert wrapped is not None
+    assert wrapped.x == 0
+
+
+def test_neighbor_in_direction_wrapped_returns_none_off_the_top_or_bottom():
+    top = HexCoord(5, 0)
+    bottom = HexCoord(5, BOUNDS.height - 1)
+    assert neighbor_in_direction_wrapped(top, Direction.NE, BOUNDS.width, BOUNDS.height) is None
+    assert neighbor_in_direction_wrapped(top, Direction.NW, BOUNDS.width, BOUNDS.height) is None
+    assert neighbor_in_direction_wrapped(bottom, Direction.SE, BOUNDS.width, BOUNDS.height) is None
+    assert neighbor_in_direction_wrapped(bottom, Direction.SW, BOUNDS.width, BOUNDS.height) is None
 
 
 def test_resolve_move_to_adjacent_hex():
