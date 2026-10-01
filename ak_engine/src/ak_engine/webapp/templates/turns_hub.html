@@ -12,6 +12,15 @@
 
 <div class="panel" style="border-left: 6px solid var(--phase-turns);">
   <h2>{{ meta.name }} &mdash; Turn {{ state.turn_number }}</h2>
+
+  {% if state.emperor_kingdom_id is not none %}
+    <p class="status-info">
+      &#128081; An Emperor has been crowned: <strong>{{ state.kingdoms[state.emperor_kingdom_id].name if state.emperor_kingdom_id in state.kingdoms else ('Kingdom #' ~ state.emperor_kingdom_id) }}</strong>.
+      Per the rulebook, this is how a game of Adventurer-Kings is won -- you may want to end the campaign here.
+      Turns can still be processed afterward if you'd rather keep playing (the real game doesn't force a stop either).
+    </p>
+  {% endif %}
+
   <p>Upload each Kingdom's real move file (e.g. <code>AK3__T{{ state.turn_number }}.K1</code>), keeping its own filename -- the Kingdom is identified from the filename itself, not its content.</p>
 
   <table class="data-table">

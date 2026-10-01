@@ -37729,6 +37729,37 @@ supply of any of these doesn't have to be re-derived from scratch:
   actual Feature #129 (Cave, Gold Dragon, Large Hoard of Gold) end to
   end and re-confirming the corrected display after the title-casing
   fix. Full suite: 7263 passed (15 new tests).
+
+  **Phase 975: an Emperor-crowned advisory banner on the Turns hub.**
+  While driving the live Turn 1-6 demo with the user, Aldric the Bold was
+  crowned Emperor as early as Turn 1 (`turn/emperor_election.py`'s own
+  automatic, every-turn `evaluate_election_call()` -- no explicit King
+  order triggers it, confirmed directly from that module's own
+  docstring), yet turns kept being processed normally for several more
+  rounds. The user asked directly whether that was a bug. It is not --
+  confirmed from `turn/final_standings.py`'s own sourced docstring:
+  `kingdom_points()` "recomputes every turn after coronation, not as a
+  one-time 'game over' event, matching the real engine's own recompute-
+  on-every-`Pray_Report` behavior; no separate 'is this the last turn'
+  detection is needed." The real original engine never auto-halted on
+  election either -- ending a campaign was always the GM's own real-world
+  call, not something the software enforced.
+
+  Added a non-blocking advisory (`webapp/templates/turns_hub.html`, a new
+  `.status-info` style) once `state.emperor_kingdom_id` is set: names the
+  crowned Kingdom, states the rulebook framing ("this is how a game of
+  Adventurer-Kings is won"), and explicitly says turns can still be
+  processed afterward -- an informational nudge, not a stop condition,
+  matching the sourced "the real game doesn't force a stop either"
+  finding above. No new `GameState` field needed (no "first coronation
+  turn" is tracked or required -- the banner only needs to know an
+  Emperor currently exists, which `emperor_kingdom_id` already is).
+
+  Verified with new `test_webapp_app.py` route tests (no banner before
+  any election; the banner appears, naming the right Kingdom, after a
+  real Turn 1 processing run that crowns one) and a real-browser
+  Playwright screenshot against the live Turn 7 demo state. Full suite:
+  7265 passed (2 new tests).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

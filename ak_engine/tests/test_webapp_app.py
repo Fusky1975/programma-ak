@@ -861,6 +861,32 @@ def test_turns_hub_shows_not_uploaded_for_every_kingdom(tmp_path):
     assert b"Not uploaded" in response.data
 
 
+def test_turns_hub_shows_no_emperor_banner_before_any_election(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns")
+
+    assert response.status_code == 200
+    assert b"has been crowned" not in response.data
+
+
+def test_turns_hub_shows_the_emperor_banner_once_one_is_crowned(tmp_path):
+    # The game's own real sample move file (AK3__T1.K1) is enough on its
+    # own to crown an Emperor by the end of Turn 1 -- confirmed via a real
+    # end-to-end run, not assumed.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _upload_move_file(client, meta.slug, "AK3__T1.K1")
+    client.post(f"/games/{meta.slug}/turns/process")
+
+    response = client.get(f"/games/{meta.slug}/turns")
+
+    assert response.status_code == 200
+    assert b"has been crowned" in response.data
+    assert b"Aldric" in response.data
+
+
 def test_upload_move_file_shows_it_as_uploaded(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
