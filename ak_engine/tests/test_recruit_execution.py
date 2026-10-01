@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
@@ -827,6 +829,89 @@ def test_a_dinosaur_recruit_locks_out_a_different_army_type_in_the_same_request(
     assert len(result.recruited) == 1
     assert result.recruited[0].army_type is ArmyType.DINOSAURS
     assert result.province_locked == [ArmyType.LT_CAVALRY]
+
+
+def build_dinosaur_state_with_slots(
+    *, recruit_type_1: ArmyType | None, recruit_type_2: ArmyType | None = None
+) -> GameState:
+    # Phase 980: a province with *real* recruit-slot data (recruit_type_1
+    # not None) -- the shape `ProvinceState` actually carries once bridged
+    # from a real world file or generated via generate_new_game(), unlike
+    # `build_dinosaur_state()` above, which leaves both slots at their
+    # default None (no real per-province data to check the new gate
+    # against at all -- see that fallback's own Phase 980 docstring note).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Elvenholm", Race.ELVEN, Alignment.GOOD, HexCoord(0, 0), treasury=100))
+    state.add_province(
+        ProvinceState(
+            DINOSAUR_LOCATION,
+            Terrain.PLAINS,
+            Race.ELVEN,
+            owner_kingdom_id=1,
+            recruit_type_1=recruit_type_1,
+            recruit_type_2=recruit_type_2,
+        )
+    )
+    raw = [0] * 30
+    raw[Ability.DRUID.value * 2] = 5
+    state.add_leader(
+        LeaderState(
+            LEADER_ID,
+            1,
+            "Druid Leader",
+            DINOSAUR_LOCATION,
+            skills=SkillTable(raw_values=raw),
+            advanced_abilities={AdvancedAbility.DRUIDIC_DINOSAURS},
+        )
+    )
+    return state
+
+
+def test_dinosaur_recruit_blocked_when_province_has_neither_elven_el_lc_nor_hc_slot():
+    # Phase 980, user-confirmed: "only in place of elven EL, LC or HC" --
+    # a province recruiting ordinary Bowmen/Axemen has neither qualifying
+    # slot, so Dinosaurs can't be recruited there even with the ability
+    # and sufficient Druid skill.
+    state = build_dinosaur_state_with_slots(recruit_type_1=ArmyType.BOWMEN, recruit_type_2=ArmyType.AXEMEN)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.elven_slot_required == [ArmyType.DINOSAURS]
+
+
+@pytest.mark.parametrize("qualifying_type", [ArmyType.ELEPHANTS, ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY])
+def test_dinosaur_recruit_allowed_when_either_slot_is_elephants_lt_cavalry_or_hvy_cavalry(qualifying_type):
+    # Checked in both slot positions -- the gate doesn't care which of the
+    # province's two slots carries the qualifying type.
+    state_first_slot = build_dinosaur_state_with_slots(recruit_type_1=qualifying_type, recruit_type_2=ArmyType.BOWMEN)
+    result_first_slot = execute_recruit(
+        state_first_slot, kingdom_id=1, leader_id=LEADER_ID, request=RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+    )
+    assert len(result_first_slot.recruited) == 1
+    assert result_first_slot.elven_slot_required == []
+
+    state_second_slot = build_dinosaur_state_with_slots(recruit_type_1=ArmyType.BOWMEN, recruit_type_2=qualifying_type)
+    result_second_slot = execute_recruit(
+        state_second_slot, kingdom_id=1, leader_id=LEADER_ID, request=RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+    )
+    assert len(result_second_slot.recruited) == 1
+    assert result_second_slot.elven_slot_required == []
+
+
+def test_dinosaur_recruit_slot_gate_is_skipped_when_province_has_no_real_slot_data():
+    # build_dinosaur_state() (above) never sets recruit_type_1/2 (None,
+    # None) -- the same "no real per-province data to check" fallback
+    # is_native_to_province already uses, so the new gate must not block
+    # every hand-built test fixture that predates it.
+    state = build_dinosaur_state(druid_skill=5)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.elven_slot_required == []
 
 
 def test_execute_recruit_by_a_dead_leader_is_a_clean_no_op_not_a_crash():

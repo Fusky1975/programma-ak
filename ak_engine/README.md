@@ -37997,6 +37997,61 @@ supply of any of these doesn't have to be re-derived from scratch:
   time landing on a genuinely tough `GR_DRAGON` guardian for feature_id
   1, hence a much larger win seed than every prior re-scan). Full suite:
   7284 passed.
+
+  **Phase 980: Dinosaur armies fixed -- real "Race: Saurian" wired in,
+  plus a real, previously-deferred province-level recruiting
+  precondition, both found and user-confirmed while cross-referencing a
+  fresh, user-supplied reverse-engineering report of `REPORTS.PAS`
+  against this project's own CHARACTERS/ARMIES section.** That cross-
+  reference turned out to mostly re-derive material this project had
+  already mined in exhaustive detail over many earlier phases (`Tell_
+  Align`, `Get_News`, `Pray_Report`'s office-standings formulas -- all
+  independently spot-checked and found already correct) -- but it also
+  surfaced one genuine side effect nothing here modeled: "Rep_Armies,
+  atype=Dinosaurs e arace=Elven -> arace=Saurian." `models/
+  advanced_ability.py` already quoted the real source text verbatim
+  since Phase 691 ("Race: Saurian"), but nothing had ever wired it in --
+  `models/army_type.py MONSTROUS_ARMY_RACE` gains `ArmyType.DINOSAURS:
+  Race.SAURIAN`, so a Dinosaur army now reports and fights as Saurian
+  (real column text "Dinosaur", `RACE_NAME`'s own already-sourced form)
+  instead of the owning Kingdom's own race -- the real recruiting race
+  gate (province must be Elven, `turn/recruit.py
+  _ELVEN_ONLY_ARMY_TYPES`) is a separate check, run before this dict is
+  ever consulted, so it's unaffected.
+
+  The user also confirmed, from their own knowledge of the real game,
+  that the same Advanced Ability's own "only in place of elven EL, LC or
+  HC" is a real province-level *precondition* -- a province must
+  currently offer Elephants, Light Cavalry or Heavy Cavalry as one of
+  its own two recruit slots for Dinosaurs to be recruitable there at
+  all. An earlier phase (691) had already quoted this exact clause but
+  read it only as "descriptive context... no mechanism invented," having
+  ruled out one specific (wrong) reading -- a literal cross-type slot-
+  *consumption* formula, which really isn't sourced -- without
+  separately implementing the plainer existence-check reading, which
+  is. `turn/recruit_execution.py` now enforces it (new
+  `RecruitExecutionResult.elven_slot_required`), only when the province
+  actually carries real per-province slot data (`recruit_type_1 is not
+  None`) -- the same fallback `is_native_to_province` itself already
+  uses, so no hand-built test fixture that never populated real slots
+  is newly, silently blocked. No new move-command was needed: Recruit
+  orders were already fully generic over `ArmyType` (`turn/recruit_
+  decode.py`), and Dinosaurs' own real 2-letter code (`ArmyType.
+  DINOSAURS = "DI"`) already round-trips through the existing pipeline,
+  so "RE-DI" was never a missing command, just an existing one the
+  precondition above now actually gates correctly. Per this composer's
+  own pre-existing, deliberate "no sourced narrative template" stance
+  for every other administrative recruit rejection (`describe_recruit()`
+  Phase 419), the new block gets no player-facing sentence either --
+  consistent, not an oversight.
+
+  Verified with new/updated tests across `test_army_type.py` (`Race.
+  SAURIAN` now in `MONSTROUS_ARMY_RACE`, two stale "not in" assertions
+  corrected), `test_recruit_execution.py` (the slot gate blocking and
+  allowing in both slot positions, and staying a no-op for fixtures with
+  no real slot data), and `test_turn_report.py` (a Human-owned Dinosaur
+  army still shows "Dinosaur" race, not "Human" -- proof it's not merely
+  falling back to the owner's own race). Full suite: 7290 passed.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

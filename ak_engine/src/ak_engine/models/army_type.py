@@ -221,6 +221,20 @@ MONSTROUS_ARMY_RACE: dict[ArmyType, Race] = {
     # Phase 383: confirmed by `special_races`' own explicit 8-item list
     # (see module docstring) -- not name-symmetry guesswork.
     ArmyType.VAMPIRES: Race.VAMPISH,
+    # Phase 980: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real
+    # description -- "Race: Saurian" -- a genuine exception to this
+    # dict's usual "same race gates recruiting and shows as the army's
+    # own race" shape: Dinosaurs are recruited only in an *Elven*
+    # province (`turn/recruit.py _ELVEN_ONLY_ARMY_TYPES`, checked
+    # before this dict is ever consulted for that purpose -- unaffected
+    # by this entry), but the resulting army itself displays and fights
+    # as Saurian, never Elven. No province is ever actually native-race
+    # Saurian (`worldgen/special_race_placement.py SPECIAL_RACE_BASE_
+    # COUNT` has no Saurian entry), so inverting this dict for world-gen
+    # purposes (`worldgen/initial_armies.py NATIVE_ARMY_TYPE`) gains an
+    # inert `Race.SAURIAN -> ArmyType.DINOSAURS` entry that's simply
+    # never looked up.
+    ArmyType.DINOSAURS: Race.SAURIAN,
 }
 
 # "Str" column of the Army Type Table. Garrison and Elephants are excluded;

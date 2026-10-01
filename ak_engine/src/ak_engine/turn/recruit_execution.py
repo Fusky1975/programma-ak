@@ -173,11 +173,49 @@ several types at once, ``turn/recruit_decode.py``'s own ordinal list),
 letting e.g. ``[DINOSAURS, BOWMEN]`` in one order still recruit the
 Bowmen after the Dinosaur locked the province. Now re-checked at the
 top of every loop iteration, so the lock takes effect immediately once
-set, within the same call too. "Only in place of elven EL, LC or HC" is read
-as descriptive context for why this only applies in Elven provinces,
-not a literal cross-type slot-consumption formula -- no source gives a
-mechanism for how recruiting a Dinosaur would decrement a *different*
-army type's own ``recruited_this_turn`` counter, so none is invented.
+set, within the same call too.
+
+**Phase 980 addendum, user-confirmed: "only in place of elven EL, LC or
+HC" is a real province-level precondition, not just descriptive
+context.** The earlier reading above was right to reject a literal
+cross-type slot-*consumption* formula (recruiting a Dinosaur still never
+decrements a different type's own ``recruited_this_turn`` counter -- no
+source gives that mechanism, and none is invented here either), but it
+stopped short of implementing the plainer, confirmed half of the same
+sentence: the province must currently offer Elephants, Light Cavalry or
+Heavy Cavalry as one of its own two recruit slots (``ProvinceState.
+recruit_type_1``/``recruit_type_2``) for Dinosaurs to be recruitable
+there at all -- a real *precondition* check, independent of the
+``AdvancedAbility.DRUIDIC_DINOSAURS`` leader gate right above it.
+``_DINOSAUR_REQUIRED_PROVINCE_SLOT_TYPES`` below names the three
+qualifying types; blocked via the new ``RecruitExecutionResult.
+elven_slot_required``. Only enforced when this project actually has
+real per-province slot data (``recruit_type_1 is not None``, the same
+condition ``is_native_to_province`` above already gates on) -- a hand-
+built test fixture or any other caller that never populated real slots
+has no data to check this against, so the gate is silently satisfied
+rather than blocking everything, the same "approximate, don't invent,
+when real data is missing" precedent `is_native`'s own fallback already
+set.
+
+**Also Phase 980: the real "Race: Saurian" fact (already quoted
+verbatim in `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION
+[DRUIDIC_DINOSAURS]`` since Phase 691, but never wired anywhere) now
+actually applies.** `models/army_type.py MONSTROUS_ARMY_RACE` gains
+``ArmyType.DINOSAURS: Race.SAURIAN`` -- every Dinosaur army now reports
+and fights as Saurian, not the owning (necessarily Elven, per the race
+gate above) Kingdom's own race. A real, user-supplied reverse-
+engineering report of ``REPORTS.PAS`` independently describes this as a
+report-generation-time correction (an Elven-race Dinosaur army gets
+mutated to Saurian the first time a report runs, with a one-time "The
+race of Dinosaurs has changed from Elven to Saurian" announcement) --
+not reproduced here verbatim: this project's armies are created with
+their final display race up front (`ArmyState` has no mutable race
+field of its own, and every other ``MONSTROUS_ARMY_RACE`` entry already
+works this way, fixed at creation, never corrected later), so there is
+no "was Elven, became Saurian" moment for an announcement to narrate in
+the first place -- a Dinosaur army is simply Saurian from the moment
+it's recruited.
 """
 
 from __future__ import annotations
@@ -204,6 +242,13 @@ from ak_engine.turn.recruit_decode import RecruitRequest
 # down by tiers" convention without reusing `compute_druidic_
 # shortfall()`'s own differently-scoped kingdom-race check.
 DINOSAUR_FULL_QUALITY_DRUID_SKILL = 5
+
+# Phase 980: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real description --
+# "only in place of elven EL, LC or HC" -- the three army types whose
+# own presence in a province's recruit slots unlocks Dinosaur recruiting
+# there (user-confirmed as a precondition check, not a slot-consumption
+# formula -- see this module's own Phase 980 docstring addendum).
+_DINOSAUR_REQUIRED_PROVINCE_SLOT_TYPES = frozenset({ArmyType.ELEPHANTS, ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY})
 
 
 @dataclass(slots=True)
@@ -235,6 +280,12 @@ class RecruitExecutionResult:
     # `ProvinceState.recruit_locked_this_turn` from an earlier successful
     # Dinosaur recruit this same turn.
     province_locked: list[ArmyType] = field(default_factory=list)
+    # Phase 980: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own "only in place
+    # of elven EL, LC or HC" -- a separate, province-level precondition
+    # from `province_locked` above (which fires only *after* a Dinosaur
+    # has already been recruited this turn); this one blocks the very
+    # first attempt when the province's own recruit slots don't qualify.
+    elven_slot_required: list[ArmyType] = field(default_factory=list)
     total_gold_spent: int = 0
 
 
@@ -364,6 +415,20 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         # armies").
         if army_type is ArmyType.DINOSAURS and AdvancedAbility.DRUIDIC_DINOSAURS not in leader.advanced_abilities:
             result.incompatible.append(army_type)
+            continue
+
+        # Phase 980: "only in place of elven EL, LC or HC" -- a real
+        # province-level precondition, independent of the leader-level
+        # ability gate just above. Only enforced when real per-province
+        # slot data exists (recruit_type_1 is not None), matching
+        # is_native's own fallback a few lines up.
+        if (
+            army_type is ArmyType.DINOSAURS
+            and province.recruit_type_1 is not None
+            and province.recruit_type_1 not in _DINOSAUR_REQUIRED_PROVINCE_SLOT_TYPES
+            and province.recruit_type_2 not in _DINOSAUR_REQUIRED_PROVINCE_SLOT_TYPES
+        ):
+            result.elven_slot_required.append(army_type)
             continue
 
         wingman_bonus = 1 if leader_is_wingman and army_type in OVERFLIGHT_AIR and is_native else 0

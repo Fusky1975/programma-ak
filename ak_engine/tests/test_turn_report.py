@@ -9849,6 +9849,28 @@ def test_describe_armies_report_monstrous_army_uses_its_own_fixed_race():
     ]
 
 
+def test_describe_armies_report_dinosaurs_show_as_saurian_not_the_owning_kingdoms_race():
+    # Phase 980: AdvancedAbility.DRUIDIC_DINOSAURS's own "Race: Saurian"
+    # -- a Dinosaur army's race resolves to Race.SAURIAN regardless of
+    # the owning Kingdom's own race (Human here, to prove it's not
+    # merely falling back to kingdom.race -- in real play the owner is
+    # always Elven, per the separate recruiting race gate). The real
+    # column text is RACE_NAME[SAURIAN]'s own already-sourced "Dinosaur"
+    # (CTBOTH.PAS rname), the same short singular form every other
+    # MONSTROUS_ARMY_RACE entry already renders (e.g. Dragon_Wing's own
+    # "Dragons" designation shows race "Dragon", not "Dragons").
+    state = _armies_state()
+    state.add_army(ArmyState(1, 1, ArmyType.DINOSAURS, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == [
+        _ARMIES_CAPTION_LINE_1,
+        _ARMIES_COLUMN_HEADER,
+        "Capital City      Garrison       Dinosaurs           Dinosaur  Average  Veteran",
+    ]
+
+
 def test_describe_armies_report_excludes_other_kingdoms_armies():
     state = _armies_state()
     state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
