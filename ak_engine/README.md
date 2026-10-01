@@ -37953,6 +37953,50 @@ supply of any of these doesn't have to be re-derived from scratch:
   "re-scan after a new RNG draw lands earlier in the pipeline" update
   this project has already done after five earlier phases for the exact
   same reason. Full suite: 7283 passed (3 new tests, 2 re-scanned).
+
+  **Phase 979 addendum: the one remaining gap -- the reserved last
+  roster id -- closed too, for the two tiers with real evidence behind
+  them.** Two further real, user-supplied `GW` world files kept settling
+  this as the user searched their own archive: a 23-King "Super AK"
+  (`game_type=EARTH`) file at turn 4 shows the reserved id (249, a
+  250-slot roster) is **"Kelderek" again** -- the same name the Phase
+  979 addendum above already found in a completely unrelated 3-King
+  game (different `game_number`, different `valhalla_alignment_
+  rotation_mask`). Two independently-matching real games settle that
+  this is a fixed per-tier constant, not a per-game Valhalla draw --
+  strong enough, with the user's own go-ahead, to finally materialize
+  this id rather than leave it open a third time. `models/valhalla.py`
+  gains `VALHALLA_HERO_BY_NAME`, and `models/hero_roster.py` gains
+  `RESERVED_ROSTER_HERO_NAME = {100: "Kitralus", 250: "Kelderek"}` --
+  both real names resolve to a complete, already-sourced Alignment/
+  Temper/Race/`SkillTable` from this project's own Valhalla-visitor
+  roster, confirming `models/hero_roster.py`'s own Phase 366 suspicion
+  that this slot was a Valhalla mechanic, not a `LNAMES.PAS` one.
+  `generate_new_game()` now materializes it (for any `leader_count`
+  with a confirmed entry -- the 175-slot `Arcanes_V` tier still has none
+  checked, so it deliberately stays open) via the same mercenary-
+  coordinate draw as every other non-Home leader, since its own
+  "attached separately to a Home" rule is still too ambiguous to know
+  *which* Home. The same turn-4 file's two other, unrelated name
+  mismatches (ids 75/106) are most simply explained by the rulebook's
+  own in-game character-rename option, not a world-gen gap, and aren't
+  acted on.
+
+  A 2-King game now generates all 100 of 100 roster slots (2 Kings + 98
+  Heroes, "Kitralus" included) -- the earlier mercenary-only fix above
+  was already verified live through the real running webapp via
+  Playwright (99 rows: 2 Kings + 97 Heroes, the reserved id still
+  missing at that point); this addendum's own last-slot fix was
+  confirmed the same way `generate_new_game()` itself is confirmed
+  elsewhere, directly: a fresh 2-King call now reports 100 total
+  leaders, with "Kitralus" present among them. New `test_generate_new_
+  game.py` test (`test_reserved_roster_id_gets_its_real_valhalla_name_
+  and_stats`); `_mercenaries()`'s own test helper updated to exclude the
+  now-separately-tested reserved id; one more "re-scan after an earlier
+  RNG draw" update to `test_use_mi_item_creation_integration.py` (this
+  time landing on a genuinely tough `GR_DRAGON` guardian for feature_id
+  1, hence a much larger win seed than every prior re-scan). Full suite:
+  7284 passed.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

@@ -234,27 +234,36 @@ all real and sourced as described above.
     ``remaining_mercenaries: 0``, so it alone could never have caught
     this).
 
+11. **The reserved last roster id (Phase 979 addendum)** -- Phase 357's
+    own "attached separately to a Home" note flagged this id's
+    placement as too ambiguous to code; left unmaterialized ever since.
+    **A third and fourth real ``GW`` file, gathered chasing the same
+    hero-count bug, resolve its name (if not yet its placement) for two
+    of the three ``leader_count`` tiers**: a 100-slot-tier game shows
+    "Kitralus" at this id; two genuinely different 250-slot-tier games
+    -- a 3-King ``NORMAL``-type game and an unrelated 23-King ``EARTH``-
+    type ("Super AK") game at turn 4, different ``game_number``,
+    different ``valhalla_alignment_rotation_mask`` -- both independently
+    show "Kelderek", settling that this is a fixed per-tier constant,
+    not a per-game draw (a turn-4 snapshot's own two *other*, unrelated
+    name mismatches at that same game's ids 75/106 are far more simply
+    explained by the rulebook's own "you may rename your characters"
+    option than by anything world-gen-time). Both names resolve via
+    ``models/valhalla.py VALHALLA_HERO_BY_NAME`` to a complete, real
+    Alignment/Temper/Race/``SkillTable`` -- not a guess, the same
+    Valhalla-visitor roster `models/hero_roster.py`'s own Phase 366
+    docstring already suspected this slot came from. Placement still has
+    no better source than the mercenary-coordinate draw above, so it
+    reuses that rather than inventing a "which Home" rule with less
+    evidence behind it. The 175-slot ``Arcanes_V`` tier has no real file
+    checked yet, so ``models/hero_roster.py RESERVED_ROSTER_HERO_NAME``
+    deliberately omits it -- that one id stays unmaterialized, same as
+    before this phase, rather than guessed.
+
 **Deliberately NOT implemented here**, each a genuine, separately
 documented gap carried over from the phases that already found it --
 none invented past here:
 
-- **The reserved last roster id**: excluded from ``hero_pool`` entirely
-  (no talents rolled, no ``LeaderState`` created) -- its own "attached
-  separately to a Home" placement rule was already flagged by Phase 357
-  as too ambiguous to code (this is the Valhalla-visitor-reserved slot,
-  ``models/valhalla.py``'s own separate mechanic, not a King-loadable
-  Hero). **Phase 979 addendum**: both real ``GW`` files checked for the
-  remaining-mercenary fix above independently confirm this slot *is*
-  always populated in a real game, and by a name that really is in
-  ``models/valhalla.py VALHALLA_ROSTER`` (not a coincidence -- "Kitralus"
-  in the 10-King/``v3`` game, "Kelderek" in the 3-King/``v4`` game, both
-  verified present there), strengthening rather than resolving the
-  existing gap note. One further, unconfirmed pattern spotted in
-  passing, not acted on: both are the *last* entry of their own
-  Alignment's bucket tuple (``Kitralus`` closes ``Alignment.NEUTRAL``,
-  ``Kelderek`` closes ``Alignment.PAGAN``) -- two data points, not
-  enough to name a selection rule, but a concrete lead for whoever
-  revisits this.
 - **Ordinary (non-Home, non-special-race) humanoid provinces' first
   recruit slot and army**: **closed, Phase 797** (backlog #22's own
   land-side half) -- ``worldgen/initial_armies.py humanoid_first_slot()``
@@ -359,12 +368,13 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, BASE_STRENGTH, ArmyType
 from ak_engine.models.feature import Feature
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
-from ak_engine.models.hero_roster import LEADER_COUNT_BY_GAME_VERSION, STANDARD_HERO_ROSTER
+from ak_engine.models.hero_roster import LEADER_COUNT_BY_GAME_VERSION, RESERVED_ROSTER_HERO_NAME, STANDARD_HERO_ROSTER
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import roll_monster_alignment
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
+from ak_engine.models.valhalla import VALHALLA_HERO_BY_NAME
 from ak_engine.turn.movement import MapBounds
 from ak_engine.turn.strength import ELEPHANTS_STRENGTH_RANGE
 from ak_engine.worldgen.feature_placement import place_all_features
@@ -736,6 +746,37 @@ def generate_new_game(
                 birth_y=coord.y,
                 alignment=alignment,
                 race=race_grid[coord],
+            )
+        )
+
+    # Phase 979 addendum: the reserved last roster id, closed for the two
+    # leader_count tiers with a confirmed real name behind them
+    # (models/hero_roster.py RESERVED_ROSTER_HERO_NAME's own docstring --
+    # "Kitralus"/"Kelderek", both independently confirmed real-world
+    # names that resolve to a full, real Valhalla stat block). Its own
+    # "attached separately to a Home" placement rule is still too
+    # ambiguous to know *which* Home, so this reuses the same mercenary-
+    # coordinate draw as every other non-Home independent leader above,
+    # rather than inventing a Home-attachment rule with even less
+    # evidence behind it. Any leader_count without a confirmed name here
+    # (e.g. the 175-slot Arcanes_V tier) still leaves this id
+    # unmaterialized, unchanged from before.
+    reserved_hero_name = RESERVED_ROSTER_HERO_NAME.get(leader_count)
+    if reserved_hero_name is not None:
+        valhalla_hero = VALHALLA_HERO_BY_NAME[reserved_hero_name]
+        coord = draw_mercenary_relocation_coordinate(rng, width, height, is_sea, is_king_owned)
+        game_state.add_leader(
+            LeaderState(
+                leader_id=reserved_roster_id,
+                kingdom_id=None,
+                name=valhalla_hero.name,
+                location=coord,
+                skills=valhalla_hero.skills,
+                birth_x=coord.x,
+                birth_y=coord.y,
+                alignment=valhalla_hero.true_alignment,
+                temper=valhalla_hero.temper,
+                race=valhalla_hero.race,
             )
         )
 

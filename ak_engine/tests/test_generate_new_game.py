@@ -20,7 +20,7 @@ from ak_engine.worldgen.generate_new_game import (
 )
 from ak_engine.worldgen.initial_armies import BEST_ATYPE, COMMANDER_NONE
 from ak_engine.worldgen.king_home_placement import MIN_HOME_DISTANCE
-from ak_engine.worldgen.leader_placement import COMPANIONS_PER_KING, RESERVED_ROSTER_COUNT, owner_leader_count
+from ak_engine.worldgen.leader_placement import COMPANIONS_PER_KING, owner_leader_count
 from ak_engine.models.treasure import TREASURE_CATEGORY, TreasureCategory
 from ak_engine.worldgen.magic_item_placement import item_slot_count
 from ak_engine.worldgen.mercenary_band import hex_ring
@@ -469,25 +469,25 @@ def test_independent_lords_govern_free_humanoid_provinces_as_independent_heroes(
         assert lord.name == STANDARD_HERO_ROSTER[lord.leader_id]
 
 
-def test_total_leader_count_matches_leader_count_minus_king_count_minus_reserved():
-    # Phase 979: "remaining mercenary heroes" (leftover hero_pool ids
-    # beyond lords+companions) are now materialized too, so the total
-    # leader count should equal leader_count(100) - king_count, minus the
-    # one still-unmaterialized RESERVED_ROSTER_COUNT slot (its own name
-    # source is a separate, still-open gap -- see generate_new_game.py's
-    # own docstring) -- independently confirmed against two real GW world
-    # files from different actual historical games, each showing the
-    # *full* leader_count - king_count (90 for a 10-King/v3 game, 247 for
-    # a 3-King/v4/250-slot game) once that one reserved slot is counted
-    # back in.
+def test_total_leader_count_matches_leader_count_exactly():
+    # Phase 979 (+ its own addendum): "remaining mercenary heroes" and
+    # the reserved last roster id are both materialized now, so for
+    # leader_count=100 (this project's own default/only tier, with a
+    # confirmed RESERVED_ROSTER_HERO_NAME entry) every one of the 100
+    # roster slots is a real LeaderState -- independently confirmed
+    # against real GW world files from different actual historical
+    # games, each showing the full leader_count - king_count + 1
+    # reserved slot (90 Heroes + 1 reserved for a 10-King/v3 game, 247 +
+    # 1 for a 3-King/v4/250-slot game, the same +1 reconfirmed again by a
+    # second, unrelated 250-slot game).
     game_state, kings = _setup()
     rng = PascalRandom(seed=1)
     result = generate_new_game(rng, game_state, kings, gamevers=1)
 
     # Kings occupy the same id range heroes otherwise would, one-for-one,
     # so the *total* materialized leader count (Kings + Heroes) is simply
-    # leader_count minus the still-reserved slot, independent of king_count.
-    assert len(result.leaders) == 100 - RESERVED_ROSTER_COUNT
+    # leader_count, independent of king_count.
+    assert len(result.leaders) == 100
 
 
 def test_no_leader_id_is_reused_across_kings_lords_and_companions():
@@ -504,16 +504,24 @@ def test_no_leader_id_is_reused_across_kings_lords_and_companions():
     assert non_king_count == lord_count + companion_count
 
 
-def _mercenaries(result, kings):
-    """The complement of `_lords()` among kingdom_id=None non-King leaders --
-    see `_lords()`'s own docstring comment for why id order distinguishes them."""
+def _mercenaries(result, kings, *, leader_count=100):
+    """The complement of `_lords()` among kingdom_id=None non-King leaders,
+    also excluding the reserved last roster id (Phase 979 addendum -- its
+    own name doesn't come from STANDARD_HERO_ROSTER, see `test_reserved_
+    roster_id_gets_its_real_valhalla_name_and_stats` below) -- see
+    `_lords()`'s own docstring comment for why id order distinguishes
+    lords from mercenaries."""
 
     king_ids = {king.leader_id for king in kings}
     lord_ids = {lord.leader_id for lord in _lords(result, kings)}
+    reserved_id = leader_count - 1
     return [
         leader
         for leader in result.leaders.values()
-        if leader.leader_id not in king_ids and leader.kingdom_id is None and leader.leader_id not in lord_ids
+        if leader.leader_id not in king_ids
+        and leader.kingdom_id is None
+        and leader.leader_id not in lord_ids
+        and leader.leader_id != reserved_id
     ]
 
 
@@ -538,6 +546,31 @@ def test_remaining_mercenary_heroes_are_placed_off_sea_and_off_king_homes():
         assert mercenary.skills is not None
         assert mercenary.alignment is not None
         assert mercenary.name == STANDARD_HERO_ROSTER[mercenary.leader_id]
+
+
+def test_reserved_roster_id_gets_its_real_valhalla_name_and_stats():
+    # Phase 979 addendum: for a 100-slot leader_count (this project's own
+    # default/only tier, RESERVED_ROSTER_HERO_NAME[100] == "Kitralus"),
+    # the reserved last roster id (99) is now a real LeaderState too,
+    # with the full stat block of the matching VALHALLA_ROSTER entry --
+    # confirmed real (same name) across a real GW world file, not an
+    # invented identity.
+    from ak_engine.models.valhalla import VALHALLA_HERO_BY_NAME
+
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    reserved = result.leaders[99]
+    kitralus = VALHALLA_HERO_BY_NAME["Kitralus"]
+    assert reserved.name == "Kitralus"
+    assert reserved.kingdom_id is None
+    assert reserved.alignment is kitralus.true_alignment
+    assert reserved.temper is kitralus.temper
+    assert reserved.race is kitralus.race
+    assert reserved.skills == kitralus.skills
+    assert reserved.location not in {king.home_coord for king in kings}
+    assert result.provinces[reserved.location].terrain is not Terrain.SEA
 
 
 def _setup_naval(king_count: int = 3) -> tuple[GameState, list[KingSetup]]:

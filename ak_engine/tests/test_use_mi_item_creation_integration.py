@@ -75,6 +75,16 @@ class of shift once more): feature_id 1 is now guarded by a
 ``SKILL_BOOK``-category feature moved to feature_id 95, still guarded
 by a ``GI_CLAM`` (hp 14-27, melee skill 0, the same real fact as
 before -- only its feature id shifted), win seed ``5`` unchanged.
+
+Re-scanned a final time after Phase 979's own addendum materialized the
+reserved last roster id too (one more ``PascalRandom`` coordinate draw,
+same class of shift once more): feature_id 1 is now guarded by a
+``GR_DRAGON`` (hp 21-31, melee skill 2) -- a genuinely tough guardian
+for an unskilled Searcher, so its own win seed is larger than every
+prior rescan's, ``827``, rather than the usual small one; the
+``SKILL_BOOK``-category feature keeps feature_id 95/``GI_CLAM``/win
+seed ``5`` unchanged (that specific treasure+guardian pairing wasn't
+affected by this particular shift).
 """
 
 from __future__ import annotations
@@ -97,14 +107,15 @@ from ak_engine.worldgen.pascal_random import PascalRandom
 _KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
 _SEARCHER_LEADER_ID = 999
 # Phase 979 note: generate_new_game(seed=1)'s own feature roster is a
-# fixed, reproducible fact of this scenario, re-checked after Phase 979
-# wired draw_mercenary_relocation_coordinate() into generate_new_game()
-# for "remaining mercenary heroes" (RNG consumption before place_all_
-# features(), same class of shift as Phase 426/427/797/799/892/902
-# before it). The first treasure+guardian feature (feature_id 1) is now
-# guarded by a MINOTAUR (hp 15-25, melee skill 2) -- a real, reproducible
-# fact, not a tuning choice.
-_SEARCH_WIN_SEED = 0
+# fixed, reproducible fact of this scenario, re-checked after Phase 979's
+# own addendum materialized the reserved last roster id too (one more
+# PascalRandom draw before place_all_features(), same class of shift as
+# Phase 426/427/797/799/892/902 and Phase 979's own earlier mercenary-
+# placement change before it). The first treasure+guardian feature
+# (feature_id 1) is now guarded by a GR_DRAGON (hp 21-31, melee skill 2)
+# -- a real, reproducible fact, not a tuning choice; its own win seed is
+# correspondingly large for an unskilled Searcher.
+_SEARCH_WIN_SEED = 827
 # feature_id 95 (GI_CLAM guarding a Tactical skill book) is the
 # SKILL_BOOK-category feature this test now targets -- picked for a
 # weak guardian (hp 14-27, melee skill 0) so the win seed stays small.
