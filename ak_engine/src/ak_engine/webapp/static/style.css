@@ -265,3 +265,60 @@ button.danger:hover {
   color: var(--color-accent-primary);
   border: 2px solid var(--color-accent-primary);
 }
+
+/* Provinces page hex map (Phase 981). */
+.hex-map-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #fffaf0;
+  margin: 1rem 0;
+  padding: 0.5rem;
+}
+
+.hex-map a polygon {
+  cursor: pointer;
+  transition: opacity 0.1s ease;
+}
+
+.hex-map a:hover polygon {
+  opacity: 0.75;
+}
+
+.hex-map-legend {
+  margin-bottom: 1rem;
+}
+
+.hex-map-legend-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin-bottom: 0.4rem;
+}
+
+.hex-map-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.hex-map-swatch-color {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 3px;
+}
+
+.hex-map-swatch-border {
+  background: transparent;
+  border: 3px solid;
+}
+
+.hex-map-legend-note {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+  margin: 0;
+}

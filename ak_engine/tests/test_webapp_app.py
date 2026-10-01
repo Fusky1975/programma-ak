@@ -495,6 +495,28 @@ def test_provinces_list_shows_every_generated_province(tmp_path):
     assert b"(0, 0)" in response.data
 
 
+def test_provinces_list_shows_a_hex_map_svg(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/provinces")
+
+    assert response.status_code == 200
+    assert b"<svg" in response.data
+    assert b"<polygon" in response.data
+    assert b"Home of" in response.data  # tooltip text for at least one King's Home
+
+
+def test_provinces_list_before_world_creation_has_no_hex_map(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/provinces")
+
+    assert response.status_code == 200
+    assert b"<svg" not in response.data
+
+
 def test_province_edit_shows_the_current_values(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -581,6 +603,79 @@ def test_save_province_missing_province_shows_an_error_not_a_crash(tmp_path):
 
     assert response.status_code == 200
     assert b"Province not found" in response.data
+
+
+def test_set_home_province_moves_a_kings_home(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    some_other_coord = next(coord for coord in state.provinces if coord != state.kingdoms[1].home_province)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/{some_other_coord.x}/{some_other_coord.y}/set-home",
+        data={"kingdom_id": "1"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, reloaded = open_game(tmp_path, meta.slug)
+    assert reloaded.kingdoms[1].home_province == some_other_coord
+
+
+def test_set_home_province_does_not_touch_the_provinces_own_owner_or_tax(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    some_other_coord = next(coord for coord in state.provinces if coord != state.kingdoms[1].home_province)
+    original_owner = state.provinces[some_other_coord].owner_kingdom_id
+    original_tax = state.provinces[some_other_coord].tax
+
+    client.post(f"/games/{meta.slug}/provinces/{some_other_coord.x}/{some_other_coord.y}/set-home", data={"kingdom_id": "1"})
+
+    _, reloaded = open_game(tmp_path, meta.slug)
+    assert reloaded.provinces[some_other_coord].owner_kingdom_id == original_owner
+    assert reloaded.provinces[some_other_coord].tax == original_tax
+
+
+def test_set_home_province_with_invalid_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0/set-home",
+        data={"kingdom_id": "999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Kingdom" in response.data
+
+
+def test_set_home_province_missing_province_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/999/999/set-home",
+        data={"kingdom_id": "1"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Province not found" in response.data
+
+
+def test_province_edit_shows_which_kingdom_it_is_home_to(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+
+    response = client.get(f"/games/{meta.slug}/provinces/{home.x}/{home.y}")
+
+    assert response.status_code == 200
+    assert b"Home of" in response.data
+    assert state.kingdoms[1].name.encode() in response.data
 
 
 def test_leaders_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):

@@ -9,6 +9,44 @@
 
   {% if provinces %}
     <p>{{ provinces|length }} provinces on a {{ state.board_width }}x{{ state.board_height }} map.</p>
+
+    <div class="hex-map-scroll">
+      <svg width="{{ hex_map.width }}" height="{{ hex_map.height }}" class="hex-map">
+        {% for cell in hex_map.cells %}
+          <a xlink:href="{{ url_for('province_edit', slug=meta.slug, x=cell.x, y=cell.y) }}">
+            <polygon points="{{ cell.points }}" fill="{{ cell.fill }}" stroke="{{ cell.stroke }}" stroke-width="{{ cell.stroke_width }}">
+              <title>{{ cell.title }}</title>
+            </polygon>
+            {% if cell.home_marker %}
+              <circle cx="{{ cell.home_marker[0] }}" cy="{{ cell.home_marker[1] }}" r="5" fill="#fdf6e3" stroke="{{ cell.stroke }}" stroke-width="2">
+                <title>{{ cell.title }}</title>
+              </circle>
+            {% endif %}
+          </a>
+        {% endfor %}
+      </svg>
+    </div>
+
+    <div class="hex-map-legend">
+      <div class="hex-map-legend-group">
+        {% for terrain, color in [
+          ('Plains', '#d9c88f'), ('Forest', '#3f6b35'), ('Jungle', '#1f5c2e'),
+          ('Mountains', '#8a8378'), ('Desert', '#e0b96a'), ('Sea', '#4a7fa8')
+        ] %}
+          <span class="hex-map-swatch"><span class="hex-map-swatch-color" style="background:{{ color }};"></span>{{ terrain }}</span>
+        {% endfor %}
+      </div>
+      {% if state.kingdoms %}
+        <div class="hex-map-legend-group">
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <span class="hex-map-swatch"><span class="hex-map-swatch-color hex-map-swatch-border" style="border-color:{{ kingdom_color(kingdom_id) }};"></span>{{ kingdom.name }}</span>
+          {% endfor %}
+          <span class="hex-map-swatch"><span class="hex-map-swatch-color hex-map-swatch-border" style="border-color: #9c8c6e;"></span>Unowned</span>
+        </div>
+        <p class="hex-map-legend-note">The small circle marks each King's own current Home province.</p>
+      {% endif %}
+    </div>
+
     <table class="data-table">
       <thead>
         <tr>

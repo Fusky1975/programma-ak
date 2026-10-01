@@ -57,6 +57,28 @@
 </div>
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Home Province</h2>
+  {% set current_homes = state.kingdoms.values()|selectattr('home_province', 'equalto', province.coord)|list %}
+  {% if current_homes %}
+    <p class="status-ok">Home of {{ current_homes|map(attribute='name')|join(', ') }}.</p>
+  {% else %}
+    <p class="game-meta">Not currently anyone's Home province.</p>
+  {% endif %}
+  {% if state.kingdoms %}
+    <form class="inline" method="post" action="{{ url_for('province_set_home', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">
+      <label for="home_kingdom_id">Make this the Home province of</label>
+      <select id="home_kingdom_id" name="kingdom_id">
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}">{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Set as Home</button>
+    </form>
+    <p class="hex-map-legend-note">This only moves the Home marker (used for Home-province bonuses, Royal Heir distance, etc.) -- it doesn't change this province's own owner, tax, or recruit types, or the old Home's either. Edit those separately if needed.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Special Features</h2>
   {% if features %}
     <ul class="game-list">

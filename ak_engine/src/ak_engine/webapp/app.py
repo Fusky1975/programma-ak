@@ -43,6 +43,7 @@ from ak_engine.webapp.games import (
     open_game,
     save_game,
 )
+from ak_engine.webapp.hex_map import build_hex_map, kingdom_color
 from ak_engine.webapp.players import (
     MAX_PLAYERS,
     MIN_PLAYERS,
@@ -149,6 +150,7 @@ def create_app(games_root: Path | None = None) -> Flask:
     app = Flask(__name__)
     app.config["GAMES_ROOT"] = games_root if games_root is not None else DEFAULT_GAMES_ROOT
     app.jinja_env.filters["display_name"] = display_name
+    app.jinja_env.globals["kingdom_color"] = kingdom_color
 
     @app.get("/")
     def games_list():
@@ -388,6 +390,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             meta=meta,
             state=state,
             provinces=provinces,
+            hex_map=build_hex_map(state) if provinces else None,
             error=request.args.get("error"),
         )
 
@@ -458,6 +461,31 @@ def create_app(games_root: Path | None = None) -> Flask:
         province.tax = tax
         province.recruit_type_1 = recruit_type_1
         province.recruit_type_2 = recruit_type_2
+        save_game(root, slug, state)
+        return redirect(url_for("province_edit", slug=slug, x=x, y=y))
+
+    @app.post("/games/<slug>/provinces/<int:x>/<int:y>/set-home")
+    def province_set_home(slug: str, x: int, y: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        coord = HexCoord(x, y)
+        if coord not in state.provinces:
+            return redirect(url_for("provinces_list", slug=slug, error="Province not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("province_edit", slug=slug, x=x, y=y, error=message))
+
+        kingdom_id_raw = request.form.get("kingdom_id", "")
+        try:
+            kingdom_id = int(kingdom_id_raw)
+            kingdom = state.kingdoms[kingdom_id]
+        except (ValueError, KeyError):
+            return _edit_error("Please choose a valid Kingdom.")
+
+        kingdom.home_province = coord
         save_game(root, slug, state)
         return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 
