@@ -20,17 +20,17 @@ from pathlib import Path
 from flask import Flask, Response, redirect, render_template, request, url_for
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ArmyType
-from ak_engine.models.feature import FeatureType
-from ak_engine.models.magic_feature import MagicFeature
-from ak_engine.models.map import HexCoord, Terrain
-from ak_engine.models.monster import Monster
+from ak_engine.models.army_type import ARMY_TYPE_NAME, ArmyType
+from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
+from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
+from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
+from ak_engine.models.monster import MONSTER_NAMES, Monster
 from ak_engine.models.office import OFFICE_NAME, Office
-from ak_engine.models.power import Power
-from ak_engine.models.race import Race
+from ak_engine.models.power import POWER_NAME, Power
+from ak_engine.models.race import RACE_NAME, Race
 from ak_engine.models.sex import Sex
-from ak_engine.models.temper import Temper
-from ak_engine.models.treasure import Treasure
+from ak_engine.models.temper import TEMPER_NAME, Temper
+from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_NAME, Treasure
 from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES
 from ak_engine.webapp.games import (
     DuplicateGameNameError,
@@ -77,12 +77,74 @@ from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH
 MANDATORY_OFFICES: tuple[Office, ...] = tuple(o for o in ALL_OFFICES if o.value <= Office.MAGE.value)
 OPTIONAL_OFFICES: tuple[Office, ...] = tuple(o for o in ALL_OFFICES if o.value > Office.MAGE.value) + ARMY_RANKED_OFFICES
 
+
+def _optional_enum(cls, raw: str):
+    """A submitted <select>'s value, as an enum member, or ``None`` for the
+    "unset"/"none" blank option every optional field's own template offers.
+    """
+
+    return cls[raw] if raw else None
+
+
+# Every enum this interface renders in a dropdown or table, mapped to this
+# project's own curated "real display name" dict (e.g. `models/race.py
+# RACE_NAME`: "Elf" not "Elven", "Light Cavalry" not "Lt Cavalry" --
+# sourced from the same real game text these models' own reports already
+# render). `Alignment` has no such dict of its own, but its member values
+# already *are* the real display string (`Alignment.ANTI_HOLY.value ==
+# "Anti-Holy"`), so a one-off dict built from that is just as real.
+_ENUM_DISPLAY_NAMES: dict[type, dict] = {
+    Terrain: TERRAIN_NAME,
+    # RACE_NAME's own Race.NO_RACE entry is lowercase ("no race") -- real,
+    # sourced prose-fragment text (TREASURE.X2 et al.), correct mid-
+    # sentence but not as a standalone dropdown label, so this interface
+    # overrides just that one entry rather than title-casing the whole
+    # dict (which would also wrongly capitalize "of"/"the" inside a
+    # multi-word real name, e.g. Treasure's own gold-hoard names below).
+    Race: {**RACE_NAME, Race.NO_RACE: "No Race"},
+    ArmyType: ARMY_TYPE_NAME,
+    FeatureType: FEATURE_TYPE_NAMES,
+    Monster: MONSTER_NAMES,
+    # GOLD_HOARD_DISPLAY_NAME overrides TREASURE_NAME's own bare "Hoard"
+    # for the 3 gold-hoard tiers -- that module's own docstring confirms
+    # TREASURE_NAME's "Hoard" is TREASURE.X2's flavor-name extraction, not
+    # what a real ADVENTURE report actually prints ("Large Hoard of Gold").
+    Treasure: {**TREASURE_NAME, **GOLD_HOARD_DISPLAY_NAME},
+    MagicFeature: MAGIC_FEATURE_NAME,
+    Power: POWER_NAME,
+    Temper: TEMPER_NAME,
+    Alignment: {member: member.value for member in Alignment},
+}
+
+
+def display_name(value) -> str:
+    """The Jinja filter (``{{ value|display_name }}``) every template uses
+    to show an enum member -- this project's own curated name verbatim
+    when one covers this exact member (already correctly cased real text,
+    e.g. "Large Hoard of Gold"/"Anti-Holy" -- blanket title-casing that
+    would wrongly capitalize "of"/produce "Anti Holy"). Falls back to a
+    title-cased version of the enum's own identifier for the handful of
+    members no curated dict covers (documented gaps in those dicts
+    themselves, e.g. `Race.DROW`/`ArmyType.ARTILLERY`) and for enums with
+    no curated dict at all (`Sex` -- "Male"/"Female" is already exactly
+    right from the bare identifier, so it needs none).
+    """
+
+    if value is None:
+        return ""
+    lookup = _ENUM_DISPLAY_NAMES.get(type(value), {})
+    if value in lookup:
+        return lookup[value]
+    return value.name.replace("_", " ").title()
+
+
 DEFAULT_GAMES_ROOT = Path.home() / "ak_games"
 
 
 def create_app(games_root: Path | None = None) -> Flask:
     app = Flask(__name__)
     app.config["GAMES_ROOT"] = games_root if games_root is not None else DEFAULT_GAMES_ROOT
+    app.jinja_env.filters["display_name"] = display_name
 
     @app.get("/")
     def games_list():
@@ -299,6 +361,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             meta=meta,
             state=state,
             province=province,
+            features=state.features_at(HexCoord(x, y)),
             terrains=list(Terrain),
             races=list(Race),
             army_types=list(ArmyType),
@@ -413,14 +476,10 @@ def create_app(games_root: Path | None = None) -> Flask:
         except KeyError:
             return _edit_error("Please choose a valid race.")
 
-        def _optional_enum(cls, field: str):
-            raw = request.form.get(field, "")
-            return cls[raw] if raw else None
-
         try:
-            alignment = _optional_enum(Alignment, "alignment")
-            temper = _optional_enum(Temper, "temper")
-            sex = _optional_enum(Sex, "sex")
+            alignment = _optional_enum(Alignment, request.form.get("alignment", ""))
+            temper = _optional_enum(Temper, request.form.get("temper", ""))
+            sex = _optional_enum(Sex, request.form.get("sex", ""))
         except KeyError:
             return _edit_error("Please choose valid values.")
 
@@ -491,16 +550,12 @@ def create_app(games_root: Path | None = None) -> Flask:
         except KeyError:
             return _edit_error("Please choose a valid feature type.")
 
-        def _optional_enum(cls, field: str):
-            raw = request.form.get(field, "")
-            return cls[raw] if raw else None
-
         try:
-            guardian_monster = _optional_enum(Monster, "guardian_monster")
-            guardian_alignment = _optional_enum(Alignment, "guardian_alignment")
-            treasure = _optional_enum(Treasure, "treasure")
-            magic_location = _optional_enum(MagicFeature, "magic_location")
-            magic_power = _optional_enum(Power, "magic_power")
+            guardian_monster = _optional_enum(Monster, request.form.get("guardian_monster", ""))
+            guardian_alignment = _optional_enum(Alignment, request.form.get("guardian_alignment", ""))
+            treasure = _optional_enum(Treasure, request.form.get("treasure", ""))
+            magic_location = _optional_enum(MagicFeature, request.form.get("magic_location", ""))
+            magic_power = _optional_enum(Power, request.form.get("magic_power", ""))
         except KeyError:
             return _edit_error("Please choose valid values.")
 
@@ -510,6 +565,74 @@ def create_app(games_root: Path | None = None) -> Flask:
         feature.treasure = treasure
         feature.magic_location = magic_location
         feature.magic_power = magic_power
+        save_game(root, slug, state)
+        return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id))
+
+    @app.get("/games/<slug>/provinces/<int:x>/<int:y>/features/new")
+    def feature_new(slug: str, x: int, y: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        coord = HexCoord(x, y)
+        if coord not in state.provinces:
+            return redirect(url_for("provinces_list", slug=slug, error="Province not found."))
+        return render_template(
+            "feature_new.html",
+            meta=meta,
+            coord=coord,
+            next_feature_id=state.new_feature_id(),
+            feature_types=list(FeatureType),
+            monsters=list(Monster),
+            alignments=list(Alignment),
+            treasures=list(Treasure),
+            magic_locations=list(MagicFeature),
+            powers=list(Power),
+            error=request.args.get("error"),
+        )
+
+    @app.post("/games/<slug>/provinces/<int:x>/<int:y>/features/new")
+    def feature_create(slug: str, x: int, y: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        coord = HexCoord(x, y)
+        if coord not in state.provinces:
+            return redirect(url_for("provinces_list", slug=slug, error="Province not found."))
+
+        def _create_error(message: str):
+            return redirect(url_for("feature_new", slug=slug, x=x, y=y, error=message))
+
+        try:
+            kind = FeatureType[request.form.get("kind", "")]
+        except KeyError:
+            return _create_error("Please choose a valid feature type.")
+
+        try:
+            guardian_monster = _optional_enum(Monster, request.form.get("guardian_monster", ""))
+            guardian_alignment = _optional_enum(Alignment, request.form.get("guardian_alignment", ""))
+            treasure = _optional_enum(Treasure, request.form.get("treasure", ""))
+            magic_location = _optional_enum(MagicFeature, request.form.get("magic_location", ""))
+            magic_power = _optional_enum(Power, request.form.get("magic_power", ""))
+        except KeyError:
+            return _create_error("Please choose valid values.")
+
+        feature_id = state.new_feature_id()
+        state.add_feature(
+            Feature(
+                feature_id=feature_id,
+                coord=coord,
+                kind=kind,
+                guardian_monster=guardian_monster,
+                guardian_alignment=guardian_alignment,
+                treasure=treasure,
+                magic_location=magic_location,
+                magic_power=magic_power,
+            )
+        )
         save_game(root, slug, state)
         return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id))
 

@@ -18,7 +18,7 @@
       <label for="race">Race</label><br>
       <select id="race" name="race">
         {% for race in races %}
-          <option value="{{ race.name }}" {% if leader.race == race %}selected{% endif %}>{{ race.name.replace('_', ' ').title() }}</option>
+          <option value="{{ race.name }}" {% if leader.race == race %}selected{% endif %}>{{ race|display_name }}</option>
         {% endfor %}
       </select>
     </p>
@@ -28,7 +28,7 @@
       <select id="alignment" name="alignment">
         <option value="">-- Unset --</option>
         {% for alignment in alignments %}
-          <option value="{{ alignment.name }}" {% if leader.alignment == alignment %}selected{% endif %}>{{ alignment.name.replace('_', ' ').title() }}</option>
+          <option value="{{ alignment.name }}" {% if leader.alignment == alignment %}selected{% endif %}>{{ alignment|display_name }}</option>
         {% endfor %}
       </select>
     </p>
@@ -38,7 +38,7 @@
       <select id="temper" name="temper">
         <option value="">-- Unset --</option>
         {% for temper in tempers %}
-          <option value="{{ temper.name }}" {% if leader.temper == temper %}selected{% endif %}>{{ temper.name.title() }}</option>
+          <option value="{{ temper.name }}" {% if leader.temper == temper %}selected{% endif %}>{{ temper|display_name }}</option>
         {% endfor %}
       </select>
     </p>
@@ -48,7 +48,7 @@
       <select id="sex" name="sex">
         <option value="">-- Unset --</option>
         {% for sex in sexes %}
-          <option value="{{ sex.name }}" {% if leader.sex == sex %}selected{% endif %}>{{ sex.name.title() }}</option>
+          <option value="{{ sex.name }}" {% if leader.sex == sex %}selected{% endif %}>{{ sex|display_name }}</option>
         {% endfor %}
       </select>
     </p>

@@ -6,9 +6,15 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 
+from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_type import ArmyType
 from ak_engine.models.map import HexCoord
+from ak_engine.models.monster import Monster
 from ak_engine.models.office import Office
-from ak_engine.webapp.app import create_app
+from ak_engine.models.race import Race
+from ak_engine.models.sex import Sex
+from ak_engine.models.treasure import Treasure
+from ak_engine.webapp.app import create_app, display_name
 from ak_engine.webapp.games import create_game, list_games, open_game
 
 
@@ -1010,3 +1016,179 @@ def test_processing_a_turn_with_a_missing_kingdom_still_succeeds(tmp_path):
     assert response.status_code == 200
     view = client.get(f"/games/{meta.slug}/turns/1/report/2")
     assert view.status_code == 200
+
+
+def test_feature_new_shows_the_next_feature_id(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    expected_next_id = max(state.features.keys(), default=0) + 1
+
+    response = client.get(f"/games/{meta.slug}/provinces/0/0/features/new")
+
+    assert response.status_code == 200
+    assert f"Feature <strong>#{expected_next_id}</strong>".encode() in response.data
+
+
+def test_feature_new_missing_province_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/provinces/999/999/features/new", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Province not found" in response.data
+
+
+def test_feature_new_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/provinces/0/0/features/new", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_create_feature_persists_it_with_the_right_id_and_coord(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    expected_id = max(state.features.keys(), default=0) + 1
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0/features/new",
+        data={
+            "kind": "CAVE",
+            "guardian_monster": "GO_DRAGON",
+            "treasure": "GOLD_HOARD_LARGE",
+            "guardian_alignment": "",
+            "magic_location": "",
+            "magic_power": "",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    feature = state.features[expected_id]
+    assert feature.coord == HexCoord(0, 0)
+    assert feature.kind.name == "CAVE"
+    assert feature.guardian_monster.name == "GO_DRAGON"
+    assert feature.treasure.name == "GOLD_HOARD_LARGE"
+    assert feature.guardian_alignment is None
+    # The new feature's own edit page is shown right after creation.
+    assert b"Gold Dragon" in response.data
+
+
+def test_create_feature_with_invalid_kind_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0/features/new",
+        data={"kind": "NOT_A_KIND"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid feature type" in response.data
+
+
+def test_create_feature_missing_province_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/999/999/features/new",
+        data={"kind": "CAVE"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Province not found" in response.data
+
+
+def test_create_feature_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/games/does-not-exist/provinces/0/0/features/new",
+        data={"kind": "CAVE"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+# -- display_name() -- the Jinja filter every editor screen renders enum
+# members through -- real curated names, not a naive "underscore -> title
+# case" guess at the enum identifier.
+
+
+def test_display_name_uses_the_curated_name_when_one_exists():
+    # Race.ELVEN's own curated RACE_NAME is "Elf" -- "Elven".title() would
+    # have been a plausible-looking but wrong guess.
+    assert display_name(Race.ELVEN) == "Elf"
+    # ArmyType.LT_CAVALRY's own curated name spells out the abbreviation.
+    assert display_name(ArmyType.LT_CAVALRY) == "Light Cavalry"
+    # Monster.GO_DRAGON's own curated name is "Gold Dragon" -- the bare
+    # identifier prettifies to the wrong "Go Dragon" ("Go" is the real
+    # game's own abbreviation for "Gold", not a separate word).
+    assert display_name(Monster.GO_DRAGON) == "Gold Dragon"
+
+
+def test_display_name_prefers_the_real_adventure_report_gold_hoard_names():
+    # models/treasure.py TREASURE_NAME alone gives the 3 gold-hoard tiers
+    # only their bare "Hoard" (TREASURE.X2's own flavor-name extraction,
+    # that module's own docstring says, "not what the report actually
+    # prints") -- GOLD_HOARD_DISPLAY_NAME's own real ADVENTURE-report text
+    # must win for exactly these 3 members.
+    assert display_name(Treasure.GOLD_HOARD_LARGE) == "Large Hoard of Gold"
+    assert display_name(Treasure.GOLD_HOARD_HUGE) == "Huge Hoard of Gold"
+    assert display_name(Treasure.GOLD_HOARD_FABULOUS) == "Fabulous Hoard of Gold"
+
+
+def test_display_name_uses_alignments_own_real_value_not_the_identifier():
+    # Alignment.ANTI_HOLY.value is already "Anti-Holy" -- the bare
+    # identifier's own naive prettification would give "Anti Holy" (no
+    # hyphen) instead.
+    assert display_name(Alignment.ANTI_HOLY) == "Anti-Holy"
+    assert display_name(Alignment.DRUID) == "Druidic"
+
+
+def test_display_name_falls_back_to_the_bare_identifier_when_uncurated():
+    # Race.DROW has no entry in RACE_NAME (a documented gap in that dict
+    # itself) -- falls back to a plain title-cased identifier rather than
+    # raising.
+    assert display_name(Race.DROW) == "Drow"
+
+
+def test_display_name_handles_an_enum_with_no_curated_dict_at_all():
+    # Sex has no curated *_NAME dict anywhere in this project -- the bare
+    # identifier is already exactly right.
+    assert display_name(Sex.MALE) == "Male"
+
+
+def test_display_name_of_none_is_empty_string():
+    assert display_name(None) == ""
+
+
+def test_province_edit_shows_the_real_curated_recruit_type_names(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/provinces/0/0")
+
+    assert b"Light Cavalry" in response.data
+    assert b"Lt Cavalry" not in response.data
+
+
+def test_leader_edit_shows_the_real_curated_race_name(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)  # leader 2 is Elara, Elven
+
+    response = client.get(f"/games/{meta.slug}/leaders/2")
+
+    assert b">Elf<" in response.data
+    assert b"Elven" not in response.data

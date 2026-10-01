@@ -26,12 +26,12 @@
         {% for province in provinces %}
           <tr>
             <td>({{ province.coord.x }}, {{ province.coord.y }})</td>
-            <td>{{ province.terrain.name.replace('_', ' ').title() }}</td>
-            <td>{{ province.race.name.replace('_', ' ').title() }}</td>
+            <td>{{ province.terrain|display_name }}</td>
+            <td>{{ province.race|display_name }}</td>
             <td>{{ state.kingdoms[province.owner_kingdom_id].name if province.owner_kingdom_id in state.kingdoms else '--' }}</td>
             <td>{{ province.tax if province.tax is not none else '--' }}</td>
-            <td>{{ province.recruit_type_1.name.replace('_', ' ').title() if province.recruit_type_1 else '--' }}</td>
-            <td>{{ province.recruit_type_2.name.replace('_', ' ').title() if province.recruit_type_2 else '--' }}</td>
+            <td>{{ province.recruit_type_1|display_name if province.recruit_type_1 else '--' }}</td>
+            <td>{{ province.recruit_type_2|display_name if province.recruit_type_2 else '--' }}</td>
             <td><a class="button" href="{{ url_for('province_edit', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">Edit</a></td>
           </tr>
         {% endfor %}

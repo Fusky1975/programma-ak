@@ -13,7 +13,7 @@
         <li>
           <div>
             <div class="game-name">{{ kingdom.name }}</div>
-            <div class="game-meta">{{ kingdom.race.name.title() }} &middot; {{ kingdom.alignment.name.replace('_', ' ').title() }} &middot; Home at ({{ kingdom.home_province.x }}, {{ kingdom.home_province.y }})</div>
+            <div class="game-meta">{{ kingdom.race|display_name }} &middot; {{ kingdom.alignment|display_name }} &middot; Home at ({{ kingdom.home_province.x }}, {{ kingdom.home_province.y }})</div>
           </div>
         </li>
       {% endfor %}

@@ -23,10 +23,10 @@
         {% for feature in features %}
           <tr>
             <td>({{ feature.coord.x }}, {{ feature.coord.y }})</td>
-            <td>{{ feature.kind.name.replace('_', ' ').title() }}</td>
-            <td>{{ feature.guardian_monster.name.replace('_', ' ').title() if feature.guardian_monster else '--' }}</td>
-            <td>{{ feature.treasure.name.replace('_', ' ').title() if feature.treasure else '--' }}</td>
-            <td>{{ feature.magic_power.name.replace('_', ' ').title() if feature.magic_power else '--' }}</td>
+            <td>{{ feature.kind|display_name }}</td>
+            <td>{{ feature.guardian_monster|display_name if feature.guardian_monster else '--' }}</td>
+            <td>{{ feature.treasure|display_name if feature.treasure else '--' }}</td>
+            <td>{{ feature.magic_power|display_name if feature.magic_power else '--' }}</td>
             <td><a class="button" href="{{ url_for('feature_edit', slug=meta.slug, feature_id=feature.feature_id) }}">Edit</a></td>
           </tr>
         {% endfor %}

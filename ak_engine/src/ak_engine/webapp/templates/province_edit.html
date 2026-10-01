@@ -13,7 +13,7 @@
       <label for="terrain">Terrain</label><br>
       <select id="terrain" name="terrain">
         {% for terrain in terrains %}
-          <option value="{{ terrain.name }}" {% if province.terrain == terrain %}selected{% endif %}>{{ terrain.name.replace('_', ' ').title() }}</option>
+          <option value="{{ terrain.name }}" {% if province.terrain == terrain %}selected{% endif %}>{{ terrain|display_name }}</option>
         {% endfor %}
       </select>
     </p>
@@ -22,7 +22,7 @@
       <label for="race">Race</label><br>
       <select id="race" name="race">
         {% for race in races %}
-          <option value="{{ race.name }}" {% if province.race == race %}selected{% endif %}>{{ race.name.replace('_', ' ').title() }}</option>
+          <option value="{{ race.name }}" {% if province.race == race %}selected{% endif %}>{{ race|display_name }}</option>
         {% endfor %}
       </select>
     </p>
@@ -37,7 +37,7 @@
       <select id="recruit_type_1" name="recruit_type_1">
         <option value="">-- None --</option>
         {% for army_type in army_types %}
-          <option value="{{ army_type.name }}" {% if province.recruit_type_1 == army_type %}selected{% endif %}>{{ army_type.name.replace('_', ' ').title() }}</option>
+          <option value="{{ army_type.name }}" {% if province.recruit_type_1 == army_type %}selected{% endif %}>{{ army_type|display_name }}</option>
         {% endfor %}
       </select>
     </p>
@@ -47,13 +47,30 @@
       <select id="recruit_type_2" name="recruit_type_2">
         <option value="">-- None --</option>
         {% for army_type in army_types %}
-          <option value="{{ army_type.name }}" {% if province.recruit_type_2 == army_type %}selected{% endif %}>{{ army_type.name.replace('_', ' ').title() }}</option>
+          <option value="{{ army_type.name }}" {% if province.recruit_type_2 == army_type %}selected{% endif %}>{{ army_type|display_name }}</option>
         {% endfor %}
       </select>
     </p>
 
     <button type="submit">Save Province</button>
   </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Special Features</h2>
+  {% if features %}
+    <ul class="game-list">
+      {% for feature in features %}
+        <li>
+          <div class="game-name">#{{ feature.feature_id }} &mdash; {{ feature.kind|display_name }}</div>
+          <a class="button" href="{{ url_for('feature_edit', slug=meta.slug, feature_id=feature.feature_id) }}">Edit</a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No special features here yet.</p>
+  {% endif %}
+  <a class="button" href="{{ url_for('feature_new', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">Add Special Feature</a>
 </div>
 
 {% endblock %}

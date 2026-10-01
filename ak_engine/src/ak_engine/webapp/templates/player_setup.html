@@ -24,7 +24,7 @@
         <li>
           <div>
             <div class="game-name">{{ player.name }}</div>
-            <div class="game-meta">{{ player.race.title() }} &middot; {{ player.alignment.replace('_', ' ').title() }}</div>
+            <div class="game-meta">{{ player.race_enum|display_name }} &middot; {{ player.alignment_enum|display_name }}</div>
           </div>
           <form class="inline" method="post" action="{{ url_for('players_remove', slug=meta.slug, player_id=player.player_id) }}"
                 onsubmit="return confirm('Remove King &quot;{{ player.name }}&quot;?');">
@@ -47,14 +47,14 @@
     <label for="race">Race</label>
     <select id="race" name="race" required>
       {% for race in playable_races %}
-        <option value="{{ race.name }}">{{ race.name.title() }}</option>
+        <option value="{{ race.name }}">{{ race|display_name }}</option>
       {% endfor %}
     </select>
 
     <label for="alignment">Alignment</label>
     <select id="alignment" name="alignment" required>
       {% for alignment in alignments %}
-        <option value="{{ alignment.name }}">{{ alignment.name.replace('_', ' ').title() }}</option>
+        <option value="{{ alignment.name }}">{{ alignment|display_name }}</option>
       {% endfor %}
     </select>
 

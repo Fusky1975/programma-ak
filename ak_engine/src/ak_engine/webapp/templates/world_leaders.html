@@ -25,10 +25,10 @@
           <tr>
             <td>{{ leader.name }}{% if leader.is_king %} (King){% endif %}</td>
             <td>{{ state.kingdoms[leader.kingdom_id].name if leader.kingdom_id in state.kingdoms else 'Independent' }}</td>
-            <td>{{ leader.race.name.replace('_', ' ').title() }}</td>
-            <td>{{ leader.alignment.name.replace('_', ' ').title() if leader.alignment else '--' }}</td>
-            <td>{{ leader.temper.name.title() if leader.temper else '--' }}</td>
-            <td>{{ leader.sex.name.title() if leader.sex else '--' }}</td>
+            <td>{{ leader.race|display_name }}</td>
+            <td>{{ leader.alignment|display_name if leader.alignment else '--' }}</td>
+            <td>{{ leader.temper|display_name if leader.temper else '--' }}</td>
+            <td>{{ leader.sex|display_name if leader.sex else '--' }}</td>
             <td><a class="button" href="{{ url_for('leader_edit', slug=meta.slug, leader_id=leader.leader_id) }}">Edit</a></td>
           </tr>
         {% endfor %}

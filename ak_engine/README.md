@@ -37666,6 +37666,69 @@ supply of any of these doesn't have to be re-derived from scratch:
   turn-processing cycle, entirely from the browser, with no engine logic
   duplicated anywhere in `webapp/` -- every screen is a thin, tested
   layer over functions the engine already had.
+
+  **Phase 974: "Add Special Feature," and a real display-name bug found
+  and fixed while using the finished interface end to end with the
+  user.** The user drove a live demo (4 Kings, a full world, a province
+  edit, a Turn 1 process) and asked to add a brand-new Feature to an
+  empty Sea province -- a gap in Phase 971's own scope, which only let
+  the GM edit a Feature `generate_new_game()` had already created, never
+  create one from nothing. Added `/games/<slug>/provinces/<x>/<y>/
+  features/new` (GET/POST), reusing `GameState.new_feature_id()`/
+  `add_feature()` exactly as `turn/world_generation.py`'s own real
+  Feature-creation path already does, and showing the GM the assigned
+  `#N` before they commit (the user's own explicit question: "che numero
+  d'ordine riceve?").
+
+  **A real, user-caught display bug, not a cosmetic nitpick**: asking for
+  a "Gold Dragon" guardian, the GM interface's own dropdown showed "Go
+  Dragon" -- every enum-backed dropdown/table built in Phases 2/3/5
+  (terrain, race, recruit types, monsters, treasures, magic locations/
+  powers, alignments, tempers) had been displaying a naive `.name.
+  replace('_', ' ').title()` prettification of the enum's own Python
+  identifier instead of this project's own already-curated, real-game
+  display-name dicts (`models/race.py RACE_NAME`, `models/monster.py
+  MONSTER_NAMES`, `models/treasure.py TREASURE_NAME`, etc. -- the exact
+  same data `report/turn_report.py` already renders through). Confirmed
+  concretely: "Go Dragon" (wrong) vs. the real "Gold Dragon" curated in
+  `MONSTER_NAMES`; "Lt Cavalry" vs. "Light Cavalry"; "Elven" vs. the real
+  "Elf"; "Anti Holy" vs. the real "Anti-Holy" (`Alignment.ANTI_HOLY.
+  value`, no dict of its own needed since the member's own value already
+  is the display string). Fixed with one Jinja filter, `display_name`
+  (`webapp/app.py`), registered once (`app.jinja_env.filters`) and used
+  by every template instead of the bare prettifier -- a curated name
+  returned verbatim when one exists, falling back to the old plain
+  title-casing only for the documented handful of gaps in those dicts
+  themselves (`Race.DROW`, `ArmyType.ARTILLERY`, etc.) or enums with no
+  curated dict at all (`Sex` -- "Male"/"Female" was already right).
+
+  **A second-order bug caught before it shipped, by testing the fix
+  itself rather than trusting it**: the filter's first draft title-cased
+  *every* resolved name, curated or not -- harmless for single-word
+  names, but it silently corrupted real multi-word curated text, turning
+  "Large Hoard of Gold" (`models/treasure.py GOLD_HOARD_DISPLAY_NAME`,
+  that module's own confirmed real ADVENTURE-report string) into "Large
+  Hoard Of Gold." Caught by a real-browser re-check after wiring the
+  fix in, not assumed correct from the diff alone -- fixed by returning
+  a curated name exactly as stored, title-casing only the uncurated
+  fallback path. `models/treasure.py` also required picking the right
+  one of its *four* different `Treasure`-keyed name dicts: the generic
+  `TREASURE_NAME` gives the 3 gold-hoard tiers only a bare "Hoard" (that
+  module's own docstring: TREASURE.X2's flavor-name extraction, "not
+  what the report actually prints"), so `GOLD_HOARD_DISPLAY_NAME`
+  overrides those 3 specific entries.
+
+  Verified with new unit tests for `display_name()` directly (curated
+  names returned verbatim including the gold-hoard-override case and
+  Alignment's own real value, the documented-gap fallback, the no-
+  curated-dict-at-all case, `None`), route-level assertions that a
+  curated name actually renders (not the old wrong one), and new
+  `test_webapp_app.py` route tests for feature creation (the assigned-id
+  display, a full create round trip, invalid-type and missing-province/
+  game error paths), plus a real-browser Playwright pass creating an
+  actual Feature #129 (Cave, Gold Dragon, Large Hoard of Gold) end to
+  end and re-confirming the corrected display after the title-casing
+  fix. Full suite: 7263 passed (15 new tests).
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are
