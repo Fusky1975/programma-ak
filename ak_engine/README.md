@@ -37829,6 +37829,66 @@ supply of any of these doesn't have to be re-derived from scratch:
   confirming the real upload form rejects such a file with neither real
   Kingdom showing a spurious upload. Full suite: 7270 passed (3 new
   tests).
+
+  **Phase 978: two real GM-interface bugs found by the user testing
+  against their own real Turn-0 report from an actual historical game.**
+
+  First, King/Hero creation and editing offered all 10 `Alignment` enum
+  members, including `ANTI_HOLY`/`MECHANICAL`/`SPECIAL` -- but
+  `models/alignment.py`'s own `CTBOTH.PAS` sourcing already establishes
+  those three as monster/construct-only, and RULES.AK [1.0] names the
+  real seven a character can hold verbatim: "an Alignment (Divine, Good,
+  Druidic, Neutral, Pagan, Evil, Undead)". New `webapp/players.py
+  PLAYABLE_ALIGNMENTS` (mirroring the existing `PLAYABLE_RACES`
+  precedent) now scopes both `player_setup.html` (King creation) and
+  `leader_edit.html` (King/Hero editing) to those seven, validated
+  server-side too. `feature_edit.html`/`feature_new.html` (a monster
+  guardian's own Alignment) correctly keep all 10.
+
+  Second, there was no way for the GM to ever set a King's Temper or
+  starting talent allocation. RULES.AK [2.1] (user-supplied verbatim):
+  "At the start of the game, the player assigns the King's name, race,
+  temper, alignment and four ability levels... but can't assign more
+  than 2 levels to any Talent." `worldgen/king_talent.py
+  build_king_skill_table()` already implemented this exact formula
+  (confirmed against a real `AK3__T1.K1` skill line since Phase 430) --
+  but nothing in the webapp ever called it, so every King generated
+  through this interface silently kept `skills=None`/`temper=None`
+  forever, never receiving even the automatic +1 Melee/Archery/Sage
+  bonus every King gets unconditionally. `player_setup.html`'s "Add a
+  King" form now has a Temper selector and a 15-Ability point-allocation
+  grid (server-validated: exactly 4 points total, at most 2 per
+  Ability), and `webapp/world_creation.py create_world()` now calls
+  `build_king_skill_table()` for every King -- including one added
+  before this phase with no talent data at all, which still correctly
+  receives just the automatic bonuses rather than nothing.
+
+  Verified with new tests across `test_webapp_players.py` (the new
+  `PlayerEntry` fields round-trip through `players.json`),
+  `test_webapp_world_creation.py` (a King's real `LeaderState.alignment`/
+  `.temper`/`.skills` match `build_king_skill_table()`'s own output after
+  "Create World" runs), and `test_webapp_app.py` (the restricted dropdowns,
+  every new validation error path, and the existing roster/world-creation
+  tests' own helper updated to post a complete, valid King form). Full
+  suite: 7282 passed (12 new tests).
+
+  Two further points the user raised in the same report turned out, on
+  direct comparison against RULES.AK/ADDEND.AK, to already match
+  documented real behavior rather than being bugs: a King's Turn-0 map
+  correctly shows only the Home province (`ADDEND.AK`'s "European
+  variant" section grants "knowledge of the provinces surrounding his
+  Kingdom, up to 3 provinces distant" as an explicit *variant-only*
+  bonus, implying the standard game starts with none beyond Home --
+  matching the user's own real reference report exactly, which also
+  shows a single province); and the PROVINCES section is correctly
+  scoped to owned territory ("the lands of thy Empire"), not a
+  neighbor-intelligence listing. A separate, already-documented real gap
+  -- `generate_new_game()` never materializes "remaining mercenary
+  heroes" (leftover hero-roster ids beyond independent lords and King
+  companions), since no source material says where one starts -- remains
+  open pending the user confirming real hero-count figures that don't
+  yet reconcile with the already-fixture-verified `leader_count=100`
+  formula.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

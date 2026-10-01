@@ -190,6 +190,25 @@ form.inline {
   flex-wrap: wrap;
 }
 
+.talent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.talent-grid label {
+  font-weight: normal;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.talent-grid input[type="number"] {
+  width: 4rem;
+}
+
 label {
   font-weight: bold;
 }

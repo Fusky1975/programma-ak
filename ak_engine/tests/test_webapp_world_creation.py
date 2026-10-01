@@ -9,8 +9,10 @@ import json
 import pytest
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.enums import Ability
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.webapp.games import create_game, game_dir, open_game
 from ak_engine.webapp.players import add_player
 from ak_engine.webapp.world_creation import (
@@ -18,6 +20,7 @@ from ak_engine.webapp.world_creation import (
     WorldAlreadyCreatedError,
     create_world,
 )
+from ak_engine.worldgen.king_talent import build_king_skill_table
 
 
 def _game_with_players(tmp_path, count: int):
@@ -58,6 +61,34 @@ def test_create_world_auto_places_every_kings_home(tmp_path):
         king_leader = next(leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king)
         assert kingdom.home_province == king_leader.location
         assert kingdom.home_province != HexCoord(0, 0)
+
+
+def test_create_world_applies_each_kings_own_temper_and_talent_allocation(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    directory = game_dir(tmp_path, meta.slug)
+    add_player(
+        directory,
+        "Fusky",
+        Race.HUMAN,
+        Alignment.UNDEAD,
+        Temper.BRAVE,
+        {Ability.MELEE: 2, Ability.NECROMANCY: 2},
+    )
+    add_player(directory, "Vitello", Race.ELVEN, Alignment.NEUTRAL)
+
+    _, state = create_world(tmp_path, meta.slug, seed=1)
+
+    fusky = next(leader for leader in state.leaders.values() if leader.is_king and leader.name == "Fusky")
+    assert fusky.alignment is Alignment.UNDEAD
+    assert fusky.temper is Temper.BRAVE
+    assert fusky.skills == build_king_skill_table({Ability.MELEE: 2, Ability.NECROMANCY: 2}, Alignment.UNDEAD)
+
+    # A King added without ever touching the new fields (an older
+    # players.json, or a GM who left talent_allocation empty) still gets
+    # the automatic bonuses -- never silently stays at skills=None.
+    vitello = next(leader for leader in state.leaders.values() if leader.is_king and leader.name == "Vitello")
+    assert vitello.temper is None
+    assert vitello.skills == build_king_skill_table({}, Alignment.NEUTRAL)
 
 
 def test_create_world_below_min_players_raises(tmp_path):

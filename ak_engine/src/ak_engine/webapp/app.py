@@ -21,6 +21,7 @@ from flask import Flask, Response, redirect, render_template, request, url_for
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TYPE_NAME, ArmyType
+from ak_engine.models.enums import ABILITY_NAME, Ability
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
@@ -45,6 +46,7 @@ from ak_engine.webapp.games import (
 from ak_engine.webapp.players import (
     MAX_PLAYERS,
     MIN_PLAYERS,
+    PLAYABLE_ALIGNMENTS,
     PLAYABLE_RACES,
     PlayerNotFoundError,
     RosterFullError,
@@ -67,6 +69,7 @@ from ak_engine.webapp.world_creation import (
     WorldAlreadyCreatedError,
     create_world,
 )
+from ak_engine.worldgen.king_talent import MAX_POINTS_PER_ABILITY, MAX_TALENT_POINTS
 from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH
 
 # The 8 mandatory Imperial Offices (rulebook [10.1]) vs. every other real,
@@ -114,6 +117,7 @@ _ENUM_DISPLAY_NAMES: dict[type, dict] = {
     Power: POWER_NAME,
     Temper: TEMPER_NAME,
     Alignment: {member: member.value for member in Alignment},
+    Ability: ABILITY_NAME,
 }
 
 
@@ -185,7 +189,9 @@ def create_app(games_root: Path | None = None) -> Flask:
             meta=meta,
             players=players,
             playable_races=PLAYABLE_RACES,
-            alignments=list(Alignment),
+            alignments=PLAYABLE_ALIGNMENTS,
+            tempers=list(Temper),
+            abilities=list(Ability),
             min_players=MIN_PLAYERS,
             max_players=MAX_PLAYERS,
             error=request.args.get("error"),
@@ -217,9 +223,48 @@ def create_app(games_root: Path | None = None) -> Flask:
             alignment = Alignment[alignment_name]
         except KeyError:
             return redirect(url_for("players_setup", slug=slug, error="Please choose a valid alignment."))
+        if alignment not in PLAYABLE_ALIGNMENTS:
+            return redirect(
+                url_for(
+                    "players_setup",
+                    slug=slug,
+                    error="Kings may only be Divine, Good, Druidic, Neutral, Pagan, Evil, or Undead.",
+                )
+            )
 
         try:
-            add_player(game_dir(root, slug), name, race, alignment)
+            temper = Temper[request.form.get("temper", "")]
+        except KeyError:
+            return redirect(url_for("players_setup", slug=slug, error="Please choose a valid Temper."))
+
+        talent_allocation: dict[Ability, int] = {}
+        for ability in Ability:
+            raw_points = request.form.get(f"talent_{ability.name}", "0").strip()
+            try:
+                points = int(raw_points) if raw_points else 0
+            except ValueError:
+                return redirect(url_for("players_setup", slug=slug, error="Talent points must be whole numbers."))
+            if points < 0 or points > MAX_POINTS_PER_ABILITY:
+                return redirect(
+                    url_for(
+                        "players_setup",
+                        slug=slug,
+                        error=f"Each Ability can have at most {MAX_POINTS_PER_ABILITY} starting talent points.",
+                    )
+                )
+            if points:
+                talent_allocation[ability] = points
+        if sum(talent_allocation.values()) != MAX_TALENT_POINTS:
+            return redirect(
+                url_for(
+                    "players_setup",
+                    slug=slug,
+                    error=f"Please distribute exactly {MAX_TALENT_POINTS} starting talent points.",
+                )
+            )
+
+        try:
+            add_player(game_dir(root, slug), name, race, alignment, temper, talent_allocation)
         except RosterFullError:
             return redirect(
                 url_for("players_setup", slug=slug, error=f"A game can have at most {MAX_PLAYERS} Kings.")
@@ -448,7 +493,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             state=state,
             leader=leader,
             races=list(Race),
-            alignments=list(Alignment),
+            alignments=PLAYABLE_ALIGNMENTS,
             tempers=list(Temper),
             sexes=list(Sex),
             error=request.args.get("error"),
@@ -481,6 +526,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             temper = _optional_enum(Temper, request.form.get("temper", ""))
             sex = _optional_enum(Sex, request.form.get("sex", ""))
         except KeyError:
+            return _edit_error("Please choose valid values.")
+        if alignment is not None and alignment not in PLAYABLE_ALIGNMENTS:
             return _edit_error("Please choose valid values.")
 
         leader.name = name

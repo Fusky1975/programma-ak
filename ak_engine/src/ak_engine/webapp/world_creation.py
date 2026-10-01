@@ -20,6 +20,7 @@ from ak_engine.models.map import HexCoord
 from ak_engine.webapp.games import GameMeta, game_dir, open_game, save_game
 from ak_engine.webapp.players import MAX_PLAYERS, MIN_PLAYERS, list_players
 from ak_engine.worldgen.generate_new_game import KingSetup, generate_new_game
+from ak_engine.worldgen.king_talent import build_king_skill_table
 from ak_engine.worldgen.pascal_random import PascalRandom
 from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH
 
@@ -69,6 +70,15 @@ def create_world(
                 location=placeholder_home,
                 is_king=True,
                 race=player.race_enum,
+                alignment=player.alignment_enum,
+                temper=player.temper_enum,
+                # Rulebook [2.1]'s own automatic +1 Melee/Archery/Sage and
+                # Divine/Undead White<->Necromancy overrides apply
+                # regardless of the player's own talent_allocation choice
+                # (which may be empty, e.g. for a players.json predating
+                # this field) -- build_king_skill_table() already bakes
+                # both in on top of whatever points were actually chosen.
+                skills=build_king_skill_table(player.talent_allocation_by_ability, player.alignment_enum),
             )
         )
         king_setups.append(KingSetup(leader_id=kingdom_id, race=player.race_enum, home_coord=None))

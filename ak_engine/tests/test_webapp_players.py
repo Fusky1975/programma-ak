@@ -6,9 +6,12 @@ from __future__ import annotations
 import pytest
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.enums import Ability
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.webapp.players import (
     MAX_PLAYERS,
+    PLAYABLE_ALIGNMENTS,
     PLAYABLE_RACES,
     PlayerNotFoundError,
     RosterFullError,
@@ -69,3 +72,42 @@ def test_playable_races_are_exactly_the_four_engine_supported_ones():
     # any other race would KeyError in generate_new_game()'s own
     # home_first_slot(king.race) call, so the interface must not offer it.
     assert set(PLAYABLE_RACES) == {Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH}
+
+
+def test_playable_alignments_are_exactly_the_seven_rulebook_ones():
+    # RULES.AK [1.0]'s own "(Divine, Good, Druidic, Neutral, Pagan, Evil,
+    # Undead)" -- Anti-Holy/Mechanical/Special are monster-only.
+    assert set(PLAYABLE_ALIGNMENTS) == {
+        Alignment.DIVINE,
+        Alignment.GOOD,
+        Alignment.DRUID,
+        Alignment.NEUTRAL,
+        Alignment.PAGAN,
+        Alignment.EVIL,
+        Alignment.UNDEAD,
+    }
+
+
+def test_add_player_without_temper_or_talents_leaves_them_unset(tmp_path):
+    entry = add_player(tmp_path, "Andrea", Race.HUMAN, Alignment.GOOD)
+
+    assert entry.temper_enum is None
+    assert entry.talent_allocation_by_ability == {}
+
+
+def test_add_player_persists_temper_and_talent_allocation(tmp_path):
+    entry = add_player(
+        tmp_path,
+        "Fusky",
+        Race.HUMAN,
+        Alignment.UNDEAD,
+        Temper.BRAVE,
+        {Ability.MELEE: 2, Ability.NECROMANCY: 2},
+    )
+
+    assert entry.temper_enum is Temper.BRAVE
+    assert entry.talent_allocation_by_ability == {Ability.MELEE: 2, Ability.NECROMANCY: 2}
+
+    listed = list_players(tmp_path)
+    assert listed[0].temper_enum is Temper.BRAVE
+    assert listed[0].talent_allocation_by_ability == {Ability.MELEE: 2, Ability.NECROMANCY: 2}

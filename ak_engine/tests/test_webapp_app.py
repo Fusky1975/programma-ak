@@ -143,13 +143,29 @@ def test_player_setup_missing_game_shows_an_error_not_a_crash(tmp_path):
     assert b"Game not found" in response.data
 
 
+def _king_form_data(name: str, race: str = "HUMAN", alignment: str = "GOOD", temper: str = "BRAVE") -> dict[str, str]:
+    """A complete, valid "Add a King" POST payload -- rulebook [2.1]'s own
+    exactly-4-points/max-2-per-Ability talent allocation, split across two
+    Abilities here (MELEE, SAGE) so neither test fixture nor assertion
+    needs to care which ones specifically."""
+
+    return {
+        "name": name,
+        "race": race,
+        "alignment": alignment,
+        "temper": temper,
+        "talent_MELEE": "2",
+        "talent_SAGE": "2",
+    }
+
+
 def test_add_king_via_form_persists_it(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)
 
     response = client.post(
         f"/games/{meta.slug}/players",
-        data={"name": "Bram Ironhand", "race": "HUMAN", "alignment": "GOOD"},
+        data=_king_form_data("Bram Ironhand"),
         follow_redirects=True,
     )
 
@@ -187,12 +203,95 @@ def test_add_king_with_a_non_playable_race_shows_an_error(tmp_path):
     assert b"Smaug" not in response.data
 
 
+def test_add_king_with_a_non_playable_alignment_shows_an_error(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.post(
+        f"/games/{meta.slug}/players",
+        data={"name": "Smaug", "race": "HUMAN", "alignment": "ANTI_HOLY"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Divine, Good, Druidic, Neutral, Pagan, Evil, or Undead" in response.data
+    assert b"Smaug" not in response.data
+
+
+def test_player_setup_does_not_offer_monster_only_alignments(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/players")
+
+    assert response.status_code == 200
+    assert b'value="ANTI_HOLY"' not in response.data
+    assert b'value="MECHANICAL"' not in response.data
+    assert b'value="SPECIAL"' not in response.data
+    assert b'value="UNDEAD"' in response.data
+
+
+def test_add_king_with_wrong_total_talent_points_shows_an_error(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    data = _king_form_data("Smaug")
+    data["talent_SAGE"] = "1"  # now totals 3, not the required 4
+
+    response = client.post(f"/games/{meta.slug}/players", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"exactly 4 starting talent points" in response.data
+    assert b"Smaug" not in response.data
+
+
+def test_add_king_with_too_many_points_on_one_ability_shows_an_error(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    data = _king_form_data("Smaug")
+    data["talent_MELEE"] = "3"
+    data["talent_SAGE"] = "1"
+
+    response = client.post(f"/games/{meta.slug}/players", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"at most 2 starting talent points" in response.data
+    assert b"Smaug" not in response.data
+
+
+def test_add_king_with_invalid_temper_shows_an_error(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    data = _king_form_data("Smaug")
+    data["temper"] = "NOT_A_TEMPER"
+
+    response = client.post(f"/games/{meta.slug}/players", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"valid Temper" in response.data
+    assert b"Smaug" not in response.data
+
+
+def test_player_setup_shows_the_talent_allocation_grid(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/players")
+
+    assert response.status_code == 200
+    assert b'name="talent_MELEE"' in response.data
+    assert b'name="talent_SAGE"' in response.data
+    assert b'name="temper"' in response.data
+
+
 def test_remove_king_via_form_removes_it(tmp_path):
     # A name that doesn't overlap the Add-King form's own placeholder text
     # ("e.g. Aldric the Bold"), so this only matches the roster listing.
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)
-    client.post(f"/games/{meta.slug}/players", data={"name": "Bram Ironhand", "race": "HUMAN", "alignment": "GOOD"})
+    client.post(f"/games/{meta.slug}/players", data=_king_form_data("Bram Ironhand"))
 
     response = client.post(f"/games/{meta.slug}/players/0/delete", follow_redirects=True)
 
@@ -214,8 +313,8 @@ def test_remove_unknown_king_shows_an_error_not_a_crash(tmp_path):
 def test_player_setup_shows_ok_status_within_bounds(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)
-    client.post(f"/games/{meta.slug}/players", data={"name": "Aldric", "race": "HUMAN", "alignment": "GOOD"})
-    client.post(f"/games/{meta.slug}/players", data={"name": "Elara", "race": "ELVEN", "alignment": "NEUTRAL"})
+    client.post(f"/games/{meta.slug}/players", data=_king_form_data("Aldric"))
+    client.post(f"/games/{meta.slug}/players", data=_king_form_data("Elara", "ELVEN", "NEUTRAL"))
 
     response = client.get(f"/games/{meta.slug}/players")
 
@@ -293,7 +392,7 @@ def test_save_titles_missing_game_shows_an_error_not_a_crash(tmp_path):
 
 
 def _add_king(client, slug, name, race="HUMAN", alignment="GOOD"):
-    client.post(f"/games/{slug}/players", data={"name": name, "race": race, "alignment": alignment})
+    client.post(f"/games/{slug}/players", data=_king_form_data(name, race, alignment))
 
 
 def test_world_setup_below_min_players_shows_a_warning_not_a_form(tmp_path):
@@ -597,6 +696,33 @@ def test_save_leader_with_invalid_race_shows_an_error_not_a_crash(tmp_path):
 
     assert response.status_code == 200
     assert b"valid race" in response.data
+
+
+def test_save_leader_with_a_monster_only_alignment_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1",
+        data={"name": "Aldric", "race": "HUMAN", "alignment": "MECHANICAL"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Please choose valid values" in response.data
+
+
+def test_leader_edit_does_not_offer_monster_only_alignments(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert response.status_code == 200
+    assert b'value="ANTI_HOLY"' not in response.data
+    assert b'value="MECHANICAL"' not in response.data
+    assert b'value="SPECIAL"' not in response.data
+    assert b'value="UNDEAD"' in response.data
 
 
 def test_save_leader_missing_leader_shows_an_error_not_a_crash(tmp_path):
