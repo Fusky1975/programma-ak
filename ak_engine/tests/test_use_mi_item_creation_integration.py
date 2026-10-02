@@ -96,6 +96,17 @@ happened not to move that specific pairing); the ``SKILL_BOOK``-category
 feature moved to feature_id 13, still guarded by a ``GI_CLAM`` (the
 same real monster as every prior rescan, just a new feature id and a
 different book, ``BOOK_SAGE``), win seed ``5`` unchanged.
+
+Re-scanned again after Phase 986 recalibrated ``worldgen/place_map.py``'s
+own land-growth target to match a real played game's land/Sea ratio (far
+more land cells now exist for the same ``generate_new_game(seed=1)``
+scenario, so the whole province grid -- and every RNG draw that depends
+on its size or contents, all of them before ``place_all_features()`` --
+shifts, the identical class of change as every rescan above, just from a
+different cause this time): feature_id 1 is now guarded by a ``GENIE``
+(good-aligned), win seed ``2``; the ``SKILL_BOOK``-category feature moved
+to feature_id 21, guarded by a ``MEDUSA`` and carrying a different book,
+``BOOK_TACTICAL``, win seed ``30``.
 """
 
 from __future__ import annotations
@@ -117,21 +128,16 @@ from ak_engine.worldgen.pascal_random import PascalRandom
 
 _KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
 _SEARCHER_LEADER_ID = 999
-# Phase 979 note: generate_new_game(seed=1)'s own feature roster is a
-# fixed, reproducible fact of this scenario, re-checked after Phase 979's
-# own addendum materialized the reserved last roster id too (one more
-# PascalRandom draw before place_all_features(), same class of shift as
-# Phase 426/427/797/799/892/902 and Phase 979's own earlier mercenary-
-# placement change before it). The first treasure+guardian feature
-# (feature_id 1) is now guarded by a GR_DRAGON (hp 21-31, melee skill 2)
-# -- a real, reproducible fact, not a tuning choice; its own win seed is
-# correspondingly large for an unskilled Searcher.
-_SEARCH_WIN_SEED = 827
-# feature_id 13 (GI_CLAM guarding a Sage skill book) is the
-# SKILL_BOOK-category feature this test now targets -- picked for a
-# weak guardian (hp 14-27, melee skill 0) so the win seed stays small.
-_BOOK_FEATURE_ID = 13
-_BOOK_SEARCH_WIN_SEED = 5
+# Phase 986 note: generate_new_game(seed=1)'s own feature roster shifted
+# again after the land-ratio recalibration (see this module's own Phase
+# 986 rescan paragraph above) -- a fixed, reproducible fact of this
+# scenario, not a tuning choice. The first treasure+guardian feature
+# (feature_id 1) is now guarded by a good-aligned GENIE.
+_SEARCH_WIN_SEED = 2
+# feature_id 21 (a MEDUSA guarding a Tactical skill book) is the
+# SKILL_BOOK-category feature this test now targets.
+_BOOK_FEATURE_ID = 21
+_BOOK_SEARCH_WIN_SEED = 30
 
 
 def _generate_game(king_count: int = 10) -> GameState:
@@ -170,9 +176,9 @@ def test_world_generated_treasure_reaches_state_items_via_a_search_win():
 
 def test_a_world_generated_and_search_won_book_is_directly_usable_via_use_mi():
     # This project's real generate_new_game(seed=1) scenario places a
-    # BOOK_SAGE on feature_id 13 (guarded by a GI_CLAM) -- not tuned
+    # BOOK_TACTICAL on feature_id 21 (guarded by a MEDUSA) -- not tuned
     # for that, just what this fixed, reproducible generation run
-    # produces (see _BOOK_FEATURE_ID's own Phase 982 note above). Any
+    # produces (see _BOOK_FEATURE_ID's own Phase 986 note above). Any
     # SKILL_BOOK category member would exercise the same chain.
     state = _generate_game()
     feature = next(f for f in state.features.values() if f.feature_id == _BOOK_FEATURE_ID)

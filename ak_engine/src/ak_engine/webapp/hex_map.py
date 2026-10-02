@@ -21,6 +21,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from ak_engine.models.feature import FEATURE_TYPE_NAMES
 from ak_engine.models.game_state import GameState, KingdomState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import RACE_NAME
@@ -88,6 +89,8 @@ class HexCell:
     stroke_width: float
     is_home: bool
     home_marker: tuple[float, float] | None  # (cx, cy) for the home-province dot, else None
+    feature_marker: tuple[float, float] | None  # (cx, cy) for the special-feature marker, else None
+    first_feature_id: int | None  # for the Features map's own click-through, None if no feature here
     title: str  # tooltip text
 
 
@@ -126,6 +129,10 @@ def build_hex_map(state: GameState, *, size: float = HEX_SIZE) -> HexMap:
     for kingdom in state.kingdoms.values():
         home_coords.setdefault(kingdom.home_province, []).append(kingdom)
 
+    features_by_coord: dict[HexCoord, list[int]] = {}
+    for feature_id, feature in state.features.items():
+        features_by_coord.setdefault(feature.coord, []).append(feature_id)
+
     cells: list[HexCell] = []
     max_x = max_y = 0
     for coord, province in state.provinces.items():
@@ -138,6 +145,7 @@ def build_hex_map(state: GameState, *, size: float = HEX_SIZE) -> HexMap:
         stroke_width = 3.0 if owner is not None else 1.0
 
         homes_here = home_coords.get(coord, [])
+        feature_ids_here = features_by_coord.get(coord, [])
         title_parts = [
             f"({coord.x}, {coord.y})",
             TERRAIN_LABEL.get(province.terrain, province.terrain.name),
@@ -146,6 +154,9 @@ def build_hex_map(state: GameState, *, size: float = HEX_SIZE) -> HexMap:
         ]
         if homes_here:
             title_parts.append("Home of " + ", ".join(k.name for k in homes_here))
+        if feature_ids_here:
+            kinds = [FEATURE_TYPE_NAMES.get(state.features[fid].kind, state.features[fid].kind.name) for fid in feature_ids_here]
+            title_parts.append("Feature: " + ", ".join(kinds))
 
         cells.append(
             HexCell(
@@ -157,6 +168,14 @@ def build_hex_map(state: GameState, *, size: float = HEX_SIZE) -> HexMap:
                 stroke_width=stroke_width,
                 is_home=bool(homes_here),
                 home_marker=(cx, cy) if homes_here else None,
+                # Offset toward the hex's own top-right corner, not dead
+                # center, so it stays visible alongside a home_marker on
+                # the same cell -- every King Home carries exactly 2
+                # real Features (worldgen/feature_generation.py
+                # first_2k_home_index()), so the two markers coexist on
+                # a real cell often enough to need their own positions.
+                feature_marker=(cx + size * 0.45, cy - size * 0.45) if feature_ids_here else None,
+                first_feature_id=feature_ids_here[0] if feature_ids_here else None,
                 title=" · ".join(title_parts),
             )
         )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import Counter
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ArmyType
 from ak_engine.models.enums import Ability
@@ -22,7 +24,7 @@ from ak_engine.worldgen.generate_new_game import (
 from ak_engine.worldgen.initial_armies import BEST_ATYPE, COMMANDER_NONE
 from ak_engine.worldgen.king_home_placement import MIN_HOME_DISTANCE
 from ak_engine.worldgen.leader_placement import COMPANIONS_PER_KING, owner_leader_count
-from ak_engine.models.treasure import TREASURE_CATEGORY, TreasureCategory
+from ak_engine.models.treasure import TREASURE_CATEGORY, Treasure, TreasureCategory
 from ak_engine.worldgen.magic_item_placement import item_slot_count
 from ak_engine.worldgen.mercenary_band import hex_ring
 from ak_engine.worldgen.pascal_random import PascalRandom
@@ -367,6 +369,30 @@ def test_magic_item_cursor_assigns_treasure_to_exactly_the_confirmed_slot_count(
     assert magic_item_treasure == item_slot_count(feature_count(1))
 
 
+def test_gold_hoard_tier_is_mostly_large_not_a_uniform_third_each():
+    # Phase 985: user-reported anomaly -- too many Huge hoards. Confirmed
+    # against the real GW3__T1 world file's own 64 real gold-hoard
+    # features: 55 Large (85.9%), 9 Huge (14.1%), 0 Fabulous. A flat
+    # uniform 1/3 draw (this function's own original Phase 430 shape)
+    # would show roughly equal counts of all three -- real data flatly
+    # contradicts that. See _draw_gold_hoard_tier()'s own docstring for
+    # the exact weighting this Monte Carlo checks.
+    from ak_engine.worldgen.generate_new_game import _draw_gold_hoard_tier
+
+    rng = PascalRandom(seed=1)
+    n = 50_000
+    counts = Counter(_draw_gold_hoard_tier(rng) for _ in range(n))
+
+    large_share = counts[Treasure.GOLD_HOARD_LARGE] / n
+    huge_share = counts[Treasure.GOLD_HOARD_HUGE] / n
+    fabulous_share = counts[Treasure.GOLD_HOARD_FABULOUS] / n
+
+    assert abs(large_share - 0.875) < 0.02
+    assert abs(huge_share - 0.109) < 0.02
+    assert abs(fabulous_share - 0.0156) < 0.01
+    assert large_share > huge_share > fabulous_share
+
+
 def test_generate_new_game_is_deterministic_for_a_fixed_seed():
     game_state_a, kings_a = _setup()
     game_state_b, kings_b = _setup()
@@ -561,8 +587,12 @@ def test_remaining_mercenary_heroes_are_placed_off_sea_and_off_king_homes():
     # worldgen/leader_placement.py's own confirmed draw_mercenary_
     # relocation_coordinate() ("redraw while on Sea or in a King-owned
     # province; sharing a lord-owned province is allowed").
+    # seed=1 stopped leaving any hero_pool ids unclaimed after the Phase
+    # 986 land-ratio recalibration (more land -> more free humanoid
+    # provinces -> more lords claim the 100-id hero pool before any are
+    # left over as mercenaries); seed=6 still leaves some.
     game_state, kings = _setup()
-    rng = PascalRandom(seed=1)
+    rng = PascalRandom(seed=6)
     result = generate_new_game(rng, game_state, kings, gamevers=1)
 
     king_homes = {king.home_coord for king in kings}

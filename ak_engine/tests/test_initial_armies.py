@@ -217,7 +217,19 @@ def test_flying_or_special_budget_stays_within_documented_range():
 
 
 def test_king_home_budget_is_the_confirmed_fixed_value():
-    assert KING_HOME_BUDGET == 7
+    # Phase 985: corrected from 7 to 8 -- see KING_HOME_BUDGET's own
+    # docstring for the real-sample derivation.
+    assert KING_HOME_BUDGET == 8
+
+
+def test_king_home_budget_affords_exactly_3_armies_for_every_real_sample_shape():
+    # Phase 985: all 5 real Turn-0 samples this project has show exactly
+    # 3 starting armies for a King Home, alternating slot0/slot1/slot0 --
+    # confirmed here for both real shapes seen (Legion/Light-Cavalry and
+    # Bowmen/Heavy-Cavalry), and that a 4th army never fits.
+    for slot0, slot1 in ((ArmyType.LEGION, ArmyType.LT_CAVALRY), (ArmyType.BOWMEN, ArmyType.HVY_CAVALRY)):
+        armies = build_initial_armies(slot0, slot1, KING_HOME_BUDGET)
+        assert armies == [slot0, slot1, slot0]
 
 
 def test_build_initial_armies_alternates_slots_and_spends_budget_exactly():

@@ -579,6 +579,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             meta=meta,
             state=state,
             features=features,
+            hex_map=build_hex_map(state) if state.provinces else None,
             error=request.args.get("error"),
         )
 

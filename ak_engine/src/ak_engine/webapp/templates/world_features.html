@@ -7,6 +7,51 @@
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>{{ meta.name }} &mdash; Special Features</h2>
 
+  {% if hex_map %}
+    <div class="hex-map-scroll">
+      <svg width="{{ hex_map.width }}" height="{{ hex_map.height }}" class="hex-map">
+        {% for cell in hex_map.cells %}
+          {% if cell.first_feature_id is not none %}
+            {% set cell_href = url_for('feature_edit', slug=meta.slug, feature_id=cell.first_feature_id) %}
+          {% else %}
+            {% set cell_href = url_for('feature_new', slug=meta.slug, x=cell.x, y=cell.y) %}
+          {% endif %}
+          <a xlink:href="{{ cell_href }}">
+            <polygon points="{{ cell.points }}" fill="{{ cell.fill }}" stroke="{{ cell.stroke }}" stroke-width="{{ cell.stroke_width }}">
+              <title>{{ cell.title }}</title>
+            </polygon>
+            {% if cell.home_marker %}
+              <circle cx="{{ cell.home_marker[0] }}" cy="{{ cell.home_marker[1] }}" r="5" fill="#fdf6e3" stroke="{{ cell.stroke }}" stroke-width="2">
+                <title>{{ cell.title }}</title>
+              </circle>
+            {% endif %}
+            {% if cell.feature_marker %}
+              <circle cx="{{ cell.feature_marker[0] }}" cy="{{ cell.feature_marker[1] }}" r="4" fill="#b8860b" stroke="#2b1d0e" stroke-width="1">
+                <title>{{ cell.title }}</title>
+              </circle>
+            {% endif %}
+          </a>
+        {% endfor %}
+      </svg>
+    </div>
+
+    <div class="hex-map-legend">
+      <div class="hex-map-legend-group">
+        {% for terrain, color in [
+          ('Plains', '#d9c88f'), ('Forest', '#3f6b35'), ('Jungle', '#1f5c2e'),
+          ('Mountains', '#8a8378'), ('Desert', '#e0b96a'), ('Sea', '#4a7fa8')
+        ] %}
+          <span class="hex-map-swatch"><span class="hex-map-swatch-color" style="background:{{ color }};"></span>{{ terrain }}</span>
+        {% endfor %}
+      </div>
+      <div class="hex-map-legend-group">
+        <span class="hex-map-swatch"><span class="hex-map-swatch-color" style="background:#fdf6e3; border: 2px solid #8b5e34; border-radius: 50%;"></span>Home province</span>
+        <span class="hex-map-swatch"><span class="hex-map-swatch-color" style="background:#b8860b; border-radius: 50%;"></span>Special Feature</span>
+      </div>
+      <p class="hex-map-legend-note">Click a province with no gold marker to add a new Special Feature there.</p>
+    </div>
+  {% endif %}
+
   {% if features %}
     <table class="data-table">
       <thead>

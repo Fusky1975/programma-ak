@@ -863,6 +863,31 @@ def test_features_list_shows_generated_features(tmp_path):
     assert b"<table" in response.data
 
 
+def test_features_list_shows_a_hex_map_svg(tmp_path):
+    # Phase 985: the Features page gets the same colored world map the
+    # Provinces page already has, with its own gold marker on every
+    # province that carries a Special Feature.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/features")
+
+    assert response.status_code == 200
+    assert b"svg" in response.data
+    assert b"class=\"hex-map\"" in response.data
+    assert b"Special Feature" in response.data
+
+
+def test_features_list_before_world_creation_has_no_hex_map(tmp_path):
+    meta = create_game(tmp_path, "No World Yet")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/features")
+
+    assert response.status_code == 200
+    assert b"class=\"hex-map\"" not in response.data
+
+
 def _first_feature_id(tmp_path, slug):
     _, state = open_game(tmp_path, slug)
     return next(iter(state.features))

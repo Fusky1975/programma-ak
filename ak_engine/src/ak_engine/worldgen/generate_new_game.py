@@ -129,9 +129,10 @@ this project has a real, sourced formula for:
    gold-slot feature (``feature_gets_item_slot()`` false) previously
    got `treasure=None` outright -- `magic_item_placement.py`'s own
    confirmed "the other half get gold" was never actually implemented,
-   only documented. It now draws uniformly among the 3 `GOLD_HOARD`
-   tiers (unsourced which tier -- no AKGEN note covers it -- so a plain
-   project-original uniform draw, `_GOLD_HOARD_TIERS`).
+   only documented. It now draws a real `GOLD_HOARD` tier via
+   `_draw_gold_hoard_tier()` (originally a flat uniform draw across the
+   3 tiers; Phase 985 recalibrated the weights against real data -- see
+   that function's own docstring).
 8. **Independent lords + King companions (Phase 426)** -- "place Kings,
    independent lords, companions and remaining mercenary heroes"'s own
    remaining two roles, closing the gap Phase 365 originally left open
@@ -504,12 +505,37 @@ def _special_race_army_budget(race: Race, tax: int, rng: PascalRandom) -> int | 
     return None
 
 
-# Phase 430: see the gold-tier-assignment call site's own comment below.
-_GOLD_HOARD_TIERS: tuple[Treasure, ...] = (
-    Treasure.GOLD_HOARD_LARGE,
-    Treasure.GOLD_HOARD_HUGE,
-    Treasure.GOLD_HOARD_FABULOUS,
-)
+def _draw_gold_hoard_tier(rng: PascalRandom) -> Treasure:
+    """Which of the 3 ``GOLD_HOARD`` tiers a gold-slot feature gets --
+    still genuinely unsourced (no AKGEN reverse-engineering note covers
+    it, see the call site's own comment below) -- but no longer a flat
+    uniform 1/3 each (Phase 430's own original, explicitly-flagged
+    guess). User-reported anomaly, Phase 985: a real game should show
+    far more Large hoards than Huge ones, confirmed directly by parsing
+    the real ``GW3__T1`` world file's own 64 real gold-hoard features
+    (``parser/gw_world.py parse_gw_features()``): **55 Large (85.9%), 9
+    Huge (14.1%), 0 Fabulous** -- a uniform 1/3 split would show roughly
+    equal counts of all three, which real data flatly contradicts.
+
+    Realized as two independent 1-in-8 "upgrade" rolls (``IRand AND 7``,
+    this module's own established idiom for an unsourced-but-plausible
+    power-of-two draw, e.g. ``second_recruit_slot()``'s own cavalry/
+    chariots choice) rather than a single 3-way weighted table, since
+    that shape is both simple and lands close to the one real sample
+    available: 7/8 Large (87.5%, vs 85.9% observed), 1/8 * 7/8 Huge
+    (10.9%, vs 14.1% observed), 1/8 * 1/8 Fabulous (1.6% -- a real,
+    nonzero chance, not ruled out by a single sample showing zero
+    occurrences in 64 draws, just confirmed rare). A project-original
+    calibration from real data, not a disassembly-sourced formula --
+    flagged as such, the same honesty standard every other unsourced
+    value in this module already follows.
+    """
+
+    if rng.irand() & 7:
+        return Treasure.GOLD_HOARD_LARGE
+    if rng.irand() & 7:
+        return Treasure.GOLD_HOARD_HUGE
+    return Treasure.GOLD_HOARD_FABULOUS
 
 
 def _elephants_aware_strength_of(rng: PascalRandom):
@@ -1009,13 +1035,10 @@ def generate_new_game(
             # *which* half of the 4-gold/4-item repeating pattern a
             # feature falls in (magic_item_placement.py's own docstring:
             # "the other half get gold") -- it never assigns the actual
-            # gold-tier treasure. Which of the 3 GOLD_HOARD tiers a gold
-            # feature gets is unsourced (no AKGEN reverse-engineering
-            # note covers it), so this is a project-original uniform
-            # draw across the 3 tiers -- the same "no source, uniform
-            # default" convention already used elsewhere in this module
-            # (e.g. `second_recruit_slot()`'s own cavalry/chariots draw).
-            treasure = _GOLD_HOARD_TIERS[rng.irand() % len(_GOLD_HOARD_TIERS)]
+            # gold-tier treasure. Phase 985: see `_draw_gold_hoard_tier()`'s
+            # own docstring for the real-sample-calibrated weighting
+            # (no longer a flat uniform 1/3 each).
+            treasure = _draw_gold_hoard_tier(rng)
 
         magic_location = resolve_visible_location(
             placement.feature_type, placement.feature_index, placement.coord.x
