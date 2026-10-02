@@ -192,6 +192,46 @@ real magic-item text, not a coincidence -- matching this project's own
 already-confirmed "every King Home carries exactly 2 Features" fact),
 **then this Kingdom's own Home garrison's own armies**.
 
+**Phase 991 -- the Feature-summary record, fully decoded and cross-
+checked against both real Home's own 2 Features (4 total).**
+``parse_xk_feature_record()`` decodes one 8-byte record, structurally
+identical in width to an army record: ``[feature_id:1][coord_x:1]
+[coord_y:1][unknown_c:1][unknown_d:1][monster_ordinal:1][engagement_
+state:1][feature_type_ordinal:1]``. ``feature_id`` is confirmed to be
+the Feature's own 0-indexed position in this project's own already-
+parsed ``parser/gw_world.py parse_gw_features()`` list (not a separately
+assigned id) -- matches exactly for all 4 real Features checked (``0``
+and ``15`` for Kingdom 0's own Home; ``1`` and ``16`` for Kingdom 1's).
+``monster_ordinal``, ``engagement_state``, and ``feature_type_ordinal``
+are this project's own already-confirmed ``Monster``/
+``MonsterEngagementState``/``FeatureType`` enum ordinals directly --
+all 3 match exactly for all 4 real Features (e.g. Kingdom 0's feature
+``15``: Spectre/Mercenary/Catacombs, all exact). ``unknown_c``/
+``unknown_d`` read ``0`` in every one of the 4 real records -- same
+"never observed nonzero" status as the province record's own
+``unknown_a``/``unknown_b``.
+
+**A second, optional "treasure reveal" record can follow a Feature's
+own summary record** (both separated from their neighbors by a literal
+``0xFE`` byte): ``[feature_id:1][treasure_ordinal:1][unknown_h:1]
+[unknown_i:1][name_len:1][name:name_len]`` -- ``treasure_ordinal`` is
+this project's own already-confirmed ``models/treasure.py`` ordinal
+(e.g. ``36`` is ``Treasure.WEAPON_2``), and ``name`` is that treasure's
+own real display name as a Pascal ShortString, **not truncated** at 15
+characters the way the still-unattributed title strings earlier in the
+file are (Kingdom 1's own revealed treasure name, ``"Large Hoard of
+Gold"``, is 19 characters, shown in full). Confirmed exactly for both
+real revealed treasures available (Kingdom 0's Feature 15, ``"Shadow
+Sword"`` = ``Treasure.WEAPON_2``; Kingdom 1's Feature 1, ``"Large Hoard
+of Gold"`` = ``Treasure.GOLD_HOARD_LARGE``). **Only one of each Home's 2
+Features ever gets this second record** in both real samples -- not
+explained by treasure type (both of Kingdom 1's own Features carry the
+same ``GOLD_HOARD_LARGE``, yet only one is revealed) -- the revealed
+one has the real, higher ``GWFeatureRecord.trcharges`` value in both
+samples (10 vs 4; 6 vs 5), a suggestive but unconfirmed correlation
+from only 2 data points. ``unknown_h``/``unknown_i`` don't match
+``trcharges``/``trowner_raw`` or any other real field tried -- left raw.
+
 ``parse_xk_army_record()`` below decodes one 8-byte army record, given
 its own starting byte offset: ``[quality:1][state:1][coord_x:1]
 [coord_y:1][commanded_by:1][unknown_e:1][army_type_ordinal:1]
@@ -245,9 +285,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.feature import FeatureType
 from ak_engine.models.map import HexCoord, Terrain
-from ak_engine.models.monster import MonsterEngagementState
+from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.parser.gw_world import MOD_PAT_ORDINAL_TO_ARMY_TYPE
 from ak_engine.turn.combat import Quality
 
@@ -482,3 +524,91 @@ def parse_xk_army_record(data: bytes, offset: int) -> tuple[XKArmyRecord, int]:
         unknown_g=unknown_g,
     )
     return record, offset + _ARMY_RECORD_SIZE
+
+
+_FEATURE_RECORD_SIZE = 8
+
+
+@dataclass(slots=True)
+class XKFeatureRecord:
+    """One decoded Feature-summary record -- see the module docstring's
+    own Phase 991 addendum. ``feature_id`` is the Feature's own
+    0-indexed position in ``parser/gw_world.py parse_gw_features()``'s
+    own list, confirmed exactly for all 4 real Features checked.
+    """
+
+    feature_id: int
+    coord: HexCoord
+    monster: Monster
+    engagement_state: MonsterEngagementState
+    feature_type: FeatureType
+    unknown_c: int
+    unknown_d: int
+
+
+def parse_xk_feature_record(data: bytes, offset: int) -> tuple[XKFeatureRecord, int]:
+    """Decodes one 8-byte Feature-summary record starting at ``offset``
+    (its own ``feature_id`` byte) -- see the module docstring's own
+    Phase 991 addendum. Returns the decoded record and the byte offset
+    immediately after it (not necessarily the next Feature's own start --
+    an optional treasure-reveal record, see ``parse_xk_feature_treasure_
+    record()``, may sit between them).
+    """
+
+    if offset + _FEATURE_RECORD_SIZE > len(data):
+        raise XKParseError("XK file ended mid-way through a Feature record", byte_offset=offset)
+    feature_id, coord_x, coord_y, unknown_c, unknown_d, monster, engagement_state, feature_type = data[
+        offset : offset + _FEATURE_RECORD_SIZE
+    ]
+    record = XKFeatureRecord(
+        feature_id=feature_id,
+        coord=HexCoord(coord_x, coord_y),
+        monster=Monster(monster),
+        engagement_state=MonsterEngagementState(engagement_state),
+        feature_type=FeatureType(feature_type),
+        unknown_c=unknown_c,
+        unknown_d=unknown_d,
+    )
+    return record, offset + _FEATURE_RECORD_SIZE
+
+
+@dataclass(slots=True)
+class XKFeatureTreasureRecord:
+    """One decoded "treasure reveal" record -- see the module docstring's
+    own Phase 991 addendum. Only some Features get one of these; there
+    is no fixed offset to find it at (the caller must know a treasure
+    record follows, e.g. by trying to parse one and catching
+    ``XKParseError``, or by other means not yet established).
+    """
+
+    feature_id: int
+    treasure: Treasure
+    name: str
+    unknown_h: int
+    unknown_i: int
+
+
+def parse_xk_feature_treasure_record(data: bytes, offset: int) -> tuple[XKFeatureTreasureRecord, int]:
+    """Decodes one treasure-reveal record starting at ``offset`` (its own
+    ``feature_id`` byte) -- see the module docstring's own Phase 991
+    addendum. Returns the decoded record and the byte offset immediately
+    after it.
+    """
+
+    if offset + 5 > len(data):
+        raise XKParseError("XK file ended mid-way through a treasure-reveal record", byte_offset=offset)
+    feature_id, treasure_ordinal, unknown_h, unknown_i, name_length = data[offset : offset + 5]
+    offset += 5
+    raw_name = data[offset : offset + name_length]
+    if len(raw_name) < name_length:
+        raise XKParseError("XK file ended mid-way through a treasure-reveal record's own name", byte_offset=offset)
+    name = raw_name.decode("latin-1")
+    offset += name_length
+    record = XKFeatureTreasureRecord(
+        feature_id=feature_id,
+        treasure=Treasure(treasure_ordinal),
+        name=name,
+        unknown_h=unknown_h,
+        unknown_i=unknown_i,
+    )
+    return record, offset

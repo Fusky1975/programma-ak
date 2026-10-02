@@ -14,14 +14,18 @@ from pathlib import Path
 import pytest
 
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.feature import FeatureType
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
-from ak_engine.models.monster import MonsterEngagementState
+from ak_engine.models.treasure import Treasure
 from ak_engine.parser.xk_world import (
     XK_HEADER_SIZE,
     XK_LEADER_ROSTER_COUNT,
     XKParseError,
     parse_xk_army_record,
+    parse_xk_feature_record,
+    parse_xk_feature_treasure_record,
     parse_xk_header,
     parse_xk_known_leader_names,
     parse_xk_province_record,
@@ -292,3 +296,56 @@ def test_parse_xk_army_record_decodes_kingdom_1s_own_skeletal_home_army():
     assert record.coord == HexCoord(9, 5)
     assert record.commanded_by_leader_id is None
     assert record.army_type_ordinal == 1  # Bowmen
+
+
+def test_parse_xk_feature_record_decodes_kingdom_0s_own_home_features():
+    data = T1_K0.read_bytes()
+
+    first, next_offset = parse_xk_feature_record(data, 0x9AF)
+    assert first.feature_id == 0
+    assert first.coord == HexCoord(11, 7)
+    assert first.monster is Monster.MUMMY
+    assert first.engagement_state is MonsterEngagementState.MERCENARY
+    assert first.feature_type is FeatureType.TOMB
+    assert next_offset == 0x9B7
+
+    second, _ = parse_xk_feature_record(data, 0x9B7)
+    assert second.feature_id == 15
+    assert second.coord == HexCoord(11, 7)
+    assert second.monster is Monster.SPECTRE
+    assert second.feature_type is FeatureType.CATACOMBS
+
+
+def test_parse_xk_feature_record_decodes_kingdom_1s_own_home_features():
+    data = T1_K1.read_bytes()
+
+    first, _ = parse_xk_feature_record(data, 0x9D7)
+    assert first.feature_id == 1
+    assert first.coord == HexCoord(9, 5)
+    assert first.monster is Monster.NEC_MAGE
+    assert first.feature_type is FeatureType.ALTAR
+
+    second, _ = parse_xk_feature_record(data, 0x9DF)
+    assert second.feature_id == 16
+    assert second.monster is Monster.SWORDSMAN
+    assert second.feature_type is FeatureType.HOLLOW_TREE
+
+
+def test_parse_xk_feature_treasure_record_decodes_a_real_magic_item_name():
+    data = T1_K0.read_bytes()
+    record, _ = parse_xk_feature_treasure_record(data, 0x9C0)
+
+    assert record.feature_id == 15
+    assert record.treasure is Treasure.WEAPON_2
+    assert record.name == "Shadow Sword"
+
+
+def test_parse_xk_feature_treasure_record_does_not_truncate_a_long_name():
+    # Unlike the still-unattributed 15-char-truncated title strings
+    # elsewhere in the file, a treasure name is shown in full.
+    data = T1_K1.read_bytes()
+    record, _ = parse_xk_feature_treasure_record(data, 0x9E8)
+
+    assert record.feature_id == 1
+    assert record.treasure is Treasure.GOLD_HOARD_LARGE
+    assert record.name == "Large Hoard of Gold"
