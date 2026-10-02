@@ -32,6 +32,7 @@ from ak_engine.models.race import RACE_NAME, Race
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import TEMPER_NAME, Temper
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_NAME, Treasure
+from ak_engine.turn.combat import QUALITY_NAME, Quality
 from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES
 from ak_engine.webapp.games import (
     DuplicateGameNameError,
@@ -119,6 +120,7 @@ _ENUM_DISPLAY_NAMES: dict[type, dict] = {
     Temper: TEMPER_NAME,
     Alignment: {member: member.value for member in Alignment},
     Ability: ABILITY_NAME,
+    Quality: QUALITY_NAME,
 }
 
 
@@ -565,6 +567,93 @@ def create_app(games_root: Path | None = None) -> Flask:
         leader.sex = sex
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
+    @app.get("/games/<slug>/armies")
+    def armies_list(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        armies = sorted(
+            state.armies.values(),
+            key=lambda army: (army.kingdom_id is None, army.kingdom_id or 0, army.location.y, army.location.x),
+        )
+        return render_template(
+            "world_armies.html",
+            meta=meta,
+            state=state,
+            armies=armies,
+            error=request.args.get("error"),
+        )
+
+    @app.get("/games/<slug>/armies/<int:army_id>")
+    def army_edit(slug: str, army_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        army = state.armies.get(army_id)
+        if army is None:
+            return redirect(url_for("armies_list", slug=slug, error="Army not found."))
+        return render_template(
+            "army_edit.html",
+            meta=meta,
+            state=state,
+            army=army,
+            army_types=list(ArmyType),
+            qualities=list(Quality),
+            error=request.args.get("error"),
+        )
+
+    @app.post("/games/<slug>/armies/<int:army_id>")
+    def army_save(slug: str, army_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        army = state.armies.get(army_id)
+        if army is None:
+            return redirect(url_for("armies_list", slug=slug, error="Army not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("army_edit", slug=slug, army_id=army_id, error=message))
+
+        try:
+            army_type = ArmyType[request.form.get("army_type", "")]
+        except KeyError:
+            return _edit_error("Please choose a valid army type.")
+        try:
+            quality = Quality[request.form.get("quality", "")]
+        except KeyError:
+            return _edit_error("Please choose a valid quality.")
+
+        kingdom_id_raw = request.form.get("kingdom_id", "").strip()
+        kingdom_id: int | None
+        if kingdom_id_raw:
+            try:
+                kingdom_id = int(kingdom_id_raw)
+            except ValueError:
+                return _edit_error("Please choose a valid Kingdom.")
+            if kingdom_id not in state.kingdoms:
+                return _edit_error("Please choose a valid Kingdom.")
+        else:
+            kingdom_id = None
+
+        try:
+            x = int(request.form.get("location_x", ""))
+            y = int(request.form.get("location_y", ""))
+        except ValueError:
+            return _edit_error("Location must be whole numbers.")
+
+        army.army_type = army_type
+        army.quality = quality
+        army.kingdom_id = kingdom_id
+        army.location = HexCoord(x, y)
+        save_game(root, slug, state)
+        return redirect(url_for("army_edit", slug=slug, army_id=army_id))
 
     @app.get("/games/<slug>/features")
     def features_list(slug: str):

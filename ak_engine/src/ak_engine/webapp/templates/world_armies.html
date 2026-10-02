@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Armies -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('world_setup', slug=meta.slug) }}">&larr; World</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Armies</h2>
+
+  {% if armies %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Quality</th>
+          <th>Kingdom</th>
+          <th>Location</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for army in armies %}
+          <tr>
+            <td>{{ army.army_type|display_name }}</td>
+            <td>{{ army.quality|display_name }}</td>
+            <td>{{ state.kingdoms[army.kingdom_id].name if army.kingdom_id in state.kingdoms else 'Unowned' }}</td>
+            <td>({{ army.location.x }}, {{ army.location.y }})</td>
+            <td><a class="button" href="{{ url_for('army_edit', slug=meta.slug, army_id=army.army_id) }}">Edit</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">This game has no world yet -- <a href="{{ url_for('world_setup', slug=meta.slug) }}">create it first</a>.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

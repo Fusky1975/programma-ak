@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Army {{ army.army_id }} -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('armies_list', slug=meta.slug) }}">&larr; Armies</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Army #{{ army.army_id }}</h2>
+
+  <form method="post" action="{{ url_for('army_save', slug=meta.slug, army_id=army.army_id) }}">
+    <p>
+      <label for="army_type">Army Type</label><br>
+      <select id="army_type" name="army_type">
+        {% for army_type in army_types %}
+          <option value="{{ army_type.name }}" {% if army.army_type == army_type %}selected{% endif %}>{{ army_type|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="quality">Quality</label><br>
+      <select id="quality" name="quality">
+        {% for quality in qualities %}
+          <option value="{{ quality.name }}" {% if army.quality == quality %}selected{% endif %}>{{ quality|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="kingdom_id">Kingdom</label><br>
+      <select id="kingdom_id" name="kingdom_id">
+        <option value="" {% if army.kingdom_id is none %}selected{% endif %}>-- Unowned --</option>
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}" {% if army.kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="location_x">Location (x, y)</label><br>
+      <input type="number" id="location_x" name="location_x" value="{{ army.location.x }}" required style="width: 6em;">
+      <input type="number" id="location_y" name="location_y" value="{{ army.location.y }}" required style="width: 6em;">
+    </p>
+
+    <button type="submit">Save Army</button>
+  </form>
+</div>
+
+{% endblock %}

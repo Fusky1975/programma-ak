@@ -14,6 +14,7 @@ from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.sex import Sex
 from ak_engine.models.treasure import Treasure
+from ak_engine.turn.combat import Quality
 from ak_engine.webapp.app import create_app, display_name
 from ak_engine.webapp.games import create_game, list_games, open_game
 
@@ -832,6 +833,133 @@ def test_save_leader_missing_leader_shows_an_error_not_a_crash(tmp_path):
 
     assert response.status_code == 200
     assert b"Hero not found" in response.data
+
+
+def test_armies_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.get(f"/games/{meta.slug}/armies")
+
+    assert response.status_code == 200
+    assert b"no world yet" in response.data
+
+
+def test_armies_list_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/armies", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_armies_list_shows_every_generated_army(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/armies")
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert len(state.armies) > 0
+    assert b"Edit" in response.data
+
+
+def test_army_edit_shows_the_current_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+
+    response = client.get(f"/games/{meta.slug}/armies/{army.army_id}")
+
+    assert response.status_code == 200
+    assert f'value="{army.location.x}"'.encode() in response.data
+    assert f'value="{army.location.y}"'.encode() in response.data
+
+
+def test_army_edit_missing_army_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/armies/999999", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Army not found" in response.data
+
+
+def test_save_army_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={"army_type": "HVY_CAVALRY", "quality": "ELITE", "kingdom_id": "", "location_x": "5", "location_y": "3"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    saved = state.armies[army.army_id]
+    assert saved.army_type == ArmyType.HVY_CAVALRY
+    assert saved.quality == Quality.ELITE
+    assert saved.kingdom_id is None
+    assert saved.location == HexCoord(5, 3)
+
+
+def test_save_army_with_invalid_army_type_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={"army_type": "NOT_A_TYPE", "quality": "ELITE", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid army type" in response.data
+
+
+def test_save_army_with_invalid_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={
+            "army_type": "LEGION",
+            "quality": "AVERAGE",
+            "kingdom_id": "999",
+            "location_x": "0",
+            "location_y": "0",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Kingdom" in response.data
+
+
+def test_save_army_missing_army_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/999999",
+        data={"army_type": "LEGION", "quality": "AVERAGE", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Army not found" in response.data
 
 
 def test_features_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
