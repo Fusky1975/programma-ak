@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ARMY_TYPE_BY_ORDINAL, ArmyType, MONSTROUS_ARMY_RACE
+from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_BY_ORDINAL, ArmyType, MONSTROUS_ARMY_RACE
 from ak_engine.models.map import Terrain
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
@@ -217,19 +217,42 @@ def test_flying_or_special_budget_stays_within_documented_range():
 
 
 def test_king_home_budget_is_the_confirmed_fixed_value():
-    # Phase 985: corrected from 7 to 8 -- see KING_HOME_BUDGET's own
-    # docstring for the real-sample derivation.
-    assert KING_HOME_BUDGET == 8
+    # Phase 987: back to the original disassembly-confirmed 7 -- Phase
+    # 985's brief correction to 8 was masking a different bug (spending
+    # BASE_STRENGTH/"Str" instead of `pay`); see KING_HOME_BUDGET's own
+    # docstring.
+    assert KING_HOME_BUDGET == 7
+
+
+def _pay_of(army_type: ArmyType) -> int:
+    return ARMY_TABLE[army_type].pay
 
 
 def test_king_home_budget_affords_exactly_3_armies_for_every_real_sample_shape():
-    # Phase 985: all 5 real Turn-0 samples this project has show exactly
-    # 3 starting armies for a King Home, alternating slot0/slot1/slot0 --
-    # confirmed here for both real shapes seen (Legion/Light-Cavalry and
-    # Bowmen/Heavy-Cavalry), and that a 4th army never fits.
+    # Phase 985/987: all 5 real Turn-0 samples this project has show
+    # exactly 3 starting armies for a King Home, alternating
+    # slot0/slot1/slot0 -- confirmed here for both real shapes seen
+    # (Legion/Light-Cavalry and Bowmen/Heavy-Cavalry), spending each
+    # army's `pay` (not `BASE_STRENGTH`) against the budget, and that a
+    # 4th army never fits.
     for slot0, slot1 in ((ArmyType.LEGION, ArmyType.LT_CAVALRY), (ArmyType.BOWMEN, ArmyType.HVY_CAVALRY)):
-        armies = build_initial_armies(slot0, slot1, KING_HOME_BUDGET)
+        armies = build_initial_armies(slot0, slot1, KING_HOME_BUDGET, strength_of=_pay_of)
         assert armies == [slot0, slot1, slot0]
+
+
+def test_king_home_budget_affords_exactly_3_armies_for_every_possible_combination():
+    # Phase 987: unlike the Str-based spending Phase 985 assumed, pay-
+    # based spending provably reproduces exactly 3 armies for *every*
+    # King race (BEST_ATYPE, all pay 2) paired with *every* real Home
+    # second-slot option (pay 2 or 3) -- not just the 2 directly
+    # observed in real Turn-0 samples. This is what actually justifies
+    # keeping a single fixed KING_HOME_BUDGET at all.
+    best_atypes = (ArmyType.LEGION, ArmyType.BOWMEN, ArmyType.AXEMEN, ArmyType.PHALANX)
+    second_slots = (ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY, ArmyType.CHARIOTS, ArmyType.ELEPHANTS, ArmyType.FLEET)
+    for slot0 in best_atypes:
+        for slot1 in second_slots:
+            armies = build_initial_armies(slot0, slot1, KING_HOME_BUDGET, strength_of=_pay_of)
+            assert armies == [slot0, slot1, slot0]
 
 
 def test_build_initial_armies_alternates_slots_and_spends_budget_exactly():

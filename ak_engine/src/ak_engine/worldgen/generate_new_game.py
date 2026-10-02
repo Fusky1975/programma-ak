@@ -845,8 +845,16 @@ def generate_new_game(
             naval = king_is_naval(game_state.leaders[king.leader_id].skills)
             recruit_type_2 = second_recruit_slot(terrain, rng, naval=naval)
             owner_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
+            # Phase 987: King Home spends each army's `pay` (recruit/
+            # maintenance cost), not `BASE_STRENGTH` ("Str") -- see
+            # KING_HOME_BUDGET's own docstring for the real-data
+            # derivation. Every real Home second-slot type already has
+            # a fixed, non-"variable" `pay` in ARMY_TABLE (Elephants
+            # included), so no RNG-consuming strength roll is needed
+            # here at all, unlike the generic ordinary-province budget
+            # loop below.
             army_types = build_initial_armies(
-                recruit_type_1, recruit_type_2, KING_HOME_BUDGET, strength_of=_elephants_aware_strength_of(rng)
+                recruit_type_1, recruit_type_2, KING_HOME_BUDGET, strength_of=lambda t: ARMY_TABLE[t].pay
             )
             # Phase 428: every King Home starts 100% explored (confirmed
             # verbatim -- "Expl% 100%" -- across four independent real
