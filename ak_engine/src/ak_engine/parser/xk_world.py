@@ -167,16 +167,69 @@ both real Turn 1 samples; 913/839 bytes for the two real Turn 2
 samples -- not a fixed size, and not simply proportional to this
 Kingdom's own known-leader count either) sits between the end of the
 per-leader name table and this Kingdom's own first known-province
-record. Repeating small fixed-shape byte groups and a few embedded
-ASCII fragments (e.g. ``"Lord"``, ``"Shaman"``) suggest this is a
-further, real, structured section (most plausibly a per-army or per-
-leader status table, mirroring ``parser/gw_world.py``'s own block
-structure) rather than padding, but it is **not decoded, and this
-module makes no attempt to locate the province table's own start from
-a bare file path** -- a genuine, explicitly flagged gap, not a hidden
-assumption. Everything *after* the province table (whatever follows
-``Tanglewood``, this sample's own last province record) is equally
-undeciphered.
+record. It contains real per-leader coordinate data (this Kingdom's own
+King and both Companions' coordinates were all found inside it, at
+``Piratum``'s own real (11,7)) and at least 2 embedded 15-character-
+truncated title strings (``"Master of the s"``, ``"Lord of the stu"`` --
+real text, neither matching any title this project's own
+``models/office.py OFFICE_NAME``/``RACE_FANATICISM_TITLE`` tables
+already carry, so genuinely new, not yet attributed) -- **most likely a
+per-leader status block** (mirroring ``parser/gw_world.py``'s own
+leader block), **not armies** as this module's own Phase 988 version of
+this docstring guessed. Still not decoded, and this module makes no
+attempt to locate the province table's own start from a bare file path
+-- a genuine, explicitly flagged gap, not a hidden assumption.
+
+**Phase 990 -- what actually follows the province table, and the real
+army block.** The data after the last known-province record
+(``Tanglewood``, in this Kingdom's own Turn 1 sample) is **not**
+undifferentiated: real province names/magic-item names found inside it
+confirm it holds, in order, **this Kingdom's own Home's 2 real Features
+**(confirmed: both entries carry ``Piratum``'s own real coordinate
+(11,7), and one embeds the Pascal ShortString ``"Shadow Sword"`` --
+exactly ``parser/models/treasure.py TREASURE_NAME[Treasure.WEAPON_2]``,
+real magic-item text, not a coincidence -- matching this project's own
+already-confirmed "every King Home carries exactly 2 Features" fact),
+**then this Kingdom's own Home garrison's own armies**.
+
+``parse_xk_army_record()`` below decodes one 8-byte army record, given
+its own starting byte offset: ``[quality:1][state:1][coord_x:1]
+[coord_y:1][commanded_by:1][unknown_e:1][army_type_ordinal:1]
+[unknown_g:1]``. ``quality`` is this project's own ``turn.combat.
+Quality`` ordinal directly (``2`` is always ``Quality.AVERAGE``, matching
+every real sample -- no real non-``AVERAGE`` army exists in this
+project's own corpus to test a different value). ``state`` is the real
+``MonsterEngagementState`` ordinal already confirmed in ``parser/
+gw_world.py`` (``1``=``HIRED``, ``2``=``MERCENARY``, ``3``=``ZOMBOID``).
+``commanded_by`` only ever reads the real ``0xFF`` "unled, under the
+garrison commander" sentinel in every sample available -- a real
+commanded army's own encoding is untested, no sample exists.
+``army_type_ordinal`` matches the real ``MOD_PAT_ORDINAL_TO_ARMY_TYPE``
+ordinal for 5 of 6 real regular-army records checked (both Kingdoms'
+own Home garrisons, Turn 1) -- including both real Skeletal/Zomboid
+armies (Phalanx, Bowmen) and 3 of 4 remaining Hired ones; the one
+exception (a real Heavy Cavalry army reads ordinal ``0``, not the
+expected ``6``) is **flagged, not hidden or explained away** -- kept as
+a raw ordinal (not converted to ``ArmyType``) for exactly this reason.
+``unknown_e`` reads identically to ``state`` in all 6 real samples
+checked (a genuine, reproducible duplicate -- role unconfirmed: could
+be a real second field that coincidentally shares ``state``'s own small
+value range, or truly the same field stored twice). ``unknown_g``'s own
+real role is entirely unconfirmed (candidate real facts tried and
+ruled out: movement points, race, tax -- none fit across all 6 samples).
+
+**Only confirmed for this Kingdom's own Home.** Every one of this
+Kingdom's known-but-not-owned neighbor provinces (``Florence``,
+``Redwood``, etc.) carries **zero** army entries anywhere in the file,
+regardless of whether the real `GW3__T1` data shows armies stationed
+there -- a Kingdom's XK file apparently never reveals a neighbor's
+garrison, only its own. A real **Mercenary**-state army (Piratum's own
+4th, real army, ``Chariots``/``MERCENARY``) sits in the same coordinate
+cluster but does **not** fit this same 8-byte shape at all (byte-by-byte
+checked and ruled out) -- its own real shape is a separate, undecoded
+gap. Locating the army block's own start (like the province table) is
+not attempted from a bare path -- only decoding one record, given a
+known offset, is implemented.
 
 This module intentionally exposes only what is fully confirmed above
 (the header's 4 named fields, the per-leader name table, and the
@@ -193,8 +246,10 @@ from pathlib import Path
 
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import MonsterEngagementState
 from ak_engine.models.race import Race
 from ak_engine.parser.gw_world import MOD_PAT_ORDINAL_TO_ARMY_TYPE
+from ak_engine.turn.combat import Quality
 
 XK_HEADER_SIZE = 0x30B
 XK_LEADER_ROSTER_COUNT = 100
@@ -374,3 +429,56 @@ def parse_xk_province_record(data: bytes, offset: int) -> tuple[XKProvinceRecord
         recruit_type_2=MOD_PAT_ORDINAL_TO_ARMY_TYPE.get(recruit2_ordinal),
     )
     return record, offset
+
+
+_UNLED_COMMANDER_SENTINEL = 0xFF
+_ARMY_RECORD_SIZE = 8
+
+
+@dataclass(slots=True)
+class XKArmyRecord:
+    """One decoded army record from this Kingdom's own Home garrison --
+    see the module docstring's own Phase 990 addendum for the full
+    derivation, including the one unresolved army_type mismatch and the
+    two still-unexplained raw bytes kept here rather than guessed at.
+    """
+
+    quality: Quality
+    state: MonsterEngagementState
+    coord: HexCoord
+    commanded_by_leader_id: int | None
+    # The real MOD_PAT ordinal -- kept raw, not converted to ArmyType,
+    # because one of the 6 real samples checked doesn't match the
+    # expected ordinal for its own real army type (see module docstring).
+    army_type_ordinal: int
+    unknown_e: int
+    unknown_g: int
+
+
+def parse_xk_army_record(data: bytes, offset: int) -> tuple[XKArmyRecord, int]:
+    """Decodes one 8-byte army record starting at ``offset`` (its own
+    ``quality`` byte) -- see the module docstring's own Phase 990
+    addendum. Returns the decoded record and the byte offset immediately
+    after it.
+
+    Confirmed only for this Kingdom's own Home garrison's regular
+    (non-Mercenary-state) armies -- see the module docstring for why a
+    Mercenary-state army does not fit this shape, and why this function
+    does not locate the army block's own start in an arbitrary file.
+    """
+
+    if offset + _ARMY_RECORD_SIZE > len(data):
+        raise XKParseError("XK file ended mid-way through an army record", byte_offset=offset)
+    quality, state, coord_x, coord_y, commanded_by, unknown_e, army_type_ordinal, unknown_g = data[
+        offset : offset + _ARMY_RECORD_SIZE
+    ]
+    record = XKArmyRecord(
+        quality=Quality(quality),
+        state=MonsterEngagementState(state),
+        coord=HexCoord(coord_x, coord_y),
+        commanded_by_leader_id=None if commanded_by == _UNLED_COMMANDER_SENTINEL else commanded_by,
+        army_type_ordinal=army_type_ordinal,
+        unknown_e=unknown_e,
+        unknown_g=unknown_g,
+    )
+    return record, offset + _ARMY_RECORD_SIZE

@@ -16,14 +16,17 @@ import pytest
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
+from ak_engine.models.monster import MonsterEngagementState
 from ak_engine.parser.xk_world import (
     XK_HEADER_SIZE,
     XK_LEADER_ROSTER_COUNT,
     XKParseError,
+    parse_xk_army_record,
     parse_xk_header,
     parse_xk_known_leader_names,
     parse_xk_province_record,
 )
+from ak_engine.turn.combat import Quality
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "world" / "G3"
 T1_K0 = FIXTURE_DIR / "XK3__T1.K0"
@@ -242,3 +245,50 @@ def test_parse_xk_province_record_decodes_a_sea_province_with_no_race():
     assert record.terrain is Terrain.SEA
     assert record.race is Race.NO_RACE
     assert record.governor_leader_id is None
+
+
+def test_parse_xk_army_record_decodes_kingdom_0s_own_skeletal_home_army():
+    # Real GW3__T1 fact: King Babba Sissoko is Undead-aligned, so his
+    # Home's own first army is raised Skeletal/Zomboid (Phalanx).
+    data = T1_K0.read_bytes()
+    record, next_offset = parse_xk_army_record(data, 3201)
+
+    assert record.quality is Quality.AVERAGE
+    assert record.state is MonsterEngagementState.ZOMBOID
+    assert record.coord == HexCoord(11, 7)
+    assert record.commanded_by_leader_id is None
+    assert record.army_type_ordinal == 3  # Phalanx, MOD_PAT_ORDINAL_TO_ARMY_TYPE
+    assert next_offset == 3209
+
+
+def test_parse_xk_army_record_chains_through_kingdom_0s_own_home_garrison():
+    # The real GW3__T1 Home garrison at Piratum (11,7): Phalanx (Zomboid),
+    # then Phalanx (Hired), then Warg Riders (Hired) -- this Kingdom's own
+    # XK file order, not necessarily GW3's own listing order.
+    data = T1_K0.read_bytes()
+    offset = 3201
+    expected = [
+        (MonsterEngagementState.ZOMBOID, 3),
+        (MonsterEngagementState.HIRED, 3),
+        (MonsterEngagementState.HIRED, 10),
+    ]
+    for state, army_type_ordinal in expected:
+        record, offset = parse_xk_army_record(data, offset)
+        assert record.quality is Quality.AVERAGE
+        assert record.coord == HexCoord(11, 7)
+        assert record.commanded_by_leader_id is None
+        assert record.state is state
+        assert record.army_type_ordinal == army_type_ordinal
+
+
+def test_parse_xk_army_record_decodes_kingdom_1s_own_skeletal_home_army():
+    # King Uga-Buga Makumb is also Undead-aligned -- his Home's first
+    # army (Bowmen) is likewise raised Skeletal/Zomboid.
+    data = T1_K1.read_bytes()
+    record, _ = parse_xk_army_record(data, 3103)
+
+    assert record.quality is Quality.AVERAGE
+    assert record.state is MonsterEngagementState.ZOMBOID
+    assert record.coord == HexCoord(9, 5)
+    assert record.commanded_by_leader_id is None
+    assert record.army_type_ordinal == 1  # Bowmen
