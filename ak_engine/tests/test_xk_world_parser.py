@@ -21,6 +21,7 @@ from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
+from ak_engine.parser.gw_world import parse_gw_armies
 from ak_engine.parser.xk_world import (
     SUPPORTED_FORMAT_REVISION,
     SUPPORTED_GAME_VERSION,
@@ -382,22 +383,23 @@ def test_treasure_record_does_not_truncate_a_long_name():
 
 def test_army_record_decodes_kingdom_0s_own_skeletal_home_army():
     # King Babba Sissoko is Undead-aligned, so his Home's own first army
-    # is raised Skeletal/Zomboid (status 3).
+    # is raised Skeletal/Zomboid.
     armies = [a for a in parse_xk_world(T1_K0).armies if a.coord == HexCoord(11, 7)]
     assert len(armies) == 4
 
-    zomboid = next(a for a in armies if a.status == 3)
+    zomboid = next(a for a in armies if a.status is MonsterEngagementState.ZOMBOID)
     assert zomboid.race is Race.ORCISH
     assert zomboid.army_type is ArmyType.PHALANX
     assert zomboid.commanded_by_leader_id is None
+    assert zomboid.detail_status is MonsterEngagementState.ZOMBOID
 
 
 def test_army_record_decodes_the_real_mercenary_army_a_phase_988_991_guess_missed():
     # Phase 988-991's own hand-derived 8-byte army shape never found this
-    # real Mercenary (status 2) army at all -- its own field order guess
-    # (quality/state swapped and partly duplicated) didn't generalize.
+    # real Mercenary army at all -- its own field order guess (quality/
+    # state swapped and partly duplicated) didn't generalize.
     armies = [a for a in parse_xk_world(T1_K0).armies if a.coord == HexCoord(11, 7)]
-    mercenary = next(a for a in armies if a.status == 2)
+    mercenary = next(a for a in armies if a.status is MonsterEngagementState.MERCENARY)
 
     assert mercenary.race is Race.HUMAN
     assert mercenary.army_type is ArmyType.CHARIOTS
@@ -411,6 +413,57 @@ def test_army_without_location_details_has_no_coordinate():
     for army in hidden:
         assert army.commanded_by_leader_id is None
         assert army.detail_status is None
+
+
+def test_army_status_matches_the_real_gw_engagement_state_at_scale():
+    # Index-exact pairing against every one of the real 218 GW3__T1
+    # armies (not just the 4 at one Home) -- zero exceptions.
+    world = parse_xk_world(T1_K0)
+    gw_armies = parse_gw_armies(Path("/home/user/programma-ak/GW3__T1"))
+    checked = 0
+    for army in world.armies:
+        gw_index = army.army_index if army.army_index < 255 else army.army_index - 1
+        gw_army = gw_armies[gw_index]
+        assert army.race == gw_army.race
+        assert army.army_type == gw_army.army_type
+        assert army.status is gw_army.state
+        if army.detail_status is not None:
+            assert army.detail_status is gw_army.state
+        checked += 1
+    assert checked == 218
+
+
+_TURN_TO_REAL_GW_FILE = {
+    1: Path("/home/user/programma-ak/GW3__T1"),
+    2: Path("/home/user/programma-ak/GW3__T2"),
+    3: Path("/home/user/programma-ak/GW3__T3"),
+    4: Path("/home/user/programma-ak/GW3__T4"),
+}
+
+
+def test_quality_or_mask_is_a_real_masking_sentinel_not_a_clean_ordinal():
+    # A nonzero quality_or_mask always matches the real Quality.value
+    # exactly; zero is a real masking sentinel covering every possible
+    # real quality, not literally Quality.DEPLETED -- confirmed across
+    # the full 12-file corpus (one Home's own armies alone isn't varied
+    # enough to show the ambiguity) -- see module docstring's own
+    # Phase 994 addendum.
+    masked_real_qualities = set()
+    gw_cache = {}
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_armies(_TURN_TO_REAL_GW_FILE[turn])
+        gw_armies = gw_cache[turn]
+        for army in world.armies:
+            gw_index = army.army_index if army.army_index < 255 else army.army_index - 1
+            gw_army = gw_armies[gw_index]
+            if army.quality_or_mask == 0:
+                masked_real_qualities.add(gw_army.quality.value)
+            else:
+                assert army.quality_or_mask == gw_army.quality.value
+    assert len(masked_real_qualities) > 1  # genuinely ambiguous, not a hidden constant
 
 
 def test_recruitment_map_covers_every_cell_of_the_real_18x9_board():

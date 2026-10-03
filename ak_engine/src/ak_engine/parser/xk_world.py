@@ -140,6 +140,37 @@ public, not per-recipient-filtered) -- this closes Phase 990's own
 "per-leader status data" that pointer wasn't actually about: these 2
 blocks are per-*King*, not per-leader at all.
 
+**Phase 994 -- the Army record's own ``status``/``detail_status``/
+``quality_or_mask``, cross-checked at scale.** Confirmed (Phase 992)
+that a given XK file's own ``army_index`` (the ``0..army_count-1`` loop
+position, ``255`` skipped) lines up *exactly* with ``parser/gw_world.py
+parse_gw_armies()``'s own same-order list for the same real world file
+(re-inserting the skipped index: ``gw_index = army_index if army_index
+< 255 else army_index - 1``) -- this lets every Army record in the
+entire 12-file corpus be paired with its own real ``GWArmyRecord``
+directly, not just the handful at one Home. Across all 3015 armies this
+produced real pairs for: ``race``/``army_type`` matched their own real
+``GWArmyRecord`` fields with **zero exceptions**. ``status`` and
+``detail_status`` (when present) matched ``GWArmyRecord.state``'s own
+real ``MonsterEngagementState`` ordinal **exactly, zero exceptions**
+each of the 3 non-``DEAD`` values actually observed (``HIRED``,
+``MERCENARY``, ``ZOMBOID``) -- the real enum this project's
+``parser/gw_world.py`` already defines, no new table needed; both
+fields are now decoded as ``MonsterEngagementState``, not raw ints.
+``quality_or_mask`` is **not** a clean 1:1 ordinal: every nonzero value
+(``1``-``4``) matched ``GWArmyRecord.quality.value`` exactly in every
+one of 190 such cases, but raw ``0`` mapped to **5 different** real
+``Quality`` values (``0`` through ``4``, 2825 cases) -- a real masking
+sentinel, not "this army's quality is ``Quality.DEPLETED``" (``0``):
+most real ``Quality.AVERAGE`` armies happen to be masked to ``0`` too.
+Kept as a raw int for exactly this reason -- converting ``0`` to either
+``None`` or ``Quality.DEPLETED`` would silently discard real
+information the format itself doesn't let a reader recover unambiguously.
+A Mercenary-state army is masked less often than an ordinary one (102 of
+111 real Mercenary armies reveal their real quality) but not
+reliably enough to treat "Mercenary" as the real reveal rule --
+genuinely still open.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals and
 both 256-byte flag areas; a full card's own ``sex_flags`` bitfield and
@@ -147,7 +178,8 @@ both 256-byte flag areas; a full card's own ``sex_flags`` bitfield and
 beyond their raw per-ability values; the leader-races/states vectors'
 own full value range; a province record's ``unknown_9197_word``; a
 Feature record's own ``unknown_962a``; an Army record's own
-``quality_or_mask``/``status``/``detail_status``; a Treasure's own
+``quality_or_mask`` (see the Phase 994 addendum above -- a real masking
+sentinel, confirmed, but its own reveal rule isn't); a Treasure's own
 ``trowner`` word beyond the observed ``256 + feature_id`` convention for
 a feature-held item (a leader-held item's own convention is asserted,
 not independently verified in these samples); why each King title table
@@ -482,26 +514,28 @@ class XKTreasureRecord:
 
 @dataclass(slots=True)
 class XKArmyRecord:
-    """One Army record (4 or 8 bytes) -- see module docstring.
-    ``army_index`` is this army's own position in the real ``0..
-    army_count-1`` loop (with ``255`` always skipped), not a stored id.
-    ``quality_or_mask``/``status``/``detail_status`` are kept raw --
-    genuinely unconfirmed, and this Phase found a real example
-    (Mercenary state) that a Phase 988-991 guess at this shape missed
-    entirely. ``coord``/``commanded_by_leader_id``/``detail_status`` are
-    ``None`` when this record has no location details (a literal
-    ``0xFE`` in that position, confirmed real, not merely "not yet
-    observed").
+    """One Army record (4 or 8 bytes) -- see module docstring's own
+    Phase 994 addendum for ``status``/``detail_status``/
+    ``quality_or_mask``. ``army_index`` is this army's own position in
+    the real ``0..army_count-1`` loop (with ``255`` always skipped), not
+    a stored id -- confirmed (Phase 994) to be the *exact* same 0-based
+    position this project's own ``parser/gw_world.py parse_gw_armies()``
+    already returns for the same real world file, so the two can be
+    zipped directly (after re-inserting the skipped index) for a real
+    army's full detail. ``coord``/``commanded_by_leader_id``/
+    ``detail_status`` are ``None`` when this record has no location
+    details (a literal ``0xFE`` in that position, confirmed real, not
+    merely "not yet observed").
     """
 
     army_index: int
     race: Race
     army_type: ArmyType | None
     quality_or_mask: int
-    status: int
+    status: MonsterEngagementState
     coord: HexCoord | None
     commanded_by_leader_id: int | None
-    detail_status: int | None
+    detail_status: MonsterEngagementState | None
 
 
 @dataclass(slots=True)
@@ -767,16 +801,16 @@ def _read_army(r: _Reader, army_index: int) -> XKArmyRecord:
     race = Race(r.u8(f"army[{army_index}].race"))
     army_type = MOD_PAT_ORDINAL_TO_ARMY_TYPE.get(r.u8(f"army[{army_index}].type"))
     quality_or_mask = r.u8(f"army[{army_index}].quality_or_mask")
-    status = r.u8(f"army[{army_index}].status")
+    status = MonsterEngagementState(r.u8(f"army[{army_index}].status"))
     marker = r.u8(f"army[{army_index}].x_or_hidden")
     coord: HexCoord | None = None
     commanded_by_leader_id: int | None = None
-    detail_status: int | None = None
+    detail_status: MonsterEngagementState | None = None
     if marker != _SENTINEL_END:
         x = marker
         y = r.u8(f"army[{army_index}].y")
         leader = r.u8(f"army[{army_index}].leader")
-        detail_status = r.u8(f"army[{army_index}].detail_status")
+        detail_status = MonsterEngagementState(r.u8(f"army[{army_index}].detail_status"))
         coord = HexCoord(x, y)
         commanded_by_leader_id = None if leader == _SENTINEL_NO_OWNER else leader
     return XKArmyRecord(
