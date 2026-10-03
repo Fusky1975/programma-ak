@@ -1064,3 +1064,43 @@ def test_flags_c3fc_is_mostly_shared_across_kingdoms_with_a_few_real_exceptions(
     t2_worlds = [parse_xk_world(f) for f in (T2_K0, T2_K1, T2_K2)]
     t2_nonzero_indices = {i for w in t2_worlds for i, b in enumerate(w.globals.flags_c3fc) if b != 0}
     assert t1_nonzero_indices != t2_nonzero_indices
+
+
+_TURN_TO_REAL_GW_FEATURES_1000 = {
+    1: Path("/home/user/programma-ak/GW3__T1"),
+    2: Path("/home/user/programma-ak/GW3__T2"),
+    3: Path("/home/user/programma-ak/GW3__T3"),
+    4: Path("/home/user/programma-ak/GW3__T4"),
+}
+
+
+def test_feature_count_global_is_the_real_world_total_not_a_per_kingdom_count():
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        gw_features = parse_gw_features(_TURN_TO_REAL_GW_FEATURES_1000[world.globals.game_turn])
+        assert world.globals.feature_count == len(gw_features) == 128
+        # this Kingdom's own known-feature count is always far smaller
+        assert len(world.features) < world.globals.feature_count
+
+
+def test_feature_held_trowner_matches_gws_own_raw_trowner_field_directly():
+    # Stronger than the name/arithmetic-based confirmation: trowner is
+    # cross-checked against GWFeatureRecord's own raw trowner_raw field
+    # for the same real feature, not just re-derived from 256+feature_id.
+    gw_cache = {}
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_features(_TURN_TO_REAL_GW_FEATURES_1000[turn])
+        gw_features = gw_cache[turn]
+        for treasure in world.treasures:
+            if treasure.feature_id >= len(gw_features):
+                continue
+            if treasure.trowner != 256 + treasure.feature_id:
+                continue
+            gw_feature = gw_features[treasure.feature_id]
+            assert treasure.trowner == gw_feature.trowner_raw
+            checked += 1
+    assert checked == 13

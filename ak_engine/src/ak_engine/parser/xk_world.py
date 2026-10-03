@@ -386,6 +386,43 @@ is itself a pre-turn-1 snapshot, not an ordinary turn. No bit-level
 meaning is decoded for either flag area beyond this structural
 picture.
 
+**Phase 1000 -- Feature/Treasure fields pushed one step further
+against GW's own raw fields.** ``feature_count`` (the named global) is
+confirmed, in every one of the 12 real files, to be the real *world*
+total (``128``, exactly ``len(parse_gw_features(...))`` for that turn)
+-- not this Kingdom's own known-feature count, which is far smaller
+(``2``-``8`` in this corpus's own ``world.features``). A feature-held
+Treasure's own ``trowner`` is now cross-checked directly against GW's
+own raw ``GWFeatureRecord.trowner_raw`` field (not just re-derived from
+the ``256 + feature_id`` arithmetic and a name match, as before): all
+``13`` real matched cases agree exactly, zero exceptions -- confirming
+``trowner`` is a literal copy of that same underlying value, not an
+independently recomputed one. ``trcharges`` has, as before, zero real
+examples in this corpus whose ordinal falls in the ``[70, 92)`` range
+that would carry one, so its predicate remains structurally confirmed
+(Phase 992) but its actual value is still untested against GW's own
+``trcharges`` field.
+
+``unknown_962a`` has a real, named candidate worth recording even
+though it can't be confirmed from data alone: ``parser/gw_world.py``'s
+own ``GWFeatureRecord.fdis_raw`` -- the Pascal source's own name for
+that field is "discovery **or flags**" (ambiguous even at the source),
+and it is confirmed constant ``0`` across *that* module's own full,
+pre-existing 12-turn, 128-feature-per-turn real corpus, exactly
+mirroring ``unknown_962a``'s own "always ``0`` in all 36 real XK
+samples" finding (Phase 995). The naming pattern also fits: this
+project has already confirmed (Phase 996) that a leader's own
+``lfdisc``/``ldiscp`` fields are real, "feature discovery" / "discovery
+points" counters -- the same ``fdis``-rooted Pascal naming family, at
+the Feature level instead of the leader level, is a plausible same-
+concept counterpart. This is a **named hypothesis, not a confirmed
+decode**: both fields are always ``0`` in every real sample on hand in
+either corpus, so there is no actual data to tell whether they are the
+same quantity or merely two different, equally-silent always-``0``
+fields -- a real sample where some feature has actually been
+discovered (nonzero in either field) would settle it outright. Kept as
+``unknown_962a``, not renamed, until such a sample exists.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -731,7 +768,14 @@ class XKProvinceRecord:
 class XKFeatureRecord:
     """One Feature-summary record (8 bytes) -- see module docstring.
     ``unknown_962a`` is a real ``DS:962A`` word, always ``0`` in every
-    sample so far (36 real records checked, Phase 995), role unconfirmed.
+    sample so far (36 real records checked, Phase 995), role
+    unconfirmed. ``parser/gw_world.py GWFeatureRecord.fdis_raw`` is a
+    plausible, named candidate for the same quantity (Phase 1000 --
+    same "always 0 in every real sample" behavior in that module's own
+    much larger pre-existing corpus, and the same ``fdis``-rooted
+    Pascal naming family this project already confirmed at the leader
+    level), but neither field has a single nonzero real example to
+    confirm or refute it against -- not renamed on that basis alone.
 
     ``monster``/``engagement_state`` mirror real GW ground truth for a
     live guardian, but Phase 995 found a real, reproducible exception
