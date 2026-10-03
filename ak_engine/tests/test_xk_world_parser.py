@@ -1251,3 +1251,36 @@ def test_planstart_planend_minus_one_does_not_mean_no_plan_was_submitted():
     for fixture in ALL_12_SAMPLES:
         for card in parse_xk_world(fixture).leader_cards:
             assert (card.planstart, card.planend) == (-1, -1)
+
+
+def test_extra_low_bytes_partially_matches_k1_obj_only_for_lmove():
+    # A real, non-coincidental but incomplete pattern (Phase 1003):
+    # extra_low_bytes[i] equals that same phase's own real K1 obj value
+    # only for LMOVE phases, and only in some of those -- zero matches
+    # for any other action type confirms this isn't a coincidence.
+    lmove_matches = 0
+    lmove_total = 0
+    nonlmove_matches = 0
+    nonlmove_total = 0
+    for turn, xk_fixture in _K1_TURN_PAIRS:
+        kingdom = parse_k1_moves_file(_K1_MOVES_DIR / f"AK3__T{turn}.K1")
+        world = parse_xk_world(xk_fixture)
+        cards_by_id = {c.leader_id: c for c in world.leader_cards}
+        for leader in kingdom.leaders:
+            card = cards_by_id.get(leader.leader_id)
+            if card is None or not leader.plan.segments:
+                continue
+            segment = leader.plan.segments[0]
+            for i in range(5):
+                phase = segment.phases.get(f"P{i}")
+                if phase is None:
+                    continue
+                matches = card.extra_low_bytes[i] == phase.obj
+                if phase.action is ActionCode.LMOVE:
+                    lmove_total += 1
+                    lmove_matches += int(matches)
+                else:
+                    nonlmove_total += 1
+                    nonlmove_matches += int(matches)
+    assert (lmove_matches, lmove_total) == (10, 18)
+    assert (nonlmove_matches, nonlmove_total) == (0, 37)

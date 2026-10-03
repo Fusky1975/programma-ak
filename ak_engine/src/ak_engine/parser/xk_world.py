@@ -492,13 +492,35 @@ reading is "no plan is currently pending at snapshot time" -- i.e. the
 previous turn's plan has already been consumed by the time XK is
 exported, which this corpus's own snapshot timing happens to make true
 for every single real card on hand, leaving the genuinely-nonzero case
-still unobserved. ``extra_low_bytes`` remains undecoded: checked
-directly against the same real K1 ``extra`` values (including as a
-literal low byte, modulo 256), no clean correspondence was found --
-its own real value range (consistently ``80``-``130`` in this corpus)
-is suggestive of a real province id but doesn't match any coordinate
-reading tried against the leader's own real ``coord``/``birth_coord``
-fields either; genuinely still open.
+still unobserved. ``extra_low_bytes`` is not a simple copy or low byte
+of the real K1 ``extra`` value for the *same* phase -- checked directly
+(including as a literal low byte, modulo 256), no correspondence found
+-- but Phase 1003 below finds a real, non-coincidental partial
+correspondence to the LMOVE ``obj`` value instead.
+
+**Phase 1003 -- ``extra_low_bytes``'s own LMOVE-specific, partial
+correspondence.** Checking ``extra_low_bytes[i]`` against *that same
+phase's own* real K1 ``obj`` value (not ``extra``) at the same scale as
+Phase 1002's own cross-check finds a real, action-specific pattern:
+for an ``ActionCode.LMOVE`` phase, ``extra_low_bytes[i] == obj``
+in 10 of 18 real cases -- for every other action type, zero matches in
+37 cases (ruling out coincidence; the correspondence is real and
+LMOVE-specific, the same action type Phase 1002's own ``objects``
+exception already singled out). The 8 real exceptions mostly (7 of 8)
+read ``0`` instead of the real target value. No single clean predicate
+was found to separate the matching and non-matching cases -- tried and
+ruled out: plan position (both match and mismatch occur at every
+position ``P0``-``P4`` except ``P0``, which only ever matches),
+the preceding or following phase's own action type, and grouping by
+leader or by turn-transition (both groups mix matches and non-matches
+for the same leader within the same turn-transition). Settling this
+further would most likely need a disassembly of the turn-*processing*
+engine's own write-back to a leader's in-memory plan record (only the
+XK *writer* has been disassembled so far) -- the pattern's own shape
+(a real value half the time, ``0`` otherwise, specific to the one
+action type whose own ``obj`` is a coordinate rather than a plain id)
+is consistent with that record being live-mutated by move execution
+itself before XK captures it, but this is not confirmed.
 
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
@@ -508,11 +530,13 @@ but not otherwise named) and both 256-byte flag areas (Phase 999:
 integer's real meaning isn't; ``flags_c3fc``'s mostly-shared-with-a-
 few-per-Kingdom-bits shape confirmed, no bit meaning decoded); a full
 card's own ``sex_flags`` bitfield beyond "0 in this corpus",
-``extra_low_bytes`` (Phase 1002: confirmed not a simple copy or low
-byte of the real K1 ``extra`` value, role otherwise undecoded), and
-``objects[i]``'s own real meaning specifically for an ``LMOVE`` phase
-(Phase 1002: every other action type and the whole of ``actions`` is
-now fully decoded against real K1 data); the
+``extra_low_bytes`` (Phase 1003: a real, LMOVE-specific partial
+correspondence to K1's own ``obj`` found -- 10 of 18 exact matches,
+0 of 37 for any other action type -- but no predicate separating the
+8 real exceptions from the 10 matches), and ``objects[i]``'s own real
+meaning specifically for an ``LMOVE`` phase (Phase 1002: every other
+action type and the whole of ``actions`` is now fully decoded against
+real K1 data); the
 ``leader_states`` vector's own exact per-value meaning (Phase 996:
 substantially characterized with real data and several real hypotheses
 tested and falsified, see above, but no clean rule found yet); a
@@ -783,9 +807,13 @@ class XKLeaderCard:
     (``turn/plan_dispatch.py``'s own ``decode_hex_number(phase.obj,
     board_width)``), not a simple target id, which is why XK's own
     value there doesn't match the raw K1 integer; what it holds instead
-    isn't pinned down. ``extra_low_bytes`` remains undecoded -- checked
-    directly against the real K1 ``extra`` values, no correspondence
-    found. ``planstart``/``planend`` are signed bytes; ``-1`` is
+    isn't pinned down. ``extra_low_bytes`` doesn't correspond to the
+    real K1 ``extra`` value at all, but (Phase 1003) does to that same
+    phase's own ``obj`` for an ``LMOVE`` phase specifically, in 10 of
+    18 real cases (0 of 37 for any other action type -- a real,
+    non-coincidental pattern, not fully decoded: no predicate was found
+    to separate the matches from the 8 real exceptions, which mostly
+    read ``0`` instead). ``planstart``/``planend`` are signed bytes; ``-1`` is
     confirmed real (every full card in the whole 12-file corpus reads
     ``-1``/``-1``), but -- corrected from this field's own prior
     docstring claim -- it does **not** mean "no plan was ever
