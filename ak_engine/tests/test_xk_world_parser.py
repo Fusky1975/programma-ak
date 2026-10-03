@@ -850,3 +850,133 @@ def test_province_ownership_matches_real_gw_governor_at_scale():
                 visible_checked += 1
     assert owner_checked == 59
     assert visible_checked == 75
+
+
+def test_quality_or_mask_revealed_exactly_for_this_kingdoms_own_leader_commanded_armies():
+    # quality_or_mask is nonzero (revealed) iff the army's real commander
+    # (GWArmyRecord.commanded_by_leader_id) belongs to this file's own
+    # Kingdom -- zero exceptions either direction, across the corpus.
+    gw_cache = {}
+    leaders_cache = {}
+    own_revealed = 0
+    own_masked = 0
+    other_revealed = 0
+    other_masked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        kid = world.header.kingdom_id
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_armies(_TURN_TO_REAL_GW_LEADERS[turn])
+            leaders_cache[turn] = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        gw_armies = gw_cache[turn]
+        leaders = leaders_cache[turn]
+        for army in world.armies:
+            gw_index = army.army_index if army.army_index < 255 else army.army_index - 1
+            gw_army = gw_armies[gw_index]
+            if gw_army.commanded_by_leader_id is None:
+                continue
+            owner_kid = leaders[gw_army.commanded_by_leader_id].kingdom_id
+            revealed = army.quality_or_mask != 0
+            if owner_kid == kid:
+                own_revealed += int(revealed)
+                own_masked += int(not revealed)
+            else:
+                other_revealed += int(revealed)
+                other_masked += int(not revealed)
+    assert (own_revealed, own_masked) == (77, 0)
+    assert (other_revealed, other_masked) == (0, 1480)
+
+
+def test_quality_or_mask_revealed_exactly_for_garrisons_in_this_kingdoms_own_provinces():
+    # A leaderless HIRED or ZOMBOID army (a garrison) is revealed iff it
+    # sits at a coordinate this file's own province list shows as
+    # owned by this Kingdom -- zero exceptions either direction.
+    gw_cache = {}
+    own_revealed = 0
+    own_masked = 0
+    other_revealed = 0
+    other_masked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        kid = world.header.kingdom_id
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_armies(_TURN_TO_REAL_GW_LEADERS[turn])
+        gw_armies = gw_cache[turn]
+        prov_by_coord = {p.coord: p for p in world.provinces}
+        for army in world.armies:
+            gw_index = army.army_index if army.army_index < 255 else army.army_index - 1
+            gw_army = gw_armies[gw_index]
+            if gw_army.commanded_by_leader_id is not None:
+                continue
+            if gw_army.state.name not in ("HIRED", "ZOMBOID"):
+                continue
+            revealed = army.quality_or_mask != 0
+            province = prov_by_coord.get(gw_army.coord)
+            is_own_province = province is not None and province.owner_kingdom_id == kid
+            if is_own_province:
+                own_revealed += int(revealed)
+                own_masked += int(not revealed)
+            else:
+                other_revealed += int(revealed)
+                other_masked += int(not revealed)
+    assert (own_revealed, own_masked) == (11, 0)
+    assert (other_revealed, other_masked) == (0, 754)
+
+
+def test_quality_or_mask_is_always_masked_for_dead_leaderless_armies():
+    gw_cache = {}
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_armies(_TURN_TO_REAL_GW_LEADERS[turn])
+        gw_armies = gw_cache[turn]
+        for army in world.armies:
+            gw_index = army.army_index if army.army_index < 255 else army.army_index - 1
+            gw_army = gw_armies[gw_index]
+            if gw_army.commanded_by_leader_id is not None or gw_army.state.name != "DEAD":
+                continue
+            assert army.quality_or_mask == 0
+            checked += 1
+    assert checked == 582
+
+
+def test_quality_or_mask_mercenary_armies_are_the_one_real_exception():
+    # Mercenary-state leaderless armies do NOT follow the ownership
+    # rule: checked directly, both directions are contradicted (some
+    # own-province ones are masked; some other-Kingdom ones are
+    # revealed). Documented as a genuine, unresolved exception rather
+    # than forced into the otherwise-universal rule.
+    gw_cache = {}
+    revealed = 0
+    masked = 0
+    own_province_masked_examples = 0
+    other_province_revealed_examples = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        kid = world.header.kingdom_id
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_armies(_TURN_TO_REAL_GW_LEADERS[turn])
+        gw_armies = gw_cache[turn]
+        prov_by_coord = {p.coord: p for p in world.provinces}
+        for army in world.armies:
+            gw_index = army.army_index if army.army_index < 255 else army.army_index - 1
+            gw_army = gw_armies[gw_index]
+            if gw_army.commanded_by_leader_id is not None or gw_army.state.name != "MERCENARY":
+                continue
+            is_revealed = army.quality_or_mask != 0
+            revealed += int(is_revealed)
+            masked += int(not is_revealed)
+            province = prov_by_coord.get(gw_army.coord)
+            is_own_province = province is not None and province.owner_kingdom_id == kid
+            if is_own_province and not is_revealed:
+                own_province_masked_examples += 1
+            if not is_own_province and is_revealed:
+                other_province_revealed_examples += 1
+    assert (revealed, masked) == (102, 9)
+    assert own_province_masked_examples > 0
+    assert other_province_revealed_examples > 0

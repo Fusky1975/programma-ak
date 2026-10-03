@@ -300,6 +300,48 @@ module's own decode property) -- renamed to ``effects_bitmask``, no new
 lookup table needed since ``parser/gw_world.py``'s own ``TERMOD_*``
 constants and properties already decode every bit.
 
+**Phase 998 -- the Army record's own ``quality_or_mask`` reveal rule,
+solved for 96% of real armies.** Cross-referencing each army's real
+owner against ``quality_or_mask``'s own reveal/mask split (nonzero vs.
+``0``) at scale, across all 3015 real army/``GWArmyRecord`` pairs,
+finds a single rule with **zero exceptions** across 2904 of them
+(96.3%): **``quality_or_mask`` is revealed exactly when this Kingdom
+effectively owns the army.** Concretely, two cases, both checked with
+zero exceptions in both directions:
+
+- A leader-commanded army (``GWArmyRecord.commanded_by_leader_id`` set):
+  revealed iff that leader's own real Kingdom (via
+  ``parse_gw_leaders()``) is this file's own ``kingdom_id`` -- ``77`` of
+  ``77`` own-Kingdom armies revealed, ``0`` of ``1480`` other-Kingdom
+  armies revealed.
+- A leaderless army whose real ``state`` is ``HIRED`` (an ordinary
+  province garrison) or ``ZOMBOID`` (an undead garrison): revealed iff
+  it sits at a coordinate this file's own ``provinces`` list shows as
+  owned by this Kingdom (``owner_kingdom_id`` matches) -- ``11`` of
+  ``11`` own-province garrisons revealed, ``0`` of ``754`` other/unknown-
+  province garrisons revealed. A leaderless army whose real ``state`` is
+  ``DEAD`` is masked unconditionally (``582`` of ``582``), consistent
+  with a destroyed army having no current owner to reveal it to.
+
+This rule is reconstructible from already-decoded XK fields alone, not
+only from external GW ground truth: "this file's own ``kingdom_id``"
+is the header field, "a leader's own Kingdom" is knowable because only
+this Kingdom's own leaders get a full ``XKLeaderCard`` in this same
+file, and "a province this Kingdom owns" is ``XKProvinceRecord.
+owner_kingdom_id`` in this same file's own ``provinces`` list -- GW was
+needed only to confirm the rule, not to state it.
+
+The one real exception: a leaderless army whose real ``state`` is
+``MERCENARY`` (``is_mercenary`` real armies, roaming free companies)
+does **not** follow the ownership rule -- checked directly, both
+directions contradicted (some own-province Mercenary armies are
+masked, some other-Kingdom-province ones are revealed) -- and is
+instead revealed far more often than not regardless of location
+(``102`` of ``111``, consistent with the already-known Phase 994
+figure). This 3.7% of real armies remains a genuine, real, unresolved
+exception -- not reducible to the ownership rule above, and not yet
+reducible to any other single-field rule tried.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals and
 both 256-byte flag areas; a full card's own ``sex_flags`` bitfield
@@ -311,9 +353,11 @@ own exact per-value meaning (Phase 996: substantially characterized
 with real data and several real hypotheses tested and falsified, see
 above, but no clean rule found yet); a Feature record's own
 ``unknown_962a`` (Phase 995: confirmed always ``0`` in all 36 real
-samples, role still unconfirmed); an Army record's own
-``quality_or_mask`` (see the Phase 994 addendum above -- a real masking
-sentinel, confirmed, but its own reveal rule isn't); exactly how a
+samples, role still unconfirmed); a Mercenary-state leaderless Army
+record's own ``quality_or_mask`` reveal rule (Phase 998: solved for
+every other real army shape, but this one real exception -- 111 of
+3015 armies -- resists the same ownership rule and every other
+single-field rule tried so far); exactly how a
 defeated Feature guardian's ``NOMONSTER``/``MERCENARY`` XK-side
 convention is chosen (confirmed real and reproducible, Phase 995, but
 only one real dead-Feature event exists in this corpus to observe it);
@@ -693,6 +737,15 @@ class XKArmyRecord:
     ``detail_status`` are ``None`` when this record has no location
     details (a literal ``0xFE`` in that position, confirmed real, not
     merely "not yet observed").
+
+    ``quality_or_mask`` is confirmed (Phase 998) to be revealed (nonzero)
+    exactly when this Kingdom effectively owns the army -- a leader of
+    its own commands it, or (for a leaderless garrison) it sits in one
+    of its own provinces -- for 96% of real armies, zero exceptions. A
+    leaderless, real-``MERCENARY``-state army is the one confirmed
+    exception: mostly revealed regardless of ownership, but not reliably
+    enough to extend the same rule to it. See the module docstring's own
+    Phase 998 addendum for the full real counts both ways.
     """
 
     army_index: int
