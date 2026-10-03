@@ -21,7 +21,7 @@ from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
-from ak_engine.parser.gw_world import parse_gw_armies
+from ak_engine.parser.gw_world import parse_gw_armies, parse_gw_features, parse_gw_leaders
 from ak_engine.parser.xk_world import (
     SUPPORTED_FORMAT_REVISION,
     SUPPORTED_GAME_VERSION,
@@ -483,3 +483,97 @@ def test_secondary_terrain_table_has_its_own_fixed_capacity():
     world = parse_xk_world(T1_K0)
     assert world.secondary_terrain is not None
     assert len(world.secondary_terrain.raw) == 450
+
+
+_TURN_TO_REAL_GW_FEATURES = {
+    1: Path("/home/user/programma-ak/GW3__T1"),
+    2: Path("/home/user/programma-ak/GW3__T2"),
+    3: Path("/home/user/programma-ak/GW3__T3"),
+    4: Path("/home/user/programma-ak/GW3__T4"),
+}
+
+
+def test_feature_type_matches_the_real_gw_feature_at_scale():
+    # feature_id lines up exactly with parse_gw_features()'s own 0-based
+    # list position for the same real world file -- the same proven
+    # technique Phase 994 used for armies, applied here to every one of
+    # the 36 real Feature records across the full 12-file corpus.
+    gw_cache = {}
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_features(_TURN_TO_REAL_GW_FEATURES[turn])
+        gw_features = gw_cache[turn]
+        for feature in world.features:
+            gw_feature = gw_features[feature.feature_id]
+            assert feature.feature_type == gw_feature.feature_type
+            assert feature.unknown_962a == 0
+            checked += 1
+    assert checked == 36
+
+
+def test_defeated_feature_guardian_reports_nomonster_mercenary_not_dead():
+    # Feature 15 (Piratum's Catacombs, Kingdom 0's Home): its Spectre
+    # guardian was defeated between Turn 1 and Turn 2 -- the only dead
+    # Feature anywhere in this campaign's Turns 1-4. Real GW keeps the
+    # monster's identity and reports engagement_state=DEAD; XK instead
+    # reports a real, reproducible "cleared" convention. Confirmed
+    # across 3 independent XK snapshots of this same single real event.
+    gw_features_t1 = parse_gw_features(Path("/home/user/programma-ak/GW3__T1"))
+    assert gw_features_t1[15].monster is Monster.SPECTRE
+
+    for fixture, gw_path in (
+        (T2_K0, Path("/home/user/programma-ak/GW3__T2")),
+        (T3_K0, Path("/home/user/programma-ak/GW3__T3")),
+        (T4_K0, Path("/home/user/programma-ak/GW3__T4")),
+    ):
+        world = parse_xk_world(fixture)
+        feature = next(f for f in world.features if f.feature_id == 15)
+        assert feature.monster is Monster.NOMONSTER
+        assert feature.engagement_state is MonsterEngagementState.MERCENARY
+        assert feature.feature_type is FeatureType.CATACOMBS
+
+        gw_features = parse_gw_features(gw_path)
+        assert gw_features[15].engagement_state is MonsterEngagementState.DEAD
+
+
+def test_shadow_sword_trowner_leaves_feature_held_once_guardian_falls():
+    # Companion to the guardian-cleared finding: the same Feature 15's
+    # own Treasure record (the Shadow Sword) moves from the documented
+    # 256+feature_id feature-held convention (271) at Turn 1 to 0 once
+    # the guardian is defeated.
+    world_t1 = parse_xk_world(T1_K0)
+    treasure_t1 = next(t for t in world_t1.treasures if t.feature_id == 15)
+    assert treasure_t1.trowner == 256 + 15
+
+    for fixture in (T2_K0, T3_K0, T4_K0):
+        world = parse_xk_world(fixture)
+        treasure = next(t for t in world.treasures if t.feature_id == 15)
+        assert treasure.trowner == 0
+
+
+def test_treasure_trowner_leader_held_convention_confirmed_by_quintilian():
+    # Independent confirmation (not the King-id-0-coincident Shadow Sword
+    # case) of the disassembly documentation's own asserted rule: a
+    # leader-held item's trowner is that leader's own raw leader_id, not
+    # a derived value. XK3__T3.K2 carries a Treasure record whose own
+    # feature_id (130) is past this world's real 128-Feature range --
+    # not bound to any currently-extant Feature -- with trowner=99.
+    # Leader 99 is a real, ordinary (non-King) hero in that same file.
+    world = parse_xk_world(T3_K2)
+    treasure = next(t for t in world.treasures if t.feature_id == 130)
+    assert treasure.treasure == Treasure.LEADERSHIP_HUMAN
+    assert treasure.trowner == 99
+
+    assert world.globals.king_count == 10  # King ids are 0-9; 99 can't be one
+    assert world.leader_names[99] == "Quintilian"
+    assert world.leader_races[99] == Race.HUMAN
+    leader_card = next(lc for lc in world.leader_cards if lc.leader_id == 99)
+    assert leader_card.client_owner == 2  # Kingdom 2 -- this file's own Kingdom
+
+    gw_leaders = parse_gw_leaders(Path("/home/user/programma-ak/GW3__T3"))
+    gw_quintilian = next(leader for leader in gw_leaders if leader.name == "Quintilian")
+    assert gw_quintilian.is_king is False
+    assert gw_quintilian.kingdom_id == 2

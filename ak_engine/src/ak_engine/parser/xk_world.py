@@ -171,24 +171,75 @@ A Mercenary-state army is masked less often than an ordinary one (102 of
 reliably enough to treat "Mercenary" as the real reveal rule --
 genuinely still open.
 
+**Phase 995 -- Feature records at scale: a defeated guardian's real
+transformation, and the leader-held ``trowner`` convention confirmed.**
+Using the same ``feature_id``-as-GW-list-index correspondence Phase 994
+established for armies (confirmed here too: a Feature's own ``feature_id``
+is the exact 0-based position ``parser/gw_world.py parse_gw_features()``
+already returns for the same real world file), all 36 real Feature
+records across the 12-file corpus were paired with their own real
+``GWFeatureRecord``. ``feature_type`` matched with **zero exceptions**.
+``unknown_962a`` is ``0`` in all 36 real samples -- no observed variance
+to test a hypothesis against; still genuinely open. ``monster`` and
+``engagement_state`` matched in all but 3 cases, and those 3 are not a
+parser bug: they are 3 independent XK snapshots (``XK3__T2.K0``,
+``XK3__T3.K0``, ``XK3__T4.K0``) of the *same* single real event, the only
+dead Feature anywhere in this campaign's Turns 1-4 -- Feature 15
+(Piratum's Catacombs, Kingdom 0's Home), whose Spectre guardian was
+defeated between Turn 1 and Turn 2. Real GW shows this as
+``engagement_state=DEAD`` with the monster's identity preserved
+(``monster=SPECTRE``); XK instead shows ``monster=Monster.NOMONSTER``
+(this project's own pre-existing "no monster" sentinel) and
+``engagement_state=MonsterEngagementState.MERCENARY`` (not ``DEAD``) in
+all 3 snapshots, with ``feature_type`` staying correctly ``CATACOMBS``
+throughout -- a real, reproducible XK-side convention for "guardian
+cleared", not a mirror of GW's own literal ``DEAD`` state.
+
+The same Feature's own Treasure record (the Shadow Sword) corroborates
+this: ``trowner`` reads ``271`` (``256 + 15``, the already-documented
+feature-held convention) at Turn 1, then ``0`` at Turns 2-4 after the
+guardian falls. Because King Babba Sissoko also happens to hold
+``leader_id=0``, this single example cannot by itself distinguish "now
+held by leader 0" from a generic "cleared" sentinel. A full scan of every
+Treasure record in the 12-file corpus for any ``trowner`` deviating from
+``256 + feature_id`` found exactly one more, independent case that does
+disambiguate it: ``XK3__T3.K2``, a Treasure record carrying
+``feature_id=130`` (past this world's real 128-Feature range, i.e. not
+bound to any currently-extant Feature at all -- the treasure table also
+holds free-floating items with their own slot numbering once their
+origin Feature is gone) with ``trowner=99``. Leader id 99 is a real,
+ordinary (non-King) hero in that same file -- ``Quintilian``, Kingdom 2,
+``Race.HUMAN`` -- holding a ``Treasure.LEADERSHIP_HUMAN`` item ("Sword
+Excalibur"). ``99`` cannot be a "cleared" sentinel coinciding with a
+King's id here (Quintilian isn't a King; this corpus's King ids are
+0-9), so this independently confirms the disassembly documentation's own
+asserted rule: **a leader-held item's ``trowner`` is that leader's own
+raw ``leader_id``**, not a derived value. Combined with the Turn 1-4
+Shadow Sword sequence, the most likely reading of ``trowner=0`` there is
+"now held by leader 0" (King Babba Sissoko) rather than a distinct
+sentinel, but with only one such King-id-0 example this remains a
+one-sample inference, not independently proven the way leader 99's case
+is.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals and
 both 256-byte flag areas; a full card's own ``sex_flags`` bitfield and
 ``skills``/``aptitudes``/``actions``/``objects``/``extra_low_bytes``
 beyond their raw per-ability values; the leader-races/states vectors'
 own full value range; a province record's ``unknown_9197_word``; a
-Feature record's own ``unknown_962a``; an Army record's own
+Feature record's own ``unknown_962a`` (Phase 995: confirmed always ``0``
+in all 36 real samples, role still unconfirmed); an Army record's own
 ``quality_or_mask`` (see the Phase 994 addendum above -- a real masking
-sentinel, confirmed, but its own reveal rule isn't); a Treasure's own
-``trowner`` word beyond the observed ``256 + feature_id`` convention for
-a feature-held item (a leader-held item's own convention is asserted,
-not independently verified in these samples); why each King title table
-reserves 12 slots for at most 10 real Kings (no real sample with
-``king_count`` above 10 exists to test whether it's a true fixed cap or
-simply never-observed to matter); the real SAGA client reader (only the
-host *writer* was disassembled); and any ``gamevers`` other than ``3``
-(the compiled client has other branches; this strict decoder
-deliberately refuses them rather than extrapolate).
+sentinel, confirmed, but its own reveal rule isn't); exactly how a
+defeated Feature guardian's ``NOMONSTER``/``MERCENARY`` XK-side
+convention is chosen (confirmed real and reproducible, Phase 995, but
+only one real dead-Feature event exists in this corpus to observe it);
+why each King title table reserves 12 slots for at most 10 real Kings
+(no real sample with ``king_count`` above 10 exists to test whether it's
+a true fixed cap or simply never-observed to matter); the real SAGA
+client reader (only the host *writer* was disassembled); and any
+``gamevers`` other than ``3`` (the compiled client has other branches;
+this strict decoder deliberately refuses them rather than extrapolate).
 """
 
 from __future__ import annotations
@@ -482,7 +533,16 @@ class XKProvinceRecord:
 class XKFeatureRecord:
     """One Feature-summary record (8 bytes) -- see module docstring.
     ``unknown_962a`` is a real ``DS:962A`` word, always ``0`` in every
-    sample so far, role unconfirmed.
+    sample so far (36 real records checked, Phase 995), role unconfirmed.
+
+    ``monster``/``engagement_state`` mirror real GW ground truth for a
+    live guardian, but Phase 995 found a real, reproducible exception
+    for a *defeated* one: once a Feature's guardian has been cleared, XK
+    reports ``monster=Monster.NOMONSTER`` and
+    ``engagement_state=MonsterEngagementState.MERCENARY`` instead of
+    mirroring GW's own literal ``DEAD`` state and the monster's original
+    identity -- confirmed across 3 independent XK snapshots of the same
+    real event (see module docstring's Phase 995 addendum).
     """
 
     feature_id: int
@@ -498,11 +558,18 @@ class XKTreasureRecord:
     """One Treasure record -- see module docstring. ``trcharges`` is
     only present (real disassembly-proven predicate, ``0x40558``) when
     ``treasure`` has a raw ordinal in ``[70, 92)``; ``None`` otherwise,
-    never defaulted to ``0``. ``trowner`` is kept raw (the real
-    ``256 + feature_id`` convention for a feature-held item is confirmed
-    by example, not derived here as a property, since a leader-held
-    item's own convention isn't independently verified in these
-    samples).
+    never defaulted to ``0``. ``trowner`` is kept raw rather than split
+    into a typed union: the feature-held convention is ``256 +
+    feature_id`` (confirmed by example); the leader-held convention is a
+    plain raw ``leader_id`` (Phase 995 -- independently confirmed via
+    ``XK3__T3.K2``'s Quintilian, a real non-King hero, holding a
+    ``Treasure.LEADERSHIP_HUMAN`` item with ``trowner`` exactly his own
+    ``leader_id``, 99). The two conventions aren't distinguishable from
+    ``trowner`` alone without also knowing this file's own
+    ``feature_id`` range -- also note ``feature_id`` here isn't always a
+    currently-extant Feature: a treasure whose origin Feature is gone
+    can still appear with a ``feature_id`` past the world's real Feature
+    count, a free-floating slot number rather than a live Feature's id.
     """
 
     feature_id: int
