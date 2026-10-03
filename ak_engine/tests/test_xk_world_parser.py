@@ -20,7 +20,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
-from ak_engine.models.treasure import Treasure
+from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_NAME, Treasure
 from ak_engine.parser.gw_world import (
     TERMOD_PLAGUE_EFF_MASK,
     parse_gw_armies,
@@ -1104,3 +1104,63 @@ def test_feature_held_trowner_matches_gws_own_raw_trowner_field_directly():
             assert treasure.trowner == gw_feature.trowner_raw
             checked += 1
     assert checked == 13
+
+
+def test_generic_treasure_name_matches_the_pre_existing_gold_hoard_display_name():
+    # Treasure.GOLD_HOARD_LARGE recurs at 3 distinct real features
+    # (1, 17, 99) across the corpus -- name is always this project's
+    # own pre-existing, TREASURE.X2-sourced generic display name, not a
+    # per-instance string.
+    seen_feature_ids = set()
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        for treasure in world.treasures:
+            if treasure.treasure is not Treasure.GOLD_HOARD_LARGE:
+                continue
+            assert treasure.name == GOLD_HOARD_DISPLAY_NAME[Treasure.GOLD_HOARD_LARGE]
+            assert treasure.name == "Large Hoard of Gold"
+            seen_feature_ids.add(treasure.feature_id)
+    assert seen_feature_ids == {1, 17, 99}
+
+
+def test_unique_artifact_treasure_names_mostly_match_treasure_name_table():
+    # 3 of 4 real unique-artifact instances match this project's own
+    # pre-existing, directly TREASURE.X2-transcribed TREASURE_NAME table
+    # exactly. LEADERSHIP_HUMAN is a confirmed real exception (Phase
+    # 1001): XK's own real field is "Sword Excalibur", not the table's
+    # own verbatim "Excalibur" -- a genuine discrepancy, not a decode
+    # bug (the raw length-prefix byte matches a literal 15-char string).
+    names_by_type: dict[Treasure, str] = {}
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        for treasure in world.treasures:
+            names_by_type.setdefault(treasure.treasure, treasure.name)
+
+    assert names_by_type[Treasure.WEAPON_2] == TREASURE_NAME[Treasure.WEAPON_2] == "Shadow Sword"
+    assert names_by_type[Treasure.WAND_FLOOD] == TREASURE_NAME[Treasure.WAND_FLOOD] == "Feathers of Rain-Dancing"
+    assert names_by_type[Treasure.BOOK_PSYCHIC] == TREASURE_NAME[Treasure.BOOK_PSYCHIC] == "Codex of Mental Prowess"
+
+    assert TREASURE_NAME[Treasure.LEADERSHIP_HUMAN] == "Excalibur"
+    assert names_by_type[Treasure.LEADERSHIP_HUMAN] == "Sword Excalibur"
+    assert names_by_type[Treasure.LEADERSHIP_HUMAN] != TREASURE_NAME[Treasure.LEADERSHIP_HUMAN]
+
+
+def test_treasure_name_is_not_truncated_at_the_king_title_tables_own_fifteen_chars():
+    world = parse_xk_world(T4_K0)
+    treasure = next(t for t in world.treasures if t.feature_id == 125)
+    assert treasure.name == "Feathers of Rain-Dancing"
+    assert len(treasure.name) == 24
+
+
+def test_trcharges_still_has_no_real_example_in_its_own_ordinal_range():
+    # No real Treasure ordinal in [70, 92) exists anywhere in the
+    # corpus, so trcharges is None in every real record -- the presence
+    # predicate is structurally confirmed (Phase 992) but its actual
+    # value is still untested against GW's own trcharges field.
+    seen_ordinals = set()
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        for treasure in world.treasures:
+            seen_ordinals.add(treasure.treasure.value)
+            assert treasure.trcharges is None
+    assert not any(70 <= ordinal < 92 for ordinal in seen_ordinals)

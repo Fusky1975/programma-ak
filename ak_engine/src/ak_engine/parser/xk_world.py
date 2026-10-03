@@ -423,6 +423,35 @@ fields -- a real sample where some feature has actually been
 discovered (nonzero in either field) would settle it outright. Kept as
 ``unknown_962a``, not renamed, until such a sample exists.
 
+**Phase 1001 -- a Treasure's own ``name`` field checked against this
+project's own pre-existing, ``TREASURE.X2``-sourced name tables.** The
+full real corpus holds exactly 5 distinct real Treasure instances (16
+raw records once repeats across turns are collapsed). For the one
+"generic" type repeated across 3 different real features
+(``Treasure.GOLD_HOARD_LARGE``, features 1/17/99), ``name`` reads
+exactly ``"Large Hoard of Gold"`` every time -- a byte-for-byte match
+to this project's own pre-existing ``models/treasure.py
+GOLD_HOARD_DISPLAY_NAME[Treasure.GOLD_HOARD_LARGE]``, confirming a
+generic treasure's ``name`` is the type's own fixed display name, not
+a per-instance string. For the 4 distinct "unique artifact" types (one
+real instance each), ``name`` matches this project's own pre-existing,
+directly ``TREASURE.X2``-transcribed ``TREASURE_NAME`` table exactly
+for 3 of 4: ``Treasure.WEAPON_2`` -> ``"Shadow Sword"``,
+``Treasure.WAND_FLOOD`` -> ``"Feathers of Rain-Dancing"``,
+``Treasure.BOOK_PSYCHIC`` -> ``"Codex of Mental Prowess"``. The 4th is
+a real, confirmed discrepancy, not a decode bug (verified directly
+against the raw bytes: a genuine ``0x0F`` length prefix precedes a
+literal 15-character string): ``Treasure.LEADERSHIP_HUMAN``'s real XK
+instance (``XK3__T3.K2``, feature 130, Quintilian's own Excalibur)
+reads ``name == "Sword Excalibur"``, where ``TREASURE_NAME``'s own
+verbatim-from-``TREASURE.X2`` value is ``"Excalibur"`` (no "Sword ").
+Left unresolved rather than assumed to be an error in either source --
+only one real sample exists to check this specific ordinal against.
+This also confirms a Treasure's own ``name`` is an ordinary,
+unbounded Pascal ShortString, **not** subject to the King-title
+table's own fixed 15-character cutoff (``"Feathers of Rain-Dancing"``,
+24 real characters, is the longest on hand and reads back whole).
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -812,6 +841,17 @@ class XKTreasureRecord:
     currently-extant Feature: a treasure whose origin Feature is gone
     can still appear with a ``feature_id`` past the world's real Feature
     count, a free-floating slot number rather than a live Feature's id.
+
+    ``name`` is confirmed (Phase 1001) to match this project's own
+    pre-existing, ``TREASURE.X2``-sourced ``models/treasure.py
+    GOLD_HOARD_DISPLAY_NAME``/``TREASURE_NAME`` tables exactly for 4 of
+    5 real distinct instances on hand -- a generic type's own fixed
+    display name for an ordinary treasure, or a unique artifact's own
+    transcribed proper name. The one exception
+    (``Treasure.LEADERSHIP_HUMAN``'s real instance reading ``"Sword
+    Excalibur"`` where the table's own value is ``"Excalibur"``) is a
+    confirmed real discrepancy, not a decode bug, and is left
+    unresolved -- see module docstring's own Phase 1001 addendum.
     """
 
     feature_id: int
