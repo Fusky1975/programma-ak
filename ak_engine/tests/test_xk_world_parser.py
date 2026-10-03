@@ -15,6 +15,7 @@ import pytest
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.enums import ActionCode
 from ak_engine.models.feature import FeatureType
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
@@ -28,6 +29,7 @@ from ak_engine.parser.gw_world import (
     parse_gw_leaders,
     parse_gw_world,
 )
+from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.parser.xk_world import (
     SUPPORTED_FORMAT_REVISION,
     SUPPORTED_GAME_VERSION,
@@ -1164,3 +1166,88 @@ def test_trcharges_still_has_no_real_example_in_its_own_ordinal_range():
             seen_ordinals.add(treasure.treasure.value)
             assert treasure.trcharges is None
     assert not any(70 <= ordinal < 92 for ordinal in seen_ordinals)
+
+
+_K1_MOVES_DIR = Path("/home/user/programma-ak")
+_K1_TURN_PAIRS = ((1, T2_K1), (2, T3_K1), (3, T4_K1))
+
+
+def test_actions_match_the_real_submitted_k1_move_file_exactly():
+    # Kingdom 1's own full cards, checked against that same Kingdom's
+    # own real AK3__Tn.K1 move file (not just GW's post-processing
+    # snapshot): actions[i] is the real P<i> action code submitted the
+    # preceding turn, exact, zero exceptions.
+    checked = 0
+    for turn, xk_fixture in _K1_TURN_PAIRS:
+        kingdom = parse_k1_moves_file(_K1_MOVES_DIR / f"AK3__T{turn}.K1")
+        world = parse_xk_world(xk_fixture)
+        cards_by_id = {c.leader_id: c for c in world.leader_cards}
+        for leader in kingdom.leaders:
+            card = cards_by_id.get(leader.leader_id)
+            if card is None or not leader.plan.segments:
+                continue
+            segment = leader.plan.segments[0]
+            for i in range(5):
+                phase = segment.phases.get(f"P{i}")
+                if phase is None:
+                    continue
+                assert int(phase.action) == card.actions[i]
+                checked += 1
+    assert checked == 55
+
+
+def test_objects_match_k1_obj_for_every_action_except_lmove():
+    # objects[i] is that phase's own real obj value, exact, for every
+    # action type except LMOVE -- an LMOVE phase's own obj is itself a
+    # packed hex-coordinate (turn/plan_dispatch.py's own
+    # decode_hex_number), not a simple target id.
+    non_lmove_checked = 0
+    lmove_mismatches = 0
+    lmove_checked = 0
+    for turn, xk_fixture in _K1_TURN_PAIRS:
+        kingdom = parse_k1_moves_file(_K1_MOVES_DIR / f"AK3__T{turn}.K1")
+        world = parse_xk_world(xk_fixture)
+        cards_by_id = {c.leader_id: c for c in world.leader_cards}
+        for leader in kingdom.leaders:
+            card = cards_by_id.get(leader.leader_id)
+            if card is None or not leader.plan.segments:
+                continue
+            segment = leader.plan.segments[0]
+            for i in range(5):
+                phase = segment.phases.get(f"P{i}")
+                if phase is None:
+                    continue
+                if phase.action is ActionCode.LMOVE:
+                    lmove_checked += 1
+                    if phase.obj != card.objects[i]:
+                        lmove_mismatches += 1
+                else:
+                    assert phase.obj == card.objects[i]
+                    non_lmove_checked += 1
+    assert non_lmove_checked == 37
+    assert lmove_checked == 18
+    assert lmove_mismatches == 18  # every LMOVE phase diverges, zero accidental matches
+
+
+def test_planstart_planend_minus_one_does_not_mean_no_plan_was_submitted():
+    # Corrects the field's own prior "a confirmed no-plan value"
+    # reading: every full card in the whole corpus reads -1/-1, even
+    # for leaders directly confirmed (via the K1 cross-check above) to
+    # have had a full 5-phase plan submitted and already executed.
+    kingdom = parse_k1_moves_file(_K1_MOVES_DIR / "AK3__T1.K1")
+    world = parse_xk_world(T2_K1)
+    cards_by_id = {c.leader_id: c for c in world.leader_cards}
+    had_a_real_full_plan = False
+    for leader in kingdom.leaders:
+        card = cards_by_id.get(leader.leader_id)
+        if card is None or not leader.plan.segments:
+            continue
+        segment = leader.plan.segments[0]
+        if len(segment.phases) == 5:
+            had_a_real_full_plan = True
+            assert (card.planstart, card.planend) == (-1, -1)
+    assert had_a_real_full_plan
+
+    for fixture in ALL_12_SAMPLES:
+        for card in parse_xk_world(fixture).leader_cards:
+            assert (card.planstart, card.planend) == (-1, -1)

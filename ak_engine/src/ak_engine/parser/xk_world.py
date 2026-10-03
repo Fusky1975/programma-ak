@@ -452,6 +452,54 @@ unbounded Pascal ShortString, **not** subject to the King-title
 table's own fixed 15-character cutoff (``"Feathers of Rain-Dancing"``,
 24 real characters, is the longest on hand and reads back whole).
 
+**Phase 1002 -- a full character card's own ``actions``/``objects``
+decoded against the real K1 move files, and a ``planstart``/``planend``
+correction.** This project already has a full parser for the real
+``AK3__Tn.K1`` move files Kingdom 1's own player actually submitted
+(``parser/k1_moves.py``, independent of this module) -- Kingdom 1's own
+leaders' full cards in ``XK3__T(n+1).K1`` can therefore be checked
+directly against that same Kingdom's own real submitted plan for turn
+``n``, not just against GW's own post-processing snapshot. Across all 3
+available turn-pairs (``T1``->``XK T2``, ``T2``->``XK T3``, ``T3``->
+``XK T4``) and every one of that Kingdom's own leaders with a full card
+in both: ``actions[i]`` matches that leader's own real ``P<i>`` action
+code from the preceding turn's K1 file **exactly, 55 of 55 phases,
+zero exceptions**. ``objects[i]`` matches that same phase's own real
+``obj`` value **exactly for every action type except ``ActionCode.
+LMOVE`` (37 of 37 non-``LMOVE`` phases, zero exceptions)** -- every
+single mismatch found (18 of 18) is on an ``LMOVE`` phase, and this
+project's own production turn code (``turn/plan_dispatch.py``'s real
+``ActionCode.LMOVE`` dispatch) already explains why: an ``LMOVE``
+phase's own ``obj`` is itself a packed hex-coordinate
+(``decode_hex_number(phase.obj, board_width)``), a structurally
+different kind of value from the simple small-integer target id every
+other action's own ``obj`` holds -- so XK's own ``objects[i]`` for an
+``LMOVE`` phase specifically is *not* expected to equal the raw K1
+``obj`` integer directly, and indeed doesn't. What XK's own value
+represents for that one action type is not pinned down (several
+real coordinate-decode readings were tried directly against the real
+``coord``/``birth_coord`` fields and none matched), but the *reason*
+it diverges is now understood, not just observed.
+
+This also **corrects** this dataclass's own prior "``-1`` is a real,
+confirmed 'no plan' value" claim: every single full card in the entire
+12-file corpus reads ``planstart=-1``/``planend=-1``, with zero
+exceptions -- including, now directly confirmed via the same K1
+cross-check, leaders who very much *did* have a full, 5-phase plan
+submitted and already executed by snapshot time. ``-1`` cannot mean
+"no plan was ever submitted" for those leaders. The better-supported
+reading is "no plan is currently pending at snapshot time" -- i.e. the
+previous turn's plan has already been consumed by the time XK is
+exported, which this corpus's own snapshot timing happens to make true
+for every single real card on hand, leaving the genuinely-nonzero case
+still unobserved. ``extra_low_bytes`` remains undecoded: checked
+directly against the same real K1 ``extra`` values (including as a
+literal low byte, modulo 256), no clean correspondence was found --
+its own real value range (consistently ``80``-``130`` in this corpus)
+is suggestive of a real province id but doesn't match any coordinate
+reading tried against the leader's own real ``coord``/``birth_coord``
+fields either; genuinely still open.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -459,10 +507,12 @@ but not otherwise named) and both 256-byte flag areas (Phase 999:
 ``flags_c4fc``'s own leader-indexed shape confirmed, its per-Hero
 integer's real meaning isn't; ``flags_c3fc``'s mostly-shared-with-a-
 few-per-Kingdom-bits shape confirmed, no bit meaning decoded); a full
-card's own ``sex_flags`` bitfield beyond "0 in this corpus" and
-``actions``/``objects``/``extra_low_bytes`` beyond their raw per-phase
-values (Phase 996: now confirmed non-constant per real leader+turn,
-ruling out a fixed sentinel, but not otherwise decoded); the
+card's own ``sex_flags`` bitfield beyond "0 in this corpus",
+``extra_low_bytes`` (Phase 1002: confirmed not a simple copy or low
+byte of the real K1 ``extra`` value, role otherwise undecoded), and
+``objects[i]``'s own real meaning specifically for an ``LMOVE`` phase
+(Phase 1002: every other action type and the whole of ``actions`` is
+now fully decoded against real K1 data); the
 ``leader_states`` vector's own exact per-value meaning (Phase 996:
 substantially characterized with real data and several real hypotheses
 tested and falsified, see above, but no clean rule found yet); a
@@ -716,15 +766,34 @@ class XKLeaderCard:
     pairs ``parser/gw_world.py``'s own ``GWLeaderRecord.skills.
     raw_values`` already carries for the same real leader, for the 15
     real abilities (slot 15, ``noabil``, is always ``(0, 0)`` padding,
-    not a 16th real ability). ``objects`` are 5 signed 16-bit
-    item-instance ids (0 = none observed in every real sample);
-    ``planstart``/``planend`` are signed bytes (``-1`` is a real,
-    confirmed "no plan" value, not an error). ``general_merit`` is named
-    for what it's confirmed (Phase 996) to equal -- GW's own
-    ``general_merit`` field, not GW's own ``admiral_merit`` field it was
-    first guessed to be, from the delivered disassembly material's own
-    corpus-correspondence guess (its own stated confidence was the far
-    pointer address alone, not this specific name).
+    not a 16th real ability). ``general_merit`` is named for what it's
+    confirmed (Phase 996) to equal -- GW's own ``general_merit`` field,
+    not GW's own ``admiral_merit`` field it was first guessed to be,
+    from the delivered disassembly material's own corpus-correspondence
+    guess (its own stated confidence was the far pointer address alone,
+    not this specific name).
+
+    ``actions``/``objects`` (Phase 1002) are confirmed against Kingdom
+    1's own real submitted ``AK3__Tn.K1`` move files (not just GW's own
+    post-processing snapshot): ``actions[i]`` is that leader's own real
+    ``P<i>`` action code from the preceding turn, exact, zero
+    exceptions. ``objects[i]`` is that phase's own real ``obj`` value,
+    exact, for every action type except ``ActionCode.LMOVE`` -- an
+    ``LMOVE`` phase's own real ``obj`` is itself a packed hex-coordinate
+    (``turn/plan_dispatch.py``'s own ``decode_hex_number(phase.obj,
+    board_width)``), not a simple target id, which is why XK's own
+    value there doesn't match the raw K1 integer; what it holds instead
+    isn't pinned down. ``extra_low_bytes`` remains undecoded -- checked
+    directly against the real K1 ``extra`` values, no correspondence
+    found. ``planstart``/``planend`` are signed bytes; ``-1`` is
+    confirmed real (every full card in the whole 12-file corpus reads
+    ``-1``/``-1``), but -- corrected from this field's own prior
+    docstring claim -- it does **not** mean "no plan was ever
+    submitted": the same Phase 1002 cross-check directly confirms
+    leaders reading ``-1``/``-1`` here who very much had a full 5-phase
+    plan submitted and already executed by snapshot time. The better-
+    supported reading is "no plan is currently pending at snapshot
+    time"; the genuinely-nonzero case remains unobserved.
     """
 
     leader_id: int
