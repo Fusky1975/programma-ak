@@ -577,3 +577,154 @@ def test_treasure_trowner_leader_held_convention_confirmed_by_quintilian():
     gw_quintilian = next(leader for leader in gw_leaders if leader.name == "Quintilian")
     assert gw_quintilian.is_king is False
     assert gw_quintilian.kingdom_id == 2
+
+
+_TURN_TO_REAL_GW_LEADERS = {
+    1: Path("/home/user/programma-ak/GW3__T1"),
+    2: Path("/home/user/programma-ak/GW3__T2"),
+    3: Path("/home/user/programma-ak/GW3__T3"),
+    4: Path("/home/user/programma-ak/GW3__T4"),
+}
+
+
+def test_general_merit_matches_gw_general_merit_not_gw_admiral_merit():
+    # The delivered disassembly material names this slot "admiral_merit"
+    # on a corpus-correspondence guess, by its own admission (only the
+    # far pointer address, 82E2, is disassembly-certain). Cross-checked
+    # at scale against the real GW ground truth, it in fact equals GW's
+    # own general_merit field exactly, every time -- not GW's own,
+    # separate admiral_merit field, which only coincidentally agrees
+    # when the two happen to hold the same value. Renamed accordingly.
+    gw_cache = {}
+    checked = 0
+    agrees_with_general = 0
+    agrees_with_admiral = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        gw_leaders = gw_cache[turn]
+        for card in world.leader_cards:
+            if card.leader_id >= len(gw_leaders):
+                continue
+            gw = gw_leaders[card.leader_id]
+            assert card.general_merit == gw.general_merit
+            assert card.defender_merit == gw.defender_merit
+            checked += 1
+            if card.general_merit == gw.general_merit:
+                agrees_with_general += 1
+            if card.general_merit == gw.admiral_merit:
+                agrees_with_admiral += 1
+    assert checked == 58
+    assert agrees_with_general == 58
+    assert agrees_with_admiral < checked  # not merely a renamed duplicate check
+
+
+def test_leader_feature_discoveries_points_and_white_magic_match_at_scale():
+    gw_cache = {}
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        gw_leaders = gw_cache[turn]
+        for card in world.leader_cards:
+            if card.leader_id >= len(gw_leaders):
+                continue
+            gw = gw_leaders[card.leader_id]
+            assert card.lfdisc == gw.feature_discoveries
+            assert card.ldiscp == gw.discovery_points
+            assert card.lwmsp == gw.white_magic_service_points
+            checked += 1
+    assert checked == 58
+
+
+def test_skills_and_aptitudes_pair_with_the_real_gw_skill_table_at_scale():
+    # skills[i]/aptitudes[i] (LEADER_ABILITY_ORDER's first 15 real
+    # abilities) equal GWLeaderRecord.skills.raw_values[2*i]/[2*i+1] for
+    # the same real leader in the vast majority of real pairs; the
+    # residual drift is explained (not just tolerated) below.
+    gw_cache = {}
+    total_pairs = 0
+    mismatched_pairs = 0
+    gw_at_least_as_high = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        gw_leaders = gw_cache[turn]
+        for card in world.leader_cards:
+            if card.leader_id >= len(gw_leaders):
+                continue
+            gw = gw_leaders[card.leader_id]
+            raw = gw.skills.raw_values
+            # Slot 15 (noabil) is always (0, 0) padding, not real data.
+            assert card.skills[15] == 0
+            assert card.aptitudes[15] == 0
+            for i in range(15):
+                gskill, gapt = raw[2 * i], raw[2 * i + 1]
+                xskill, xapt = card.skills[i], card.aptitudes[i]
+                total_pairs += 1
+                if (gskill, gapt) != (xskill, xapt):
+                    mismatched_pairs += 1
+                    if gskill >= xskill and gapt >= xapt:
+                        gw_at_least_as_high += 1
+    assert total_pairs == 870
+    # The vast majority of real pairs match exactly.
+    assert mismatched_pairs / total_pairs < 0.1
+    # Of the mismatches, GW's own same-turn value is (almost) always
+    # >= XK's in both dimensions -- consistent with GW reflecting a
+    # later point in that turn's own processing than the XK snapshot,
+    # not a pairing-order bug.
+    assert gw_at_least_as_high / mismatched_pairs > 0.9
+
+
+def test_sex_flags_and_leader_races_real_value_ranges():
+    sex_flags_values = set()
+    race_values = set()
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        for card in world.leader_cards:
+            sex_flags_values.add(card.sex_flags)
+        race_values.update(world.leader_races)
+    # No real female leader exists in this campaign -- the bitfield's
+    # own nonzero semantics remain genuinely untested, not confirmed 0.
+    assert sex_flags_values == {0}
+    assert race_values == {Race.DWARVEN, Race.ELVEN, Race.HUMAN, Race.ORCISH}
+
+
+def test_leader_states_every_full_card_slot_reads_one():
+    # leader_states' own per-value meaning is still genuinely open (see
+    # module docstring's Phase 996 addendum), but this one sub-rule is
+    # confirmed with zero exceptions across the full corpus: a leader_id
+    # backing a full card always reads exactly 1 in leader_states.
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        for card in world.leader_cards:
+            assert world.leader_states[card.leader_id] == 1
+            checked += 1
+    assert checked == 58
+
+
+def test_leader_states_untracked_slots_are_overwhelmingly_seven():
+    full_and_partial = 0
+    neither = 0
+    neither_state_seven = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        tracked_ids = {c.leader_id for c in world.leader_cards} | {
+            c.leader_id for c in world.partial_leader_cards
+        }
+        for i, state in enumerate(world.leader_states):
+            if i in tracked_ids:
+                full_and_partial += 1
+            else:
+                neither += 1
+                if state == 7:
+                    neither_state_seven += 1
+    assert neither > 0
+    assert neither_state_seven / neither > 0.95

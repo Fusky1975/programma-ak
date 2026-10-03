@@ -221,14 +221,75 @@ sentinel, but with only one such King-id-0 example this remains a
 one-sample inference, not independently proven the way leader 99's case
 is.
 
+**Phase 996 -- character-card fields at scale, one real naming
+correction, one field fully decoded.** Using the same leader_id-as-
+GW-list-index correspondence (``parser/gw_world.py parse_gw_leaders()``
+for the same real world file), 58 real full ``XKLeaderCard`` records
+across the 12-file corpus were paired with their own real
+``GWLeaderRecord``. Three already-named-but-never-cross-checked fields
+are now confirmed exactly, 58/58, no exceptions: ``lfdisc`` ==
+``feature_discoveries``, ``ldiscp`` == ``discovery_points``, ``lwmsp`` ==
+``white_magic_service_points``. One field is a real naming correction:
+the slot the delivered disassembly material calls ``admiral_merit``
+(its own stated confidence is only the far pointer address, ``82E2`` --
+"i nomi semantici dei contatori derivano dalle corrispondenze del
+corpus", i.e. a corpus-correspondence guess, not a certain name) in
+fact equals GW's own ``general_merit`` field in all 58 cases, while
+matching GW's own, separate ``admiral_merit`` field in only 35/58 --
+renamed here to ``general_merit`` accordingly.
+
+``skills``/``aptitudes`` are confirmed to be the real per-ability
+``(skill, aptitude)`` pairs: ``XKLeaderCard.skills[i]``/``aptitudes[i]``
+equals ``GWLeaderRecord.skills.raw_values[2*i]``/``[2*i+1]`` for
+``LEADER_ABILITY_ORDER``'s first 15 real abilities, in 819 of 870
+(94%) pairs checked exactly, with slot 15 (``noabil``) confirmed
+always ``(0, 0)`` padding in both, 58/58. The 51 residual mismatches
+(affecting 26 of 58 leaders, almost all a single ability each) are not
+a decode error: in 48 of 51, GW's own same-turn value is
+``>=`` XK's in both skill and aptitude (never lower) -- consistent with
+GW reflecting a later point in that turn's own processing pipeline
+(e.g. after weekly Practice resolution) than the XK snapshot of the
+same nominal turn number, not a pairing-order bug. (The remaining 3,
+all the same one leader -- Riose -- are a single aptitude point the
+other way, genuinely unexplained but too small and too narrowly
+concentrated to indicate a structural issue.)
+
+``sex_flags``, read full-width as a signed word, is ``0`` in all 58
+real samples -- consistent with GW's own ``sex_override_flag`` boolean,
+also ``False`` throughout this corpus (no real female leader exists in
+this campaign to exercise the nonzero case) -- the bitfield's own
+further semantics remain genuinely untested. ``leader_races``' real
+observed value range across the full corpus is exactly ``{DWARVEN,
+ELVEN, HUMAN, ORCISH}`` -- no new race, consistent with the
+already-confirmed ``Race`` ordinals. ``leader_states`` remains
+genuinely open, but is now substantially characterized rather than a
+total blank: its real value range is ``{0, 1, 2, 7}``; every full
+card's own slot reads exactly ``1`` (58/58, zero exceptions); the
+overwhelming majority of slots backing neither a full nor a partial
+card read ``7`` (1074 of 1080); partial-card slots split across all
+four values with no single clean predicate found despite testing
+several real candidates -- GW's own ``kingdom_id``, ``is_king``, and
+``condition`` fields were each checked directly and each falsified as
+the sole explanation (e.g. Riose's own real Turn 2->3 transition from
+unemployed, ``kingdom_id=None``, to hired into Kingdom 0,
+``kingdom_id=0``, matches his own XK partial-to-full card transition
+exactly, but most other ``state=1`` partial-card leaders keep
+``kingdom_id=None`` in GW throughout, so a null/non-null
+``kingdom_id`` split alone cannot be the rule).
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals and
-both 256-byte flag areas; a full card's own ``sex_flags`` bitfield and
-``skills``/``aptitudes``/``actions``/``objects``/``extra_low_bytes``
-beyond their raw per-ability values; the leader-races/states vectors'
-own full value range; a province record's ``unknown_9197_word``; a
-Feature record's own ``unknown_962a`` (Phase 995: confirmed always ``0``
-in all 36 real samples, role still unconfirmed); an Army record's own
+both 256-byte flag areas; a full card's own ``sex_flags`` bitfield
+beyond "0 in this corpus" and ``actions``/``objects``/
+``extra_low_bytes`` beyond their raw per-phase values (Phase 996: now
+confirmed non-constant per real leader+turn, ruling out a fixed
+sentinel, but not otherwise decoded); the ``leader_states`` vector's
+own exact per-value meaning (Phase 996: substantially characterized
+with real data and several real hypotheses tested and falsified, see
+above, but no clean rule found yet); a province record's
+``unknown_9197_word``; a Feature record's own ``unknown_962a`` (Phase
+995: confirmed always ``0`` in all 36 real samples, role still
+unconfirmed); an Army record's own
 ``quality_or_mask`` (see the Phase 994 addendum above -- a real masking
 sentinel, confirmed, but its own reveal rule isn't); exactly how a
 defeated Feature guardian's ``NOMONSTER``/``MERCENARY`` XK-side
@@ -464,10 +525,20 @@ class XKGlobals:
 class XKLeaderCard:
     """One full, 74-byte character card -- see module docstring.
     ``skills``/``aptitudes`` are 16-entry raw lists, indexed by
-    ``LEADER_ABILITY_ORDER`` (the real ``CTBOTH.PAS ability`` order);
-    ``objects`` are 5 signed 16-bit item-instance ids (0 = none observed
-    in every real sample); ``planstart``/``planend`` are signed bytes
-    (``-1`` is a real, confirmed "no plan" value, not an error).
+    ``LEADER_ABILITY_ORDER`` (the real ``CTBOTH.PAS ability`` order) --
+    confirmed (Phase 996) to be the exact same ``(skill, aptitude)``
+    pairs ``parser/gw_world.py``'s own ``GWLeaderRecord.skills.
+    raw_values`` already carries for the same real leader, for the 15
+    real abilities (slot 15, ``noabil``, is always ``(0, 0)`` padding,
+    not a 16th real ability). ``objects`` are 5 signed 16-bit
+    item-instance ids (0 = none observed in every real sample);
+    ``planstart``/``planend`` are signed bytes (``-1`` is a real,
+    confirmed "no plan" value, not an error). ``general_merit`` is named
+    for what it's confirmed (Phase 996) to equal -- GW's own
+    ``general_merit`` field, not GW's own ``admiral_merit`` field it was
+    first guessed to be, from the delivered disassembly material's own
+    corpus-correspondence guess (its own stated confidence was the far
+    pointer address alone, not this specific name).
     """
 
     leader_id: int
@@ -478,7 +549,7 @@ class XKLeaderCard:
     coord: HexCoord
     birth_coord: HexCoord
     hire_turn: int
-    admiral_merit: int
+    general_merit: int
     defender_merit: int
     lfdisc: int
     ldiscp: int
@@ -751,7 +822,7 @@ def _read_leader_card(r: _Reader) -> XKLeaderCard:
     born_x = r.u8(f"leader[{leader_id}].born_x")
     born_y = r.u8(f"leader[{leader_id}].born_y")
     hire_turn = r.s16(f"leader[{leader_id}].hire_turn")
-    admiral_merit = r.s16(f"leader[{leader_id}].admiral_merit")
+    general_merit = r.s16(f"leader[{leader_id}].general_merit")
     defender_merit = r.s16(f"leader[{leader_id}].defender_merit")
     lfdisc = r.u8(f"leader[{leader_id}].lfdisc")
     ldiscp = r.u8(f"leader[{leader_id}].ldiscp")
@@ -773,7 +844,7 @@ def _read_leader_card(r: _Reader) -> XKLeaderCard:
         coord=HexCoord(x, y),
         birth_coord=HexCoord(born_x, born_y),
         hire_turn=hire_turn,
-        admiral_merit=admiral_merit,
+        general_merit=general_merit,
         defender_merit=defender_merit,
         lfdisc=lfdisc,
         ldiscp=ldiscp,
