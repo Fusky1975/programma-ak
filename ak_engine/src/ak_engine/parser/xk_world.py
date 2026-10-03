@@ -65,9 +65,9 @@ needs to render them -- not the GW world save, not an AK orders file.
    bytes each -- the ``+1`` (not just ``leader_capacity``) is real and
    confirmed in the disassembly; missing it misaligns everything after.
 8. ``DS:89C7`` (12 raw bytes), 9. a per-recipient word at
-   ``DS:8AE7 + 2*kingdom_id`` (kept raw), 10-11. two 192-byte blocks from
-   far pointers ``DS:8B29``/``DS:8B2D`` (kept raw -- real structure
-   undeciphered).
+   ``DS:8AE7 + 2*kingdom_id`` (kept raw), 10-11. two 192-byte **per-King
+   title tables** from far pointers ``DS:8B29``/``DS:8B2D`` -- see the
+   Phase 993 addendum below.
 12. **Known provinces** (``XKProvinceRecord`` below), 0xFE-terminated.
 13. **Features** (``XKFeatureRecord``, 8 bytes each), 0xFE-terminated.
 14. **Treasures** (``XKTreasureRecord``, variable length), 0xFE-terminated.
@@ -117,23 +117,46 @@ Babba Sissoko, real ``Alignment.UNDEAD``/``Temper.BERSERK``, reads
 ``alignment=7``/``temper=3``, exactly ``ALIGNMENT_BY_ORDINAL[7]``/
 ``Temper.BERSERK.value``).
 
+**Phase 993 -- the two 192-byte ``DS:8B29``/``DS:8B2D`` blocks, fully
+decoded.** Each is a fixed array of 12 slots, 16 bytes each (a 1-byte
+length then a 15-byte char buffer -- the same truncate-at-15 ShortString
+shape Phase 990 first noticed on 2 stray strings before their own
+container was known), indexed by king id (``king_count`` real entries,
+0-9 in this corpus, plus 2 always-blank reserve slots never observed
+populated). ``DS:8B29`` is each King's own ``title_prefix``; ``DS:8B2D``
+is each King's own ``title_suffix`` -- **exactly** this project's own
+already-existing, already-named ``parser/gw_world.py GWKingExtension.
+title_prefix``/``title_suffix`` fields, confirmed by direct cross-check
+against both real ``GW3__T1`` and ``GW3__T4`` for both of this
+campaign's 2 Kings who ever have non-blank titles: King 0 (Babba
+Sissoko) reads ``prefix="Lord"``, ``suffix="Master of the s"`` at Turn 1
+and ``suffix="Master orango"`` at Turn 4 (short enough this time to show
+untruncated) in both XK *and* GW; King 1 (Uga-Buga Makumb) reads
+``prefix="Shaman"``, ``suffix="Lord of the stu"`` (Turn 1) /
+``"Stuffy doll"`` (Turn 4) in both, identically. Confirmed identical
+across different Kingdoms' own XK files too (every King's title is
+public, not per-recipient-filtered) -- this closes Phase 990's own
+"two still-unattributed title strings" gap completely, and the
+"per-leader status data" that pointer wasn't actually about: these 2
+blocks are per-*King*, not per-leader at all.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals and
-both 256-byte flag areas; both 192-byte pointer blocks; a full card's
-own ``sex_flags`` bitfield and ``skills``/``aptitudes``/``actions``/
-``objects``/``extra_low_bytes`` beyond their raw per-ability values; the
-leader-races/states vectors' own full value range; a province record's
-``unknown_9197_word``; a Feature record's own ``unknown_962a``; an Army
-record's own ``quality_or_mask``/``status``/``detail_status``; a
-Treasure's own ``trowner`` word beyond the observed ``256 + feature_id``
-convention for a feature-held item (a leader-held item's own convention
-is asserted, not independently verified in these samples); the two
-still-unattributed 15-character-truncated title strings Phase 990 found
-in the globals/card region (not yet mapped to a specific field by this
-new material either); the real SAGA client reader (only the host
-*writer* was disassembled); and any ``gamevers`` other than ``3`` (the
-compiled client has other branches; this strict decoder deliberately
-refuses them rather than extrapolate).
+both 256-byte flag areas; a full card's own ``sex_flags`` bitfield and
+``skills``/``aptitudes``/``actions``/``objects``/``extra_low_bytes``
+beyond their raw per-ability values; the leader-races/states vectors'
+own full value range; a province record's ``unknown_9197_word``; a
+Feature record's own ``unknown_962a``; an Army record's own
+``quality_or_mask``/``status``/``detail_status``; a Treasure's own
+``trowner`` word beyond the observed ``256 + feature_id`` convention for
+a feature-held item (a leader-held item's own convention is asserted,
+not independently verified in these samples); why each King title table
+reserves 12 slots for at most 10 real Kings (no real sample with
+``king_count`` above 10 exists to test whether it's a true fixed cap or
+simply never-observed to matter); the real SAGA client reader (only the
+host *writer* was disassembled); and any ``gamevers`` other than ``3``
+(the compiled client has other branches; this strict decoder
+deliberately refuses them rather than extrapolate).
 """
 
 from __future__ import annotations
@@ -537,6 +560,24 @@ class XKHomeKingdomExtension:
     shield_record: bytes
 
 
+_KING_TITLE_TABLE_CAPACITY = 12
+_KING_TITLE_SLOT_SIZE = 16
+
+
+@dataclass(slots=True)
+class XKKingTitles:
+    """Both per-King title tables (``DS:8B29``/``DS:8B2D``) -- see the
+    module docstring's own Phase 993 addendum. Each list has exactly
+    ``_KING_TITLE_TABLE_CAPACITY`` (12) entries, indexed by king id; a
+    king with no title (or a reserve slot beyond the real ``king_count``)
+    reads ``""``, never absent. Confirmed public (identical across every
+    Kingdom's own XK file), not filtered per recipient.
+    """
+
+    prefix_by_king_id: list[str]
+    suffix_by_king_id: list[str]
+
+
 @dataclass(slots=True)
 class XKWorld:
     """The fully decoded contents of one ``XK`` file."""
@@ -550,8 +591,7 @@ class XKWorld:
     leader_states: list[int]
     ds_89c7: bytes
     recipient_word: int
-    pointer_8b29: bytes
-    pointer_8b2d: bytes
+    king_titles: XKKingTitles
     provinces: list[XKProvinceRecord]
     features: list[XKFeatureRecord]
     treasures: list[XKTreasureRecord]
@@ -574,6 +614,21 @@ def _read_globals(r: _Reader) -> XKGlobals:
     flags_c3fc = r.bytes_("flags_C3FC", _FLAGS_AREA_SIZE)
     flags_c4fc = r.bytes_("flags_C4FC", _FLAGS_AREA_SIZE)
     return XKGlobals(values=values, flags_c3fc=flags_c3fc, flags_c4fc=flags_c4fc)
+
+
+def _read_king_title_table(r: _Reader, name: str) -> list[str]:
+    """Reads one 192-byte per-King title table -- see module docstring's
+    own Phase 993 addendum. Each of the 12 fixed-width 16-byte slots
+    holds a length-prefixed string in its own first ``1 + length`` bytes;
+    the rest of the slot is unused padding, discarded here.
+    """
+
+    titles: list[str] = []
+    for king_id in range(_KING_TITLE_TABLE_CAPACITY):
+        slot = r.bytes_(f"{name}[{king_id}]", _KING_TITLE_SLOT_SIZE)
+        length = slot[0]
+        titles.append(slot[1 : 1 + length].decode("cp850"))
+    return titles
 
 
 def _read_leader_names(r: _Reader, leader_capacity: int) -> list[str | None]:
@@ -778,8 +833,10 @@ def parse_xk_world(path: Path) -> XKWorld:
 
     ds_89c7 = r.bytes_("DS_89C7", 12)
     recipient_word = r.s16("DS_8AE7_recipient_word")
-    pointer_8b29 = r.bytes_("pointer_8B29", 192)
-    pointer_8b2d = r.bytes_("pointer_8B2D", 192)
+    king_titles = XKKingTitles(
+        prefix_by_king_id=_read_king_title_table(r, "king_title_prefixes"),
+        suffix_by_king_id=_read_king_title_table(r, "king_title_suffixes"),
+    )
 
     provinces: list[XKProvinceRecord] = []
     while r.peek("provinces") != _SENTINEL_END:
@@ -870,8 +927,7 @@ def parse_xk_world(path: Path) -> XKWorld:
         leader_states=leader_states,
         ds_89c7=ds_89c7,
         recipient_word=recipient_word,
-        pointer_8b29=pointer_8b29,
-        pointer_8b2d=pointer_8b2d,
+        king_titles=king_titles,
         provinces=provinces,
         features=features,
         treasures=treasures,

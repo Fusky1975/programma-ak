@@ -251,6 +251,37 @@ def test_leader_races_and_states_vectors_are_leader_capacity_plus_one():
     assert world.leader_races[0] is Race.ORCISH  # King Babba Sissoko
 
 
+def test_king_titles_match_the_real_gw_king_extension_fields_at_turn_1():
+    # Cross-checked directly against parser/gw_world.py's own already-
+    # confirmed GWKingExtension.title_prefix/title_suffix for the same
+    # real GW3__T1 campaign.
+    titles = parse_xk_world(T1_K0).king_titles
+    assert titles.prefix_by_king_id[0] == "Lord"
+    assert titles.suffix_by_king_id[0] == "Master of the s"  # real 15-char truncation
+    assert titles.prefix_by_king_id[1] == "Shaman"
+    assert titles.suffix_by_king_id[1] == "Lord of the stu"  # real 15-char truncation
+
+
+def test_king_titles_change_by_turn_4_matching_the_real_gw_data():
+    # Short enough this time to show untruncated -- same real values in
+    # both XK and GW3__T4.
+    titles = parse_xk_world(T4_K0).king_titles
+    assert titles.suffix_by_king_id[0] == "Master orango"
+    assert titles.suffix_by_king_id[1] == "Stuffy doll"
+
+
+def test_king_titles_are_public_identical_across_different_kingdoms_own_files():
+    assert parse_xk_world(T1_K0).king_titles == parse_xk_world(T1_K1).king_titles
+
+
+def test_king_titles_table_has_12_slots_with_unused_ones_blank():
+    titles = parse_xk_world(T1_K0).king_titles
+    assert len(titles.prefix_by_king_id) == 12
+    assert len(titles.suffix_by_king_id) == 12
+    assert titles.prefix_by_king_id[9] == ""  # King 9 has no real title
+    assert titles.prefix_by_king_id[11] == ""  # reserve slot, never a real King
+
+
 def test_province_record_decodes_an_ordinary_known_neighbor():
     provinces = {p.coord: p for p in parse_xk_world(T1_K0).provinces}
     florence = provinces[HexCoord(11, 6)]
