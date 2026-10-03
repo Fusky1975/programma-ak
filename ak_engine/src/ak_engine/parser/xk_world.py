@@ -342,22 +342,70 @@ figure). This 3.7% of real armies remains a genuine, real, unresolved
 exception -- not reducible to the ownership rule above, and not yet
 reducible to any other single-field rule tried.
 
+**Phase 999 -- the globals block and both flag areas, structurally
+characterized at scale.** For every turn with all 3 of this campaign's
+real Kingdom files on hand (all 4 turns), every unnamed global word
+that varies at all (``DS_C2F6``/``C2F8``/``C2FC``/``C2FE``/``C308``/
+``C316``/``C330``/``C332``/``C334``/``C336``, and the whole run from
+``DS_C388`` through ``DS_C3FA``) is **identical across all 3 Kingdoms'
+own files for that turn**, zero exceptions -- these are genuinely
+turn-level (or shared/world-level) values, not per-Kingdom secrets one
+Kingdom's own file reveals and another's withholds. The ``DS_C388``-
+``DS_C3FA`` run in particular has the shape of leftover host-process
+memory rather than meaningful encoded data (arbitrary-looking,
+round-in-hex values like ``0x3C00``/``0x0D00``/``0xFF00``, shared
+identically by the 3 files the host writes back-to-back in the same
+turn-processing run) -- a real, data-backed inference, not disassembly-
+certain, so kept exactly as raw as before.
+
+``flags_c4fc`` is **not a flat 256-bit flag field**: it is indexed by
+``leader_id`` (only bytes ``0..leader_capacity-1`` ever carry data,
+confirmed: the highest nonzero index seen in the whole 12-file corpus
+is exactly ``100``, i.e. ``leader_capacity`` itself, the N+1 slot this
+format's leader vectors already reserve elsewhere). Every byte at an
+index with neither a full nor a partial character card is confirmed
+``0``, zero exceptions (1142 of 1142 checked); every one of this
+corpus's own 3 real Kings also reads exactly ``0`` at their own
+``leader_id``. A real Hero's own full-card ``leader_id`` usually (24 of
+25 real Heroes checked) carries a small, nonzero integer (``1``-``5``
+observed, stable across every turn the same Hero has a full card in)
+-- but the role of that integer resists every real hypothesis tried
+(``hire_turn``, race, alignment, temper, and each of the already-
+decoded ``general_merit``/``defender_merit``/``lfdisc``/``ldiscp``/
+``lwmsp`` fields), and one real Hero (Quintilian) reads ``0`` too, so
+"nonzero" isn't even a clean full-card/no-full-card split -- genuinely
+open. ``flags_c3fc`` is structurally different: it is **mostly**
+shared identically across this campaign's 3 Kingdoms at the same turn
+(confirmed at Turns 2-4), with only a handful of real per-Kingdom bit
+differences at specific indices (e.g. index 22 reads ``10`` for
+Kingdom 2 but ``8`` for Kingdoms 0 and 1 at every one of Turns 2-4) --
+and Turn 1's own nonzero-index pattern is entirely different in shape
+from Turns 2-4's shared one, consistent with this project's own
+already-established finding (``parser/gw_world.py``) that ``GW3__T1``
+is itself a pre-turn-1 snapshot, not an ordinary turn. No bit-level
+meaning is decoded for either flag area beyond this structural
+picture.
+
 **Genuinely still open** (kept raw rather than guessed, per the
-delivered material's own stated limits): the ~115 unnamed globals and
-both 256-byte flag areas; a full card's own ``sex_flags`` bitfield
-beyond "0 in this corpus" and ``actions``/``objects``/
-``extra_low_bytes`` beyond their raw per-phase values (Phase 996: now
-confirmed non-constant per real leader+turn, ruling out a fixed
-sentinel, but not otherwise decoded); the ``leader_states`` vector's
-own exact per-value meaning (Phase 996: substantially characterized
-with real data and several real hypotheses tested and falsified, see
-above, but no clean rule found yet); a Feature record's own
-``unknown_962a`` (Phase 995: confirmed always ``0`` in all 36 real
-samples, role still unconfirmed); a Mercenary-state leaderless Army
-record's own ``quality_or_mask`` reveal rule (Phase 998: solved for
-every other real army shape, but this one real exception -- 111 of
-3015 armies -- resists the same ownership rule and every other
-single-field rule tried so far); exactly how a
+delivered material's own stated limits): the ~115 unnamed globals
+(Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
+but not otherwise named) and both 256-byte flag areas (Phase 999:
+``flags_c4fc``'s own leader-indexed shape confirmed, its per-Hero
+integer's real meaning isn't; ``flags_c3fc``'s mostly-shared-with-a-
+few-per-Kingdom-bits shape confirmed, no bit meaning decoded); a full
+card's own ``sex_flags`` bitfield beyond "0 in this corpus" and
+``actions``/``objects``/``extra_low_bytes`` beyond their raw per-phase
+values (Phase 996: now confirmed non-constant per real leader+turn,
+ruling out a fixed sentinel, but not otherwise decoded); the
+``leader_states`` vector's own exact per-value meaning (Phase 996:
+substantially characterized with real data and several real hypotheses
+tested and falsified, see above, but no clean rule found yet); a
+Feature record's own ``unknown_962a`` (Phase 995: confirmed always
+``0`` in all 36 real samples, role still unconfirmed); a Mercenary-
+state leaderless Army record's own ``quality_or_mask`` reveal rule
+(Phase 998: solved for every other real army shape, but this one real
+exception -- 111 of 3015 armies -- resists the same ownership rule and
+every other single-field rule tried so far); exactly how a
 defeated Feature guardian's ``NOMONSTER``/``MERCENARY`` XK-side
 convention is chosen (confirmed real and reproducible, Phase 995, but
 only one real dead-Feature event exists in this corpus to observe it);
@@ -534,8 +582,14 @@ class XKGlobals:
     """The 774-byte global block (``DS:C2F6..C5FB``). ``values`` holds
     all 131 words, named where confirmed (``XK_GLOBAL_FIELD_NAMES``) and
     ``DS_xxxx``-keyed otherwise; the named-field properties below are
-    thin lookups into it. ``flags_c3fc``/``flags_c4fc`` are the two
-    256-byte areas that follow, kept raw -- see module docstring.
+    thin lookups into it. Every unnamed word that varies at all is
+    confirmed (Phase 999) to be identical across this campaign's 3
+    Kingdoms' own files for the same turn -- turn-level/shared state,
+    not a per-Kingdom secret. ``flags_c3fc``/``flags_c4fc`` are the two
+    256-byte areas that follow, kept raw -- see module docstring's own
+    Phase 999 addendum for their real structural shape (``flags_c4fc``
+    is leader_id-indexed; ``flags_c3fc`` is mostly shared across
+    Kingdoms with a few real per-Kingdom bits).
     """
 
     values: dict[str, int]

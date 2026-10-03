@@ -980,3 +980,87 @@ def test_quality_or_mask_mercenary_armies_are_the_one_real_exception():
     assert (revealed, masked) == (102, 9)
     assert own_province_masked_examples > 0
     assert other_province_revealed_examples > 0
+
+
+_VARYING_UNNAMED_GLOBAL_KEYS = (
+    "DS_C2F6", "DS_C2F8", "DS_C2FC", "DS_C2FE", "DS_C308", "DS_C316",
+    "DS_C330", "DS_C332", "DS_C334", "DS_C336",
+    "DS_C388", "DS_C38A", "DS_C38C", "DS_C38E", "DS_C390", "DS_C392",
+    "DS_C394", "DS_C396", "DS_C398", "DS_C39A", "DS_C39C", "DS_C39E",
+    "DS_C3A0", "DS_C3A2", "DS_C3A4", "DS_C3A6", "DS_C3A8", "DS_C3B4",
+    "DS_C3B6", "DS_C3B8", "DS_C3BA", "DS_C3BC", "DS_C3BE", "DS_C3C0",
+    "DS_C3C2", "DS_C3C4", "DS_C3C6", "DS_C3C8", "DS_C3CA", "DS_C3CC",
+    "DS_C3D2", "DS_C3D4", "DS_C3D6", "DS_C3D8", "DS_C3DA", "DS_C3DC",
+    "DS_C3DE", "DS_C3E0", "DS_C3E2", "DS_C3E4", "DS_C3E6", "DS_C3E8",
+    "DS_C3EC", "DS_C3EE", "DS_C3F0", "DS_C3F2", "DS_C3F4", "DS_C3F6",
+    "DS_C3F8", "DS_C3FA",
+)  # noqa: E501
+
+
+def test_unnamed_varying_globals_are_identical_across_this_turns_three_kingdoms():
+    # Every unnamed global word that varies at all is the same across
+    # all 3 of this campaign's own Kingdom files for a given turn --
+    # turn-level/shared state, not a per-Kingdom secret (Phase 999).
+    for turn, fixtures in ((1, (T1_K0, T1_K1, T1_K2)), (2, (T2_K0, T2_K1, T2_K2)),
+                            (3, (T3_K0, T3_K1, T3_K2)), (4, (T4_K0, T4_K1, T4_K2))):
+        worlds = [parse_xk_world(f) for f in fixtures]
+        for key in _VARYING_UNNAMED_GLOBAL_KEYS:
+            values = {w.globals.values[key] for w in worlds}
+            assert len(values) == 1, f"turn {turn} key {key} differs across kingdoms: {values}"
+
+
+def test_flags_c4fc_is_leader_id_indexed_not_a_flat_bitmask():
+    # flags_c4fc[i] is confirmed 0 for every i that backs neither a full
+    # nor a partial character card -- zero exceptions across the corpus
+    # -- and the highest nonzero index ever seen is exactly
+    # leader_capacity (100), the same N+1 boundary this format's other
+    # leader vectors already use.
+    max_nonzero_index = -1
+    untracked_nonzero = 0
+    untracked_checked = 0
+    king_nonzero = 0
+    king_checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        full_ids = {c.leader_id for c in world.leader_cards}
+        partial_ids = {c.leader_id for c in world.partial_leader_cards}
+        king_ids = set(range(world.globals.king_count))
+        for i in range(world.globals.leader_capacity):
+            val = world.globals.flags_c4fc[i]
+            if val != 0:
+                max_nonzero_index = max(max_nonzero_index, i)
+            if i not in full_ids and i not in partial_ids:
+                untracked_checked += 1
+                if val != 0:
+                    untracked_nonzero += 1
+            if i in king_ids:
+                king_checked += 1
+                if val != 0:
+                    king_nonzero += 1
+    assert untracked_checked > 0
+    assert untracked_nonzero == 0
+    assert king_checked > 0
+    assert king_nonzero == 0
+    assert max_nonzero_index <= 100
+
+
+def test_flags_c3fc_is_mostly_shared_across_kingdoms_with_a_few_real_exceptions():
+    # Unlike flags_c4fc, flags_c3fc is not cleanly leader-indexed, but
+    # for an ordinary turn (2-4) it's mostly identical across this
+    # campaign's 3 Kingdoms, with only a handful of real per-Kingdom
+    # byte differences -- Turn 1 (a pre-turn-1 snapshot, like GW3__T1)
+    # has an entirely different nonzero-index shape.
+    for turn, fixtures in ((2, (T2_K0, T2_K1, T2_K2)), (3, (T3_K0, T3_K1, T3_K2)),
+                            (4, (T4_K0, T4_K1, T4_K2))):
+        worlds = [parse_xk_world(f) for f in fixtures]
+        c3fc = [w.globals.flags_c3fc for w in worlds]
+        differing_bytes = sum(1 for i in range(256) if len({c[i] for c in c3fc}) > 1)
+        identical_bytes = 256 - differing_bytes
+        assert differing_bytes > 0  # real per-Kingdom differences exist
+        assert identical_bytes / 256 > 0.9  # but it's mostly shared
+
+    t1_worlds = [parse_xk_world(f) for f in (T1_K0, T1_K1, T1_K2)]
+    t1_nonzero_indices = {i for w in t1_worlds for i, b in enumerate(w.globals.flags_c3fc) if b != 0}
+    t2_worlds = [parse_xk_world(f) for f in (T2_K0, T2_K1, T2_K2)]
+    t2_nonzero_indices = {i for w in t2_worlds for i, b in enumerate(w.globals.flags_c3fc) if b != 0}
+    assert t1_nonzero_indices != t2_nonzero_indices
