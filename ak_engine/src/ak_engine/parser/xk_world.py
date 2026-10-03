@@ -277,6 +277,29 @@ exactly, but most other ``state=1`` partial-card leaders keep
 ``kingdom_id=None`` in GW throughout, so a null/non-null
 ``kingdom_id`` split alone cannot be the rule).
 
+**Phase 997 -- province records fully decoded and cross-checked at
+scale.** Matching ``parser/gw_world.py parse_gw_world()``'s own
+province list by its real, unique ``name`` field (both formats carry
+one) rather than by index, all 177 real province records across the
+12-file corpus were paired with their own real ``GWProvinceRecord``.
+``terrain`` and ``race`` matched with **zero exceptions** (177/177).
+For the 59 records with this Kingdom's own full economic view,
+``tax``/``recruit_type_1``/``recruit_type_2`` matched **zero
+exceptions** against GW's own fields, and ``owner_kingdom_id`` matched
+the real Kingdom of GW's own ``governor_leader_id`` (cross-referenced
+through ``parse_gw_leaders()``) with **zero exceptions**. For the 75
+records with only a visible owner, ``visible_owner_leader_id`` matched
+GW's own ``governor_leader_id`` directly, **zero exceptions**. The
+field previously kept raw as ``unknown_9197_word`` is now fully
+decoded: it is **exactly** GW's own ``effects_bitmask`` (``termod``)
+field, confirmed byte-for-byte across all 177 real records including
+both non-zero real samples on hand (``XK3__T2.K1``'s "the Mermaid Sea"
+and "the Icaria Sea", both ``0x40`` -- ``TERMOD_PLAGUE_EFF_MASK``'s own
+range, i.e. ``plague_effect_level == 4`` via that already-existing
+module's own decode property) -- renamed to ``effects_bitmask``, no new
+lookup table needed since ``parser/gw_world.py``'s own ``TERMOD_*``
+constants and properties already decode every bit.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals and
 both 256-byte flag areas; a full card's own ``sex_flags`` bitfield
@@ -286,10 +309,9 @@ confirmed non-constant per real leader+turn, ruling out a fixed
 sentinel, but not otherwise decoded); the ``leader_states`` vector's
 own exact per-value meaning (Phase 996: substantially characterized
 with real data and several real hypotheses tested and falsified, see
-above, but no clean rule found yet); a province record's
-``unknown_9197_word``; a Feature record's own ``unknown_962a`` (Phase
-995: confirmed always ``0`` in all 36 real samples, role still
-unconfirmed); an Army record's own
+above, but no clean rule found yet); a Feature record's own
+``unknown_962a`` (Phase 995: confirmed always ``0`` in all 36 real
+samples, role still unconfirmed); an Army record's own
 ``quality_or_mask`` (see the Phase 994 addendum above -- a real masking
 sentinel, confirmed, but its own reveal rule isn't); exactly how a
 defeated Feature guardian's ``NOMONSTER``/``MERCENARY`` XK-side
@@ -585,6 +607,13 @@ class XKProvinceRecord:
       "unknown".
     - All three ``None`` (``ownership_marker == 0xFE``): no ownership
       information at all.
+
+    ``effects_bitmask`` is confirmed (Phase 997) to be exactly
+    ``parser/gw_world.py GWProvinceRecord.effects_bitmask`` (``termod``)
+    for the same real province -- that module's own ``TERMOD_*``
+    constants and decode properties (``plague_effect_level``,
+    ``bless_effect_active``, etc.) apply here unchanged; no separate
+    table is needed.
     """
 
     coord: HexCoord
@@ -597,7 +626,7 @@ class XKProvinceRecord:
     tax: int | None
     recruit_type_1: ArmyType | None
     recruit_type_2: ArmyType | None
-    unknown_9197_word: int
+    effects_bitmask: int
 
 
 @dataclass(slots=True)
@@ -867,7 +896,7 @@ def _read_province(r: _Reader) -> XKProvinceRecord:
     name = r.pstring(key + ".name")
     terrain = Terrain(r.u8(key + ".terrain"))
     race = Race(r.u8(key + ".race"))
-    unknown_9197_word = r.s16(key + ".unknown_9197_word")
+    effects_bitmask = r.s16(key + ".effects_bitmask")
     exploration_percent = r.u8(key + ".exploration")
     marker = r.u8(key + ".ownership_marker")
     owner_kingdom_id: int | None = None
@@ -896,7 +925,7 @@ def _read_province(r: _Reader) -> XKProvinceRecord:
         tax=tax,
         recruit_type_1=recruit_type_1,
         recruit_type_2=recruit_type_2,
-        unknown_9197_word=unknown_9197_word,
+        effects_bitmask=effects_bitmask,
     )
 
 

@@ -21,7 +21,13 @@ from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
-from ak_engine.parser.gw_world import parse_gw_armies, parse_gw_features, parse_gw_leaders
+from ak_engine.parser.gw_world import (
+    TERMOD_PLAGUE_EFF_MASK,
+    parse_gw_armies,
+    parse_gw_features,
+    parse_gw_leaders,
+    parse_gw_world,
+)
 from ak_engine.parser.xk_world import (
     SUPPORTED_FORMAT_REVISION,
     SUPPORTED_GAME_VERSION,
@@ -728,3 +734,119 @@ def test_leader_states_untracked_slots_are_overwhelmingly_seven():
                     neither_state_seven += 1
     assert neither > 0
     assert neither_state_seven / neither > 0.95
+
+
+_TURN_TO_REAL_GW_PROVINCES = {
+    1: Path("/home/user/programma-ak/GW3__T1"),
+    2: Path("/home/user/programma-ak/GW3__T2"),
+    3: Path("/home/user/programma-ak/GW3__T3"),
+    4: Path("/home/user/programma-ak/GW3__T4"),
+}
+
+
+def test_effects_bitmask_matches_real_gw_termod_at_scale():
+    # Matched by each province's own real, unique name (both formats
+    # carry one) -- unlike armies/features/leaders, there's no shared
+    # index to zip by here. unknown_9197_word is fully decoded by this
+    # cross-check: it's exactly GW's own effects_bitmask (termod).
+    gw_cache = {}
+    checked = 0
+    nonzero_checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = {p.name: p for p in parse_gw_world(_TURN_TO_REAL_GW_PROVINCES[turn])}
+        gw_by_name = gw_cache[turn]
+        for province in world.provinces:
+            gw = gw_by_name.get(province.name)
+            if gw is None:
+                continue
+            assert province.effects_bitmask == gw.effects_bitmask
+            checked += 1
+            if province.effects_bitmask != 0:
+                nonzero_checked += 1
+    assert checked == 177
+    assert nonzero_checked == 2  # the Mermaid Sea + the Icaria Sea, both plague-afflicted
+
+
+def test_mermaid_and_icaria_sea_effects_bitmask_is_a_real_plague_level():
+    world = parse_xk_world(T2_K1)
+    provinces = {p.name: p for p in world.provinces}
+    for name in ("the Mermaid Sea", "the Icaria Sea"):
+        province = provinces[name]
+        assert province.effects_bitmask == 0x40
+        assert province.effects_bitmask & TERMOD_PLAGUE_EFF_MASK == 0x40
+        assert (province.effects_bitmask & TERMOD_PLAGUE_EFF_MASK) >> 4 == 4
+
+
+def test_province_terrain_and_race_match_real_gw_at_scale():
+    gw_cache = {}
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = {p.name: p for p in parse_gw_world(_TURN_TO_REAL_GW_PROVINCES[turn])}
+        gw_by_name = gw_cache[turn]
+        for province in world.provinces:
+            gw = gw_by_name.get(province.name)
+            if gw is None:
+                continue
+            assert province.terrain == gw.terrain
+            assert province.race == gw.race
+            checked += 1
+    assert checked == 177
+
+
+def test_owned_province_economics_match_real_gw_at_scale():
+    gw_cache = {}
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = {p.name: p for p in parse_gw_world(_TURN_TO_REAL_GW_PROVINCES[turn])}
+        gw_by_name = gw_cache[turn]
+        for province in world.provinces:
+            if province.tax is None:
+                continue
+            gw = gw_by_name.get(province.name)
+            if gw is None:
+                continue
+            assert province.tax == gw.tax
+            assert province.recruit_type_1 == gw.recruit_type_1
+            assert province.recruit_type_2 == gw.recruit_type_2
+            checked += 1
+    assert checked == 59
+
+
+def test_province_ownership_matches_real_gw_governor_at_scale():
+    # owner_kingdom_id (the full-economics shape) must match the real
+    # Kingdom of GW's own governor_leader_id; visible_owner_leader_id
+    # (the visible-owner-only shape) must match that leader_id directly.
+    gw_cache = {}
+    leaders_cache = {}
+    owner_checked = 0
+    visible_checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = {p.name: p for p in parse_gw_world(_TURN_TO_REAL_GW_PROVINCES[turn])}
+            leaders_cache[turn] = parse_gw_leaders(_TURN_TO_REAL_GW_PROVINCES[turn])
+        gw_by_name = gw_cache[turn]
+        leaders = leaders_cache[turn]
+        for province in world.provinces:
+            gw = gw_by_name.get(province.name)
+            if gw is None:
+                continue
+            if province.owner_kingdom_id is not None:
+                assert gw.governor_leader_id is not None
+                assert leaders[gw.governor_leader_id].kingdom_id == province.owner_kingdom_id
+                owner_checked += 1
+            elif province.visible_owner_leader_id is not None:
+                assert province.visible_owner_leader_id == gw.governor_leader_id
+                visible_checked += 1
+    assert owner_checked == 59
+    assert visible_checked == 75
