@@ -1,306 +1,235 @@
-"""Phase 988: the real ``XK`` per-Kingdom "known world" file -- the
+"""Phase 992: the real ``XK`` per-Kingdom "known world" file -- the
 binary export a player's own separate Windows support program reads to
 show that Kingdom's own map and prepare their next turn's moves.
 
-**Genuinely new reverse engineering, started at the user's own explicit
-request** (the GM-interface plan's own "Fuori scopo per questa prima
-versione" section had deliberately deferred this: "un progetto di
-reverse engineering a se, paragonabile per portata a quello gia fatto
-per il formato GW"). Unlike the GW world-file reverse engineering (which
-leaned heavily on a prior `AKGEN.EXE` static-disassembly document trail
-already describing most fields by name), **no disassembly material for
-XK exists yet in this project** -- every finding below comes from
-directly cross-referencing 4 real sample files the user provided
-(``XK3__T1.K0``, ``XK3__T1.K1``, ``XK3__T2.K0``, ``XK3__T2.K1`` -- two
-successive turns, two different Kingdoms, same real campaign "3" this
-project's own ``tests/fixtures/world/G3/GW3__T1``-``T12`` and
-``SE3__T*.K1`` letters already come from) against this project's own
-already-confirmed ``parser/gw_world.py`` ground truth for that same
-campaign. This is **known-plaintext cryptanalysis**, not disassembly:
-every confirmed field below was found by searching for a real, already-
-known value (a Kingdom id, a turn number, a real province or hero name)
-inside the raw bytes, not by reading Pascal source.
+**Supersedes Phases 988-991.** Those phases built this module from pure
+known-plaintext cryptanalysis (searching for real GW/letter facts inside
+the raw bytes, with no Pascal source or disassembly for this format in
+the project) and got the header, the per-leader name table, and most of
+the province/Feature/treasure records right -- but, lacking a ground
+truth for byte *order*, mis-grouped a few adjacent fields (e.g. treating
+a Feature record's real 2-byte ``DS:962A`` field as "two always-zero
+unknown bytes"), and got the Army record's own field order wrong
+entirely (swapping what are really separate ``race``/``type`` bytes for
+a guessed, partly-duplicated ``quality``/``state`` layout that happened
+to fit the 3 non-Mercenary samples available at the time but broke on
+the 4th, Mercenary-state one).
 
-**Confirmed exactly, cross-checked against all 4 real samples:**
+**The user then supplied a real disassembly of ``AK.EXE``'s own XK
+*writer* routine** (raw range ``0x1DCBF-0x1FE8A``, calling the real
+``BlockWrite``/``3EE5:1C4B``), cross-checked against partial real Pascal
+source (``CTBOTH.PAS`` excerpts: the ``ability``/``race``/``outlook``
+enum orders, the ``TR_*`` extension-tag constants) and a 12-sample
+corpus (this project's own 4 fixtures plus 8 more: the same campaign's
+Kingdom 2, and Turns 3-4) -- a far stronger evidentiary basis than
+cryptanalysis alone, since it reads the real field order and sizes
+directly from the code that writes them rather than inferring them from
+outcomes. This phase ports that work: every field and record shape
+below is sourced to a specific disassembly address or Pascal excerpt,
+not re-derived. Genuinely unconfirmed semantics (most global words, both
+~256-byte flag areas, both 192-byte pointer blocks, the Feature record's
+own ``DS:962A`` word, Army ``quality_or_mask``, every state/status bit)
+are kept as raw ints under their own ``DS_xxxx`` address rather than
+guessed at -- the same discipline ``parser/gw_world.py`` already applies
+to its own undeciphered fields.
 
-- Every XK file opens with a **fixed-size, 0x30B (779)-byte header
-  block** -- the per-leader name table below always starts at exactly
-  that offset in every sample, independent of total file size (which
-  otherwise varies, 4534-4951 bytes across the 4 samples).
-- Byte 0 reads **30** in all 4 files -- exactly this project's own
-  already-confirmed ``GWHeader.header_revision`` value (every real
-  ``GW3__T1``-``T12`` file in this project's corpus also reads
-  ``header_revision == 30``). Real role beyond "the same save-format
-  revision marker GW uses" not yet independently confirmed, but the
-  exact value match across an unrelated file format is too specific to
-  be coincidence. Bytes 1-2 read zero in every sample (part of a wider
-  field, or simply unused) -- left unparsed since no real value has
-  ever required more than byte 0's own single-byte range.
-- Byte 3 (flanked by zero bytes on both sides) is this **file's own
-  Kingdom id** (0-indexed): reads ``0`` in both ``*.K0`` samples and
-  ``1`` in both ``*.K1`` samples, stable across both turns.
-- Byte 0x11 (17), flanked by zero bytes, is the **game turn number**:
-  reads ``1`` in both ``T1`` samples and ``2`` in both ``T2`` samples,
-  stable across both Kingdoms -- matches ``GWHeader.game_turn`` for the
-  same real campaign exactly.
-- Byte 0x49 (73), flanked by zero bytes, is the **Kingdom count**:
-  reads ``10`` in all 4 samples -- matches ``GWHeader.king_count`` for
-  this real campaign (a 10-Kingdom game) exactly, and is turn-
-  independent as expected.
-- The remaining header bytes (roughly 0x04-0x48, 0x4a-0x30a) are
-  **still genuinely undeciphered** -- some positions differ between the
-  two Kingdoms' own files at the same turn (e.g. a short run around
-  0x158-0x17f), suggesting small embedded per-Kingdom summary fields,
-  but no real value from the GW/letter corpus has yet been matched
-  against any of them. Left unparsed rather than guessed.
+**What XK contains.** A snapshot of the world as known to one specific
+Kingdom (the file's own ``kingdom_id``, 0-indexed -- the filename's own
+``Kx`` suffix matches it in every sample, but isn't itself authoritative;
+this module reads the real header field): names, full or partial
+character cards, known provinces, Features, treasures, armies,
+discoveries, player administrative data, a province-by-province
+recruitable-type map, and race/alignment/ability lookups the real client
+needs to render them -- not the GW world save, not an AK orders file.
 
-**The per-leader name table, immediately following the header
-(0x30B):** exactly 100 consecutive Pascal ShortStrings (a 1-byte length
-prefix followed by that many raw chars, this project's own already-
-established idiom -- see ``parser/gw_world.py``'s own string handling),
-one entry per leader id ``0``-``99`` -- the same id-space this project's
-own ``LeaderState.leader_id``/``STANDARD_HERO_ROSTER`` already use.
-Confirmed character-for-character against the real, already-parsed
-``GW3__T1`` leader roster (``parser/gw_world.py parse_gw_leaders()``):
-every single one of the 10 Kings' real names (``Babba Sissoko``, ``Uga-
-Buga Makumb``, ``Bradipo I``, ``Kwoth``, ``Hokuto``, ``Prometeo``,
-``Kahn``, ``Giovanna d'Arco``, ``Circe``, ``Agesilao``) appears
-verbatim at their own real id in every one of the 4 samples -- **with
-one genuine exception, not a parser quirk**: King id 2 reads
-``"Bradibo I"`` in both real Turn 1 samples and ``"Bradipo I"`` in both
-real Turn 2 samples, matching ``GW3__T1``'s own later-confirmed
-spelling only from Turn 2 onward. A real, reproducible spelling
-correction inside this one campaign's own data between turns 1 and 2,
-kept exactly as found rather than normalized away. Every other
-(non-King) leader id shows one of two things:
+**Confirmed exact file grammar**, in order:
 
-- its own **real, current name** (confirmed, e.g. id 18 ``Guerin`` and
-  id 72 ``Teleko``, Kingdom 1's own two starting Companions, both
-  placed at Kingdom 1's own Home coordinate in the real ``GW3__T1``
-  data), when this specific Kingdom's file already "knows" that
-  leader; or
-- the fixed placeholder ``"Ldr-<id>"`` (e.g. id 10 reads exactly
-  ``"Ldr-10"``) when it doesn't -- confirmed to be a literal, exact
-  format (``f"Ldr-{id}"``) for every single one of the ~80-84
-  placeholder entries across all 4 samples, zero exceptions.
+1. **Header** (5 bytes): ``format_revision`` (``u16``, always ``30`` in
+   every sample -- this strict decoder, matching the real disassembly's
+   own validated branch, only supports this revision), 1 reserved byte
+   (always ``0``), ``kingdom_id`` (``u16``, though every real value seen
+   fits a single byte).
+2. **Globals** (774 bytes): a verbatim copy of ``DS:C2F6..C5FB`` --
+   131 words (262 bytes, ``DS:C2F6..C3FA``), then two 256-byte areas
+   (``DS:C3FC``, ``DS:C4FC``). 16 of the 131 words are confirmed-named
+   (``XK_GLOBAL_FIELD_NAMES`` below, e.g. ``gameturn``, ``king_count``);
+   the rest are raw, keyed ``DS_xxxx`` by address. Both 256-byte areas
+   are kept as raw bytes -- real per-bit flag meanings are undeciphered.
+3. **Leader names** (always starting at the confirmed offset ``0x30B``,
+   779 -- unchanged from Phase 988): ``leader_capacity`` (a named global,
+   ``100`` in every real sample) Pascal ShortStrings, one per leader id.
+4. **Full character cards**: 74 bytes each (``XKLeaderCard`` below),
+   0xFE-terminated.
+5. **Partial character cards**: ``id, x, y`` (3 bytes each), 0xFE-terminated.
+6. **Leader races**, 7. **leader states**: ``leader_capacity + 1`` raw
+   bytes each -- the ``+1`` (not just ``leader_capacity``) is real and
+   confirmed in the disassembly; missing it misaligns everything after.
+8. ``DS:89C7`` (12 raw bytes), 9. a per-recipient word at
+   ``DS:8AE7 + 2*kingdom_id`` (kept raw), 10-11. two 192-byte blocks from
+   far pointers ``DS:8B29``/``DS:8B2D`` (kept raw -- real structure
+   undeciphered).
+12. **Known provinces** (``XKProvinceRecord`` below), 0xFE-terminated.
+13. **Features** (``XKFeatureRecord``, 8 bytes each), 0xFE-terminated.
+14. **Treasures** (``XKTreasureRecord``, variable length), 0xFE-terminated.
+15. **Armies** (``XKArmyRecord``, 4 or 8 bytes): index-implicit, looping
+    the real ``army_count`` global but **skipping index 255** -- a real
+    disassembly-confirmed quirk (``army_count=260`` yields 259 records).
+16. **Discoveries**: ``id`` + a real ``0xFE01`` legacy word (not a plain
+    ``0x0001``/``0x0000`` boolean -- the writer copies 2 bytes from a
+    local variable whose own neighbor byte happens to be ``0xFE``),
+    0xFE-terminated.
+17. **Player tail** (28 raw bytes, ``XK_PLAYER_TAIL_FIELDS`` below).
+18. ``TR_End`` (``16001`` as a ``u16``) -- **not EOF yet**.
+19. **Recruitment map**: one ``(slot_1, slot_2)`` raw-byte pair per
+    board cell, ``(right-left+1) * (bottom-top+1)`` cells, outer loop
+    over ``x`` then inner over ``y``. ``0x0F`` (``NoArmy``/placeholder
+    in ``MOD_PAT_ORDINAL_TO_ARMY_TYPE``) marks a cell this Kingdom
+    doesn't actually know the recruit types for -- not proof the host
+    province has none.
+20. **Typed extensions**, each its own ``u16`` tag: ``TR_LLs`` (16004,
+    id/lliege pairs, ``0xFF``-id-terminated -- a different sentinel than
+    everywhere else in this format), ``TR_SA`` (16005, 90 raw bytes, 15
+    abilities x 6 levels), ``TR_T2`` (16006, 450 raw bytes, a fixed
+    30x15 secondary-terrain capacity -- **not** the played board's own
+    size), ``TR_HK`` (16007, syntactically supported, no real sample
+    exercises it).
+21. **Final** ``TR_End`` (``16001``) -- true EOF; any trailing byte is
+    rejected.
 
-The table always ends with a zero-length ShortString "fencepost" (a
-lone ``0x00`` length byte) immediately followed by ``0xFF 0xFF`` -- a
-real, confirmed end-of-table sentinel, present in all 4 samples.
+**Confirmed real enum/ordinal reuse** (no new lookup tables needed):
+``Terrain``/``Race`` ordinals match a province record's raw
+``terrain``/``race`` bytes directly (already established, Phase 988).
+``parser/gw_world.py``'s own ``MOD_PAT_ORDINAL_TO_ARMY_TYPE`` is the real
+ordinal table for a province's ``recruit_type_1``/``recruit_type_2`` AND
+for an Army record's own ``army_type`` AND for a recruitment-map cell's
+own slot -- one real table, three real call sites (the ``CTBOTH.PAS``
+army-type ordinal list this new material supplies matches it exactly
+through every ordinal checked, 0-19). ``models/monster.py Monster``/
+``MonsterEngagementState`` and ``models/feature.py FeatureType`` match a
+Feature record's own raw bytes directly (Phase 991, unchanged).
+``models/treasure.py Treasure`` matches a Treasure record's own raw
+``type`` byte directly (Phase 991, unchanged). ``models/temper.py
+Temper``'s own ``.value`` and ``models/alignment.py
+ALIGNMENT_BY_ORDINAL`` (the real ``CTBOTH.PAS outlook`` order, already
+in this project) match a full leader card's own raw ``temper``/
+``alignment`` bytes directly -- newly confirmed this phase (e.g. King
+Babba Sissoko, real ``Alignment.UNDEAD``/``Temper.BERSERK``, reads
+``alignment=7``/``temper=3``, exactly ``ALIGNMENT_BY_ORDINAL[7]``/
+``Temper.BERSERK.value``).
 
-**Genuinely open, discovered but not yet understood -- flagged here
-rather than guessed at:**
-
-- **The real "known leader" set at game start is wider than this
-  project's own engine currently models.** For Kingdom 1 at Turn 1,
-  besides the 10 Kings and its own 2 Companions, 5 further independent
-  Heroes already show their real names (``Lallipugh``, ``Amalric``,
-  ``Melantheus``, ``Tao-Li``, ``Riose``) -- 3 of those are the Heroes
-  governing Kingdom 1's Home's own direct map-neighbor provinces (this
-  project's own already-confirmed ``turn/move_execution.py
-  reveal_adjacent_provinces()``, Phase 623/982), but the other 2
-  (``Tao-Li`` at a 2nd-ring neighbor, ``Riose`` further out again) are
-  not explained by that function at all. This project's own starting-
-  visibility reveal may be narrower than the real game's -- a concrete
-  follow-up worth investigating in ``worldgen/generate_new_game.py``'s
-  own Phase 982 reveal call, separate from this module.
-- **Not every direct map-neighbor Hero is known, even when closer ones
-  are.** Kingdom 0's own Home (``Piratum``, (11,7)) has 6 real direct
-  neighbors; the per-known-province table (see below) shows 4 of them
-  by name (Florence, Redwood, Jutland's own neighbor Silvania/
-  Tanglewood -- see below) but is missing exactly the 2 that are
-  ``Race.DRAGONS`` (``Mare Tarkium``, ``the Sunshine Sea``) -- while a
-  same-distance ``Race.TROLLISH`` neighbor (``Redwood``) *is* shown.
-  Too small a sample (one Home, one race) to generalize into a rule;
-  recorded here as a real, reproducible observation for a future,
-  larger cross-check.
-**The per-known-province record table, Phase 989 -- fully decoded one
-record at a time, cross-checked against all 7+7+13+12 known-province
-records across all 4 samples (26 ordinary + 2 Home records, zero
-mismatches):**
-
-Each record is, in order: ``[coord_x:1][coord_y:1][name_len:1][name:
-name_len][terrain:1][race:1]`` -- ``terrain``/``race`` are this
-project's own ``Terrain``/``Race`` enum ordinals directly (e.g. ``4`` is
-always ``Terrain.MTNS``, confirmed identical to their already-existing
-``.value``\\ s, no translation table needed) -- followed by one of
-**two confirmed trailing shapes**, both opening with the same 2
-still-undeciphered zero bytes in every single sample (``unknown_a``/
-``unknown_b`` below; never observed nonzero, role unconfirmed):
-
-- **Ordinary (not this Kingdom's own Home), 3 more bytes:** a constant
-  ``0x01`` then a constant ``0xFF``, then the province's own real
-  ``governor_leader_id`` -- or ``0xFF`` (255) again for the real
-  "ungoverned" sentinel this project's own ``parser/gw_world.py`` already
-  uses. Confirmed exactly against all 26 real ordinary records across
-  all 4 samples (e.g. Kingdom 1's own neighbor ``the Mermaid Sea``
-  trails real governor id ``11``; ``Falkenheim``, genuinely ungoverned,
-  trails ``0xFF``) -- the constant ``0x01``/``0xFF`` pair before it never
-  varies, consistent with "recruit types not shown at this exploration
-  level" (never observed to carry real recruit data).
-- **Owned by this Kingdom (its own Home, or any other province it has
-  since taken), 5 more bytes:** ``explored_percent``, ``owner_kingdom_id``
-  (always reads this file's own Kingdom id), ``tax``, ``recruit_type_1``,
-  ``recruit_type_2`` -- the last two via this project's own already-
-  confirmed ``parser/gw_world.py MOD_PAT_ORDINAL_TO_ARMY_TYPE`` table,
-  no new lookup needed. Confirmed exactly against both real Home
-  records available at Turn 1 (``Piratum``: ``explored_percent`` 100,
-  tax 10, Phalanx/Warg Riders; ``the Dolphin Sea``: 100, tax 10,
-  Bowmen/Heavy Cavalry) -- every field matches the real ``GW3__T1`` data
-  exactly for both. **Confirmed to generalize beyond a literal Home
-  too**: by Turn 2, Kingdom 0 has taken ``Redwood``/``Jutland``/
-  ``Silvania``/``Tanglewood`` (real ``GW3__T2`` data), and all 4 now
-  decode with this same expanded shape (``owner_kingdom_id`` ``0``, the
-  same real tax/recruit values as their own unowned Turn 1 records) --
-  including ``Redwood`` at ``explored_percent`` ``8``, proving this
-  field is a real, independently varying percentage, not a Home-only
-  fixed ``100``. The real discriminator is ownership by this Kingdom,
-  not "is this the literal Home."
-
-``parse_xk_province_record()`` below decodes one record (either shape,
-auto-detected via the exact ``0x01, 0xFF`` ordinary marker) given its
-own starting byte offset -- **not** a whole-file province-table scanner.
-
-**Still genuinely open:** exactly where the province table *starts*.
-A substantial block of further, still-undeciphered data (836 bytes for
-both real Turn 1 samples; 913/839 bytes for the two real Turn 2
-samples -- not a fixed size, and not simply proportional to this
-Kingdom's own known-leader count either) sits between the end of the
-per-leader name table and this Kingdom's own first known-province
-record. It contains real per-leader coordinate data (this Kingdom's own
-King and both Companions' coordinates were all found inside it, at
-``Piratum``'s own real (11,7)) and at least 2 embedded 15-character-
-truncated title strings (``"Master of the s"``, ``"Lord of the stu"`` --
-real text, neither matching any title this project's own
-``models/office.py OFFICE_NAME``/``RACE_FANATICISM_TITLE`` tables
-already carry, so genuinely new, not yet attributed) -- **most likely a
-per-leader status block** (mirroring ``parser/gw_world.py``'s own
-leader block), **not armies** as this module's own Phase 988 version of
-this docstring guessed. Still not decoded, and this module makes no
-attempt to locate the province table's own start from a bare file path
--- a genuine, explicitly flagged gap, not a hidden assumption.
-
-**Phase 990 -- what actually follows the province table, and the real
-army block.** The data after the last known-province record
-(``Tanglewood``, in this Kingdom's own Turn 1 sample) is **not**
-undifferentiated: real province names/magic-item names found inside it
-confirm it holds, in order, **this Kingdom's own Home's 2 real Features
-**(confirmed: both entries carry ``Piratum``'s own real coordinate
-(11,7), and one embeds the Pascal ShortString ``"Shadow Sword"`` --
-exactly ``parser/models/treasure.py TREASURE_NAME[Treasure.WEAPON_2]``,
-real magic-item text, not a coincidence -- matching this project's own
-already-confirmed "every King Home carries exactly 2 Features" fact),
-**then this Kingdom's own Home garrison's own armies**.
-
-**Phase 991 -- the Feature-summary record, fully decoded and cross-
-checked against both real Home's own 2 Features (4 total).**
-``parse_xk_feature_record()`` decodes one 8-byte record, structurally
-identical in width to an army record: ``[feature_id:1][coord_x:1]
-[coord_y:1][unknown_c:1][unknown_d:1][monster_ordinal:1][engagement_
-state:1][feature_type_ordinal:1]``. ``feature_id`` is confirmed to be
-the Feature's own 0-indexed position in this project's own already-
-parsed ``parser/gw_world.py parse_gw_features()`` list (not a separately
-assigned id) -- matches exactly for all 4 real Features checked (``0``
-and ``15`` for Kingdom 0's own Home; ``1`` and ``16`` for Kingdom 1's).
-``monster_ordinal``, ``engagement_state``, and ``feature_type_ordinal``
-are this project's own already-confirmed ``Monster``/
-``MonsterEngagementState``/``FeatureType`` enum ordinals directly --
-all 3 match exactly for all 4 real Features (e.g. Kingdom 0's feature
-``15``: Spectre/Mercenary/Catacombs, all exact). ``unknown_c``/
-``unknown_d`` read ``0`` in every one of the 4 real records -- same
-"never observed nonzero" status as the province record's own
-``unknown_a``/``unknown_b``.
-
-**A second, optional "treasure reveal" record can follow a Feature's
-own summary record** (both separated from their neighbors by a literal
-``0xFE`` byte): ``[feature_id:1][treasure_ordinal:1][unknown_h:1]
-[unknown_i:1][name_len:1][name:name_len]`` -- ``treasure_ordinal`` is
-this project's own already-confirmed ``models/treasure.py`` ordinal
-(e.g. ``36`` is ``Treasure.WEAPON_2``), and ``name`` is that treasure's
-own real display name as a Pascal ShortString, **not truncated** at 15
-characters the way the still-unattributed title strings earlier in the
-file are (Kingdom 1's own revealed treasure name, ``"Large Hoard of
-Gold"``, is 19 characters, shown in full). Confirmed exactly for both
-real revealed treasures available (Kingdom 0's Feature 15, ``"Shadow
-Sword"`` = ``Treasure.WEAPON_2``; Kingdom 1's Feature 1, ``"Large Hoard
-of Gold"`` = ``Treasure.GOLD_HOARD_LARGE``). **Only one of each Home's 2
-Features ever gets this second record** in both real samples -- not
-explained by treasure type (both of Kingdom 1's own Features carry the
-same ``GOLD_HOARD_LARGE``, yet only one is revealed) -- the revealed
-one has the real, higher ``GWFeatureRecord.trcharges`` value in both
-samples (10 vs 4; 6 vs 5), a suggestive but unconfirmed correlation
-from only 2 data points. ``unknown_h``/``unknown_i`` don't match
-``trcharges``/``trowner_raw`` or any other real field tried -- left raw.
-
-``parse_xk_army_record()`` below decodes one 8-byte army record, given
-its own starting byte offset: ``[quality:1][state:1][coord_x:1]
-[coord_y:1][commanded_by:1][unknown_e:1][army_type_ordinal:1]
-[unknown_g:1]``. ``quality`` is this project's own ``turn.combat.
-Quality`` ordinal directly (``2`` is always ``Quality.AVERAGE``, matching
-every real sample -- no real non-``AVERAGE`` army exists in this
-project's own corpus to test a different value). ``state`` is the real
-``MonsterEngagementState`` ordinal already confirmed in ``parser/
-gw_world.py`` (``1``=``HIRED``, ``2``=``MERCENARY``, ``3``=``ZOMBOID``).
-``commanded_by`` only ever reads the real ``0xFF`` "unled, under the
-garrison commander" sentinel in every sample available -- a real
-commanded army's own encoding is untested, no sample exists.
-``army_type_ordinal`` matches the real ``MOD_PAT_ORDINAL_TO_ARMY_TYPE``
-ordinal for 5 of 6 real regular-army records checked (both Kingdoms'
-own Home garrisons, Turn 1) -- including both real Skeletal/Zomboid
-armies (Phalanx, Bowmen) and 3 of 4 remaining Hired ones; the one
-exception (a real Heavy Cavalry army reads ordinal ``0``, not the
-expected ``6``) is **flagged, not hidden or explained away** -- kept as
-a raw ordinal (not converted to ``ArmyType``) for exactly this reason.
-``unknown_e`` reads identically to ``state`` in all 6 real samples
-checked (a genuine, reproducible duplicate -- role unconfirmed: could
-be a real second field that coincidentally shares ``state``'s own small
-value range, or truly the same field stored twice). ``unknown_g``'s own
-real role is entirely unconfirmed (candidate real facts tried and
-ruled out: movement points, race, tax -- none fit across all 6 samples).
-
-**Only confirmed for this Kingdom's own Home.** Every one of this
-Kingdom's known-but-not-owned neighbor provinces (``Florence``,
-``Redwood``, etc.) carries **zero** army entries anywhere in the file,
-regardless of whether the real `GW3__T1` data shows armies stationed
-there -- a Kingdom's XK file apparently never reveals a neighbor's
-garrison, only its own. A real **Mercenary**-state army (Piratum's own
-4th, real army, ``Chariots``/``MERCENARY``) sits in the same coordinate
-cluster but does **not** fit this same 8-byte shape at all (byte-by-byte
-checked and ruled out) -- its own real shape is a separate, undecoded
-gap. Locating the army block's own start (like the province table) is
-not attempted from a bare path -- only decoding one record, given a
-known offset, is implemented.
-
-This module intentionally exposes only what is fully confirmed above
-(the header's 4 named fields, the per-leader name table, and the
-province-record shape once its own start offset is already known) -- a
-genuinely useful, tested building block (e.g. a GM-interface screen
-could already show "which heroes does this Kingdom currently know
-about"), not a claim that XK decoding is complete.
+**Genuinely still open** (kept raw rather than guessed, per the
+delivered material's own stated limits): the ~115 unnamed globals and
+both 256-byte flag areas; both 192-byte pointer blocks; a full card's
+own ``sex_flags`` bitfield and ``skills``/``aptitudes``/``actions``/
+``objects``/``extra_low_bytes`` beyond their raw per-ability values; the
+leader-races/states vectors' own full value range; a province record's
+``unknown_9197_word``; a Feature record's own ``unknown_962a``; an Army
+record's own ``quality_or_mask``/``status``/``detail_status``; a
+Treasure's own ``trowner`` word beyond the observed ``256 + feature_id``
+convention for a feature-held item (a leader-held item's own convention
+is asserted, not independently verified in these samples); the two
+still-unattributed 15-character-truncated title strings Phase 990 found
+in the globals/card region (not yet mapped to a specific field by this
+new material either); the real SAGA client reader (only the host
+*writer* was disassembled); and any ``gamevers`` other than ``3`` (the
+compiled client has other branches; this strict decoder deliberately
+refuses them rather than extrapolate).
 """
 
 from __future__ import annotations
 
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 
+from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.feature import FeatureType
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.parser.gw_world import MOD_PAT_ORDINAL_TO_ARMY_TYPE
-from ak_engine.turn.combat import Quality
 
-XK_HEADER_SIZE = 0x30B
-XK_LEADER_ROSTER_COUNT = 100
+SUPPORTED_FORMAT_REVISION = 30
+SUPPORTED_GAME_VERSION = 3
+XK_NAME_TABLE_OFFSET = 0x30B
 
-# The exact 2-byte marker (Phase 989) distinguishing an "ordinary"
-# province record (recruit types not revealed at this exploration
-# level) from this Kingdom's own Home -- see module docstring.
-_ORDINARY_RECORD_MARKER = (0x01, 0xFF)
-_UNOWNED_GOVERNOR_SENTINEL = 0xFF
+# DS:C2F6 word index -> confirmed real field name (the other 115 of 131
+# words in this range are exposed raw, keyed "DS_xxxx" by address -- see
+# module docstring).
+XK_GLOBAL_FIELD_NAMES: dict[int, str] = {
+    0xC302: "gameturn",
+    0xC306: "leader_capacity",
+    0xC30C: "left",
+    0xC30E: "right",
+    0xC310: "bottom",
+    0xC312: "top",
+    0xC314: "gamevers",
+    0xC318: "orig_turn",
+    0xC320: "gameno",
+    0xC322: "due_day",
+    0xC324: "due_month",
+    0xC326: "due_year",
+    0xC328: "turn_days",
+    0xC32A: "diplomacy_mode",
+    0xC32C: "feature_count",
+    0xC338: "army_count",
+    0xC33A: "king_count",
+    0xC33C: "last_leader",
+}
+
+_GLOBALS_START = 0xC2F6
+_GLOBALS_WORD_COUNT = 131  # DS:C2F6..C3FA
+_FLAGS_AREA_SIZE = 256
+
+# CTBOTH.PAS `ability` order (Tactical..noabil) -- the real index order
+# of a full leader card's own 16-entry skills/aptitudes arrays. The 16th
+# ("noabil") is a real array slot, not a playable ability.
+LEADER_ABILITY_ORDER: tuple[str, ...] = (
+    "Tactical",
+    "ForcedMarch",
+    "Naval",
+    "Archery",
+    "Melee",
+    "White",
+    "Necromancy",
+    "Elemental",
+    "Psychic",
+    "Illusionist",
+    "Druid",
+    "Thief",
+    "Explorer",
+    "Spy",
+    "Sage",
+    "noabil",
+)
+
+_LEADER_CARD_SIZE = 74
+_SENTINEL_END = 0xFE
+_SENTINEL_NO_OWNER = 0xFF
+_SENTINEL_NO_VISIBLE_OWNER = 0xFE
+_TR_LLS_END = 0xFF
+
+_TAG_TR_LLS = 16004
+_TAG_TR_SA = 16005
+_TAG_TR_T2 = 16006
+_TAG_TR_HK = 16007
+_TAG_TR_END = 16001
+
+XK_PLAYER_TAIL_FIELDS: tuple[tuple[str, int], ...] = (
+    ("DS_8B31", 1),
+    ("DS_8B73", 1),
+    ("relations_D1D4", 12),
+    ("DS_8CBD", 2),
+    ("DS_8D41", 2),
+    ("DS_8D83", 2),
+    ("DS_8E49_low", 2),
+    ("DS_8DC5", 2),
+    ("DS_8ECD_low", 2),
+    ("DS_8F51_low", 2),
+)
 
 
 class XKParseError(ValueError):
@@ -311,304 +240,647 @@ class XKParseError(ValueError):
         super().__init__(message if byte_offset is None else f"{message} (byte offset {byte_offset})")
 
 
+class _Reader:
+    """A sequential byte-string reader mirroring the real writer's own
+    field order -- ports the delivered, roundtrip-verified decoder's
+    internals, adapted to raise ``XKParseError`` and to not retain a
+    flat leaf log (this module exposes typed dataclasses instead).
+    """
+
+    __slots__ = ("data", "offset")
+
+    def __init__(self, data: bytes):
+        self.data = data
+        self.offset = 0
+
+    def bytes_(self, name: str, length: int) -> bytes:
+        start = self.offset
+        end = start + length
+        if length < 0 or end > len(self.data):
+            raise XKParseError(f"{name}: truncated", byte_offset=start)
+        self.offset = end
+        return self.data[start:end]
+
+    def u8(self, name: str) -> int:
+        return self.bytes_(name, 1)[0]
+
+    def u16(self, name: str) -> int:
+        return struct.unpack_from("<H", self.bytes_(name, 2))[0]
+
+    def s8(self, name: str) -> int:
+        return struct.unpack_from("<b", self.bytes_(name, 1))[0]
+
+    def s16(self, name: str) -> int:
+        return struct.unpack_from("<h", self.bytes_(name, 2))[0]
+
+    def peek(self, name: str) -> int:
+        if self.offset >= len(self.data):
+            raise XKParseError(f"{name}: unexpected EOF", byte_offset=self.offset)
+        return self.data[self.offset]
+
+    def pstring(self, name: str) -> str:
+        length = self.u8(name + ".length")
+        raw = self.bytes_(name, length)
+        return raw.decode("cp850")
+
+    def sentinel(self, name: str, expected: int) -> None:
+        start = self.offset
+        got = self.u8(name)
+        if got != expected:
+            raise XKParseError(f"{name}: expected {expected:#x}, got {got:#x}", byte_offset=start)
+
+
 @dataclass(slots=True)
 class XKHeader:
-    """The 4 confirmed fields of an ``XK`` file's fixed 0x30B-byte header.
-
-    Every other header byte is genuinely undeciphered -- see the module
-    docstring -- and deliberately absent from this dataclass rather
-    than exposed as raw, unnamed data.
-    """
-
-    header_revision: int
+    format_revision: int
     kingdom_id: int
-    game_turn: int
-    king_count: int
 
 
-def _read_bytes(path: Path) -> bytes:
-    data = path.read_bytes()
-    if len(data) < XK_HEADER_SIZE:
-        raise XKParseError(f"XK file too short for the confirmed {XK_HEADER_SIZE}-byte header (got {len(data)} bytes)")
-    return data
-
-
-def parse_xk_header(path: Path) -> XKHeader:
-    """Parses the 4 confirmed header fields -- see module docstring."""
-
-    data = _read_bytes(path)
-    return XKHeader(
-        header_revision=data[0],
-        kingdom_id=data[3],
-        game_turn=data[0x11],
-        king_count=data[0x49],
-    )
-
-
-def parse_xk_known_leader_names(path: Path) -> dict[int, str | None]:
-    """The 100-entry per-leader name table immediately after the header.
-
-    Returns ``{leader_id: real_name}`` for every id this Kingdom's own
-    file already knows, and ``{leader_id: None}`` for every id still
-    showing the confirmed ``"Ldr-<id>"`` placeholder -- callers that want
-    the raw placeholder text itself (e.g. to match a real letter
-    verbatim) can reconstruct it as ``f"Ldr-{leader_id}"``, since the
-    format is a confirmed, zero-exception constant (see module
-    docstring), not reproduced as a magic string here.
+@dataclass(slots=True)
+class XKGlobals:
+    """The 774-byte global block (``DS:C2F6..C5FB``). ``values`` holds
+    all 131 words, named where confirmed (``XK_GLOBAL_FIELD_NAMES``) and
+    ``DS_xxxx``-keyed otherwise; the named-field properties below are
+    thin lookups into it. ``flags_c3fc``/``flags_c4fc`` are the two
+    256-byte areas that follow, kept raw -- see module docstring.
     """
 
-    data = _read_bytes(path)
-    offset = XK_HEADER_SIZE
-    names: dict[int, str | None] = {}
-    for leader_id in range(XK_LEADER_ROSTER_COUNT):
-        if offset >= len(data):
-            raise XKParseError("XK file ended mid-way through the 100-entry leader name table", byte_offset=offset)
-        length = data[offset]
-        offset += 1
-        raw = data[offset : offset + length]
-        if len(raw) < length:
-            raise XKParseError("XK file ended mid-way through a leader name entry", byte_offset=offset)
-        name = raw.decode("latin-1")
-        offset += length
-        names[leader_id] = None if name == f"Ldr-{leader_id}" else name
-    return names
+    values: dict[str, int]
+    flags_c3fc: bytes
+    flags_c4fc: bytes
+
+    @property
+    def game_turn(self) -> int:
+        return self.values["gameturn"]
+
+    @property
+    def leader_capacity(self) -> int:
+        return self.values["leader_capacity"]
+
+    @property
+    def board_left(self) -> int:
+        return self.values["left"]
+
+    @property
+    def board_right(self) -> int:
+        return self.values["right"]
+
+    @property
+    def board_top(self) -> int:
+        return self.values["top"]
+
+    @property
+    def board_bottom(self) -> int:
+        return self.values["bottom"]
+
+    @property
+    def game_version(self) -> int:
+        return self.values["gamevers"]
+
+    @property
+    def king_count(self) -> int:
+        return self.values["king_count"]
+
+    @property
+    def army_count(self) -> int:
+        return self.values["army_count"]
+
+    @property
+    def feature_count(self) -> int:
+        return self.values["feature_count"]
+
+    @property
+    def last_leader_id(self) -> int:
+        return self.values["last_leader"]
+
+
+@dataclass(slots=True)
+class XKLeaderCard:
+    """One full, 74-byte character card -- see module docstring.
+    ``skills``/``aptitudes`` are 16-entry raw lists, indexed by
+    ``LEADER_ABILITY_ORDER`` (the real ``CTBOTH.PAS ability`` order);
+    ``objects`` are 5 signed 16-bit item-instance ids (0 = none observed
+    in every real sample); ``planstart``/``planend`` are signed bytes
+    (``-1`` is a real, confirmed "no plan" value, not an error).
+    """
+
+    leader_id: int
+    client_owner: int
+    lliege: int
+    skills: list[int]
+    aptitudes: list[int]
+    coord: HexCoord
+    birth_coord: HexCoord
+    hire_turn: int
+    admiral_merit: int
+    defender_merit: int
+    lfdisc: int
+    ldiscp: int
+    lwmsp: int
+    temper: Temper
+    alignment: Alignment
+    sex_flags: int
+    actions: list[int]
+    objects: list[int]
+    extra_low_bytes: list[int]
+    planstart: int
+    planend: int
+
+
+@dataclass(slots=True)
+class XKPartialLeaderCard:
+    leader_id: int
+    coord: HexCoord
 
 
 @dataclass(slots=True)
 class XKProvinceRecord:
-    """One decoded province record from the province table -- see the
-    module docstring's own Phase 989 addendum for the full derivation.
+    """One known-province record -- see module docstring. Exactly one of
+    the 3 real ownership shapes applies:
 
-    ``governor_leader_id``, ``explored_percent``, ``owner_kingdom_id``,
-    ``tax``, ``recruit_type_1``, and ``recruit_type_2`` are ``None`` when
-    not present in this record's own confirmed shape: an "ordinary"
-    record (not this Kingdom's own Home) only ever carries
-    ``governor_leader_id``; a Home record only ever carries the other
-    five.
+    - ``owner_kingdom_id`` set (and ``tax``/``recruit_type_1``/
+      ``recruit_type_2`` with it): this Kingdom's own full economic view
+      of a province it owns (``ownership_marker`` is itself the owning
+      Kingdom's id).
+    - ``visible_owner_leader_id`` set or ``None`` (``ownership_marker ==
+      0xFF``): another province's owner is visible by leader id, with no
+      economic data -- ``None`` means "visibly ungoverned", not
+      "unknown".
+    - All three ``None`` (``ownership_marker == 0xFE``): no ownership
+      information at all.
     """
 
     coord: HexCoord
     name: str
     terrain: Terrain
     race: Race
-    governor_leader_id: int | None
-    explored_percent: int | None
+    exploration_percent: int
     owner_kingdom_id: int | None
+    visible_owner_leader_id: int | None
     tax: int | None
     recruit_type_1: ArmyType | None
     recruit_type_2: ArmyType | None
-
-
-def parse_xk_province_record(data: bytes, offset: int) -> tuple[XKProvinceRecord, int]:
-    """Decodes one province-table record starting at ``offset`` (its own
-    ``coord_x`` byte) -- see the module docstring's own Phase 989
-    addendum. Returns the decoded record and the byte offset immediately
-    after it (the next record's own ``coord_x``, if any).
-
-    This function does **not** locate the province table's own start in
-    an arbitrary file -- see the module docstring for why that remains
-    genuinely open. ``offset`` must already point at a real record.
-    """
-
-    if offset + 2 > len(data):
-        raise XKParseError("XK file ended mid-way through a province record's own coordinate", byte_offset=offset)
-    coord = HexCoord(data[offset], data[offset + 1])
-    offset += 2
-
-    if offset >= len(data):
-        raise XKParseError("XK file ended mid-way through a province record's own name", byte_offset=offset)
-    name_length = data[offset]
-    offset += 1
-    raw_name = data[offset : offset + name_length]
-    if len(raw_name) < name_length:
-        raise XKParseError("XK file ended mid-way through a province record's own name", byte_offset=offset)
-    name = raw_name.decode("latin-1")
-    offset += name_length
-
-    if offset + 4 > len(data):
-        raise XKParseError("XK file ended mid-way through a province record's own fields", byte_offset=offset)
-    terrain = Terrain(data[offset])
-    race = Race(data[offset + 1])
-    # data[offset + 2], data[offset + 3] -- unknown_a/unknown_b, always 0
-    # in every real sample so far; see module docstring.
-    offset += 4
-
-    if (data[offset], data[offset + 1]) == _ORDINARY_RECORD_MARKER:
-        offset += 2
-        if offset >= len(data):
-            raise XKParseError("XK file ended mid-way through a province record's own governor id", byte_offset=offset)
-        raw_governor = data[offset]
-        offset += 1
-        governor_leader_id = None if raw_governor == _UNOWNED_GOVERNOR_SENTINEL else raw_governor
-        record = XKProvinceRecord(
-            coord=coord,
-            name=name,
-            terrain=terrain,
-            race=race,
-            governor_leader_id=governor_leader_id,
-            explored_percent=None,
-            owner_kingdom_id=None,
-            tax=None,
-            recruit_type_1=None,
-            recruit_type_2=None,
-        )
-        return record, offset
-
-    if offset + 5 > len(data):
-        raise XKParseError("XK file ended mid-way through a Home province record's own fields", byte_offset=offset)
-    explored_percent, owner_kingdom_id, tax, recruit1_ordinal, recruit2_ordinal = data[offset : offset + 5]
-    offset += 5
-    record = XKProvinceRecord(
-        coord=coord,
-        name=name,
-        terrain=terrain,
-        race=race,
-        governor_leader_id=None,
-        explored_percent=explored_percent,
-        owner_kingdom_id=owner_kingdom_id,
-        tax=tax,
-        recruit_type_1=MOD_PAT_ORDINAL_TO_ARMY_TYPE.get(recruit1_ordinal),
-        recruit_type_2=MOD_PAT_ORDINAL_TO_ARMY_TYPE.get(recruit2_ordinal),
-    )
-    return record, offset
-
-
-_UNLED_COMMANDER_SENTINEL = 0xFF
-_ARMY_RECORD_SIZE = 8
-
-
-@dataclass(slots=True)
-class XKArmyRecord:
-    """One decoded army record from this Kingdom's own Home garrison --
-    see the module docstring's own Phase 990 addendum for the full
-    derivation, including the one unresolved army_type mismatch and the
-    two still-unexplained raw bytes kept here rather than guessed at.
-    """
-
-    quality: Quality
-    state: MonsterEngagementState
-    coord: HexCoord
-    commanded_by_leader_id: int | None
-    # The real MOD_PAT ordinal -- kept raw, not converted to ArmyType,
-    # because one of the 6 real samples checked doesn't match the
-    # expected ordinal for its own real army type (see module docstring).
-    army_type_ordinal: int
-    unknown_e: int
-    unknown_g: int
-
-
-def parse_xk_army_record(data: bytes, offset: int) -> tuple[XKArmyRecord, int]:
-    """Decodes one 8-byte army record starting at ``offset`` (its own
-    ``quality`` byte) -- see the module docstring's own Phase 990
-    addendum. Returns the decoded record and the byte offset immediately
-    after it.
-
-    Confirmed only for this Kingdom's own Home garrison's regular
-    (non-Mercenary-state) armies -- see the module docstring for why a
-    Mercenary-state army does not fit this shape, and why this function
-    does not locate the army block's own start in an arbitrary file.
-    """
-
-    if offset + _ARMY_RECORD_SIZE > len(data):
-        raise XKParseError("XK file ended mid-way through an army record", byte_offset=offset)
-    quality, state, coord_x, coord_y, commanded_by, unknown_e, army_type_ordinal, unknown_g = data[
-        offset : offset + _ARMY_RECORD_SIZE
-    ]
-    record = XKArmyRecord(
-        quality=Quality(quality),
-        state=MonsterEngagementState(state),
-        coord=HexCoord(coord_x, coord_y),
-        commanded_by_leader_id=None if commanded_by == _UNLED_COMMANDER_SENTINEL else commanded_by,
-        army_type_ordinal=army_type_ordinal,
-        unknown_e=unknown_e,
-        unknown_g=unknown_g,
-    )
-    return record, offset + _ARMY_RECORD_SIZE
-
-
-_FEATURE_RECORD_SIZE = 8
+    unknown_9197_word: int
 
 
 @dataclass(slots=True)
 class XKFeatureRecord:
-    """One decoded Feature-summary record -- see the module docstring's
-    own Phase 991 addendum. ``feature_id`` is the Feature's own
-    0-indexed position in ``parser/gw_world.py parse_gw_features()``'s
-    own list, confirmed exactly for all 4 real Features checked.
+    """One Feature-summary record (8 bytes) -- see module docstring.
+    ``unknown_962a`` is a real ``DS:962A`` word, always ``0`` in every
+    sample so far, role unconfirmed.
     """
 
     feature_id: int
     coord: HexCoord
+    unknown_962a: int
     monster: Monster
     engagement_state: MonsterEngagementState
     feature_type: FeatureType
-    unknown_c: int
-    unknown_d: int
-
-
-def parse_xk_feature_record(data: bytes, offset: int) -> tuple[XKFeatureRecord, int]:
-    """Decodes one 8-byte Feature-summary record starting at ``offset``
-    (its own ``feature_id`` byte) -- see the module docstring's own
-    Phase 991 addendum. Returns the decoded record and the byte offset
-    immediately after it (not necessarily the next Feature's own start --
-    an optional treasure-reveal record, see ``parse_xk_feature_treasure_
-    record()``, may sit between them).
-    """
-
-    if offset + _FEATURE_RECORD_SIZE > len(data):
-        raise XKParseError("XK file ended mid-way through a Feature record", byte_offset=offset)
-    feature_id, coord_x, coord_y, unknown_c, unknown_d, monster, engagement_state, feature_type = data[
-        offset : offset + _FEATURE_RECORD_SIZE
-    ]
-    record = XKFeatureRecord(
-        feature_id=feature_id,
-        coord=HexCoord(coord_x, coord_y),
-        monster=Monster(monster),
-        engagement_state=MonsterEngagementState(engagement_state),
-        feature_type=FeatureType(feature_type),
-        unknown_c=unknown_c,
-        unknown_d=unknown_d,
-    )
-    return record, offset + _FEATURE_RECORD_SIZE
 
 
 @dataclass(slots=True)
-class XKFeatureTreasureRecord:
-    """One decoded "treasure reveal" record -- see the module docstring's
-    own Phase 991 addendum. Only some Features get one of these; there
-    is no fixed offset to find it at (the caller must know a treasure
-    record follows, e.g. by trying to parse one and catching
-    ``XKParseError``, or by other means not yet established).
+class XKTreasureRecord:
+    """One Treasure record -- see module docstring. ``trcharges`` is
+    only present (real disassembly-proven predicate, ``0x40558``) when
+    ``treasure`` has a raw ordinal in ``[70, 92)``; ``None`` otherwise,
+    never defaulted to ``0``. ``trowner`` is kept raw (the real
+    ``256 + feature_id`` convention for a feature-held item is confirmed
+    by example, not derived here as a property, since a leader-held
+    item's own convention isn't independently verified in these
+    samples).
     """
 
     feature_id: int
     treasure: Treasure
+    trcharges: int | None
+    trowner: int
     name: str
-    unknown_h: int
-    unknown_i: int
 
 
-def parse_xk_feature_treasure_record(data: bytes, offset: int) -> tuple[XKFeatureTreasureRecord, int]:
-    """Decodes one treasure-reveal record starting at ``offset`` (its own
-    ``feature_id`` byte) -- see the module docstring's own Phase 991
-    addendum. Returns the decoded record and the byte offset immediately
-    after it.
+@dataclass(slots=True)
+class XKArmyRecord:
+    """One Army record (4 or 8 bytes) -- see module docstring.
+    ``army_index`` is this army's own position in the real ``0..
+    army_count-1`` loop (with ``255`` always skipped), not a stored id.
+    ``quality_or_mask``/``status``/``detail_status`` are kept raw --
+    genuinely unconfirmed, and this Phase found a real example
+    (Mercenary state) that a Phase 988-991 guess at this shape missed
+    entirely. ``coord``/``commanded_by_leader_id``/``detail_status`` are
+    ``None`` when this record has no location details (a literal
+    ``0xFE`` in that position, confirmed real, not merely "not yet
+    observed").
     """
 
-    if offset + 5 > len(data):
-        raise XKParseError("XK file ended mid-way through a treasure-reveal record", byte_offset=offset)
-    feature_id, treasure_ordinal, unknown_h, unknown_i, name_length = data[offset : offset + 5]
-    offset += 5
-    raw_name = data[offset : offset + name_length]
-    if len(raw_name) < name_length:
-        raise XKParseError("XK file ended mid-way through a treasure-reveal record's own name", byte_offset=offset)
-    name = raw_name.decode("latin-1")
-    offset += name_length
-    record = XKFeatureTreasureRecord(
+    army_index: int
+    race: Race
+    army_type: ArmyType | None
+    quality_or_mask: int
+    status: int
+    coord: HexCoord | None
+    commanded_by_leader_id: int | None
+    detail_status: int | None
+
+
+@dataclass(slots=True)
+class XKDiscoveryRecord:
+    feature_id: int
+    legacy_word: int
+
+
+@dataclass(slots=True)
+class XKRecruitmentMapCell:
+    coord: HexCoord
+    recruit_type_1: ArmyType | None
+    recruit_type_2: ArmyType | None
+
+
+@dataclass(slots=True)
+class XKSecondaryAbilityTable:
+    """``TR_SA`` (tag 16005): 90 raw bytes, 15 real abilities x 6 levels
+    (``LEADER_ABILITY_ORDER``'s own first 15 entries, excluding
+    ``noabil``) -- associates special-ability codes with the real
+    prose/name tables those abilities use, not a second skill array.
+    """
+
+    levels_by_ability: list[list[int]]
+
+
+@dataclass(slots=True)
+class XKLiegeExtension:
+    """``TR_LLs`` (tag 16004): id/lliege pairs. A real ``0xFF`` in the
+    ``lliege`` position does not end the list -- only ``0xFF`` in the
+    ``id`` position does (a different sentinel than every other list in
+    this format).
+    """
+
+    liege_by_leader_id: dict[int, int]
+
+
+@dataclass(slots=True)
+class XKSecondaryTerrainTable:
+    """``TR_T2`` (tag 16006): a fixed 30x15 (450-byte) capacity table,
+    indexed ``15*x + y`` -- **not** sized to the played board, and not
+    proof every cell is a real, active province.
+    """
+
+    raw: bytes
+
+
+@dataclass(slots=True)
+class XKHomeKingdomExtension:
+    """``TR_HK`` (tag 16007): syntactically supported, sourced from the
+    writer's own branch and the real Pascal shield-record size -- no
+    real sample in this project's own corpus exercises it yet.
+    """
+
+    king_leader_id: int
+    shield_record: bytes
+
+
+@dataclass(slots=True)
+class XKWorld:
+    """The fully decoded contents of one ``XK`` file."""
+
+    header: XKHeader
+    globals: XKGlobals
+    leader_names: list[str | None]
+    leader_cards: list[XKLeaderCard]
+    partial_leader_cards: list[XKPartialLeaderCard]
+    leader_races: list[Race]
+    leader_states: list[int]
+    ds_89c7: bytes
+    recipient_word: int
+    pointer_8b29: bytes
+    pointer_8b2d: bytes
+    provinces: list[XKProvinceRecord]
+    features: list[XKFeatureRecord]
+    treasures: list[XKTreasureRecord]
+    armies: list[XKArmyRecord]
+    discoveries: list[XKDiscoveryRecord]
+    player_tail: dict[str, bytes]
+    recruitment_map: list[XKRecruitmentMapCell]
+    liege_extension: XKLiegeExtension | None
+    secondary_abilities: XKSecondaryAbilityTable | None
+    secondary_terrain: XKSecondaryTerrainTable | None
+    home_kingdom: XKHomeKingdomExtension | None
+
+
+def _read_globals(r: _Reader) -> XKGlobals:
+    values: dict[str, int] = {}
+    for word_index in range(_GLOBALS_WORD_COUNT):
+        address = _GLOBALS_START + 2 * word_index
+        key = XK_GLOBAL_FIELD_NAMES.get(address, f"DS_{address:04X}")
+        values[key] = r.s16(f"globals.{key}")
+    flags_c3fc = r.bytes_("flags_C3FC", _FLAGS_AREA_SIZE)
+    flags_c4fc = r.bytes_("flags_C4FC", _FLAGS_AREA_SIZE)
+    return XKGlobals(values=values, flags_c3fc=flags_c3fc, flags_c4fc=flags_c4fc)
+
+
+def _read_leader_names(r: _Reader, leader_capacity: int) -> list[str | None]:
+    names: list[str | None] = []
+    for leader_id in range(leader_capacity):
+        name = r.pstring(f"leader_names[{leader_id}]")
+        names.append(None if name == f"Ldr-{leader_id}" else name)
+    return names
+
+
+def _read_leader_card(r: _Reader) -> XKLeaderCard:
+    leader_id = r.u8("leader.id")
+    client_owner = r.u8(f"leader[{leader_id}].client_owner")
+    lliege = r.u8(f"leader[{leader_id}].lliege")
+    skills = list(r.bytes_(f"leader[{leader_id}].skills", 16))
+    aptitudes = list(r.bytes_(f"leader[{leader_id}].aptitudes", 16))
+    x = r.u8(f"leader[{leader_id}].x")
+    y = r.u8(f"leader[{leader_id}].y")
+    born_x = r.u8(f"leader[{leader_id}].born_x")
+    born_y = r.u8(f"leader[{leader_id}].born_y")
+    hire_turn = r.s16(f"leader[{leader_id}].hire_turn")
+    admiral_merit = r.s16(f"leader[{leader_id}].admiral_merit")
+    defender_merit = r.s16(f"leader[{leader_id}].defender_merit")
+    lfdisc = r.u8(f"leader[{leader_id}].lfdisc")
+    ldiscp = r.u8(f"leader[{leader_id}].ldiscp")
+    lwmsp = r.u8(f"leader[{leader_id}].lwmsp")
+    temper = r.u8(f"leader[{leader_id}].temper")
+    alignment = r.u8(f"leader[{leader_id}].alignment")
+    sex_flags = r.s16(f"leader[{leader_id}].sex_flags")
+    actions = list(r.bytes_(f"leader[{leader_id}].actions", 5))
+    objects = [struct.unpack("<h", r.bytes_(f"leader[{leader_id}].objects[{i}]", 2))[0] for i in range(5)]
+    extra_low_bytes = list(r.bytes_(f"leader[{leader_id}].extra_low_bytes", 5))
+    planstart = r.s8(f"leader[{leader_id}].planstart")
+    planend = r.s8(f"leader[{leader_id}].planend")
+    return XKLeaderCard(
+        leader_id=leader_id,
+        client_owner=client_owner,
+        lliege=lliege,
+        skills=skills,
+        aptitudes=aptitudes,
+        coord=HexCoord(x, y),
+        birth_coord=HexCoord(born_x, born_y),
+        hire_turn=hire_turn,
+        admiral_merit=admiral_merit,
+        defender_merit=defender_merit,
+        lfdisc=lfdisc,
+        ldiscp=ldiscp,
+        lwmsp=lwmsp,
+        temper=Temper(temper),
+        alignment=ALIGNMENT_BY_ORDINAL[alignment],
+        sex_flags=sex_flags,
+        actions=actions,
+        objects=objects,
+        extra_low_bytes=extra_low_bytes,
+        planstart=planstart,
+        planend=planend,
+    )
+
+
+def _read_province(r: _Reader) -> XKProvinceRecord:
+    x = r.u8("province.x")
+    y = r.u8("province.y")
+    key = f"province[{x},{y}]"
+    name = r.pstring(key + ".name")
+    terrain = Terrain(r.u8(key + ".terrain"))
+    race = Race(r.u8(key + ".race"))
+    unknown_9197_word = r.s16(key + ".unknown_9197_word")
+    exploration_percent = r.u8(key + ".exploration")
+    marker = r.u8(key + ".ownership_marker")
+    owner_kingdom_id: int | None = None
+    visible_owner_leader_id: int | None = None
+    tax: int | None = None
+    recruit_type_1: ArmyType | None = None
+    recruit_type_2: ArmyType | None = None
+    if marker == _SENTINEL_NO_OWNER:
+        visible_owner = r.u8(key + ".visible_owner")
+        visible_owner_leader_id = None if visible_owner == _SENTINEL_NO_OWNER else visible_owner
+    elif marker == _SENTINEL_NO_VISIBLE_OWNER:
+        pass
+    else:
+        owner_kingdom_id = marker
+        tax = r.u8(key + ".ptax")
+        recruit_type_1 = MOD_PAT_ORDINAL_TO_ARMY_TYPE.get(r.u8(key + ".recruit_1"))
+        recruit_type_2 = MOD_PAT_ORDINAL_TO_ARMY_TYPE.get(r.u8(key + ".recruit_2"))
+    return XKProvinceRecord(
+        coord=HexCoord(x, y),
+        name=name,
+        terrain=terrain,
+        race=race,
+        exploration_percent=exploration_percent,
+        owner_kingdom_id=owner_kingdom_id,
+        visible_owner_leader_id=visible_owner_leader_id,
+        tax=tax,
+        recruit_type_1=recruit_type_1,
+        recruit_type_2=recruit_type_2,
+        unknown_9197_word=unknown_9197_word,
+    )
+
+
+def _read_feature(r: _Reader) -> XKFeatureRecord:
+    feature_id = r.u8("feature.id")
+    x = r.u8(f"feature[{feature_id}].x")
+    y = r.u8(f"feature[{feature_id}].y")
+    unknown_962a = r.s16(f"feature[{feature_id}].unknown_962a")
+    monster = r.u8(f"feature[{feature_id}].monster")
+    engagement_state = r.u8(f"feature[{feature_id}].engagement_state")
+    feature_type = r.u8(f"feature[{feature_id}].feature_type")
+    return XKFeatureRecord(
+        feature_id=feature_id,
+        coord=HexCoord(x, y),
+        unknown_962a=unknown_962a,
+        monster=Monster(monster),
+        engagement_state=MonsterEngagementState(engagement_state),
+        feature_type=FeatureType(feature_type),
+    )
+
+
+def _read_treasure(r: _Reader) -> XKTreasureRecord:
+    feature_id = r.u8("treasure.id")
+    treasure_ordinal = r.u8(f"treasure[{feature_id}].type")
+    trcharges: int | None = None
+    if 70 <= treasure_ordinal < 92:
+        trcharges = r.u8(f"treasure[{feature_id}].trcharges")
+    trowner = r.u16(f"treasure[{feature_id}].trowner")
+    name = r.pstring(f"treasure[{feature_id}].name")
+    return XKTreasureRecord(
         feature_id=feature_id,
         treasure=Treasure(treasure_ordinal),
+        trcharges=trcharges,
+        trowner=trowner,
         name=name,
-        unknown_h=unknown_h,
-        unknown_i=unknown_i,
     )
-    return record, offset
+
+
+def _read_army(r: _Reader, army_index: int) -> XKArmyRecord:
+    race = Race(r.u8(f"army[{army_index}].race"))
+    army_type = MOD_PAT_ORDINAL_TO_ARMY_TYPE.get(r.u8(f"army[{army_index}].type"))
+    quality_or_mask = r.u8(f"army[{army_index}].quality_or_mask")
+    status = r.u8(f"army[{army_index}].status")
+    marker = r.u8(f"army[{army_index}].x_or_hidden")
+    coord: HexCoord | None = None
+    commanded_by_leader_id: int | None = None
+    detail_status: int | None = None
+    if marker != _SENTINEL_END:
+        x = marker
+        y = r.u8(f"army[{army_index}].y")
+        leader = r.u8(f"army[{army_index}].leader")
+        detail_status = r.u8(f"army[{army_index}].detail_status")
+        coord = HexCoord(x, y)
+        commanded_by_leader_id = None if leader == _SENTINEL_NO_OWNER else leader
+    return XKArmyRecord(
+        army_index=army_index,
+        race=race,
+        army_type=army_type,
+        quality_or_mask=quality_or_mask,
+        status=status,
+        coord=coord,
+        commanded_by_leader_id=commanded_by_leader_id,
+        detail_status=detail_status,
+    )
+
+
+def parse_xk_world(path: Path) -> XKWorld:
+    """Fully decodes one ``XK`` file -- see module docstring for the
+    complete grammar and sourcing. Raises ``XKParseError`` on anything
+    that doesn't match the confirmed shape (an unsupported
+    ``format_revision``/``gamevers``, a truncated file, or trailing
+    bytes after the final ``TR_End``).
+    """
+
+    data = path.read_bytes()
+    r = _Reader(data)
+
+    format_revision = r.u16("format_revision")
+    if format_revision != SUPPORTED_FORMAT_REVISION:
+        raise XKParseError(f"unsupported format_revision {format_revision} (only {SUPPORTED_FORMAT_REVISION} is validated)")
+    r.u8("prefix_reserved")
+    kingdom_id = r.u16("kingdom_id")
+    header = XKHeader(format_revision=format_revision, kingdom_id=kingdom_id)
+
+    globals_ = _read_globals(r)
+    if globals_.game_version != SUPPORTED_GAME_VERSION:
+        raise XKParseError(f"unsupported gamevers {globals_.game_version} (only {SUPPORTED_GAME_VERSION} is validated)")
+
+    leader_names = _read_leader_names(r, globals_.leader_capacity)
+
+    leader_cards: list[XKLeaderCard] = []
+    while r.peek("leaders") != _SENTINEL_END:
+        leader_cards.append(_read_leader_card(r))
+    r.sentinel("leaders.end", _SENTINEL_END)
+
+    partial_leader_cards: list[XKPartialLeaderCard] = []
+    while r.peek("partial_leaders") != _SENTINEL_END:
+        leader_id = r.u8("partial_leader.id")
+        x = r.u8(f"partial[{leader_id}].x")
+        y = r.u8(f"partial[{leader_id}].y")
+        partial_leader_cards.append(XKPartialLeaderCard(leader_id=leader_id, coord=HexCoord(x, y)))
+    r.sentinel("partial_leaders.end", _SENTINEL_END)
+
+    leader_races = [Race(r.u8(f"leader_races[{i}]")) for i in range(globals_.leader_capacity + 1)]
+    leader_states = [r.u8(f"leader_states[{i}]") for i in range(globals_.leader_capacity + 1)]
+
+    ds_89c7 = r.bytes_("DS_89C7", 12)
+    recipient_word = r.s16("DS_8AE7_recipient_word")
+    pointer_8b29 = r.bytes_("pointer_8B29", 192)
+    pointer_8b2d = r.bytes_("pointer_8B2D", 192)
+
+    provinces: list[XKProvinceRecord] = []
+    while r.peek("provinces") != _SENTINEL_END:
+        provinces.append(_read_province(r))
+    r.sentinel("provinces.end", _SENTINEL_END)
+
+    features: list[XKFeatureRecord] = []
+    while r.peek("features") != _SENTINEL_END:
+        features.append(_read_feature(r))
+    r.sentinel("features.end", _SENTINEL_END)
+
+    treasures: list[XKTreasureRecord] = []
+    while r.peek("treasures") != _SENTINEL_END:
+        treasures.append(_read_treasure(r))
+    r.sentinel("treasures.end", _SENTINEL_END)
+
+    armies: list[XKArmyRecord] = []
+    for army_index in range(globals_.army_count):
+        if army_index == 255:
+            continue
+        armies.append(_read_army(r, army_index))
+
+    discoveries: list[XKDiscoveryRecord] = []
+    while r.peek("discoveries") != _SENTINEL_END:
+        feature_id = r.u8("discovery.id")
+        legacy_word = r.s16(f"discovery[{feature_id}].legacy_word")
+        discoveries.append(XKDiscoveryRecord(feature_id=feature_id, legacy_word=legacy_word))
+    r.sentinel("discoveries.end", _SENTINEL_END)
+
+    player_tail: dict[str, bytes] = {}
+    for field_name, size in XK_PLAYER_TAIL_FIELDS:
+        player_tail[field_name] = r.bytes_(field_name, size)
+
+    r.sentinel("base.end", _TAG_TR_END & 0xFF)
+    r.sentinel("base.end.hi", _TAG_TR_END >> 8)
+
+    recruitment_map: list[XKRecruitmentMapCell] = []
+    for x in range(globals_.board_left, globals_.board_right + 1):
+        for y in range(globals_.board_top, globals_.board_bottom + 1):
+            slot1 = r.u8(f"recruit_map[{x},{y}].slot1")
+            slot2 = r.u8(f"recruit_map[{x},{y}].slot2")
+            recruitment_map.append(
+                XKRecruitmentMapCell(
+                    coord=HexCoord(x, y),
+                    recruit_type_1=MOD_PAT_ORDINAL_TO_ARMY_TYPE.get(slot1),
+                    recruit_type_2=MOD_PAT_ORDINAL_TO_ARMY_TYPE.get(slot2),
+                )
+            )
+
+    liege_extension: XKLiegeExtension | None = None
+    secondary_abilities: XKSecondaryAbilityTable | None = None
+    secondary_terrain: XKSecondaryTerrainTable | None = None
+    home_kingdom: XKHomeKingdomExtension | None = None
+    saw_final_end = False
+    while not saw_final_end:
+        tag = r.u16("extension.tag")
+        if tag == _TAG_TR_END:
+            saw_final_end = True
+        elif tag == _TAG_TR_LLS:
+            liege_by_leader_id: dict[int, int] = {}
+            while r.peek("TR_LLs") != _TR_LLS_END:
+                leader_id = r.u8("TR_LLs.id")
+                liege_by_leader_id[leader_id] = r.u8(f"TR_LLs[{leader_id}].lliege")
+            r.sentinel("TR_LLs.end", _TR_LLS_END)
+            liege_extension = XKLiegeExtension(liege_by_leader_id=liege_by_leader_id)
+        elif tag == _TAG_TR_SA:
+            flat = list(r.bytes_("TR_SA.spabord", 90))
+            secondary_abilities = XKSecondaryAbilityTable(levels_by_ability=[flat[i : i + 6] for i in range(0, 90, 6)])
+        elif tag == _TAG_TR_T2:
+            secondary_terrain = XKSecondaryTerrainTable(raw=r.bytes_("TR_T2.pt2", 450))
+        elif tag == _TAG_TR_HK:
+            king_leader_id = r.u8("TR_HK.king")
+            shield_record = r.bytes_("TR_HK.shield_record", 190)
+            home_kingdom = XKHomeKingdomExtension(king_leader_id=king_leader_id, shield_record=shield_record)
+        else:
+            raise XKParseError(f"unsupported extension tag {tag}", byte_offset=r.offset - 2)
+
+    if r.offset != len(data):
+        raise XKParseError(f"{len(data) - r.offset} trailing bytes after the final TR_End", byte_offset=r.offset)
+
+    return XKWorld(
+        header=header,
+        globals=globals_,
+        leader_names=leader_names,
+        leader_cards=leader_cards,
+        partial_leader_cards=partial_leader_cards,
+        leader_races=leader_races,
+        leader_states=leader_states,
+        ds_89c7=ds_89c7,
+        recipient_word=recipient_word,
+        pointer_8b29=pointer_8b29,
+        pointer_8b2d=pointer_8b2d,
+        provinces=provinces,
+        features=features,
+        treasures=treasures,
+        armies=armies,
+        discoveries=discoveries,
+        player_tail=player_tail,
+        recruitment_map=recruitment_map,
+        liege_extension=liege_extension,
+        secondary_abilities=secondary_abilities,
+        secondary_terrain=secondary_terrain,
+        home_kingdom=home_kingdom,
+    )
