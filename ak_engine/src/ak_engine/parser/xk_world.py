@@ -84,9 +84,10 @@ needs to render them -- not the GW world save, not an AK orders file.
     local variable whose own neighbor byte happens to be ``0xFE``),
     0xFE-terminated.
 17. **Player tail** (28 bytes): mostly raw (``XK_PLAYER_TAIL_FIELDS_
-    BEFORE_RELATIONS``/``_AFTER_RELATIONS`` below), except the 12-byte
-    ``relations_D1D4`` span, which is fully decoded (Phase 1005) as
-    ``diplomatic_relations``.
+    BEFORE_RELATIONS``/``_AFTER_RELATIONS``/``_TRAILING`` below), except
+    the 12-byte ``relations_D1D4`` span, fully decoded (Phase 1005) as
+    ``diplomatic_relations``, and 2 of the remaining words, decoded
+    (Phase 1006) as ``account_number``/``met_kings_bitmask_low``.
 18. ``TR_End`` (``16001`` as a ``u16``) -- **not EOF yet**.
 19. **Recruitment map**: one ``(slot_1, slot_2)`` raw-byte pair per
     board cell, ``(right-left+1) * (bottom-top+1)`` cells, outer loop
@@ -558,6 +559,33 @@ Kings, 12 raw slots) are always ``0``/``ENEMY`` -- unused padding, the
 same pattern the King title table (Phase 993) already shows, not a
 genuine "11th and 12th King" relation.
 
+**Phase 1006 -- two more player-tail words decoded against
+``GWKingExtension``.** Checking every still-raw player-tail word
+against every numeric field on this project's own pre-existing
+``GWKingExtension`` for this file's own King, across the full 12-file
+corpus, finds two more exact, real (non-coincidental) matches:
+``DS_8D83`` is exactly ``account_number`` (``100``/``101``/``102`` for
+Kingdoms 0/1/2 respectively, every real sample) -- renamed to
+``account_number``. ``DS_8E49_low`` is exactly ``met_kings_bitmask``
+(real variance confirmed, not just a shared constant: ``0`` at Turns
+1-2, then ``2``/``1``/``256`` for Kingdoms 0/1/2 respectively at Turns
+3-4, matching exactly every time) -- renamed to
+``met_kings_bitmask_low``, keeping the "_low" suffix the real
+disassembly already gives it, since XK only ever captures the low word
+of that field and this corpus's own small King count never exercises a
+high-word bit. Two further candidates were found but are **not**
+renamed, for lack of real discriminating evidence: ``DS_8CBD`` always
+reads ``15``, matching ``election_request_or_previous_choice`` exactly
+in every sample, but with zero observed variance a specific-looking
+constant still isn't distinguishable from coincidence the way a
+varying field is; ``DS_8DC5`` always reads ``1``, matching
+``player_mode``, but ``1`` is too common a value to carry real
+evidentiary weight on its own. The remaining player-tail words
+(``DS_8B31``, ``DS_8B73``, ``DS_8D41``, ``DS_8ECD_low``, ``DS_8F51_low``)
+are likewise always-constant in this corpus and were checked against
+every other ``GWKingExtension`` field with no distinguishing match
+found; kept raw.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -682,8 +710,8 @@ XK_PLAYER_TAIL_FIELDS_BEFORE_RELATIONS: tuple[tuple[str, int], ...] = (
 XK_PLAYER_TAIL_FIELDS_AFTER_RELATIONS: tuple[tuple[str, int], ...] = (
     ("DS_8CBD", 2),
     ("DS_8D41", 2),
-    ("DS_8D83", 2),
-    ("DS_8E49_low", 2),
+)
+XK_PLAYER_TAIL_FIELDS_TRAILING: tuple[tuple[str, int], ...] = (
     ("DS_8DC5", 2),
     ("DS_8ECD_low", 2),
     ("DS_8F51_low", 2),
@@ -1123,6 +1151,15 @@ class XKWorld:
     that (up to the raw 12-byte span) is always ``0``/``ENEMY``, unused
     padding -- the same "12 slots reserved for at most 10 real Kings"
     pattern the King title table (Phase 993) already shows.
+
+    ``account_number``/``met_kings_bitmask_low`` (Phase 1006) are
+    confirmed exactly, 12 of 12 real samples each, against
+    ``GWKingExtension.account_number``/``.met_kings_bitmask`` for this
+    file's own King. ``met_kings_bitmask_low`` keeps its own disassembly-
+    sourced "_low" suffix because XK only ever captures the low word of
+    that real field (per the writer's own source), not confirmed
+    equivalent beyond the bit range this corpus's own small King count
+    ever sets.
     """
 
     header: XKHeader
@@ -1141,6 +1178,8 @@ class XKWorld:
     armies: list[XKArmyRecord]
     discoveries: list[XKDiscoveryRecord]
     diplomatic_relations: tuple[DiplomaticRelation, ...]
+    account_number: int
+    met_kings_bitmask_low: int
     player_tail: dict[str, bytes]
     recruitment_map: list[XKRecruitmentMapCell]
     liege_extension: XKLiegeExtension | None
@@ -1418,6 +1457,10 @@ def parse_xk_world(path: Path) -> XKWorld:
     )
     for field_name, size in XK_PLAYER_TAIL_FIELDS_AFTER_RELATIONS:
         player_tail[field_name] = r.bytes_(field_name, size)
+    account_number = r.s16("account_number")
+    met_kings_bitmask_low = r.s16("met_kings_bitmask_low")
+    for field_name, size in XK_PLAYER_TAIL_FIELDS_TRAILING:
+        player_tail[field_name] = r.bytes_(field_name, size)
 
     r.sentinel("base.end", _TAG_TR_END & 0xFF)
     r.sentinel("base.end.hi", _TAG_TR_END >> 8)
@@ -1483,6 +1526,8 @@ def parse_xk_world(path: Path) -> XKWorld:
         armies=armies,
         discoveries=discoveries,
         diplomatic_relations=diplomatic_relations,
+        account_number=account_number,
+        met_kings_bitmask_low=met_kings_bitmask_low,
         player_tail=player_tail,
         recruitment_map=recruitment_map,
         liege_extension=liege_extension,

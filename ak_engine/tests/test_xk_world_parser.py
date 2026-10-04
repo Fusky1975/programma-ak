@@ -1371,3 +1371,33 @@ def test_diplomatic_relations_padding_slots_past_king_count_are_unused():
 def test_relations_d1d4_is_no_longer_in_the_raw_player_tail_dict():
     world = parse_xk_world(T1_K0)
     assert "relations_D1D4" not in world.player_tail
+
+
+def test_account_number_matches_real_gw_king_extension_at_scale():
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        kingdom_id = world.header.kingdom_id
+        turn = world.globals.game_turn
+        extensions = parse_gw_king_extensions(_TURN_TO_REAL_GW_KING_EXTENSIONS[turn])
+        assert world.account_number == extensions[kingdom_id].account_number
+        assert world.account_number == 100 + kingdom_id
+        checked += 1
+    assert checked == 12
+    assert "DS_8D83" not in parse_xk_world(T1_K0).player_tail
+
+
+def test_met_kings_bitmask_low_matches_real_gw_value_including_real_variance():
+    seen_values = set()
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        kingdom_id = world.header.kingdom_id
+        turn = world.globals.game_turn
+        extensions = parse_gw_king_extensions(_TURN_TO_REAL_GW_KING_EXTENSIONS[turn])
+        assert world.met_kings_bitmask_low == extensions[kingdom_id].met_kings_bitmask
+        seen_values.add(world.met_kings_bitmask_low)
+        checked += 1
+    assert checked == 12
+    assert seen_values == {0, 1, 2, 256}  # genuine variance, not a shared constant
+    assert "DS_8E49_low" not in parse_xk_world(T1_K0).player_tail
