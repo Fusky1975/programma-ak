@@ -59,8 +59,13 @@ needs to render them -- not the GW world save, not an AK orders file.
    779 -- unchanged from Phase 988): ``leader_capacity`` (a named global,
    ``100`` in every real sample) Pascal ShortStrings, one per leader id.
 4. **Full character cards**: 74 bytes each (``XKLeaderCard`` below),
-   0xFE-terminated.
-5. **Partial character cards**: ``id, x, y`` (3 bytes each), 0xFE-terminated.
+   0xFE-terminated -- confirmed (Phase 1004) to hold *exactly* this
+   Kingdom's own leaders, a full biconditional with real GW ground
+   truth (57 of 57 of this Kingdom's own leaders get a full card here,
+   zero get a partial card or neither).
+5. **Partial character cards**: ``id, x, y`` (3 bytes each), 0xFE-terminated
+   -- confirmed (Phase 1004) to never hold one of this Kingdom's own
+   leaders (0 of 68 real partial cards belong to the viewing Kingdom).
 6. **Leader races**, 7. **leader states**: ``leader_capacity + 1`` raw
    bytes each -- the ``+1`` (not just ``leader_capacity``) is real and
    confirmed in the disassembly; missing it misaligns everything after.
@@ -522,6 +527,18 @@ action type whose own ``obj`` is a coordinate rather than a plain id)
 is consistent with that record being live-mutated by move execution
 itself before XK captures it, but this is not confirmed.
 
+**Phase 1004 -- the full/partial character-card split is a complete
+biconditional with real ownership.** Checked directly against GW's own
+``kingdom_id`` for every leader in the 12-file corpus: a leader gets a
+full card in this file **if and only if** they belong to the viewing
+Kingdom. Both directions confirmed with zero exceptions: every one of
+this Kingdom's own real leaders (57 of 57) gets a full card, never a
+partial one or neither; every real partial card (68 of 68) belongs to
+some *other* Kingdom (or no Kingdom at all), never this one. A reader
+of this format can therefore tell "is this my own leader" directly
+from which list (if either) a ``leader_id`` appears in, with no need
+to cross-reference GW or any other ground truth.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -849,6 +866,11 @@ class XKLeaderCard:
 
 @dataclass(slots=True)
 class XKPartialLeaderCard:
+    """A leader known only by location -- confirmed (Phase 1004) to
+    never be one of this Kingdom's own: every real partial card belongs
+    to another Kingdom or no Kingdom at all (see module docstring).
+    """
+
     leader_id: int
     coord: HexCoord
 

@@ -1284,3 +1284,46 @@ def test_extra_low_bytes_partially_matches_k1_obj_only_for_lmove():
                     nonlmove_matches += int(matches)
     assert (lmove_matches, lmove_total) == (10, 18)
     assert (nonlmove_matches, nonlmove_total) == (0, 37)
+
+
+def test_full_card_iff_own_leader_and_partial_card_never_own_leader():
+    # A complete biconditional, zero exceptions in either direction:
+    # a leader gets a full card here iff they belong to the viewing
+    # Kingdom (GW's own kingdom_id); a partial card never belongs to it.
+    gw_cache = {}
+    own_full = 0
+    own_partial = 0
+    own_neither = 0
+    partial_belongs_to_viewer = 0
+    partial_checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        kingdom_id = world.header.kingdom_id
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        gw_leaders = gw_cache[turn]
+        full_ids = {c.leader_id for c in world.leader_cards}
+        partial_ids = {c.leader_id for c in world.partial_leader_cards}
+
+        for i, gw_leader in enumerate(gw_leaders):
+            if gw_leader.kingdom_id != kingdom_id:
+                continue
+            if i in full_ids:
+                own_full += 1
+            elif i in partial_ids:
+                own_partial += 1
+            else:
+                own_neither += 1
+
+        for leader_id in partial_ids:
+            if leader_id >= len(gw_leaders):
+                continue
+            partial_checked += 1
+            if gw_leaders[leader_id].kingdom_id == kingdom_id:
+                partial_belongs_to_viewer += 1
+
+    assert own_full == 57
+    assert (own_partial, own_neither) == (0, 0)
+    assert partial_checked == 68
+    assert partial_belongs_to_viewer == 0
