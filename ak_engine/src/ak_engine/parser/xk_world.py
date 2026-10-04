@@ -631,6 +631,24 @@ slots are the ``0x0F``/``None`` sentinel, zero exceptions -- the
 recruitment map's own real "known" footprint is exactly this
 Kingdom's own known-province set, no broader and no narrower.
 
+**Phase 1010 -- the ``TR_LLs`` liege extension: richer than the full
+card, and one real leader-id-reuse artifact.** ``liege_by_leader_id``
+covers more than just this Kingdom's own full-card leaders: it also
+carries an entry for 62 of the 68 real partial-card leaders across the
+corpus -- and the 6 real exceptions are fully explained, not a gap:
+each one is independently confirmed, via GW's own ``kingdom_id``, to be
+an unemployed/independent character (``kingdom_id=None``), for whom a
+liege is meaningless. For every leader_id covered by both a full card
+and this extension, the two agree exactly in 57 of 58 real cases. The
+one exception (``XK3__T4.K2``, leader 99) is not a decode error: it is
+a real leader-id-reuse artifact confirmed independently against GW --
+``GW3__T3``'s own leader 99 is Quintilian (Kingdom 2, this Phase's own
+earlier Excalibur example); ``GW3__T4``'s own leader 99 is a different
+real character, Bo (Kingdom 9). The identity behind this one
+``leader_id`` genuinely changed between the two files' own capture
+moments, so comparing "the same nominal turn" compares two different
+real people for this one slot -- not a flaw in either decoder.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -1149,6 +1167,13 @@ class XKLiegeExtension:
     ``lliege`` position does not end the list -- only ``0xFF`` in the
     ``id`` position does (a different sentinel than every other list in
     this format).
+
+    Confirmed (Phase 1010) richer than ``XKLeaderCard.lliege``: it also
+    covers a real partial-card leader, when (and only when) that leader
+    is actually employed by some Kingdom (``kingdom_id`` set in GW) --
+    an unemployed/independent character is correctly absent, not a gap.
+    See module docstring's own Phase 1010 addendum for the one real
+    leader-id-reuse exception found cross-checking it against GW.
     """
 
     liege_by_leader_id: dict[int, int]

@@ -1490,3 +1490,51 @@ def test_recruitment_map_cells_for_unknown_provinces_are_always_blank():
             assert cell.recruit_type_2 is None
             checked += 1
     assert checked == 1767
+
+
+def test_liege_extension_matches_full_card_lliege_except_one_known_identity_reuse():
+    # The one real exception (XK3__T4.K2, leader 99) is a genuine
+    # leader-id-reuse artifact confirmed against GW, not a decode bug:
+    # the real person behind leader_id 99 changes between GW3__T3
+    # (Quintilian, Kingdom 2) and GW3__T4 (Bo, Kingdom 9).
+    matches = 0
+    mismatches = []
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        if world.liege_extension is None:
+            continue
+        liege_map = world.liege_extension.liege_by_leader_id
+        for card in world.leader_cards:
+            if card.leader_id not in liege_map:
+                continue
+            if liege_map[card.leader_id] == card.lliege:
+                matches += 1
+            else:
+                mismatches.append((fixture.name, card.leader_id, card.lliege, liege_map[card.leader_id]))
+    assert matches == 57
+    assert mismatches == [("XK3__T4.K2", 99, 255, 9)]
+
+    leaders_t3 = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[3])
+    leaders_t4 = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[4])
+    assert (leaders_t3[99].name, leaders_t3[99].kingdom_id) == ("Quintilian", 2)
+    assert (leaders_t4[99].name, leaders_t4[99].kingdom_id) == ("Bo", 9)
+
+
+def test_liege_extension_covers_partial_cards_only_when_employed():
+    covered = 0
+    uncovered_leader_ids = []
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        if world.liege_extension is None:
+            continue
+        liege_map = world.liege_extension.liege_by_leader_id
+        turn = world.globals.game_turn
+        gw_leaders = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        for card in world.partial_leader_cards:
+            if card.leader_id in liege_map:
+                covered += 1
+            else:
+                uncovered_leader_ids.append(gw_leaders[card.leader_id].kingdom_id)
+    assert covered == 62
+    assert len(uncovered_leader_ids) == 6
+    assert all(kid is None for kid in uncovered_leader_ids)  # all unemployed, zero exceptions
