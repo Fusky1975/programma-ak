@@ -70,10 +70,11 @@ needs to render them -- not the GW world save, not an AK orders file.
    bytes each -- the ``+1`` (not just ``leader_capacity``) is real and
    confirmed in the disassembly; missing it misaligns everything after.
 8. ``DS:89C7`` (12 bytes): each King's own real sex, decoded (Phase
-   1007) as ``king_sex``, king-id ordered. 9. a per-recipient word at
-   ``DS:8AE7 + 2*kingdom_id`` (kept raw), 10-11. two 192-byte **per-King
-   title tables** from far pointers ``DS:8B29``/``DS:8B2D`` -- see the
-   Phase 993 addendum below.
+   1007) as ``king_sex``, king-id ordered. 9. a word at
+   ``DS:8AE7 + 2*kingdom_id``, decoded (Phase 1008) as this King's own
+   real ``treasury``. 10-11. two 192-byte **per-King title tables** from
+   far pointers ``DS:8B29``/``DS:8B2D`` -- see the Phase 993 addendum
+   below.
 12. **Known provinces** (``XKProvinceRecord`` below), 0xFE-terminated.
 13. **Features** (``XKFeatureRecord``, 8 bytes each), 0xFE-terminated.
 14. **Treasures** (``XKTreasureRecord``, variable length), 0xFE-terminated.
@@ -601,6 +602,15 @@ The 2 slots past ``king_count`` are unused padding (one happens to
 still decode as a valid ``Sex.MALE`` byte, the other as ``0``, mapped
 to ``None`` here) -- the same pattern every other 12-slot, ≤10-real-King
 array in this format already shows.
+
+**Phase 1008 -- the per-recipient word at ``DS:8AE7 + 2*kingdom_id``
+decoded as this King's own real treasury.** Checked directly against
+``GWKingExtension.treasury`` for this file's own King: exact match, 12
+of 12 real samples, zero exceptions, with real variance confirmed
+(``10`` at every Kingdom's own Turn 1, then diverging per-Kingdom:
+``22``/``11``/``0`` at Turn 2, ``24``/``22``/``4`` at Turn 3,
+``30``/``14``/``16`` at Turn 4). Renamed from the previously-raw
+``recipient_word`` to ``treasury``.
 
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
@@ -1177,6 +1187,11 @@ class XKWorld:
     that real field (per the writer's own source), not confirmed
     equivalent beyond the bit range this corpus's own small King count
     ever sets.
+
+    ``treasury`` (Phase 1008, renamed from the previously-raw
+    ``recipient_word``) is confirmed exactly, 12 of 12 real samples,
+    against ``GWKingExtension.treasury`` for this file's own King, with
+    real per-Kingdom variance across turns, not a shared constant.
     """
 
     header: XKHeader
@@ -1187,7 +1202,7 @@ class XKWorld:
     leader_races: list[Race]
     leader_states: list[int]
     king_sex: tuple[Sex | None, ...]
-    recipient_word: int
+    treasury: int
     king_titles: XKKingTitles
     provinces: list[XKProvinceRecord]
     features: list[XKFeatureRecord]
@@ -1435,7 +1450,7 @@ def parse_xk_world(path: Path) -> XKWorld:
         Sex(chr(value)) if value in (ord("M"), ord("F")) else None
         for value in r.bytes_("DS_89C7", 12)
     )
-    recipient_word = r.s16("DS_8AE7_recipient_word")
+    treasury = r.s16("DS_8AE7_treasury")
     king_titles = XKKingTitles(
         prefix_by_king_id=_read_king_title_table(r, "king_title_prefixes"),
         suffix_by_king_id=_read_king_title_table(r, "king_title_suffixes"),
@@ -1538,7 +1553,7 @@ def parse_xk_world(path: Path) -> XKWorld:
         leader_races=leader_races,
         leader_states=leader_states,
         king_sex=king_sex,
-        recipient_word=recipient_word,
+        treasury=treasury,
         king_titles=king_titles,
         provinces=provinces,
         features=features,

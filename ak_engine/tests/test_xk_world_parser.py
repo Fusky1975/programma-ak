@@ -1425,3 +1425,18 @@ def test_king_sex_identical_across_the_whole_corpus_and_padding_handled():
         assert parse_xk_world(fixture).king_sex == reference
     assert len(reference) == 12
     assert reference[10] is None  # unused padding byte (0), not a real Sex
+
+
+def test_treasury_matches_real_gw_king_extension_including_real_variance():
+    seen_values = set()
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        kingdom_id = world.header.kingdom_id
+        turn = world.globals.game_turn
+        extensions = parse_gw_king_extensions(_TURN_TO_REAL_GW_KING_EXTENSIONS[turn])
+        assert world.treasury == extensions[kingdom_id].treasury
+        seen_values.add(world.treasury)
+        checked += 1
+    assert checked == 12
+    assert len(seen_values) > 1  # genuine per-Kingdom/per-turn variance
