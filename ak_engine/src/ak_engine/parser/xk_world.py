@@ -83,7 +83,10 @@ needs to render them -- not the GW world save, not an AK orders file.
     ``0x0001``/``0x0000`` boolean -- the writer copies 2 bytes from a
     local variable whose own neighbor byte happens to be ``0xFE``),
     0xFE-terminated.
-17. **Player tail** (28 raw bytes, ``XK_PLAYER_TAIL_FIELDS`` below).
+17. **Player tail** (28 bytes): mostly raw (``XK_PLAYER_TAIL_FIELDS_
+    BEFORE_RELATIONS``/``_AFTER_RELATIONS`` below), except the 12-byte
+    ``relations_D1D4`` span, which is fully decoded (Phase 1005) as
+    ``diplomatic_relations``.
 18. ``TR_End`` (``16001`` as a ``u16``) -- **not EOF yet**.
 19. **Recruitment map**: one ``(slot_1, slot_2)`` raw-byte pair per
     board cell, ``(right-left+1) * (bottom-top+1)`` cells, outer loop
@@ -539,6 +542,22 @@ of this format can therefore tell "is this my own leader" directly
 from which list (if either) a ``leader_id`` appears in, with no need
 to cross-reference GW or any other ground truth.
 
+**Phase 1005 -- the player tail's own 12-byte ``relations_D1D4`` span
+fully decoded.** This project already has a confirmed, independently-
+sourced real field for exactly this concept: ``parser/gw_world.py
+GWKingExtension.diplomatic_relations`` -- a King's own king-id-ordered
+view of every King's relation to them (``DiplomaticRelation.ENEMY``/
+``NEUTRAL``/``ALLIED``/``TEAMED``), already cross-validated elsewhere
+in this project against ``GW3__T10``'s own real relation downgrade.
+Checked directly against this file's own ``relations_D1D4`` bytes for
+this file's own King, across the full 12-file corpus: **exact match,
+120 of 120 real king-slots, zero exceptions**. Promoted out of the raw
+``player_tail`` dict into a real, typed ``XKWorld.diplomatic_relations``
+field. The 2 slots past ``king_count`` (every real sample has 10 real
+Kings, 12 raw slots) are always ``0``/``ENEMY`` -- unused padding, the
+same pattern the King title table (Phase 993) already shows, not a
+genuine "11th and 12th King" relation.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -588,7 +607,7 @@ from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
-from ak_engine.parser.gw_world import MOD_PAT_ORDINAL_TO_ARMY_TYPE
+from ak_engine.parser.gw_world import MOD_PAT_ORDINAL_TO_ARMY_TYPE, DiplomaticRelation
 
 SUPPORTED_FORMAT_REVISION = 30
 SUPPORTED_GAME_VERSION = 3
@@ -656,10 +675,11 @@ _TAG_TR_T2 = 16006
 _TAG_TR_HK = 16007
 _TAG_TR_END = 16001
 
-XK_PLAYER_TAIL_FIELDS: tuple[tuple[str, int], ...] = (
+XK_PLAYER_TAIL_FIELDS_BEFORE_RELATIONS: tuple[tuple[str, int], ...] = (
     ("DS_8B31", 1),
     ("DS_8B73", 1),
-    ("relations_D1D4", 12),
+)
+XK_PLAYER_TAIL_FIELDS_AFTER_RELATIONS: tuple[tuple[str, int], ...] = (
     ("DS_8CBD", 2),
     ("DS_8D41", 2),
     ("DS_8D83", 2),
@@ -1091,7 +1111,19 @@ class XKKingTitles:
 
 @dataclass(slots=True)
 class XKWorld:
-    """The fully decoded contents of one ``XK`` file."""
+    """The fully decoded contents of one ``XK`` file.
+
+    ``diplomatic_relations`` (Phase 1005) is confirmed, 120 of 120 real
+    king-slots checked with zero exceptions, to be exactly ``parser/
+    gw_world.py GWKingExtension.diplomatic_relations`` for this file's
+    own King -- the real ``DiplomaticRelation`` enum (``ENEMY``/
+    ``NEUTRAL``/``ALLIED``/``TEAMED``), king-id-ordered, this King's own
+    view of every King including itself (always ``ALLIED`` at its own
+    index, a self-relation sentinel). ``king_count``-long; any slot past
+    that (up to the raw 12-byte span) is always ``0``/``ENEMY``, unused
+    padding -- the same "12 slots reserved for at most 10 real Kings"
+    pattern the King title table (Phase 993) already shows.
+    """
 
     header: XKHeader
     globals: XKGlobals
@@ -1108,6 +1140,7 @@ class XKWorld:
     treasures: list[XKTreasureRecord]
     armies: list[XKArmyRecord]
     discoveries: list[XKDiscoveryRecord]
+    diplomatic_relations: tuple[DiplomaticRelation, ...]
     player_tail: dict[str, bytes]
     recruitment_map: list[XKRecruitmentMapCell]
     liege_extension: XKLiegeExtension | None
@@ -1378,7 +1411,12 @@ def parse_xk_world(path: Path) -> XKWorld:
     r.sentinel("discoveries.end", _SENTINEL_END)
 
     player_tail: dict[str, bytes] = {}
-    for field_name, size in XK_PLAYER_TAIL_FIELDS:
+    for field_name, size in XK_PLAYER_TAIL_FIELDS_BEFORE_RELATIONS:
+        player_tail[field_name] = r.bytes_(field_name, size)
+    diplomatic_relations = tuple(
+        DiplomaticRelation(value) for value in r.bytes_("relations_D1D4", 12)
+    )
+    for field_name, size in XK_PLAYER_TAIL_FIELDS_AFTER_RELATIONS:
         player_tail[field_name] = r.bytes_(field_name, size)
 
     r.sentinel("base.end", _TAG_TR_END & 0xFF)
@@ -1444,6 +1482,7 @@ def parse_xk_world(path: Path) -> XKWorld:
         treasures=treasures,
         armies=armies,
         discoveries=discoveries,
+        diplomatic_relations=diplomatic_relations,
         player_tail=player_tail,
         recruitment_map=recruitment_map,
         liege_extension=liege_extension,

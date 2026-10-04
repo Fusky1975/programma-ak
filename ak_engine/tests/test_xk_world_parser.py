@@ -24,8 +24,10 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_NAME, Treasure
 from ak_engine.parser.gw_world import (
     TERMOD_PLAGUE_EFF_MASK,
+    DiplomaticRelation,
     parse_gw_armies,
     parse_gw_features,
+    parse_gw_king_extensions,
     parse_gw_leaders,
     parse_gw_world,
 )
@@ -1327,3 +1329,45 @@ def test_full_card_iff_own_leader_and_partial_card_never_own_leader():
     assert (own_partial, own_neither) == (0, 0)
     assert partial_checked == 68
     assert partial_belongs_to_viewer == 0
+
+
+_TURN_TO_REAL_GW_KING_EXTENSIONS = {
+    1: Path("/home/user/programma-ak/GW3__T1"),
+    2: Path("/home/user/programma-ak/GW3__T2"),
+    3: Path("/home/user/programma-ak/GW3__T3"),
+    4: Path("/home/user/programma-ak/GW3__T4"),
+}
+
+
+def test_diplomatic_relations_matches_real_gw_king_extension_at_scale():
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        kingdom_id = world.header.kingdom_id
+        turn = world.globals.game_turn
+        extensions = parse_gw_king_extensions(_TURN_TO_REAL_GW_KING_EXTENSIONS[turn])
+        own_extension = extensions[kingdom_id]
+        king_count = world.globals.king_count
+        for i in range(king_count):
+            assert world.diplomatic_relations[i] == own_extension.diplomatic_relations[i]
+            checked += 1
+    assert checked == 120
+
+
+def test_diplomatic_relations_self_slot_is_always_allied():
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        assert world.diplomatic_relations[world.header.kingdom_id] is DiplomaticRelation.ALLIED
+
+
+def test_diplomatic_relations_padding_slots_past_king_count_are_unused():
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        king_count = world.globals.king_count
+        for relation in world.diplomatic_relations[king_count:]:
+            assert relation is DiplomaticRelation.ENEMY  # unused padding, not a real relation
+
+
+def test_relations_d1d4_is_no_longer_in_the_raw_player_tail_dict():
+    world = parse_xk_world(T1_K0)
+    assert "relations_D1D4" not in world.player_tail
