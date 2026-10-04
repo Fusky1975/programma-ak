@@ -69,7 +69,8 @@ needs to render them -- not the GW world save, not an AK orders file.
 6. **Leader races**, 7. **leader states**: ``leader_capacity + 1`` raw
    bytes each -- the ``+1`` (not just ``leader_capacity``) is real and
    confirmed in the disassembly; missing it misaligns everything after.
-8. ``DS:89C7`` (12 raw bytes), 9. a per-recipient word at
+8. ``DS:89C7`` (12 bytes): each King's own real sex, decoded (Phase
+   1007) as ``king_sex``, king-id ordered. 9. a per-recipient word at
    ``DS:8AE7 + 2*kingdom_id`` (kept raw), 10-11. two 192-byte **per-King
    title tables** from far pointers ``DS:8B29``/``DS:8B2D`` -- see the
    Phase 993 addendum below.
@@ -586,6 +587,21 @@ are likewise always-constant in this corpus and were checked against
 every other ``GWKingExtension`` field with no distinguishing match
 found; kept raw.
 
+**Phase 1007 -- ``DS:89C7`` decoded as each King's own real sex.** The
+12 raw bytes read, in every one of the 12 real files (identical in
+every sample, since no King's own sex ever changes), as the literal
+ASCII characters ``M``/``M``/``M``/``M``/``M``/``M``/``M``/``F``/``F``/
+``M`` for the first 10 slots -- exactly this project's own pre-existing
+``GWKingExtension.is_male`` for this campaign's real 10 Kings, king-id
+ordered (Kings 7 and 8, Giovanna d'Arco and Circe, are the only two
+real female Kings in this campaign, and are exactly where the two real
+``F`` bytes land). Decoded as ``king_sex: tuple[models.sex.Sex | None,
+...]`` -- this project's own pre-existing ``Sex`` enum, not a new type.
+The 2 slots past ``king_count`` are unused padding (one happens to
+still decode as a valid ``Sex.MALE`` byte, the other as ``0``, mapped
+to ``None`` here) -- the same pattern every other 12-slot, ≤10-real-King
+array in this format already shows.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -633,6 +649,7 @@ from ak_engine.models.feature import FeatureType
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
+from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.parser.gw_world import MOD_PAT_ORDINAL_TO_ARMY_TYPE, DiplomaticRelation
@@ -1169,7 +1186,7 @@ class XKWorld:
     partial_leader_cards: list[XKPartialLeaderCard]
     leader_races: list[Race]
     leader_states: list[int]
-    ds_89c7: bytes
+    king_sex: tuple[Sex | None, ...]
     recipient_word: int
     king_titles: XKKingTitles
     provinces: list[XKProvinceRecord]
@@ -1414,7 +1431,10 @@ def parse_xk_world(path: Path) -> XKWorld:
     leader_races = [Race(r.u8(f"leader_races[{i}]")) for i in range(globals_.leader_capacity + 1)]
     leader_states = [r.u8(f"leader_states[{i}]") for i in range(globals_.leader_capacity + 1)]
 
-    ds_89c7 = r.bytes_("DS_89C7", 12)
+    king_sex = tuple(
+        Sex(chr(value)) if value in (ord("M"), ord("F")) else None
+        for value in r.bytes_("DS_89C7", 12)
+    )
     recipient_word = r.s16("DS_8AE7_recipient_word")
     king_titles = XKKingTitles(
         prefix_by_king_id=_read_king_title_table(r, "king_title_prefixes"),
@@ -1517,7 +1537,7 @@ def parse_xk_world(path: Path) -> XKWorld:
         partial_leader_cards=partial_leader_cards,
         leader_races=leader_races,
         leader_states=leader_states,
-        ds_89c7=ds_89c7,
+        king_sex=king_sex,
         recipient_word=recipient_word,
         king_titles=king_titles,
         provinces=provinces,

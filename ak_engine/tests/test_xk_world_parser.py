@@ -20,6 +20,7 @@ from ak_engine.models.feature import FeatureType
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
+from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_NAME, Treasure
 from ak_engine.parser.gw_world import (
@@ -1401,3 +1402,26 @@ def test_met_kings_bitmask_low_matches_real_gw_value_including_real_variance():
     assert checked == 12
     assert seen_values == {0, 1, 2, 256}  # genuine variance, not a shared constant
     assert "DS_8E49_low" not in parse_xk_world(T1_K0).player_tail
+
+
+def test_king_sex_matches_real_gw_king_extension_is_male():
+    # Giovanna d'Arco (King 7) and Circe (King 8) are this campaign's
+    # only two real female Kings -- exactly where the real F bytes land.
+    world = parse_xk_world(T1_K0)
+    king_count = world.globals.king_count
+    extensions = parse_gw_king_extensions(Path("/home/user/programma-ak/GW3__T1"))
+    assert king_count == 10
+    for i in range(king_count):
+        expected = Sex.MALE if extensions[i].is_male else Sex.FEMALE
+        assert world.king_sex[i] == expected
+    assert world.king_sex[7] == Sex.FEMALE
+    assert world.king_sex[8] == Sex.FEMALE
+    assert all(world.king_sex[i] == Sex.MALE for i in range(king_count) if i not in (7, 8))
+
+
+def test_king_sex_identical_across_the_whole_corpus_and_padding_handled():
+    reference = parse_xk_world(T1_K0).king_sex
+    for fixture in ALL_12_SAMPLES:
+        assert parse_xk_world(fixture).king_sex == reference
+    assert len(reference) == 12
+    assert reference[10] is None  # unused padding byte (0), not a real Sex
