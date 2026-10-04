@@ -1440,3 +1440,53 @@ def test_treasury_matches_real_gw_king_extension_including_real_variance():
         checked += 1
     assert checked == 12
     assert len(seen_values) > 1  # genuine per-Kingdom/per-turn variance
+
+
+def test_recruitment_map_matches_real_gw_recruit_types_for_known_provinces():
+    # Checked against real GW ground truth, not just this file's own
+    # province list: the recruitment map reveals a known province's
+    # real recruit types regardless of ownership, richer than
+    # XKProvinceRecord's own recruit_type_1/2 (owned-only).
+    gw_cache = {}
+    known_checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = {p.name: p for p in parse_gw_world(_TURN_TO_REAL_GW_PROVINCES[turn])}
+        gw_by_name = gw_cache[turn]
+        cell_by_coord = {c.coord: c for c in world.recruitment_map}
+        for province in world.provinces:
+            gw_province = gw_by_name.get(province.name)
+            if gw_province is None:
+                continue
+            cell = cell_by_coord[province.coord]
+            assert cell.recruit_type_1 == gw_province.recruit_type_1
+            assert cell.recruit_type_2 == gw_province.recruit_type_2
+            known_checked += 1
+    assert known_checked == 177
+
+
+def test_recruitment_map_is_richer_than_the_province_record_for_unowned_known_provinces():
+    world = parse_xk_world(T1_K0)
+    cell_by_coord = {c.coord: c for c in world.recruitment_map}
+    unowned_known = [p for p in world.provinces if p.owner_kingdom_id is None]
+    assert unowned_known  # real unowned-but-known provinces exist in this file
+    for province in unowned_known:
+        assert province.recruit_type_1 is None and province.recruit_type_2 is None
+        cell = cell_by_coord[province.coord]
+        assert cell.recruit_type_1 is not None  # the recruitment map still reveals it
+
+
+def test_recruitment_map_cells_for_unknown_provinces_are_always_blank():
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        known_coords = {p.coord for p in world.provinces}
+        for cell in world.recruitment_map:
+            if cell.coord in known_coords:
+                continue
+            assert cell.recruit_type_1 is None
+            assert cell.recruit_type_2 is None
+            checked += 1
+    assert checked == 1767

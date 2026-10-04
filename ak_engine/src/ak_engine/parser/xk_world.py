@@ -612,6 +612,25 @@ of 12 real samples, zero exceptions, with real variance confirmed
 ``30``/``14``/``16`` at Turn 4). Renamed from the previously-raw
 ``recipient_word`` to ``treasury``.
 
+**Phase 1009 -- the recruitment map cross-checked at scale, and found
+to carry more than the province list.** Checked directly against real
+GW ground truth (not just this file's own ``provinces`` list) across
+the full 12-file corpus: for every one of the 177 real provinces this
+Kingdom knows, the recruitment-map cell at that coordinate matches the
+real ``recruit_type_1``/``recruit_type_2`` **exactly, zero exceptions**
+-- including the 118 of those 177 that this Kingdom doesn't *own* and
+whose own ``XKProvinceRecord.recruit_type_1``/``recruit_type_2`` are
+therefore ``None`` (that field is only populated for an owned
+province's full economics, per the module docstring's own ownership-
+shape rule). The recruitment map is a **strictly richer** channel for
+this one piece of information: it reveals a known province's real
+recruit types regardless of ownership, where the province record
+itself only does so for an owned one. For every one of the other 1767
+real cells (a province this Kingdom does *not* know at all), both
+slots are the ``0x0F``/``None`` sentinel, zero exceptions -- the
+recruitment map's own real "known" footprint is exactly this
+Kingdom's own known-province set, no broader and no narrower.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -1098,6 +1117,16 @@ class XKDiscoveryRecord:
 
 @dataclass(slots=True)
 class XKRecruitmentMapCell:
+    """One board cell's own known recruit types -- see module docstring's
+    own Phase 1009 addendum. Confirmed, zero exceptions across the full
+    corpus, to carry the real recruit types for every province this
+    Kingdom knows (matching real GW ground truth exactly), regardless
+    of ownership -- richer than ``XKProvinceRecord.recruit_type_1``/
+    ``recruit_type_2``, which are ``None`` for a known-but-not-owned
+    province. Both ``None`` for a province this Kingdom doesn't know at
+    all, with zero real exceptions either direction.
+    """
+
     coord: HexCoord
     recruit_type_1: ArmyType | None
     recruit_type_2: ArmyType | None
