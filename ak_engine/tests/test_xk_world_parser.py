@@ -721,24 +721,32 @@ def test_leader_states_every_full_card_slot_reads_one():
     assert checked == 58
 
 
-def test_leader_states_untracked_slots_are_overwhelmingly_seven():
-    full_and_partial = 0
-    neither = 0
-    neither_state_seven = 0
+def test_leader_states_untracked_real_ids_are_always_exactly_seven():
+    # Phase 1012: sharpens Phase 996's own ">95%" approximation into a
+    # complete, zero-exception rule. Every untracked slot within the
+    # real 0..leader_capacity-1 id range reads exactly 7; the single
+    # exception in the whole corpus is always the structural padding
+    # slot at index leader_capacity itself (never a real leader id).
+    real_untracked = 0
+    real_untracked_seven = 0
+    padding_slot_values = set()
     for fixture in ALL_12_SAMPLES:
         world = parse_xk_world(fixture)
+        leader_capacity = world.globals.leader_capacity
         tracked_ids = {c.leader_id for c in world.leader_cards} | {
             c.leader_id for c in world.partial_leader_cards
         }
         for i, state in enumerate(world.leader_states):
             if i in tracked_ids:
-                full_and_partial += 1
-            else:
-                neither += 1
-                if state == 7:
-                    neither_state_seven += 1
-    assert neither > 0
-    assert neither_state_seven / neither > 0.95
+                continue
+            if i == leader_capacity:
+                padding_slot_values.add(state)
+                continue
+            real_untracked += 1
+            if state == 7:
+                real_untracked_seven += 1
+    assert real_untracked == real_untracked_seven == 1074
+    assert padding_slot_values == {0}
 
 
 _TURN_TO_REAL_GW_PROVINCES = {

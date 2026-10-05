@@ -671,6 +671,22 @@ simple per-province reading -- consistent with, though not proven to
 be, the same leftover-host-memory phenomenon already characterized for
 the plain globals.
 
+**Phase 1012 -- the untracked portion of ``leader_states`` fully
+resolved.** Phase 996 could only say an untracked slot (backing neither
+a full nor a partial card) "overwhelmingly" reads ``7`` (1074 of 1080).
+Checked precisely against every real leader_id's own 0..``leader_
+capacity``-1 range: it is **exactly** ``7`` for every one of the real
+100 untracked leader ids, zero exceptions (1074 of 1074) -- the one
+value that isn't ``7`` in the whole corpus is always, in every one of
+the 12 files, index ``leader_capacity`` itself (``100``), a single
+structural padding slot this format's own "``leader_capacity + 1``, not
+``leader_capacity``" sizing convention (already confirmed elsewhere in
+this format) guarantees can never hold a real leader -- trivially ``0``,
+not a second genuine state value. The untracked case of ``leader_states``
+is therefore now a complete, closed rule; the partial-card case (values
+``0``/``1``/``2``/``7`` with no single predicate found, Phase 996)
+remains the only genuinely open part.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -686,9 +702,11 @@ correspondence to K1's own ``obj`` found -- 10 of 18 exact matches,
 meaning specifically for an ``LMOVE`` phase (Phase 1002: every other
 action type and the whole of ``actions`` is now fully decoded against
 real K1 data); the
-``leader_states`` vector's own exact per-value meaning (Phase 996:
-substantially characterized with real data and several real hypotheses
-tested and falsified, see above, but no clean rule found yet); a
+``leader_states`` vector's own exact per-value meaning *for a
+partial-card leader specifically* (Phase 996: substantially
+characterized with real data and several real hypotheses tested and
+falsified, see above, but no clean rule found yet -- the untracked
+case is fully resolved, Phase 1012); a
 Feature record's own ``unknown_962a`` (Phase 995: confirmed always
 ``0`` in all 36 real samples, role still unconfirmed); a Mercenary-
 state leaderless Army record's own ``quality_or_mask`` reveal rule
