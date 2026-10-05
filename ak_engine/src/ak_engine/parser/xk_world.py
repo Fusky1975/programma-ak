@@ -649,6 +649,28 @@ real character, Bo (Kingdom 9). The identity behind this one
 moments, so comparing "the same nominal turn" compares two different
 real people for this one slot -- not a flaw in either decoder.
 
+**Phase 1011 -- the two typed extension tables characterized: one
+static, one more leftover memory.** ``secondary_abilities``
+(``TR_SA``) is byte-for-byte **identical across all 12 real samples**
+-- every turn, every Kingdom -- consistent with genuine static,
+compiled lookup data (a special-ability-to-prose-table cross-reference,
+per its own docstring), not per-game state; no further per-game
+decoding is possible or expected from this corpus. ``secondary_terrain``
+(``TR_T2``) is a different case: identical across this campaign's 3
+Kingdoms for a given turn, but *varies turn to turn* -- the same
+turn-level/shared-memory pattern Phase 999 already established for the
+plain globals, not genuine per-Kingdom secondary-terrain knowledge.
+Directly testing the straightforward reading its own name suggests
+(byte at real province list index ``i`` equals that province's own
+real ``Terrain`` ordinal, matched against ``GWProvinceRecord.
+alternate_terrain``) is **falsified**: 60 of the real 162 provinces
+checked disagree, many with raw byte values (``161``, ``87``, ``83``)
+that aren't even valid ``Terrain`` ordinals. This doesn't disprove the
+confirmed ``TR_T2`` tag or disassembly sourcing, but does rule out this
+simple per-province reading -- consistent with, though not proven to
+be, the same leftover-host-memory phenomenon already characterized for
+the plain globals.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -1156,6 +1178,9 @@ class XKSecondaryAbilityTable:
     (``LEADER_ABILITY_ORDER``'s own first 15 entries, excluding
     ``noabil``) -- associates special-ability codes with the real
     prose/name tables those abilities use, not a second skill array.
+    Confirmed (Phase 1011) byte-for-byte identical across all 12 real
+    samples (every turn, every Kingdom) -- genuine static, compiled
+    data, not per-game state.
     """
 
     levels_by_ability: list[list[int]]
@@ -1183,7 +1208,14 @@ class XKLiegeExtension:
 class XKSecondaryTerrainTable:
     """``TR_T2`` (tag 16006): a fixed 30x15 (450-byte) capacity table,
     indexed ``15*x + y`` -- **not** sized to the played board, and not
-    proof every cell is a real, active province.
+    proof every cell is a real, active province. Confirmed (Phase 1011)
+    identical across this campaign's 3 Kingdoms for a given turn but
+    varying turn to turn -- the same turn-level/shared-memory pattern
+    Phase 999 already found for the plain globals. The straightforward
+    "byte = that province's own real alternate_terrain ordinal" reading
+    is falsified directly against GW (60 of 162 real provinces
+    disagree, several with raw values that aren't even valid ``Terrain``
+    ordinals) -- see module docstring's own Phase 1011 addendum.
     """
 
     raw: bytes

@@ -1538,3 +1538,47 @@ def test_liege_extension_covers_partial_cards_only_when_employed():
     assert covered == 62
     assert len(uncovered_leader_ids) == 6
     assert all(kid is None for kid in uncovered_leader_ids)  # all unemployed, zero exceptions
+
+
+def test_secondary_ability_table_is_identical_across_the_whole_corpus():
+    reference = None
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        table = tuple(tuple(row) for row in world.secondary_abilities.levels_by_ability)
+        if reference is None:
+            reference = table
+        else:
+            assert table == reference  # genuine static compiled data, not per-game state
+
+
+def test_secondary_terrain_table_shared_per_turn_but_varies_across_turns():
+    by_turn = {}
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        by_turn.setdefault(turn, set()).add(world.secondary_terrain.raw)
+    for turn, tables in by_turn.items():
+        assert len(tables) == 1, f"turn {turn} differs across kingdoms"
+    assert len({next(iter(tables)) for tables in by_turn.values()}) > 1  # varies turn to turn
+
+
+def test_secondary_terrain_table_is_not_simply_per_province_alternate_terrain():
+    # The straightforward reading (byte at real province list index i ==
+    # that province's own real alternate_terrain ordinal) is falsified.
+    world = parse_xk_world(T1_K0)
+    gw_provinces = parse_gw_world(Path("/home/user/programma-ak/GW3__T1"))
+    raw = world.secondary_terrain.raw
+    mismatches = 0
+    invalid_terrain_bytes = 0
+    for i, province in enumerate(gw_provinces):
+        byte = raw[i]
+        try:
+            terrain = Terrain(byte)
+        except ValueError:
+            terrain = None
+            invalid_terrain_bytes += 1
+        if terrain != province.alternate_terrain:
+            mismatches += 1
+    assert len(gw_provinces) == 162
+    assert mismatches == 60
+    assert invalid_terrain_bytes > 0
