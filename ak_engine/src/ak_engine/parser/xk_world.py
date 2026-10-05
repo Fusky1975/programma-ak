@@ -385,7 +385,28 @@ observed, stable across every turn the same Hero has a full card in)
 decoded ``general_merit``/``defender_merit``/``lfdisc``/``ldiscp``/
 ``lwmsp`` fields), and one real Hero (Quintilian) reads ``0`` too, so
 "nonzero" isn't even a clean full-card/no-full-card split -- genuinely
-open. ``flags_c3fc`` is structurally different: it is **mostly**
+open.
+
+**Phase 1018 -- the same mystery re-tried against a much larger real
+sample, still unresolved.** The 5 Turn 11-12 samples bring the real
+own-Hero sample from 25 to 136 (same ``0``-``5`` range as before: ``45``
+Heroes at ``3``, ``40`` at ``2``, ``25`` at ``1``, ``18`` at ``5``, ``5``
+at ``4``, ``3`` at ``0``). None of several
+further real fields tried against this larger sample correlate either:
+``feature_discoveries``, ``admiral_merit``,
+``unpaid_blackmail_penalty_exponent``, ``special_effects_raw``,
+``original_liege_raw``, the full-card's own ``lfdisc``/``sex_flags``,
+nor any single index of either the 30-slot GW ``skills`` table or the
+full card's own 16-slot ``skills``/``aptitudes`` arrays (best coincidence
+across every index tried: under a quarter of the sample, consistent
+with chance given only 6 real observed values). Stability across turns
+mostly holds at this larger scale too (43 of 44 same-Kingdom,
+consecutive-turn-pair checks unchanged, Turn 11 to Turn 12) -- the one
+real change (leader 72, Teleko, ``2`` to ``0`` in Kingdom 1's own file)
+coincides with the same leader already flagged in the Phase 1016
+addendum as one of that correction's own "other but full card" real
+exceptions, but a single data point isn't enough to connect the two
+mysteries. ``flags_c3fc`` is structurally different: it is **mostly**
 shared identically across this campaign's 3 Kingdoms at the same turn
 (confirmed at Turns 2-4), with only a handful of real per-Kingdom bit
 differences at specific indices (e.g. index 22 reads ``10`` for

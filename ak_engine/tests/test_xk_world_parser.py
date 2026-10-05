@@ -1140,6 +1140,32 @@ def test_flags_c4fc_is_leader_id_indexed_not_a_flat_bitmask():
     assert max_nonzero_index <= 100
 
 
+def test_flags_c4fc_per_hero_value_distribution_at_17_file_scale():
+    # Phase 1018: re-run across the larger 17-sample corpus, the real
+    # own-Hero sample grows from 25 to 136, still showing only the
+    # same 0-5 range with no new hypothesis (several further GW/card
+    # fields tried, none correlating -- see the module docstring's own
+    # Phase 1018 addendum). Captured here as a regression check on the
+    # distribution itself, not a decode -- this field's real role
+    # remains genuinely open.
+    from collections import Counter
+
+    leaders_cache = {}
+    value_counts = Counter()
+    for fixture in ALL_17_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in leaders_cache:
+            leaders_cache[turn] = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        leaders = leaders_cache[turn]
+        for card in world.leader_cards:
+            if leaders[card.leader_id].is_king:
+                continue
+            value_counts[world.globals.flags_c4fc[card.leader_id]] += 1
+    assert sum(value_counts.values()) == 136
+    assert value_counts == Counter({3: 45, 2: 40, 1: 25, 5: 18, 4: 5, 0: 3})
+
+
 def test_flags_c3fc_is_mostly_shared_across_kingdoms_with_a_few_real_exceptions():
     # Unlike flags_c4fc, flags_c3fc is not cleanly leader-indexed, but
     # for an ordinary turn (2-4) it's mostly identical across this
