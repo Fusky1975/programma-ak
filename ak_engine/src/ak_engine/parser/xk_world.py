@@ -628,7 +628,7 @@ found; kept raw.
 
 **Phase 1007 -- ``DS:89C7`` decoded as each King's own real sex.** The
 12 raw bytes read, in every one of the 12 real files (identical in
-every sample, since no King's own sex ever changes), as the literal
+every sample of the original 12-file corpus, Turns 1-4), as the literal
 ASCII characters ``M``/``M``/``M``/``M``/``M``/``M``/``M``/``F``/``F``/
 ``M`` for the first 10 slots -- exactly this project's own pre-existing
 ``GWKingExtension.is_male`` for this campaign's real 10 Kings, king-id
@@ -639,7 +639,9 @@ real female Kings in this campaign, and are exactly where the two real
 The 2 slots past ``king_count`` are unused padding (one happens to
 still decode as a valid ``Sex.MALE`` byte, the other as ``0``, mapped
 to ``None`` here) -- the same pattern every other 12-slot, ≤10-real-King
-array in this format already shows.
+array in this format already shows. **Correction (Phase 1017):** a
+King's own sex is not in fact permanently fixed -- see the Phase 1017
+addendum below for a real change found in the Turn 11-12 corpus.
 
 **Phase 1008 -- the per-recipient word at ``DS:8AE7 + 2*kingdom_id``
 decoded as this King's own real treasury.** Checked directly against
@@ -649,6 +651,42 @@ of 12 real samples, zero exceptions, with real variance confirmed
 ``22``/``11``/``0`` at Turn 2, ``24``/``22``/``4`` at Turn 3,
 ``30``/``14``/``16`` at Turn 4). Renamed from the previously-raw
 ``recipient_word`` to ``treasury``.
+
+**Phase 1017 -- the per-King fields re-checked against the Phase
+1015/1016 Turn 11-12 corpus.** ``diplomatic_relations`` (Phase 1005),
+``account_number``/``met_kings_bitmask_low`` (Phase 1006) all remain
+**exact matches against GWKingExtension with zero exceptions** across
+the full 17-file corpus (170, 17, and 17 real checks respectively,
+``met_kings_bitmask_low`` now showing 3 more distinct real values --
+``931``/``998``/``1021`` -- alongside the original corpus's ``0``/``1``/
+``2``/``256``). These are keyed to this file's own King specifically,
+not to any leader's own tracking status, so they are not exposed to the
+"tracking is dynamic, not ownership" mechanism Phases 1015/1016 found
+for Army/leader-card visibility.
+
+``king_sex`` and ``treasury`` are the one exception, and it corrects
+Phase 1007's own claim that King sex is identical in every sample
+"since no King's own sex never changes": XK's own ``king_sex[0]`` (King
+0, Babba Sissoko) is ``MALE`` for every one of the original 12-file
+corpus's own real samples (Turns 1-4) but ``FEMALE`` for every one of
+the 5 new real Turn 11-12 samples -- a real, genuine change at some
+point between Turn 4 and Turn 11, not sample noise (stable across all 3
+Kingdoms' own independent files at Turn 11, and both files at Turn 12).
+
+Separately, and more narrowly: GW3__T12's own raw text for King 0's
+extension line reads ``M`` (``is_male=True``) and treasury ``245`` --
+disagreeing with *both* of XK's own, mutually-consistent Turn-12
+readings (``FEMALE``, treasury ``265``), even though GW3__T11's own
+``F``/``199`` agreed with XK exactly. This narrower, single-file
+disagreement coincides with a real, independently-visible fact already
+in GW3__T12's own raw text: King 0's own real human player name changes
+from "Andrea Ferrigno" (Turn 11) to "Brian Gruber" (Turn 12) -- a
+mid-campaign handover of this Kingdom to a new real player, between
+exactly the two turns where GW's own King-0 extension line and XK's own
+King-0 fields start to disagree. This is filed as a known, real
+discrepancy in this one historical GW sample rather than an XK decode
+gap: both of XK's own independent Turn-12 files already agree with each
+other and with every earlier turn.
 
 **Phase 1009 -- the recruitment map cross-checked at scale, and found
 to carry more than the province list.** Checked directly against real

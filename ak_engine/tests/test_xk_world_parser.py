@@ -1479,6 +1479,8 @@ _TURN_TO_REAL_GW_KING_EXTENSIONS = {
     2: Path("/home/user/programma-ak/GW3__T2"),
     3: Path("/home/user/programma-ak/GW3__T3"),
     4: Path("/home/user/programma-ak/GW3__T4"),
+    11: Path("/home/user/programma-ak/GW3__T11"),
+    12: Path("/home/user/programma-ak/GW3__T12"),
 }
 
 
@@ -1495,6 +1497,41 @@ def test_diplomatic_relations_matches_real_gw_king_extension_at_scale():
             assert world.diplomatic_relations[i] == own_extension.diplomatic_relations[i]
             checked += 1
     assert checked == 120
+
+
+def test_diplomatic_relations_account_number_and_met_kings_mask_hold_at_17_file_scale():
+    # Phase 1017: re-run across the 17-file corpus (adding the Phase
+    # 1015/1016 Turn 11-12 samples), diplomatic_relations,
+    # account_number and met_kings_bitmask_low all remain exact matches
+    # against GWKingExtension with zero exceptions -- unlike the Army
+    # quality_or_mask and full/partial-card rules (Phases 1015/1016),
+    # these per-King fields are keyed to this file's own King
+    # specifically (not to any leader's tracking status), so they are
+    # not exposed to the same "tracking is dynamic, not ownership"
+    # mechanism. See
+    # test_king_sex_and_treasury_have_one_real_gw3_t12_discrepancy below
+    # for the one real exception found elsewhere in this same King
+    # extension data.
+    dr_checked = 0
+    acct_checked = 0
+    met_kings_seen = set()
+    for fixture in ALL_17_SAMPLES:
+        world = parse_xk_world(fixture)
+        kingdom_id = world.header.kingdom_id
+        turn = world.globals.game_turn
+        extensions = parse_gw_king_extensions(_TURN_TO_REAL_GW_KING_EXTENSIONS[turn])
+        own_extension = extensions[kingdom_id]
+        king_count = world.globals.king_count
+        for i in range(king_count):
+            assert world.diplomatic_relations[i] == own_extension.diplomatic_relations[i]
+            dr_checked += 1
+        assert world.account_number == own_extension.account_number == 100 + kingdom_id
+        acct_checked += 1
+        assert world.met_kings_bitmask_low == own_extension.met_kings_bitmask
+        met_kings_seen.add(world.met_kings_bitmask_low)
+    assert dr_checked == 170
+    assert acct_checked == 17
+    assert met_kings_seen == {0, 1, 2, 256, 931, 998, 1021}
 
 
 def test_diplomatic_relations_self_slot_is_always_allied():
@@ -1582,6 +1619,48 @@ def test_treasury_matches_real_gw_king_extension_including_real_variance():
         checked += 1
     assert checked == 12
     assert len(seen_values) > 1  # genuine per-Kingdom/per-turn variance
+
+
+def test_king_sex_and_treasury_have_one_real_gw3_t12_discrepancy():
+    # Phase 1017: unlike diplomatic_relations/account_number/
+    # met_kings_bitmask_low above, king_sex and treasury do NOT survive
+    # the Turn 11-12 corpus unchanged -- but the real cause traces to
+    # GW3__T12's own raw text, not to any XK decode gap. XK's own
+    # king_sex[0] (King 0, Babba Sissoko) is stable FEMALE across every
+    # one of this corpus's 17 real files, including both Turn 12
+    # samples (K0 and K1) -- but GW3__T12's own King-0 extension line
+    # literally reads "M" (``is_male=True``), disagreeing with both. The
+    # same King-0 extension line's own treasury (``245``) also disagrees
+    # with XK3__T12.K0's own ``treasury`` (``265``) -- a second, King-0-
+    # specific GW3__T12 mismatch alongside the sex one, while every
+    # other King's own treasury (including King 0's own at Turn 11, and
+    # King 1's at Turn 12) matches exactly.
+    #
+    # Both disagreements coincide with a real, independently visible
+    # fact in GW3__T12's own raw text: King 0's own real human player
+    # name changes from "Andrea Ferrigno" (Turn 11) to "Brian Gruber"
+    # (Turn 12) -- a mid-campaign handover of this Kingdom to a new real
+    # player. Whatever produced the "M"/stale-treasury discrepancy in
+    # GW3__T12's own King-0 extension line is tied to that handover, not
+    # to an XK decode bug: both of XK's own independent Turn-12 files
+    # (Kingdom 0's and Kingdom 1's) agree with each other and with every
+    # earlier turn, while only this one real GW extension line disagrees
+    # with all of them.
+    world_t11_k0 = parse_xk_world(T11_K0)
+    world_t12_k0 = parse_xk_world(T12_K0)
+    world_t12_k1 = parse_xk_world(T12_K1)
+    assert world_t11_k0.king_sex[0] == Sex.FEMALE
+    assert world_t12_k0.king_sex[0] == Sex.FEMALE
+    assert world_t12_k1.king_sex[0] == Sex.FEMALE
+
+    ext_t11 = parse_gw_king_extensions(_TURN_TO_REAL_GW_KING_EXTENSIONS[11])
+    ext_t12 = parse_gw_king_extensions(_TURN_TO_REAL_GW_KING_EXTENSIONS[12])
+    assert ext_t11[0].is_male is False  # agrees with XK at Turn 11
+    assert ext_t12[0].is_male is True  # disagrees with XK at Turn 12
+
+    assert world_t12_k0.treasury == 265
+    assert ext_t12[0].treasury == 245  # disagrees; King 1's own treasury matches fine
+    assert world_t12_k1.treasury == ext_t12[1].treasury == 484
 
 
 def test_recruitment_map_matches_real_gw_recruit_types_for_known_provinces():
