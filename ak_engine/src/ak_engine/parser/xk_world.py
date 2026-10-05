@@ -734,6 +734,60 @@ undocumented turn-to-turn game mechanic (independent characters'
 visibility to a given Kingdom's own tracking apparently isn't
 permanent), not a decode gap in this field itself.
 
+**Phase 1015 -- the Army record's own ``quality_or_mask`` reveal rule,
+corrected with 5 new, much larger real samples (Turns 11-12).** The
+original 12-sample corpus (Phase 998) was small enough that "this
+Kingdom owns the army" and "this Kingdom has tracked the army's
+commander long enough to give them a full card" always happened to
+coincide, making the real rule look like it was about GW's raw
+``kingdom_id``. The 5 new, real, user-provided Turn-11/12 samples (much
+larger: 22-25 full leader cards and 30-121 known provinces each, versus
+2-12 and 2-9 in the original corpus) broke that coincidence for the
+first time and **falsified** the Phase 998 "own Kingdom" framing for
+leader-commanded armies: re-run across the combined 17-file corpus, it
+now shows 2 "own but masked" and 25 "other but revealed" real
+exceptions (out of 2274 real leader-commanded armies).
+
+The real, corrected rule, confirmed with **zero exceptions** across all
+2274 of them: **``quality_or_mask`` is revealed exactly when the
+commanding leader has a full ``XKLeaderCard`` in the viewing Kingdom's
+own file** -- not when GW's own raw ``kingdom_id`` says the leader
+belongs to this Kingdom. Concretely:
+
+- The 25 "other but revealed" cases are all real armies of monster-type
+  "pet" troops (Dragon Wings, Eagle Wings, Trolls, Warg Riders, hired
+  Orcish Phalanxes) commanded by a real enemy Hero (e.g. Isis, an Elven
+  Hero genuinely employed by Kingdom 7) who has nonetheless earned a
+  full card in a *different* Kingdom's own file (Kingdom 0's) by Turn
+  11-12 -- presumably through enough real contact/combat history for
+  that Kingdom to have come to fully know this enemy commander, even
+  while never employing them.
+- The 2 "own but masked" cases are the mirror image: a real member of
+  the viewing Kingdom itself (Indra, genuinely Kingdom 2's own Hero per
+  GW's ``kingdom_id``) who nonetheless has **no card at all** in that
+  same Kingdom's own Turn-11 file (``leader_states[90] == 7``,
+  "untracked") -- consistent with this module's own Phase 1014 finding
+  that a leader's own tracking/coverage by a Kingdom is a genuinely
+  dynamic, snapshot-specific property, not a fixed, permanent
+  leader<->Kingdom relationship.
+
+This also means the rule was always reconstructible from this same
+file's own already-decoded fields alone (no external GW ground truth
+needed to state it, only to confirm it): "has a full card here" is
+simply membership in this same file's own ``leader_cards`` list.
+
+The garrison sub-rule (a leaderless ``HIRED``/``ZOMBOID`` army revealed
+iff it sits in a province this file's own ``provinces`` list shows as
+owned by this Kingdom) and the unconditional-mask rule for ``DEAD``
+leaderless armies both remain exception-free across the full 17-file
+corpus (now 167 of 167 and 1208 of 1208 respectively) and needed no
+correction. The Mercenary-state leaderless exception (Phase 998) also
+remains exactly as originally characterized, now with a larger but
+proportionally identical real sample (145 revealed, 9 masked, the same
+9 real masked exceptions as the original corpus -- zero new ones among
+the 5 new files' own 43 real Mercenary-state armies, which were all
+revealed).
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -1192,14 +1246,20 @@ class XKArmyRecord:
     details (a literal ``0xFE`` in that position, confirmed real, not
     merely "not yet observed").
 
-    ``quality_or_mask`` is confirmed (Phase 998) to be revealed (nonzero)
-    exactly when this Kingdom effectively owns the army -- a leader of
-    its own commands it, or (for a leaderless garrison) it sits in one
-    of its own provinces -- for 96% of real armies, zero exceptions. A
+    ``quality_or_mask`` is confirmed (Phase 998, corrected Phase 1015) to
+    be revealed (nonzero) exactly when this Kingdom effectively knows
+    the army -- for a leader-commanded army, that its commander has a
+    full ``XKLeaderCard`` in *this* file (not, as Phase 998 originally
+    thought from a smaller corpus, that the commander's real GW
+    ``kingdom_id`` happens to match this Kingdom's own -- the two always
+    coincided in that corpus, but a larger one shows a well-tracked
+    enemy commander can earn a full card here too) -- or (for a
+    leaderless garrison) it sits in one of its own provinces -- zero
+    exceptions across the full, larger real corpus except one. A
     leaderless, real-``MERCENARY``-state army is the one confirmed
     exception: mostly revealed regardless of ownership, but not reliably
     enough to extend the same rule to it. See the module docstring's own
-    Phase 998 addendum for the full real counts both ways.
+    Phase 998 and Phase 1015 addenda for the full real counts both ways.
     """
 
     army_index: int

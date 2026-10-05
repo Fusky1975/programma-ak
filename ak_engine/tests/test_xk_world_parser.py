@@ -54,6 +54,11 @@ T3_K2 = FIXTURE_DIR / "XK3__T3.K2"
 T4_K0 = FIXTURE_DIR / "XK3__T4.K0"
 T4_K1 = FIXTURE_DIR / "XK3__T4.K1"
 T4_K2 = FIXTURE_DIR / "XK3__T4.K2"
+T11_K0 = FIXTURE_DIR / "XK3__T11.K0"
+T11_K1 = FIXTURE_DIR / "XK3__T11.K1"
+T11_K2 = FIXTURE_DIR / "XK3__T11.K2"
+T12_K0 = FIXTURE_DIR / "XK3__T12.K0"
+T12_K1 = FIXTURE_DIR / "XK3__T12.K1"
 ALL_FIXTURES = (T1_K0, T1_K1, T2_K0, T2_K1)
 # The full real 12-sample corpus this module's own Phase 992 rewrite was
 # verified against (same real campaign "3", Turns 1-4, Kingdoms 0-2) --
@@ -62,6 +67,15 @@ ALL_FIXTURES = (T1_K0, T1_K1, T2_K0, T2_K1)
 # against its own declared SHA-256 for each file (the originals
 # themselves weren't included in that delivery).
 ALL_12_SAMPLES = (T1_K0, T1_K1, T1_K2, T2_K0, T2_K1, T2_K2, T3_K0, T3_K1, T3_K2, T4_K0, T4_K1, T4_K2)
+# Phase 1015: 5 more real, user-provided samples from the same campaign,
+# much later (Turns 11-12, Kingdom 2 missing from Turn 12 -- only 5 files
+# were provided). These snapshots are substantially larger (22-25 full
+# leader cards and 30-121 known provinces, vs. 2-12 and 2-9 in the
+# original corpus) and were the first real data able to falsify several
+# of this module's own "zero exceptions" claims that the small original
+# corpus had never been able to exercise -- see the Phase 1015 module
+# docstring addendum.
+ALL_17_SAMPLES = ALL_12_SAMPLES + (T11_K0, T11_K1, T11_K2, T12_K0, T12_K1)
 
 REAL_KING_NAMES = [
     "Babba Sissoko",
@@ -595,6 +609,8 @@ _TURN_TO_REAL_GW_LEADERS = {
     2: Path("/home/user/programma-ak/GW3__T2"),
     3: Path("/home/user/programma-ak/GW3__T3"),
     4: Path("/home/user/programma-ak/GW3__T4"),
+    11: Path("/home/user/programma-ak/GW3__T11"),
+    12: Path("/home/user/programma-ak/GW3__T12"),
 }
 
 
@@ -866,9 +882,17 @@ def test_province_ownership_matches_real_gw_governor_at_scale():
 
 
 def test_quality_or_mask_revealed_exactly_for_this_kingdoms_own_leader_commanded_armies():
-    # quality_or_mask is nonzero (revealed) iff the army's real commander
-    # (GWArmyRecord.commanded_by_leader_id) belongs to this file's own
-    # Kingdom -- zero exceptions either direction, across the corpus.
+    # On the original 12-sample corpus (Turns 1-4), quality_or_mask was
+    # nonzero (revealed) iff the army's real commander
+    # (GWArmyRecord.commanded_by_leader_id) belonged to this file's own
+    # Kingdom -- zero exceptions either direction. The counts below are
+    # restricted to that original corpus to keep this exact historical
+    # regression check; see
+    # test_quality_or_mask_revealed_exactly_for_full_card_commanded_armies
+    # below for the corrected, full-card-based rule that also holds over
+    # the larger Phase 1015 corpus (Turns 11-12), where this "own
+    # Kingdom" framing is no longer exception-free -- see the Phase 1015
+    # module docstring addendum.
     gw_cache = {}
     leaders_cache = {}
     own_revealed = 0
@@ -899,6 +923,65 @@ def test_quality_or_mask_revealed_exactly_for_this_kingdoms_own_leader_commanded
                 other_masked += int(not revealed)
     assert (own_revealed, own_masked) == (77, 0)
     assert (other_revealed, other_masked) == (0, 1480)
+
+
+def test_quality_or_mask_revealed_exactly_for_full_card_commanded_armies():
+    # Phase 1015 correction: re-run across the larger 17-sample corpus
+    # (adding Turns 11-12), the previous rule -- revealed iff the
+    # commander's real GW kingdom_id matches this file's own Kingdom --
+    # is no longer exception-free (2 "own but masked", 25 "other but
+    # revealed" real cases). The real discriminator, confirmed with zero
+    # exceptions across all 2274 real leader-commanded armies in the
+    # full 17-file corpus, is not GW's raw kingdom_id at all: it is
+    # whether the commanding leader has a FULL card in the *viewing*
+    # Kingdom's own XK file.
+    #
+    # This also explains every one of the 27 apparent counterexamples:
+    # - The 25 "other but revealed" cases are all armies of monster-type
+    #   "pet" troops (Dragon Wings, Eagle Wings, Trolls, Warg Riders,
+    #   hired Orcish Phalanxes) commanded by an enemy Hero who, by Turn
+    #   11-12, has become familiar enough (presumably through repeated
+    #   contact/combat) to have earned a full card in the viewing
+    #   Kingdom's own file -- despite still genuinely serving a
+    #   different, real Kingdom in GW's own ground truth.
+    # - The 2 "own but masked" cases are the mirror image: a real member
+    #   of the viewing Kingdom itself (GW kingdom_id matches) who
+    #   nonetheless has no card at all (leader_states == 7, "untracked")
+    #   in that Kingdom's own snapshot -- consistent with this project's
+    #   own Phase 1014 finding that leader tracking/coverage is a
+    #   genuinely dynamic, snapshot-specific property, not a fixed
+    #   leader<->Kingdom relationship.
+    #
+    # In the original, smaller 12-sample corpus "own Kingdom" and "has a
+    # full card here" always coincided (no Hero had yet been tracked
+    # long enough to become fully known to a foreign Kingdom), which is
+    # why the original, narrower rule looked exception-free there.
+    gw_cache = {}
+    revealed_count = 0
+    masked_count = 0
+    exceptions = 0
+    for fixture in ALL_17_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_armies(_TURN_TO_REAL_GW_LEADERS[turn])
+        gw_armies = gw_cache[turn]
+        full_card_ids = {card.leader_id for card in world.leader_cards}
+        for army in world.armies:
+            gw_index = army.army_index if army.army_index < 255 else army.army_index - 1
+            gw_army = gw_armies[gw_index]
+            if gw_army.commanded_by_leader_id is None:
+                continue
+            revealed = army.quality_or_mask != 0
+            has_full_card = gw_army.commanded_by_leader_id in full_card_ids
+            if has_full_card != revealed:
+                exceptions += 1
+            if revealed:
+                revealed_count += 1
+            else:
+                masked_count += 1
+    assert exceptions == 0
+    assert (revealed_count, masked_count) == (274, 1888)
 
 
 def test_quality_or_mask_revealed_exactly_for_garrisons_in_this_kingdoms_own_provinces():
