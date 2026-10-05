@@ -1423,6 +1423,57 @@ def test_full_card_iff_own_leader_and_partial_card_never_own_leader():
     assert partial_belongs_to_viewer == 0
 
 
+def test_full_card_does_not_imply_own_leader_at_scale():
+    # Phase 1016 correction: re-run the same checks as
+    # test_full_card_iff_own_leader_and_partial_card_never_own_leader
+    # above across the larger 17-sample corpus (adding Turns 11-12),
+    # the "full card iff belongs to the viewing Kingdom" biconditional
+    # is no longer exception-free in either direction -- a well-tracked
+    # foreign leader can earn a full card here (14 real cases, e.g.
+    # Isis, genuinely Kingdom 7's own Hero, with a full card in Kingdom
+    # 0's own file), and a genuine member of the viewing Kingdom can go
+    # fully untracked in its own file (10 real cases, e.g. Indra,
+    # genuinely Kingdom 2's own Hero, with no card at all in Kingdom
+    # 2's own file). One direction does remain exception-free at this
+    # larger scale and is the one still safe to rely on: a partial card
+    # never belongs to the viewing Kingdom (0 of 166).
+    own_full = 0
+    own_neither = 0
+    other_full = 0
+    partial_belongs_to_viewer = 0
+    partial_checked = 0
+    for fixture in ALL_17_SAMPLES:
+        world = parse_xk_world(fixture)
+        kingdom_id = world.header.kingdom_id
+        turn = world.globals.game_turn
+        gw_leaders = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        full_ids = {c.leader_id for c in world.leader_cards}
+        partial_ids = {c.leader_id for c in world.partial_leader_cards}
+
+        for i, gw_leader in enumerate(gw_leaders):
+            if gw_leader.name is None or gw_leader.name == "":
+                continue
+            is_own = gw_leader.kingdom_id == kingdom_id
+            if is_own and i in full_ids:
+                own_full += 1
+            elif is_own:
+                own_neither += 1
+            elif i in full_ids:
+                other_full += 1
+
+        for leader_id in partial_ids:
+            if leader_id >= len(gw_leaders):
+                continue
+            partial_checked += 1
+            if gw_leaders[leader_id].kingdom_id == kingdom_id:
+                partial_belongs_to_viewer += 1
+
+    assert (own_full, own_neither) == (139, 10)
+    assert other_full == 14
+    assert partial_checked == 166
+    assert partial_belongs_to_viewer == 0
+
+
 _TURN_TO_REAL_GW_KING_EXTENSIONS = {
     1: Path("/home/user/programma-ak/GW3__T1"),
     2: Path("/home/user/programma-ak/GW3__T2"),

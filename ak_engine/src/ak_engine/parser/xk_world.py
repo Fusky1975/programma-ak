@@ -545,6 +545,44 @@ of this format can therefore tell "is this my own leader" directly
 from which list (if either) a ``leader_id`` appears in, with no need
 to cross-reference GW or any other ground truth.
 
+**Correction (Phase 1016), with the same 5 new Turn 11-12 samples that
+drove the Phase 1015 correction above.** Re-run across the combined
+17-file corpus (1695 real leader/viewing-file pairs, up from the
+original corpus's 125), "full card iff belongs to the viewing Kingdom"
+is no longer exception-free in **either** direction:
+
+- 14 real full cards belong to a foreign Kingdom: the same "a
+  well-tracked enemy Hero earns a full card here too" real leaders
+  already identified in Phase 1015 (Isis, Samantha, Negumba, ...), plus
+  a handful more (Tiffany, Adele, Hecate). One instance of this was
+  already on record and misread: Phase 1010's own Bo (``leader_id``
+  ``99``, real Kingdom ``9``) getting a full card in ``XK3__T4.K2``
+  (Kingdom 2's own file) was filed there purely as a leader-id-reuse
+  artifact -- true, but it is *also* a real instance of this same
+  foreign-full-card pattern, missed at the time because this specific
+  biconditional was never checked in that direction against the
+  original corpus.
+- 10 real leaders who do genuinely belong to the viewing Kingdom get
+  **no card at all** here (``139`` of ``149`` real own leaders get a
+  full card, not ``57`` of ``57``) -- the same "own member temporarily
+  untracked in their own Kingdom's file" pattern as Phase 1015's own
+  Indra example (Brunhilda, Tlazolteotl, Kishijoten, Odysseus, and
+  others).
+
+One direction of the original claim does remain exception-free at this
+larger scale, and is the one actually load-bearing for reading the
+format: **a partial card never belongs to the viewing Kingdom** (``0``
+of ``166`` real partial cards across the full corpus). So a partial
+card still reliably means "not mine," but a full card no longer
+reliably means "mine" -- only "this file currently tracks them in
+full," which (per Phase 1014) is a real, dynamic, snapshot-specific
+fact about this Kingdom's own knowledge, not a permanent fact about
+employment. This is the same underlying mechanism Phase 1015 found for
+Army ``quality_or_mask``, now shown to be the more fundamental fact:
+the full/partial/neither split itself was never really about
+ownership, only about tracking, and ownership was simply the dominant
+(but not exclusive) real-world cause of being tracked.
+
 **Phase 1005 -- the player tail's own 12-byte ``relations_D1D4`` span
 fully decoded.** This project already has a confirmed, independently-
 sourced real field for exactly this concept: ``parser/gw_world.py
