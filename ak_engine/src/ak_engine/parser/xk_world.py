@@ -713,6 +713,27 @@ the first place -- a real, confirmed 1:1 correlation with no identified
 mechanism yet (tested and ruled out: employment, per the Phase 1010
 correction above).
 
+**Phase 1014 -- the liege-extension-coverage question pushed further,
+and a real finding that rules out a static explanation.** Checked every
+other real field available for the same 56 ``condition == 1`` partial-
+card leaders -- ``coord``, ``birth_coord``, ``hiring_turn``,
+``original_liege_raw`` (always ``255``, uninformative), and
+``known_by_kings_mask`` (including specifically whether *this viewing
+Kingdom's own bit* is set) -- none separates the 50 covered cases from
+the 6 uncovered ones. More importantly, coverage is confirmed **not a
+fixed property of the (leader, viewing Kingdom) pair**: Dracona (leader
+38), viewed by Kingdom 0's own file, is covered at Turn 2 but uncovered
+at Turn 3 -- with an unchanged real coordinate and an unchanged real
+``known_by_kings_mask`` (``1`` at both turns) in between. The same real
+leader, the same real viewer, the same two other fields, and two
+different real coverage outcomes rules out any explanation resting on
+a static fact about either the leader or the relationship.
+Whatever decides it changes turn to turn for reasons not present in any
+field this project can currently read -- consistent with a real,
+undocumented turn-to-turn game mechanic (independent characters'
+visibility to a given Kingdom's own tracking apparently isn't
+permanent), not a decode gap in this field itself.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,

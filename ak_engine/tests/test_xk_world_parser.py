@@ -1591,6 +1591,26 @@ def test_leader_states_partial_card_condition_one_split_by_liege_coverage():
     assert checked == 56
 
 
+def test_liege_coverage_is_not_a_fixed_leader_kingdom_relationship():
+    # Phase 1014: rules out a static explanation for coverage. The same
+    # real leader (Dracona, 38), viewed by the same real Kingdom (0)'s
+    # own file, is covered at Turn 2 but uncovered at Turn 3 -- with an
+    # unchanged real coord and known_by_kings_mask in between, so
+    # neither can be what flips it.
+    def covered(fixture):
+        world = parse_xk_world(fixture)
+        liege_map = world.liege_extension.liege_by_leader_id if world.liege_extension else {}
+        return 38 in liege_map
+
+    assert covered(T2_K0) is True
+    assert covered(T3_K0) is False
+
+    leaders_t2 = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[2])
+    leaders_t3 = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[3])
+    assert leaders_t2[38].coord == leaders_t3[38].coord
+    assert leaders_t2[38].known_by_kings_mask == leaders_t3[38].known_by_kings_mask
+
+
 def test_secondary_ability_table_is_identical_across_the_whole_corpus():
     reference = None
     for fixture in ALL_12_SAMPLES:
