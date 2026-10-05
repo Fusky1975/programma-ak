@@ -1528,9 +1528,14 @@ def test_liege_extension_matches_full_card_lliege_except_one_known_identity_reus
     assert (leaders_t4[99].name, leaders_t4[99].kingdom_id) == ("Bo", 9)
 
 
-def test_liege_extension_covers_partial_cards_only_when_employed():
+def test_liege_extension_coverage_is_not_about_employment():
+    # Correction (Phase 1013): every real partial-card leader in this
+    # corpus is independent (kingdom_id=None) -- employment status
+    # cannot be what distinguishes the 62 covered from the 6 uncovered.
+    # What actually predicts coverage is tested below.
     covered = 0
-    uncovered_leader_ids = []
+    uncovered = 0
+    all_kingdom_ids = set()
     for fixture in ALL_12_SAMPLES:
         world = parse_xk_world(fixture)
         if world.liege_extension is None:
@@ -1539,13 +1544,51 @@ def test_liege_extension_covers_partial_cards_only_when_employed():
         turn = world.globals.game_turn
         gw_leaders = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
         for card in world.partial_leader_cards:
+            all_kingdom_ids.add(gw_leaders[card.leader_id].kingdom_id)
             if card.leader_id in liege_map:
                 covered += 1
             else:
-                uncovered_leader_ids.append(gw_leaders[card.leader_id].kingdom_id)
+                uncovered += 1
     assert covered == 62
-    assert len(uncovered_leader_ids) == 6
-    assert all(kid is None for kid in uncovered_leader_ids)  # all unemployed, zero exceptions
+    assert uncovered == 6
+    assert all_kingdom_ids == {None}  # every partial card is independent, covered or not
+
+
+def test_leader_states_equals_gw_condition_for_a_nonone_independent_leader():
+    # The first real decode of GW's own condition field for a value
+    # other than 1 anywhere in this project.
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        gw_leaders = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        for card in world.partial_leader_cards:
+            gw_leader = gw_leaders[card.leader_id]
+            if gw_leader.condition == 1:
+                continue
+            assert world.leader_states[card.leader_id] == gw_leader.condition
+            checked += 1
+    assert checked == 12
+
+
+def test_leader_states_partial_card_condition_one_split_by_liege_coverage():
+    # Completes the partial-card case of leader_states: when condition
+    # is 1, leader_states is 1 iff the same leader_id is also covered
+    # by the TR_LLs liege extension, 7 otherwise -- zero exceptions.
+    checked = 0
+    for fixture in ALL_12_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        gw_leaders = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        liege_map = world.liege_extension.liege_by_leader_id if world.liege_extension else {}
+        for card in world.partial_leader_cards:
+            gw_leader = gw_leaders[card.leader_id]
+            if gw_leader.condition != 1:
+                continue
+            expected = 1 if card.leader_id in liege_map else 7
+            assert world.leader_states[card.leader_id] == expected
+            checked += 1
+    assert checked == 56
 
 
 def test_secondary_ability_table_is_identical_across_the_whole_corpus():

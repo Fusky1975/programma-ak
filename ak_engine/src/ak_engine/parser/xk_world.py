@@ -635,11 +635,15 @@ Kingdom's own known-province set, no broader and no narrower.
 card, and one real leader-id-reuse artifact.** ``liege_by_leader_id``
 covers more than just this Kingdom's own full-card leaders: it also
 carries an entry for 62 of the 68 real partial-card leaders across the
-corpus -- and the 6 real exceptions are fully explained, not a gap:
-each one is independently confirmed, via GW's own ``kingdom_id``, to be
-an unemployed/independent character (``kingdom_id=None``), for whom a
-liege is meaningless. For every leader_id covered by both a full card
-and this extension, the two agree exactly in 57 of 58 real cases. The
+corpus. **Correction (Phase 1013):** this phase originally attributed
+the 6 real exceptions to those leaders being unemployed
+(``kingdom_id=None``) -- wrong, since *every* real partial-card leader
+in this corpus is independent (``kingdom_id=None``, zero exceptions,
+68 of 68), so that can't be the real distinguishing factor. See the
+module docstring's own Phase 1013 addendum for what actually predicts
+coverage (``leader_states`` itself, not employment). For every
+leader_id covered by both a full card and this extension, the two
+agree exactly in 57 of 58 real cases. The
 one exception (``XK3__T4.K2``, leader 99) is not a decode error: it is
 a real leader-id-reuse artifact confirmed independently against GW --
 ``GW3__T3``'s own leader 99 is Quintilian (Kingdom 2, this Phase's own
@@ -682,10 +686,32 @@ the 12 files, index ``leader_capacity`` itself (``100``), a single
 structural padding slot this format's own "``leader_capacity + 1``, not
 ``leader_capacity``" sizing convention (already confirmed elsewhere in
 this format) guarantees can never hold a real leader -- trivially ``0``,
-not a second genuine state value. The untracked case of ``leader_states``
-is therefore now a complete, closed rule; the partial-card case (values
-``0``/``1``/``2``/``7`` with no single predicate found, Phase 996)
-remains the only genuinely open part.
+not a second genuine state value.
+
+**Phase 1013 -- the partial-card case of ``leader_states`` fully
+characterized too, completing the field.** Checked against GW's own
+``condition`` field (previously undeciphered project-wide, always
+``1`` for every one of this project's own already-confirmed real
+samples -- but never checked before against an *independent*
+character's own real value): for every real partial-card leader whose
+own ``condition`` is **not** ``1`` (``0`` or ``2`` both real, observed
+values), ``leader_states`` equals ``condition`` exactly, ``12`` of
+``12``, zero exceptions -- the first real decode of ``condition`` for
+a non-``1`` value anywhere in this project. For the remaining real
+cases (``condition == 1``), ``leader_states`` is ``1`` exactly when
+that same leader_id is also covered by the ``TR_LLs`` liege extension
+(Phase 1010), and ``7`` exactly when it isn't -- ``56`` of ``56``, zero
+exceptions, the same 6 real leader/file pairs in both checks. This
+closes Phase 996's own "no clean rule found" gap completely: every
+real ``leader_states`` value in the whole 12-file corpus is now
+predicted by one of these rules (full card -> ``1``; untracked ->
+``7``, Phase 1012; partial, ``condition != 1`` -> equals ``condition``;
+partial, ``condition == 1`` -> ``1``/``7`` by liege-extension
+coverage). What remains genuinely open is one level deeper: *why* a
+``condition == 1`` leader is or isn't covered by the liege extension in
+the first place -- a real, confirmed 1:1 correlation with no identified
+mechanism yet (tested and ruled out: employment, per the Phase 1010
+correction above).
 
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
@@ -702,11 +728,9 @@ correspondence to K1's own ``obj`` found -- 10 of 18 exact matches,
 meaning specifically for an ``LMOVE`` phase (Phase 1002: every other
 action type and the whole of ``actions`` is now fully decoded against
 real K1 data); the
-``leader_states`` vector's own exact per-value meaning *for a
-partial-card leader specifically* (Phase 996: substantially
-characterized with real data and several real hypotheses tested and
-falsified, see above, but no clean rule found yet -- the untracked
-case is fully resolved, Phase 1012); a
+*why* a ``condition == 1`` partial-card leader is or isn't covered by
+the ``TR_LLs`` liege extension (every other case of ``leader_states``
+is now a fully predicted, closed rule -- Phases 1012/1013); a
 Feature record's own ``unknown_962a`` (Phase 995: confirmed always
 ``0`` in all 36 real samples, role still unconfirmed); a Mercenary-
 state leaderless Army record's own ``quality_or_mask`` reveal rule
@@ -1212,11 +1236,13 @@ class XKLiegeExtension:
     this format).
 
     Confirmed (Phase 1010) richer than ``XKLeaderCard.lliege``: it also
-    covers a real partial-card leader, when (and only when) that leader
-    is actually employed by some Kingdom (``kingdom_id`` set in GW) --
-    an unemployed/independent character is correctly absent, not a gap.
-    See module docstring's own Phase 1010 addendum for the one real
-    leader-id-reuse exception found cross-checking it against GW.
+    covers 62 of 68 real partial-card leaders. Coverage is **not** about
+    employment (every real partial-card leader in this corpus is
+    independent, ``kingdom_id=None``) -- it exactly matches whether
+    that same leader's own ``leader_states`` entry reads ``1`` rather
+    than ``7`` (Phase 1013, zero exceptions). See module docstring's
+    own Phase 1010/1013 addenda, including the one real leader-id-reuse
+    exception found cross-checking this extension against GW.
     """
 
     liege_by_leader_id: dict[int, int]
