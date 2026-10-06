@@ -987,23 +987,39 @@ shown, because the specific real combination never occurred in it:
   contradicts it either.)
 
 The employed, ``condition == 1`` case this larger corpus newly exposes
-is **not** as clean: of 51 real employed partial cards, 44 still follow
-the established "covered (by any liege value, sentinel or real) ->
-``1``" rule, but 7 real exceptions instead read ``2`` (6 cases: Odysseus,
-Brunhilda, and Kishijoten, each stable across both of this corpus's own
-Turn 11 and Turn 12 samples) or ``0`` (1 case: Hecate, only at Turn 12
--- at Turn 11 she herself reads the expected ``1``, with her own liege value
-changing from a real id to the ``255`` sentinel in between). Every one
-of these 7 exceptions carries the ``255`` sentinel liege value -- but so
-do 37 *non*-exceptional employed cases that correctly read ``1``, so
-"sentinel + employed" is necessary but not sufficient, ruling out the
-same fix that closed the ``condition == 2`` case above. Also tried and
-ruled out: whether the exception is itself a King (``leader_id < 10``,
-trivially always "employed" by their own kingdom) -- both exceptional
-and non-exceptional sentinel/employed cases include real Heroes, not
-just Kings. Left genuinely open, alongside the pre-existing "why is a
-``condition == 1`` leader covered by the liege extension at all"
-question (Phase 1013/1014) it sits right next to.
+looked, at first, not as clean: of 51 real employed partial cards, 44
+follow the established "covered (by any liege value, sentinel or real)
+-> ``1``" rule, but 7 real exceptions instead read ``2`` or ``0``. Every
+one of these 7 carries the ``255`` sentinel liege value -- but so do 37
+*non*-exceptional employed cases that correctly read ``1``, so
+"sentinel + employed" alone is necessary but not sufficient.
+
+**Phase 1022 closes this completely.** The real, missing ingredient is
+``GWLeaderRecord.hiring_turn``: every one of the 44 normal cases either
+carries a real (non-``255``) liege value *or* has ``hiring_turn == 0``
+(a founding Hero, present since the game began); every one of the 7
+exceptions has *both* the ``255`` sentinel liege value *and*
+``hiring_turn != 0`` (a Hero recruited mid-campaign) -- **51 of 51, zero
+exceptions**, once this third condition is added. Concretely: a
+sentinel-liege, employed, ``condition == 1`` partial card reads ``1``
+if this Hero founded their own Kingdom's roster, but something else if
+they joined it later. (Hecate's own single real appearance in the
+"exception" set, at Turn 12 only, isn't a counterexample: at Turn 11
+she herself carries a *real* liege value, ``1`` as the rule predicts,
+and only crosses into the sentinel-liege case by Turn 12 -- the same
+"liege coverage is dynamic, not fixed" property Phase 1014 already
+established, now shown to interact with this rule too, not to break
+it.)
+
+What the exception resolves *to* is less clean: 6 of the 7 real cases
+(Odysseus, Brunhilda, Kishijoten) read ``2``, stable across both of
+this corpus's own Turn 11 and Turn 12 samples; the 7th (Hecate, Turn 12
+only) reads ``0`` instead, sharing her own real ``hiring_turn`` (``3``)
+with Odysseus's own ``2``-reading case, which rules out ``hiring_turn``'s
+own specific value as what picks ``2`` vs. ``0``. With only one real
+``0`` instance on file, this finer distinction is left open -- but the
+much larger question (*is* this employed Hero's own ``leader_states``
+an exception at all) is now a complete, closed, zero-exception rule.
 
 **Phase 1021 -- ``discoveries`` re-checked at a much larger real scale,
 reinforcing rather than contradicting what was already known.** The
@@ -1046,12 +1062,14 @@ and ``extra_low_bytes[i]``'s own same-phase-destination reading (Phase
 now understood in outline (chained move positions, usually but not
 always kept in sync) but not closed to zero exceptions; the
 *why* a ``condition == 1`` partial-card leader is or isn't covered by
-the ``TR_LLs`` liege extension, and (Phase 1020) the further, narrower
-question of why 7 of 51 real *employed* ``condition == 1`` partial
-cards read ``2``/``0`` instead of the otherwise-universal "covered ->
-``1``" rule's own prediction -- every other case of ``leader_states``
-is now a fully predicted, closed rule (Phases 1012/1013/1020); a
-Feature record's own ``unknown_962a`` (Phase 995: confirmed always
+the ``TR_LLs`` liege extension (Phase 1013/1014), and (Phase 1022) the
+much narrower question of why a sentinel-liege, employed, late-hired
+Hero's own exception reads ``2`` in 6 of 7 real cases but ``0`` in the
+7th (Hecate, with only one real instance to characterize) -- every
+other case of ``leader_states``, including *whether* that specific
+employed case is an exception at all, is now a fully predicted, closed
+rule (Phases 1012/1013/1020/1022); a Feature record's own
+``unknown_962a`` (Phase 995: confirmed always
 ``0`` in all 36 real samples, role still unconfirmed); a Mercenary-
 state leaderless Army record's own ``quality_or_mask`` reveal rule
 (Phase 998: solved for every other real army shape, but this one real

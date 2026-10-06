@@ -2071,13 +2071,13 @@ def test_leader_states_partial_card_condition_one_split_by_liege_coverage():
 
 def test_leader_states_employed_condition_one_mostly_follows_coverage_rule():
     # Phase 1020: the newly-possible "employed partial card" category
-    # (absent from the original corpus) mostly still follows the
-    # established "covered -> 1" rule (44 of 51), but has 7 real
-    # exceptions reading 2 or 0 instead -- every one of them carries the
-    # liege extension's own 255 sentinel, but so do 37 non-exceptional
-    # cases, so "employed + sentinel" is necessary but not sufficient to
-    # predict the exception. Left genuinely open; captured here as a
-    # precise regression on the real counts, not a closed rule.
+    # (absent from the original corpus) mostly follows the established
+    # "covered -> 1" rule (44 of 51), but has 7 real exceptions reading
+    # 2 or 0 instead. See
+    # test_leader_states_employed_exception_is_closed_by_hiring_turn
+    # below for the Phase 1022 finding that fully closes *whether* a
+    # case is an exception (hiring_turn != 0, not just sentinel liege
+    # coverage) -- only which non-1 value it resolves to remains open.
     SENTINEL = 255
     normal = 0
     exceptions = []
@@ -2100,6 +2100,36 @@ def test_leader_states_employed_condition_one_mostly_follows_coverage_rule():
     assert len(exceptions) == 7
     assert all(liege_val == SENTINEL for *_, liege_val, _ls in exceptions)
     assert {name for _, _, name, _, _ in exceptions} == {"Odysseus", "Brunhilda", "Kishijoten", "Hecate"}
+
+
+def test_leader_states_employed_exception_is_closed_by_hiring_turn():
+    # Phase 1022: closes the Phase 1020 "sentinel + employed is
+    # necessary but not sufficient" gap completely. The missing
+    # ingredient is GWLeaderRecord.hiring_turn: among employed,
+    # condition == 1 partial cards, leader_states == 1 unless the liege
+    # extension gives the 255 sentinel AND this Hero's own hiring_turn
+    # is nonzero (recruited after the game began, not a founding
+    # member) -- 51 of 51 real cases, zero exceptions.
+    SENTINEL = 255
+    checked = 0
+    for fixture in ALL_17_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        gw_leaders = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        liege_map = world.liege_extension.liege_by_leader_id if world.liege_extension else {}
+        for card in world.partial_leader_cards:
+            gw_leader = gw_leaders[card.leader_id]
+            if gw_leader.condition != 1 or gw_leader.kingdom_id is None:
+                continue
+            liege_val = liege_map[card.leader_id]
+            is_exception = liege_val == SENTINEL and gw_leader.hiring_turn != 0
+            ls = world.leader_states[card.leader_id]
+            if is_exception:
+                assert ls != 1
+            else:
+                assert ls == 1
+            checked += 1
+    assert checked == 51
 
 
 def test_liege_coverage_is_not_a_fixed_leader_kingdom_relationship():
