@@ -157,6 +157,39 @@ def test_discoveries_accumulate_turn_over_turn_for_kingdom_2():
     assert t4 == {2, 9, 34}
 
 
+def test_discoveries_hold_up_at_17_file_scale_including_resolved_features():
+    # Phase 1021: the Turn 11-12 corpus extends the real discoveries
+    # sample 27x (81 records, up from 3). legacy_word remains exactly
+    # 0xFE01 throughout -- reinforcing, not contradicting, the original
+    # small sample. The larger sample also shows discoveries can
+    # reference a feature_id no longer in this same file's own current
+    # features list (60 of 81) -- consistent with the already-confirmed
+    # accumulation behavior: discoveries is a permanent historical
+    # ledger, features only lists what's still currently live, so a
+    # since-resolved feature (treasure claimed, guardian defeated) can
+    # drop out of the latter while staying in the former. Every
+    # discovered id that *is* still live matches its own known
+    # feature's own feature_id exactly (21 of 21), consistent with
+    # feature_id using the same real GW-list-index convention
+    # XKFeatureRecord.feature_id itself already confirms (Phase 994).
+    total = 0
+    stale = 0
+    live_matches = 0
+    for fixture in (T11_K0, T11_K1, T11_K2, T12_K0, T12_K1):
+        world = parse_xk_world(fixture)
+        known_feature_ids = {feat.feature_id for feat in world.features}
+        for d in world.discoveries:
+            total += 1
+            assert (d.legacy_word & 0xFFFF) == 0xFE01
+            if d.feature_id in known_feature_ids:
+                live_matches += 1
+            else:
+                stale += 1
+    assert total == 81
+    assert stale == 60
+    assert live_matches == 21
+
+
 def test_header_kingdom_id_matches_the_filenames_own_k_suffix():
     assert parse_xk_world(T1_K0).header.kingdom_id == 0
     assert parse_xk_world(T1_K1).header.kingdom_id == 1

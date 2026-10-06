@@ -1005,6 +1005,32 @@ just Kings. Left genuinely open, alongside the pre-existing "why is a
 ``condition == 1`` leader covered by the liege extension at all"
 question (Phase 1013/1014) it sits right next to.
 
+**Phase 1021 -- ``discoveries`` re-checked at a much larger real scale,
+reinforcing rather than contradicting what was already known.** The
+original corpus's own small real sample (3 records total, Kingdom 2
+only) already established ``legacy_word``'s own constant ``0xFE01``
+value (explained directly from the delivered disassembly material as a
+writer artifact, not meaningful per-discovery data -- see this
+docstring's own grammar overview above) and that ``discoveries``
+accumulates monotonically, turn over turn. The 5 new Turn 11-12 samples
+extend the real sample 27x (81 records total) and confirm both: every
+one of the 81 still reads exactly ``0xFE01``, zero exceptions. They
+also add a real data point the smaller corpus's own 3-record sample was
+too small to show: a discovered ``feature_id`` is **not** always a
+member of that same file's own *current* ``features`` list (e.g.
+``XK3__T11.K0``: 13 of its own 15 real discovered ids aren't in its own
+23 real currently-known feature ids) -- consistent with, and a natural
+extension of, the already-confirmed accumulation behavior: ``discoveries``
+is this Kingdom's permanent historical discovery ledger, while
+``features`` only lists what is still currently live/relevant, so a
+feature resolved since its own discovery (treasure claimed, guardian
+defeated) can fall out of the latter while staying in the former.
+``feature_id`` uses the same real, already-confirmed GW-list-index
+convention ``XKFeatureRecord.feature_id`` itself uses (Phase 994) --
+not independently re-derived here, just confirmed consistent with it
+(every real discovered id that *is* still live matches its own known
+feature's own ``feature_id`` exactly, as expected).
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
