@@ -947,7 +947,14 @@ remains exactly as originally characterized, now with a larger but
 proportionally identical real sample (145 revealed, 9 masked, the same
 9 real masked exceptions as the original corpus -- zero new ones among
 the 5 new files' own 43 real Mercenary-state armies, which were all
-revealed).
+revealed). Two other, unrelated "zero exceptions" claims (Phase 997's
+``effects_bitmask``==GW's own ``termod``, and Phase 1009's recruitment
+map matching real recruit types for every known province) were also
+re-run against the same 17-file corpus and remain exactly
+exception-free, now at 651 real checks each (up from 177) -- these are
+matched by each province's own real, unique name, not by army-style
+list position, so they weren't exposed to the same kind of
+corpus-size-dependent gap the ownership rules above were.
 
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals

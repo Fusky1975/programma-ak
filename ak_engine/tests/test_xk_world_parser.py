@@ -770,6 +770,8 @@ _TURN_TO_REAL_GW_PROVINCES = {
     2: Path("/home/user/programma-ak/GW3__T2"),
     3: Path("/home/user/programma-ak/GW3__T3"),
     4: Path("/home/user/programma-ak/GW3__T4"),
+    11: Path("/home/user/programma-ak/GW3__T11"),
+    12: Path("/home/user/programma-ak/GW3__T12"),
 }
 
 
@@ -778,10 +780,12 @@ def test_effects_bitmask_matches_real_gw_termod_at_scale():
     # carry one) -- unlike armies/features/leaders, there's no shared
     # index to zip by here. unknown_9197_word is fully decoded by this
     # cross-check: it's exactly GW's own effects_bitmask (termod).
+    # Phase 1015's own Turn 11-12 corpus extends this to 651 real checks
+    # (from the original 177), still zero exceptions.
     gw_cache = {}
     checked = 0
     nonzero_checked = 0
-    for fixture in ALL_12_SAMPLES:
+    for fixture in ALL_17_SAMPLES:
         world = parse_xk_world(fixture)
         turn = world.globals.game_turn
         if turn not in gw_cache:
@@ -795,8 +799,8 @@ def test_effects_bitmask_matches_real_gw_termod_at_scale():
             checked += 1
             if province.effects_bitmask != 0:
                 nonzero_checked += 1
-    assert checked == 177
-    assert nonzero_checked == 2  # the Mermaid Sea + the Icaria Sea, both plague-afflicted
+    assert checked == 651
+    assert nonzero_checked == 14
 
 
 def test_mermaid_and_icaria_sea_effects_bitmask_is_a_real_plague_level():
@@ -1809,10 +1813,12 @@ def test_recruitment_map_matches_real_gw_recruit_types_for_known_provinces():
     # Checked against real GW ground truth, not just this file's own
     # province list: the recruitment map reveals a known province's
     # real recruit types regardless of ownership, richer than
-    # XKProvinceRecord's own recruit_type_1/2 (owned-only).
+    # XKProvinceRecord's own recruit_type_1/2 (owned-only). Phase 1015's
+    # own Turn 11-12 corpus extends this to 651 real checks (from the
+    # original 177), still zero exceptions.
     gw_cache = {}
     known_checked = 0
-    for fixture in ALL_12_SAMPLES:
+    for fixture in ALL_17_SAMPLES:
         world = parse_xk_world(fixture)
         turn = world.globals.game_turn
         if turn not in gw_cache:
@@ -1827,7 +1833,7 @@ def test_recruitment_map_matches_real_gw_recruit_types_for_known_provinces():
             assert cell.recruit_type_1 == gw_province.recruit_type_1
             assert cell.recruit_type_2 == gw_province.recruit_type_2
             known_checked += 1
-    assert known_checked == 177
+    assert known_checked == 651
 
 
 def test_recruitment_map_is_richer_than_the_province_record_for_unowned_known_provinces():
@@ -1843,7 +1849,7 @@ def test_recruitment_map_is_richer_than_the_province_record_for_unowned_known_pr
 
 def test_recruitment_map_cells_for_unknown_provinces_are_always_blank():
     checked = 0
-    for fixture in ALL_12_SAMPLES:
+    for fixture in ALL_17_SAMPLES:
         world = parse_xk_world(fixture)
         known_coords = {p.coord for p in world.provinces}
         for cell in world.recruitment_map:
@@ -1852,7 +1858,7 @@ def test_recruitment_map_cells_for_unknown_provinces_are_always_blank():
             assert cell.recruit_type_1 is None
             assert cell.recruit_type_2 is None
             checked += 1
-    assert checked == 1767
+    assert checked == 2103
 
 
 def test_liege_extension_matches_full_card_lliege_except_one_known_identity_reuse():
