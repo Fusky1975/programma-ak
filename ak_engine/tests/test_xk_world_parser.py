@@ -1865,10 +1865,14 @@ def test_liege_extension_matches_full_card_lliege_except_one_known_identity_reus
     # The one real exception (XK3__T4.K2, leader 99) is a genuine
     # leader-id-reuse artifact confirmed against GW, not a decode bug:
     # the real person behind leader_id 99 changes between GW3__T3
-    # (Quintilian, Kingdom 2) and GW3__T4 (Bo, Kingdom 9).
+    # (Quintilian, Kingdom 2) and GW3__T4 (Bo, Kingdom 9). Re-run across
+    # the larger 17-file corpus (Phase 1015/1016's own Turn 11-12
+    # samples), this remains the only real exception -- 152 of 153 real
+    # checks now, up from the original 57 of 58, with zero new ones
+    # among the 95 additional real checks the new files add.
     matches = 0
     mismatches = []
-    for fixture in ALL_12_SAMPLES:
+    for fixture in ALL_17_SAMPLES:
         world = parse_xk_world(fixture)
         if world.liege_extension is None:
             continue
@@ -1880,7 +1884,7 @@ def test_liege_extension_matches_full_card_lliege_except_one_known_identity_reus
                 matches += 1
             else:
                 mismatches.append((fixture.name, card.leader_id, card.lliege, liege_map[card.leader_id]))
-    assert matches == 57
+    assert matches == 152
     assert mismatches == [("XK3__T4.K2", 99, 255, 9)]
 
     leaders_t3 = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[3])
@@ -1915,6 +1919,39 @@ def test_liege_extension_coverage_is_not_about_employment():
     assert all_kingdom_ids == {None}  # every partial card is independent, covered or not
 
 
+def test_liege_extension_coverage_partial_cards_can_be_employed_at_scale():
+    # Phase 1020 correction: re-run across the larger 17-file corpus,
+    # "every partial-card leader is independent" no longer holds -- 51
+    # of 211 real partial cards genuinely belong to some Kingdom. This
+    # doesn't revive "employment predicts coverage" (both employed and
+    # independent partial cards can be covered or uncovered), it just
+    # means the above test's own all_kingdom_ids == {None} no longer
+    # describes the full corpus.
+    covered = 0
+    uncovered = 0
+    employed = 0
+    independent = 0
+    for fixture in ALL_17_SAMPLES:
+        world = parse_xk_world(fixture)
+        if world.liege_extension is None:
+            continue
+        liege_map = world.liege_extension.liege_by_leader_id
+        turn = world.globals.game_turn
+        gw_leaders = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        for card in world.partial_leader_cards:
+            if gw_leaders[card.leader_id].kingdom_id is None:
+                independent += 1
+            else:
+                employed += 1
+            if card.leader_id in liege_map:
+                covered += 1
+            else:
+                uncovered += 1
+    assert covered == 160
+    assert uncovered == 6
+    assert (employed, independent) == (51, 115)
+
+
 def test_leader_states_equals_gw_condition_for_a_nonone_independent_leader():
     # The first real decode of GW's own condition field for a value
     # other than 1 anywhere in this project.
@@ -1930,6 +1967,53 @@ def test_leader_states_equals_gw_condition_for_a_nonone_independent_leader():
             assert world.leader_states[card.leader_id] == gw_leader.condition
             checked += 1
     assert checked == 12
+
+
+def test_leader_states_condition_rule_corrected_by_liege_sentinel_at_scale():
+    # Phase 1020 correction: the original "leader_states always equals
+    # condition for condition != 1" claim (12 of 12) was real but
+    # incomplete -- every one of those 12 real cases happened, by
+    # coincidence of the smaller corpus, to carry the TR_LLs liege
+    # extension's own 255 "no real liege" sentinel wherever it applied
+    # at all. The larger 17-file corpus's own 28 real condition == 2
+    # cases (independent leaders only, as Phase 1010/1013 already
+    # established for condition != 1) reveal the real, complete rule:
+    # leader_states equals condition when the liege extension gives
+    # nothing or the 255 sentinel (23 of 23), but equals 1 instead when
+    # it gives a genuine, real liege id (5 of 5) -- zero exceptions once
+    # the sentinel is accounted for. condition == 0's own 19 real cases
+    # never carry a real, non-sentinel liege value in this corpus, so
+    # this generalization isn't independently confirmed for 0, only
+    # consistent with it (all 19 do carry the 255 sentinel, all read 0).
+    SENTINEL = 255
+    cond2_sentinel_matches = 0
+    cond2_real_liege_matches = 0
+    cond0_checked = 0
+    for fixture in ALL_17_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        gw_leaders = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        liege_map = world.liege_extension.liege_by_leader_id if world.liege_extension else {}
+        for card in world.partial_leader_cards:
+            gw_leader = gw_leaders[card.leader_id]
+            if gw_leader.condition not in (0, 2):
+                continue
+            liege_val = liege_map.get(card.leader_id)
+            is_sentinel = liege_val is None or liege_val == SENTINEL
+            if gw_leader.condition == 0:
+                assert is_sentinel
+                assert world.leader_states[card.leader_id] == 0
+                cond0_checked += 1
+                continue
+            if is_sentinel:
+                assert world.leader_states[card.leader_id] == gw_leader.condition
+                cond2_sentinel_matches += 1
+            else:
+                assert world.leader_states[card.leader_id] == 1
+                cond2_real_liege_matches += 1
+    assert cond0_checked == 19
+    assert cond2_sentinel_matches == 23
+    assert cond2_real_liege_matches == 5
 
 
 def test_leader_states_partial_card_condition_one_split_by_liege_coverage():
@@ -1950,6 +2034,39 @@ def test_leader_states_partial_card_condition_one_split_by_liege_coverage():
             assert world.leader_states[card.leader_id] == expected
             checked += 1
     assert checked == 56
+
+
+def test_leader_states_employed_condition_one_mostly_follows_coverage_rule():
+    # Phase 1020: the newly-possible "employed partial card" category
+    # (absent from the original corpus) mostly still follows the
+    # established "covered -> 1" rule (44 of 51), but has 7 real
+    # exceptions reading 2 or 0 instead -- every one of them carries the
+    # liege extension's own 255 sentinel, but so do 37 non-exceptional
+    # cases, so "employed + sentinel" is necessary but not sufficient to
+    # predict the exception. Left genuinely open; captured here as a
+    # precise regression on the real counts, not a closed rule.
+    SENTINEL = 255
+    normal = 0
+    exceptions = []
+    for fixture in ALL_17_SAMPLES:
+        world = parse_xk_world(fixture)
+        turn = world.globals.game_turn
+        gw_leaders = parse_gw_leaders(_TURN_TO_REAL_GW_LEADERS[turn])
+        liege_map = world.liege_extension.liege_by_leader_id if world.liege_extension else {}
+        for card in world.partial_leader_cards:
+            gw_leader = gw_leaders[card.leader_id]
+            if gw_leader.condition != 1 or gw_leader.kingdom_id is None:
+                continue
+            assert card.leader_id in liege_map  # every real employed case is covered
+            ls = world.leader_states[card.leader_id]
+            if ls == 1:
+                normal += 1
+            else:
+                exceptions.append((fixture.name, card.leader_id, gw_leader.name, liege_map[card.leader_id], ls))
+    assert normal == 44
+    assert len(exceptions) == 7
+    assert all(liege_val == SENTINEL for *_, liege_val, _ls in exceptions)
+    assert {name for _, _, name, _, _ in exceptions} == {"Odysseus", "Brunhilda", "Kishijoten", "Hecate"}
 
 
 def test_liege_coverage_is_not_a_fixed_leader_kingdom_relationship():

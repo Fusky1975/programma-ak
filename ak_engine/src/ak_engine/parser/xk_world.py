@@ -956,6 +956,55 @@ matched by each province's own real, unique name, not by army-style
 list position, so they weren't exposed to the same kind of
 corpus-size-dependent gap the ownership rules above were.
 
+**Phase 1020 -- the ``leader_states`` partial-card rule (Phase 1013),
+re-run against the Phase 1015/1016 corpus, needs the same kind of
+correction.** Two things the smaller 12-file corpus could never have
+shown, because the specific real combination never occurred in it:
+
+- **A partial card can belong to a real, employing Kingdom.** Phase
+  1013's own "every real partial-card leader in this corpus is
+  independent" (``kingdom_id=None``, Phase 1010's correction) no longer
+  holds at this larger scale -- 51 of the corpus's own 211 real partial
+  cards are genuinely employed by some Kingdom. (This is the same "a
+  Kingdom's own knowledge of a leader isn't tied to who employs them"
+  fact Phase 1016 already established for *full* cards, now shown to
+  apply to partial cards too.)
+- **``condition == 2``'s own "equals condition" rule (Phase 1013) was
+  real but incomplete, not wrong.** All 12 of the original corpus's own
+  real ``condition != 1`` cases -- by coincidence, not by rule --
+  happened to carry the ``TR_LLs`` liege extension's own ``255``
+  sentinel (no real liege) wherever they were covered at all. The new
+  corpus's own 28 real ``condition == 2`` cases reveal the sentinel
+  itself is what the rule actually keys on: ``leader_states`` equals
+  ``condition`` (``2``) when the liege extension's own value for that
+  ``leader_id`` is absent or the ``255`` sentinel (23 of 23), but equals
+  ``1`` instead when the liege extension gives a genuine, real liege id
+  (5 of 5) -- a complete, zero-exception replacement rule once the
+  sentinel is accounted for. (``condition == 0``'s own 19 real cases in
+  this corpus never carry a real, non-sentinel liege value to test the
+  same generalization against, so it's confirmed only for ``2``, not
+  independently for ``0`` -- though nothing in the ``0`` data
+  contradicts it either.)
+
+The employed, ``condition == 1`` case this larger corpus newly exposes
+is **not** as clean: of 51 real employed partial cards, 44 still follow
+the established "covered (by any liege value, sentinel or real) ->
+``1``" rule, but 7 real exceptions instead read ``2`` (6 cases: Odysseus,
+Brunhilda, and Kishijoten, each stable across both of this corpus's own
+Turn 11 and Turn 12 samples) or ``0`` (1 case: Hecate, only at Turn 12
+-- at Turn 11 she herself reads the expected ``1``, with her own liege value
+changing from a real id to the ``255`` sentinel in between). Every one
+of these 7 exceptions carries the ``255`` sentinel liege value -- but so
+do 37 *non*-exceptional employed cases that correctly read ``1``, so
+"sentinel + employed" is necessary but not sufficient, ruling out the
+same fix that closed the ``condition == 2`` case above. Also tried and
+ruled out: whether the exception is itself a King (``leader_id < 10``,
+trivially always "employed" by their own kingdom) -- both exceptional
+and non-exceptional sentinel/employed cases include real Heroes, not
+just Kings. Left genuinely open, alongside the pre-existing "why is a
+``condition == 1`` leader covered by the liege extension at all"
+question (Phase 1013/1014) it sits right next to.
+
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
@@ -971,8 +1020,11 @@ and ``extra_low_bytes[i]``'s own same-phase-destination reading (Phase
 now understood in outline (chained move positions, usually but not
 always kept in sync) but not closed to zero exceptions; the
 *why* a ``condition == 1`` partial-card leader is or isn't covered by
-the ``TR_LLs`` liege extension (every other case of ``leader_states``
-is now a fully predicted, closed rule -- Phases 1012/1013); a
+the ``TR_LLs`` liege extension, and (Phase 1020) the further, narrower
+question of why 7 of 51 real *employed* ``condition == 1`` partial
+cards read ``2``/``0`` instead of the otherwise-universal "covered ->
+``1``" rule's own prediction -- every other case of ``leader_states``
+is now a fully predicted, closed rule (Phases 1012/1013/1020); a
 Feature record's own ``unknown_962a`` (Phase 995: confirmed always
 ``0`` in all 36 real samples, role still unconfirmed); a Mercenary-
 state leaderless Army record's own ``quality_or_mask`` reveal rule
