@@ -554,6 +554,70 @@ action type whose own ``obj`` is a coordinate rather than a plain id)
 is consistent with that record being live-mutated by move execution
 itself before XK captures it, but this is not confirmed.
 
+**Phase 1019 -- what an LMOVE phase's own ``objects[i]`` really holds,
+resolved using the Phase 1015/1016 Turn 10-11 K1 move-file pair.**
+Kingdom 1's own real ``AK3__T10.K1`` move file (previously on hand but
+unusable for this cross-check, since no XK sample for the resulting
+Turn 11 snapshot existed until now) adds a 4th real turn-pair alongside
+Phase 1002's original 3 -- 36 more real phases, including 44 more real
+``LMOVE`` phases, nearly 2.5x the original ``LMOVE`` sample. This is
+large enough to finally separate "the *first* ``LMOVE`` phase in a
+leader's own plan segment" from "any ``LMOVE`` phase", which the
+original, smaller sample (only 3 real turn-pairs, 1 real Kingdom) could
+not do on its own.
+
+The real answer: an ``LMOVE`` phase's own ``objects[i]`` is **that
+phase's own starting position**, not its destination (which
+``extra_low_bytes[i]`` usually holds instead, confirmed below) --
+
+- For the *first* ``LMOVE`` in a plan segment, ``objects[i]`` is this
+  leader's own real coordinate *before* any of this turn's moves
+  execute (this project's own pre-existing ``parse_gw_leaders()``
+  reading of the immediately preceding real GW snapshot), packed with
+  the same board width ``turn/hex_numbering.py``'s own
+  ``decode_hex_number``/``EMPIRICAL_AK3_BOARD_WIDTH`` already use for
+  the plain K1 ``obj`` field -- but with ``x``/``y``'s roles
+  transposed: ``HexCoord(val // width, val % width)``, the mirror of
+  ``decode_hex_number``'s own ``(val % width, val // width)``. Exact
+  match, **26 of 26 real first-``LMOVE`` phases, zero exceptions**,
+  across all 4 available real turn-pairs.
+- For every later ``LMOVE`` in the same plan segment, ``objects[i]``
+  usually equals the real destination (``obj``) of the most recently
+  *executed* earlier ``LMOVE`` phase in that same plan -- i.e. the
+  position chains forward, move by move, consistent with ``objects[i]``
+  meaning "position before this move" throughout. **33 of 36 real
+  chained cases match**; the 3 real exceptions are all the same one
+  leader (leader 32, Turn 10), whose own chain instead shows
+  ``objects[i]`` equal to that exact phase's own destination (not its
+  predecessor's) -- consistent with, though not independent proof of,
+  that specific earlier move not having actually completed (e.g.
+  blocked or out of movement points), which would leave the leader's
+  real position unchanged from before that attempted move.
+
+This also explains Phase 1002's own "zero accidental matches" claim for
+``objects[i] == obj`` on ``LMOVE`` phases needing correction: of the
+larger corpus's own 62 real ``LMOVE`` phases, 2 (both from the same
+leader-32 exception above) do show ``objects[i] == obj`` -- a
+degenerate case of the chain breaking in a way that happens to coincide
+with the phase's own destination, not a second independent decode.
+
+``extra_low_bytes[i]`` for an ``LMOVE`` phase is the natural complement
+of this finding, re-run at the same larger scale: it usually equals
+*that exact phase's own* real destination (``45`` of ``62``, up from
+Phase 1003's original ``10`` of ``18``) -- the end of the move, where
+``objects[i]`` now confirmed holds the start. Of the 17 real
+non-matches, most (11) read ``0``; the other 6 show the same "frozen,
+stale position" pattern as the ``objects[i]`` chain exceptions above
+(including the very same leader-32 cases), rather than a fresh
+independent mystery. A handful of real matches also now exist outside
+``LMOVE`` (``7`` of ``108``, up from Phase 1003's original ``0`` of
+``37``) -- all ``EXPLORE`` or ``CAST`` phases with small real ``obj``
+values (one leader shows the identical ``obj``/``extra`` pair across 4
+consecutive real ``EXPLORE`` phases) -- plausibly the same
+position-tracking mechanism extending to ``EXPLORE`` (a plausibly
+movement-adjacent action), but not independently confirmed and still
+too small a sample to rule out coincidence.
+
 **Phase 1004 -- the full/partial character-card split is a complete
 biconditional with real ownership.** Checked directly against GW's own
 ``kingdom_id`` for every leader in the 12-file corpus: a leader gets a
@@ -888,18 +952,17 @@ revealed).
 **Genuinely still open** (kept raw rather than guessed, per the
 delivered material's own stated limits): the ~115 unnamed globals
 (Phase 999: now confirmed turn-level/shared rather than per-Kingdom,
-but not otherwise named) and both 256-byte flag areas (Phase 999:
+but not otherwise named) and both 256-byte flag areas (Phase 999/1018:
 ``flags_c4fc``'s own leader-indexed shape confirmed, its per-Hero
-integer's real meaning isn't; ``flags_c3fc``'s mostly-shared-with-a-
-few-per-Kingdom-bits shape confirmed, no bit meaning decoded); a full
-card's own ``sex_flags`` bitfield beyond "0 in this corpus",
-``extra_low_bytes`` (Phase 1003: a real, LMOVE-specific partial
-correspondence to K1's own ``obj`` found -- 10 of 18 exact matches,
-0 of 37 for any other action type -- but no predicate separating the
-8 real exceptions from the 10 matches), and ``objects[i]``'s own real
-meaning specifically for an ``LMOVE`` phase (Phase 1002: every other
-action type and the whole of ``actions`` is now fully decoded against
-real K1 data); the
+integer's real meaning still isn't despite a 136-real-Hero re-test;
+``flags_c3fc``'s mostly-shared-with-a-few-per-Kingdom-bits shape
+confirmed, no bit meaning decoded); a full card's own ``sex_flags``
+bitfield beyond "0 in this corpus"; the real non-matching cases left in
+each of ``objects[i]``'s own LMOVE position-chain (Phase 1019: 3 of 36)
+and ``extra_low_bytes[i]``'s own same-phase-destination reading (Phase
+1019: 17 of 62, plus 7 unexplained real matches outside LMOVE) -- both
+now understood in outline (chained move positions, usually but not
+always kept in sync) but not closed to zero exceptions; the
 *why* a ``condition == 1`` partial-card leader is or isn't covered by
 the ``TR_LLs`` liege extension (every other case of ``leader_states``
 is now a fully predicted, closed rule -- Phases 1012/1013); a
@@ -1171,14 +1234,22 @@ class XKLeaderCard:
     ``LMOVE`` phase's own real ``obj`` is itself a packed hex-coordinate
     (``turn/plan_dispatch.py``'s own ``decode_hex_number(phase.obj,
     board_width)``), not a simple target id, which is why XK's own
-    value there doesn't match the raw K1 integer; what it holds instead
-    isn't pinned down. ``extra_low_bytes`` doesn't correspond to the
-    real K1 ``extra`` value at all, but (Phase 1003) does to that same
-    phase's own ``obj`` for an ``LMOVE`` phase specifically, in 10 of
-    18 real cases (0 of 37 for any other action type -- a real,
-    non-coincidental pattern, not fully decoded: no predicate was found
-    to separate the matches from the 8 real exceptions, which mostly
-    read ``0`` instead). ``planstart``/``planend`` are signed bytes; ``-1`` is
+    value there doesn't match the raw K1 integer. For an ``LMOVE``
+    phase specifically, ``objects[i]`` instead holds that move's own
+    *starting* position (Phase 1019): this leader's own real coordinate
+    before any of this turn's moves, transpose-packed with the same
+    board width for the first ``LMOVE`` in a plan (26 of 26, zero
+    exceptions), or the most recently executed earlier ``LMOVE``'s own
+    destination for a later one in the same plan (33 of 36; the 3 real
+    exceptions read that exact phase's own destination instead,
+    consistent with that earlier move not completing). ``extra_low_bytes``
+    doesn't correspond to the real K1 ``extra`` value at all, but (Phase
+    1003, re-run at scale in Phase 1019) usually does to that same
+    phase's own ``obj`` -- its *destination*, the complement of what
+    ``objects[i]`` now holds -- for an ``LMOVE`` phase specifically, in
+    45 of 62 real cases (7 of 108 for any other action type, all
+    ``EXPLORE``/``CAST``, not independently explained). ``planstart``/
+    ``planend`` are signed bytes; ``-1`` is
     confirmed real (every full card in the whole 12-file corpus reads
     ``-1``/``-1``), but -- corrected from this field's own prior
     docstring claim -- it does **not** mean "no plan was ever

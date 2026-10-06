@@ -1289,7 +1289,17 @@ def test_trcharges_still_has_no_real_example_in_its_own_ordinal_range():
 
 
 _K1_MOVES_DIR = Path("/home/user/programma-ak")
-_K1_TURN_PAIRS = ((1, T2_K1), (2, T3_K1), (3, T4_K1))
+_K1_TURN_PAIRS = ((1, T2_K1), (2, T3_K1), (3, T4_K1), (10, T11_K1))
+# The real GW snapshot immediately *before* each paired turn's own real
+# AK3__Tn.K1 moves were applied -- i.e. this Kingdom's own leaders'
+# real starting coordinates for that turn's plan. Used by the Phase
+# 1019 LMOVE-start-position tests below.
+_K1_TURN_START_GW = {
+    1: Path("/home/user/programma-ak/GW3__T1"),
+    2: Path("/home/user/programma-ak/GW3__T2"),
+    3: Path("/home/user/programma-ak/GW3__T3"),
+    10: Path("/home/user/programma-ak/GW3__T10"),
+}
 
 
 def test_actions_match_the_real_submitted_k1_move_file_exactly():
@@ -1313,16 +1323,19 @@ def test_actions_match_the_real_submitted_k1_move_file_exactly():
                     continue
                 assert int(phase.action) == card.actions[i]
                 checked += 1
-    assert checked == 55
+    assert checked == 170
 
 
 def test_objects_match_k1_obj_for_every_action_except_lmove():
     # objects[i] is that phase's own real obj value, exact, for every
     # action type except LMOVE -- an LMOVE phase's own obj is itself a
     # packed hex-coordinate (turn/plan_dispatch.py's own
-    # decode_hex_number), not a simple target id.
+    # decode_hex_number), not a simple target id. Phase 1019 explains
+    # what an LMOVE phase's own objects[i] *does* hold instead -- see
+    # test_lmove_objects_is_the_phases_own_starting_position below.
     non_lmove_checked = 0
     lmove_mismatches = 0
+    lmove_matches = 0
     lmove_checked = 0
     for turn, xk_fixture in _K1_TURN_PAIRS:
         kingdom = parse_k1_moves_file(_K1_MOVES_DIR / f"AK3__T{turn}.K1")
@@ -1341,12 +1354,107 @@ def test_objects_match_k1_obj_for_every_action_except_lmove():
                     lmove_checked += 1
                     if phase.obj != card.objects[i]:
                         lmove_mismatches += 1
+                    else:
+                        lmove_matches += 1
                 else:
                     assert phase.obj == card.objects[i]
                     non_lmove_checked += 1
-    assert non_lmove_checked == 37
-    assert lmove_checked == 18
-    assert lmove_mismatches == 18  # every LMOVE phase diverges, zero accidental matches
+    assert non_lmove_checked == 108
+    assert lmove_checked == 62
+    # Phase 1019 correction: not "zero accidental matches" after all --
+    # 2 of the larger corpus's own 62 real LMOVE phases do show
+    # objects[i] == this same phase's own obj, both from the same one
+    # real leader (32, Turn 10) whose own position-chain breaks in
+    # exactly this way -- see the Phase 1019 chain test below.
+    assert lmove_matches == 2
+    assert lmove_mismatches == 60
+
+
+def test_lmove_objects_is_the_phases_own_starting_position():
+    # Phase 1019: the Phase 1002/1003 mystery of what an LMOVE phase's
+    # own objects[i] holds (confirmed NOT that phase's own destination)
+    # is resolved for the first LMOVE in a leader's own plan segment --
+    # it is that leader's own real starting coordinate for the whole
+    # turn (the position already on file before any of this turn's
+    # moves execute), packed with the same board width
+    # (EMPIRICAL_AK3_BOARD_WIDTH) turn/hex_numbering.py's own
+    # decode_hex_number already uses for the plain K1 obj field, but
+    # with x and y's roles swapped (``HexCoord(val // width, val %
+    # width)`` instead of ``decode_hex_number``'s own ``(val % width,
+    # val // width)``). Confirmed with zero exceptions across all 4
+    # real turn-pairs on hand (including the Phase 1015/1016 Turn 10-11
+    # pair), the first time any of this project's own real data points
+    # have let "the first LMOVE phase in a plan" be distinguished from
+    # "any LMOVE phase" -- the earlier, smaller corpus's own 8 real
+    # first-LMOVE cases were too few on their own to separate this
+    # rule from pure noise.
+    from ak_engine.turn.hex_numbering import EMPIRICAL_AK3_BOARD_WIDTH
+
+    checked = 0
+    for turn, xk_fixture in _K1_TURN_PAIRS:
+        start_gw_path = _K1_TURN_START_GW.get(turn)
+        if start_gw_path is None:
+            continue
+        kingdom = parse_k1_moves_file(_K1_MOVES_DIR / f"AK3__T{turn}.K1")
+        world = parse_xk_world(xk_fixture)
+        cards_by_id = {c.leader_id: c for c in world.leader_cards}
+        gw_leaders_start = parse_gw_leaders(start_gw_path)
+        for leader in kingdom.leaders:
+            card = cards_by_id.get(leader.leader_id)
+            if card is None or not leader.plan.segments:
+                continue
+            segment = leader.plan.segments[0]
+            first_lmove_idx = next(
+                (i for i in range(5) if (segment.phases.get(f"P{i}") or None) and segment.phases[f"P{i}"].action is ActionCode.LMOVE),
+                None,
+            )
+            if first_lmove_idx is None:
+                continue
+            val = card.objects[first_lmove_idx]
+            decoded = HexCoord(x=val // EMPIRICAL_AK3_BOARD_WIDTH, y=val % EMPIRICAL_AK3_BOARD_WIDTH)
+            assert decoded == gw_leaders_start[leader.leader_id].coord
+            checked += 1
+    assert checked == 26
+
+
+def test_lmove_objects_chains_to_the_most_recent_executed_lmove():
+    # Phase 1019, continued: for an LMOVE phase that is NOT the first
+    # one in its own plan segment, objects[i] usually equals the real
+    # destination (obj) of the most recently EXECUTED earlier LMOVE
+    # phase in the same plan -- i.e. the position chains forward move
+    # by move, consistent with objects[i] meaning "position before this
+    # move" throughout, not just for the first move. 33 of 36 real
+    # chained cases match exactly; the 3 real exceptions are all the
+    # same one leader (32, Turn 10), whose own objects[i] instead
+    # equals that exact phase's own destination (the same anomaly
+    # test_objects_match_k1_obj_for_every_action_except_lmove's own
+    # lmove_matches == 2 already flags, since 2 of these 3 exceptions'
+    # chain target happens to coincide with the phase's own obj) --
+    # consistent with (not proof of) that specific move not actually
+    # having completed, but not independently confirmed.
+    chain_matches = 0
+    chain_total = 0
+    for turn, xk_fixture in _K1_TURN_PAIRS:
+        kingdom = parse_k1_moves_file(_K1_MOVES_DIR / f"AK3__T{turn}.K1")
+        world = parse_xk_world(xk_fixture)
+        cards_by_id = {c.leader_id: c for c in world.leader_cards}
+        for leader in kingdom.leaders:
+            card = cards_by_id.get(leader.leader_id)
+            if card is None or not leader.plan.segments:
+                continue
+            segment = leader.plan.segments[0]
+            last_lmove_obj = None
+            for i in range(5):
+                phase = segment.phases.get(f"P{i}")
+                if phase is None or phase.action is not ActionCode.LMOVE:
+                    continue
+                if last_lmove_obj is not None:
+                    chain_total += 1
+                    if card.objects[i] == last_lmove_obj:
+                        chain_matches += 1
+                last_lmove_obj = phase.obj
+    assert chain_total == 36
+    assert chain_matches == 33
 
 
 def test_planstart_planend_minus_one_does_not_mean_no_plan_was_submitted():
@@ -1368,16 +1476,24 @@ def test_planstart_planend_minus_one_does_not_mean_no_plan_was_submitted():
             assert (card.planstart, card.planend) == (-1, -1)
     assert had_a_real_full_plan
 
-    for fixture in ALL_12_SAMPLES:
+    for fixture in ALL_17_SAMPLES:
         for card in parse_xk_world(fixture).leader_cards:
             assert (card.planstart, card.planend) == (-1, -1)
 
 
 def test_extra_low_bytes_partially_matches_k1_obj_only_for_lmove():
-    # A real, non-coincidental but incomplete pattern (Phase 1003):
-    # extra_low_bytes[i] equals that same phase's own real K1 obj value
-    # only for LMOVE phases, and only in some of those -- zero matches
-    # for any other action type confirms this isn't a coincidence.
+    # A real, non-coincidental but incomplete pattern (Phase 1003,
+    # re-run at larger scale in Phase 1019): extra_low_bytes[i] equals
+    # that same phase's own real K1 obj value mostly for LMOVE phases
+    # (45 of 62 at this larger scale, up from Phase 1003's original 10
+    # of 18) -- consistent with usually carrying this exact phase's own
+    # destination, the complement of what Phase 1019 found for
+    # objects[i] (usually this phase's own *starting* position
+    # instead). A handful of real non-LMOVE matches now also exist (7
+    # of 108, up from Phase 1003's original 0 of 37) -- all EXPLORE or
+    # CAST phases with small real obj values, not independently
+    # explained, but too few and too specific to call pure
+    # coincidence either.
     lmove_matches = 0
     lmove_total = 0
     nonlmove_matches = 0
@@ -1402,8 +1518,8 @@ def test_extra_low_bytes_partially_matches_k1_obj_only_for_lmove():
                 else:
                     nonlmove_total += 1
                     nonlmove_matches += int(matches)
-    assert (lmove_matches, lmove_total) == (10, 18)
-    assert (nonlmove_matches, nonlmove_total) == (0, 37)
+    assert (lmove_matches, lmove_total) == (45, 62)
+    assert (nonlmove_matches, nonlmove_total) == (7, 108)
 
 
 def test_full_card_iff_own_leader_and_partial_card_never_own_leader():
