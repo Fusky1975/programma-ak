@@ -1416,6 +1416,7 @@ from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalM
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.imperial_intelligence import known_bordering_kingdom_tax_bases, known_bordering_kingdom_treasuries
 from ak_engine.turn.leader_visibility import known_mercenary, leader_location_known_to_kingdom
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.movement import Direction, MapBounds, hex_distance_wrapped, neighbor_in_direction_wrapped
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 from ak_engine.turn.discovery_effects import (
@@ -11885,15 +11886,14 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
 
     **The real procedure tracks a genuine 3-state relation per kingdom
     pair** (`kallst[kng,k2]`, `Write_List(allstate)` called once per
-    state value) -- this project's own `GameState.allied_kingdoms`
-    (a flat `set[frozenset[int]]`, `is_allied()`) only ever models a
-    2-state relation (allied or not), confirmed absent for the third
-    "at war" state -- no war-declaration mechanism exists anywhere in
-    this project. **AT WAR therefore always renders empty** (real,
-    sourced `_DIPLOMACY_NONE_AT_PRESENT`, not a guess at zero wars);
-    every other kingdom not in `allied_kingdoms` is listed as NEUTRAL
-    instead, since this project has no way to distinguish a genuine
-    war from ordinary neutrality.
+    state value) -- **Phase 1026 closes the gap this docstring used to
+    flag here**: `turn/diplomacy.py`'s own RULES.AK [8] state machine
+    (`GameState.diplomatic_relation()`) now tracks the real third state
+    too (`DiplomaticRelation.ENEMY`, written by a real Break Treat order
+    via `turn/diplomacy.py apply_treat_orders()`), so AT WAR renders
+    every kingdom this one currently has an Enemy relation with, not
+    always empty. A kingdom with no relation ever recorded still reads
+    Neutral, matching [8]'s own "all Kings start Neutral" default.
 
     **The real `Write_List`'s own per-entry enrichment is now modeled
     in full** (Phase 640): a known King's tax-base/treasury figure
@@ -11920,7 +11920,12 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
 
     other_kingdom_ids = sorted(k for k in state.kingdoms if k != kingdom_id)
     allied_ids = [k for k in other_kingdom_ids if state.is_allied(kingdom_id, k)]
-    neutral_ids = [k for k in other_kingdom_ids if not state.is_allied(kingdom_id, k)]
+    war_ids = [
+        k
+        for k in other_kingdom_ids
+        if not state.is_allied(kingdom_id, k) and state.diplomatic_relation(kingdom_id, k) is DiplomaticRelation.ENEMY
+    ]
+    neutral_ids = [k for k in other_kingdom_ids if k not in allied_ids and k not in war_ids]
 
     bounds = MapBounds(state.board_width, state.board_height)
     viewer_king_id = _king_leader_id(state, kingdom_id)
@@ -11933,7 +11938,7 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
     lines = ["DIPLOMACY", _DIPLOMACY_ALLIED_INTRO]
     lines.extend([_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury) for k in allied_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
     lines.append(_DIPLOMACY_WAR_INTRO)
-    lines.append(_DIPLOMACY_NONE_AT_PRESENT)
+    lines.extend([_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury) for k in war_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
     lines.append(_DIPLOMACY_NEUTRAL_INTRO)
     lines.extend([_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury) for k in neutral_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
 

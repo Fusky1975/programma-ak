@@ -34,6 +34,7 @@ from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import TREASURE_NAME, Treasure
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.feature_power_execution import FeaturePowerAttemptResult
 from ak_engine.turn.movement import Direction, neighbor_in_direction_wrapped
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError
@@ -10381,7 +10382,7 @@ def test_describe_diplomacy_report_allied_kingdom_is_listed_as_allied():
     ]
 
 
-def test_describe_diplomacy_report_war_always_renders_none_at_present():
+def test_describe_diplomacy_report_war_renders_none_at_present_with_no_enemy_relation():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
@@ -10391,6 +10392,29 @@ def test_describe_diplomacy_report_war_always_renders_none_at_present():
 
     war_index = lines.index(_DIPLOMACY_WAR_INTRO)
     assert lines[war_index + 1] == "None at present"
+
+
+def test_describe_diplomacy_report_enemy_relation_is_listed_as_at_war():
+    # Phase 1026: turn/diplomacy.py's own real Enemy relation (via a
+    # Break Treat order) now renders here -- previously always empty,
+    # since no war-declaration mechanism existed in this project at all.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.GOOD, HexCoord(1, 1)))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1), is_king=True))
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ENEMY
+
+    lines = describe_diplomacy_report(state, 1)
+
+    assert lines == [
+        "DIPLOMACY",
+        _DIPLOMACY_ALLIED_INTRO,
+        "None at present",
+        _DIPLOMACY_WAR_INTRO,
+        "Kwoth (#2)",
+        _DIPLOMACY_NEUTRAL_INTRO,
+        "None at present",
+    ]
 
 
 def test_describe_diplomacy_report_no_king_recorded_falls_back_to_kingdom_name():

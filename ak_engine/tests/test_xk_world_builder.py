@@ -192,3 +192,95 @@ def test_army_count_over_255_skips_index_255():
     finally:
         path.unlink(missing_ok=True)
     assert 255 not in {army.army_index for army in reparsed.armies}
+
+
+def test_negative_synthetic_leader_id_is_excluded_from_full_and_partial_cards():
+    # Found verifying against a real bridged GameState
+    # (parser/gw_world_bridge.py bridge_new_game_state()): a Hero outside
+    # the fixed roster match gets a synthetic *negative* leader_id there
+    # -- the real XK leader_id space is 0..leader_capacity-1 only, so
+    # this builder must skip such a leader rather than crash the writer.
+    state = _realistic_state()
+    state.add_leader(LeaderState(-1, 1, "Unidentified Valhalla Arrival", HexCoord(0, 0)))
+
+    world = build_xk_world_for_kingdom(state, 1)
+    data = write_xk_world(world)  # must not raise
+
+    full_card_ids = {card.leader_id for card in world.leader_cards}
+    partial_ids = {card.leader_id for card in world.partial_leader_cards}
+    assert -1 not in full_card_ids
+    assert -1 not in partial_ids
+    assert all(0 <= name_id < 100 for name_id in range(len(world.leader_names)))
+
+
+def test_army_commanded_by_a_negative_synthetic_leader_id_is_reported_unled():
+    state = _realistic_state()
+    state.add_leader(LeaderState(-1, 1, "Unidentified Valhalla Arrival", HexCoord(0, 0)))
+    state.add_army(ArmyState(999, 1, ArmyType.GARRISON, Quality.AVERAGE, HexCoord(0, 0), commanded_by=-1))
+
+    world = build_xk_world_for_kingdom(state, 1)
+    write_xk_world(world)  # must not raise
+
+    record = next(a for a in world.armies if a.army_index == sorted(state.armies).index(999))
+    assert record.commanded_by_leader_id is None
+
+
+def test_item_owned_by_a_negative_synthetic_leader_id_is_omitted():
+    state = _realistic_state()
+    state.add_leader(LeaderState(-1, 1, "Unidentified Valhalla Arrival", HexCoord(0, 0)))
+    state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=-1)
+
+    world = build_xk_world_for_kingdom(state, 1)
+    write_xk_world(world)  # must not raise
+
+    assert all(t.trowner != -1 for t in world.treasures)
+
+
+# -- Real-data verification (plan's own Fase 3 "Verifica" step) --
+
+GW_FIXTURE_DIR = pathlib.Path(__file__).parent / "fixtures" / "world" / "G3"
+
+
+def _bridged_real_state(gw_path: pathlib.Path) -> GameState:
+    from ak_engine.parser.gw_world import parse_gw_armies, parse_gw_king_extensions, parse_gw_leaders, parse_gw_world
+    from ak_engine.parser.gw_world_bridge import bridge_new_game_state
+
+    provinces = parse_gw_world(gw_path)
+    leaders = parse_gw_leaders(gw_path)
+    armies = parse_gw_armies(gw_path)
+    king_extensions = parse_gw_king_extensions(gw_path)
+    state, _report = bridge_new_game_state(leaders, provinces, armies, turn_number=1, king_extensions=king_extensions)
+    # gw_world_bridge.py doesn't populate per-kingdom exploration at all
+    # (a separate, pre-existing gap outside this plan's own scope) -- a
+    # Kingdom trivially knows its own territory, so seed that much for a
+    # real exercise of the known-province path.
+    for province in state.provinces.values():
+        if province.owner_kingdom_id is not None:
+            province.explored_percent_by_kingdom[province.owner_kingdom_id] = 100
+    return state
+
+
+@pytest.mark.parametrize("fixture_name", ["GW3__T1", "GW3__T12"])
+def test_builds_for_every_real_kingdom_in_a_bridged_real_world(fixture_name):
+    # Phase 1026: this exact test, run by hand against GW3__T1, is what
+    # first found the negative-synthetic-leader_id crash fixed above --
+    # kept as a permanent regression test against real data, not just the
+    # synthetic fixtures above.
+    state = _bridged_real_state(GW_FIXTURE_DIR / fixture_name)
+    for kingdom_id in sorted(state.kingdoms):
+        world = build_xk_world_for_kingdom(state, kingdom_id)
+        data = write_xk_world(world)
+        path = pathlib.Path(tempfile.mktemp())
+        try:
+            path.write_bytes(data)
+            reparsed = parse_xk_world(path)
+        finally:
+            path.unlink(missing_ok=True)
+        assert reparsed.header.kingdom_id == kingdom_id
+        assert len(reparsed.armies) == len(state.armies)
+        kingdom_still_owns_territory = any(p.owner_kingdom_id == kingdom_id for p in state.provinces.values())
+        if kingdom_still_owns_territory:
+            # A real Kingdom defeated by this turn (owns nothing in the
+            # source state -- a real, correct GW3__T12 outcome, not a
+            # bug) has nothing of its own to assert here.
+            assert any(p.owner_kingdom_id == kingdom_id for p in reparsed.provinces)

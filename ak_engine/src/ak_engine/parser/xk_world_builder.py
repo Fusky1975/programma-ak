@@ -343,6 +343,12 @@ def _build_treasures_from_items(state: GameState, kingdom_id: int) -> list[XKTre
         owner = state.leaders.get(item.owner_leader_id) if item.owner_leader_id is not None else None
         if owner is None or owner.kingdom_id != kingdom_id:
             continue
+        if _representable_leader_id(item.owner_leader_id) is None:
+            # No representable trowner value exists for this item at all
+            # (not feature-held, and the owner's own id can't be written
+            # -- see _representable_leader_id's own docstring) -- omit
+            # rather than write a bogus owner.
+            continue
         treasure_ordinal = item.treasure.value
         treasures.append(
             XKTreasureRecord(
@@ -399,9 +405,24 @@ def _build_army(state: GameState, army: ArmyState, army_index: int, kingdom_id: 
         quality_or_mask=quality_or_mask,
         status=status,
         coord=army.location,
-        commanded_by_leader_id=army.commanded_by,
+        commanded_by_leader_id=_representable_leader_id(army.commanded_by),
         detail_status=status,
     )
+
+
+def _representable_leader_id(leader_id: int | None) -> int | None:
+    """A real XK file can only name a leader in `0..leader_capacity-1` --
+    found verifying against a real bridged GameState
+    (`parser/gw_world_bridge.py`'s own synthetic *negative* ids for a
+    Hero outside the fixed roster match): such a commander is reported
+    as unled here rather than crashing the writer, the same "no
+    representable id, omit rather than guess" convention this builder
+    already uses for the leader-card loop above.
+    """
+
+    if leader_id is None or leader_id < 0 or leader_id >= 100:
+        return None
+    return leader_id
 
 
 def _army_race(state: GameState, army: ArmyState) -> Race:
@@ -503,7 +524,14 @@ def build_xk_world_for_kingdom(state: GameState, kingdom_id: int, sibling: XKWor
     partial_leader_cards: list[XKPartialLeaderCard] = []
 
     for leader in state.leaders.values():
-        if leader.leader_id >= leader_capacity:
+        # Phase 1026, found verifying against a real bridged GameState
+        # (parser/gw_world_bridge.py bridge_new_game_state()): a Hero
+        # outside the fixed roster match gets a synthetic *negative*
+        # leader_id there (that module's own "documented placeholder"
+        # convention) -- the real XK leader_id space is 0..leader_
+        # capacity-1 only, so both ends need excluding, not just the
+        # upper one.
+        if leader.leader_id >= leader_capacity or leader.leader_id < 0:
             continue
         leader_names[leader.leader_id] = leader.name
         leader_races[leader.leader_id] = leader.race if leader.race is not None else kingdom.race
