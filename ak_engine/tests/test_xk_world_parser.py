@@ -548,6 +548,8 @@ _TURN_TO_REAL_GW_FEATURES = {
     2: Path("/home/user/programma-ak/GW3__T2"),
     3: Path("/home/user/programma-ak/GW3__T3"),
     4: Path("/home/user/programma-ak/GW3__T4"),
+    11: Path("/home/user/programma-ak/GW3__T11"),
+    12: Path("/home/user/programma-ak/GW3__T12"),
 }
 
 
@@ -555,10 +557,12 @@ def test_feature_type_matches_the_real_gw_feature_at_scale():
     # feature_id lines up exactly with parse_gw_features()'s own 0-based
     # list position for the same real world file -- the same proven
     # technique Phase 994 used for armies, applied here to every one of
-    # the 36 real Feature records across the full 12-file corpus.
+    # the real Feature records across the corpus. Phase 1024 extends
+    # this to the full 17-file corpus (196 real checks, up from 36),
+    # still zero exceptions for both feature_type and unknown_962a.
     gw_cache = {}
     checked = 0
-    for fixture in ALL_12_SAMPLES:
+    for fixture in ALL_17_SAMPLES:
         world = parse_xk_world(fixture)
         turn = world.globals.game_turn
         if turn not in gw_cache:
@@ -569,7 +573,7 @@ def test_feature_type_matches_the_real_gw_feature_at_scale():
             assert feature.feature_type == gw_feature.feature_type
             assert feature.unknown_962a == 0
             checked += 1
-    assert checked == 36
+    assert checked == 196
 
 
 def test_defeated_feature_guardian_reports_nomonster_mercenary_not_dead():
@@ -595,6 +599,35 @@ def test_defeated_feature_guardian_reports_nomonster_mercenary_not_dead():
 
         gw_features = parse_gw_features(gw_path)
         assert gw_features[15].engagement_state is MonsterEngagementState.DEAD
+
+
+def test_defeated_feature_guardian_convention_holds_at_52_event_scale():
+    # Phase 1024: the Turn 11-12 corpus's own much larger, much-longer-
+    # played game state turns a single real dead-Feature event (Phase
+    # 995, above) into 52 real, independent ones -- many different real
+    # monster identities, across 5 files. Every single one shows the
+    # exact same XK-side "cleared" convention (NOMONSTER/MERCENARY, not
+    # GW's own literal DEAD-with-identity-preserved), zero exceptions --
+    # turning what was a single, reproducible-but-unreplicated example
+    # into a thoroughly confirmed, general rule.
+    gw_cache = {}
+    checked = 0
+    for fixture, turn in (
+        (T11_K0, 11), (T11_K1, 11), (T11_K2, 11), (T12_K0, 12), (T12_K1, 12),
+    ):
+        world = parse_xk_world(fixture)
+        if turn not in gw_cache:
+            gw_cache[turn] = parse_gw_features(Path(f"/home/user/programma-ak/GW3__T{turn}"))
+        gw_features = gw_cache[turn]
+        for feature in world.features:
+            gw_feature = gw_features[feature.feature_id]
+            if gw_feature.engagement_state is not MonsterEngagementState.DEAD:
+                continue
+            assert feature.monster is Monster.NOMONSTER
+            assert feature.engagement_state is MonsterEngagementState.MERCENARY
+            assert feature.feature_type == gw_feature.feature_type
+            checked += 1
+    assert checked == 52
 
 
 def test_shadow_sword_trowner_leaves_feature_held_once_guardian_falls():

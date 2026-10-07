@@ -232,6 +232,20 @@ sentinel, but with only one such King-id-0 example this remains a
 one-sample inference, not independently proven the way leader 99's case
 is.
 
+**Phase 1024 -- the defeated-guardian ``NOMONSTER``/``MERCENARY``
+convention, confirmed at 52-event scale.** The Turn 11-12 corpus's own
+much longer-played game state turns Phase 995's single real dead-
+Feature event (3 XK snapshots of the one real Piratum's Catacombs
+Spectre) into 52 real, independent dead-guardian events across the 5
+new files -- many different real monster identities (Mummy, Vampire,
+Gryphon, Sphinx, Basilisk, dragons, and more). **Every single one**
+shows the exact same XK-side convention: ``monster=NOMONSTER``,
+``engagement_state=MERCENARY``, regardless of GW's own real monster
+identity and its literal ``DEAD`` state, with ``feature_type`` staying
+correct throughout. What was a real but unreplicated single example is
+now a thoroughly confirmed, general rule -- 55 of 55 real dead-guardian
+events across the whole corpus, zero exceptions.
+
 **Phase 996 -- character-card fields at scale, one real naming
 correction, one field fully decoded.** Using the same leader_id-as-
 GW-list-index correspondence (``parser/gw_world.py parse_gw_leaders()``
@@ -1090,17 +1104,14 @@ Hero's own exception reads ``2`` in 6 of 7 real cases but ``0`` in the
 other case of ``leader_states``, including *whether* that specific
 employed case is an exception at all, is now a fully predicted, closed
 rule (Phases 1012/1013/1020/1022); a Feature record's own
-``unknown_962a`` (Phase 995: confirmed always
-``0`` in all 36 real samples, role still unconfirmed); a Mercenary-
-state leaderless Army record's own ``quality_or_mask`` reveal rule
-(Phase 998: solved for every other real army shape, but this one real
-exception -- 111 of 3015 armies -- resists the same ownership rule and
-every other single-field rule tried so far); exactly how a
-defeated Feature guardian's ``NOMONSTER``/``MERCENARY`` XK-side
-convention is chosen (confirmed real and reproducible, Phase 995, but
-only one real dead-Feature event exists in this corpus to observe it);
-why each King title table reserves 12 slots for at most 10 real Kings
-(no real sample with ``king_count`` above 10 exists to test whether it's
+``unknown_962a`` (Phase 995/1024: confirmed always
+``0`` in all 196 real samples now on hand, role still unconfirmed); a
+Mercenary-state leaderless Army record's own ``quality_or_mask`` reveal
+rule (Phase 998: solved for every other real army shape, but this one
+real exception -- 111 of 3015 armies -- resists the same ownership rule
+and every other single-field rule tried so far); why each King title
+table reserves 12 slots for at most 10 real Kings (no real sample with
+``king_count`` above 10 exists to test whether it's
 a true fixed cap or simply never-observed to matter); the real SAGA
 client reader (only the host *writer* was disassembled); and any
 ``gamevers`` other than ``3`` (the compiled client has other branches;
