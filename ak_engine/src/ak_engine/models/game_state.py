@@ -323,6 +323,7 @@ from ak_engine.models.rumor import Rumor
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.search_decode import SearchTactic
 
@@ -439,6 +440,23 @@ class KingdomState:
     # `score(k) = (IRand AND 1023) - 1024*visits(k)` formula, where a
     # King with fewer visits always outscores one with more.
     valhalla_visit_count: int = 0
+    # Phase 1026 -- confirmed exactly equal to `GWKingExtension.account_
+    # number`/XK's own `account_number` for this Kingdom's own King (both
+    # parsers' own Phase 1006 addendum); no other in-project mechanism
+    # reads or writes this, so a fresh `KingdomState` defaults to `0`,
+    # the same "missing data defaults to neutral, not guessed" convention
+    # `parser/gw_world_writer.py`'s own leader-header placeholder uses.
+    account_number: int = 0
+    # Phase 1026 -- the King's own honorific Title/Epithet text (``parser/
+    # gw_world.py GWKingExtension.title_prefix``/``.title_suffix``, e.g.
+    # "Lord"/"Master of the..." -- real, player/GM-assigned flavor text,
+    # not derived from the Office/optional-titles system). This project
+    # has no assignment mechanism for it yet (no GM-editor field, no
+    # world-generation default beyond the empty string) -- defaults to
+    # ``""``, the documented "no title" case both parsers already treat
+    # as valid, never absent.
+    king_title_prefix: str = ""
+    king_title_suffix: str = ""
 
 
 @dataclass(slots=True)
@@ -887,6 +905,19 @@ class LeaderState:
     # (2026-10-01) after a user-reported "5 gold pay" anomaly traced to
     # exactly this gap.
     is_starting_companion: bool = False
+    # Phase 1026 -- XK's own confirmed ``hire_turn`` field (every full
+    # leader card in the real corpus reads ``-1``/``-1`` for ``planstart``/
+    # ``planend`` but a real, varying ``hire_turn`` -- see `parser/
+    # xk_world.py XKLeaderCard`'s own docstring). This project had no
+    # equivalent field at all: set to ``0`` for every leader created at
+    # world generation (``worldgen/generate_new_game.py``'s own King/
+    # starting-companion loop -- turn 0, before turn 1 itself begins,
+    # the same "genesis" convention this project already uses for
+    # pre-game state), and to the real ``GameState.turn_number`` at the
+    # moment a Hire order actually succeeds (``turn/plan_dispatch.py
+    # _dispatch_hire()``) -- the only two places a leader can newly enter
+    # a Kingdom's service.
+    hire_turn: int = 0
     # Phase 193: kingdom ids currently watching this leader via a successful
     # Clairvoyance cast -- see module docstring. Not auto-cleared.
     clairvoyance_watchers: set[int] = field(default_factory=set)
@@ -1508,6 +1539,31 @@ class GameState:
     # docstring's Phase 309 addendum. Monotonic, never reset.
     graveyard_death_counter: int = 0
     allied_kingdoms: set[frozenset[int]] = field(default_factory=set)
+    # Phase 1026 -- RULES.AK [8.1]'s own full 3-state relation (Enemy/
+    # Neutral/Allied), one shared value per unordered Kingdom pair -- see
+    # ``diplomatic_relation()``'s own docstring for why a missing pair
+    # reads Neutral and why this stays in sync with ``allied_kingdoms``
+    # rather than replacing it. Written only by ``turn/diplomacy.py
+    # apply_treat_orders()``.
+    diplomatic_relations: dict[frozenset[int], DiplomaticRelation] = field(default_factory=dict)
+    # Phase 1026 -- a turn-stamped companion to ``diplomatic_relations``
+    # above, same pattern as ``kingdoms_met_since`` (Phase 491): the turn
+    # number a pair most recently *became* Allied. Closes [8.4]'s own
+    # previously-documented gap (``turn/scientific_treaty.py``'s own
+    # Phase 869 addendum): "need to have become Allies on a *previous*
+    # gameturn" can now be checked for real instead of only against
+    # *current* ``is_allied()`` status.
+    diplomatic_relations_since: dict[frozenset[int], int] = field(default_factory=dict)
+    # Phase 1026 -- RULES.AK [8.3]'s own Break Treat order, directed
+    # ``(issuing_kingdom_id, target_kingdom_id)`` -- same "no real
+    # order-file shape ever seen, populated directly by the caller"
+    # category as ``treat_permissions`` right above (a mutual Treat order
+    # is already read from ``treat_permissions`` itself, see
+    # ``turn/diplomacy.py``'s own module docstring for why a second,
+    # parallel Treat-order field was not added here). Turn-scoped, same
+    # as ``treat_permissions``: cleared by ``turn/turn_processor.py
+    # _replenish_turn_scoped_state()``.
+    break_treat_orders: set[tuple[int, int]] = field(default_factory=set)
     # Phase 261: RULES.AK [3.4] "In order for you to Recruit in your
     # ally's territory, he MUST issue a 'Treat' order with you (even
     # though you may already be allied.)" -- a directed permission,
@@ -2075,6 +2131,36 @@ class GameState:
         if kingdom_a == kingdom_b:
             return True
         return frozenset({kingdom_a, kingdom_b}) in self.allied_kingdoms
+
+    def diplomatic_relation(self, kingdom_a: int, kingdom_b: int) -> DiplomaticRelation:
+        """Phase 1026 -- RULES.AK [8.1]'s own 3-state relation (Enemy/
+        Neutral/Allied; ``DiplomaticRelation.TEAMED`` is never produced by
+        this project's own turn logic -- see ``turn/diplomacy.py``'s own
+        module docstring for why). A pair with no entry in
+        ``diplomatic_relations`` is Neutral, matching turn 1's own "all
+        Kings start Neutral to each other" rule ([8] itself); the
+        self-relation is always Allied, a query-time convention (never
+        actually stored) matching XK's own confirmed self-relation
+        sentinel.
+
+        ``allied_kingdoms`` stays the single source of truth for "Allied
+        or not" -- checked *first*, so a pair any of this project's own
+        pre-existing callers (or a test fixture, or a GM editor) sets
+        there directly, without ever going through ``turn/diplomacy.py
+        apply_treat_orders()``, still reads Allied here, never silently
+        downgraded back to Neutral for lack of a matching
+        ``diplomatic_relations`` entry. ``apply_treat_orders()`` keeps
+        both in sync on every real transition it computes, so the two
+        never actively disagree; this ordering only matters for state
+        nothing in this module itself ever wrote.
+        """
+
+        if kingdom_a == kingdom_b:
+            return DiplomaticRelation.ALLIED
+        pair = frozenset({kingdom_a, kingdom_b})
+        if pair in self.allied_kingdoms:
+            return DiplomaticRelation.ALLIED
+        return self.diplomatic_relations.get(pair, DiplomaticRelation.NEUTRAL)
 
     def has_met(self, kingdom_a: int | None, kingdom_b: int | None) -> bool:
         """Phase 408 -- mirrors ``kkmet``'s own read side (``SAY.PAS`` ~101,

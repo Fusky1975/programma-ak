@@ -1457,6 +1457,21 @@ class XKProvinceRecord:
     - All three ``None`` (``ownership_marker == 0xFE``): no ownership
       information at all.
 
+    **Writer-support addendum** (Phase 1026): the second and third shapes
+    above both leave ``owner_kingdom_id``/``visible_owner_leader_id`` at
+    ``None`` -- indistinguishable from each other by those two fields
+    alone whenever the second shape's own ``visible_owner`` byte is
+    itself ``0xFF`` ("visibly ungoverned"). Confirmed to really occur in
+    both shapes across the 17-file corpus (62 real "``0xFF`` marker,
+    ``0xFF`` visible_owner`` records vs. 27 real plain ``0xFE`` marker
+    records) -- a real round-trip hazard for a writer, not a hypothetical
+    one. ``no_ownership_info`` resolves it: ``True`` only for the third
+    shape (``ownership_marker == 0xFE``), ``False`` for the other two
+    (including the second shape's own "visibly ungoverned" case) -- so a
+    writer can always reconstruct the exact original marker byte from
+    ``owner_kingdom_id``/``visible_owner_leader_id``/``no_ownership_info``
+    together.
+
     ``effects_bitmask`` is confirmed (Phase 997) to be exactly
     ``parser/gw_world.py GWProvinceRecord.effects_bitmask`` (``termod``)
     for the same real province -- that module's own ``TERMOD_*``
@@ -1476,6 +1491,7 @@ class XKProvinceRecord:
     recruit_type_1: ArmyType | None
     recruit_type_2: ArmyType | None
     effects_bitmask: int
+    no_ownership_info: bool = False
 
 
 @dataclass(slots=True)
@@ -1844,11 +1860,12 @@ def _read_province(r: _Reader) -> XKProvinceRecord:
     tax: int | None = None
     recruit_type_1: ArmyType | None = None
     recruit_type_2: ArmyType | None = None
+    no_ownership_info = False
     if marker == _SENTINEL_NO_OWNER:
         visible_owner = r.u8(key + ".visible_owner")
         visible_owner_leader_id = None if visible_owner == _SENTINEL_NO_OWNER else visible_owner
     elif marker == _SENTINEL_NO_VISIBLE_OWNER:
-        pass
+        no_ownership_info = True
     else:
         owner_kingdom_id = marker
         tax = r.u8(key + ".ptax")
@@ -1866,6 +1883,7 @@ def _read_province(r: _Reader) -> XKProvinceRecord:
         recruit_type_1=recruit_type_1,
         recruit_type_2=recruit_type_2,
         effects_bitmask=effects_bitmask,
+        no_ownership_info=no_ownership_info,
     )
 
 

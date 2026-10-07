@@ -1281,6 +1281,7 @@ def _dispatch_hire(
         hero.double_agent_hired_by_kingdom_id = kingdom_id
     else:
         hero.kingdom_id = kingdom_id
+        hero.hire_turn = state.turn_number
 
     return HireExecutionResult(request, hired=True, minimum_gold=pay, rare_alignment_exception=rare_exception)
 

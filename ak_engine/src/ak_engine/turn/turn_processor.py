@@ -277,6 +277,7 @@ from ak_engine.turn.battle_orchestrator import (
 )
 from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.blackmail import advance_blackmail_claims
+from ak_engine.turn.diplomacy import apply_treat_orders
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.aspy_execution import execute_aspy
@@ -459,6 +460,13 @@ def run_turn(
     # `pending_blackmailer_king_id`/`active_blackmailer_king_id` field
     # pair exactly. See `turn/blackmail.py`'s own module docstring.
     advance_blackmail_claims(state)
+
+    # Phase 1026 -- RULES.AK [8.2]/[8.3]'s own Treat/Break Treat orders,
+    # resolved into real `diplomatic_relations` transitions before any
+    # phase dispatches -- see `turn/diplomacy.py`'s own module docstring
+    # for why this single early call (rather than a separate end-of-turn
+    # pass) is this project's own documented timing simplification.
+    apply_treat_orders(state)
 
     # Phase 669 -- rulebook [5.10]: each leader's own real, standing
     # Special Encounter Plan, decoded once here (before any phase
@@ -964,6 +972,11 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
       today) rather than leaving it to silently repeat the exact same
       "field forgotten, permission never expires" bug the moment a future
       phase wires a real Treat-order decoder in.
+    - ``GameState.break_treat_orders`` -> ``set()`` (Phase 1026) -- same
+      "this gameturn only" scope and same "caller's job, no decoder
+      exists" category as ``treat_permissions`` right above; see
+      ``turn/diplomacy.py`` for the one real reader (called before this
+      reset, early in ``run_turn()``).
     - ``ArmyState.flood_dams_exempt_at`` -> ``None`` (Phase 888) --
       Discovery.FLOOD_DAMS's own rest-of-turn exemption from the
       Flooded-province movement block (`turn/move_execution.py
@@ -1030,6 +1043,7 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         kingdom.treasury_raid_attempts_this_turn = 0
     state.action_casts_used = {}
     state.treat_permissions = set()
+    state.break_treat_orders = set()
 
 
 def _apply_werebeast_transformations(state: GameState) -> None:

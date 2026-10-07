@@ -16,6 +16,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleResult
 from ak_engine.turn.combat import Quality
@@ -2528,3 +2529,62 @@ def test_execute_move_enforced_permits_a_mermen_carried_by_a_real_air_carrier():
 
     assert result.moved is True
     assert state.armies[102].transported_by == 101
+
+
+def test_army_move_is_blocked_into_an_explicitly_neutral_kingdoms_province():
+    # RULES.AK [8.1]: a Neutral relation blocks an army's own move order
+    # into the other Kingdom's territory -- the unit stays put, no battle.
+    state = base_state()
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.NEUTRAL
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.moved is False
+    assert result.battle_report is None
+    assert result.blocked_by_neutral_relations is True
+    assert result.stopped_chasing is True
+    assert state.armies[101].location == ORIGIN
+    assert state.armies[101].movement_points == 3
+
+
+def test_lone_character_passes_freely_into_an_explicitly_neutral_kingdoms_province():
+    state = base_state()
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.NEUTRAL
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Scout", location=ORIGIN))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[], target=TARGET, leader_id=10, rng=None)
+
+    assert result.blocked_by_neutral_relations is False
+    assert state.leaders[10].location == TARGET
+
+
+def test_army_move_is_not_blocked_when_the_pair_has_no_explicit_relation_recorded():
+    # A pair this project's own diplomacy logic has never touched keeps
+    # today's pre-existing (attackable) behavior -- see the call site's
+    # own comment for why this is deliberately narrower than
+    # GameState.diplomatic_relation()'s own lenient "missing = Neutral"
+    # default.
+    state = base_state()
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.blocked_by_neutral_relations is False
+    assert result.moved is True
+
+
+def test_army_move_is_not_blocked_when_the_pair_is_explicitly_allied():
+    state = base_state()
+    state.allied_kingdoms.add(frozenset({1, 2}))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.blocked_by_neutral_relations is False
+
+
+def test_army_move_is_not_blocked_when_the_pair_is_explicitly_enemy():
+    state = base_state()
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ENEMY
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.blocked_by_neutral_relations is False

@@ -1638,6 +1638,7 @@ def test_dispatch_hire_double_agent_appears_hired_by_a_foreign_king_without_chan
     assert result.hired is True
     assert state.leaders[32].kingdom_id == 2  # real employer never changes
     assert state.leaders[32].double_agent_hired_by_kingdom_id == 1
+    assert state.leaders[32].hire_turn == 0  # no real hire took place -- unchanged
     assert state.kingdoms[1].treasury == 98  # the foreign king's own gold really is spent
 
 
@@ -1812,6 +1813,7 @@ def test_dispatch_hire_succeeds_and_charges_only_the_required_pay_not_the_offer(
     assert result.hired is True
     assert result.minimum_gold == 2
     assert state.leaders[32].kingdom_id == 1
+    assert state.leaders[32].hire_turn == state.turn_number
     assert state.kingdoms[1].treasury == 98  # only the required 2, not the offered 4
 
 

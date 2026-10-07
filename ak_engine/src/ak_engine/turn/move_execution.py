@@ -282,6 +282,7 @@ from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, ArmyState, G
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.treasure import Treasure
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle, mystic_winds_active_for
 from ak_engine.turn.cast_execution import ILLUSORY_FOG_EXTRA_MOVEMENT_COST, is_illusory_fog_affected_air_unit
 from ak_engine.turn.conquest import movement_cost_for_move
@@ -557,6 +558,29 @@ class MoveExecutionResult:
     new_location: HexCoord | None
     reached_target: bool = True
     stopped_chasing: bool = False
+    # Phase 1026 -- RULES.AK [8.1]: "Se due Re hanno un rapporto di
+    # neutralità, le loro unità militari non attaccano quando ricevono
+    # l'ordine di muovere nelle province dell'altro e rimangono invece
+    # dove si trovano." User-confirmed scope: blocks an army move only
+    # (a lone character with no army always passes freely, including to
+    # Recruit -- see ``turn/recruit_execution.py``'s own Phase 303
+    # "populace levy needs ownership/ally territory, a mercenary hire
+    # doesn't" gate, already correctly separate from this). ``True`` when
+    # this call's own move was refused for exactly that reason (the mover
+    # brought at least one army, and this Kingdom's relation with the
+    # target province's owner is *explicitly* tracked as Neutral --
+    # see the call site's own comment for why "explicitly tracked" is
+    # the deliberately narrower condition actually checked here).
+    # ``stopped_chasing`` is also set alongside this, so ``turn/
+    # turn_processor.py``'s own multi-phase chase tracking correctly
+    # treats the order as settled rather than retrying it every
+    # subsequent phase against a relation that won't change again this
+    # turn (diplomacy is resolved once, early in ``run_turn()``). A
+    # mover left standing in foreign territory by this block is subject
+    # to the exact same check on its own next move order -- there is no
+    # separate "stuck" mechanic, it falls out of reapplying this same
+    # rule phase after phase.
+    blocked_by_neutral_relations: bool = False
     # Phase 410 -- True for *either* a battle-won conquest
     # (``battle_report.conquered``, mirrored here for a single flag
     # callers can check regardless of path) or a real, uncontested one
@@ -1596,6 +1620,43 @@ def execute_move(
     target_province = state.provinces.get(actual_target)
     if target_province is None:
         raise ValueError(f"no province data for {actual_target}")
+
+    # Phase 1026 -- RULES.AK [8.1]'s own Neutral-relation move block (see
+    # MoveExecutionResult.blocked_by_neutral_relations's own docstring).
+    # Deliberately checks ``diplomatic_relations`` directly, NOT the
+    # lenient ``GameState.diplomatic_relation()`` query (whose own
+    # "missing pair reads Neutral" default is correct for turn-1 RULES.AK
+    # [8] semantics but would silently make every pre-existing Kingdom
+    # pair in this project's entire test suite -- and any production
+    # `GameState` built before a world-generation Phase explicitly
+    # initializes this field -- Neutral too, blocking movement nothing
+    # before this phase ever gated): only a pair this project's own
+    # `turn/diplomacy.py apply_treat_orders()` (or a future world-gen
+    # initializer / GM editor) has *actually written* a Neutral entry for
+    # is blocked here. A pair with no entry at all keeps today's
+    # pre-existing behavior unchanged (attackable, the same "not Allied"
+    # default every other `is_allied()` caller already uses). Checked
+    # before any other state mutation below (exploration, movement-point
+    # cost, conquest, battle).
+    if (
+        armies
+        and target_province.owner_kingdom_id is not None
+        and target_province.owner_kingdom_id != kingdom_id
+        and state.diplomatic_relations.get(frozenset({target_province.owner_kingdom_id, kingdom_id}))
+        is DiplomaticRelation.NEUTRAL
+    ):
+        return MoveExecutionResult(
+            moved=False,
+            battle_report=None,
+            exploration=None,
+            movement_points_spent=0,
+            new_location=None,
+            reached_target=False,
+            stopped_chasing=True,
+            blocked_by_neutral_relations=True,
+            wind_walking=wind_walking,
+        )
+
     # Phase 754: snapshotted *before* an uncontested-conquest branch
     # below can overwrite `target_province.owner_kingdom_id` -- "foreign
     # territory" (MOVE.md section 21.3) means whoever owned it at the

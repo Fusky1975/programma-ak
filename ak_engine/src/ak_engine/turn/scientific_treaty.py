@@ -28,17 +28,23 @@ not decoded from a move file. [8.4] reuses that exact field -- a
 second, parallel permission model for what the rulebook itself
 describes as one order with two effects.
 
-**"Have become Allies on a previous gameturn"**: this project has no
-alliance-formation timestamp anywhere. ``GameState.allied_kingdoms``
-(like ``treat_permissions``) is a bare set with no in-project mechanism
-that ever adds to it -- the "Ally" order itself is equally unparsed --
-it is entirely populated by the caller ahead of time, with no record of
-*when* an alliance began. Distinguishing "became allied last turn" from
-"became allied this turn" is therefore not information this engine has
-anywhere to read, so this precondition checks *current*
-``is_allied()`` status only, not its duration -- a documented
-limitation, not a silent guess, the same spirit as ``treat_
-permissions``'s own "caller's job" convention.
+**"Have become Allies on a previous gameturn"** (Phase 1026 -- previously
+documented here as an open gap, now closed): ``turn/diplomacy.py
+apply_treat_orders()`` now stamps ``GameState.diplomatic_relations_
+since`` with the real turn number every time a pair actually transitions
+into Allied, the same "turn-stamped companion set" pattern
+``kingdoms_met_since`` (Phase 491) already uses. This precondition now
+checks that timestamp is strictly *before* the current turn, not merely
+*current* ``is_allied()`` status -- an alliance formed this very turn
+(``since_turn == state.turn_number``) does not yet unlock the exchange,
+matching the rulebook's own "previous gameturn" wording exactly. A pair
+that's Allied with **no** recorded timestamp at all (an alliance set up
+directly -- e.g. a GM-authored starting ``GameState``, or an older test
+fixture predating Phase 1026 -- never having gone through
+``apply_treat_orders()``) is still treated as eligible, the same
+permissive "missing data defaults to neutral, not guessed" convention
+this project uses elsewhere, rather than retroactively penalizing state
+this module has no way to have seen form.
 
 **Adjacency-or-presence** ("the 2 Kingdoms are adjacent, or else a
 character from one Kingdom must be inside the other Kingdom"): read
@@ -274,9 +280,10 @@ def alignment_check_success_chance(kingdom_a_alignment: Alignment, kingdom_b_ali
 def execute_scientific_treaties(
     state: GameState, *, board_width: int, board_height: int, rng: random.Random | None = None
 ) -> list[ScientificTreatyResult]:
-    """Resolve every mutual Treat order between currently-Allied Kingdoms
-    in contact this gameturn -- see module docstring for each
-    precondition's own sourcing and this project's documented limits.
+    """Resolve every mutual Treat order between Kingdoms Allied since a
+    previous gameturn (Phase 1026) and in contact this gameturn -- see
+    module docstring for each precondition's own sourcing and this
+    project's documented limits.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -285,6 +292,9 @@ def execute_scientific_treaties(
     for pair in _mutual_treat_pairs(state):
         kingdom_a_id, kingdom_b_id = sorted(pair)
         if not state.is_allied(kingdom_a_id, kingdom_b_id):
+            continue
+        since_turn = state.diplomatic_relations_since.get(frozenset({kingdom_a_id, kingdom_b_id}))
+        if since_turn is not None and since_turn >= state.turn_number:
             continue
         kingdom_a = state.kingdoms.get(kingdom_a_id)
         kingdom_b = state.kingdoms.get(kingdom_b_id)
