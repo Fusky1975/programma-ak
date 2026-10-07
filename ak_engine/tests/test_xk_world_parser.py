@@ -341,6 +341,23 @@ def test_king_titles_table_has_12_slots_with_unused_ones_blank():
     assert titles.prefix_by_king_id[11] == ""  # reserve slot, never a real King
 
 
+def test_king_titles_match_real_gw_and_are_shared_at_17_file_scale():
+    # Phase 1025: re-run against the Turn 11-12 corpus (much later in
+    # the same campaign), both the real-GW match and the
+    # shared-across-kingdoms property remain exact, zero exceptions --
+    # and King 9 still has no real title even this far into the game, a
+    # stable real fact rather than a decode gap.
+    for turn, fixtures in ((11, (T11_K0, T11_K1, T11_K2)), (12, (T12_K0, T12_K1))):
+        extensions = parse_gw_king_extensions(_TURN_TO_REAL_GW_KING_EXTENSIONS[turn])
+        all_titles = [parse_xk_world(f).king_titles for f in fixtures]
+        for titles in all_titles:
+            for king_id in range(10):
+                assert titles.prefix_by_king_id[king_id] == extensions[king_id].title_prefix
+                assert titles.suffix_by_king_id[king_id] == extensions[king_id].title_suffix
+            assert titles.prefix_by_king_id[9] == ""
+        assert all(t == all_titles[0] for t in all_titles)
+
+
 def test_province_record_decodes_an_ordinary_known_neighbor():
     provinces = {p.coord: p for p in parse_xk_world(T1_K0).provinces}
     florence = provinces[HexCoord(11, 6)]

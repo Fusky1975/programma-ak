@@ -151,6 +151,18 @@ public, not per-recipient-filtered) -- this closes Phase 990's own
 "per-leader status data" that pointer wasn't actually about: these 2
 blocks are per-*King*, not per-leader at all.
 
+**Phase 1025 -- re-confirmed at 17-file scale; titles keep accruing
+over the campaign.** The Turn 11-12 corpus's own real cross-check
+against ``GWKingExtension`` (all 10 real Kings, both fields, every
+file) remains exact, zero exceptions, and the "shared across
+Kingdoms" property holds too. By Turn 11, 2 *more* real Kings have
+acquired a non-blank title beyond the original corpus's own 2 (King 3,
+``"Cosmic Herderer"``; King 6, ``"II"``) -- real, new title grants
+happening over the course of the campaign, not a fixed property of
+specific Kings. King 9 still has no title of either kind even this far
+in, and the 2 reserve slots (10, 11) remain blank, consistent with the
+original finding.
+
 **Phase 994 -- the Army record's own ``status``/``detail_status``/
 ``quality_or_mask``, cross-checked at scale.** Confirmed (Phase 992)
 that a given XK file's own ``army_index`` (the ``0..army_count-1`` loop
