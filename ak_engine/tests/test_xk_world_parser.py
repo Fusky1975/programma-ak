@@ -1225,16 +1225,56 @@ def test_flags_c3fc_is_mostly_shared_across_kingdoms_with_a_few_real_exceptions(
     assert t1_nonzero_indices != t2_nonzero_indices
 
 
+def test_flags_c3fc_per_kingdom_differences_never_split_three_ways():
+    # Phase 1023: re-run across every available 3-Kingdom real turn
+    # (1, 2, 3, 4, and the new Turn 11), the real per-Kingdom footprint
+    # is much larger than the original corpus's own "a handful" (3-4 at
+    # Turns 2-4) suggested -- Turn 11 alone has 45 differing byte
+    # positions out of 256. But every single one of the combined 73
+    # real differing positions across all 5 turns shows exactly one
+    # Kingdom's own byte differing from the other two, which always
+    # agree with each other -- zero positions where all 3 real
+    # Kingdoms disagree. Consistent with each differing byte encoding
+    # some real, low-cardinality per-Kingdom attribute (not per-viewer
+    # secrecy, since the value is identical regardless of which
+    # Kingdom's own file reads it) where two of this campaign's three
+    # sampled Kingdoms simply happen to share a value -- still no
+    # byte-level semantic meaning decoded.
+    one_outlier = 0
+    all_distinct = 0
+    for turn, fixtures in (
+        (1, (T1_K0, T1_K1, T1_K2)),
+        (2, (T2_K0, T2_K1, T2_K2)),
+        (3, (T3_K0, T3_K1, T3_K2)),
+        (4, (T4_K0, T4_K1, T4_K2)),
+        (11, (T11_K0, T11_K1, T11_K2)),
+    ):
+        worlds = [parse_xk_world(f) for f in fixtures]
+        c3fc = [w.globals.flags_c3fc for w in worlds]
+        for i in range(256):
+            distinct_values = len({c[i] for c in c3fc})
+            if distinct_values == 2:
+                one_outlier += 1
+            elif distinct_values == 3:
+                all_distinct += 1
+    assert one_outlier == 73
+    assert all_distinct == 0
+
+
 _TURN_TO_REAL_GW_FEATURES_1000 = {
     1: Path("/home/user/programma-ak/GW3__T1"),
     2: Path("/home/user/programma-ak/GW3__T2"),
     3: Path("/home/user/programma-ak/GW3__T3"),
     4: Path("/home/user/programma-ak/GW3__T4"),
+    11: Path("/home/user/programma-ak/GW3__T11"),
+    12: Path("/home/user/programma-ak/GW3__T12"),
 }
 
 
 def test_feature_count_global_is_the_real_world_total_not_a_per_kingdom_count():
-    for fixture in ALL_12_SAMPLES:
+    # Phase 1023: re-confirmed at 17-file scale (still 128 in every
+    # real Turn 11-12 sample too, same as the original corpus).
+    for fixture in ALL_17_SAMPLES:
         world = parse_xk_world(fixture)
         gw_features = parse_gw_features(_TURN_TO_REAL_GW_FEATURES_1000[world.globals.game_turn])
         assert world.globals.feature_count == len(gw_features) == 128

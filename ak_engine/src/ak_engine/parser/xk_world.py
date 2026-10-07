@@ -418,6 +418,25 @@ is itself a pre-turn-1 snapshot, not an ordinary turn. No bit-level
 meaning is decoded for either flag area beyond this structural
 picture.
 
+**Phase 1023 -- ``flags_c3fc``'s own real per-Kingdom footprint is much
+larger than it first looked, and never splits three ways.** The new
+Turn 11 sample (the only new file with all 3 of this campaign's real
+Kingdoms on hand) shows 45 real differing byte positions out of 256 --
+an order of magnitude more than the original corpus's own 3-4 at Turns
+2-4. Combined across every available 3-Kingdom turn (1, 2, 3, 4, 11:
+73 real differing positions total), **every single one** shows exactly
+one Kingdom's own byte differing from the other two, which always
+agree with each other -- zero positions where all 3 real Kingdoms
+disagree. Since the value at any one position is identical regardless
+of which Kingdom's own file reads it (the same "shared, not a
+per-Kingdom secret" property Phase 999 already established), this isn't
+viewer-dependent masking: it's consistent with each differing byte
+encoding some real, low-cardinality per-Kingdom attribute where two of
+this campaign's three sampled Kingdoms simply happen to share a value
+-- a real structural property, not yet enough to assign byte-level
+meaning (which specific attribute, or why a given index belongs to
+one Kingdom rather than another, remains undetermined).
+
 **Phase 1000 -- Feature/Treasure fields pushed one step further
 against GW's own raw fields.** ``feature_count`` (the named global) is
 confirmed, in every one of the 12 real files, to be the real *world*
@@ -1053,8 +1072,10 @@ delivered material's own stated limits): the ~115 unnamed globals
 but not otherwise named) and both 256-byte flag areas (Phase 999/1018:
 ``flags_c4fc``'s own leader-indexed shape confirmed, its per-Hero
 integer's real meaning still isn't despite a 136-real-Hero re-test;
-``flags_c3fc``'s mostly-shared-with-a-few-per-Kingdom-bits shape
-confirmed, no bit meaning decoded); a full card's own ``sex_flags``
+``flags_c3fc``'s mostly-shared shape confirmed and its real per-Kingdom
+footprint quantified at a much larger scale (Phase 1023: 73 real
+differing positions across 5 turns, never a 3-way split), still no
+byte-level meaning decoded); a full card's own ``sex_flags``
 bitfield beyond "0 in this corpus"; the real non-matching cases left in
 each of ``objects[i]``'s own LMOVE position-chain (Phase 1019: 3 of 36)
 and ``extra_low_bytes[i]``'s own same-phase-destination reading (Phase
