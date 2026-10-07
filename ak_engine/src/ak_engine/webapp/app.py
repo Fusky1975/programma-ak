@@ -34,6 +34,7 @@ from ak_engine.models.temper import TEMPER_NAME, Temper
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_NAME, Treasure
 from ak_engine.turn.combat import QUALITY_NAME, Quality
 from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES
+from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
 from ak_engine.webapp.games import (
     DuplicateGameNameError,
     GameNotFoundError,
@@ -82,7 +83,37 @@ from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH
 # the two groups (`report/turn_report.py describe_imperial_office_report()`
 # is the consumer this screen's choice feeds).
 MANDATORY_OFFICES: tuple[Office, ...] = tuple(o for o in ALL_OFFICES if o.value <= Office.MAGE.value)
-OPTIONAL_OFFICES: tuple[Office, ...] = tuple(o for o in ALL_OFFICES if o.value > Office.MAGE.value) + ARMY_RANKED_OFFICES
+
+# The optional titles, grouped for the GM's own screen: the 7 alignment-
+# King titles first (same order as PLAYABLE_ALIGNMENTS), then the 11 race
+# titles (RACE_TITLE_OFFICE's own order), then the 4 magic-school titles,
+# then every remaining optional title (the terrain-explorer Kings, the
+# other merit-based offices, and the 3 army-scoped Royal Titles) last, in
+# their existing relative order.
+_ALIGNMENT_OPTIONAL_OFFICES: tuple[Office, ...] = (
+    Office.DIVINE_KING,
+    Office.GOOD_KING,
+    Office.DRUID_KING,
+    Office.NEUTRAL_KING,
+    Office.PAGAN_KING,
+    Office.EVIL_KING,
+    Office.UNDEAD_KING,
+)
+_RACE_OPTIONAL_OFFICES: tuple[Office, ...] = tuple(RACE_TITLE_OFFICE.values())
+_MAGIC_OPTIONAL_OFFICES: tuple[Office, ...] = (
+    Office.ELE_MAGE,
+    Office.ILLUS_MAGE,
+    Office.NECRO_MAGE,
+    Office.PSYCHIC_MAGE,
+)
+_GROUPED_OPTIONAL_OFFICES = set(_ALIGNMENT_OPTIONAL_OFFICES + _RACE_OPTIONAL_OFFICES + _MAGIC_OPTIONAL_OFFICES)
+OPTIONAL_OFFICES: tuple[Office, ...] = (
+    _ALIGNMENT_OPTIONAL_OFFICES
+    + _RACE_OPTIONAL_OFFICES
+    + _MAGIC_OPTIONAL_OFFICES
+    + tuple(o for o in ALL_OFFICES if o.value > Office.MAGE.value and o not in _GROUPED_OPTIONAL_OFFICES)
+    + ARMY_RANKED_OFFICES
+)
 
 
 def _optional_enum(cls, raw: str):
