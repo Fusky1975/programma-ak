@@ -13,6 +13,7 @@
         <div style="display: flex; gap: 0.5rem;">
           <a class="button" href="{{ url_for('turn_report_view', slug=meta.slug, turn_number=turn_number, kingdom_id=kingdom_id) }}">View</a>
           <a class="button" href="{{ url_for('turn_report_download', slug=meta.slug, turn_number=turn_number, kingdom_id=kingdom_id) }}">Download</a>
+          <a class="button" href="{{ url_for('turn_report_download_xk', slug=meta.slug, turn_number=turn_number, kingdom_id=kingdom_id) }}">Download XK</a>
         </div>
       </li>
     {% endfor %}

@@ -18,7 +18,9 @@ from ak_engine.models.game_state import GameState
 from ak_engine.orchestrator import TurnOutcome, process_turn
 from ak_engine.parser.errors import K1ParseError
 from ak_engine.parser.k1_moves import parse_k1_moves_file
+from ak_engine.parser.xk_world_writer import write_xk_world
 from ak_engine.webapp.games import save_game
+from ak_engine.webapp.xk_reports import XKExportError, build_xk_worlds_for_all_kingdoms
 
 MOVES_DIRNAME = "moves"
 REPORTS_DIRNAME = "reports"
@@ -133,6 +135,45 @@ def load_turn_report(one_game_dir: Path, turn_number: int, kingdom_id: int) -> l
     return path.read_text(encoding="utf-8").splitlines()
 
 
+def save_turn_xk_files(one_game_dir: Path, turn_number: int, state: GameState) -> None:
+    """Phase 1026 -- the real binary counterpart to ``save_turn_reports()``
+    above, saved the same way and for the same reason: a processed turn's
+    own ``GameState`` isn't kept around once a *later* turn has been
+    processed (``state.pkl`` holds only the current/live snapshot), so an
+    older turn's own XK file can't be rebuilt on demand -- it has to be
+    written now, while ``state`` still reflects this exact turn. Builds
+    every Kingdom together (``build_xk_worlds_for_all_kingdoms()``) so
+    each one's own shared/turn-level byte blocks can copy a sibling
+    Kingdom's instead of zero-filling. A Kingdom whose own data can't be
+    encoded (``XKExportError``) is simply skipped here -- the text letter
+    (already saved) still exists for the GM either way.
+    """
+
+    directory = turn_reports_dir(one_game_dir, turn_number)
+    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        worlds = build_xk_worlds_for_all_kingdoms(state)
+    except XKExportError:
+        return
+    for kingdom_id, world in worlds.items():
+        try:
+            data = write_xk_world(world)
+        except ValueError:
+            continue
+        (directory / f"{kingdom_id}.xk").write_bytes(data)
+
+
+def load_turn_xk_file(one_game_dir: Path, turn_number: int, kingdom_id: int) -> bytes | None:
+    """``None`` if this turn's own XK file was never saved for this
+    Kingdom (never processed, or ``save_turn_xk_files()`` skipped it --
+    see that function's own docstring)."""
+
+    path = turn_reports_dir(one_game_dir, turn_number) / f"{kingdom_id}.xk"
+    if not path.is_file():
+        return None
+    return path.read_bytes()
+
+
 def processed_turn_numbers(one_game_dir: Path) -> list[int]:
     """Every turn number with at least one saved report, oldest first."""
 
@@ -151,8 +192,9 @@ def processed_turn_numbers(one_game_dir: Path) -> list[int]:
 
 def process_and_save_current_turn(root: Path, slug: str, state: GameState, one_game_dir: Path) -> TurnOutcome:
     """Runs ``process_turn()`` against every move file uploaded for
-    ``state.turn_number``, then persists both the resulting letter
-    reports (under this same turn's own number -- ``TurnOutcome.
+    ``state.turn_number``, then persists the resulting letter reports
+    AND each Kingdom's own real XK file (Phase 1026, ``save_turn_xk_
+    files()``) under this same turn's own number -- ``TurnOutcome.
     letter_reports`` describes the turn that was *just* processed, not
     the incremented ``state.turn_number`` ``process_turn()`` leaves
     behind) and the updated ``state`` itself. Unlike ``webapp/reports.py
@@ -160,7 +202,7 @@ def process_and_save_current_turn(root: Path, slug: str, state: GameState, one_g
     regenerated later on demand -- it reflects one real, RNG-driven
     ``run_turn()`` dispatch that already happened and mutated ``state``
     permanently -- so it's saved to disk immediately, right here, rather
-    than left for a later "view" request to recompute.
+    than left for a later "view"/"download" request to recompute.
 
     A Kingdom with no uploaded file this turn is not an error:
     ``process_turn()`` already gives it the real rulebook-mandated
@@ -175,5 +217,6 @@ def process_and_save_current_turn(root: Path, slug: str, state: GameState, one_g
     )
     outcome = process_turn(state, order_file_paths)
     save_turn_reports(one_game_dir, processed_turn_number, outcome.letter_reports)
+    save_turn_xk_files(one_game_dir, processed_turn_number, state)
     save_game(root, slug, state)
     return outcome

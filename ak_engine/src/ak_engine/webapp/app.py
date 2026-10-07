@@ -60,12 +60,14 @@ from ak_engine.webapp.reports import turn_zero_report
 from ak_engine.webapp.turn_processing import (
     InvalidMoveFileError,
     load_turn_report,
+    load_turn_xk_file,
     process_and_save_current_turn,
     processed_turn_numbers,
     remove_uploaded_move_file,
     save_uploaded_move_file,
     uploaded_move_files,
 )
+from ak_engine.webapp.xk_reports import XKExportError, build_xk_file_for_kingdom
 from ak_engine.webapp.world_creation import (
     RosterOutOfBoundsError,
     WorldAlreadyCreatedError,
@@ -824,6 +826,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             meta=meta,
             kingdom=state.kingdoms[kingdom_id],
             lines=turn_zero_report(state, kingdom_id),
+            error=request.args.get("error"),
         )
 
     @app.get("/games/<slug>/turn0/<int:kingdom_id>/download")
@@ -841,6 +844,26 @@ def create_app(games_root: Path | None = None) -> Flask:
             "\n".join(lines),
             mimetype="text/plain",
             headers={"Content-Disposition": f'attachment; filename="SE_T0_{kingdom_name}.txt"'},
+        )
+
+    @app.get("/games/<slug>/turn0/<int:kingdom_id>/download/xk")
+    def turn_zero_download_xk(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        if kingdom_id not in state.kingdoms:
+            return redirect(url_for("turn_zero_list", slug=slug, error="Kingdom not found."))
+        try:
+            data = build_xk_file_for_kingdom(state, kingdom_id)
+        except XKExportError as exc:
+            return redirect(url_for("turn_zero_view", slug=slug, kingdom_id=kingdom_id, error=f"Couldn't build the XK file: {exc}"))
+        kingdom_name = state.kingdoms[kingdom_id].name.replace(" ", "_")
+        return Response(
+            data,
+            mimetype="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="XK_T0_{kingdom_name}.xk"'},
         )
 
     @app.get("/games/<slug>/turns")
@@ -927,7 +950,13 @@ def create_app(games_root: Path | None = None) -> Flask:
             return redirect(url_for("turn_report_list", slug=slug, turn_number=turn_number, error="Report not found."))
         kingdom_name = state.kingdoms[kingdom_id].name if kingdom_id in state.kingdoms else f"Kingdom #{kingdom_id}"
         return render_template(
-            "turn_report_view.html", meta=meta, turn_number=turn_number, kingdom_id=kingdom_id, kingdom_name=kingdom_name, lines=lines
+            "turn_report_view.html",
+            meta=meta,
+            turn_number=turn_number,
+            kingdom_id=kingdom_id,
+            kingdom_name=kingdom_name,
+            lines=lines,
+            error=request.args.get("error"),
         )
 
     @app.get("/games/<slug>/turns/<int:turn_number>/report/<int:kingdom_id>/download")
@@ -945,6 +974,25 @@ def create_app(games_root: Path | None = None) -> Flask:
             "\n".join(lines),
             mimetype="text/plain",
             headers={"Content-Disposition": f'attachment; filename="SE_T{turn_number}_{kingdom_name}.txt"'},
+        )
+
+    @app.get("/games/<slug>/turns/<int:turn_number>/report/<int:kingdom_id>/download/xk")
+    def turn_report_download_xk(slug: str, turn_number: int, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        data = load_turn_xk_file(game_dir(root, slug), turn_number, kingdom_id)
+        if data is None:
+            return redirect(
+                url_for("turn_report_list", slug=slug, turn_number=turn_number, error="XK file not found for this Kingdom.")
+            )
+        kingdom_name = (state.kingdoms[kingdom_id].name if kingdom_id in state.kingdoms else f"Kingdom_{kingdom_id}").replace(" ", "_")
+        return Response(
+            data,
+            mimetype="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="XK_T{turn_number}_{kingdom_name}.xk"'},
         )
 
     return app

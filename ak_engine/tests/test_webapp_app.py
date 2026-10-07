@@ -1182,6 +1182,38 @@ def test_turn_zero_download_unknown_kingdom_shows_an_error_not_a_crash(tmp_path)
     assert b"Kingdom not found" in response.data
 
 
+def test_turn_zero_download_xk_serves_a_real_xk_file(tmp_path):
+    from ak_engine.parser.xk_world import parse_xk_world
+    import pathlib
+    import tempfile
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turn0/1/download/xk")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/octet-stream"
+    assert "attachment" in response.headers["Content-Disposition"]
+    path = pathlib.Path(tempfile.mktemp())
+    try:
+        path.write_bytes(response.data)
+        world = parse_xk_world(path)
+    finally:
+        path.unlink(missing_ok=True)
+    assert world.header.kingdom_id == 1
+
+
+def test_turn_zero_download_xk_unknown_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turn0/999/download/xk", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Kingdom not found" in response.data
+
+
 def test_turn_zero_reports_do_not_advance_the_turn_number(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -1397,6 +1429,42 @@ def test_turn_report_view_and_download_after_processing(tmp_path):
     assert download.status_code == 200
     assert download.mimetype == "text/plain"
     assert "attachment" in download.headers["Content-Disposition"]
+
+
+def test_turn_report_download_xk_after_processing_serves_a_real_xk_file(tmp_path):
+    from ak_engine.parser.xk_world import parse_xk_world
+    import pathlib
+    import tempfile
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _upload_move_file(client, meta.slug, "AK3__T1.K1")
+    client.post(f"/games/{meta.slug}/turns/process")
+
+    response = client.get(f"/games/{meta.slug}/turns/1/report/1/download/xk")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/octet-stream"
+    assert "attachment" in response.headers["Content-Disposition"]
+    path = pathlib.Path(tempfile.mktemp())
+    try:
+        path.write_bytes(response.data)
+        world = parse_xk_world(path)
+    finally:
+        path.unlink(missing_ok=True)
+    assert world.header.kingdom_id == 1
+
+
+def test_turn_report_download_xk_missing_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _upload_move_file(client, meta.slug, "AK3__T1.K1")
+    client.post(f"/games/{meta.slug}/turns/process")
+
+    response = client.get(f"/games/{meta.slug}/turns/1/report/999/download/xk", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"XK file not found" in response.data
 
 
 def test_turn_report_view_missing_report_shows_an_error_not_a_crash(tmp_path):

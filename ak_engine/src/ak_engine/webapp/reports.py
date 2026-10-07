@@ -16,11 +16,15 @@ any turn has run.
 
 Each Kingdom's own report already includes real PROVINCES/CHARACTERS/
 ARMIES sections describing everything that Kingdom currently owns --
-serving, per the GM interface plan's own explicit v1 scope decision, as
-this project's stand-in for the real (still unreverse-engineered) binary
-XK export a player's own separate map program would otherwise consume.
-The report screen says so explicitly rather than silently presenting one
-as the other.
+originally built, per the GM interface plan's own explicit v1 scope
+decision, as this project's stand-in for the real binary XK export a
+player's own separate map program would otherwise consume, since the
+format was still unreverse-engineered at the time. **Phase 1026 closes
+that gap**: ``webapp/xk_reports.py`` now builds the real file (``parser/
+xk_world_builder.py``/``xk_world_writer.py``), offered alongside this
+text letter on the same report screens -- this module's own stand-in
+report is kept too, not replaced, since it remains a readable summary a
+GM can view in-browser without a separate map program.
 
 This module also builds the real "BIRTHRIGHT REPORT" title page (Phase
 981) -- the real title page a brand-new King's own first report always
