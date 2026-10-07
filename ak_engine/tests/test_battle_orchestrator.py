@@ -18,6 +18,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.battle_line import BattleUnit
@@ -5458,3 +5459,43 @@ def test_apply_monster_summoning_aid_uses_the_halved_player_led_rate():
         miss_units, commander, state, FIELD, bounds, rng=ScriptedRandom([just_over]), **_aid_kwargs()
     )
     assert miss_units == []
+
+
+def test_fight_battle_raises_when_the_only_present_army_is_shielded_by_an_allied_host():
+    # [8.1]'s own "triangle" case: kingdom 2 ("Y") is a guest army in a
+    # province owned by kingdom 3 ("X"), who is Allied with the attacker
+    # (kingdom 1, "Z"). Even though Y and Z are Enemies, X's own
+    # hospitality shields Y -- no legitimate defender present at all.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Zantium", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Yland", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(3, "Xaria", Race.HUMAN, Alignment.GOOD, HexCoord(8, 8)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+    state.allied_kingdoms.add(frozenset({1, 3}))
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ENEMY
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD))
+
+    with pytest.raises(ValueError, match="no defending armies"):
+        fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=random.Random(0))
+
+
+def test_fight_multi_attacker_battle_treats_a_shielded_guest_as_uncontested():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Zantium", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Yland", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(3, "Xaria", Race.HUMAN, Alignment.GOOD, HexCoord(8, 8)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+    state.allied_kingdoms.add(frozenset({1, 3}))
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ENEMY
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Zealot", location=HexCoord(5, 5)))
+    parties = [MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5))]
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=random.Random(0))
+
+    assert len(battles) == 1
+    assert battles[0].report.conquered is True
+    assert battles[0].report.battle_result.winner == "attacker"
+    assert state.armies[201].location == FIELD  # Y's shielded guest army untouched

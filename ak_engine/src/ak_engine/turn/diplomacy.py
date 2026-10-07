@@ -57,25 +57,37 @@ visibility) and is a conservative, explicitly documented simplification
 for the ordinary case (one phase earlier than a maximally literal "end
 of turn" reading), never a silent guess.
 
-**What this phase does NOT cover yet.** [8.1]'s own "triangle" case (a
-Kingdom X allied to both Y and Z, who are themselves enemies of each
-other: Y and Z may march through X's own territory to fight each other,
-but no battle may occur *on* X's territory between them; if X's own
-forces end a phase co-located with Y's inside a province Y owns that Z
-has invaded, X's forces join Y's side, but X can never be the attacking
-side) is a multi-Kingdom battle-eligibility nuance that belongs in
-``turn/battle_orchestrator.py``/``turn/multiple_contingents.py`` (which
-already implements the ordinary two-way ally force-pooling this case
-would extend), not here -- ``turn/move_execution.py``'s own Neutral-move
-block (see ``MoveExecutionResult.blocked_by_neutral_relations``) only
-covers the two-Kingdom case. Not yet implemented; a real, open gap, not
-a silent guess.
+**[8.1]'s own "triangle" case -- a Kingdom X allied to both Y and Z, who
+are themselves enemies of each other.** Closed via ``is_attackable_at()``
+below, consumed by every one of this project's own three defender-
+gathering call sites (``turn/move_execution.py execute_move()``,
+``turn/battle_orchestrator.py fight_battle()``/``fight_multi_attacker_
+battle()``). The rulebook's own text ("Y e Z possono marciare attraverso
+il territorio di X per attaccarsi a vicenda, ma nessuna battaglia può
+avvenire tra loro sul territorio di quest'ultimo") turns out to need no
+triangle-specific code at all: it falls out of one general principle --
+territory owned by a Kingdom Allied with the attacker shields *every*
+army physically present there from that attacker, not just the
+territory owner's own forces (already covered by the ordinary ``is_
+allied()`` check on the defending army itself). The other half of the
+rule ("se X comanda forze presenti... nella provincia di Y invasa da Z,
+le sue forze combattono con Y contro Z") needs no new code either: X's
+forces, merely co-located (not attacking), are already swept into the
+ordinary non-allied-with-the-attacker defender pool today. The rule's own
+closing sentence ("in nessuno di questi casi il Re X può dare assistenza
+in attacco") is likewise already structurally guaranteed, not something
+to additionally enforce: X moving against its own ally Z's territory is
+never framed as an attack in the first place (RULES.AK [8.1]'s own
+"alleati... hanno libero passaggio," wired as the Allied-passage case
+right alongside the Neutral-move block), so X can never appear as an
+*attacking* party against Z to begin with -- there is no uniting
+contingent for it to join.
 """
 
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.game_state import GameState
+from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.parser.gw_world import DiplomaticRelation
 
 _RELATION_RANK: dict[DiplomaticRelation, int] = {
@@ -97,6 +109,28 @@ def _upgrade(relation: DiplomaticRelation) -> DiplomaticRelation:
 def _is_druid(state: GameState, kingdom_id: int) -> bool:
     kingdom = state.kingdoms.get(kingdom_id)
     return kingdom is not None and kingdom.alignment is Alignment.DRUID
+
+
+def is_attackable_at(
+    state: GameState, defender_kingdom_id: int, attacker_kingdom_id: int, province: ProvinceState
+) -> bool:
+    """[8.1]'s own "triangle" rule, generalized (see module docstring):
+    an army of ``defender_kingdom_id`` physically present at ``province``
+    is a legitimate target for ``attacker_kingdom_id``'s own move/battle
+    there only if (a) the two Kingdoms aren't themselves Allied (the
+    ordinary rule), AND (b) ``province`` isn't owned by a *third*
+    Kingdom who is Allied with the attacker -- an Allied territory owner
+    shields every army present, not just their own. Reusable at every
+    defender-gathering call site (``turn/move_execution.py``,
+    ``turn/battle_orchestrator.py``) so the two project-wide "who's a
+    legitimate target here" checks never drift apart.
+    """
+
+    if state.is_allied(defender_kingdom_id, attacker_kingdom_id):
+        return False
+    if province.owner_kingdom_id is not None and state.is_allied(province.owner_kingdom_id, attacker_kingdom_id):
+        return False
+    return True
 
 
 def _set_relation(state: GameState, kingdom_a: int, kingdom_b: int, relation: DiplomaticRelation) -> None:

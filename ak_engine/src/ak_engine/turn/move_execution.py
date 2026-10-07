@@ -287,6 +287,7 @@ from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle, mysti
 from ak_engine.turn.cast_execution import ILLUSORY_FOG_EXTRA_MOVEMENT_COST, is_illusory_fog_affected_air_unit
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError, is_illegal_move_from_contested
+from ak_engine.turn.diplomacy import is_attackable_at
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.exploration import ExploreResult, discover_features, resolve_explore, resolve_find_mines
 from ak_engine.turn.office_holder import resolve_office_holder
@@ -1688,7 +1689,7 @@ def execute_move(
     defenders_present = [
         army
         for army in state.armies_at(actual_target)
-        if army.kingdom_id is not None and not state.is_allied(army.kingdom_id, kingdom_id)
+        if army.kingdom_id is not None and is_attackable_at(state, army.kingdom_id, kingdom_id, target_province)
     ]
     occupied_by_enemy = bool(armies) and bool(defenders_present)
 

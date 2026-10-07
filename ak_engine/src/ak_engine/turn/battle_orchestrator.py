@@ -204,6 +204,7 @@ from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit, quality_one_level_down
 from ak_engine.turn.challenge_execution import resolve_challenge_combat
 from ak_engine.turn.combat import Quality, direct_destruction_probability
+from ak_engine.turn.diplomacy import is_attackable_at
 from ak_engine.turn.discovery_effects import (
     arcane_valor_hit_points_bonus,
     effective_skill_level,
@@ -2475,7 +2476,7 @@ def fight_battle(
         for army in state.armies_at(province_coord)
         if army.army_id not in attacker_army_ids
         and army.kingdom_id is not None
-        and not state.is_allied(army.kingdom_id, attacker_kingdom_id)
+        and is_attackable_at(state, army.kingdom_id, attacker_kingdom_id, province)
     ]
     if not attacker_armies:
         raise ValueError("no attacking armies given")
@@ -3242,7 +3243,11 @@ def fight_multi_attacker_battle(
         defenders_present = any(
             army.army_id not in combined_army_ids
             and army.kingdom_id is not None
-            and not state.is_allied(army.kingdom_id, claiming_kingdom_id)
+            and (
+                is_attackable_at(state, army.kingdom_id, claiming_kingdom_id, target_province)
+                if target_province is not None
+                else not state.is_allied(army.kingdom_id, claiming_kingdom_id)
+            )
             for army in state.armies_at(province_coord)
         )
         if defenders_present:

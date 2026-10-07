@@ -6,11 +6,11 @@ each branch below is sourced from.
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.game_state import GameState, KingdomState
-from ak_engine.models.map import HexCoord
+from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.parser.gw_world import DiplomaticRelation
-from ak_engine.turn.diplomacy import apply_treat_orders
+from ak_engine.turn.diplomacy import apply_treat_orders, is_attackable_at
 
 HOME_A = HexCoord(0, 0)
 HOME_B = HexCoord(1, 0)
@@ -153,3 +153,44 @@ def test_a_pair_already_allied_via_legacy_allied_kingdoms_is_not_retouched_by_a_
     state.treat_permissions.update({(1, 2), (2, 1)})
     apply_treat_orders(state)
     assert frozenset({1, 2}) not in state.diplomatic_relations_since
+
+
+def _triangle_state() -> GameState:
+    # X (kingdom 1) allied to both Y (kingdom 2) and Z (kingdom 3), who
+    # are enemies of each other. Province X_HOME belongs to X.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Xaria", Race.HUMAN, Alignment.GOOD, HOME_A))
+    state.add_kingdom(KingdomState(2, "Yland", Race.HUMAN, Alignment.GOOD, HOME_B))
+    state.add_kingdom(KingdomState(3, "Zantium", Race.HUMAN, Alignment.EVIL, HexCoord(2, 0)))
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.allied_kingdoms.add(frozenset({1, 3}))
+    state.diplomatic_relations[frozenset({2, 3})] = DiplomaticRelation.ENEMY
+    return state
+
+
+def test_is_attackable_at_ordinary_enemy_is_attackable():
+    state = _triangle_state()
+    province = ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2)
+    assert is_attackable_at(state, defender_kingdom_id=2, attacker_kingdom_id=3, province=province) is True
+
+
+def test_is_attackable_at_allied_defender_is_never_attackable():
+    state = _triangle_state()
+    province = ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None)
+    assert is_attackable_at(state, defender_kingdom_id=1, attacker_kingdom_id=2, province=province) is False
+
+
+def test_is_attackable_at_shields_a_guest_kingdoms_army_on_allied_host_territory():
+    # Y's forces, merely passing through/stationed in X's own territory,
+    # cannot be attacked by Z even though Y and Z are enemies -- [8.1]'s
+    # own "triangle" rule, since X (the territory owner) is Allied with
+    # the attacker Z.
+    state = _triangle_state()
+    x_owned_province = ProvinceState(HOME_A, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1)
+    assert is_attackable_at(state, defender_kingdom_id=2, attacker_kingdom_id=3, province=x_owned_province) is False
+
+
+def test_is_attackable_at_does_not_shield_on_unowned_or_non_allied_territory():
+    state = _triangle_state()
+    wild_province = ProvinceState(HexCoord(9, 9), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None)
+    assert is_attackable_at(state, defender_kingdom_id=2, attacker_kingdom_id=3, province=wild_province) is True

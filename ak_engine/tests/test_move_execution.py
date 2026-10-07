@@ -2588,3 +2588,22 @@ def test_army_move_is_not_blocked_when_the_pair_is_explicitly_enemy():
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
 
     assert result.blocked_by_neutral_relations is False
+
+
+def test_triangle_guest_army_on_allied_host_territory_is_not_attacked():
+    # [8.1]'s own "triangle" case: kingdom 1 (the mover/attacker, "Z")
+    # moves into TARGET, owned by kingdom 3 ("X"), who is Allied with
+    # kingdom 1 -- kingdom 2's ("Y") army is merely a guest there, and is
+    # Enemy with kingdom 1, but X's own hospitality shields it: no battle.
+    state = base_state()
+    state.add_kingdom(KingdomState(3, "Xaria", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.provinces[TARGET].owner_kingdom_id = 3
+    state.allied_kingdoms.add(frozenset({1, 3}))  # mover (1) allied with the host (3)
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ENEMY
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))  # Y's guest army
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.moved is True
+    assert result.battle_report is None
+    assert state.armies[201].location == TARGET  # Y's army untouched
