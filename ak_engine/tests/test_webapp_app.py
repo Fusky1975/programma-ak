@@ -1377,6 +1377,75 @@ def test_process_turn_advances_state_and_redirects_to_the_report(tmp_path):
     assert state.turn_number == 2
 
 
+def test_turns_diplomacy_shows_the_default_neutral_relation(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)  # Kingdoms 1 (Aldric) and 2 (Elara)
+
+    response = client.get(f"/games/{meta.slug}/turns/diplomacy")
+
+    assert response.status_code == 200
+    assert b"Aldric" in response.data
+    assert b"Elara" in response.data
+    assert b"Neutral" in response.data
+
+
+def test_turns_diplomacy_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/turns/diplomacy", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_turns_diplomacy_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/turns/diplomacy", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_turns_diplomacy_save_with_no_orders_is_a_no_op(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/turns/diplomacy", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.treat_permissions == set()
+    assert state.break_treat_orders == set()
+
+
+def test_turns_diplomacy_mutual_treat_upgrades_relation_once_the_turn_is_processed(tmp_path):
+    # Before Phase 1027, nothing in the GM web interface could ever
+    # populate treat_permissions/break_treat_orders -- apply_treat_
+    # orders() was real but entirely unreachable from a real game. This
+    # is the end-to-end proof the gap is actually closed: both Kings
+    # (1=Aldric, 2=Elara, Neutral to each other by default) issue a
+    # mutual Treat here, then processing the turn should upgrade them
+    # straight to Allied (Neutral -> Allied, rulebook [8.2]).
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    client.post(
+        f"/games/{meta.slug}/turns/diplomacy",
+        data={"order_1_2": "treat", "order_2_1": "treat"},
+    )
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.treat_permissions == {(1, 2), (2, 1)}
+
+    client.post(f"/games/{meta.slug}/turns/process")
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.is_allied(1, 2)
+    # Turn-scoped fields are cleared again once the turn that consumed
+    # them has been processed.
+    assert state.treat_permissions == set()
+
+
 def test_process_turn_without_a_world_shows_an_error_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)

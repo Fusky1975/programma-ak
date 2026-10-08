@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Turn {{ state.turn_number }} -- Diplomacy -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('turns_hub', slug=meta.slug) }}">&larr; Turn {{ state.turn_number }}</a></p>
+
+{% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+
+<div class="panel" style="border-left: 6px solid var(--phase-turns);">
+  <h2>{{ meta.name }} &mdash; Diplomacy</h2>
+  <p>Current relation between every Kingdom pair (rulebook [8.1] &mdash; all Kings start Neutral to each other):</p>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Kingdom</th>
+        <th>Kingdom</th>
+        <th>Relation</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a_id, a in state.kingdoms.items() %}
+        {% for b_id, b in state.kingdoms.items() %}
+          {% if a_id < b_id %}
+            <tr>
+              <td>{{ a.name }}</td>
+              <td>{{ b.name }}</td>
+              <td>{{ state.diplomatic_relation(a_id, b_id)|display_name }}</td>
+            </tr>
+          {% endif %}
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-turns);">
+  <h2>Treat / Break Treat Orders &mdash; Turn {{ state.turn_number }}</h2>
+  <p>Rulebook [8.2]/[8.3]: a Treat order promotes the relation one step (Enemy &rarr; Neutral &rarr; Allied), but
+    only if <strong>both</strong> Kings issue it toward each other this turn. A Break Treat order demotes it one
+    step unilaterally (straight to Enemy if both sides issue it on a currently-Allied pair). A Treat order is
+    also what lets your ally recruit in your own territory this turn, even if you're already allied.</p>
+  <form method="post" action="{{ url_for('turns_diplomacy_save', slug=meta.slug) }}">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Issuing King</th>
+          <th>Toward</th>
+          <th>Order</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for issuer_id, issuer in state.kingdoms.items() %}
+          {% for target_id, target in state.kingdoms.items() %}
+            {% if issuer_id != target_id %}
+              <tr>
+                <td>{{ issuer.name }}</td>
+                <td>{{ target.name }}</td>
+                <td>
+                  <select name="order_{{ issuer_id }}_{{ target_id }}">
+                    <option value="none" {% if (issuer_id, target_id) not in state.treat_permissions and (issuer_id, target_id) not in state.break_treat_orders %}selected{% endif %}>No order</option>
+                    <option value="treat" {% if (issuer_id, target_id) in state.treat_permissions %}selected{% endif %}>Treat</option>
+                    <option value="break" {% if (issuer_id, target_id) in state.break_treat_orders %}selected{% endif %}>Break Treat</option>
+                  </select>
+                </td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit">Save Orders for Turn {{ state.turn_number }}</button>
+  </form>
+</div>
+
+{% endblock %}

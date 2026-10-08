@@ -57,6 +57,7 @@ from ak_engine.webapp.players import (
     list_players,
     remove_player,
 )
+from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
 from ak_engine.webapp.reports import turn_zero_report
 from ak_engine.webapp.turn_processing import (
     InvalidMoveFileError,
@@ -914,6 +915,48 @@ def create_app(games_root: Path | None = None) -> Flask:
             processed_turns=processed_turn_numbers(directory),
             error=request.args.get("error"),
         )
+
+    @app.get("/games/<slug>/turns/diplomacy")
+    def turns_diplomacy(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        return render_template(
+            "turns_diplomacy.html",
+            meta=meta,
+            state=state,
+            error=request.args.get("error"),
+        )
+
+    @app.post("/games/<slug>/turns/diplomacy")
+    def turns_diplomacy_save(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        treat_pairs: set[tuple[int, int]] = set()
+        break_pairs: set[tuple[int, int]] = set()
+        for issuer_id in state.kingdoms:
+            for target_id in state.kingdoms:
+                if issuer_id == target_id:
+                    continue
+                choice = request.form.get(f"order_{issuer_id}_{target_id}", "none")
+                if choice == "treat":
+                    treat_pairs.add((issuer_id, target_id))
+                elif choice == "break":
+                    break_pairs.add((issuer_id, target_id))
+
+        try:
+            set_turn_diplomacy_orders(state, treat_pairs, break_pairs)
+        except InvalidDiplomacyOrderError as exc:
+            return redirect(url_for("turns_diplomacy", slug=slug, error=str(exc)))
+
+        save_game(root, slug, state)
+        return redirect(url_for("turns_hub", slug=slug))
 
     @app.post("/games/<slug>/turns/upload")
     def turns_upload(slug: str):
