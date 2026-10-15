@@ -95,4 +95,13 @@
   <a class="button" href="{{ url_for('feature_new', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">Add Special Feature</a>
 </div>
 
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Delete Province</h2>
+  <p class="hex-map-legend-note">There's no "Add Province" in this editor -- a deleted province can only come back by regenerating the whole world. Blocked while it's a Kingdom's Home province, or has any Army or Leader currently on it (move or remove them first); any Special Feature here is deleted along with it.</p>
+  <form method="post" action="{{ url_for('province_delete', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}"
+        onsubmit="return confirm('Permanently delete the province at ({{ province.coord.x }}, {{ province.coord.y }})? This cannot be undone from this interface.');">
+    <button type="submit" class="danger">Delete Province</button>
+  </form>
+</div>
+
 {% endblock %}

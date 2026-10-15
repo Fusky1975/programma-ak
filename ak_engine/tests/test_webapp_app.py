@@ -680,6 +680,124 @@ def test_province_edit_shows_which_kingdom_it_is_home_to(tmp_path):
     assert state.kingdoms[1].name.encode() in response.data
 
 
+def _safe_province_coords(state, count):
+    """``count`` distinct province coordinates with no Kingdom Home, no
+    Army, no Leader, and no Feature on them -- safe to delete without
+    tripping any of province_delete()'s own real preconditions."""
+
+    homes = {kingdom.home_province for kingdom in state.kingdoms.values()}
+    found = []
+    for coord in state.provinces:
+        if coord in homes:
+            continue
+        if state.armies_at(coord) or state.leaders_at(coord) or state.features_at(coord):
+            continue
+        found.append(coord)
+        if len(found) == count:
+            return found
+    raise AssertionError(f"could not find {count} safe province coordinates to delete")
+
+
+def test_province_delete_removes_it(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+
+    response = client.post(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert coord not in state.provinces
+
+
+def test_province_delete_also_removes_its_own_features(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+    client.post(
+        f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/features/new",
+        data={"kind": "TEMPLE"},
+    )
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.features_at(coord)
+
+    response = client.post(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert coord not in state.provinces
+    assert state.features_at(coord) == []
+
+
+def test_province_delete_blocked_for_a_kingdoms_home_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+
+    response = client.post(f"/games/{meta.slug}/provinces/{home.x}/{home.y}/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Home province" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert home in state.provinces
+
+
+def test_province_delete_blocked_when_an_army_is_present(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+    army = next(iter(state.armies.values()))
+    army.location = coord
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.post(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Armies present" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert coord in state.provinces
+
+
+def test_province_delete_blocked_when_a_leader_is_present(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+    leader = next(leader for leader in state.leaders.values() if not leader.is_king)
+    leader.location = coord
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.post(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Leaders present" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert coord in state.provinces
+
+
+def test_province_delete_missing_province_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/provinces/999/999/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Province not found" in response.data
+
+
+def test_province_delete_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/provinces/0/0/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
 def test_leaders_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)

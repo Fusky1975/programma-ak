@@ -526,6 +526,41 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 
+    @app.post("/games/<slug>/provinces/<int:x>/<int:y>/delete")
+    def province_delete(slug: str, x: int, y: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        coord = HexCoord(x, y)
+        if coord not in state.provinces:
+            return redirect(url_for("provinces_list", slug=slug, error="Province not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("province_edit", slug=slug, x=x, y=y, error=message))
+
+        # Unlike Army/Leader/Feature, a Province has no "Add" counterpart
+        # in this editor and several live turn-processing call sites index
+        # `state.provinces[coord]` directly for a Kingdom's own Home
+        # province or a Leader/Army's own current location (confirmed real
+        # invariants, e.g. `turn/rename_province.py`/`turn/recruit_
+        # execution.py`'s own docstrings) -- deleting one of those out
+        # from under a live game would crash the very next turn processed.
+        # Refuse rather than silently corrupt the save.
+        if any(kingdom.home_province == coord for kingdom in state.kingdoms.values()):
+            return _edit_error("This is a Kingdom's Home province and can't be deleted -- set a different Home first.")
+        if state.armies_at(coord):
+            return _edit_error("This province has Armies present and can't be deleted -- move or remove them first.")
+        if state.leaders_at(coord):
+            return _edit_error("This province has Leaders present and can't be deleted -- move or remove them first.")
+
+        for feature in state.features_at(coord):
+            state.features.pop(feature.feature_id, None)
+        del state.provinces[coord]
+        save_game(root, slug, state)
+        return redirect(url_for("provinces_list", slug=slug))
+
     @app.get("/games/<slug>/leaders")
     def leaders_list(slug: str):
         root: Path = app.config["GAMES_ROOT"]
