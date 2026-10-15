@@ -7,7 +7,7 @@ from io import BytesIO
 from pathlib import Path
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ArmyType
+from ak_engine.models.army_type import ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.enums import Ability
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
@@ -1041,6 +1041,78 @@ def test_provinces_list_shows_leaders_here_and_links_to_the_province(tmp_path):
 
     assert response.status_code == 200
     assert king.name.encode() in response.data
+    assert f'/provinces/{home.x}/{home.y}'.encode() in response.data
+
+
+def test_province_edit_shows_armies_here_with_a_delete_button(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    armies_here = state.armies_at(home)
+    assert armies_here, "expected worldgen to seed at least one Army at a King's own Home"
+
+    response = client.get(f"/games/{meta.slug}/provinces/{home.x}/{home.y}")
+
+    assert response.status_code == 200
+    assert b"No Armies here" not in response.data
+    assert b"Armies Here" in response.data
+
+
+def test_province_edit_shows_no_armies_here_for_an_empty_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    empty_coords = [c for c in state.provinces if not state.armies_at(c)]
+    coord = empty_coords[0]
+
+    response = client.get(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}")
+
+    assert response.status_code == 200
+    assert b"No Armies here" in response.data
+
+
+def test_deleting_an_army_from_a_province_returns_to_that_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    army = state.armies_at(home)[0]
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}/delete?return_x={home.x}&return_y={home.y}", follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert army.army_id not in state.armies
+    # Back on the province page, not the Armies list.
+    assert b"Armies Here" in response.data
+
+
+def test_deleting_an_army_without_return_params_still_goes_to_armies_list(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army_id = next(iter(state.armies))
+
+    response = client.post(f"/games/{meta.slug}/armies/{army_id}/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Add Army" in response.data  # only on world_armies.html, not province_edit.html
+
+
+def test_provinces_list_shows_armies_here_and_links_to_the_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    army = state.armies_at(home)[0]
+
+    response = client.get(f"/games/{meta.slug}/provinces")
+
+    assert response.status_code == 200
+    assert ARMY_TYPE_NAME[army.army_type].encode() in response.data
     assert f'/provinces/{home.x}/{home.y}'.encode() in response.data
 
 

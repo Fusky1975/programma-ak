@@ -58,6 +58,7 @@
           <th>Recruit 1</th>
           <th>Recruit 2</th>
           <th>Leaders Here</th>
+          <th>Armies Here</th>
           <th></th>
         </tr>
       </thead>
@@ -65,6 +66,7 @@
         {% set home_coords = state.kingdoms.values()|map(attribute='home_province')|list %}
         {% for province in provinces %}
           {% set leaders_here = leaders_by_coord.get(province.coord, []) %}
+          {% set armies_here = armies_by_coord.get(province.coord, []) %}
           <tr>
             <td>({{ province.coord.x }}, {{ province.coord.y }})</td>
             <td>{{ province.terrain|display_name }}</td>
@@ -76,6 +78,13 @@
             <td>
               {% if leaders_here %}
                 <a href="{{ url_for('province_edit', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">{{ leaders_here|map(attribute='name')|join(', ') }}</a>
+              {% else %}
+                --
+              {% endif %}
+            </td>
+            <td>
+              {% if armies_here %}
+                <a href="{{ url_for('province_edit', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">{{ armies_here|map(attribute='army_type')|map('display_name')|join(', ') }}</a>
               {% else %}
                 --
               {% endif %}

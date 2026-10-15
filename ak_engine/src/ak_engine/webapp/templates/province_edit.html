@@ -108,6 +108,32 @@
 </div>
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Armies Here</h2>
+  {% if armies %}
+    <ul class="game-list">
+      {% for army in armies %}
+        <li>
+          <div>
+            <div class="game-name">{{ army.army_type|display_name }} ({{ army.quality|display_name }})</div>
+            <div class="game-meta">{{ state.kingdoms[army.kingdom_id].name if army.kingdom_id in state.kingdoms else 'Unowned' }}</div>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <a class="button" href="{{ url_for('army_edit', slug=meta.slug, army_id=army.army_id) }}">Edit</a>
+            <form class="inline" method="post"
+                  action="{{ url_for('army_delete', slug=meta.slug, army_id=army.army_id, return_x=province.coord.x, return_y=province.coord.y) }}"
+                  onsubmit="return confirm('Permanently delete this Army?');">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No Armies here.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Special Features</h2>
   {% if features %}
     <ul class="game-list">
