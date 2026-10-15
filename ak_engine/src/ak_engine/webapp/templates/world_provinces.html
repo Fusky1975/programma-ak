@@ -80,4 +80,35 @@
   {% endif %}
 </div>
 
+{% if provinces %}
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Add Province</h2>
+  <p class="hex-map-legend-note">Fills in an empty cell (e.g. one you deleted) within this map's own {{ state.board_width }}x{{ state.board_height }} bounds -- it can't already have a province.</p>
+  <form method="post" action="{{ url_for('province_create', slug=meta.slug) }}">
+    <div class="inline">
+      <label for="new_x">X (0-{{ state.board_width - 1 }})</label>
+      <input type="number" id="new_x" name="x" min="0" max="{{ state.board_width - 1 }}" required style="width: 6em;">
+
+      <label for="new_y">Y (0-{{ state.board_height - 1 }})</label>
+      <input type="number" id="new_y" name="y" min="0" max="{{ state.board_height - 1 }}" required style="width: 6em;">
+
+      <label for="new_terrain">Terrain</label>
+      <select id="new_terrain" name="terrain" required>
+        {% for terrain in terrains %}
+          <option value="{{ terrain.name }}">{{ terrain|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="new_race">Race</label>
+      <select id="new_race" name="race" required>
+        {% for race in races %}
+          <option value="{{ race.name }}">{{ race|display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit">Add Province</button>
+  </form>
+</div>
+{% endif %}
+
 {% endblock %}

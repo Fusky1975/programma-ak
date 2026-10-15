@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
@@ -793,6 +793,94 @@ def test_province_delete_missing_game_shows_an_error_not_a_crash(tmp_path):
     client = _client(tmp_path)
 
     response = client.post("/games/does-not-exist/provinces/0/0/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_province_create_fills_a_deleted_coordinate(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+    client.post(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/delete")
+    _, state = open_game(tmp_path, meta.slug)
+    assert coord not in state.provinces
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/new",
+        data={"x": str(coord.x), "y": str(coord.y), "terrain": "MTNS", "race": "DWARVEN"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    province = state.provinces[coord]
+    assert province.terrain == Terrain.MTNS
+    assert province.race == Race.DWARVEN
+    assert province.owner_kingdom_id is None
+    assert province.tax is None
+
+
+def test_province_create_rejects_an_already_occupied_coordinate(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    existing = next(iter(state.provinces.values()))
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/new",
+        data={"x": str(existing.coord.x), "y": str(existing.coord.y), "terrain": "PLAINS", "race": "HUMAN"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"already has a province" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[existing.coord].terrain == existing.terrain
+
+
+def test_province_create_rejects_an_out_of_bounds_coordinate(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/new",
+        data={"x": "99999", "y": "0", "terrain": "PLAINS", "race": "HUMAN"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"outside this map" in response.data
+
+
+def test_province_create_with_invalid_terrain_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+    client.post(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/delete")
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/new",
+        data={"x": str(coord.x), "y": str(coord.y), "terrain": "NOT_A_TERRAIN", "race": "HUMAN"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid terrain" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert coord not in state.provinces
+
+
+def test_province_create_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/games/does-not-exist/provinces/new",
+        data={"x": "0", "y": "0", "terrain": "PLAINS", "race": "HUMAN"},
+        follow_redirects=True,
+    )
 
     assert response.status_code == 200
     assert b"Game not found" in response.data

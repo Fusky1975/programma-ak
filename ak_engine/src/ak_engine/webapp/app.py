@@ -23,7 +23,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.enums import ABILITY_NAME, Ability
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
-from ak_engine.models.game_state import ArmyState, LeaderState
+from ak_engine.models.game_state import ArmyState, LeaderState, ProvinceState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES, Monster
@@ -428,8 +428,45 @@ def create_app(games_root: Path | None = None) -> Flask:
             state=state,
             provinces=provinces,
             hex_map=build_hex_map(state) if provinces else None,
+            terrains=list(Terrain),
+            races=list(Race),
             error=request.args.get("error"),
         )
+
+    @app.post("/games/<slug>/provinces/new")
+    def province_create(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _create_error(message: str):
+            return redirect(url_for("provinces_list", slug=slug, error=message))
+
+        try:
+            x = int(request.form.get("x", ""))
+            y = int(request.form.get("y", ""))
+        except ValueError:
+            return _create_error("Coordinates must be whole numbers.")
+        coord = HexCoord(x, y)
+        if not (0 <= x < state.board_width and 0 <= y < state.board_height):
+            return _create_error(f"({x}, {y}) is outside this map's {state.board_width}x{state.board_height} bounds.")
+        if coord in state.provinces:
+            return _create_error(f"({x}, {y}) already has a province -- edit it instead of recreating it.")
+
+        try:
+            terrain = Terrain[request.form.get("terrain", "")]
+        except KeyError:
+            return _create_error("Please choose a valid terrain.")
+        try:
+            race = Race[request.form.get("race", "")]
+        except KeyError:
+            return _create_error("Please choose a valid race.")
+
+        state.add_province(ProvinceState(coord=coord, terrain=terrain, race=race))
+        save_game(root, slug, state)
+        return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 
     @app.get("/games/<slug>/provinces/<int:x>/<int:y>")
     def province_edit(slug: str, x: int, y: int):
