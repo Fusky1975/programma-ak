@@ -1910,6 +1910,17 @@ class GameState:
     def add_kingdom(self, kingdom: KingdomState) -> None:
         self.kingdoms[kingdom.kingdom_id] = kingdom
 
+    def new_kingdom_id(self) -> int:
+        """Next unused id, checked against ``kingdoms``, ``leaders``, AND
+        ``dead_leaders`` at once -- a King's own ``leader_id`` always
+        equals his ``kingdom_id`` (confirmed project-wide, e.g. ``parser/
+        gw_world.py``'s own "a King resolves directly" docstring), so a
+        freshly-created Kingdom's id must be unused in either namespace,
+        not just its own.
+        """
+
+        return max((*self.kingdoms.keys(), *self.leaders.keys(), *self.dead_leaders.keys(), 0)) + 1
+
     def add_province(self, province: ProvinceState) -> None:
         self.provinces[province.coord] = province
 

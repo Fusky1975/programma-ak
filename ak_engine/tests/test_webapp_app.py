@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
+from ak_engine.models.enums import Ability
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.office import Office
@@ -466,6 +467,143 @@ def _game_with_world(tmp_path, client):
     _add_king(client, meta.slug, "Elara", "ELVEN", "NEUTRAL")
     client.post(f"/games/{meta.slug}/world", data={"seed": "1"})
     return meta
+
+
+def test_kingdom_create_adds_a_new_kingdom_and_king(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+    before_kingdom_ids = set(state.kingdoms)
+
+    data = _king_form_data("Sir Newling", race="DWARVEN", alignment="EVIL", temper="CAUTIOUS")
+    data["home_x"] = str(coord.x)
+    data["home_y"] = str(coord.y)
+    response = client.post(f"/games/{meta.slug}/kingdoms/new", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    new_ids = set(state.kingdoms) - before_kingdom_ids
+    assert len(new_ids) == 1
+    kingdom_id = next(iter(new_ids))
+    kingdom = state.kingdoms[kingdom_id]
+    assert kingdom.name == "Sir Newling"
+    assert kingdom.race == Race.DWARVEN
+    assert kingdom.alignment == Alignment.EVIL
+    assert kingdom.home_province == coord
+    assert kingdom.treasury == 10
+
+    # A King's own leader_id always equals his kingdom_id.
+    king = state.leaders[kingdom_id]
+    assert king.is_king is True
+    assert king.kingdom_id == kingdom_id
+    assert king.name == "Sir Newling"
+    assert king.temper == Temper.CAUTIOUS
+    assert king.location == coord
+    # Automatic +1 Melee/Archery/Sage on top of the 4 distributed points.
+    assert king.skills.pair_for_ability(Ability.MELEE)[0] == 3
+
+    # Home-seating effects, matching worldgen's own King Home convention.
+    province = state.provinces[coord]
+    assert province.owner_kingdom_id == kingdom_id
+    assert province.tax == 10
+    assert province.race == Race.DWARVEN
+    assert province.explored_percent == 100
+    assert province.explored_percent_by_kingdom[kingdom_id] == 100
+
+
+def test_kingdom_create_rejects_a_coordinate_with_no_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    before_ids = set(state.kingdoms)
+
+    data = _king_form_data("Nobody")
+    data["home_x"] = "999"
+    data["home_y"] = "999"
+    response = client.post(f"/games/{meta.slug}/kingdoms/new", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"has no province" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert set(state.kingdoms) == before_ids
+
+
+def test_kingdom_create_rejects_an_already_owned_home(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    taken = state.kingdoms[1].home_province
+    before_ids = set(state.kingdoms)
+
+    data = _king_form_data("Usurper")
+    data["home_x"] = str(taken.x)
+    data["home_y"] = str(taken.y)
+    response = client.post(f"/games/{meta.slug}/kingdoms/new", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"already" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert set(state.kingdoms) == before_ids
+
+
+def test_kingdom_create_with_invalid_race_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+
+    data = _king_form_data("Someone", race="NOT_A_RACE")
+    data["home_x"] = str(coord.x)
+    data["home_y"] = str(coord.y)
+    response = client.post(f"/games/{meta.slug}/kingdoms/new", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"valid race" in response.data
+
+
+def test_kingdom_create_with_a_monster_only_alignment_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+
+    data = _king_form_data("Someone", alignment="MECHANICAL")
+    data["home_x"] = str(coord.x)
+    data["home_y"] = str(coord.y)
+    response = client.post(f"/games/{meta.slug}/kingdoms/new", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Divine, Good, Druidic" in response.data
+
+
+def test_kingdom_create_with_wrong_talent_total_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+
+    data = _king_form_data("Someone")
+    data["talent_MELEE"] = "1"
+    data["talent_SAGE"] = "1"
+    data["home_x"] = str(coord.x)
+    data["home_y"] = str(coord.y)
+    response = client.post(f"/games/{meta.slug}/kingdoms/new", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"distribute exactly" in response.data
+
+
+def test_kingdom_create_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    data = _king_form_data("Someone")
+    data["home_x"] = "0"
+    data["home_y"] = "0"
+    response = client.post("/games/does-not-exist/kingdoms/new", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
 
 
 def test_provinces_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):

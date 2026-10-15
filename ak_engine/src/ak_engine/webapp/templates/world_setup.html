@@ -29,6 +29,59 @@
       <a class="button" href="{{ url_for('turns_hub', slug=meta.slug) }}">Process Turns &rarr;</a>
     </p>
   </div>
+
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>Create Kingdom</h2>
+    <p>Adds a brand-new Kingdom and its King to this already-created world. The Home province must be an existing,
+      unowned province (not already anyone's Home) -- pick one from the Provinces map, then enter its coordinates
+      below.</p>
+    <form method="post" action="{{ url_for('kingdom_create', slug=meta.slug) }}">
+      <div class="inline">
+        <label for="new_kingdom_name">King's Name</label>
+        <input type="text" id="new_kingdom_name" name="name" required>
+
+        <label for="new_kingdom_race">Race</label>
+        <select id="new_kingdom_race" name="race" required>
+          {% for race in races %}
+            <option value="{{ race.name }}">{{ race|display_name }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="new_kingdom_alignment">Alignment</label>
+        <select id="new_kingdom_alignment" name="alignment" required>
+          {% for alignment in alignments %}
+            <option value="{{ alignment.name }}">{{ alignment|display_name }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="new_kingdom_temper">Temper</label>
+        <select id="new_kingdom_temper" name="temper" required>
+          {% for temper in tempers %}
+            <option value="{{ temper.name }}">{{ temper|display_name }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="new_kingdom_home_x">Home Province (x, y)</label>
+        <input type="number" id="new_kingdom_home_x" name="home_x" required style="width: 6em;">
+        <input type="number" id="new_kingdom_home_y" name="home_y" required style="width: 6em;">
+      </div>
+
+      <p>
+        <strong>Starting Talents</strong> &mdash; rulebook [2.1]: distribute exactly {{ max_talent_points }} ability
+        points, at most {{ max_points_per_ability }} in any one Ability. Kings automatically get +1 Melee, Archery
+        and Sage on top of this, regardless of choice.
+      </p>
+      <div class="talent-grid">
+        {% for ability in abilities %}
+          <label for="new_kingdom_talent_{{ ability.name }}">{{ ability|display_name }}
+            <input type="number" id="new_kingdom_talent_{{ ability.name }}" name="talent_{{ ability.name }}" min="0" max="{{ max_points_per_ability }}" value="0">
+          </label>
+        {% endfor %}
+      </div>
+
+      <button type="submit">Create Kingdom</button>
+    </form>
+  </div>
 {% else %}
   <div class="panel" style="border-left: 6px solid var(--phase-world);">
     <h2>{{ meta.name }} &mdash; Create World</h2>

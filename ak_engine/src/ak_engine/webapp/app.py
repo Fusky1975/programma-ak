@@ -23,7 +23,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.enums import ABILITY_NAME, Ability
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
-from ak_engine.models.game_state import ArmyState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES, Monster
@@ -76,8 +76,10 @@ from ak_engine.webapp.world_creation import (
     WorldAlreadyCreatedError,
     create_world,
 )
-from ak_engine.worldgen.king_talent import MAX_POINTS_PER_ABILITY, MAX_TALENT_POINTS
+from ak_engine.worldgen.generate_new_game import STARTING_TREASURY
+from ak_engine.worldgen.king_talent import MAX_POINTS_PER_ABILITY, MAX_TALENT_POINTS, build_king_skill_table
 from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH
+from ak_engine.worldgen.province_tax import HOME_OVERRIDE_TAX
 
 # The 8 mandatory Imperial Offices (rulebook [10.1]) vs. every other real,
 # modeled title the GM may opt in or out of for this game -- see
@@ -375,8 +377,117 @@ def create_app(games_root: Path | None = None) -> Flask:
             max_players=MAX_PLAYERS,
             default_width=DEFAULT_WIDTH,
             default_height=DEFAULT_HEIGHT,
+            races=PLAYABLE_RACES,
+            alignments=PLAYABLE_ALIGNMENTS,
+            tempers=list(Temper),
+            abilities=list(Ability),
+            max_talent_points=MAX_TALENT_POINTS,
+            max_points_per_ability=MAX_POINTS_PER_ABILITY,
             error=request.args.get("error"),
         )
+
+    @app.post("/games/<slug>/kingdoms/new")
+    def kingdom_create(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _create_error(message: str):
+            return redirect(url_for("world_setup", slug=slug, error=message))
+
+        name = request.form.get("name", "").strip()
+        if not name:
+            return _create_error("Please enter a King's name.")
+        try:
+            race = Race[request.form.get("race", "")]
+        except KeyError:
+            return _create_error("Please choose a valid race.")
+        if race not in PLAYABLE_RACES:
+            return _create_error("Kings may only be Human, Elven, Dwarven, or Orcish.")
+        try:
+            alignment = Alignment[request.form.get("alignment", "")]
+        except KeyError:
+            return _create_error("Please choose a valid alignment.")
+        if alignment not in PLAYABLE_ALIGNMENTS:
+            return _create_error("Kings may only be Divine, Good, Druidic, Neutral, Pagan, Evil, or Undead.")
+        try:
+            temper = Temper[request.form.get("temper", "")]
+        except KeyError:
+            return _create_error("Please choose a valid Temper.")
+
+        talent_allocation: dict[Ability, int] = {}
+        for ability in Ability:
+            raw_points = request.form.get(f"talent_{ability.name}", "0").strip()
+            try:
+                points = int(raw_points) if raw_points else 0
+            except ValueError:
+                return _create_error("Talent points must be whole numbers.")
+            if points < 0 or points > MAX_POINTS_PER_ABILITY:
+                return _create_error(f"Each Ability can have at most {MAX_POINTS_PER_ABILITY} starting talent points.")
+            if points:
+                talent_allocation[ability] = points
+        if sum(talent_allocation.values()) != MAX_TALENT_POINTS:
+            return _create_error(f"Please distribute exactly {MAX_TALENT_POINTS} starting talent points.")
+
+        try:
+            x = int(request.form.get("home_x", ""))
+            y = int(request.form.get("home_y", ""))
+        except ValueError:
+            return _create_error("Home coordinates must be whole numbers.")
+        coord = HexCoord(x, y)
+        province = state.provinces.get(coord)
+        if province is None:
+            return _create_error(f"({x}, {y}) has no province -- create it first, or pick an existing one.")
+        if province.owner_kingdom_id is not None:
+            return _create_error(f"({x}, {y}) is already owned by {state.kingdoms[province.owner_kingdom_id].name}.")
+        if any(kingdom.home_province == coord for kingdom in state.kingdoms.values()):
+            return _create_error(f"({x}, {y}) is already another Kingdom's Home province.")
+
+        kingdom_id = state.new_kingdom_id()
+        skills = build_king_skill_table(talent_allocation, alignment)
+        state.add_kingdom(
+            KingdomState(
+                kingdom_id=kingdom_id,
+                name=name,
+                race=race,
+                alignment=alignment,
+                home_province=coord,
+                treasury=STARTING_TREASURY,
+            )
+        )
+        state.add_leader(
+            LeaderState(
+                leader_id=kingdom_id,
+                kingdom_id=kingdom_id,
+                name=name,
+                location=coord,
+                skills=skills,
+                is_king=True,
+                temper=temper,
+                alignment=alignment,
+                race=race,
+                birth_x=x,
+                birth_y=y,
+            )
+        )
+        # Matches worldgen/generate_new_game.py's own King Home seating
+        # (ownership, the fixed HOME_OVERRIDE_TAX, native race becomes the
+        # King's own, 100% exploration for this Kingdom -- confirmed real
+        # across every Turn-0 PROVINCES sample, see that module's own
+        # Phase 428 addendum) -- deliberately NOT replicated here: the
+        # RNG-dependent recruit-slot formulas and initial-army budget,
+        # which need the whole-map generation context this single-
+        # Kingdom action doesn't have. Add Army/edit the recruit types
+        # by hand afterward if this new Kingdom needs either.
+        province.owner_kingdom_id = kingdom_id
+        province.tax = HOME_OVERRIDE_TAX
+        province.race = race
+        province.explored_percent = 100
+        province.explored_percent_by_kingdom[kingdom_id] = 100
+        save_game(root, slug, state)
+        return redirect(url_for("world_setup", slug=slug))
 
     @app.post("/games/<slug>/world")
     def world_create(slug: str):
