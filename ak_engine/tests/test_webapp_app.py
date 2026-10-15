@@ -606,6 +606,60 @@ def test_kingdom_create_missing_game_shows_an_error_not_a_crash(tmp_path):
     assert b"Game not found" in response.data
 
 
+def test_kingdom_delete_removes_it_and_everything_in_its_service(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[2].home_province
+
+    response = client.post(f"/games/{meta.slug}/kingdoms/2/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert 2 not in state.kingdoms
+    assert 2 not in state.leaders  # its King
+    assert all(leader.kingdom_id != 2 for leader in state.leaders.values())
+    assert all(army.kingdom_id != 2 for army in state.armies.values())
+    assert state.provinces[home].owner_kingdom_id is None
+    # The other Kingdom is completely untouched.
+    assert 1 in state.kingdoms
+    assert 1 in state.leaders
+
+
+def test_kingdom_delete_refuses_the_crowned_emperor(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    state.emperor_kingdom_id = 1
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.post(f"/games/{meta.slug}/kingdoms/1/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"crowned Emperor" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert 1 in state.kingdoms
+
+
+def test_kingdom_delete_missing_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/kingdoms/999/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Kingdom not found" in response.data
+
+
+def test_kingdom_delete_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/kingdoms/1/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
 def test_provinces_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)

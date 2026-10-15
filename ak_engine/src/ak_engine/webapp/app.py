@@ -59,6 +59,7 @@ from ak_engine.webapp.players import (
     remove_player,
 )
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
+from ak_engine.webapp.kingdom_delete import KingdomHasEmperorError, delete_kingdom
 from ak_engine.webapp.reports import turn_zero_report
 from ak_engine.webapp.turn_processing import (
     InvalidMoveFileError,
@@ -486,6 +487,24 @@ def create_app(games_root: Path | None = None) -> Flask:
         province.race = race
         province.explored_percent = 100
         province.explored_percent_by_kingdom[kingdom_id] = 100
+        save_game(root, slug, state)
+        return redirect(url_for("world_setup", slug=slug))
+
+    @app.post("/games/<slug>/kingdoms/<int:kingdom_id>/delete")
+    def kingdom_delete(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        if kingdom_id not in state.kingdoms:
+            return redirect(url_for("world_setup", slug=slug, error="Kingdom not found."))
+        try:
+            delete_kingdom(state, kingdom_id)
+        except KingdomHasEmperorError:
+            return redirect(
+                url_for("world_setup", slug=slug, error="This Kingdom is the crowned Emperor and can't be deleted.")
+            )
         save_game(root, slug, state)
         return redirect(url_for("world_setup", slug=slug))
 
