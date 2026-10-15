@@ -20,9 +20,10 @@ from pathlib import Path
 from flask import Flask, Response, redirect, render_template, request, url_for
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ARMY_TYPE_NAME, ArmyType
+from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.enums import ABILITY_NAME, Ability
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
+from ak_engine.models.game_state import ArmyState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES, Monster
@@ -618,8 +619,62 @@ def create_app(games_root: Path | None = None) -> Flask:
             meta=meta,
             state=state,
             armies=armies,
+            army_types=list(ArmyType),
+            qualities=list(Quality),
             error=request.args.get("error"),
         )
+
+    @app.post("/games/<slug>/armies/new")
+    def armies_create(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _create_error(message: str):
+            return redirect(url_for("armies_list", slug=slug, error=message))
+
+        try:
+            army_type = ArmyType[request.form.get("army_type", "")]
+        except KeyError:
+            return _create_error("Please choose a valid army type.")
+        try:
+            quality = Quality[request.form.get("quality", "")]
+        except KeyError:
+            return _create_error("Please choose a valid quality.")
+
+        kingdom_id_raw = request.form.get("kingdom_id", "").strip()
+        kingdom_id: int | None
+        if kingdom_id_raw:
+            try:
+                kingdom_id = int(kingdom_id_raw)
+            except ValueError:
+                return _create_error("Please choose a valid Kingdom.")
+            if kingdom_id not in state.kingdoms:
+                return _create_error("Please choose a valid Kingdom.")
+        else:
+            kingdom_id = None
+
+        try:
+            x = int(request.form.get("location_x", ""))
+            y = int(request.form.get("location_y", ""))
+        except ValueError:
+            return _create_error("Location must be whole numbers.")
+
+        army_id = state.new_army_id()
+        state.add_army(
+            ArmyState(
+                army_id=army_id,
+                kingdom_id=kingdom_id,
+                army_type=army_type,
+                quality=quality,
+                location=HexCoord(x, y),
+                movement_points=ARMY_TABLE[army_type].speed,
+            )
+        )
+        save_game(root, slug, state)
+        return redirect(url_for("army_edit", slug=slug, army_id=army_id))
 
     @app.get("/games/<slug>/armies/<int:army_id>")
     def army_edit(slug: str, army_id: int):

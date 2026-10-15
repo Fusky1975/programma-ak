@@ -35,4 +35,40 @@
   {% endif %}
 </div>
 
+{% if state.kingdoms %}
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Add Army</h2>
+  <form method="post" action="{{ url_for('armies_create', slug=meta.slug) }}">
+    <div class="inline">
+      <label for="army_type">Army Type</label>
+      <select id="army_type" name="army_type" required>
+        {% for army_type in army_types %}
+          <option value="{{ army_type.name }}">{{ army_type|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="quality">Quality</label>
+      <select id="quality" name="quality" required>
+        {% for quality in qualities %}
+          <option value="{{ quality.name }}">{{ quality|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="kingdom_id">Kingdom</label>
+      <select id="kingdom_id" name="kingdom_id">
+        <option value="">-- Unowned --</option>
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}">{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="location_x">Location (x, y)</label>
+      <input type="number" id="location_x" name="location_x" required style="width: 6em;">
+      <input type="number" id="location_y" name="location_y" required style="width: 6em;">
+    </div>
+    <button type="submit">Add Army</button>
+  </form>
+</div>
+{% endif %}
+
 {% endblock %}

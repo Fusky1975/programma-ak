@@ -962,6 +962,118 @@ def test_save_army_missing_army_shows_an_error_not_a_crash(tmp_path):
     assert b"Army not found" in response.data
 
 
+def test_armies_create_adds_a_new_army_with_real_movement_points(tmp_path):
+    # Before this route existed, the GM world editors could edit an
+    # existing Army but had no way to add a brand-new one at all.
+    from ak_engine.models.army_type import ARMY_TABLE
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    kingdom_id = next(iter(state.kingdoms))
+    before_ids = set(state.armies)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/new",
+        data={
+            "army_type": "LEGION",
+            "quality": "ELITE",
+            "kingdom_id": str(kingdom_id),
+            "location_x": "3",
+            "location_y": "2",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    new_ids = set(state.armies) - before_ids
+    assert len(new_ids) == 1
+    army = state.armies[next(iter(new_ids))]
+    assert army.army_type == ArmyType.LEGION
+    assert army.quality == Quality.ELITE
+    assert army.kingdom_id == kingdom_id
+    assert army.location == HexCoord(3, 2)
+    # Matches how a freshly-generated army is seeded (worldgen/generate_
+    # new_game.py) -- not the dataclass's own 0 default, which would
+    # leave the army unable to move until the next turn's replenishment.
+    assert army.movement_points == ARMY_TABLE[ArmyType.LEGION].speed
+
+
+def test_armies_create_as_unowned_mercenary(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    before_ids = set(state.armies)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/new",
+        data={"army_type": "LEGION", "quality": "AVERAGE", "kingdom_id": "", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    new_ids = set(state.armies) - before_ids
+    assert len(new_ids) == 1
+    assert state.armies[next(iter(new_ids))].kingdom_id is None
+
+
+def test_armies_create_with_invalid_army_type_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    before_ids = set(state.armies)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/new",
+        data={"army_type": "NOT_A_TYPE", "quality": "ELITE", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid army type" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert set(state.armies) == before_ids
+
+
+def test_armies_create_with_invalid_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    before_ids = set(state.armies)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/new",
+        data={
+            "army_type": "LEGION",
+            "quality": "AVERAGE",
+            "kingdom_id": "999",
+            "location_x": "0",
+            "location_y": "0",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Kingdom" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert set(state.armies) == before_ids
+
+
+def test_armies_create_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/games/does-not-exist/armies/new",
+        data={"army_type": "LEGION", "quality": "AVERAGE", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
 def test_features_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)
