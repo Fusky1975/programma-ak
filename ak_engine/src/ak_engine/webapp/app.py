@@ -603,6 +603,25 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 
+    @app.post("/games/<slug>/leaders/<int:leader_id>/delete")
+    def leader_delete(slug: str, leader_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        # A plain dict removal, not GameState.remove_leader(): that method
+        # is the real in-game death mechanic (archives into dead_leaders
+        # for a future Resurrection, applies the 25% merit death penalty,
+        # installs a Royal Heir for a King) -- none of which an editor
+        # correcting a mistake should trigger. A stale ArmyState.
+        # commanded_by/office_holders pointer left behind here is already
+        # the exact same, already-handled condition as a leader who died
+        # in battle (report/turn_report.py's own "alive-only" checks).
+        state.leaders.pop(leader_id, None)
+        save_game(root, slug, state)
+        return redirect(url_for("leaders_list", slug=slug))
+
     @app.get("/games/<slug>/armies")
     def armies_list(slug: str):
         root: Path = app.config["GAMES_ROOT"]
@@ -744,6 +763,17 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("army_edit", slug=slug, army_id=army_id))
 
+    @app.post("/games/<slug>/armies/<int:army_id>/delete")
+    def army_delete(slug: str, army_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        state.remove_army(army_id)
+        save_game(root, slug, state)
+        return redirect(url_for("armies_list", slug=slug))
+
     @app.get("/games/<slug>/features")
     def features_list(slug: str):
         root: Path = app.config["GAMES_ROOT"]
@@ -821,6 +851,17 @@ def create_app(games_root: Path | None = None) -> Flask:
         feature.magic_power = magic_power
         save_game(root, slug, state)
         return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id))
+
+    @app.post("/games/<slug>/features/<int:feature_id>/delete")
+    def feature_delete(slug: str, feature_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        state.features.pop(feature_id, None)
+        save_game(root, slug, state)
+        return redirect(url_for("features_list", slug=slug))
 
     @app.get("/games/<slug>/provinces/<int:x>/<int:y>/features/new")
     def feature_new(slug: str, x: int, y: int):

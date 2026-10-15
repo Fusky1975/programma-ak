@@ -55,6 +55,11 @@
 
     <button type="submit">Save Hero</button>
   </form>
+
+  <form method="post" action="{{ url_for('leader_delete', slug=meta.slug, leader_id=leader.leader_id) }}"
+        onsubmit="return confirm('Permanently delete {{ leader.name }}?{% if leader.is_king %} This King rules a Kingdom -- deleting him leaves it without a King (no Royal Heir is installed, unlike an in-game death).{% endif %}');">
+    <button type="submit" class="danger">Delete {{ 'King' if leader.is_king else 'Hero' }}</button>
+  </form>
 </div>
 
 {% endblock %}

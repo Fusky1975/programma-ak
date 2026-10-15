@@ -835,6 +835,59 @@ def test_save_leader_missing_leader_shows_an_error_not_a_crash(tmp_path):
     assert b"Hero not found" in response.data
 
 
+def test_leader_delete_removes_a_hero(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    hero = next(leader for leader in state.leaders.values() if not leader.is_king)
+
+    response = client.post(f"/games/{meta.slug}/leaders/{hero.leader_id}/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert hero.leader_id not in state.leaders
+
+
+def test_leader_delete_of_a_king_leaves_the_kingdom_without_a_king(tmp_path):
+    # Unlike GameState.remove_leader() (the real in-game death mechanic),
+    # the editor's own delete must NOT archive into dead_leaders, apply
+    # the merit death penalty, or install a Royal Heir -- it's a mistake-
+    # correction tool, not a simulated death.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.is_king)
+
+    response = client.post(f"/games/{meta.slug}/leaders/{king.leader_id}/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert king.leader_id not in state.leaders
+    assert king.leader_id not in state.dead_leaders
+
+
+def test_leader_delete_missing_leader_is_a_no_op(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    before_ids = set(state.leaders)
+
+    response = client.post(f"/games/{meta.slug}/leaders/999999/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert set(state.leaders) == before_ids
+
+
+def test_leader_delete_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/leaders/1/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
 def test_armies_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)
@@ -1074,6 +1127,41 @@ def test_armies_create_missing_game_shows_an_error_not_a_crash(tmp_path):
     assert b"Game not found" in response.data
 
 
+def test_army_delete_removes_it(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army_id = next(iter(state.armies))
+
+    response = client.post(f"/games/{meta.slug}/armies/{army_id}/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert army_id not in state.armies
+
+
+def test_army_delete_missing_army_is_a_no_op(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    before_ids = set(state.armies)
+
+    response = client.post(f"/games/{meta.slug}/armies/999999/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert set(state.armies) == before_ids
+
+
+def test_army_delete_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/armies/1/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
 def test_features_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)
@@ -1152,6 +1240,40 @@ def test_feature_edit_missing_feature_shows_an_error_not_a_crash(tmp_path):
 
     assert response.status_code == 200
     assert b"Feature not found" in response.data
+
+
+def test_feature_delete_removes_it(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+
+    response = client.post(f"/games/{meta.slug}/features/{feature_id}/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert feature_id not in state.features
+
+
+def test_feature_delete_missing_feature_is_a_no_op(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    before_ids = set(state.features)
+
+    response = client.post(f"/games/{meta.slug}/features/999999/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert set(state.features) == before_ids
+
+
+def test_feature_delete_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/features/1/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
 
 
 def test_save_feature_persists_the_new_values(tmp_path):
