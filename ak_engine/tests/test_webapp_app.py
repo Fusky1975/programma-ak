@@ -13,10 +13,11 @@ from ak_engine.models.monster import Monster
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.sex import Sex
+from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 from ak_engine.webapp.app import create_app, display_name
-from ak_engine.webapp.games import create_game, list_games, open_game
+from ak_engine.webapp.games import create_game, list_games, open_game, save_game
 
 
 def _client(tmp_path):
@@ -883,6 +884,160 @@ def test_leader_delete_missing_game_shows_an_error_not_a_crash(tmp_path):
     client = _client(tmp_path)
 
     response = client.post("/games/does-not-exist/leaders/1/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_leaders_create_adds_a_new_hero(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    kingdom_id = next(iter(state.kingdoms))
+    before_ids = set(state.leaders)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/new",
+        data={
+            "name": "Brand New Hero",
+            "race": "DWARVEN",
+            "alignment": "GOOD",
+            "temper": "BRAVE",
+            "sex": "FEMALE",
+            "kingdom_id": str(kingdom_id),
+            "location_x": "3",
+            "location_y": "2",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    new_ids = set(state.leaders) - before_ids
+    assert len(new_ids) == 1
+    hero = state.leaders[next(iter(new_ids))]
+    assert hero.name == "Brand New Hero"
+    assert hero.race == Race.DWARVEN
+    assert hero.alignment == Alignment.GOOD
+    assert hero.temper == Temper.BRAVE
+    assert hero.sex == Sex.FEMALE
+    assert hero.kingdom_id == kingdom_id
+    assert hero.location == HexCoord(3, 2)
+    assert hero.is_king is False
+
+
+def test_leaders_create_as_independent_hero_with_minimal_fields(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    before_ids = set(state.leaders)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/new",
+        data={"name": "Loner", "race": "HUMAN", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    new_ids = set(state.leaders) - before_ids
+    assert len(new_ids) == 1
+    hero = state.leaders[next(iter(new_ids))]
+    assert hero.kingdom_id is None
+    assert hero.alignment is None
+    assert hero.temper is None
+    assert hero.sex is None
+
+
+def test_leaders_create_does_not_reuse_an_archived_dead_leader_id(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    hero_to_kill = next(leader for leader in state.leaders.values() if not leader.is_king)
+    state.remove_leader(hero_to_kill.leader_id)
+    save_game(tmp_path, meta.slug, state)
+    before_ids = set(state.leaders) | set(state.dead_leaders)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/new",
+        data={"name": "Newcomer", "race": "HUMAN", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    new_leader = next(leader for leader in state.leaders.values() if leader.name == "Newcomer")
+    assert new_leader.leader_id not in before_ids
+
+
+def test_leaders_create_with_blank_name_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    before_ids = set(state.leaders)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/new",
+        data={"name": "   ", "race": "HUMAN", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"enter a name" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert set(state.leaders) == before_ids
+
+
+def test_leaders_create_with_invalid_race_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/new",
+        data={"name": "Someone", "race": "NOT_A_RACE", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid race" in response.data
+
+
+def test_leaders_create_with_a_monster_only_alignment_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/new",
+        data={"name": "Someone", "race": "HUMAN", "alignment": "MECHANICAL", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid values" in response.data
+
+
+def test_leaders_create_with_invalid_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/new",
+        data={"name": "Someone", "race": "HUMAN", "kingdom_id": "999", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Kingdom" in response.data
+
+
+def test_leaders_create_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/games/does-not-exist/leaders/new",
+        data={"name": "Someone", "race": "HUMAN", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
 
     assert response.status_code == 200
     assert b"Game not found" in response.data

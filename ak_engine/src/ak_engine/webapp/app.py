@@ -23,7 +23,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.enums import ABILITY_NAME, Ability
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
-from ak_engine.models.game_state import ArmyState
+from ak_engine.models.game_state import ArmyState, LeaderState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES, Monster
@@ -539,8 +539,74 @@ def create_app(games_root: Path | None = None) -> Flask:
             meta=meta,
             state=state,
             leaders=leaders,
+            races=list(Race),
+            alignments=PLAYABLE_ALIGNMENTS,
+            tempers=list(Temper),
+            sexes=list(Sex),
             error=request.args.get("error"),
         )
+
+    @app.post("/games/<slug>/leaders/new")
+    def leaders_create(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _create_error(message: str):
+            return redirect(url_for("leaders_list", slug=slug, error=message))
+
+        name = request.form.get("name", "").strip()
+        if not name:
+            return _create_error("Please enter a name.")
+        try:
+            race = Race[request.form.get("race", "")]
+        except KeyError:
+            return _create_error("Please choose a valid race.")
+
+        try:
+            alignment = _optional_enum(Alignment, request.form.get("alignment", ""))
+            temper = _optional_enum(Temper, request.form.get("temper", ""))
+            sex = _optional_enum(Sex, request.form.get("sex", ""))
+        except KeyError:
+            return _create_error("Please choose valid values.")
+        if alignment is not None and alignment not in PLAYABLE_ALIGNMENTS:
+            return _create_error("Please choose valid values.")
+
+        kingdom_id_raw = request.form.get("kingdom_id", "").strip()
+        kingdom_id: int | None
+        if kingdom_id_raw:
+            try:
+                kingdom_id = int(kingdom_id_raw)
+            except ValueError:
+                return _create_error("Please choose a valid Kingdom.")
+            if kingdom_id not in state.kingdoms:
+                return _create_error("Please choose a valid Kingdom.")
+        else:
+            kingdom_id = None
+
+        try:
+            x = int(request.form.get("location_x", ""))
+            y = int(request.form.get("location_y", ""))
+        except ValueError:
+            return _create_error("Location must be whole numbers.")
+
+        leader_id = state.new_leader_id()
+        state.add_leader(
+            LeaderState(
+                leader_id=leader_id,
+                kingdom_id=kingdom_id,
+                name=name,
+                location=HexCoord(x, y),
+                race=race,
+                alignment=alignment,
+                temper=temper,
+                sex=sex,
+            )
+        )
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 
     @app.get("/games/<slug>/leaders/<int:leader_id>")
     def leader_edit(slug: str, leader_id: int):

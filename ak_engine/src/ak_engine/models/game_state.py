@@ -1927,6 +1927,16 @@ class GameState:
     def add_leader(self, leader: LeaderState) -> None:
         self.leaders[leader.leader_id] = leader
 
+    def new_leader_id(self) -> int:
+        """Next unused leader id (1 above the current highest across both
+        ``leaders`` and ``dead_leaders``, or 1 if neither has any) --
+        same convention as ``new_army_id()``/``new_feature_id()``. Checks
+        ``dead_leaders`` too so a GM-created Hero never collides with an
+        archived one still eligible for a future Resurrection.
+        """
+
+        return max((*self.leaders.keys(), *self.dead_leaders.keys(), 0)) + 1
+
     def record_battle_death(self, coord: HexCoord, army_type: ArmyType, quality: Quality, kingdom_id: int | None) -> None:
         """Appends one ``GraveyardEntry`` for a genuine battle death at ``coord`` -- see
         module docstring for exactly which destruction sites call this.

@@ -39,4 +39,61 @@
   {% endif %}
 </div>
 
+{% if state.kingdoms %}
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Add Hero</h2>
+  <p>Adds a brand-new Hero (never a King -- use the Kings &amp; Titles screen during setup for that).</p>
+  <form method="post" action="{{ url_for('leaders_create', slug=meta.slug) }}">
+    <div class="inline">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" required>
+
+      <label for="race">Race</label>
+      <select id="race" name="race" required>
+        {% for race in races %}
+          <option value="{{ race.name }}">{{ race|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="alignment">Alignment</label>
+      <select id="alignment" name="alignment">
+        <option value="">-- Unset --</option>
+        {% for alignment in alignments %}
+          <option value="{{ alignment.name }}">{{ alignment|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="temper">Temper</label>
+      <select id="temper" name="temper">
+        <option value="">-- Unset --</option>
+        {% for temper in tempers %}
+          <option value="{{ temper.name }}">{{ temper|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="sex">Sex</label>
+      <select id="sex" name="sex">
+        <option value="">-- Unset --</option>
+        {% for sex in sexes %}
+          <option value="{{ sex.name }}">{{ sex|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="kingdom_id">Kingdom</label>
+      <select id="kingdom_id" name="kingdom_id">
+        <option value="">-- Independent --</option>
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}">{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="location_x">Location (x, y)</label>
+      <input type="number" id="location_x" name="location_x" required style="width: 6em;">
+      <input type="number" id="location_y" name="location_y" required style="width: 6em;">
+    </div>
+    <button type="submit">Add Hero</button>
+  </form>
+</div>
+{% endif %}
+
 {% endblock %}
