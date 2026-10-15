@@ -970,6 +970,80 @@ def test_province_edit_shows_which_kingdom_it_is_home_to(tmp_path):
     assert state.kingdoms[1].name.encode() in response.data
 
 
+def test_province_edit_shows_leaders_here_with_a_delete_button(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    king = state.leaders[1]
+
+    response = client.get(f"/games/{meta.slug}/provinces/{home.x}/{home.y}")
+
+    assert response.status_code == 200
+    assert king.name.encode() in response.data
+    assert b"Delete" in response.data
+    assert b"No Leaders here" not in response.data
+
+
+def test_province_edit_shows_no_leaders_here_for_an_empty_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    empty_coords = [c for c in state.provinces if not state.leaders_at(c)]
+    coord = empty_coords[0]
+
+    response = client.get(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}")
+
+    assert response.status_code == 200
+    assert b"No Leaders here" in response.data
+
+
+def test_deleting_a_leader_from_a_province_returns_to_that_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/delete?return_x={home.x}&return_y={home.y}", follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert 1 not in state.leaders
+    # Back on the province page (Province's own heading), not the Kings &
+    # Heroes list -- confirmed by the still-present "Leaders Here" panel
+    # heading and the now-absent deleted King.
+    assert b"Leaders Here" in response.data
+
+
+def test_deleting_a_leader_without_return_params_still_goes_to_leaders_list(tmp_path):
+    # Backward compatibility: leader_edit.html's own delete form (Phase
+    # 1026) passes no return_x/return_y and must keep its own original
+    # redirect target.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/leaders/1/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Kings &amp; Heroes" in response.data
+
+
+def test_provinces_list_shows_leaders_here_and_links_to_the_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    king = state.leaders[1]
+
+    response = client.get(f"/games/{meta.slug}/provinces")
+
+    assert response.status_code == 200
+    assert king.name.encode() in response.data
+    assert f'/provinces/{home.x}/{home.y}'.encode() in response.data
+
+
 def _safe_province_coords(state, count):
     """``count`` distinct province coordinates with no Kingdom Home, no
     Army, no Leader, and no Feature on them -- safe to delete without

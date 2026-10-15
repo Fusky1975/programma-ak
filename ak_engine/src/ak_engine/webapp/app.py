@@ -635,12 +635,16 @@ def create_app(games_root: Path | None = None) -> Flask:
         except GameNotFoundError:
             return redirect(url_for("games_list", error="Game not found."))
         provinces = sorted(state.provinces.values(), key=lambda p: (p.coord.y, p.coord.x))
+        leaders_by_coord: dict[HexCoord, list] = {}
+        for leader in state.leaders.values():
+            leaders_by_coord.setdefault(leader.location, []).append(leader)
         return render_template(
             "world_provinces.html",
             meta=meta,
             state=state,
             provinces=provinces,
             hex_map=build_hex_map(state) if provinces else None,
+            leaders_by_coord=leaders_by_coord,
             terrains=list(Terrain),
             races=list(Race),
             error=request.args.get("error"),
@@ -697,6 +701,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             state=state,
             province=province,
             features=state.features_at(HexCoord(x, y)),
+            leaders=state.leaders_at(HexCoord(x, y)),
             terrains=list(Terrain),
             races=list(Race),
             army_types=list(ArmyType),
@@ -971,6 +976,19 @@ def create_app(games_root: Path | None = None) -> Flask:
         # in battle (report/turn_report.py's own "alive-only" checks).
         state.leaders.pop(leader_id, None)
         save_game(root, slug, state)
+        # Phase 1030: a delete triggered from a specific province's own
+        # "Leaders Here" panel (world_provinces.html's own per-coordinate
+        # link) returns to that same province instead of the Kings &
+        # Heroes list -- query params, not route params, so the existing
+        # leader_edit.html delete form (no params) keeps its own
+        # unchanged redirect target.
+        return_x = request.args.get("return_x")
+        return_y = request.args.get("return_y")
+        if return_x is not None and return_y is not None:
+            try:
+                return redirect(url_for("province_edit", slug=slug, x=int(return_x), y=int(return_y)))
+            except ValueError:
+                pass
         return redirect(url_for("leaders_list", slug=slug))
 
     @app.get("/games/<slug>/armies")

@@ -82,6 +82,32 @@
 </div>
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Leaders Here</h2>
+  {% if leaders %}
+    <ul class="game-list">
+      {% for leader in leaders %}
+        <li>
+          <div>
+            <div class="game-name">{{ leader.name }}{% if leader.is_king %} (King){% endif %}</div>
+            <div class="game-meta">{{ state.kingdoms[leader.kingdom_id].name if leader.kingdom_id in state.kingdoms else 'Independent' }}</div>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <a class="button" href="{{ url_for('leader_edit', slug=meta.slug, leader_id=leader.leader_id) }}">Edit</a>
+            <form class="inline" method="post"
+                  action="{{ url_for('leader_delete', slug=meta.slug, leader_id=leader.leader_id, return_x=province.coord.x, return_y=province.coord.y) }}"
+                  onsubmit="return confirm('Permanently delete {{ leader.name }}?{% if leader.is_king %} This King rules a Kingdom -- deleting him leaves it without a King (no Royal Heir is installed, unlike an in-game death).{% endif %}');">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No Leaders here.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Special Features</h2>
   {% if features %}
     <ul class="game-list">
