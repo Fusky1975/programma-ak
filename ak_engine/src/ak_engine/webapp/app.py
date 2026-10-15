@@ -23,7 +23,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.enums import ABILITY_NAME, Ability
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
-from ak_engine.models.game_state import ArmyState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, LeaderState, ProvinceState
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES, Monster
@@ -59,6 +59,12 @@ from ak_engine.webapp.players import (
     remove_player,
 )
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
+from ak_engine.webapp.kingdom_create import (
+    NoProvinceAtCoordError,
+    ProvinceAlreadyAHomeError,
+    ProvinceAlreadyOwnedError,
+    create_kingdom,
+)
 from ak_engine.webapp.kingdom_delete import KingdomHasEmperorError, delete_kingdom
 from ak_engine.webapp.reports import turn_zero_report
 from ak_engine.webapp.turn_processing import (
@@ -77,10 +83,8 @@ from ak_engine.webapp.world_creation import (
     WorldAlreadyCreatedError,
     create_world,
 )
-from ak_engine.worldgen.generate_new_game import STARTING_TREASURY
-from ak_engine.worldgen.king_talent import MAX_POINTS_PER_ABILITY, MAX_TALENT_POINTS, build_king_skill_table
+from ak_engine.worldgen.king_talent import MAX_POINTS_PER_ABILITY, MAX_TALENT_POINTS
 from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH
-from ak_engine.worldgen.province_tax import HOME_OVERRIDE_TAX
 
 # The 8 mandatory Imperial Offices (rulebook [10.1]) vs. every other real,
 # modeled title the GM may opt in or out of for this game -- see
@@ -127,6 +131,53 @@ def _optional_enum(cls, raw: str):
     """
 
     return cls[raw] if raw else None
+
+
+def _parse_king_form_fields(form) -> tuple[str, Race, Alignment, Temper, dict[Ability, int]]:
+    """The "name/race/alignment/temper/4-point talent allocation" fields
+    every post-world King-creation form submits (rulebook [2.1]) --
+    shared by ``kingdom_create()`` and ``province_kingdom_create()``
+    (Phase 1027/1029), the two entry points for creating a brand-new
+    Kingdom in an already-created world. Raises ``ValueError`` with a
+    user-facing message on the first invalid field, so each caller can
+    just redirect with ``error=str(exc)`` to whichever screen it owns.
+    """
+
+    name = form.get("name", "").strip()
+    if not name:
+        raise ValueError("Please enter a King's name.")
+    try:
+        race = Race[form.get("race", "")]
+    except KeyError:
+        raise ValueError("Please choose a valid race.")
+    if race not in PLAYABLE_RACES:
+        raise ValueError("Kings may only be Human, Elven, Dwarven, or Orcish.")
+    try:
+        alignment = Alignment[form.get("alignment", "")]
+    except KeyError:
+        raise ValueError("Please choose a valid alignment.")
+    if alignment not in PLAYABLE_ALIGNMENTS:
+        raise ValueError("Kings may only be Divine, Good, Druidic, Neutral, Pagan, Evil, or Undead.")
+    try:
+        temper = Temper[form.get("temper", "")]
+    except KeyError:
+        raise ValueError("Please choose a valid Temper.")
+
+    talent_allocation: dict[Ability, int] = {}
+    for ability in Ability:
+        raw_points = form.get(f"talent_{ability.name}", "0").strip()
+        try:
+            points = int(raw_points) if raw_points else 0
+        except ValueError:
+            raise ValueError("Talent points must be whole numbers.") from None
+        if points < 0 or points > MAX_POINTS_PER_ABILITY:
+            raise ValueError(f"Each Ability can have at most {MAX_POINTS_PER_ABILITY} starting talent points.")
+        if points:
+            talent_allocation[ability] = points
+    if sum(talent_allocation.values()) != MAX_TALENT_POINTS:
+        raise ValueError(f"Please distribute exactly {MAX_TALENT_POINTS} starting talent points.")
+
+    return name, race, alignment, temper, talent_allocation
 
 
 # Every enum this interface renders in a dropdown or table, mapped to this
@@ -395,100 +446,132 @@ def create_app(games_root: Path | None = None) -> Flask:
         except GameNotFoundError:
             return redirect(url_for("games_list", error="Game not found."))
 
-        def _create_error(message: str):
-            return redirect(url_for("world_setup", slug=slug, error=message))
-
-        name = request.form.get("name", "").strip()
-        if not name:
-            return _create_error("Please enter a King's name.")
         try:
-            race = Race[request.form.get("race", "")]
-        except KeyError:
-            return _create_error("Please choose a valid race.")
-        if race not in PLAYABLE_RACES:
-            return _create_error("Kings may only be Human, Elven, Dwarven, or Orcish.")
-        try:
-            alignment = Alignment[request.form.get("alignment", "")]
-        except KeyError:
-            return _create_error("Please choose a valid alignment.")
-        if alignment not in PLAYABLE_ALIGNMENTS:
-            return _create_error("Kings may only be Divine, Good, Druidic, Neutral, Pagan, Evil, or Undead.")
-        try:
-            temper = Temper[request.form.get("temper", "")]
-        except KeyError:
-            return _create_error("Please choose a valid Temper.")
-
-        talent_allocation: dict[Ability, int] = {}
-        for ability in Ability:
-            raw_points = request.form.get(f"talent_{ability.name}", "0").strip()
-            try:
-                points = int(raw_points) if raw_points else 0
-            except ValueError:
-                return _create_error("Talent points must be whole numbers.")
-            if points < 0 or points > MAX_POINTS_PER_ABILITY:
-                return _create_error(f"Each Ability can have at most {MAX_POINTS_PER_ABILITY} starting talent points.")
-            if points:
-                talent_allocation[ability] = points
-        if sum(talent_allocation.values()) != MAX_TALENT_POINTS:
-            return _create_error(f"Please distribute exactly {MAX_TALENT_POINTS} starting talent points.")
+            name, race, alignment, temper, talent_allocation = _parse_king_form_fields(request.form)
+        except ValueError as exc:
+            return redirect(url_for("world_setup", slug=slug, error=str(exc)))
 
         try:
             x = int(request.form.get("home_x", ""))
             y = int(request.form.get("home_y", ""))
         except ValueError:
-            return _create_error("Home coordinates must be whole numbers.")
+            return redirect(url_for("world_setup", slug=slug, error="Home coordinates must be whole numbers."))
+
+        try:
+            create_kingdom(
+                state,
+                name=name,
+                race=race,
+                alignment=alignment,
+                temper=temper,
+                talent_allocation=talent_allocation,
+                coord=HexCoord(x, y),
+            )
+        except NoProvinceAtCoordError:
+            return redirect(
+                url_for(
+                    "world_setup",
+                    slug=slug,
+                    error=f"({x}, {y}) has no province -- create it first, or pick an existing one.",
+                )
+            )
+        except ProvinceAlreadyOwnedError as exc:
+            return redirect(
+                url_for("world_setup", slug=slug, error=f"({x}, {y}) is already owned by {exc.owner_name}.")
+            )
+        except ProvinceAlreadyAHomeError:
+            return redirect(
+                url_for("world_setup", slug=slug, error=f"({x}, {y}) is already another Kingdom's Home province.")
+            )
+        save_game(root, slug, state)
+        return redirect(url_for("world_setup", slug=slug))
+
+    @app.get("/games/<slug>/provinces/<int:x>/<int:y>/kingdoms/new")
+    def province_kingdom_new(slug: str, x: int, y: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
         coord = HexCoord(x, y)
         province = state.provinces.get(coord)
         if province is None:
-            return _create_error(f"({x}, {y}) has no province -- create it first, or pick an existing one.")
+            return redirect(url_for("provinces_list", slug=slug, error="Province not found."))
         if province.owner_kingdom_id is not None:
-            return _create_error(f"({x}, {y}) is already owned by {state.kingdoms[province.owner_kingdom_id].name}.")
+            return redirect(
+                url_for(
+                    "province_edit",
+                    slug=slug,
+                    x=x,
+                    y=y,
+                    error=f"({x}, {y}) is already owned by {state.kingdoms[province.owner_kingdom_id].name}.",
+                )
+            )
         if any(kingdom.home_province == coord for kingdom in state.kingdoms.values()):
-            return _create_error(f"({x}, {y}) is already another Kingdom's Home province.")
+            return redirect(
+                url_for(
+                    "province_edit", slug=slug, x=x, y=y, error=f"({x}, {y}) is already another Kingdom's Home province."
+                )
+            )
+        return render_template(
+            "kingdom_new.html",
+            meta=meta,
+            coord=coord,
+            races=PLAYABLE_RACES,
+            alignments=PLAYABLE_ALIGNMENTS,
+            tempers=list(Temper),
+            abilities=list(Ability),
+            max_talent_points=MAX_TALENT_POINTS,
+            max_points_per_ability=MAX_POINTS_PER_ABILITY,
+            error=request.args.get("error"),
+        )
 
-        kingdom_id = state.new_kingdom_id()
-        skills = build_king_skill_table(talent_allocation, alignment)
-        state.add_kingdom(
-            KingdomState(
-                kingdom_id=kingdom_id,
+    @app.post("/games/<slug>/provinces/<int:x>/<int:y>/kingdoms/new")
+    def province_kingdom_create(slug: str, x: int, y: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _create_error(message: str):
+            return redirect(url_for("province_kingdom_new", slug=slug, x=x, y=y, error=message))
+
+        try:
+            name, race, alignment, temper, talent_allocation = _parse_king_form_fields(request.form)
+        except ValueError as exc:
+            return _create_error(str(exc))
+
+        try:
+            create_kingdom(
+                state,
                 name=name,
                 race=race,
                 alignment=alignment,
-                home_province=coord,
-                treasury=STARTING_TREASURY,
-            )
-        )
-        state.add_leader(
-            LeaderState(
-                leader_id=kingdom_id,
-                kingdom_id=kingdom_id,
-                name=name,
-                location=coord,
-                skills=skills,
-                is_king=True,
                 temper=temper,
-                alignment=alignment,
-                race=race,
-                birth_x=x,
-                birth_y=y,
+                talent_allocation=talent_allocation,
+                coord=HexCoord(x, y),
             )
-        )
-        # Matches worldgen/generate_new_game.py's own King Home seating
-        # (ownership, the fixed HOME_OVERRIDE_TAX, native race becomes the
-        # King's own, 100% exploration for this Kingdom -- confirmed real
-        # across every Turn-0 PROVINCES sample, see that module's own
-        # Phase 428 addendum) -- deliberately NOT replicated here: the
-        # RNG-dependent recruit-slot formulas and initial-army budget,
-        # which need the whole-map generation context this single-
-        # Kingdom action doesn't have. Add Army/edit the recruit types
-        # by hand afterward if this new Kingdom needs either.
-        province.owner_kingdom_id = kingdom_id
-        province.tax = HOME_OVERRIDE_TAX
-        province.race = race
-        province.explored_percent = 100
-        province.explored_percent_by_kingdom[kingdom_id] = 100
+        except NoProvinceAtCoordError:
+            return redirect(url_for("provinces_list", slug=slug, error="Province not found."))
+        except ProvinceAlreadyOwnedError as exc:
+            return redirect(
+                url_for(
+                    "province_edit", slug=slug, x=x, y=y, error=f"({x}, {y}) is already owned by {exc.owner_name}."
+                )
+            )
+        except ProvinceAlreadyAHomeError:
+            return redirect(
+                url_for(
+                    "province_edit",
+                    slug=slug,
+                    x=x,
+                    y=y,
+                    error=f"({x}, {y}) is already another Kingdom's Home province.",
+                )
+            )
         save_game(root, slug, state)
-        return redirect(url_for("world_setup", slug=slug))
+        return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 
     @app.post("/games/<slug>/kingdoms/<int:kingdom_id>/delete")
     def kingdom_delete(slug: str, kingdom_id: int):

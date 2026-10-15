@@ -660,6 +660,104 @@ def test_kingdom_delete_missing_game_shows_an_error_not_a_crash(tmp_path):
     assert b"Game not found" in response.data
 
 
+def test_province_kingdom_new_shows_the_form_for_an_eligible_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+
+    response = client.get(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/kingdoms/new")
+
+    assert response.status_code == 200
+    assert b"New Kingdom at" in response.data
+
+
+def test_province_kingdom_new_redirects_when_already_owned(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+
+    response = client.get(f"/games/{meta.slug}/provinces/{home.x}/{home.y}/kingdoms/new", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"already owned by" in response.data
+
+
+def test_province_kingdom_new_missing_province_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/provinces/999/999/kingdoms/new", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Province not found" in response.data
+
+
+def test_province_kingdom_create_adds_a_kingdom_at_that_coordinate(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+    before_ids = set(state.kingdoms)
+
+    data = _king_form_data("Sir Newling", race="DWARVEN", alignment="EVIL", temper="CAUTIOUS")
+    response = client.post(
+        f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/kingdoms/new", data=data, follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    new_ids = set(state.kingdoms) - before_ids
+    assert len(new_ids) == 1
+    kingdom = state.kingdoms[next(iter(new_ids))]
+    assert kingdom.name == "Sir Newling"
+    assert kingdom.home_province == coord
+    assert state.provinces[coord].owner_kingdom_id == kingdom.kingdom_id
+
+
+def test_province_kingdom_create_rejects_an_already_owned_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    before_ids = set(state.kingdoms)
+
+    data = _king_form_data("Usurper")
+    response = client.post(
+        f"/games/{meta.slug}/provinces/{home.x}/{home.y}/kingdoms/new", data=data, follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    assert b"already owned by" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert set(state.kingdoms) == before_ids
+
+
+def test_province_kingdom_create_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    data = _king_form_data("Someone")
+    response = client.post("/games/does-not-exist/provinces/0/0/kingdoms/new", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_provinces_list_shows_create_kingdom_link_only_for_eligible_provinces(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    (coord,) = _safe_province_coords(state, 1)
+
+    response = client.get(f"/games/{meta.slug}/provinces")
+
+    assert response.status_code == 200
+    assert f'/provinces/{coord.x}/{coord.y}/kingdoms/new'.encode() in response.data
+    home = state.kingdoms[1].home_province
+    assert f'/provinces/{home.x}/{home.y}/kingdoms/new'.encode() not in response.data
+
+
 def test_provinces_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)

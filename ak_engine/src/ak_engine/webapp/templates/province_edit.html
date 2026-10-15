@@ -76,6 +76,9 @@
     </form>
     <p class="hex-map-legend-note">This only moves the Home marker (used for Home-province bonuses, Royal Heir distance, etc.) -- it doesn't change this province's own owner, tax, or recruit types, or the old Home's either. Edit those separately if needed.</p>
   {% endif %}
+  {% if province.owner_kingdom_id is none and not current_homes %}
+    <p><a class="button" href="{{ url_for('province_kingdom_new', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">Create Kingdom Here &rarr;</a></p>
+  {% endif %}
 </div>
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
