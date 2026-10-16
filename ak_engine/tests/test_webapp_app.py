@@ -1916,6 +1916,141 @@ def test_provinces_list_shows_the_resize_form(tmp_path):
     assert b"Resize Map" in response.data
 
 
+def test_province_effects_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0/effects",
+        data={
+            "terrain_override": "SEA",
+            "tax_modifier_percent": "-100",
+            "illusory_terrain": "MTNS",
+            "illusory_terrain_enhanced": "on",
+            "scar_terrain_gold_reduction": "4",
+            "earthquake_flat_reduction": "3",
+            "illusory_fog_active": "on",
+            "plague_active": "on",
+            "is_island": "on",
+            "mine_gold_bonus": "6",
+            "mine_find_attempts": "2",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    province = state.provinces[HexCoord(0, 0)]
+    assert province.terrain_override.name == "SEA"
+    assert province.tax_modifier_percent == -100
+    assert province.illusory_terrain.name == "MTNS"
+    assert province.illusory_terrain_enhanced is True
+    assert province.scar_terrain_gold_reduction == 4
+    assert province.earthquake_flat_reduction == 3
+    assert province.illusory_fog_active is True
+    assert province.plague_active is True
+    assert province.is_island is True
+    assert province.mine_gold_bonus == 6
+    assert province.mine_find_attempts == 2
+
+
+def test_province_effects_save_can_clear_optional_terrains_and_checkboxes(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(
+        f"/games/{meta.slug}/provinces/0/0/effects",
+        data={
+            "terrain_override": "SEA",
+            "illusory_terrain": "MTNS",
+            "illusory_terrain_enhanced": "on",
+            "illusory_fog_active": "on",
+            "plague_active": "on",
+            "is_island": "on",
+        },
+    )
+
+    client.post(f"/games/{meta.slug}/provinces/0/0/effects", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    province = state.provinces[HexCoord(0, 0)]
+    assert province.terrain_override is None
+    assert province.illusory_terrain is None
+    assert province.illusory_terrain_enhanced is False
+    assert province.illusory_fog_active is False
+    assert province.plague_active is False
+    assert province.is_island is False
+    assert province.tax_modifier_percent == 0
+    assert province.scar_terrain_gold_reduction == 0
+    assert province.earthquake_flat_reduction == 0
+    assert province.mine_gold_bonus == 0
+    assert province.mine_find_attempts == 0
+
+
+def test_province_effects_save_with_invalid_terrain_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0/effects",
+        data={"terrain_override": "NOT_A_TERRAIN"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid terrain" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[HexCoord(0, 0)].terrain_override is None
+
+
+def test_province_effects_save_with_non_numeric_value_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0/effects",
+        data={"tax_modifier_percent": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must be whole numbers" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[HexCoord(0, 0)].tax_modifier_percent == 0
+
+
+def test_province_effects_save_missing_province_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/provinces/999/999/effects", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Province not found" in response.data
+
+
+def test_province_effects_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/games/does-not-exist/provinces/0/0/effects",
+        data={},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_province_edit_shows_the_magic_and_terrain_effects_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/provinces/0/0")
+
+    assert response.status_code == 200
+    assert b"Magic &amp; Terrain Effects" in response.data
+
+
 def test_leaders_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)

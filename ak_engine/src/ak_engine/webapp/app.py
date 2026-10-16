@@ -965,6 +965,58 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 
+    @app.post("/games/<slug>/provinces/<int:x>/<int:y>/effects")
+    def province_effects_save(slug: str, x: int, y: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        coord = HexCoord(x, y)
+        province = state.provinces.get(coord)
+        if province is None:
+            return redirect(url_for("provinces_list", slug=slug, error="Province not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("province_edit", slug=slug, x=x, y=y, error=message))
+
+        def _optional_terrain(field: str) -> Terrain | None:
+            raw = request.form.get(field, "")
+            return Terrain[raw] if raw else None
+
+        try:
+            terrain_override = _optional_terrain("terrain_override")
+            illusory_terrain = _optional_terrain("illusory_terrain")
+        except KeyError:
+            return _edit_error("Please choose a valid terrain.")
+
+        def _int_field(field: str) -> int:
+            raw = request.form.get(field, "").strip()
+            return int(raw) if raw else 0
+
+        try:
+            tax_modifier_percent = _int_field("tax_modifier_percent")
+            scar_terrain_gold_reduction = _int_field("scar_terrain_gold_reduction")
+            earthquake_flat_reduction = _int_field("earthquake_flat_reduction")
+            mine_gold_bonus = _int_field("mine_gold_bonus")
+            mine_find_attempts = _int_field("mine_find_attempts")
+        except ValueError:
+            return _edit_error("Effect values must be whole numbers.")
+
+        province.terrain_override = terrain_override
+        province.tax_modifier_percent = tax_modifier_percent
+        province.illusory_terrain = illusory_terrain
+        province.illusory_terrain_enhanced = "illusory_terrain_enhanced" in request.form
+        province.scar_terrain_gold_reduction = scar_terrain_gold_reduction
+        province.earthquake_flat_reduction = earthquake_flat_reduction
+        province.illusory_fog_active = "illusory_fog_active" in request.form
+        province.plague_active = "plague_active" in request.form
+        province.is_island = "is_island" in request.form
+        province.mine_gold_bonus = mine_gold_bonus
+        province.mine_find_attempts = mine_find_attempts
+        save_game(root, slug, state)
+        return redirect(url_for("province_edit", slug=slug, x=x, y=y))
+
     @app.post("/games/<slug>/provinces/<int:x>/<int:y>/set-home")
     def province_set_home(slug: str, x: int, y: int):
         root: Path = app.config["GAMES_ROOT"]

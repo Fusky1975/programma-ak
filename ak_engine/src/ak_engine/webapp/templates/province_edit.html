@@ -72,6 +72,73 @@
 </div>
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Magic &amp; Terrain Effects</h2>
+  <p class="hex-map-legend-note">The lasting marks real casts (Part Sea/Flood, Bless/Earthquake, Illusory Terrain, Scar Terrain, Illusory Fog, Plague) and exploration (Find Mines, Island) leave on a province -- normally set and cleared by turn processing itself, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('province_effects_save', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">
+    <p>
+      <label for="terrain_override">Terrain Override (Part Sea / Flood)</label><br>
+      <select id="terrain_override" name="terrain_override">
+        <option value="" {% if province.terrain_override is none %}selected{% endif %}>-- None --</option>
+        {% for terrain in terrains %}
+          <option value="{{ terrain.name }}" {% if province.terrain_override == terrain %}selected{% endif %}>{{ terrain|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="tax_modifier_percent">Tax Modifier % (Bless / Earthquake)</label><br>
+      <input type="number" id="tax_modifier_percent" name="tax_modifier_percent" value="{{ province.tax_modifier_percent }}" style="width: 6em;">
+    </p>
+
+    <p>
+      <label for="illusory_terrain">Illusory Terrain</label><br>
+      <select id="illusory_terrain" name="illusory_terrain">
+        <option value="" {% if province.illusory_terrain is none %}selected{% endif %}>-- None --</option>
+        {% for terrain in terrains %}
+          <option value="{{ terrain.name }}" {% if province.illusory_terrain == terrain %}selected{% endif %}>{{ terrain|display_name }}</option>
+        {% endfor %}
+      </select>
+      <br>
+      <label><input type="checkbox" name="illusory_terrain_enhanced" {% if province.illusory_terrain_enhanced %}checked{% endif %}> Enhanced (caster held Enhanced Illusory Terrain)</label>
+    </p>
+
+    <p>
+      <label for="scar_terrain_gold_reduction">Scar Terrain Gold Reduction (cumulative)</label><br>
+      <input type="number" id="scar_terrain_gold_reduction" name="scar_terrain_gold_reduction" value="{{ province.scar_terrain_gold_reduction }}" style="width: 6em;">
+    </p>
+
+    <p>
+      <label for="earthquake_flat_reduction">Earthquake Flat Gold Reduction (Reinforced Concrete, this turn)</label><br>
+      <input type="number" id="earthquake_flat_reduction" name="earthquake_flat_reduction" value="{{ province.earthquake_flat_reduction }}" style="width: 6em;">
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="illusory_fog_active" {% if province.illusory_fog_active %}checked{% endif %}> Illusory Fog active (halves air-unit strength; dissipates at end of gameturn)</label>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="plague_active" {% if province.plague_active %}checked{% endif %}> Plague active</label>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="is_island" {% if province.is_island %}checked{% endif %}> Island (half-Sea/half-land terrain)</label>
+    </p>
+
+    <p>
+      <label for="mine_gold_bonus">Mine Gold Bonus (cumulative, capped at 10)</label><br>
+      <input type="number" id="mine_gold_bonus" name="mine_gold_bonus" value="{{ province.mine_gold_bonus }}" style="width: 6em;">
+    </p>
+
+    <p>
+      <label for="mine_find_attempts">Mine Find Attempts So Far</label><br>
+      <input type="number" id="mine_find_attempts" name="mine_find_attempts" value="{{ province.mine_find_attempts }}" style="width: 6em;">
+    </p>
+
+    <button type="submit">Save Effects</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Home Province</h2>
   {% set current_homes = state.kingdoms.values()|selectattr('home_province', 'equalto', province.coord)|list %}
   {% if current_homes %}
