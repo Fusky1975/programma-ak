@@ -641,6 +641,9 @@ def create_app(games_root: Path | None = None) -> Flask:
         armies_by_coord: dict[HexCoord, list] = {}
         for army in state.armies.values():
             armies_by_coord.setdefault(army.location, []).append(army)
+        features_by_coord: dict[HexCoord, list] = {}
+        for feature in state.features.values():
+            features_by_coord.setdefault(feature.coord, []).append(feature)
         return render_template(
             "world_provinces.html",
             meta=meta,
@@ -649,6 +652,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             hex_map=build_hex_map(state) if provinces else None,
             leaders_by_coord=leaders_by_coord,
             armies_by_coord=armies_by_coord,
+            features_by_coord=features_by_coord,
             terrains=list(Terrain),
             races=list(Race),
             error=request.args.get("error"),
@@ -1246,6 +1250,15 @@ def create_app(games_root: Path | None = None) -> Flask:
             return redirect(url_for("games_list", error="Game not found."))
         state.features.pop(feature_id, None)
         save_game(root, slug, state)
+        # Phase 1032: same optional "return to this province" redirect
+        # leader_delete()/army_delete() already support.
+        return_x = request.args.get("return_x")
+        return_y = request.args.get("return_y")
+        if return_x is not None and return_y is not None:
+            try:
+                return redirect(url_for("province_edit", slug=slug, x=int(return_x), y=int(return_y)))
+            except ValueError:
+                pass
         return redirect(url_for("features_list", slug=slug))
 
     @app.get("/games/<slug>/provinces/<int:x>/<int:y>/features/new")

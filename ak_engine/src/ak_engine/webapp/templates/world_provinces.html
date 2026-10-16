@@ -59,6 +59,7 @@
           <th>Recruit 2</th>
           <th>Leaders Here</th>
           <th>Armies Here</th>
+          <th>Features Here</th>
           <th></th>
         </tr>
       </thead>
@@ -67,6 +68,7 @@
         {% for province in provinces %}
           {% set leaders_here = leaders_by_coord.get(province.coord, []) %}
           {% set armies_here = armies_by_coord.get(province.coord, []) %}
+          {% set features_here = features_by_coord.get(province.coord, []) %}
           <tr>
             <td>({{ province.coord.x }}, {{ province.coord.y }})</td>
             <td>{{ province.terrain|display_name }}</td>
@@ -85,6 +87,13 @@
             <td>
               {% if armies_here %}
                 <a href="{{ url_for('province_edit', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">{{ armies_here|map(attribute='army_type')|map('display_name')|join(', ') }}</a>
+              {% else %}
+                --
+              {% endif %}
+            </td>
+            <td>
+              {% if features_here %}
+                <a href="{{ url_for('province_edit', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">{{ features_here|map(attribute='kind')|map('display_name')|join(', ') }}</a>
               {% else %}
                 --
               {% endif %}

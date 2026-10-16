@@ -1116,6 +1116,77 @@ def test_provinces_list_shows_armies_here_and_links_to_the_province(tmp_path):
     assert f'/provinces/{home.x}/{home.y}'.encode() in response.data
 
 
+def test_province_edit_shows_features_here_with_a_delete_button(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    feature_id = next(iter(state.features))
+    coord = state.features[feature_id].coord
+
+    response = client.get(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}")
+
+    assert response.status_code == 200
+    assert b"No special features here yet" not in response.data
+    assert b"Special Features" in response.data
+
+
+def test_province_edit_shows_no_special_features_for_an_empty_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    empty_coords = [c for c in state.provinces if not state.features_at(c)]
+    coord = empty_coords[0]
+
+    response = client.get(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}")
+
+    assert response.status_code == 200
+    assert b"No special features here yet" in response.data
+
+
+def test_deleting_a_feature_from_a_province_returns_to_that_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    feature_id = next(iter(state.features))
+    coord = state.features[feature_id].coord
+
+    response = client.post(
+        f"/games/{meta.slug}/features/{feature_id}/delete?return_x={coord.x}&return_y={coord.y}",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert feature_id not in state.features
+    # Back on the province page, not the global Features list.
+    assert b"Special Features" in response.data
+
+
+def test_deleting_a_feature_without_return_params_still_goes_to_features_list(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    feature_id = next(iter(state.features))
+
+    response = client.post(f"/games/{meta.slug}/features/{feature_id}/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert f"{meta.name} &mdash; Special Features".encode() in response.data
+
+
+def test_provinces_list_shows_features_here_and_links_to_the_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    feature_id = next(iter(state.features))
+    feature = state.features[feature_id]
+
+    response = client.get(f"/games/{meta.slug}/provinces")
+
+    assert response.status_code == 200
+    assert f'/provinces/{feature.coord.x}/{feature.coord.y}'.encode() in response.data
+
+
 def _safe_province_coords(state, count):
     """``count`` distinct province coordinates with no Kingdom Home, no
     Army, no Leader, and no Feature on them -- safe to delete without

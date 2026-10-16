@@ -140,7 +140,14 @@
       {% for feature in features %}
         <li>
           <div class="game-name">#{{ feature.feature_id }} &mdash; {{ feature.kind|display_name }}</div>
-          <a class="button" href="{{ url_for('feature_edit', slug=meta.slug, feature_id=feature.feature_id) }}">Edit</a>
+          <div style="display: flex; gap: 0.5rem;">
+            <a class="button" href="{{ url_for('feature_edit', slug=meta.slug, feature_id=feature.feature_id) }}">Edit</a>
+            <form class="inline" method="post"
+                  action="{{ url_for('feature_delete', slug=meta.slug, feature_id=feature.feature_id, return_x=province.coord.x, return_y=province.coord.y) }}"
+                  onsubmit="return confirm('Permanently delete this Feature?');">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </div>
         </li>
       {% endfor %}
     </ul>
