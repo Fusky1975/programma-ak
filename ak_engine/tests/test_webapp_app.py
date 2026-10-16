@@ -2481,6 +2481,8 @@ def test_save_army_persists_the_new_values(tmp_path):
             "location_x": "5",
             "location_y": "3",
             "commanded_by": "",
+            "is_skeletal": "on",
+            "plague_immune": "on",
         },
         follow_redirects=True,
     )
@@ -2493,6 +2495,59 @@ def test_save_army_persists_the_new_values(tmp_path):
     assert saved.kingdom_id is None
     assert saved.location == HexCoord(5, 3)
     assert saved.commanded_by is None
+    assert saved.is_skeletal is True
+    assert saved.plague_immune is True
+
+
+def test_save_army_can_clear_is_skeletal_and_plague_immune(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+    base_data = {
+        "army_type": army.army_type.name,
+        "quality": army.quality.name,
+        "kingdom_id": str(army.kingdom_id) if army.kingdom_id is not None else "",
+        "location_x": str(army.location.x),
+        "location_y": str(army.location.y),
+        "commanded_by": "",
+    }
+    client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={**base_data, "is_skeletal": "on", "plague_immune": "on"},
+    )
+
+    client.post(f"/games/{meta.slug}/armies/{army.army_id}", data=base_data)
+
+    _, state = open_game(tmp_path, meta.slug)
+    saved = state.armies[army.army_id]
+    assert saved.is_skeletal is False
+    assert saved.plague_immune is False
+
+
+def test_army_edit_shows_is_skeletal_and_plague_immune_as_checked(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+    client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={
+            "army_type": army.army_type.name,
+            "quality": army.quality.name,
+            "kingdom_id": str(army.kingdom_id) if army.kingdom_id is not None else "",
+            "location_x": str(army.location.x),
+            "location_y": str(army.location.y),
+            "commanded_by": "",
+            "is_skeletal": "on",
+        },
+    )
+
+    response = client.get(f"/games/{meta.slug}/armies/{army.army_id}")
+
+    assert response.status_code == 200
+    assert b'name="is_skeletal" checked' in response.data
+    assert b'name="plague_immune" checked' not in response.data
 
 
 def test_army_edit_offers_only_leaders_at_the_armys_own_location(tmp_path):

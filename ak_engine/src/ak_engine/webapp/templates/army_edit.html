@@ -55,6 +55,14 @@
       <br><span class="hex-map-legend-note">Only lists Heroes currently at this Army's own location -- a new Commander must already be here (the real Pick_Up rule).</span>
     </p>
 
+    <p>
+      <label><input type="checkbox" name="is_skeletal" {% if army.is_skeletal %}checked{% endif %}> Skeletal (raised by Skeletal Army -- "Skel" shows before its type in reports)</label>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="plague_immune" {% if army.plague_immune %}checked{% endif %}> Plague Immune (survived a past Plague -- a future one downgrades Quality instead of destroying it)</label>
+    </p>
+
     <button type="submit">Save Army</button>
   </form>
 
