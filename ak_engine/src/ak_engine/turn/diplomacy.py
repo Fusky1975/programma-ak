@@ -133,7 +133,18 @@ def is_attackable_at(
     return True
 
 
-def _set_relation(state: GameState, kingdom_a: int, kingdom_b: int, relation: DiplomaticRelation) -> None:
+def set_relation(state: GameState, kingdom_a: int, kingdom_b: int, relation: DiplomaticRelation) -> None:
+    """Writes a Kingdom pair's own ``diplomatic_relations`` entry, keeping
+    ``allied_kingdoms``/``diplomatic_relations_since`` in sync -- the one
+    real primitive both ``apply_treat_orders()`` (below) and the GM web
+    interface's own direct-override route (``webapp/app.py
+    turns_diplomacy_set_relation()``, for scenario setup -- e.g. starting
+    two Kingdoms already at War or Allied without playing out several
+    turns of Treat/Break Treat orders first) build on, so the two never
+    drift into writing this trio of fields differently. Public (no
+    leading underscore) for exactly that second caller.
+    """
+
     pair = frozenset({kingdom_a, kingdom_b})
     state.diplomatic_relations[pair] = relation
     if relation is DiplomaticRelation.ALLIED:
@@ -214,4 +225,4 @@ def apply_treat_orders(state: GameState) -> None:
             new_relation = DiplomaticRelation.ALLIED
 
         if new_relation is not current:
-            _set_relation(state, kingdom_a, kingdom_b, new_relation)
+            set_relation(state, kingdom_a, kingdom_b, new_relation)

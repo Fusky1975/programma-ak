@@ -58,6 +58,8 @@ from ak_engine.webapp.players import (
     list_players,
     remove_player,
 )
+from ak_engine.parser.gw_world import DiplomaticRelation
+from ak_engine.turn.diplomacy import set_relation
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
 from ak_engine.webapp.kingdom_create import (
     NoProvinceAtCoordError,
@@ -1607,6 +1609,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             "turns_diplomacy.html",
             meta=meta,
             state=state,
+            relations=[DiplomaticRelation.ENEMY, DiplomaticRelation.NEUTRAL, DiplomaticRelation.ALLIED],
             error=request.args.get("error"),
         )
 
@@ -1637,6 +1640,47 @@ def create_app(games_root: Path | None = None) -> Flask:
 
         save_game(root, slug, state)
         return redirect(url_for("turns_hub", slug=slug))
+
+    @app.post("/games/<slug>/turns/diplomacy/set-relation")
+    def turns_diplomacy_set_relation(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("turns_diplomacy", slug=slug, error=message))
+
+        try:
+            kingdom_a = int(request.form.get("kingdom_a", ""))
+            kingdom_b = int(request.form.get("kingdom_b", ""))
+        except ValueError:
+            return _edit_error("Please choose two valid Kingdoms.")
+        if kingdom_a not in state.kingdoms or kingdom_b not in state.kingdoms:
+            return _edit_error("Please choose two valid Kingdoms.")
+        if kingdom_a == kingdom_b:
+            return _edit_error("A Kingdom can't have a relation with itself.")
+
+        # Only the 3 relations rulebook [8] itself describes -- TEAMED is
+        # deliberately not offered here (turn/diplomacy.py's own module
+        # docstring: never produced by apply_treat_orders(), and this
+        # project has deferred whether a GM editor should be able to
+        # write it at all pending the user's own confirmation).
+        try:
+            relation = DiplomaticRelation[request.form.get("relation", "")]
+        except KeyError:
+            return _edit_error("Please choose a valid relation.")
+        if relation not in (DiplomaticRelation.ENEMY, DiplomaticRelation.NEUTRAL, DiplomaticRelation.ALLIED):
+            return _edit_error("Please choose a valid relation.")
+
+        # turn/diplomacy.py set_relation(): the same primitive
+        # apply_treat_orders() itself uses, so a direct GM override looks
+        # identical to one reached through real Treat/Break Treat orders
+        # (allied_kingdoms/diplomatic_relations_since stay in sync either way).
+        set_relation(state, kingdom_a, kingdom_b, relation)
+        save_game(root, slug, state)
+        return redirect(url_for("turns_diplomacy", slug=slug))
 
     @app.post("/games/<slug>/turns/upload")
     def turns_upload(slug: str):

@@ -9,22 +9,37 @@
 <div class="panel" style="border-left: 6px solid var(--phase-turns);">
   <h2>{{ meta.name }} &mdash; Diplomacy</h2>
   <p>Current relation between every Kingdom pair (rulebook [8.1] &mdash; all Kings start Neutral to each other):</p>
+  <p class="hex-map-legend-note">The "Set To" column overrides a pair's relation directly -- for scenario setup (e.g. starting two Kingdoms already at War or Allied) without waiting on several turns of Treat/Break Treat orders. It writes the exact same fields a real order resolution would.</p>
   <table class="data-table">
     <thead>
       <tr>
         <th>Kingdom</th>
         <th>Kingdom</th>
         <th>Relation</th>
+        <th>Set To</th>
       </tr>
     </thead>
     <tbody>
       {% for a_id, a in state.kingdoms.items() %}
         {% for b_id, b in state.kingdoms.items() %}
           {% if a_id < b_id %}
+            {% set current_relation = state.diplomatic_relation(a_id, b_id) %}
             <tr>
               <td>{{ a.name }}</td>
               <td>{{ b.name }}</td>
-              <td>{{ state.diplomatic_relation(a_id, b_id)|display_name }}</td>
+              <td>{{ current_relation|display_name }}</td>
+              <td>
+                <form class="inline" method="post" action="{{ url_for('turns_diplomacy_set_relation', slug=meta.slug) }}">
+                  <input type="hidden" name="kingdom_a" value="{{ a_id }}">
+                  <input type="hidden" name="kingdom_b" value="{{ b_id }}">
+                  <select name="relation">
+                    {% for relation in relations %}
+                      <option value="{{ relation.name }}" {% if current_relation == relation %}selected{% endif %}>{{ relation|display_name }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit">Set</button>
+                </form>
+              </td>
             </tr>
           {% endif %}
         {% endfor %}

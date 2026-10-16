@@ -3214,6 +3214,121 @@ def test_turns_diplomacy_mutual_treat_upgrades_relation_once_the_turn_is_process
     assert state.treat_permissions == set()
 
 
+def test_turns_diplomacy_set_relation_overrides_it_directly(tmp_path):
+    # Scenario setup: start two Kingdoms already at War, without playing
+    # out any Treat/Break Treat orders at all.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/turns/diplomacy/set-relation",
+        data={"kingdom_a": "1", "kingdom_b": "2", "relation": "ENEMY"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.diplomatic_relation(1, 2).name == "ENEMY"
+
+
+def test_turns_diplomacy_set_relation_to_allied_stamps_the_since_timestamp(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    client.post(
+        f"/games/{meta.slug}/turns/diplomacy/set-relation",
+        data={"kingdom_a": "1", "kingdom_b": "2", "relation": "ALLIED"},
+    )
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.is_allied(1, 2)
+    assert state.diplomatic_relations_since[frozenset({1, 2})] == state.turn_number
+
+
+def test_turns_diplomacy_set_relation_rejects_the_same_kingdom_twice(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/turns/diplomacy/set-relation",
+        data={"kingdom_a": "1", "kingdom_b": "1", "relation": "ALLIED"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"can&#39;t have a relation with itself" in response.data
+
+
+def test_turns_diplomacy_set_relation_with_invalid_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/turns/diplomacy/set-relation",
+        data={"kingdom_a": "1", "kingdom_b": "999", "relation": "ALLIED"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Kingdoms" in response.data
+
+
+def test_turns_diplomacy_set_relation_with_invalid_relation_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/turns/diplomacy/set-relation",
+        data={"kingdom_a": "1", "kingdom_b": "2", "relation": "NOT_A_RELATION"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid relation" in response.data
+
+
+def test_turns_diplomacy_set_relation_rejects_teamed(tmp_path):
+    # TEAMED is deliberately never offered here (see the route's own
+    # comment) -- a direct POST attempting it must still be rejected,
+    # not silently accepted.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/turns/diplomacy/set-relation",
+        data={"kingdom_a": "1", "kingdom_b": "2", "relation": "TEAMED"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid relation" in response.data
+
+
+def test_turns_diplomacy_set_relation_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/games/does-not-exist/turns/diplomacy/set-relation",
+        data={"kingdom_a": "1", "kingdom_b": "2", "relation": "ALLIED"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_turns_diplomacy_shows_a_set_to_dropdown_for_each_pair(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/diplomacy")
+
+    assert response.status_code == 200
+    assert b"Set To" in response.data
+    assert b'name="kingdom_a" value="1"' in response.data
+    assert b'name="kingdom_b" value="2"' in response.data
+
+
 def test_process_turn_without_a_world_shows_an_error_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)
