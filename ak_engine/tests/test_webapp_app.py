@@ -2156,7 +2156,14 @@ def test_save_army_persists_the_new_values(tmp_path):
 
     response = client.post(
         f"/games/{meta.slug}/armies/{army.army_id}",
-        data={"army_type": "HVY_CAVALRY", "quality": "ELITE", "kingdom_id": "", "location_x": "5", "location_y": "3"},
+        data={
+            "army_type": "HVY_CAVALRY",
+            "quality": "ELITE",
+            "kingdom_id": "",
+            "location_x": "5",
+            "location_y": "3",
+            "commanded_by": "",
+        },
         follow_redirects=True,
     )
 
@@ -2167,6 +2174,184 @@ def test_save_army_persists_the_new_values(tmp_path):
     assert saved.quality == Quality.ELITE
     assert saved.kingdom_id is None
     assert saved.location == HexCoord(5, 3)
+    assert saved.commanded_by is None
+
+
+def test_army_edit_offers_only_leaders_at_the_armys_own_location(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    army = state.armies_at(home)[0]
+    # Excludes Kings specifically: a King's own name can coincidentally
+    # match his Kingdom's own name (e.g. this fixture's "Elara"), which
+    # would also appear in this same page's unrelated Kingdom dropdown.
+    elsewhere_leader = next(
+        leader for leader in state.leaders.values() if leader.location != home and not leader.is_king
+    )
+
+    response = client.get(f"/games/{meta.slug}/armies/{army.army_id}")
+
+    assert response.status_code == 200
+    assert "Aldric".encode() in response.data
+    assert elsewhere_leader.name.encode() not in response.data
+
+
+def test_save_army_can_assign_a_co_located_leader_as_commander(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    army = state.armies_at(home)[0]
+    leader = state.leaders_at(home)[0]
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={
+            "army_type": army.army_type.name,
+            "quality": army.quality.name,
+            "kingdom_id": str(army.kingdom_id) if army.kingdom_id is not None else "",
+            "location_x": str(home.x),
+            "location_y": str(home.y),
+            "commanded_by": str(leader.leader_id),
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.armies[army.army_id].commanded_by == leader.leader_id
+
+
+def test_save_army_rejects_a_commander_not_at_the_armys_own_location(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    army = state.armies_at(home)[0]
+    elsewhere_leader = next(leader for leader in state.leaders.values() if leader.location != home)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={
+            "army_type": army.army_type.name,
+            "quality": army.quality.name,
+            "kingdom_id": str(army.kingdom_id) if army.kingdom_id is not None else "",
+            "location_x": str(home.x),
+            "location_y": str(home.y),
+            "commanded_by": str(elsewhere_leader.leader_id),
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must already be at this Army" in response.data
+
+
+def test_save_army_can_clear_the_commander(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    army = state.armies_at(home)[0]
+    leader = state.leaders_at(home)[0]
+    client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={
+            "army_type": army.army_type.name,
+            "quality": army.quality.name,
+            "kingdom_id": str(army.kingdom_id) if army.kingdom_id is not None else "",
+            "location_x": str(home.x),
+            "location_y": str(home.y),
+            "commanded_by": str(leader.leader_id),
+        },
+    )
+
+    client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={
+            "army_type": army.army_type.name,
+            "quality": army.quality.name,
+            "kingdom_id": str(army.kingdom_id) if army.kingdom_id is not None else "",
+            "location_x": str(home.x),
+            "location_y": str(home.y),
+            "commanded_by": "",
+        },
+    )
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.armies[army.army_id].commanded_by is None
+
+
+def test_save_army_with_invalid_commander_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    army = state.armies_at(home)[0]
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={
+            "army_type": army.army_type.name,
+            "quality": army.quality.name,
+            "kingdom_id": str(army.kingdom_id) if army.kingdom_id is not None else "",
+            "location_x": str(home.x),
+            "location_y": str(home.y),
+            "commanded_by": "999999",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Commander" in response.data
+
+
+def test_save_army_leaves_a_stale_commander_untouched_by_an_unrelated_edit(tmp_path):
+    # If the Army's own current commander has since moved away, saving
+    # this form for an unrelated change (e.g. Quality) must not silently
+    # clear that still-recorded assignment -- only *assigning a new*
+    # Commander enforces co-location (army_save()'s own docstring note).
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    army = state.armies_at(home)[0]
+    leader = state.leaders_at(home)[0]
+    client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={
+            "army_type": army.army_type.name,
+            "quality": army.quality.name,
+            "kingdom_id": str(army.kingdom_id) if army.kingdom_id is not None else "",
+            "location_x": str(home.x),
+            "location_y": str(home.y),
+            "commanded_by": str(leader.leader_id),
+        },
+    )
+    _, state = open_game(tmp_path, meta.slug)
+    # Move the commander away without touching the Army at all.
+    state.leaders[leader.leader_id].location = HexCoord(home.x + 1, home.y)
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={
+            "army_type": army.army_type.name,
+            "quality": "ELITE",
+            "kingdom_id": str(army.kingdom_id) if army.kingdom_id is not None else "",
+            "location_x": str(home.x),
+            "location_y": str(home.y),
+            "commanded_by": str(leader.leader_id),
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    saved = state.armies[army.army_id]
+    assert saved.quality == Quality.ELITE
+    assert saved.commanded_by == leader.leader_id
 
 
 def test_save_army_with_invalid_army_type_shows_an_error_not_a_crash(tmp_path):

@@ -1191,6 +1191,16 @@ def create_app(games_root: Path | None = None) -> Flask:
         army = state.armies.get(army_id)
         if army is None:
             return redirect(url_for("armies_list", slug=slug, error="Army not found."))
+        # Phase 1033: the Commander dropdown only lists Heroes currently
+        # co-located with this Army (mirroring the real Pick_Up rule,
+        # turn/plan_dispatch.py) -- but if the Army's own current
+        # commander has since moved away, he's still included (flagged
+        # "not here" in the template) so an unrelated save of this form
+        # doesn't silently clear a pre-existing, still-valid assignment.
+        commanders = list(state.leaders_at(army.location))
+        current_commander = state.leaders.get(army.commanded_by) if army.commanded_by is not None else None
+        if current_commander is not None and current_commander not in commanders:
+            commanders.append(current_commander)
         return render_template(
             "army_edit.html",
             meta=meta,
@@ -1198,6 +1208,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             army=army,
             army_types=list(ArmyType),
             qualities=list(Quality),
+            commanders=commanders,
             error=request.args.get("error"),
         )
 
@@ -1242,10 +1253,30 @@ def create_app(games_root: Path | None = None) -> Flask:
         except ValueError:
             return _edit_error("Location must be whole numbers.")
 
+        commanded_by_raw = request.form.get("commanded_by", "").strip()
+        commanded_by: int | None
+        if commanded_by_raw:
+            try:
+                commanded_by = int(commanded_by_raw)
+            except ValueError:
+                return _edit_error("Please choose a valid Commander.")
+            if commanded_by not in state.leaders:
+                return _edit_error("Please choose a valid Commander.")
+            # Only enforce "must already be at this Army's own location"
+            # (the real Pick_Up rule, turn/plan_dispatch.py) when this
+            # save actually assigns a *new* commander -- an unrelated
+            # field edit must not fail just because an already-set
+            # commander has since moved away (see army_edit() above).
+            if commanded_by != army.commanded_by and state.leaders[commanded_by].location != HexCoord(x, y):
+                return _edit_error("A Commander must already be at this Army's own location.")
+        else:
+            commanded_by = None
+
         army.army_type = army_type
         army.quality = quality
         army.kingdom_id = kingdom_id
         army.location = HexCoord(x, y)
+        army.commanded_by = commanded_by
         save_game(root, slug, state)
         return redirect(url_for("army_edit", slug=slug, army_id=army_id))
 

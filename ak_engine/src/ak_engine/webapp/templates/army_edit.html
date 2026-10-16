@@ -42,6 +42,19 @@
       <input type="number" id="location_y" name="location_y" value="{{ army.location.y }}" required style="width: 6em;">
     </p>
 
+    <p>
+      <label for="commanded_by">Commander</label><br>
+      <select id="commanded_by" name="commanded_by">
+        <option value="" {% if army.commanded_by is none %}selected{% endif %}>-- None (unled) --</option>
+        {% for leader in commanders %}
+          <option value="{{ leader.leader_id }}" {% if army.commanded_by == leader.leader_id %}selected{% endif %}>
+            {{ leader.name }}{% if leader.location != army.location %} (not here){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">Only lists Heroes currently at this Army's own location -- a new Commander must already be here (the real Pick_Up rule).</span>
+    </p>
+
     <button type="submit">Save Army</button>
   </form>
 
