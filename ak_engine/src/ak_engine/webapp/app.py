@@ -26,6 +26,7 @@ from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, sorted_kingdom
 from ak_engine.models.enums import ABILITY_NAME, Ability
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, LeaderState, ProvinceState
+from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES, Monster
@@ -1078,6 +1079,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             treasures=list(Treasure),
             advanced_abilities=sorted(leader.advanced_abilities, key=lambda a: a.name),
             available_advanced_abilities=[a for a in AdvancedAbility if a not in leader.advanced_abilities],
+            skill_abilities=list(Ability),
             error=request.args.get("error"),
         )
 
@@ -1255,6 +1257,45 @@ def create_app(games_root: Path | None = None) -> Flask:
                 leader.advanced_abilities.discard(AdvancedAbility[ability_name])
             except KeyError:
                 pass
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
+    @app.post("/games/<slug>/leaders/<int:leader_id>/skills")
+    def leader_skills_save(slug: str, leader_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leader = state.leaders.get(leader_id)
+        if leader is None:
+            return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id, error=message))
+
+        # 15 (skill, aptitude) pairs, each 0-9 -- the real CTBOTH.PAS
+        # `skillrange = 0..9` bound (models/kingdom.py SkillTable's own
+        # Phase 21 docstring), not an invented limit.
+        raw_values = [0] * 31
+        for ability in Ability:
+            try:
+                skill = int(request.form.get(f"skill_{ability.name}", ""))
+                aptitude = int(request.form.get(f"aptitude_{ability.name}", ""))
+            except ValueError:
+                return _edit_error(f"{display_name(ability)}: skill/aptitude must be whole numbers.")
+            if not (0 <= skill <= 9) or not (0 <= aptitude <= 9):
+                return _edit_error(f"{display_name(ability)}: skill/aptitude must be 0-9.")
+            raw_values[ability.value * 2] = skill
+            raw_values[ability.value * 2 + 1] = aptitude
+
+        try:
+            trailing_value = int(request.form.get("trailing_value", ""))
+        except ValueError:
+            return _edit_error("The trailing value must be a whole number.")
+        raw_values[30] = trailing_value
+
+        leader.skills = SkillTable(raw_values=raw_values)
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 

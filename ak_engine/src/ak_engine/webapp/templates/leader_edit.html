@@ -154,4 +154,40 @@
   {% endif %}
 </div>
 
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Skills</h2>
+  {% if leader.skills is none %}
+    <p class="empty-state">No skill data recorded. Saving below starts one at all zero.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('leader_skills_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Ability</th>
+          <th>Skill (0-9)</th>
+          <th>Aptitude (0-9)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ability in skill_abilities %}
+          {% set pair = leader.skills.pair_for_ability(ability) if leader.skills is not none else (0, 0) %}
+          <tr>
+            <td>{{ ability|display_name }}</td>
+            <td><input type="number" name="skill_{{ ability.name }}" value="{{ pair[0] }}" min="0" max="9" style="width: 4em;"></td>
+            <td><input type="number" name="aptitude_{{ ability.name }}" value="{{ pair[1] }}" min="0" max="9" style="width: 4em;"></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <p>
+      <label for="trailing_value">Trailing Value (31st field)</label><br>
+      <input type="number" id="trailing_value" name="trailing_value" value="{{ leader.skills.raw_values[30] if leader.skills is not none else 0 }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Real field (the skill-values line's own 31st integer), but its meaning is still unconfirmed by this project -- empirically it tracks a King's own Alignment (Druidic 1, Neutral 2, everyone else 3), constant per Kingdom across turns. Not auto-derived here since this form also applies to Heroes.</span>
+    </p>
+
+    <button type="submit">Save Skills</button>
+  </form>
+</div>
+
 {% endblock %}

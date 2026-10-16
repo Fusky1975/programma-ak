@@ -2271,6 +2271,130 @@ def test_leader_edit_does_not_offer_an_already_held_advanced_ability_again(tmp_p
     assert b'value="TACTICAL_WARGAMES_MASTERY"' not in response.data
 
 
+def _skills_form_data(overrides=None, trailing_value=0):
+    from ak_engine.models.enums import Ability
+
+    data = {"trailing_value": str(trailing_value)}
+    overrides = overrides or {}
+    for ability in Ability:
+        skill, aptitude = overrides.get(ability, (0, 0))
+        data[f"skill_{ability.name}"] = str(skill)
+        data[f"aptitude_{ability.name}"] = str(aptitude)
+    return data
+
+
+def test_leader_edit_shows_the_current_skill_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert response.status_code == 200
+    assert b"No skill data recorded" not in response.data
+    assert b"Tactics" in response.data
+
+
+def test_leader_edit_shows_no_skill_data_message_for_a_fresh_hero(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(
+        f"/games/{meta.slug}/leaders/new",
+        data={"name": "New Hero", "race": "HUMAN", "location_x": "0", "location_y": "0"},
+    )
+    _, state = open_game(tmp_path, meta.slug)
+    fresh = max(state.leaders)
+    assert state.leaders[fresh].skills is None
+
+    response = client.get(f"/games/{meta.slug}/leaders/{fresh}")
+
+    assert response.status_code == 200
+    assert b"No skill data recorded" in response.data
+
+
+def test_leader_skills_save_persists_the_new_values(tmp_path):
+    from ak_engine.models.enums import Ability
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/skills",
+        data=_skills_form_data({Ability.TACTICAL: (5, 7)}, trailing_value=9),
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    skills = state.leaders[1].skills
+    assert skills.pair_for_ability(Ability.TACTICAL) == (5, 7)
+    assert skills.raw_values[30] == 9
+
+
+def test_leader_skills_save_initializes_skills_when_none(tmp_path):
+    from ak_engine.models.enums import Ability
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(
+        f"/games/{meta.slug}/leaders/new",
+        data={"name": "New Hero", "race": "HUMAN", "location_x": "0", "location_y": "0"},
+    )
+    _, state = open_game(tmp_path, meta.slug)
+    fresh = max(state.leaders)
+    assert state.leaders[fresh].skills is None
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/{fresh}/skills",
+        data=_skills_form_data({Ability.SAGE: (3, 4)}),
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[fresh].skills is not None
+    assert state.leaders[fresh].skills.pair_for_ability(Ability.SAGE) == (3, 4)
+
+
+def test_leader_skills_save_rejects_an_out_of_range_value(tmp_path):
+    from ak_engine.models.enums import Ability
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/skills",
+        data=_skills_form_data({Ability.TACTICAL: (10, 0)}),
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must be 0-9" in response.data
+
+
+def test_leader_skills_save_rejects_a_non_numeric_value(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    data = _skills_form_data()
+    data["skill_TACTICAL"] = "lots"
+
+    response = client.post(f"/games/{meta.slug}/leaders/1/skills", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"must be whole numbers" in response.data
+
+
+def test_leader_skills_save_missing_leader_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/999999/skills", data=_skills_form_data(), follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    assert b"Hero not found" in response.data
+
+
 def test_leader_delete_removes_a_hero(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
