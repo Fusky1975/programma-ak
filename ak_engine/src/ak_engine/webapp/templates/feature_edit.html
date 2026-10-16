@@ -67,6 +67,14 @@
       </select>
     </p>
 
+    <p>
+      <label><input type="checkbox" name="looted" {% if feature.looted %}checked{% endif %}> Looted (already sacked -- a Search here won't yield its Treasure again)</label>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="magically_hidden" {% if feature.magically_hidden %}checked{% endif %}> Magically Hidden</label>
+    </p>
+
     <button type="submit">Save Feature</button>
   </form>
 

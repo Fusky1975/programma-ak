@@ -2681,6 +2681,8 @@ def test_save_feature_persists_the_new_values(tmp_path):
             "treasure": "GOLD_HOARD_HUGE",
             "magic_location": "",
             "magic_power": "",
+            "looted": "on",
+            "magically_hidden": "on",
         },
         follow_redirects=True,
     )
@@ -2694,6 +2696,41 @@ def test_save_feature_persists_the_new_values(tmp_path):
     assert feature.treasure.name == "GOLD_HOARD_HUGE"
     assert feature.magic_location is None
     assert feature.magic_power is None
+    assert feature.looted is True
+    assert feature.magically_hidden is True
+
+
+def test_save_feature_can_clear_looted_and_magically_hidden(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+    client.post(
+        f"/games/{meta.slug}/features/{feature_id}",
+        data={"kind": "DUNGEON", "looted": "on", "magically_hidden": "on"},
+    )
+
+    client.post(f"/games/{meta.slug}/features/{feature_id}", data={"kind": "DUNGEON"})
+
+    _, state = open_game(tmp_path, meta.slug)
+    feature = state.features[feature_id]
+    assert feature.looted is False
+    assert feature.magically_hidden is False
+
+
+def test_feature_edit_shows_looted_and_magically_hidden_as_checked(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+    client.post(
+        f"/games/{meta.slug}/features/{feature_id}",
+        data={"kind": "DUNGEON", "looted": "on"},
+    )
+
+    response = client.get(f"/games/{meta.slug}/features/{feature_id}")
+
+    assert response.status_code == 200
+    assert b'name="looted" checked' in response.data
+    assert b'name="magically_hidden" checked' not in response.data
 
 
 def test_save_feature_with_invalid_kind_shows_an_error_not_a_crash(tmp_path):

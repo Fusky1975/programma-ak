@@ -1377,6 +1377,8 @@ def create_app(games_root: Path | None = None) -> Flask:
         feature.treasure = treasure
         feature.magic_location = magic_location
         feature.magic_power = magic_power
+        feature.looted = request.form.get("looted") == "on"
+        feature.magically_hidden = request.form.get("magically_hidden") == "on"
         save_game(root, slug, state)
         return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id))
 
