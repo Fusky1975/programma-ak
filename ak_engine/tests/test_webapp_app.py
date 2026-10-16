@@ -2673,6 +2673,94 @@ def test_leader_skills_save_missing_leader_shows_an_error_not_a_crash(tmp_path):
     assert b"Hero not found" in response.data
 
 
+def test_leader_effects_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/effects",
+        data={
+            "phantasmal_armies_level": "3",
+            "oratory_boosted_this_turn": "on",
+            "mystic_winds_active": "on",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    leader = state.leaders[1]
+    assert leader.phantasmal_armies_level == 3
+    assert leader.oratory_boosted_this_turn is True
+    assert leader.mystic_winds_active is True
+
+
+def test_leader_effects_save_can_clear_back_to_defaults(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(
+        f"/games/{meta.slug}/leaders/1/effects",
+        data={
+            "phantasmal_armies_level": "3",
+            "oratory_boosted_this_turn": "on",
+            "mystic_winds_active": "on",
+        },
+    )
+
+    client.post(f"/games/{meta.slug}/leaders/1/effects", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    leader = state.leaders[1]
+    assert leader.phantasmal_armies_level == 0
+    assert leader.oratory_boosted_this_turn is False
+    assert leader.mystic_winds_active is False
+
+
+def test_leader_effects_save_rejects_a_non_numeric_value(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/effects",
+        data={"phantasmal_armies_level": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must be a whole number" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[1].phantasmal_armies_level == 0
+
+
+def test_leader_effects_save_missing_leader_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/leaders/999999/effects", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Hero not found" in response.data
+
+
+def test_leader_effects_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/leaders/1/effects", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_leader_edit_shows_the_spell_effects_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert response.status_code == 200
+    assert b"Spell Effects" in response.data
+
+
 def test_leader_delete_removes_a_hero(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

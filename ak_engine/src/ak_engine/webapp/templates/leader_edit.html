@@ -85,6 +85,30 @@
 </div>
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Spell Effects</h2>
+  <p class="hex-map-legend-note">Lasting marks real casts leave on this Hero/King -- normally set by turn processing itself, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('leader_effects_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <p>
+      <label for="phantasmal_armies_level">Phantasmal Armies Level</label><br>
+      <input type="number" id="phantasmal_armies_level" name="phantasmal_armies_level" value="{{ leader.phantasmal_armies_level }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Boosts the apparent strength of every army this leader commands in battle; not auto-cleared.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="oratory_boosted_this_turn" {% if leader.oratory_boosted_this_turn %}checked{% endif %}> Oratory already boosted this turn</label>
+      <br><span class="hex-map-legend-note">Idempotency flag so a second Oratory cast the same turn is a no-op; cleared at the end of every gameturn.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="mystic_winds_active" {% if leader.mystic_winds_active %}checked{% endif %}> Mystic Winds active</label>
+      <br><span class="hex-map-legend-note">Cleared automatically the moment this leader gets involved in any military battle.</span>
+    </p>
+
+    <button type="submit">Save Spell Effects</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Items Held</h2>
   {% if items %}
     <ul class="game-list">

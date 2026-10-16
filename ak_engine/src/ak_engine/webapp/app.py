@@ -1252,6 +1252,32 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 
+    @app.post("/games/<slug>/leaders/<int:leader_id>/effects")
+    def leader_effects_save(slug: str, leader_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leader = state.leaders.get(leader_id)
+        if leader is None:
+            return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id, error=message))
+
+        raw = request.form.get("phantasmal_armies_level", "").strip()
+        try:
+            phantasmal_armies_level = int(raw) if raw else 0
+        except ValueError:
+            return _edit_error("Phantasmal Armies Level must be a whole number.")
+
+        leader.phantasmal_armies_level = phantasmal_armies_level
+        leader.oratory_boosted_this_turn = "oratory_boosted_this_turn" in request.form
+        leader.mystic_winds_active = "mystic_winds_active" in request.form
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
     @app.post("/games/<slug>/leaders/<int:leader_id>/delete")
     def leader_delete(slug: str, leader_id: int):
         root: Path = app.config["GAMES_ROOT"]
