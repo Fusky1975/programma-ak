@@ -6,9 +6,14 @@
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>{{ meta.name }} &mdash; Province ({{ province.coord.x }}, {{ province.coord.y }})</h2>
-  {% if province.name %}<p>{{ province.name }}</p>{% endif %}
 
   <form method="post" action="{{ url_for('province_save', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">
+    <p>
+      <label for="name">Name</label><br>
+      <input type="text" id="name" name="name" value="{{ province.name or '' }}" placeholder="(unnamed)">
+      <br><span class="hex-map-legend-note">The real host engine never generates this at runtime -- it's baked in by world generation, except for a Turn 1 Home-province rename order. Blank clears it.</span>
+    </p>
+
     <p>
       <label for="terrain">Terrain</label><br>
       <select id="terrain" name="terrain">

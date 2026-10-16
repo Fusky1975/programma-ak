@@ -1120,6 +1120,7 @@ def test_save_province_persists_the_new_values(tmp_path):
     response = client.post(
         f"/games/{meta.slug}/provinces/0/0",
         data={
+            "name": "Anglia",
             "terrain": "JUNGLE",
             "race": "TROLLISH",
             "owner_kingdom_id": "1",
@@ -1133,12 +1134,41 @@ def test_save_province_persists_the_new_values(tmp_path):
     assert response.status_code == 200
     _, state = open_game(tmp_path, meta.slug)
     province = state.provinces[HexCoord(0, 0)]
+    assert province.name == "Anglia"
     assert province.terrain.name == "JUNGLE"
     assert province.race.name == "TROLLISH"
     assert province.owner_kingdom_id == 1
     assert province.tax == 7
     assert province.recruit_type_1.name == "PHALANX"
     assert province.recruit_type_2 is None
+
+
+def test_save_province_can_clear_the_name(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(
+        f"/games/{meta.slug}/provinces/0/0",
+        data={"terrain": "PLAINS", "race": "HUMAN", "name": "Anglia"},
+    )
+
+    client.post(f"/games/{meta.slug}/provinces/0/0", data={"terrain": "PLAINS", "race": "HUMAN"})
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[HexCoord(0, 0)].name is None
+
+
+def test_province_edit_shows_the_current_name(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(
+        f"/games/{meta.slug}/provinces/0/0",
+        data={"terrain": "PLAINS", "race": "HUMAN", "name": "Anglia"},
+    )
+
+    response = client.get(f"/games/{meta.slug}/provinces/0/0")
+
+    assert response.status_code == 200
+    assert b'value="Anglia"' in response.data
 
 
 def test_save_province_can_clear_the_owner_back_to_unowned(tmp_path):

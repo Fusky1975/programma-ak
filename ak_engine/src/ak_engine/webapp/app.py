@@ -882,12 +882,15 @@ def create_app(games_root: Path | None = None) -> Flask:
         else:
             owner_kingdom_id = None
 
+        name_raw = request.form.get("name", "").strip()
+
         province.terrain = terrain
         province.race = race
         province.tax = tax
         province.recruit_type_1 = recruit_type_1
         province.recruit_type_2 = recruit_type_2
         province.owner_kingdom_id = owner_kingdom_id
+        province.name = name_raw or None
         save_game(root, slug, state)
         return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 
