@@ -1887,6 +1887,112 @@ def test_non_king_leader_edit_offers_a_kingdom_dropdown(tmp_path):
     assert b'name="kingdom_id"' in response.data
 
 
+def test_leader_edit_shows_no_items_for_a_hero_with_none(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert response.status_code == 200
+    assert b"No items held" in response.data
+
+
+def test_leader_item_create_adds_a_new_item(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/items/new",
+        data={"treasure": "GOLD_HOARD_HUGE", "charges": "3"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    items = state.items_held_by(1)
+    assert len(items) == 1
+    assert items[0].treasure.name == "GOLD_HOARD_HUGE"
+    assert items[0].charges == 3
+    assert b"Huge Hoard of Gold" in response.data
+
+
+def test_leader_item_create_defaults_charges_to_zero(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    client.post(f"/games/{meta.slug}/leaders/1/items/new", data={"treasure": "GOLD_HOARD_HUGE"})
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.items_held_by(1)[0].charges == 0
+
+
+def test_leader_item_create_with_invalid_treasure_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/items/new",
+        data={"treasure": "NOT_A_TREASURE"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Treasure" in response.data
+
+
+def test_leader_item_create_with_non_numeric_charges_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/items/new",
+        data={"treasure": "GOLD_HOARD_HUGE", "charges": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Charges must be a whole number" in response.data
+
+
+def test_leader_item_create_missing_leader_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/999999/items/new",
+        data={"treasure": "GOLD_HOARD_HUGE"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Hero not found" in response.data
+
+
+def test_leader_item_delete_removes_it(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(f"/games/{meta.slug}/leaders/1/items/new", data={"treasure": "GOLD_HOARD_HUGE"})
+    _, state = open_game(tmp_path, meta.slug)
+    item_id = state.items_held_by(1)[0].item_id
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/items/{item_id}/delete", follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert item_id not in state.items
+
+
+def test_leader_item_delete_missing_item_is_a_no_op(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/leaders/1/items/999999/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+
+
 def test_leader_delete_removes_a_hero(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -3406,5 +3512,11 @@ def test_leader_edit_shows_the_real_curated_race_name(tmp_path):
 
     response = client.get(f"/games/{meta.slug}/leaders/2")
 
-    assert b">Elf<" in response.data
-    assert b"Elven" not in response.data
+    # Scoped to the Race <select> specifically: a curated Treasure name
+    # elsewhere on this same page ("Bow of the Elven Kings," the Items
+    # Held panel's own Treasure dropdown) legitimately contains "Elven"
+    # as part of its own real, curated name -- not the bug this test
+    # guards against.
+    race_select = response.data.split(b'<select id="race" name="race">')[1].split(b"</select>")[0]
+    assert b">Elf<" in race_select
+    assert b"Elven" not in race_select

@@ -84,4 +84,39 @@
   </form>
 </div>
 
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Items Held</h2>
+  {% if items %}
+    <ul class="game-list">
+      {% for item in items %}
+        <li>
+          <div class="game-name">#{{ item.item_id }} &mdash; {{ item.treasure|display_name }}{% if item.charges %} ({{ item.charges }} charges){% endif %}</div>
+          <form class="inline" method="post"
+                action="{{ url_for('leader_item_delete', slug=meta.slug, leader_id=leader.leader_id, item_id=item.item_id) }}"
+                onsubmit="return confirm('Permanently remove this item from {{ leader.name }}?');">
+            <button type="submit" class="danger">Remove</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No items held.</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('leader_item_create', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <div class="inline">
+      <label for="treasure">Treasure</label>
+      <select id="treasure" name="treasure" required>
+        {% for treasure in treasures %}
+          <option value="{{ treasure.name }}">{{ treasure|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="charges">Charges</label>
+      <input type="number" id="charges" name="charges" value="0" min="0" style="width: 6em;">
+    </div>
+    <button type="submit">Add Item</button>
+  </form>
+</div>
+
 {% endblock %}

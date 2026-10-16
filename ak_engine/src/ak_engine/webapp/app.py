@@ -1007,6 +1007,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             alignments=PLAYABLE_ALIGNMENTS,
             tempers=list(Temper),
             sexes=list(Sex),
+            items=state.items_held_by(leader_id),
+            treasures=list(Treasure),
             error=request.args.get("error"),
         )
 
@@ -1107,6 +1109,49 @@ def create_app(games_root: Path | None = None) -> Flask:
             except ValueError:
                 pass
         return redirect(url_for("leaders_list", slug=slug))
+
+    @app.post("/games/<slug>/leaders/<int:leader_id>/items/new")
+    def leader_item_create(slug: str, leader_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        if leader_id not in state.leaders:
+            return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+
+        def _create_error(message: str):
+            return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id, error=message))
+
+        try:
+            treasure = Treasure[request.form.get("treasure", "")]
+        except KeyError:
+            return _create_error("Please choose a valid Treasure.")
+
+        charges_raw = request.form.get("charges", "").strip()
+        try:
+            charges = int(charges_raw) if charges_raw else 0
+        except ValueError:
+            return _create_error("Charges must be a whole number.")
+
+        # GameState.add_item() (models/item.py, Phase 140): a faithful,
+        # already-built primitive this project's own module docstring
+        # explicitly anticipated "a scenario-scripted grant" caller for --
+        # this is that caller.
+        state.add_item(treasure, leader_id, charges)
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
+    @app.post("/games/<slug>/leaders/<int:leader_id>/items/<int:item_id>/delete")
+    def leader_item_delete(slug: str, leader_id: int, item_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        state.remove_item(item_id)
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 
     @app.get("/games/<slug>/armies")
     def armies_list(slug: str):
