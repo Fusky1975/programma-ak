@@ -38,6 +38,7 @@ from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_NAME, Tr
 from ak_engine.turn.combat import QUALITY_NAME, Quality
 from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
+from ak_engine.turn.sea_transport import board_army, disembark_army
 from ak_engine.webapp.games import (
     DuplicateGameNameError,
     GameNotFoundError,
@@ -1350,6 +1351,14 @@ def create_app(games_root: Path | None = None) -> Flask:
         current_commander = state.leaders.get(army.commanded_by) if army.commanded_by is not None else None
         if current_commander is not None and current_commander not in commanders:
             commanders.append(current_commander)
+        # Candidate carriers for the Transport panel: every other Army
+        # co-located with this one -- turn/sea_transport.py board_army()
+        # itself rejects anything illegal (wrong cargo type, full
+        # capacity, not actually a carrier), so the dropdown doesn't need
+        # to pre-filter by ArmyType; a rejected attempt just surfaces
+        # board_army()'s own False return as a plain error message.
+        carrier_candidates = [a for a in state.armies_at(army.location) if a.army_id != army.army_id]
+        current_carrier = state.armies.get(army.transported_by) if army.transported_by is not None else None
         return render_template(
             "army_edit.html",
             meta=meta,
@@ -1358,6 +1367,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             army_types=list(ArmyType),
             qualities=list(Quality),
             commanders=commanders,
+            carrier_candidates=carrier_candidates,
+            current_carrier=current_carrier,
             error=request.args.get("error"),
         )
 
@@ -1428,6 +1439,51 @@ def create_app(games_root: Path | None = None) -> Flask:
         army.commanded_by = commanded_by
         army.is_skeletal = request.form.get("is_skeletal") == "on"
         army.plague_immune = request.form.get("plague_immune") == "on"
+        save_game(root, slug, state)
+        return redirect(url_for("army_edit", slug=slug, army_id=army_id))
+
+    @app.post("/games/<slug>/armies/<int:army_id>/board")
+    def army_board(slug: str, army_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        if army_id not in state.armies:
+            return redirect(url_for("armies_list", slug=slug, error="Army not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("army_edit", slug=slug, army_id=army_id, error=message))
+
+        try:
+            carrier_id = int(request.form.get("carrier_id", ""))
+        except ValueError:
+            return _edit_error("Please choose a valid Carrier.")
+        if carrier_id not in state.armies:
+            return _edit_error("Please choose a valid Carrier.")
+
+        # board_army() (turn/sea_transport.py) is the one real primitive
+        # for this -- it already enforces every real legality rule
+        # (co-located, not already boarded, carrier has room, cargo type
+        # is actually eligible for this carrier). A GM editor doesn't get
+        # the Druidic caster capacity bonuses (those are a spell-cast
+        # context this action has none of), so both default to False.
+        if not board_army(state, army_id, carrier_id):
+            return _edit_error(
+                "Can't board there -- not co-located with that Army, already boarded elsewhere, "
+                "or illegal/full for that Carrier."
+            )
+        save_game(root, slug, state)
+        return redirect(url_for("army_edit", slug=slug, army_id=army_id))
+
+    @app.post("/games/<slug>/armies/<int:army_id>/disembark")
+    def army_disembark(slug: str, army_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        disembark_army(state, army_id)
         save_game(root, slug, state)
         return redirect(url_for("army_edit", slug=slug, army_id=army_id))
 

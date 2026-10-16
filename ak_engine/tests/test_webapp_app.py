@@ -2616,6 +2616,163 @@ def test_army_edit_shows_is_skeletal_and_plague_immune_as_checked(tmp_path):
     assert b'name="plague_immune" checked' not in response.data
 
 
+def _add_army(state, army_type, location, kingdom_id=None):
+    from ak_engine.models.game_state import ArmyState
+
+    army = ArmyState(
+        army_id=state.new_army_id(),
+        kingdom_id=kingdom_id,
+        army_type=army_type,
+        quality=Quality.AVERAGE,
+        location=location,
+    )
+    state.add_army(army)
+    return army
+
+
+def test_army_edit_shows_not_boarded_for_a_fresh_army(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+
+    response = client.get(f"/games/{meta.slug}/armies/{army.army_id}")
+
+    assert response.status_code == 200
+    assert b"Not boarded on anything" in response.data
+
+
+def test_army_board_boards_onto_a_legal_carrier(tmp_path):
+    from ak_engine.models.army_type import ArmyType
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    coord = next(iter(state.provinces))
+    carrier = _add_army(state, ArmyType.FLEET, coord)
+    cargo = _add_army(state, ArmyType.LEGION, coord)
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{cargo.army_id}/board",
+        data={"carrier_id": str(carrier.army_id)},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.armies[cargo.army_id].transported_by == carrier.army_id
+    assert b"Boarded on" in response.data
+
+
+def test_army_board_rejects_an_illegal_carrier(tmp_path):
+    from ak_engine.models.army_type import ArmyType
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    coord = next(iter(state.provinces))
+    not_a_carrier = _add_army(state, ArmyType.LEGION, coord)
+    cargo = _add_army(state, ArmyType.LEGION, coord)
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{cargo.army_id}/board",
+        data={"carrier_id": str(not_a_carrier.army_id)},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Can&#39;t board there" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.armies[cargo.army_id].transported_by is None
+
+
+def test_army_board_rejects_a_non_co_located_carrier(tmp_path):
+    from ak_engine.models.army_type import ArmyType
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    coords = iter(state.provinces)
+    coord_a, coord_b = next(coords), next(coords)
+    carrier = _add_army(state, ArmyType.FLEET, coord_a)
+    cargo = _add_army(state, ArmyType.LEGION, coord_b)
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{cargo.army_id}/board",
+        data={"carrier_id": str(carrier.army_id)},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Can&#39;t board there" in response.data
+
+
+def test_army_board_with_invalid_carrier_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army_id = next(iter(state.armies))
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army_id}/board",
+        data={"carrier_id": "999999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Carrier" in response.data
+
+
+def test_army_board_missing_army_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army_id = next(iter(state.armies))
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/999999/board",
+        data={"carrier_id": str(army_id)},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Army not found" in response.data
+
+
+def test_army_disembark_removes_the_boarding(tmp_path):
+    from ak_engine.models.army_type import ArmyType
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    coord = next(iter(state.provinces))
+    carrier = _add_army(state, ArmyType.FLEET, coord)
+    cargo = _add_army(state, ArmyType.LEGION, coord)
+    cargo.transported_by = carrier.army_id
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.post(f"/games/{meta.slug}/armies/{cargo.army_id}/disembark", follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.armies[cargo.army_id].transported_by is None
+    assert b"Not boarded on anything" in response.data
+
+
+def test_army_disembark_an_unboarded_army_is_a_no_op(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army_id = next(iter(state.armies))
+
+    response = client.post(f"/games/{meta.slug}/armies/{army_id}/disembark", follow_redirects=True)
+
+    assert response.status_code == 200
+
+
 def test_army_edit_offers_only_leaders_at_the_armys_own_location(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

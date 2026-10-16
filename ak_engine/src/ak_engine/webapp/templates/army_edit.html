@@ -72,4 +72,30 @@
   </form>
 </div>
 
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Transport</h2>
+  {% if current_carrier %}
+    <p>Boarded on <strong>{{ current_carrier.army_type|display_name }} (#{{ current_carrier.army_id }})</strong>.</p>
+    <form method="post" action="{{ url_for('army_disembark', slug=meta.slug, army_id=army.army_id) }}">
+      <button type="submit">Disembark</button>
+    </form>
+  {% else %}
+    <p class="empty-state">Not boarded on anything.</p>
+    {% if carrier_candidates %}
+      <form method="post" action="{{ url_for('army_board', slug=meta.slug, army_id=army.army_id) }}">
+        <div class="inline">
+          <label for="carrier_id">Board onto</label>
+          <select id="carrier_id" name="carrier_id" required>
+            {% for carrier in carrier_candidates %}
+              <option value="{{ carrier.army_id }}">{{ carrier.army_type|display_name }} (#{{ carrier.army_id }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit">Board</button>
+      </form>
+      <p class="hex-map-legend-note">Only lists Armies co-located with this one -- boarding also needs the chosen Carrier to actually have room and accept this cargo type (Fleet/Whale rules); an illegal choice shows an error rather than silently failing.</p>
+    {% endif %}
+  {% endif %}
+</div>
+
 {% endblock %}
