@@ -97,6 +97,42 @@ def test_delete_unknown_game_shows_an_error_not_a_crash(tmp_path):
     assert b"Game not found" in response.data
 
 
+def test_rename_game_via_form_persists_it(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.post(
+        f"/games/{meta.slug}/rename", data={"name": "The Four Kingdoms War"}, follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    (saved,) = list_games(tmp_path)
+    assert saved.name == "The Four Kingdoms War"
+    assert saved.slug == meta.slug  # the slug/directory stays fixed
+    assert b"The Four Kingdoms War" in response.data
+
+
+def test_rename_game_with_blank_name_shows_an_error_not_a_crash(tmp_path):
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+
+    response = client.post(f"/games/{meta.slug}/rename", data={"name": "   "}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"enter a game name" in response.data
+    (saved,) = list_games(tmp_path)
+    assert saved.name == "Third Campaign"
+
+
+def test_rename_unknown_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/rename", data={"name": "New Name"}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
 def test_font_size_base_is_at_least_18px_in_the_stylesheet(tmp_path):
     # The interface's own stated requirement -- guard it with a real test
     # rather than trusting the CSS was never edited down.

@@ -16,6 +16,10 @@
               {{ game.kingdom_count }} Kingdom{{ '' if game.kingdom_count == 1 else 's' }} &middot;
               created on {{ game.created_at[:10] }}
             </div>
+            <form class="inline" method="post" action="{{ url_for('games_rename', slug=game.slug) }}">
+              <input type="text" name="name" value="{{ game.name }}" required style="width: 16em;">
+              <button type="submit">Rename</button>
+            </form>
           </div>
           <div style="display: flex; gap: 0.5rem;">
             <a class="button" href="{{ url_for('players_setup', slug=game.slug) }}">Open</a>

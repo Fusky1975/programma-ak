@@ -275,6 +275,24 @@ def create_app(games_root: Path | None = None) -> Flask:
             return redirect(url_for("games_list", error="Game not found."))
         return redirect(url_for("games_list"))
 
+    @app.post("/games/<slug>/rename")
+    def games_rename(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        name = request.form.get("name", "").strip()
+        if not name:
+            return redirect(url_for("games_list", error="Please enter a game name."))
+        # Renames the display name only -- the slug (and its on-disk
+        # directory) stays fixed, so every existing bookmark/link into
+        # this game keeps working. save_game()'s own meta_overrides is
+        # the one real primitive for this (create_game() already uses it
+        # for the initial name); no new games.py code needed.
+        save_game(root, slug, state, meta_overrides={"name": name})
+        return redirect(url_for("games_list"))
+
     @app.get("/games/<slug>/players")
     def players_setup(slug: str):
         root: Path = app.config["GAMES_ROOT"]
