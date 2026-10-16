@@ -119,4 +119,39 @@
   </form>
 </div>
 
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Advanced Abilities</h2>
+  <p class="hex-map-legend-note">Ordinarily granted automatically by Practice at skill levels 5-9 within a category (only the 5 magic colleges are wired to do so yet) -- this lets the GM grant or revoke one directly, e.g. for the other 10 categories, or for a one-off scenario.</p>
+  {% if advanced_abilities %}
+    <ul class="game-list">
+      {% for ability in advanced_abilities %}
+        <li>
+          <div class="game-name">{{ ability|display_name }}</div>
+          <form class="inline" method="post"
+                action="{{ url_for('leader_advanced_ability_delete', slug=meta.slug, leader_id=leader.leader_id, ability_name=ability.name) }}"
+                onsubmit="return confirm('Revoke {{ ability|display_name }} from {{ leader.name }}?');">
+            <button type="submit" class="danger">Remove</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No Advanced Abilities held.</p>
+  {% endif %}
+
+  {% if available_advanced_abilities %}
+    <form method="post" action="{{ url_for('leader_advanced_ability_create', slug=meta.slug, leader_id=leader.leader_id) }}">
+      <div class="inline">
+        <label for="advanced_ability">Advanced Ability</label>
+        <select id="advanced_ability" name="advanced_ability" required>
+          {% for ability in available_advanced_abilities %}
+            <option value="{{ ability.name }}">{{ ability|display_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit">Add Advanced Ability</button>
+    </form>
+  {% endif %}
+</div>
+
 {% endblock %}

@@ -19,6 +19,7 @@ from pathlib import Path
 
 from flask import Flask, Response, redirect, render_template, request, url_for
 
+from ak_engine.models.advanced_ability import ADVANCED_ABILITY_NAME, AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, sorted_kingdom_discoveries
@@ -214,6 +215,7 @@ _ENUM_DISPLAY_NAMES: dict[type, dict] = {
     Ability: ABILITY_NAME,
     Quality: QUALITY_NAME,
     Discovery: DISCOVERY_NAME,
+    AdvancedAbility: ADVANCED_ABILITY_NAME,
 }
 
 
@@ -1052,6 +1054,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             sexes=list(Sex),
             items=state.items_held_by(leader_id),
             treasures=list(Treasure),
+            advanced_abilities=sorted(leader.advanced_abilities, key=lambda a: a.name),
+            available_advanced_abilities=[a for a in AdvancedAbility if a not in leader.advanced_abilities],
             error=request.args.get("error"),
         )
 
@@ -1193,6 +1197,42 @@ def create_app(games_root: Path | None = None) -> Flask:
         except GameNotFoundError:
             return redirect(url_for("games_list", error="Game not found."))
         state.remove_item(item_id)
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
+    @app.post("/games/<slug>/leaders/<int:leader_id>/advanced-abilities/new")
+    def leader_advanced_ability_create(slug: str, leader_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leader = state.leaders.get(leader_id)
+        if leader is None:
+            return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+        try:
+            ability = AdvancedAbility[request.form.get("advanced_ability", "")]
+        except KeyError:
+            return redirect(
+                url_for("leader_edit", slug=slug, leader_id=leader_id, error="Please choose a valid Advanced Ability.")
+            )
+        leader.advanced_abilities.add(ability)
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
+    @app.post("/games/<slug>/leaders/<int:leader_id>/advanced-abilities/<ability_name>/delete")
+    def leader_advanced_ability_delete(slug: str, leader_id: int, ability_name: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leader = state.leaders.get(leader_id)
+        if leader is not None:
+            try:
+                leader.advanced_abilities.discard(AdvancedAbility[ability_name])
+            except KeyError:
+                pass
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.discovery import Discovery
@@ -2093,6 +2094,115 @@ def test_leader_item_delete_missing_item_is_a_no_op(tmp_path):
     response = client.post(f"/games/{meta.slug}/leaders/1/items/999999/delete", follow_redirects=True)
 
     assert response.status_code == 200
+
+
+def test_leader_edit_shows_no_advanced_abilities_for_a_new_hero(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert response.status_code == 200
+    assert b"No Advanced Abilities held" in response.data
+
+
+def test_leader_advanced_ability_create_adds_it(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/advanced-abilities/new",
+        data={"advanced_ability": "TACTICAL_WARGAMES_MASTERY"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert AdvancedAbility.TACTICAL_WARGAMES_MASTERY in state.leaders[1].advanced_abilities
+    assert b"Tactical Wargames Mastery" in response.data
+
+
+def test_leader_advanced_ability_create_with_invalid_ability_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/advanced-abilities/new",
+        data={"advanced_ability": "NOT_AN_ABILITY"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Advanced Ability" in response.data
+
+
+def test_leader_advanced_ability_create_missing_leader_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/999999/advanced-abilities/new",
+        data={"advanced_ability": "TACTICAL_WARGAMES_MASTERY"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Hero not found" in response.data
+
+
+def test_leader_advanced_ability_delete_removes_it(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(
+        f"/games/{meta.slug}/leaders/1/advanced-abilities/new",
+        data={"advanced_ability": "TACTICAL_WARGAMES_MASTERY"},
+    )
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/advanced-abilities/TACTICAL_WARGAMES_MASTERY/delete",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert AdvancedAbility.TACTICAL_WARGAMES_MASTERY not in state.leaders[1].advanced_abilities
+
+
+def test_leader_advanced_ability_delete_missing_ability_is_a_no_op(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/advanced-abilities/NOT_AN_ABILITY/delete", follow_redirects=True
+    )
+
+    assert response.status_code == 200
+
+
+def test_leader_advanced_ability_delete_missing_leader_is_a_no_op(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/999999/advanced-abilities/TACTICAL_WARGAMES_MASTERY/delete",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+
+
+def test_leader_edit_does_not_offer_an_already_held_advanced_ability_again(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(
+        f"/games/{meta.slug}/leaders/1/advanced-abilities/new",
+        data={"advanced_ability": "TACTICAL_WARGAMES_MASTERY"},
+    )
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert response.status_code == 200
+    assert b'value="TACTICAL_WARGAMES_MASTERY"' not in response.data
 
 
 def test_leader_delete_removes_a_hero(tmp_path):
