@@ -825,11 +825,24 @@ def create_app(games_root: Path | None = None) -> Flask:
         except KeyError:
             return _edit_error("Please choose valid recruitable unit types.")
 
+        owner_raw = request.form.get("owner_kingdom_id", "").strip()
+        owner_kingdom_id: int | None
+        if owner_raw:
+            try:
+                owner_kingdom_id = int(owner_raw)
+            except ValueError:
+                return _edit_error("Please choose a valid Owner.")
+            if owner_kingdom_id not in state.kingdoms:
+                return _edit_error("Please choose a valid Owner.")
+        else:
+            owner_kingdom_id = None
+
         province.terrain = terrain
         province.race = race
         province.tax = tax
         province.recruit_type_1 = recruit_type_1
         province.recruit_type_2 = recruit_type_2
+        province.owner_kingdom_id = owner_kingdom_id
         save_game(root, slug, state)
         return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 

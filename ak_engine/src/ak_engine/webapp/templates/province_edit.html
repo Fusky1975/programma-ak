@@ -28,6 +28,16 @@
     </p>
 
     <p>
+      <label for="owner_kingdom_id">Owner</label><br>
+      <select id="owner_kingdom_id" name="owner_kingdom_id">
+        <option value="" {% if province.owner_kingdom_id is none %}selected{% endif %}>-- Unowned --</option>
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}" {% if province.owner_kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
       <label for="tax">Tax</label><br>
       <input type="number" id="tax" name="tax" value="{{ province.tax if province.tax is not none else '' }}">
     </p>
