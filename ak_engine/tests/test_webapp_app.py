@@ -1773,6 +1773,149 @@ def test_province_create_missing_game_shows_an_error_not_a_crash(tmp_path):
     assert b"Game not found" in response.data
 
 
+def test_world_resize_grows_the_board_and_fills_new_provinces(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    old_width, old_height = state.board_width, state.board_height
+    old_coord = HexCoord(0, 0)
+    before = state.provinces[old_coord]
+    before_terrain, before_race = before.terrain, before.race
+
+    response = client.post(
+        f"/games/{meta.slug}/world/resize",
+        data={
+            "new_width": str(old_width + 2),
+            "new_height": str(old_height + 3),
+            "terrain": "MTNS",
+            "race": "DWARVEN",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.board_width == old_width + 2
+    assert state.board_height == old_height + 3
+    # Every cell in the newly exposed strip is filled...
+    new_coord = HexCoord(old_width, 0)
+    assert state.provinces[new_coord].terrain == Terrain.MTNS
+    assert state.provinces[new_coord].race == Race.DWARVEN
+    new_corner = HexCoord(old_width + 1, old_height + 2)
+    assert new_corner in state.provinces
+    # ...but nothing within the old bounds was touched.
+    assert state.provinces[old_coord].terrain == before_terrain
+    assert state.provinces[old_coord].race == before_race
+
+
+def test_world_resize_does_not_refill_a_hole_inside_the_old_bounds(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    old_width, old_height = state.board_width, state.board_height
+    (coord,) = _safe_province_coords(state, 1)
+    client.post(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/delete")
+    _, state = open_game(tmp_path, meta.slug)
+    assert coord not in state.provinces
+
+    client.post(
+        f"/games/{meta.slug}/world/resize",
+        data={
+            "new_width": str(old_width + 1),
+            "new_height": str(old_height),
+            "terrain": "MTNS",
+            "race": "DWARVEN",
+        },
+    )
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert coord not in state.provinces
+
+
+def test_world_resize_rejects_shrinking(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    old_width, old_height = state.board_width, state.board_height
+
+    response = client.post(
+        f"/games/{meta.slug}/world/resize",
+        data={
+            "new_width": str(old_width - 1),
+            "new_height": str(old_height),
+            "terrain": "PLAINS",
+            "race": "HUMAN",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Can&#39;t shrink the map" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.board_width == old_width
+    assert state.board_height == old_height
+
+
+def test_world_resize_with_non_numeric_dimensions_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/resize",
+        data={"new_width": "lots", "new_height": "10", "terrain": "PLAINS", "race": "HUMAN"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must be whole numbers" in response.data
+
+
+def test_world_resize_with_invalid_terrain_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    old_width = state.board_width
+
+    response = client.post(
+        f"/games/{meta.slug}/world/resize",
+        data={
+            "new_width": str(old_width + 1),
+            "new_height": str(state.board_height),
+            "terrain": "NOT_A_TERRAIN",
+            "race": "HUMAN",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid terrain" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.board_width == old_width
+
+
+def test_world_resize_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/games/does-not-exist/world/resize",
+        data={"new_width": "10", "new_height": "10", "terrain": "PLAINS", "race": "HUMAN"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_provinces_list_shows_the_resize_form(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/provinces")
+
+    assert response.status_code == 200
+    assert b"Resize Map" in response.data
+
+
 def test_leaders_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)

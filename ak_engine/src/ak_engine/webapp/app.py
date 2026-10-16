@@ -826,6 +826,57 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 
+    @app.post("/games/<slug>/world/resize")
+    def world_resize(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _resize_error(message: str):
+            return redirect(url_for("provinces_list", slug=slug, error=message))
+
+        try:
+            new_width = int(request.form.get("new_width", ""))
+            new_height = int(request.form.get("new_height", ""))
+        except ValueError:
+            return _resize_error("New width and height must be whole numbers.")
+
+        old_width, old_height = state.board_width, state.board_height
+        # Growing only -- shrinking would need to decide what happens to
+        # any Kingdom's Home, Army, Leader, or Feature sitting in the
+        # removed area (the same crash-risk question province_delete()
+        # already answers one province at a time); refused outright here
+        # rather than guessed at. Delete provinces individually first if
+        # a smaller map is really wanted.
+        if new_width < old_width or new_height < old_height:
+            return _resize_error(
+                f"Can't shrink the map (currently {old_width}x{old_height}) -- delete provinces "
+                "individually first if you want a smaller map."
+            )
+
+        try:
+            terrain = Terrain[request.form.get("terrain", "")]
+        except KeyError:
+            return _resize_error("Please choose a valid terrain.")
+        try:
+            race = Race[request.form.get("race", "")]
+        except KeyError:
+            return _resize_error("Please choose a valid race.")
+
+        for y in range(new_height):
+            for x in range(new_width):
+                if x < old_width and y < old_height:
+                    continue  # already within the old bounds -- any hole there is the GM's own earlier choice, not ours to fill
+                coord = HexCoord(x, y)
+                if coord not in state.provinces:
+                    state.add_province(ProvinceState(coord=coord, terrain=terrain, race=race))
+        state.board_width = new_width
+        state.board_height = new_height
+        save_game(root, slug, state)
+        return redirect(url_for("provinces_list", slug=slug))
+
     @app.get("/games/<slug>/provinces/<int:x>/<int:y>")
     def province_edit(slug: str, x: int, y: int):
         root: Path = app.config["GAMES_ROOT"]

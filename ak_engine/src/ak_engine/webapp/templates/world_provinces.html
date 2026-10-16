@@ -142,6 +142,35 @@
     <button type="submit">Add Province</button>
   </form>
 </div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Resize Map</h2>
+  <p class="hex-map-legend-note">Currently {{ state.board_width }}x{{ state.board_height }}. Growing only -- a new, larger width and/or height adds provinces of the chosen Terrain/Race to fill the newly exposed area; shrinking isn't supported here (it would need to decide what happens to anything already standing in the removed area), so delete provinces individually first if you want a smaller map.</p>
+  <form method="post" action="{{ url_for('world_resize', slug=meta.slug) }}">
+    <div class="inline">
+      <label for="new_width">New Width</label>
+      <input type="number" id="new_width" name="new_width" value="{{ state.board_width }}" min="{{ state.board_width }}" required style="width: 6em;">
+
+      <label for="new_height">New Height</label>
+      <input type="number" id="new_height" name="new_height" value="{{ state.board_height }}" min="{{ state.board_height }}" required style="width: 6em;">
+
+      <label for="resize_terrain">Terrain</label>
+      <select id="resize_terrain" name="terrain" required>
+        {% for terrain in terrains %}
+          <option value="{{ terrain.name }}">{{ terrain|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="resize_race">Race</label>
+      <select id="resize_race" name="race" required>
+        {% for race in races %}
+          <option value="{{ race.name }}">{{ race|display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit">Resize Map</button>
+  </form>
+</div>
 {% endif %}
 
 {% endblock %}
