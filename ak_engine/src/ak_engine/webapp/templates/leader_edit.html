@@ -6,7 +6,6 @@
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>{{ meta.name }} &mdash; {{ leader.name }}{% if leader.is_king %} (King){% endif %}</h2>
-  <p class="game-meta">Kingdom: {{ state.kingdoms[leader.kingdom_id].name if leader.kingdom_id in state.kingdoms else 'Independent' }} &middot; Location: ({{ leader.location.x }}, {{ leader.location.y }})</p>
 
   <form method="post" action="{{ url_for('leader_save', slug=meta.slug, leader_id=leader.leader_id) }}">
     <p>
@@ -51,6 +50,29 @@
           <option value="{{ sex.name }}" {% if leader.sex == sex %}selected{% endif %}>{{ sex|display_name }}</option>
         {% endfor %}
       </select>
+    </p>
+
+    {% if leader.is_king %}
+      <p>
+        <strong>Kingdom:</strong> {{ state.kingdoms[leader.kingdom_id].name if leader.kingdom_id in state.kingdoms else 'Independent' }}
+        <br><span class="hex-map-legend-note">A King's own service is locked to his own Kingdom -- not editable here.</span>
+      </p>
+    {% else %}
+      <p>
+        <label for="kingdom_id">Kingdom</label><br>
+        <select id="kingdom_id" name="kingdom_id">
+          <option value="" {% if leader.kingdom_id is none %}selected{% endif %}>-- Independent --</option>
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <option value="{{ kingdom_id }}" {% if leader.kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+          {% endfor %}
+        </select>
+      </p>
+    {% endif %}
+
+    <p>
+      <label for="location_x">Location (x, y)</label><br>
+      <input type="number" id="location_x" name="location_x" value="{{ leader.location.x }}" required style="width: 6em;">
+      <input type="number" id="location_y" name="location_y" value="{{ leader.location.y }}" required style="width: 6em;">
     </p>
 
     <button type="submit">Save Hero</button>

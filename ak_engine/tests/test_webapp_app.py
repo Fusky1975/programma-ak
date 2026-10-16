@@ -1631,7 +1631,15 @@ def test_save_leader_persists_the_new_values(tmp_path):
 
     response = client.post(
         f"/games/{meta.slug}/leaders/1",
-        data={"name": "Aldric the Wise", "race": "HUMAN", "alignment": "EVIL", "temper": "BERSERK", "sex": "MALE"},
+        data={
+            "name": "Aldric the Wise",
+            "race": "HUMAN",
+            "alignment": "EVIL",
+            "temper": "BERSERK",
+            "sex": "MALE",
+            "location_x": "3",
+            "location_y": "4",
+        },
         follow_redirects=True,
     )
 
@@ -1642,6 +1650,7 @@ def test_save_leader_persists_the_new_values(tmp_path):
     assert leader.alignment.name == "EVIL"
     assert leader.temper.name == "BERSERK"
     assert leader.sex.name == "MALE"
+    assert leader.location == HexCoord(3, 4)
 
 
 def test_save_leader_can_clear_optional_fields_back_to_unset(tmp_path):
@@ -1649,10 +1658,21 @@ def test_save_leader_can_clear_optional_fields_back_to_unset(tmp_path):
     meta = _game_with_world(tmp_path, client)
     client.post(
         f"/games/{meta.slug}/leaders/1",
-        data={"name": "Aldric", "race": "HUMAN", "alignment": "EVIL", "temper": "BERSERK", "sex": "MALE"},
+        data={
+            "name": "Aldric",
+            "race": "HUMAN",
+            "alignment": "EVIL",
+            "temper": "BERSERK",
+            "sex": "MALE",
+            "location_x": "0",
+            "location_y": "0",
+        },
     )
 
-    client.post(f"/games/{meta.slug}/leaders/1", data={"name": "Aldric", "race": "HUMAN"})
+    client.post(
+        f"/games/{meta.slug}/leaders/1",
+        data={"name": "Aldric", "race": "HUMAN", "location_x": "0", "location_y": "0"},
+    )
 
     _, state = open_game(tmp_path, meta.slug)
     leader = state.leaders[1]
@@ -1728,6 +1748,113 @@ def test_save_leader_missing_leader_shows_an_error_not_a_crash(tmp_path):
 
     assert response.status_code == 200
     assert b"Hero not found" in response.data
+
+
+def test_save_leader_can_relocate_and_reassign_a_hero_to_a_different_kingdom(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    hero = next(leader for leader in state.leaders.values() if not leader.is_king)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/{hero.leader_id}",
+        data={"name": hero.name, "race": hero.race.name, "kingdom_id": "2", "location_x": "5", "location_y": "3"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    saved = state.leaders[hero.leader_id]
+    assert saved.kingdom_id == 2
+    assert saved.location == HexCoord(5, 3)
+
+
+def test_save_leader_can_make_a_hero_independent(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    hero = next(leader for leader in state.leaders.values() if not leader.is_king)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/{hero.leader_id}",
+        data={"name": hero.name, "race": hero.race.name, "kingdom_id": "", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[hero.leader_id].kingdom_id is None
+
+
+def test_save_leader_with_invalid_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    hero = next(leader for leader in state.leaders.values() if not leader.is_king)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/{hero.leader_id}",
+        data={"name": hero.name, "race": hero.race.name, "kingdom_id": "999", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Kingdom" in response.data
+
+
+def test_save_leader_with_non_numeric_location_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1",
+        data={"name": "Aldric", "race": "HUMAN", "location_x": "nope", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Location must be whole numbers" in response.data
+
+
+def test_save_leader_cannot_move_a_king_out_of_his_own_kingdoms_service(tmp_path):
+    # A King's own kingdom_id is locked to his own leader_id project-wide
+    # -- leader_edit.html never offers the Kingdom field for a King, but
+    # a direct POST (bypassing the form) must still be guarded server-side.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1",
+        data={"name": "Aldric", "race": "HUMAN", "kingdom_id": "2", "location_x": "0", "location_y": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[1].kingdom_id == 1
+
+
+def test_king_leader_edit_does_not_offer_a_kingdom_dropdown(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert response.status_code == 200
+    assert b'name="kingdom_id"' not in response.data
+    assert b"locked to his own Kingdom" in response.data
+
+
+def test_non_king_leader_edit_offers_a_kingdom_dropdown(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    hero = next(leader for leader in state.leaders.values() if not leader.is_king)
+
+    response = client.get(f"/games/{meta.slug}/leaders/{hero.leader_id}")
+
+    assert response.status_code == 200
+    assert b'name="kingdom_id"' in response.data
 
 
 def test_leader_delete_removes_a_hero(tmp_path):

@@ -1028,11 +1028,38 @@ def create_app(games_root: Path | None = None) -> Flask:
         if alignment is not None and alignment not in PLAYABLE_ALIGNMENTS:
             return _edit_error("Please choose valid values.")
 
+        # A King's own kingdom_id is locked to his own leader_id (the
+        # project-wide "King resolves directly" convention, e.g.
+        # parser/gw_world.py's own docstring) -- leader_edit.html never
+        # offers the Kingdom field for a King, but guard it here too in
+        # case of a direct POST, rather than trusting the template alone.
+        if leader.is_king:
+            kingdom_id = leader.kingdom_id
+        else:
+            kingdom_id_raw = request.form.get("kingdom_id", "").strip()
+            if kingdom_id_raw:
+                try:
+                    kingdom_id = int(kingdom_id_raw)
+                except ValueError:
+                    return _edit_error("Please choose a valid Kingdom.")
+                if kingdom_id not in state.kingdoms:
+                    return _edit_error("Please choose a valid Kingdom.")
+            else:
+                kingdom_id = None
+
+        try:
+            x = int(request.form.get("location_x", ""))
+            y = int(request.form.get("location_y", ""))
+        except ValueError:
+            return _edit_error("Location must be whole numbers.")
+
         leader.name = name
         leader.race = race
         leader.alignment = alignment
         leader.temper = temper
         leader.sex = sex
+        leader.kingdom_id = kingdom_id
+        leader.location = HexCoord(x, y)
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 
