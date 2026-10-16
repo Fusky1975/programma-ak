@@ -660,6 +660,187 @@ def test_kingdom_delete_missing_game_shows_an_error_not_a_crash(tmp_path):
     assert b"Game not found" in response.data
 
 
+def test_kingdom_edit_shows_the_current_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/kingdoms/1")
+
+    assert response.status_code == 200
+    assert b'<select id="race" name="race">' in response.data
+    assert b"Aldric" in response.data
+
+
+def test_kingdom_edit_missing_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/kingdoms/999", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Kingdom not found" in response.data
+
+
+def test_kingdom_edit_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.get("/games/does-not-exist/kingdoms/1", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_kingdom_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1",
+        data={
+            "name": "New Aldria",
+            "race": "DWARVEN",
+            "alignment": "EVIL",
+            "treasury": "42",
+            "account_number": "7",
+            "king_title_prefix": "Lord",
+            "king_title_suffix": "of the Eastern Reach",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    kingdom = state.kingdoms[1]
+    assert kingdom.name == "New Aldria"
+    assert kingdom.race.name == "DWARVEN"
+    assert kingdom.alignment.name == "EVIL"
+    assert kingdom.treasury == 42
+    assert kingdom.account_number == 7
+    assert kingdom.king_title_prefix == "Lord"
+    assert kingdom.king_title_suffix == "of the Eastern Reach"
+
+
+def test_kingdom_save_with_empty_name_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1",
+        data={"name": "", "race": "HUMAN", "alignment": "GOOD", "treasury": "0", "account_number": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"enter a Kingdom name" in response.data
+
+
+def test_kingdom_save_with_invalid_race_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1",
+        data={"name": "Aldric", "race": "NOT_A_RACE", "alignment": "GOOD", "treasury": "0", "account_number": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid race" in response.data
+
+
+def test_kingdom_save_with_a_monster_only_race_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1",
+        data={"name": "Aldric", "race": "TROLLISH", "alignment": "GOOD", "treasury": "0", "account_number": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Human, Elven, Dwarven, or Orcish" in response.data
+
+
+def test_kingdom_save_with_invalid_alignment_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1",
+        data={"name": "Aldric", "race": "HUMAN", "alignment": "NOT_AN_ALIGNMENT", "treasury": "0", "account_number": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid alignment" in response.data
+
+
+def test_kingdom_save_with_non_numeric_treasury_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1",
+        data={"name": "Aldric", "race": "HUMAN", "alignment": "GOOD", "treasury": "lots", "account_number": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Treasury must be a whole number" in response.data
+
+
+def test_kingdom_save_with_non_numeric_account_number_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1",
+        data={"name": "Aldric", "race": "HUMAN", "alignment": "GOOD", "treasury": "0", "account_number": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Account number must be a whole number" in response.data
+
+
+def test_kingdom_save_missing_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/999",
+        data={"name": "Aldric", "race": "HUMAN", "alignment": "GOOD", "treasury": "0", "account_number": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Kingdom not found" in response.data
+
+
+def test_kingdom_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/games/does-not-exist/kingdoms/1",
+        data={"name": "Aldric", "race": "HUMAN", "alignment": "GOOD", "treasury": "0", "account_number": "0"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_world_setup_shows_an_edit_link_for_each_kingdom(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/world")
+
+    assert response.status_code == 200
+    assert f'/kingdoms/1"'.encode() in response.data
+
+
 def test_province_kingdom_new_shows_the_form_for_an_eligible_province(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

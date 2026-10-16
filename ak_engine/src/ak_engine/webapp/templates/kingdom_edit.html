@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ kingdom.name }} -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('world_setup', slug=meta.slug) }}">&larr; World</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; {{ kingdom.name }}</h2>
+  <p class="game-meta">Home province: ({{ kingdom.home_province.x }}, {{ kingdom.home_province.y }}) -- <a href="{{ url_for('province_edit', slug=meta.slug, x=kingdom.home_province.x, y=kingdom.home_province.y) }}">edit from the Province page</a>.</p>
+
+  <form method="post" action="{{ url_for('kingdom_save', slug=meta.slug, kingdom_id=kingdom.kingdom_id) }}">
+    <p>
+      <label for="name">Name</label><br>
+      <input type="text" id="name" name="name" value="{{ kingdom.name }}" required>
+    </p>
+
+    <p>
+      <label for="race">Race</label><br>
+      <select id="race" name="race">
+        {% for race in races %}
+          <option value="{{ race.name }}" {% if kingdom.race == race %}selected{% endif %}>{{ race|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="alignment">Alignment</label><br>
+      <select id="alignment" name="alignment">
+        {% for alignment in alignments %}
+          <option value="{{ alignment.name }}" {% if kingdom.alignment == alignment %}selected{% endif %}>{{ alignment|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="treasury">Treasury</label><br>
+      <input type="number" id="treasury" name="treasury" value="{{ kingdom.treasury }}" required>
+    </p>
+
+    <p>
+      <label for="account_number">Account Number</label><br>
+      <input type="number" id="account_number" name="account_number" value="{{ kingdom.account_number }}" required>
+      <br><span class="hex-map-legend-note">The real XK "account number" field -- plain bookkeeping, not a login/password.</span>
+    </p>
+
+    <p>
+      <label for="king_title_prefix">King's Title -- Prefix</label><br>
+      <input type="text" id="king_title_prefix" name="king_title_prefix" value="{{ kingdom.king_title_prefix }}" placeholder="e.g. Lord">
+    </p>
+
+    <p>
+      <label for="king_title_suffix">King's Title -- Suffix</label><br>
+      <input type="text" id="king_title_suffix" name="king_title_suffix" value="{{ kingdom.king_title_suffix }}" placeholder="e.g. Master of the Eastern Reach">
+      <br><span class="hex-map-legend-note">Flavor text only -- not derived from the Imperial Office/optional-titles system, and not required.</span>
+    </p>
+
+    <button type="submit">Save Kingdom</button>
+  </form>
+
+  <form method="post" action="{{ url_for('kingdom_delete', slug=meta.slug, kingdom_id=kingdom.kingdom_id) }}"
+        onsubmit="return confirm('Permanently delete the Kingdom of {{ kingdom.name }}? This also deletes its King and every Hero in its service and every Army it owns, and releases every province it owns back to unowned. This cannot be undone.');">
+    <button type="submit" class="danger">Delete Kingdom</button>
+  </form>
+</div>
+
+{% endblock %}

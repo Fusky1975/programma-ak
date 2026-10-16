@@ -15,10 +15,13 @@
             <div class="game-name">{{ kingdom.name }}</div>
             <div class="game-meta">{{ kingdom.race|display_name }} &middot; {{ kingdom.alignment|display_name }} &middot; Home at ({{ kingdom.home_province.x }}, {{ kingdom.home_province.y }})</div>
           </div>
-          <form class="inline" method="post" action="{{ url_for('kingdom_delete', slug=meta.slug, kingdom_id=kingdom_id) }}"
-                onsubmit="return confirm('Permanently delete the Kingdom of {{ kingdom.name }}? This also deletes its King and every Hero in its service and every Army it owns, and releases every province it owns back to unowned. This cannot be undone.');">
-            <button type="submit" class="danger">Delete</button>
-          </form>
+          <div style="display: flex; gap: 0.5rem;">
+            <a class="button" href="{{ url_for('kingdom_edit', slug=meta.slug, kingdom_id=kingdom_id) }}">Edit</a>
+            <form class="inline" method="post" action="{{ url_for('kingdom_delete', slug=meta.slug, kingdom_id=kingdom_id) }}"
+                  onsubmit="return confirm('Permanently delete the Kingdom of {{ kingdom.name }}? This also deletes its King and every Hero in its service and every Army it owns, and releases every province it owns back to unowned. This cannot be undone.');">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </div>
         </li>
       {% endfor %}
     </ul>

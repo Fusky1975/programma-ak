@@ -573,6 +573,74 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 
+    @app.get("/games/<slug>/kingdoms/<int:kingdom_id>")
+    def kingdom_edit(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        kingdom = state.kingdoms.get(kingdom_id)
+        if kingdom is None:
+            return redirect(url_for("world_setup", slug=slug, error="Kingdom not found."))
+        return render_template(
+            "kingdom_edit.html",
+            meta=meta,
+            state=state,
+            kingdom=kingdom,
+            races=PLAYABLE_RACES,
+            alignments=PLAYABLE_ALIGNMENTS,
+            error=request.args.get("error"),
+        )
+
+    @app.post("/games/<slug>/kingdoms/<int:kingdom_id>")
+    def kingdom_save(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        kingdom = state.kingdoms.get(kingdom_id)
+        if kingdom is None:
+            return redirect(url_for("world_setup", slug=slug, error="Kingdom not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("kingdom_edit", slug=slug, kingdom_id=kingdom_id, error=message))
+
+        name = request.form.get("name", "").strip()
+        if not name:
+            return _edit_error("Please enter a Kingdom name.")
+        try:
+            race = Race[request.form.get("race", "")]
+        except KeyError:
+            return _edit_error("Please choose a valid race.")
+        if race not in PLAYABLE_RACES:
+            return _edit_error("Kingdoms may only be Human, Elven, Dwarven, or Orcish.")
+        try:
+            alignment = Alignment[request.form.get("alignment", "")]
+        except KeyError:
+            return _edit_error("Please choose a valid alignment.")
+        if alignment not in PLAYABLE_ALIGNMENTS:
+            return _edit_error("Kingdoms may only be Divine, Good, Druidic, Neutral, Pagan, Evil, or Undead.")
+        try:
+            treasury = int(request.form.get("treasury", ""))
+        except ValueError:
+            return _edit_error("Treasury must be a whole number.")
+        try:
+            account_number = int(request.form.get("account_number", ""))
+        except ValueError:
+            return _edit_error("Account number must be a whole number.")
+
+        kingdom.name = name
+        kingdom.race = race
+        kingdom.alignment = alignment
+        kingdom.treasury = treasury
+        kingdom.account_number = account_number
+        kingdom.king_title_prefix = request.form.get("king_title_prefix", "").strip()
+        kingdom.king_title_suffix = request.form.get("king_title_suffix", "").strip()
+        save_game(root, slug, state)
+        return redirect(url_for("kingdom_edit", slug=slug, kingdom_id=kingdom_id))
+
     @app.post("/games/<slug>/kingdoms/<int:kingdom_id>/delete")
     def kingdom_delete(slug: str, kingdom_id: int):
         root: Path = app.config["GAMES_ROOT"]
