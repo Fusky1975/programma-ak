@@ -1272,9 +1272,22 @@ def create_app(games_root: Path | None = None) -> Flask:
         except ValueError:
             return _edit_error("Phantasmal Armies Level must be a whole number.")
 
+        target_raw = request.form.get("clairvoyance_cast_target", "").strip()
+        clairvoyance_cast_target: int | None
+        if target_raw:
+            try:
+                clairvoyance_cast_target = int(target_raw)
+            except ValueError:
+                return _edit_error("Please choose a valid Clairvoyance Target.")
+            if clairvoyance_cast_target not in state.leaders:
+                return _edit_error("Please choose a valid Clairvoyance Target.")
+        else:
+            clairvoyance_cast_target = None
+
         leader.phantasmal_armies_level = phantasmal_armies_level
         leader.oratory_boosted_this_turn = "oratory_boosted_this_turn" in request.form
         leader.mystic_winds_active = "mystic_winds_active" in request.form
+        leader.clairvoyance_cast_target = clairvoyance_cast_target
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 

@@ -2676,6 +2676,8 @@ def test_leader_skills_save_missing_leader_shows_an_error_not_a_crash(tmp_path):
 def test_leader_effects_save_persists_the_new_values(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    other_leader_id = next(leader_id for leader_id in state.leaders if leader_id != 1)
 
     response = client.post(
         f"/games/{meta.slug}/leaders/1/effects",
@@ -2683,6 +2685,7 @@ def test_leader_effects_save_persists_the_new_values(tmp_path):
             "phantasmal_armies_level": "3",
             "oratory_boosted_this_turn": "on",
             "mystic_winds_active": "on",
+            "clairvoyance_cast_target": str(other_leader_id),
         },
         follow_redirects=True,
     )
@@ -2693,17 +2696,21 @@ def test_leader_effects_save_persists_the_new_values(tmp_path):
     assert leader.phantasmal_armies_level == 3
     assert leader.oratory_boosted_this_turn is True
     assert leader.mystic_winds_active is True
+    assert leader.clairvoyance_cast_target == other_leader_id
 
 
 def test_leader_effects_save_can_clear_back_to_defaults(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    other_leader_id = next(leader_id for leader_id in state.leaders if leader_id != 1)
     client.post(
         f"/games/{meta.slug}/leaders/1/effects",
         data={
             "phantasmal_armies_level": "3",
             "oratory_boosted_this_turn": "on",
             "mystic_winds_active": "on",
+            "clairvoyance_cast_target": str(other_leader_id),
         },
     )
 
@@ -2714,6 +2721,23 @@ def test_leader_effects_save_can_clear_back_to_defaults(tmp_path):
     assert leader.phantasmal_armies_level == 0
     assert leader.oratory_boosted_this_turn is False
     assert leader.mystic_winds_active is False
+    assert leader.clairvoyance_cast_target is None
+
+
+def test_leader_effects_save_with_invalid_clairvoyance_target_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/effects",
+        data={"clairvoyance_cast_target": "999999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Clairvoyance Target" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[1].clairvoyance_cast_target is None
 
 
 def test_leader_effects_save_rejects_a_non_numeric_value(tmp_path):

@@ -104,6 +104,17 @@
       <br><span class="hex-map-legend-note">Cleared automatically the moment this leader gets involved in any military battle.</span>
     </p>
 
+    <p>
+      <label for="clairvoyance_cast_target">Clairvoyance Target</label><br>
+      <select id="clairvoyance_cast_target" name="clairvoyance_cast_target">
+        <option value="" {% if leader.clairvoyance_cast_target is none %}selected{% endif %}>-- None --</option>
+        {% for other_id, other in state.leaders.items() %}
+          <option value="{{ other_id }}" {% if leader.clairvoyance_cast_target == other_id %}selected{% endif %}>{{ other.name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">This leader's own most recent Clairvoyance cast -- who's watching whom reaches the CHARACTERS report only for a caster holding Enhanced Clairvoyance, checked at report time, not here.</span>
+    </p>
+
     <button type="submit">Save Spell Effects</button>
   </form>
 </div>
