@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TYPE_NAME, ArmyType
+from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
@@ -839,6 +840,107 @@ def test_world_setup_shows_an_edit_link_for_each_kingdom(tmp_path):
 
     assert response.status_code == 200
     assert f'/kingdoms/1"'.encode() in response.data
+
+
+def test_kingdom_edit_shows_no_discoveries_for_a_new_kingdom(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/kingdoms/1")
+
+    assert response.status_code == 200
+    assert b"No Discoveries known yet" in response.data
+
+
+def test_kingdom_discovery_create_adds_it(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1/discoveries/new",
+        data={"discovery": "GREEK_FIRE"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert Discovery.GREEK_FIRE in state.kingdoms[1].discoveries
+    assert b"Greek Fire" in response.data
+
+
+def test_kingdom_discovery_create_with_invalid_discovery_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1/discoveries/new",
+        data={"discovery": "NOT_A_DISCOVERY"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Discovery" in response.data
+
+
+def test_kingdom_discovery_create_missing_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/999999/discoveries/new",
+        data={"discovery": "GREEK_FIRE"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Kingdom not found" in response.data
+
+
+def test_kingdom_discovery_delete_removes_it(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(f"/games/{meta.slug}/kingdoms/1/discoveries/new", data={"discovery": "GREEK_FIRE"})
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1/discoveries/GREEK_FIRE/delete", follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert Discovery.GREEK_FIRE not in state.kingdoms[1].discoveries
+
+
+def test_kingdom_discovery_delete_missing_discovery_is_a_no_op(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1/discoveries/NOT_A_DISCOVERY/delete", follow_redirects=True
+    )
+
+    assert response.status_code == 200
+
+
+def test_kingdom_discovery_delete_missing_kingdom_is_a_no_op(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/999999/discoveries/GREEK_FIRE/delete", follow_redirects=True
+    )
+
+    assert response.status_code == 200
+
+
+def test_kingdom_edit_does_not_offer_an_already_known_discovery_again(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(f"/games/{meta.slug}/kingdoms/1/discoveries/new", data={"discovery": "GREEK_FIRE"})
+
+    response = client.get(f"/games/{meta.slug}/kingdoms/1")
+
+    assert response.status_code == 200
+    assert b'value="GREEK_FIRE"' not in response.data
 
 
 def test_province_kingdom_new_shows_the_form_for_an_eligible_province(tmp_path):

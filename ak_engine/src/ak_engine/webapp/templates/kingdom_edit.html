@@ -63,4 +63,39 @@
   </form>
 </div>
 
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Discoveries</h2>
+  <p class="hex-map-legend-note">The Sage secrets this Kingdom currently knows -- consumed by Scientific Treaty exchanges and shown in the ADVENTURE-turn report's own "Discoveries of the Sages" list, ordered the same way (highest exchange priority first).</p>
+  {% if discoveries %}
+    <ul class="game-list">
+      {% for discovery in discoveries %}
+        <li>
+          <div class="game-name">{{ discovery|display_name }}</div>
+          <form class="inline" method="post"
+                action="{{ url_for('kingdom_discovery_delete', slug=meta.slug, kingdom_id=kingdom.kingdom_id, discovery_name=discovery.name) }}"
+                onsubmit="return confirm('Remove {{ discovery|display_name }} from {{ kingdom.name }}?');">
+            <button type="submit" class="danger">Remove</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No Discoveries known yet.</p>
+  {% endif %}
+
+  {% if available_discoveries %}
+    <form method="post" action="{{ url_for('kingdom_discovery_create', slug=meta.slug, kingdom_id=kingdom.kingdom_id) }}">
+      <div class="inline">
+        <label for="discovery">Discovery</label>
+        <select id="discovery" name="discovery" required>
+          {% for discovery in available_discoveries %}
+            <option value="{{ discovery.name }}">{{ discovery|display_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit">Add Discovery</button>
+    </form>
+  {% endif %}
+</div>
+
 {% endblock %}

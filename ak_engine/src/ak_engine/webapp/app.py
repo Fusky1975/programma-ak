@@ -21,6 +21,7 @@ from flask import Flask, Response, redirect, render_template, request, url_for
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
+from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, sorted_kingdom_discoveries
 from ak_engine.models.enums import ABILITY_NAME, Ability
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, LeaderState, ProvinceState
@@ -212,6 +213,7 @@ _ENUM_DISPLAY_NAMES: dict[type, dict] = {
     Alignment: {member: member.value for member in Alignment},
     Ability: ABILITY_NAME,
     Quality: QUALITY_NAME,
+    Discovery: DISCOVERY_NAME,
 }
 
 
@@ -585,6 +587,7 @@ def create_app(games_root: Path | None = None) -> Flask:
         kingdom = state.kingdoms.get(kingdom_id)
         if kingdom is None:
             return redirect(url_for("world_setup", slug=slug, error="Kingdom not found."))
+        owned_discoveries = sorted_kingdom_discoveries(kingdom.discoveries)
         return render_template(
             "kingdom_edit.html",
             meta=meta,
@@ -592,6 +595,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             kingdom=kingdom,
             races=PLAYABLE_RACES,
             alignments=PLAYABLE_ALIGNMENTS,
+            discoveries=owned_discoveries,
+            available_discoveries=[d for d in Discovery if d not in kingdom.discoveries],
             error=request.args.get("error"),
         )
 
@@ -660,6 +665,42 @@ def create_app(games_root: Path | None = None) -> Flask:
             )
         save_game(root, slug, state)
         return redirect(url_for("world_setup", slug=slug))
+
+    @app.post("/games/<slug>/kingdoms/<int:kingdom_id>/discoveries/new")
+    def kingdom_discovery_create(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        kingdom = state.kingdoms.get(kingdom_id)
+        if kingdom is None:
+            return redirect(url_for("world_setup", slug=slug, error="Kingdom not found."))
+        try:
+            discovery = Discovery[request.form.get("discovery", "")]
+        except KeyError:
+            return redirect(
+                url_for("kingdom_edit", slug=slug, kingdom_id=kingdom_id, error="Please choose a valid Discovery.")
+            )
+        kingdom.discoveries.add(discovery)
+        save_game(root, slug, state)
+        return redirect(url_for("kingdom_edit", slug=slug, kingdom_id=kingdom_id))
+
+    @app.post("/games/<slug>/kingdoms/<int:kingdom_id>/discoveries/<discovery_name>/delete")
+    def kingdom_discovery_delete(slug: str, kingdom_id: int, discovery_name: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        kingdom = state.kingdoms.get(kingdom_id)
+        if kingdom is not None:
+            try:
+                kingdom.discoveries.discard(Discovery[discovery_name])
+            except KeyError:
+                pass
+        save_game(root, slug, state)
+        return redirect(url_for("kingdom_edit", slug=slug, kingdom_id=kingdom_id))
 
     @app.post("/games/<slug>/world")
     def world_create(slug: str):
