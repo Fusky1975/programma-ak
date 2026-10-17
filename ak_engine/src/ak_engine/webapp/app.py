@@ -1378,6 +1378,47 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 
+    @app.post("/games/<slug>/leaders/<int:leader_id>/history")
+    def leader_history_save(slug: str, leader_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leader = state.leaders.get(leader_id)
+        if leader is None:
+            return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id, error=message))
+
+        birth_x_raw = request.form.get("birth_x", "").strip()
+        birth_y_raw = request.form.get("birth_y", "").strip()
+        birth_x: int | None
+        birth_y: int | None
+        if birth_x_raw or birth_y_raw:
+            try:
+                birth_x = int(birth_x_raw)
+                birth_y = int(birth_y_raw)
+            except ValueError:
+                return _edit_error("Birth Coordinate needs both x and y as whole numbers.")
+        else:
+            birth_x = None
+            birth_y = None
+
+        hire_turn_raw = request.form.get("hire_turn", "").strip()
+        try:
+            hire_turn = int(hire_turn_raw) if hire_turn_raw else 0
+        except ValueError:
+            return _edit_error("Hire Turn must be a whole number.")
+
+        leader.birth_x = birth_x
+        leader.birth_y = birth_y
+        leader.is_starting_companion = "is_starting_companion" in request.form
+        leader.hire_turn = hire_turn
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
     @app.post("/games/<slug>/leaders/<int:leader_id>/delete")
     def leader_delete(slug: str, leader_id: int):
         root: Path = app.config["GAMES_ROOT"]

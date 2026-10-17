@@ -120,6 +120,32 @@
 </div>
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Origin &amp; Hire History</h2>
+  <p class="hex-map-legend-note">Real facts the Hero-pay formula reads -- normally set once at world generation or hire time, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('leader_history_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <p>
+      <label for="birth_x">Birth Coordinate (x, y)</label><br>
+      <input type="number" id="birth_x" name="birth_x" value="{{ leader.birth_x if leader.birth_x is not none else '' }}" style="width: 6em;">
+      <input type="number" id="birth_y" name="birth_y" value="{{ leader.birth_y if leader.birth_y is not none else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Feeds the required-pay formula's own personal-bias term and the "born in a province the King now owns" conquest surcharge. Leave both blank for not recorded.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="is_starting_companion" {% if leader.is_starting_companion %}checked{% endif %}> Starting Companion</label>
+      <br><span class="hex-map-legend-note">True only for one of a King's own two starting companions, placed directly into his service at world generation -- exempts this Hero from the conquest surcharge above even though he was born at the King's own Home.</span>
+    </p>
+
+    <p>
+      <label for="hire_turn">Hire Turn</label><br>
+      <input type="number" id="hire_turn" name="hire_turn" value="{{ leader.hire_turn }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">0 for a leader created at world generation (before turn 1 itself begins); the real GameState.turn_number at the moment a Hire order actually succeeded otherwise.</span>
+    </p>
+
+    <button type="submit">Save Origin &amp; Hire History</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Items Held</h2>
   {% if items %}
     <ul class="game-list">
