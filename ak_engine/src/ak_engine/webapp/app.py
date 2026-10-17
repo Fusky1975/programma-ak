@@ -64,6 +64,7 @@ from ak_engine.webapp.players import (
 )
 from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.diplomacy import set_relation
+from ak_engine.turn.encounter import MonsterTalkReply
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
 from ak_engine.webapp.kingdom_create import (
     NoProvinceAtCoordError,
@@ -1972,6 +1973,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             treasures=list(Treasure),
             magic_locations=list(MagicFeature),
             powers=list(Power),
+            talk_replies=list(MonsterTalkReply),
             error=request.args.get("error"),
         )
 
@@ -2052,8 +2054,19 @@ def create_app(games_root: Path | None = None) -> Flask:
             if level:
                 discovered_by_kingdom[kingdom_id] = level
 
+        reply_raw = request.form.get("guardian_talk_reply_id", "").strip()
+        guardian_talk_reply_id: int | None
+        if reply_raw:
+            try:
+                guardian_talk_reply_id = MonsterTalkReply[reply_raw].value
+            except KeyError:
+                return _edit_error("Please choose a valid Guardian Talk Reply.")
+        else:
+            guardian_talk_reply_id = None
+
         feature.pending_deal_leader_id = pending_deal_leader_id
         feature.discovered_by_kingdom = discovered_by_kingdom
+        feature.guardian_talk_reply_id = guardian_talk_reply_id
         save_game(root, slug, state)
         return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id))
 

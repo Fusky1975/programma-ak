@@ -99,6 +99,17 @@
       <br><span class="hex-map-legend-note">Which Hero/King currently holds a Talk-secured deal with this Feature's own guardian, pending a later turn's Fulfill.</span>
     </p>
 
+    <p>
+      <label for="guardian_talk_reply_id">Guardian Talk Reply</label><br>
+      <select id="guardian_talk_reply_id" name="guardian_talk_reply_id">
+        <option value="" {% if feature.guardian_talk_reply_id is none %}selected{% endif %}>-- Not yet resolved --</option>
+        {% for reply in talk_replies %}
+          <option value="{{ reply.name }}" {% if feature.guardian_talk_reply_id == reply.value %}selected{% endif %}>{{ reply|display_name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">This guardian's own fixed Talk reply, normally rolled once (deterministically) the first time a Hero successfully Talks to it, then reused for every later Talk. Set it directly to force a specific reply for this guardian; leave at "Not yet resolved" to let the next successful Talk roll it as usual.</span>
+    </p>
+
     {% if state.kingdoms %}
       <p><label>Discovered By Kingdom (0-3)</label></p>
       <table class="data-table">

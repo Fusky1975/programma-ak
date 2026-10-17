@@ -20,6 +20,7 @@ from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.encounter import MonsterTalkReply
 from ak_engine.webapp.app import create_app, display_name
 from ak_engine.webapp.games import create_game, list_games, open_game, save_game
 
@@ -4634,7 +4635,12 @@ def test_feature_status_save_persists_the_new_values(tmp_path):
 
     response = client.post(
         f"/games/{meta.slug}/features/{feature_id}/status",
-        data={"pending_deal_leader_id": str(leader_id), "discovered_1": "2", "discovered_2": "3"},
+        data={
+            "pending_deal_leader_id": str(leader_id),
+            "discovered_1": "2",
+            "discovered_2": "3",
+            "guardian_talk_reply_id": "R_RIDDLE",
+        },
         follow_redirects=True,
     )
 
@@ -4644,6 +4650,7 @@ def test_feature_status_save_persists_the_new_values(tmp_path):
     assert feature.pending_deal_leader_id == leader_id
     assert feature.discovered_by_kingdom.get(1) == 2
     assert feature.discovered_by_kingdom.get(2) == 3
+    assert feature.guardian_talk_reply_id == MonsterTalkReply.R_RIDDLE.value
 
 
 def test_feature_status_save_can_clear_back_to_defaults(tmp_path):
@@ -4654,7 +4661,11 @@ def test_feature_status_save_can_clear_back_to_defaults(tmp_path):
     leader_id = next(iter(state.leaders))
     client.post(
         f"/games/{meta.slug}/features/{feature_id}/status",
-        data={"pending_deal_leader_id": str(leader_id), "discovered_1": "2"},
+        data={
+            "pending_deal_leader_id": str(leader_id),
+            "discovered_1": "2",
+            "guardian_talk_reply_id": "R_RIDDLE",
+        },
     )
 
     client.post(f"/games/{meta.slug}/features/{feature_id}/status", data={})
@@ -4663,6 +4674,24 @@ def test_feature_status_save_can_clear_back_to_defaults(tmp_path):
     feature = state.features[feature_id]
     assert feature.pending_deal_leader_id is None
     assert feature.discovered_by_kingdom == {}
+    assert feature.guardian_talk_reply_id is None
+
+
+def test_feature_status_save_rejects_an_invalid_guardian_talk_reply(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+
+    response = client.post(
+        f"/games/{meta.slug}/features/{feature_id}/status",
+        data={"guardian_talk_reply_id": "NOT_A_REPLY"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Guardian Talk Reply" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.features[feature_id].guardian_talk_reply_id is None
 
 
 def test_feature_status_save_rejects_an_invalid_pending_deal_leader(tmp_path):
@@ -4748,6 +4777,7 @@ def test_feature_edit_shows_the_discovery_and_deal_status_panel(tmp_path):
 
     assert response.status_code == 200
     assert b"Discovery" in response.data and b"Deal Status" in response.data
+    assert b"Guardian Talk Reply" in response.data
 
 
 def test_turn_zero_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
