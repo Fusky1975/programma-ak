@@ -1424,6 +1424,34 @@ def test_provinces_list_shows_leaders_here_and_links_to_the_province(tmp_path):
     assert f'/provinces/{home.x}/{home.y}'.encode() in response.data
 
 
+def test_provinces_list_shows_a_delete_button_for_each_leader_here(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+
+    response = client.get(f"/games/{meta.slug}/provinces")
+
+    assert response.status_code == 200
+    assert b"/leaders/1/delete" in response.data
+
+
+def test_deleting_a_leader_from_the_provinces_list_returns_to_the_provinces_list(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    hero = next(leader for leader in state.leaders.values() if not leader.is_king)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/{hero.leader_id}/delete?return_to=provinces",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert hero.leader_id not in state.leaders
+    assert f"{meta.name} &mdash; Provinces".encode() in response.data
+
+
 def test_province_edit_shows_armies_here_with_a_delete_button(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -1494,6 +1522,37 @@ def test_provinces_list_shows_armies_here_and_links_to_the_province(tmp_path):
     assert response.status_code == 200
     assert ARMY_TYPE_NAME[army.army_type].encode() in response.data
     assert f'/provinces/{home.x}/{home.y}'.encode() in response.data
+
+
+def test_provinces_list_shows_a_delete_button_for_each_army_here(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    army = state.armies_at(home)[0]
+
+    response = client.get(f"/games/{meta.slug}/provinces")
+
+    assert response.status_code == 200
+    assert f"/armies/{army.army_id}/delete".encode() in response.data
+
+
+def test_deleting_an_army_from_the_provinces_list_returns_to_the_provinces_list(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    home = state.kingdoms[1].home_province
+    army = state.armies_at(home)[0]
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}/delete?return_to=provinces",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert army.army_id not in state.armies
+    assert f"{meta.name} &mdash; Provinces".encode() in response.data
 
 
 def test_province_edit_shows_features_here_with_a_delete_button(tmp_path):

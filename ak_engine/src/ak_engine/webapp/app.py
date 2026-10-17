@@ -1321,6 +1321,8 @@ def create_app(games_root: Path | None = None) -> Flask:
                 return redirect(url_for("province_edit", slug=slug, x=int(return_x), y=int(return_y)))
             except ValueError:
                 pass
+        if request.args.get("return_to") == "provinces":
+            return redirect(url_for("provinces_list", slug=slug))
         return redirect(url_for("leaders_list", slug=slug))
 
     @app.post("/games/<slug>/leaders/<int:leader_id>/items/new")
@@ -1690,6 +1692,8 @@ def create_app(games_root: Path | None = None) -> Flask:
                 return redirect(url_for("province_edit", slug=slug, x=int(return_x), y=int(return_y)))
             except ValueError:
                 pass
+        if request.args.get("return_to") == "provinces":
+            return redirect(url_for("provinces_list", slug=slug))
         return redirect(url_for("armies_list", slug=slug))
 
     @app.get("/games/<slug>/features")

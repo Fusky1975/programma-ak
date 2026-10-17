@@ -79,14 +79,36 @@
             <td>{{ province.recruit_type_2|display_name if province.recruit_type_2 else '--' }}</td>
             <td>
               {% if leaders_here %}
-                <a href="{{ url_for('province_edit', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">{{ leaders_here|map(attribute='name')|join(', ') }}</a>
+                <ul style="list-style: none; margin: 0; padding: 0;">
+                  {% for leader in leaders_here %}
+                    <li style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem;">
+                      <a href="{{ url_for('leader_edit', slug=meta.slug, leader_id=leader.leader_id) }}">{{ leader.name }}{% if leader.is_king %} (King){% endif %}</a>
+                      <form class="inline" method="post"
+                            action="{{ url_for('leader_delete', slug=meta.slug, leader_id=leader.leader_id, return_to='provinces') }}"
+                            onsubmit="return confirm('Permanently delete {{ leader.name }}?{% if leader.is_king %} This King rules a Kingdom -- deleting him leaves it without a King (no Royal Heir is installed, unlike an in-game death).{% endif %}');">
+                        <button type="submit" class="danger">Delete</button>
+                      </form>
+                    </li>
+                  {% endfor %}
+                </ul>
               {% else %}
                 --
               {% endif %}
             </td>
             <td>
               {% if armies_here %}
-                <a href="{{ url_for('province_edit', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">{{ armies_here|map(attribute='army_type')|map('display_name')|join(', ') }}</a>
+                <ul style="list-style: none; margin: 0; padding: 0;">
+                  {% for army in armies_here %}
+                    <li style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem;">
+                      <a href="{{ url_for('army_edit', slug=meta.slug, army_id=army.army_id) }}">{{ army.army_type|display_name }}</a>
+                      <form class="inline" method="post"
+                            action="{{ url_for('army_delete', slug=meta.slug, army_id=army.army_id, return_to='provinces') }}"
+                            onsubmit="return confirm('Permanently delete this {{ army.army_type|display_name }} Army?');">
+                        <button type="submit" class="danger">Delete</button>
+                      </form>
+                    </li>
+                  {% endfor %}
+                </ul>
               {% else %}
                 --
               {% endif %}
