@@ -1142,6 +1142,38 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 
+    @app.post("/games/<slug>/provinces/<int:x>/<int:y>/recruitment")
+    def province_recruitment_save(slug: str, x: int, y: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        coord = HexCoord(x, y)
+        province = state.provinces.get(coord)
+        if province is None:
+            return redirect(url_for("provinces_list", slug=slug, error="Province not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("province_edit", slug=slug, x=x, y=y, error=message))
+
+        recruited_this_turn: dict[ArmyType, int] = {}
+        for army_type in ArmyType:
+            raw = request.form.get(f"recruited_{army_type.name}", "").strip()
+            try:
+                count = int(raw) if raw else 0
+            except ValueError:
+                return _edit_error("Recruited counts must be whole numbers.")
+            if count < 0:
+                return _edit_error("Recruited counts can't be negative.")
+            if count:
+                recruited_this_turn[army_type] = count
+
+        province.recruited_this_turn = recruited_this_turn
+        province.recruit_locked_this_turn = "recruit_locked_this_turn" in request.form
+        save_game(root, slug, state)
+        return redirect(url_for("province_edit", slug=slug, x=x, y=y))
+
     @app.post("/games/<slug>/provinces/<int:x>/<int:y>/set-home")
     def province_set_home(slug: str, x: int, y: int):
         root: Path = app.config["GAMES_ROOT"]

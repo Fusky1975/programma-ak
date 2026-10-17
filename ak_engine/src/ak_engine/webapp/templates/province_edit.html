@@ -167,6 +167,36 @@
 </div>
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Recruitment This Turn</h2>
+  <p class="hex-map-legend-note">Rulebook [3.4]: normally 1 of each unit type per province per turn, 2 in a King's own Home province -- normally tracked by Recruit orders themselves, exposed here for the GM to set up a scenario directly or correct by hand. Cleared at the end of every gameturn.</p>
+  <form method="post" action="{{ url_for('province_recruitment_save', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Unit Type</th>
+          <th>Recruited So Far</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for army_type in army_types %}
+          <tr>
+            <td>{{ army_type|display_name }}</td>
+            <td><input type="number" name="recruited_{{ army_type.name }}" value="{{ province.recruited_this_turn.get(army_type, 0) }}" min="0" style="width: 5em;"></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <p>
+      <label><input type="checkbox" name="recruit_locked_this_turn" {% if province.recruit_locked_this_turn %}checked{% endif %}> Recruitment Locked This Turn</label>
+      <br><span class="hex-map-legend-note">Druidic Dinosaurs' own "no further units may be recruited in the province that turn" hard lockout, regardless of unit type.</span>
+    </p>
+
+    <button type="submit">Save Recruitment</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Home Province</h2>
   {% set current_homes = state.kingdoms.values()|selectattr('home_province', 'equalto', province.coord)|list %}
   {% if current_homes %}

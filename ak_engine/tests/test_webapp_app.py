@@ -2472,6 +2472,109 @@ def test_province_edit_shows_the_exploration_panel(tmp_path):
     assert b"Exploration" in response.data
 
 
+def test_province_recruitment_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    (coord,) = _safe_province_coords(open_game(tmp_path, meta.slug)[1], 1)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/recruitment",
+        data={"recruited_BOWMEN": "1", "recruited_LEGION": "2", "recruit_locked_this_turn": "on"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    province = state.provinces[coord]
+    assert province.recruited_this_turn.get(ArmyType.BOWMEN) == 1
+    assert province.recruited_this_turn.get(ArmyType.LEGION) == 2
+    assert province.recruit_locked_this_turn is True
+
+
+def test_province_recruitment_save_can_clear_back_to_defaults(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    (coord,) = _safe_province_coords(open_game(tmp_path, meta.slug)[1], 1)
+    client.post(
+        f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/recruitment",
+        data={"recruited_BOWMEN": "1", "recruit_locked_this_turn": "on"},
+    )
+
+    client.post(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/recruitment", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    province = state.provinces[coord]
+    assert province.recruited_this_turn == {}
+    assert province.recruit_locked_this_turn is False
+
+
+def test_province_recruitment_save_rejects_a_negative_count(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    (coord,) = _safe_province_coords(open_game(tmp_path, meta.slug)[1], 1)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/recruitment",
+        data={"recruited_BOWMEN": "-1"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"can&#39;t be negative" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[coord].recruited_this_turn == {}
+
+
+def test_province_recruitment_save_rejects_a_non_numeric_count(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    (coord,) = _safe_province_coords(open_game(tmp_path, meta.slug)[1], 1)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/recruitment",
+        data={"recruited_BOWMEN": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must be whole numbers" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[coord].recruited_this_turn == {}
+
+
+def test_province_recruitment_save_missing_province_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/999/999/recruitment", data={}, follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    assert b"Province not found" in response.data
+
+
+def test_province_recruitment_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/games/does-not-exist/provinces/0/0/recruitment", data={}, follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_province_edit_shows_the_recruitment_this_turn_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/provinces/0/0")
+
+    assert response.status_code == 200
+    assert b"Recruitment This Turn" in response.data
+
+
 def test_leaders_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)
