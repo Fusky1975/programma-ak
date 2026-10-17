@@ -1790,6 +1790,8 @@ def create_app(games_root: Path | None = None) -> Flask:
                 return redirect(url_for("province_edit", slug=slug, x=int(return_x), y=int(return_y)))
             except ValueError:
                 pass
+        if request.args.get("return_to") == "provinces":
+            return redirect(url_for("provinces_list", slug=slug))
         return redirect(url_for("features_list", slug=slug))
 
     @app.get("/games/<slug>/provinces/<int:x>/<int:y>/features/new")

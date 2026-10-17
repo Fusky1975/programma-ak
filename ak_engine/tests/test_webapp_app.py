@@ -1567,6 +1567,36 @@ def test_provinces_list_shows_features_here_and_links_to_the_province(tmp_path):
     assert f'/provinces/{feature.coord.x}/{feature.coord.y}'.encode() in response.data
 
 
+def test_provinces_list_shows_a_delete_button_for_each_feature_here(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    feature_id = next(iter(state.features))
+
+    response = client.get(f"/games/{meta.slug}/provinces")
+
+    assert response.status_code == 200
+    assert f"/features/{feature_id}/delete".encode() in response.data
+
+
+def test_deleting_a_feature_from_the_provinces_list_returns_to_the_provinces_list(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    feature_id = next(iter(state.features))
+
+    response = client.post(
+        f"/games/{meta.slug}/features/{feature_id}/delete?return_to=provinces",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert feature_id not in state.features
+    # Back on the Provinces list, not the global Features list.
+    assert f"{meta.name} &mdash; Provinces".encode() in response.data
+
+
 def _safe_province_coords(state, count):
     """``count`` distinct province coordinates with no Kingdom Home, no
     Army, no Leader, and no Feature on them -- safe to delete without
