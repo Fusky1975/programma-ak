@@ -51,6 +51,7 @@ from ak_engine.turn.search_execution import (
     _leader_combatant,
     _register_search_target_known,
     _resolve_cast_disruption,
+    _select_guardian_quest_location,
     _select_guardian_riddle,
     effective_flee_chance,
     execute_search,
@@ -4431,6 +4432,55 @@ def test_select_guardian_riddle_covers_all_7_real_entries_across_feature_ids():
         Treasure.QUEST_RA_SMOKE,
         Treasure.QUEST_RA_OWNER,
         Treasure.QUEST_RA_MAN,
+    }
+
+
+def test_execute_search_talk_visit_reply_sets_guardian_quest_location_deterministically():
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPHINX)
+    state.add_feature(feature)
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_VISIT
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
+
+    assert result.guardian_quest_location is not None
+    assert result.guardian_quest_location == _select_guardian_quest_location(Monster.SPHINX, feature.feature_id)
+    assert result.guardian_riddle is None
+
+
+def test_execute_search_talk_non_visit_quest_reply_leaves_guardian_quest_location_unset():
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_REGAIN
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
+
+    assert result.guardian_quest_location is None
+
+
+def test_select_guardian_quest_location_is_deterministic_per_monster_and_feature():
+    assert _select_guardian_quest_location(Monster.SPHINX, 44) == _select_guardian_quest_location(Monster.SPHINX, 44)
+
+
+def test_select_guardian_quest_location_covers_all_5_real_entries_across_feature_ids():
+    chosen = {_select_guardian_quest_location(Monster.SPHINX, feature_id) for feature_id in range(5)}
+    assert chosen == {
+        Treasure.QUEST_SNOW_QUEST,
+        Treasure.QUEST_SAPPH_RING,
+        Treasure.QUEST_LUCKY_PENNY,
+        Treasure.QUEST_GODS_QUEST,
+        Treasure.QUEST_MERMAID_AMULET,
     }
 
 

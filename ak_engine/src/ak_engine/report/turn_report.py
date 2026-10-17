@@ -11172,6 +11172,52 @@ QUEST_VISIT_FULFILLED_TEXT: dict[Treasure, str] = {
 }
 
 
+_CTRL_X_MARKER = "⟦CTRL-X:province-3⟧"
+_CTRL_X_PLACEHOLDER = "a distant province"
+
+
+def render_guardian_proposes_quest_location(monster_name: str, quest_location: Treasure) -> str:
+    """Surfaces ``VISIT.X2``'s own already-transcribed quest-offer text
+    (``QUEST_VISIT_TEXT``) in the ACTION REPORT once a Talk resolves to
+    ``MonsterTalkReply.R_VISIT`` -- Phase 1028, the direct sibling of
+    ``render_guardian_poses_riddle()`` above for this different
+    reply/catalog pair. *Which* of the 5 real entries a given guardian
+    proposes is decided by ``turn/search_execution.py
+    _select_guardian_quest_location()``, not here -- see that
+    function's own docstring for why it's a project-original,
+    explicitly-unsourced stand-in (the exact sibling of
+    ``_select_guardian_riddle()``'s own unrecovered-selector-byte
+    situation), with zero effect on SA/Fulfill.
+
+    The offer text itself is sourced verbatim. Two markers are
+    resolved:
+
+    - ``⟦CTRL-A:a/an⟧`` (present in 4 of the 5 entries) is the same
+      real, deterministic English grammar rule as Riddle's own, reused
+      via ``_resolve_ctrl_a_markers()``.
+    - ``⟦CTRL-X:province-3⟧`` (present only in ``QUEST_SNOW_QUEST`` and
+      ``QUEST_MERMAID_AMULET``) is a real province reference ("throw
+      the snowball in province X" / "find the mermaid in province X")
+      for which no selector -- real or project-original -- is
+      recoverable any more than the quest-location choice above is.
+      Per explicit user instruction, this is resolved to a generic
+      placeholder phrase, never an invented specific province, so the
+      sentence reads as complete without this project fabricating any
+      geography.
+
+    ``QUEST_VISIT_FULFILLED_TEXT`` (the "quest completed" narration) is
+    deliberately NOT wired here -- the same scope boundary as Riddle's
+    own unwired ``QUEST_RIDDLE_ANSWER_TEXT``: Fulfill's success is an
+    unverified generic alignment roll (``_resolve_fulfill()``'s own
+    docstring), not proof the quest was actually completed as
+    described.
+    """
+
+    text = QUEST_VISIT_TEXT[quest_location].replace(_CTRL_X_MARKER, _CTRL_X_PLACEHOLDER)
+    text = _resolve_ctrl_a_markers(text)
+    return f"{monster_name} proposes a quest: {text}"
+
+
 # HostAK/TP/RUMORS.PAS Check_Raid -- a single, real, hardcoded
 # template (no file), dispatched inline within FD's own MTALK.X2
 # file-dispatch flow rather than the main Say_Code CASE. See module
@@ -11599,8 +11645,17 @@ def describe_search(
       of the 7 entries ``turn/search_execution.py
       _select_guardian_riddle()`` picked (project-original selection,
       real sourced text; see that function's own docstring). The other
-      19 ``QUEST_OR_AGREEMENT`` replies still render nothing at all --
+      18 ``QUEST_OR_AGREEMENT`` replies still render nothing at all --
       this project still doesn't narrate those.
+    - **Phase 1028**: a Talk resolving to ``MonsterTalkReply.R_VISIT``
+      (``result.guardian_quest_location is not None``) appends
+      ``render_guardian_proposes_quest_location()``, right after the
+      Riddle line above -- the exact sibling treatment for the real,
+      already-transcribed ``VISIT.X2`` text for whichever of the 5
+      entries ``turn/search_execution.py
+      _select_guardian_quest_location()`` picked. See that function's
+      and ``render_guardian_proposes_quest_location()``'s own
+      docstrings for the sourcing/scope details.
     - A fatal loss (``combat_resolved and winner == "monster" and
       leader_killed``) appends ``render_mortally_wounded()`` -- the same
       already-sourced MORTWOUN.X sentence (Phase 112) every other
@@ -11663,13 +11718,16 @@ def describe_search(
     weapon = MONSTER_RANGED_WEAPON.get(result.guardian_monster) if result.guardian_monster is not None else None
     flavor = missile_attack_flavor(weapon) if weapon is not None else None
 
-    # Phase 1027: a Talk resolving to MonsterTalkReply.R_RIDDLE is the
-    # one QUEST_OR_AGREEMENT reply this project narrates at all -- see
-    # render_guardian_poses_riddle()'s own docstring. The other 19
-    # quest/agreement replies still render nothing beyond the opening
-    # line above, unchanged.
+    # Phase 1027/1028: Talks resolving to MonsterTalkReply.R_RIDDLE or
+    # R_VISIT are the two QUEST_OR_AGREEMENT replies this project
+    # narrates at all -- see render_guardian_poses_riddle()'s and
+    # render_guardian_proposes_quest_location()'s own docstrings. The
+    # other 18 quest/agreement replies still render nothing beyond the
+    # opening line above, unchanged.
     if result.guardian_riddle is not None:
         lines.append(render_guardian_poses_riddle(monster_name, result.guardian_riddle))
+    if result.guardian_quest_location is not None:
+        lines.append(render_guardian_proposes_quest_location(monster_name, result.guardian_quest_location))
 
     # Phase 858 (backlog: SBUNGLE.X, the "personal-combat Cast that just
     # fizzles" sentence -- see `SearchExecutionResult.fizzled_spells`'s

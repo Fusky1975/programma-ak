@@ -1059,6 +1059,13 @@ class SearchExecutionResult:
     # AGREEMENT` replies -- this project still doesn't narrate those,
     # only Riddle's own already-transcribed prose is wired here.
     guardian_riddle: Treasure | None = None
+    # Phase 1028: the direct sibling of `guardian_riddle` above, for
+    # `MonsterTalkReply.R_VISIT` and the 5 real `report/turn_report.py
+    # QUEST_VISIT_TEXT` entries -- see `_select_guardian_quest_
+    # location()`'s own docstring. `None` for every other reply,
+    # including Riddle's own and the other 18 `QUEST_OR_AGREEMENT`
+    # replies this project still doesn't narrate.
+    guardian_quest_location: Treasure | None = None
 
 
 def execute_search(
@@ -1596,6 +1603,32 @@ def _select_guardian_riddle(monster: Monster, feature_id: int) -> Treasure:
 
     index = (monster.value * 7 + feature_id) % len(_GUARDIAN_RIDDLES)
     return _GUARDIAN_RIDDLES[index]
+
+
+_GUARDIAN_QUEST_LOCATIONS: tuple[Treasure, ...] = (
+    Treasure.QUEST_SNOW_QUEST,
+    Treasure.QUEST_SAPPH_RING,
+    Treasure.QUEST_LUCKY_PENNY,
+    Treasure.QUEST_GODS_QUEST,
+    Treasure.QUEST_MERMAID_AMULET,
+)
+
+
+def _select_guardian_quest_location(monster: Monster, feature_id: int) -> Treasure:
+    """Which of the 5 real ``report/turn_report.py QUEST_VISIT_TEXT``
+    entries a guardian proposes on a ``MonsterTalkReply.R_VISIT`` Talk
+    reply.
+
+    **Not a ported algorithm -- project-original, explicitly unsourced**,
+    the exact sibling of ``_select_guardian_riddle()`` above for this
+    different reply/catalog pair -- see that function's own docstring
+    for why no real selector byte is recoverable. Deterministic per
+    ``(monster, feature_id)`` so the same guardian always proposes the
+    same quest on a repeat Talk; zero effect on any real game mechanic.
+    """
+
+    index = (monster.value * 5 + feature_id) % len(_GUARDIAN_QUEST_LOCATIONS)
+    return _GUARDIAN_QUEST_LOCATIONS[index]
 
 
 def _grant_search_treasure(state: GameState, leader_id: int, treasure: Treasure) -> None:
@@ -3112,6 +3145,11 @@ def _resolve_search_encounter(
         guardian_riddle = (
             _select_guardian_riddle(feature.guardian_monster, feature.feature_id) if reply is MonsterTalkReply.R_RIDDLE else None
         )
+        guardian_quest_location = (
+            _select_guardian_quest_location(feature.guardian_monster, feature.feature_id)
+            if reply is MonsterTalkReply.R_VISIT
+            else None
+        )
         return SearchExecutionResult(
             accepted=True,
             combat_resolved=False,
@@ -3119,6 +3157,7 @@ def _resolve_search_encounter(
             guardian_intimidated=intimidated,
             guardian_undeterred=undeterred,
             guardian_riddle=guardian_riddle,
+            guardian_quest_location=guardian_quest_location,
             guardian_monster=feature.guardian_monster,
         )
 

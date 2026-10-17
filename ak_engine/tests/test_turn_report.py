@@ -322,6 +322,7 @@ from ak_engine.report.turn_report import (
     render_quest_errand_thanks,
     render_quote_of_the_week,
     render_guardian_poses_riddle,
+    render_guardian_proposes_quest_location,
     render_quest_fled_in_fear,
     render_quest_hero_not_tasty,
     render_quest_insufficient_price,
@@ -7003,6 +7004,43 @@ def test_quest_visit_text_control_byte_codes_preserved_literally():
     assert "⟦CTRL-X:province-3⟧" in QUEST_VISIT_TEXT[Treasure.QUEST_SNOW_QUEST]
 
 
+def test_render_guardian_proposes_quest_location_resolves_the_ctrl_a_marker():
+    # Phase 1028. GODS_QUEST carries no CTRL-A marker at all -- GODS_QUEST
+    # is covered separately below; this one (LUCKY_PENNY) has exactly one
+    # CTRL-A marker ("wishing-well" is consonant-initial -> "a").
+    result = render_guardian_proposes_quest_location("the Hermit", Treasure.QUEST_LUCKY_PENNY)
+    assert result == (
+        "the Hermit proposes a quest: the province of my birth, there is a "
+        "wishing-well which I remember from my younger days.For me, it is the "
+        "luckiest well in the world.You see, for years I have been having bad "
+        "luck.take my lucky penny and journey to the well.When you get there, "
+        "wish me luck and toss it into the well.Then, maybe my luck will "
+        "change!"
+    )
+
+
+def test_render_guardian_proposes_quest_location_resolves_the_ctrl_x_marker_to_a_generic_placeholder():
+    # SNOW_QUEST and MERMAID_AMULET are the only two entries carrying the
+    # real province-reference marker -- resolved to a generic phrase per
+    # explicit user instruction, never an invented specific province.
+    snow = render_guardian_proposes_quest_location("the Oracle", Treasure.QUEST_SNOW_QUEST)
+    assert "⟦CTRL-X:province-3⟧" not in snow
+    assert "a distant province" in snow
+
+    mermaid = render_guardian_proposes_quest_location("the Oracle", Treasure.QUEST_MERMAID_AMULET)
+    assert "⟦CTRL-X:province-3⟧" not in mermaid
+    assert "a distant province" in mermaid
+    assert "charm a mermaid for me" in mermaid
+
+
+def test_render_guardian_proposes_quest_location_leaves_plain_entries_untouched():
+    # GODS_QUEST carries no CTRL-byte markers at all -- the sourced text
+    # passes straight through, verbatim.
+    assert render_guardian_proposes_quest_location("the Shaman", Treasure.QUEST_GODS_QUEST) == (
+        f"the Shaman proposes a quest: {QUEST_VISIT_TEXT[Treasure.QUEST_GODS_QUEST]}"
+    )
+
+
 # -- monster raid-truce offer (Phase 130) --
 
 
@@ -8359,7 +8397,7 @@ def test_describe_search_guardian_riddle_appends_the_riddle_line():
 
 
 def test_describe_search_non_riddle_quest_reply_appends_no_extra_line():
-    # The other 19 QUEST_OR_AGREEMENT replies still render nothing
+    # The other 18 QUEST_OR_AGREEMENT replies still render nothing
     # beyond the opening line -- guardian_riddle stays None for them.
     result = SearchExecutionResult(
         accepted=True,
@@ -8367,6 +8405,42 @@ def test_describe_search_non_riddle_quest_reply_appends_no_extra_line():
         reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
         guardian_monster=Monster.ARCHER,
         guardian_riddle=None,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+def test_describe_search_guardian_quest_location_appends_the_quest_line():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=False,
+        reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
+        guardian_monster=Monster.SPHINX,
+        guardian_quest_location=Treasure.QUEST_GODS_QUEST,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        render_guardian_proposes_quest_location("Sphinx", Treasure.QUEST_GODS_QUEST),
+    ]
+
+
+def test_describe_search_non_visit_quest_reply_appends_no_extra_line():
+    # The other 18 QUEST_OR_AGREEMENT replies still render nothing
+    # beyond the opening line -- guardian_quest_location stays None for
+    # them.
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=False,
+        reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
+        guardian_monster=Monster.ARCHER,
+        guardian_quest_location=None,
     )
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
 
