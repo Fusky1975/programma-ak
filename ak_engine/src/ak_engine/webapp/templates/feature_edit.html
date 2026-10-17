@@ -84,4 +84,44 @@
   </form>
 </div>
 
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Discovery &amp; Deal Status</h2>
+  <p class="hex-map-legend-note">Normally set by Search/Talk/exploration themselves -- exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('feature_status_save', slug=meta.slug, feature_id=feature.feature_id) }}">
+    <p>
+      <label for="pending_deal_leader_id">Pending Deal Leader</label><br>
+      <select id="pending_deal_leader_id" name="pending_deal_leader_id">
+        <option value="" {% if feature.pending_deal_leader_id is none %}selected{% endif %}>-- None --</option>
+        {% for leader_id, leader in state.leaders.items() %}
+          <option value="{{ leader_id }}" {% if feature.pending_deal_leader_id == leader_id %}selected{% endif %}>{{ leader.name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">Which Hero/King currently holds a Talk-secured deal with this Feature's own guardian, pending a later turn's Fulfill.</span>
+    </p>
+
+    {% if state.kingdoms %}
+      <p><label>Discovered By Kingdom (0-3)</label></p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Kingdom</th>
+            <th>Discovery Level</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <tr>
+              <td>{{ kingdom.name }}</td>
+              <td><input type="number" name="discovered_{{ kingdom_id }}" value="{{ feature.discovered_by_kingdom.get(kingdom_id, 0) }}" min="0" max="3" style="width: 4em;"></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="hex-map-legend-note">0 = undiscovered (the default), 3 = fully known.</p>
+    {% endif %}
+
+    <button type="submit">Save Discovery &amp; Deal Status</button>
+  </form>
+</div>
+
 {% endblock %}

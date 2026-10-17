@@ -4236,6 +4236,131 @@ def test_save_feature_missing_feature_shows_an_error_not_a_crash(tmp_path):
     assert b"Feature not found" in response.data
 
 
+def test_feature_status_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+    _, state = open_game(tmp_path, meta.slug)
+    leader_id = next(iter(state.leaders))
+
+    response = client.post(
+        f"/games/{meta.slug}/features/{feature_id}/status",
+        data={"pending_deal_leader_id": str(leader_id), "discovered_1": "2", "discovered_2": "3"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    feature = state.features[feature_id]
+    assert feature.pending_deal_leader_id == leader_id
+    assert feature.discovered_by_kingdom.get(1) == 2
+    assert feature.discovered_by_kingdom.get(2) == 3
+
+
+def test_feature_status_save_can_clear_back_to_defaults(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+    _, state = open_game(tmp_path, meta.slug)
+    leader_id = next(iter(state.leaders))
+    client.post(
+        f"/games/{meta.slug}/features/{feature_id}/status",
+        data={"pending_deal_leader_id": str(leader_id), "discovered_1": "2"},
+    )
+
+    client.post(f"/games/{meta.slug}/features/{feature_id}/status", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    feature = state.features[feature_id]
+    assert feature.pending_deal_leader_id is None
+    assert feature.discovered_by_kingdom == {}
+
+
+def test_feature_status_save_rejects_an_invalid_pending_deal_leader(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+
+    response = client.post(
+        f"/games/{meta.slug}/features/{feature_id}/status",
+        data={"pending_deal_leader_id": "999999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Pending Deal Leader" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.features[feature_id].pending_deal_leader_id is None
+
+
+def test_feature_status_save_rejects_an_out_of_range_discovery_level(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+    _, state = open_game(tmp_path, meta.slug)
+    before = dict(state.features[feature_id].discovered_by_kingdom)
+
+    response = client.post(
+        f"/games/{meta.slug}/features/{feature_id}/status",
+        data={"discovered_1": "9"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must be 0-3" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.features[feature_id].discovered_by_kingdom == before
+
+
+def test_feature_status_save_rejects_a_non_numeric_discovery_level(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+    _, state = open_game(tmp_path, meta.slug)
+    before = dict(state.features[feature_id].discovered_by_kingdom)
+
+    response = client.post(
+        f"/games/{meta.slug}/features/{feature_id}/status",
+        data={"discovered_1": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must be whole numbers" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.features[feature_id].discovered_by_kingdom == before
+
+
+def test_feature_status_save_missing_feature_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/features/999999/status", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Feature not found" in response.data
+
+
+def test_feature_status_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/features/1/status", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_feature_edit_shows_the_discovery_and_deal_status_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+
+    response = client.get(f"/games/{meta.slug}/features/{feature_id}")
+
+    assert response.status_code == 200
+    assert b"Discovery" in response.data and b"Deal Status" in response.data
+
+
 def test_turn_zero_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)

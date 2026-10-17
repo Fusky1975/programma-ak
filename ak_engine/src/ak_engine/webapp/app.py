@@ -1872,6 +1872,49 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id))
 
+    @app.post("/games/<slug>/features/<int:feature_id>/status")
+    def feature_status_save(slug: str, feature_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        feature = state.features.get(feature_id)
+        if feature is None:
+            return redirect(url_for("features_list", slug=slug, error="Feature not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id, error=message))
+
+        deal_raw = request.form.get("pending_deal_leader_id", "").strip()
+        pending_deal_leader_id: int | None
+        if deal_raw:
+            try:
+                pending_deal_leader_id = int(deal_raw)
+            except ValueError:
+                return _edit_error("Please choose a valid Pending Deal Leader.")
+            if pending_deal_leader_id not in state.leaders:
+                return _edit_error("Please choose a valid Pending Deal Leader.")
+        else:
+            pending_deal_leader_id = None
+
+        discovered_by_kingdom: dict[int, int] = {}
+        for kingdom_id in state.kingdoms:
+            raw = request.form.get(f"discovered_{kingdom_id}", "").strip()
+            try:
+                level = int(raw) if raw else 0
+            except ValueError:
+                return _edit_error("Discovery levels must be whole numbers.")
+            if not 0 <= level <= 3:
+                return _edit_error("Discovery levels must be 0-3.")
+            if level:
+                discovered_by_kingdom[kingdom_id] = level
+
+        feature.pending_deal_leader_id = pending_deal_leader_id
+        feature.discovered_by_kingdom = discovered_by_kingdom
+        save_game(root, slug, state)
+        return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id))
+
     @app.post("/games/<slug>/features/<int:feature_id>/delete")
     def feature_delete(slug: str, feature_id: int):
         root: Path = app.config["GAMES_ROOT"]
