@@ -51,6 +51,7 @@ from ak_engine.turn.search_execution import (
     _leader_combatant,
     _register_search_target_known,
     _resolve_cast_disruption,
+    _select_guardian_riddle,
     effective_flee_chance,
     execute_search,
 )
@@ -4381,6 +4382,56 @@ def test_execute_search_talk_deal_reaction_records_the_pending_deal():
         execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
 
     assert feature.pending_deal_leader_id == LEADER_ID
+
+
+def test_execute_search_talk_riddle_reply_sets_guardian_riddle_deterministically():
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPHINX)
+    state.add_feature(feature)
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_RIDDLE
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
+
+    assert result.guardian_riddle is not None
+    assert result.guardian_riddle == _select_guardian_riddle(Monster.SPHINX, feature.feature_id)
+
+
+def test_execute_search_talk_non_riddle_quest_reply_leaves_guardian_riddle_unset():
+    state = _state_with_leader()
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER)
+    state.add_feature(feature)
+    request = _talk_request(1, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()), patch(
+        "ak_engine.turn.search_execution.resolve_monster_raid_reply", return_value=MonsterTalkReply.R_REGAIN
+    ), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ):
+        result = execute_search(state, LEADER_ID, request, ScriptedRandom([0.9] * 20))
+
+    assert result.guardian_riddle is None
+
+
+def test_select_guardian_riddle_is_deterministic_per_monster_and_feature():
+    assert _select_guardian_riddle(Monster.SPHINX, 44) == _select_guardian_riddle(Monster.SPHINX, 44)
+
+
+def test_select_guardian_riddle_covers_all_7_real_entries_across_feature_ids():
+    chosen = {_select_guardian_riddle(Monster.SPHINX, feature_id) for feature_id in range(7)}
+    assert chosen == {
+        Treasure.QUEST_RA_RIDDLE,
+        Treasure.QUEST_RA_COFFIN,
+        Treasure.QUEST_RA_BRIDGE,
+        Treasure.QUEST_RA_CANDLE,
+        Treasure.QUEST_RA_SMOKE,
+        Treasure.QUEST_RA_OWNER,
+        Treasure.QUEST_RA_MAN,
+    }
 
 
 # -- Phase 727: real, deterministic reply selector wired in -----------------

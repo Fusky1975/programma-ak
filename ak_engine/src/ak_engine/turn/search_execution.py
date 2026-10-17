@@ -1047,6 +1047,18 @@ class SearchExecutionResult:
     # fallback, ...) -- a real, separate, larger follow-up, not attempted
     # here.
     ice_suspend_immobilized: bool = False
+    # Phase 1027: which of the 7 real `report/turn_report.py
+    # QUEST_RIDDLE_TEXT` entries this guardian poses, set only when a
+    # Talk's own resolved reply is `MonsterTalkReply.R_RIDDLE` -- see
+    # `_select_guardian_riddle()`'s own docstring for why this is a
+    # project-original, explicitly-unsourced stand-in (the real
+    # selector byte, `Get_Reply`'s own `rep2`, is never read by any
+    # caller this project has disassembly access to) rather than a
+    # ported algorithm, unlike every other field on this dataclass.
+    # `None` for every other reply, including the other 19 `QUEST_OR_
+    # AGREEMENT` replies -- this project still doesn't narrate those,
+    # only Riddle's own already-transcribed prose is wired here.
+    guardian_riddle: Treasure | None = None
 
 
 def execute_search(
@@ -1546,6 +1558,44 @@ def _apply_monster_duel_merit(
     else:
         leader.merit_tally.duel_merit_net -= 2
         leader.merit_tally.courage_encounter_merit -= 1
+
+
+_GUARDIAN_RIDDLES: tuple[Treasure, ...] = (
+    Treasure.QUEST_RA_RIDDLE,
+    Treasure.QUEST_RA_COFFIN,
+    Treasure.QUEST_RA_BRIDGE,
+    Treasure.QUEST_RA_CANDLE,
+    Treasure.QUEST_RA_SMOKE,
+    Treasure.QUEST_RA_OWNER,
+    Treasure.QUEST_RA_MAN,
+)
+
+
+def _select_guardian_riddle(monster: Monster, feature_id: int) -> Treasure:
+    """Which of the 7 real ``report/turn_report.py QUEST_RIDDLE_TEXT``
+    entries a guardian poses on a ``MonsterTalkReply.R_RIDDLE`` Talk
+    reply.
+
+    **Not a ported algorithm -- project-original, explicitly unsourced.**
+    The real engine's own reply selector, ``Get_Reply`` (``turn/
+    monster_raids.py resolve_monster_raid_reply()``'s own Phase 679
+    docstring), returns a second output byte (``rep2``, "a dialogue/
+    quest-fallback byte") that is almost certainly the real selector for
+    this -- but it is never read by any caller this project has
+    disassembly access to, so its real meaning/range stays an open,
+    already-tracked gap. Rather than leave every Riddle guardian mute
+    (the status quo before this function existed: the real, already-
+    transcribed riddle text sat in ``QUEST_RIDDLE_TEXT`` with "no
+    consumer wired yet"), this picks one deterministically per
+    ``(monster, feature_id)`` purely so the same guardian always poses
+    the same riddle on a repeat Talk. It has zero effect on any real
+    game mechanic -- SA/Fulfill stay exactly as undocumented as they
+    were before this function existed (see ``_resolve_fulfill()``'s own
+    docstring).
+    """
+
+    index = (monster.value * 7 + feature_id) % len(_GUARDIAN_RIDDLES)
+    return _GUARDIAN_RIDDLES[index]
 
 
 def _grant_search_treasure(state: GameState, leader_id: int, treasure: Treasure) -> None:
@@ -3059,12 +3109,17 @@ def _resolve_search_encounter(
             return None
         feature.pending_deal_leader_id = leader_id
         intimidated, undeterred = _resolve_guardian_pacification()
+        guardian_riddle = (
+            _select_guardian_riddle(feature.guardian_monster, feature.feature_id) if reply is MonsterTalkReply.R_RIDDLE else None
+        )
         return SearchExecutionResult(
             accepted=True,
             combat_resolved=False,
             reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
             guardian_intimidated=intimidated,
             guardian_undeterred=undeterred,
+            guardian_riddle=guardian_riddle,
+            guardian_monster=feature.guardian_monster,
         )
 
     def _resolve_fulfill() -> SearchExecutionResult | None:

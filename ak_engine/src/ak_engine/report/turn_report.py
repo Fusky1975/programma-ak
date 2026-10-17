@@ -11101,6 +11101,55 @@ QUEST_RIDDLE_ANSWER_TEXT: dict[Treasure, str] = {
 }
 
 
+_CTRL_A_MARKER = "⟦CTRL-A:a/an⟧ "
+
+
+def _resolve_ctrl_a_markers(text: str) -> str:
+    """Resolves ``RIDDLE.X2``'s own ``⟦CTRL-A:a/an⟧`` "a"-vs-"an" pronoun
+    marker for ``render_guardian_poses_riddle()``'s own one call site --
+    a plain, deterministic English grammar rule (vowel-initial word ->
+    "an", else "a"), not invented content. ``report/prose.py``'s own
+    ``render()`` pipeline still has no defined behavior for CTRL-byte
+    codes in general (Phase 582's own "no consumer wired yet" posture
+    stays unchanged everywhere else this marker appears, e.g.
+    ``QUEST_VISIT_TEXT`` below) -- this helper is scoped to
+    ``QUEST_RIDDLE_TEXT``'s own 7 entries alone.
+    """
+
+    pieces = text.split(_CTRL_A_MARKER)
+    resolved = pieces[0]
+    for piece in pieces[1:]:
+        article = "an" if piece[:1].lower() in "aeiou" else "a"
+        resolved += f"{article} {piece}"
+    return resolved
+
+
+def render_guardian_poses_riddle(monster_name: str, riddle: Treasure) -> str:
+    """Surfaces ``RIDDLE.X2``'s own already-transcribed riddle text
+    (``QUEST_RIDDLE_TEXT``) in the ACTION REPORT once a Talk resolves to
+    ``MonsterTalkReply.R_RIDDLE`` -- Phase 1027, closing the "no
+    consumer wired yet" gap Phase 582 first flagged for this catalog.
+    *Which* of the 7 real entries a given guardian poses is decided by
+    ``turn/search_execution.py _select_guardian_riddle()``, not here --
+    see that function's own docstring for why it's a project-original,
+    explicitly-unsourced stand-in (the real selector byte is
+    unrecovered), with zero effect on SA/Fulfill, which stay exactly as
+    undocumented as before this function existed. The riddle text
+    itself is sourced verbatim; only its one real, deterministic
+    English grammar marker (``⟦CTRL-A:a/an⟧``) is resolved
+    (``_resolve_ctrl_a_markers()``), and ``QUEST_RA_COFFIN``'s own
+    ``$+`` stanza-break markers collapse to a single space, the same
+    "don't invent a renderer for codes render() doesn't define, but
+    don't show the player a raw placeholder byte either" compromise.
+    """
+
+    text = QUEST_RIDDLE_TEXT[riddle].replace("$+", " ")
+    while "  " in text:
+        text = text.replace("  ", " ")
+    text = _resolve_ctrl_a_markers(text.strip())
+    return f"{monster_name} poses a riddle: {text}"
+
+
 # HostAK/TP/PROSE/VISIT.X2 (header "5 2", RUMORS.PAS:2098 CTRL-U) and
 # FUVIS.X2 (header "5 1", SAY.PAS:785 _LFuVis), both keyed by Treasure's
 # own 5 non-riddle "go somewhere and do something" quest-item members --
@@ -11543,6 +11592,15 @@ def describe_search(
       weapon.py``'s own deliberately-preserved discrepancy, see that
       module's Phase 94 addendum) also falls back to the generic triplet
       for its own shots.
+    - **Phase 1027**: a Talk resolving to ``MonsterTalkReply.R_RIDDLE``
+      (``result.guardian_riddle is not None``) appends
+      ``render_guardian_poses_riddle()``, right after the opening line
+      -- the real, already-transcribed ``RIDDLE.X2`` text for whichever
+      of the 7 entries ``turn/search_execution.py
+      _select_guardian_riddle()`` picked (project-original selection,
+      real sourced text; see that function's own docstring). The other
+      19 ``QUEST_OR_AGREEMENT`` replies still render nothing at all --
+      this project still doesn't narrate those.
     - A fatal loss (``combat_resolved and winner == "monster" and
       leader_killed``) appends ``render_mortally_wounded()`` -- the same
       already-sourced MORTWOUN.X sentence (Phase 112) every other
@@ -11604,6 +11662,14 @@ def describe_search(
     monster_name = MONSTER_NAMES.get(result.guardian_monster, "guardian") if result.guardian_monster is not None else "guardian"
     weapon = MONSTER_RANGED_WEAPON.get(result.guardian_monster) if result.guardian_monster is not None else None
     flavor = missile_attack_flavor(weapon) if weapon is not None else None
+
+    # Phase 1027: a Talk resolving to MonsterTalkReply.R_RIDDLE is the
+    # one QUEST_OR_AGREEMENT reply this project narrates at all -- see
+    # render_guardian_poses_riddle()'s own docstring. The other 19
+    # quest/agreement replies still render nothing beyond the opening
+    # line above, unchanged.
+    if result.guardian_riddle is not None:
+        lines.append(render_guardian_poses_riddle(monster_name, result.guardian_riddle))
 
     # Phase 858 (backlog: SBUNGLE.X, the "personal-combat Cast that just
     # fizzles" sentence -- see `SearchExecutionResult.fizzled_spells`'s

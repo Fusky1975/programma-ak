@@ -321,6 +321,7 @@ from ak_engine.report.turn_report import (
     render_pursuit_and_destroy,
     render_quest_errand_thanks,
     render_quote_of_the_week,
+    render_guardian_poses_riddle,
     render_quest_fled_in_fear,
     render_quest_hero_not_tasty,
     render_quest_insufficient_price,
@@ -6947,6 +6948,35 @@ def test_quest_riddle_answer_text_congratulates_on_every_ordinal():
         assert text.startswith("Sayeth [, ")
 
 
+def test_render_guardian_poses_riddle_resolves_the_ctrl_a_marker():
+    # Phase 1027. "monster" is consonant-initial -> "a", "end" is
+    # vowel-initial -> "an" -- the one real, deterministic grammar rule
+    # this project resolves for this catalog; every other sourced word
+    # is untouched.
+    result = render_guardian_poses_riddle("the Sphinx", Treasure.QUEST_RA_RIDDLE)
+    assert result == (
+        'the Sphinx poses a riddle: "\'I am a monster, strange and alien.A band '
+        "of hunters follows behind me looking for the tracks made by my feet."
+        "They desire greatly to put me to an end, yet they seek no meat, only "
+        "knowledge.i inhabit the darkest places, and if I pass from the shadows "
+        "into the bright light my soul quickly slips away.What am I?'"
+    )
+
+
+def test_render_guardian_poses_riddle_collapses_coffins_stanza_markers():
+    result = render_guardian_poses_riddle("the Mummy", Treasure.QUEST_RA_COFFIN)
+    assert "$+" not in result
+    assert result.startswith('the Mummy poses a riddle: "Solve this riddle: There was a man bespake a thing,')
+
+
+def test_render_guardian_poses_riddle_leaves_plain_entries_untouched():
+    # QUEST_RA_BRIDGE/MAN carry no CTRL-byte markers at all -- the
+    # sourced text passes straight through, verbatim.
+    assert render_guardian_poses_riddle("the Troll", Treasure.QUEST_RA_BRIDGE) == (
+        f"the Troll poses a riddle: {QUEST_RIDDLE_TEXT[Treasure.QUEST_RA_BRIDGE]}"
+    )
+
+
 def test_quest_visit_text_and_fulfilled_text_cover_the_five_location_quests():
     location_quests = {
         Treasure.QUEST_SNOW_QUEST,
@@ -8303,6 +8333,41 @@ def test_describe_search_rejected_for_other_reasons_renders_nothing():
 
 def test_describe_search_accepted_no_combat_renders_only_the_opening_line():
     result = SearchExecutionResult(accepted=True, combat_resolved=False, reason="no Melee tactic in encounter plan")
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+def test_describe_search_guardian_riddle_appends_the_riddle_line():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=False,
+        reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
+        guardian_monster=Monster.SPHINX,
+        guardian_riddle=Treasure.QUEST_RA_BRIDGE,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        render_guardian_poses_riddle("Sphinx", Treasure.QUEST_RA_BRIDGE),
+    ]
+
+
+def test_describe_search_non_riddle_quest_reply_appends_no_extra_line():
+    # The other 19 QUEST_OR_AGREEMENT replies still render nothing
+    # beyond the opening line -- guardian_riddle stays None for them.
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=False,
+        reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
+        guardian_monster=Monster.ARCHER,
+        guardian_riddle=None,
+    )
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
 
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
