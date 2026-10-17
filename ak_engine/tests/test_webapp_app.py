@@ -3751,6 +3751,135 @@ def test_save_army_missing_army_shows_an_error_not_a_crash(tmp_path):
     assert b"Army not found" in response.data
 
 
+def test_army_effects_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}/effects",
+        data={
+            "movement_points": "3",
+            "unhireable_this_turn": "on",
+            "march_bonus_applied_this_turn": "on",
+            "naval_bonus_applied_this_turn": "on",
+            "march_table_bonus_applied_this_turn": "on",
+            "flood_dams_exempt_at_x": "4",
+            "flood_dams_exempt_at_y": "5",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    saved = state.armies[army.army_id]
+    assert saved.movement_points == 3
+    assert saved.unhireable_this_turn is True
+    assert saved.march_bonus_applied_this_turn is True
+    assert saved.naval_bonus_applied_this_turn is True
+    assert saved.march_table_bonus_applied_this_turn is True
+    assert saved.flood_dams_exempt_at == HexCoord(4, 5)
+
+
+def test_army_effects_save_can_clear_back_to_defaults(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+    client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}/effects",
+        data={
+            "movement_points": "3",
+            "unhireable_this_turn": "on",
+            "march_bonus_applied_this_turn": "on",
+            "naval_bonus_applied_this_turn": "on",
+            "march_table_bonus_applied_this_turn": "on",
+            "flood_dams_exempt_at_x": "4",
+            "flood_dams_exempt_at_y": "5",
+        },
+    )
+
+    client.post(f"/games/{meta.slug}/armies/{army.army_id}/effects", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    saved = state.armies[army.army_id]
+    assert saved.movement_points == 0
+    assert saved.unhireable_this_turn is False
+    assert saved.march_bonus_applied_this_turn is False
+    assert saved.naval_bonus_applied_this_turn is False
+    assert saved.march_table_bonus_applied_this_turn is False
+    assert saved.flood_dams_exempt_at is None
+
+
+def test_army_effects_save_rejects_a_non_numeric_movement_points(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+    before_movement_points = army.movement_points
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}/effects",
+        data={"movement_points": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Movement Points must be a whole number" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.armies[army.army_id].movement_points == before_movement_points
+
+
+def test_army_effects_save_rejects_a_half_filled_flood_coordinate(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}/effects",
+        data={"flood_dams_exempt_at_x": "4"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"both coordinates" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.armies[army.army_id].flood_dams_exempt_at is None
+
+
+def test_army_effects_save_missing_army_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/armies/999999/effects", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Army not found" in response.data
+
+
+def test_army_effects_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/armies/1/effects", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_army_edit_shows_the_turn_effects_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+
+    response = client.get(f"/games/{meta.slug}/armies/{army.army_id}")
+
+    assert response.status_code == 200
+    assert b"Turn Effects" in response.data
+
+
 def test_armies_create_adds_a_new_army_with_real_movement_points(tmp_path):
     # Before this route existed, the GM world editors could edit an
     # existing Army but had no way to add a brand-new one at all.

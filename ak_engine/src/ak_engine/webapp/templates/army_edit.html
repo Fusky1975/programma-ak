@@ -73,6 +73,47 @@
 </div>
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Turn Effects</h2>
+  <p class="hex-map-legend-note">Lasting marks this gameturn's own processing leaves on this Army -- normally set and cleared by turn processing itself, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('army_effects_save', slug=meta.slug, army_id=army.army_id) }}">
+    <p>
+      <label for="movement_points">Movement Points Remaining</label><br>
+      <input type="number" id="movement_points" name="movement_points" value="{{ army.movement_points }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Replenished to this Army's own base speed at the end of every gameturn; the one-time March/Naval movement bonus applies dynamically on top of whatever this holds when it actually moves.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="unhireable_this_turn" {% if army.unhireable_this_turn %}checked{% endif %}> Unhireable this turn</label>
+      <br><span class="hex-map-legend-note">Cleared at the end of every gameturn.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="march_bonus_applied_this_turn" {% if army.march_bonus_applied_this_turn %}checked{% endif %}> March bonus already applied this turn</label>
+      <br><span class="hex-map-legend-note">Idempotency flag for the March/Mastery Advanced Ability's own once-per-turn movement bonus.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="naval_bonus_applied_this_turn" {% if army.naval_bonus_applied_this_turn %}checked{% endif %}> Naval bonus already applied this turn</label>
+      <br><span class="hex-map-legend-note">Idempotency flag for the Naval Advanced Ability's own once-per-turn movement bonus (Whale League/Fleet/Mermen).</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="march_table_bonus_applied_this_turn" {% if army.march_table_bonus_applied_this_turn %}checked{% endif %}> March Table bonus already applied this turn</label>
+      <br><span class="hex-map-legend-note">Idempotency flag for the base [4.12] MARCH TABLE skill-level movement bonus -- distinct from the Advanced-Ability-gated March bonus above, stacks with it.</span>
+    </p>
+
+    <p>
+      <label for="flood_dams_exempt_at_x">Flood Dams Exempt At (x, y)</label><br>
+      <input type="number" id="flood_dams_exempt_at_x" name="flood_dams_exempt_at_x" value="{{ army.flood_dams_exempt_at.x if army.flood_dams_exempt_at else '' }}" style="width: 6em;">
+      <input type="number" id="flood_dams_exempt_at_y" name="flood_dams_exempt_at_y" value="{{ army.flood_dams_exempt_at.y if army.flood_dams_exempt_at else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">The Flooded province where this Army already paid the one-time Discovery.FLOOD_DAMS toll -- excuses it from the ongoing "stuck in a Flooded province" block there for the rest of the turn. Leave both blank for no exemption.</span>
+    </p>
+
+    <button type="submit">Save Turn Effects</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Transport</h2>
   {% if current_carrier %}
     <p>Boarded on <strong>{{ current_carrier.army_type|display_name }} (#{{ current_carrier.army_id }})</strong>.</p>

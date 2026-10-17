@@ -1683,6 +1683,46 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("army_edit", slug=slug, army_id=army_id))
 
+    @app.post("/games/<slug>/armies/<int:army_id>/effects")
+    def army_effects_save(slug: str, army_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        army = state.armies.get(army_id)
+        if army is None:
+            return redirect(url_for("armies_list", slug=slug, error="Army not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("army_edit", slug=slug, army_id=army_id, error=message))
+
+        raw = request.form.get("movement_points", "").strip()
+        try:
+            movement_points = int(raw) if raw else 0
+        except ValueError:
+            return _edit_error("Movement Points must be a whole number.")
+
+        flood_x_raw = request.form.get("flood_dams_exempt_at_x", "").strip()
+        flood_y_raw = request.form.get("flood_dams_exempt_at_y", "").strip()
+        flood_dams_exempt_at: HexCoord | None
+        if flood_x_raw or flood_y_raw:
+            try:
+                flood_dams_exempt_at = HexCoord(int(flood_x_raw), int(flood_y_raw))
+            except ValueError:
+                return _edit_error("Flood Dams Exempt At needs both coordinates as whole numbers.")
+        else:
+            flood_dams_exempt_at = None
+
+        army.movement_points = movement_points
+        army.unhireable_this_turn = "unhireable_this_turn" in request.form
+        army.march_bonus_applied_this_turn = "march_bonus_applied_this_turn" in request.form
+        army.naval_bonus_applied_this_turn = "naval_bonus_applied_this_turn" in request.form
+        army.march_table_bonus_applied_this_turn = "march_table_bonus_applied_this_turn" in request.form
+        army.flood_dams_exempt_at = flood_dams_exempt_at
+        save_game(root, slug, state)
+        return redirect(url_for("army_edit", slug=slug, army_id=army_id))
+
     @app.post("/games/<slug>/armies/<int:army_id>/board")
     def army_board(slug: str, army_id: int):
         root: Path = app.config["GAMES_ROOT"]
