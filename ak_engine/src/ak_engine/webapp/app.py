@@ -1098,6 +1098,29 @@ def create_app(games_root: Path | None = None) -> Flask:
         except ValueError:
             return _edit_error("Effect values must be whole numbers.")
 
+        contested_by_raw = request.form.get("contested_by_kingdom_id", "").strip()
+        contested_by_kingdom_id: int | None
+        if contested_by_raw:
+            try:
+                contested_by_kingdom_id = int(contested_by_raw)
+            except ValueError:
+                return _edit_error("Please choose a valid Contested-By Kingdom.")
+            if contested_by_kingdom_id not in state.kingdoms:
+                return _edit_error("Please choose a valid Contested-By Kingdom.")
+        else:
+            contested_by_kingdom_id = None
+
+        contested_from_x_raw = request.form.get("contested_from_x", "").strip()
+        contested_from_y_raw = request.form.get("contested_from_y", "").strip()
+        contested_from_coord: HexCoord | None
+        if contested_from_x_raw or contested_from_y_raw:
+            try:
+                contested_from_coord = HexCoord(int(contested_from_x_raw), int(contested_from_y_raw))
+            except ValueError:
+                return _edit_error("Contested-From Coordinate needs both x and y as whole numbers.")
+        else:
+            contested_from_coord = None
+
         province.terrain_override = terrain_override
         province.tax_modifier_percent = tax_modifier_percent
         province.illusory_terrain = illusory_terrain
@@ -1109,6 +1132,8 @@ def create_app(games_root: Path | None = None) -> Flask:
         province.is_island = "is_island" in request.form
         province.mine_gold_bonus = mine_gold_bonus
         province.mine_find_attempts = mine_find_attempts
+        province.contested_by_kingdom_id = contested_by_kingdom_id
+        province.contested_from_coord = contested_from_coord
         save_game(root, slug, state)
         return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 

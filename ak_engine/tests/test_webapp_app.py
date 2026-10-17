@@ -2252,6 +2252,9 @@ def test_province_effects_save_persists_the_new_values(tmp_path):
             "is_island": "on",
             "mine_gold_bonus": "6",
             "mine_find_attempts": "2",
+            "contested_by_kingdom_id": "2",
+            "contested_from_x": "3",
+            "contested_from_y": "4",
         },
         follow_redirects=True,
     )
@@ -2270,6 +2273,8 @@ def test_province_effects_save_persists_the_new_values(tmp_path):
     assert province.is_island is True
     assert province.mine_gold_bonus == 6
     assert province.mine_find_attempts == 2
+    assert province.contested_by_kingdom_id == 2
+    assert province.contested_from_coord == HexCoord(3, 4)
 
 
 def test_province_effects_save_can_clear_optional_terrains_and_checkboxes(tmp_path):
@@ -2284,6 +2289,9 @@ def test_province_effects_save_can_clear_optional_terrains_and_checkboxes(tmp_pa
             "illusory_fog_active": "on",
             "plague_active": "on",
             "is_island": "on",
+            "contested_by_kingdom_id": "2",
+            "contested_from_x": "3",
+            "contested_from_y": "4",
         },
     )
 
@@ -2302,6 +2310,40 @@ def test_province_effects_save_can_clear_optional_terrains_and_checkboxes(tmp_pa
     assert province.earthquake_flat_reduction == 0
     assert province.mine_gold_bonus == 0
     assert province.mine_find_attempts == 0
+    assert province.contested_by_kingdom_id is None
+    assert province.contested_from_coord is None
+
+
+def test_province_effects_save_with_invalid_contested_by_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0/effects",
+        data={"contested_by_kingdom_id": "999999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Contested-By Kingdom" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[HexCoord(0, 0)].contested_by_kingdom_id is None
+
+
+def test_province_effects_save_rejects_a_half_filled_contested_from_coordinate(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0/effects",
+        data={"contested_from_x": "3"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"both x and y" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[HexCoord(0, 0)].contested_from_coord is None
 
 
 def test_province_effects_save_with_invalid_terrain_shows_an_error_not_a_crash(tmp_path):

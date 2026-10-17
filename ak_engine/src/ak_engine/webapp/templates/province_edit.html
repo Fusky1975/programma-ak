@@ -134,6 +134,24 @@
       <input type="number" id="mine_find_attempts" name="mine_find_attempts" value="{{ province.mine_find_attempts }}" style="width: 6em;">
     </p>
 
+    <p>
+      <label for="contested_by_kingdom_id">Contested By (rulebook [7.6] mixed result)</label><br>
+      <select id="contested_by_kingdom_id" name="contested_by_kingdom_id">
+        <option value="" {% if province.contested_by_kingdom_id is none %}selected{% endif %}>-- Not Contested --</option>
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}" {% if province.contested_by_kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">The attacking Kingdom a battle here left in a "mixed result" standoff -- drives a forced rebattle each gameturn until it resolves.</span>
+    </p>
+
+    <p>
+      <label for="contested_from_x">Contested-From Coordinate (x, y)</label><br>
+      <input type="number" id="contested_from_x" name="contested_from_x" value="{{ province.contested_from_coord.x if province.contested_from_coord is not none else '' }}" style="width: 6em;">
+      <input type="number" id="contested_from_y" name="contested_from_y" value="{{ province.contested_from_coord.y if province.contested_from_coord is not none else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Where the contesting attacker originally invaded from -- rulebook [7.4]'s forced-rebattle retreat must return here or to an adjacent province. Leave both blank for not recorded.</span>
+    </p>
+
     <button type="submit">Save Effects</button>
   </form>
 </div>
