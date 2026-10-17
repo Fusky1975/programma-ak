@@ -1073,6 +1073,37 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("province_edit", slug=slug, x=x, y=y))
 
+    @app.post("/games/<slug>/provinces/<int:x>/<int:y>/exploration")
+    def province_exploration_save(slug: str, x: int, y: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        coord = HexCoord(x, y)
+        province = state.provinces.get(coord)
+        if province is None:
+            return redirect(url_for("provinces_list", slug=slug, error="Province not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("province_edit", slug=slug, x=x, y=y, error=message))
+
+        explored_percent_by_kingdom: dict[int, int] = {}
+        for kingdom_id in state.kingdoms:
+            raw = request.form.get(f"explored_{kingdom_id}", "").strip()
+            try:
+                percent = int(raw) if raw else 0
+            except ValueError:
+                return _edit_error("Exploration percentages must be whole numbers.")
+            if not 0 <= percent <= 100:
+                return _edit_error("Exploration percentages must be 0-100.")
+            if percent:
+                explored_percent_by_kingdom[kingdom_id] = percent
+
+        province.explored_percent_by_kingdom = explored_percent_by_kingdom
+        save_game(root, slug, state)
+        return redirect(url_for("province_edit", slug=slug, x=x, y=y))
+
     @app.post("/games/<slug>/provinces/<int:x>/<int:y>/set-home")
     def province_set_home(slug: str, x: int, y: int):
         root: Path = app.config["GAMES_ROOT"]

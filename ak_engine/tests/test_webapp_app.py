@@ -2286,6 +2286,110 @@ def test_province_edit_shows_the_magic_and_terrain_effects_panel(tmp_path):
     assert b"Magic &amp; Terrain Effects" in response.data
 
 
+def test_province_exploration_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    (coord,) = _safe_province_coords(open_game(tmp_path, meta.slug)[1], 1)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/exploration",
+        data={"explored_1": "40", "explored_2": "100"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    province = state.provinces[coord]
+    assert province.explored_percent_by_kingdom.get(1) == 40
+    assert province.explored_percent_by_kingdom.get(2) == 100
+
+
+def test_province_exploration_save_can_clear_back_to_unexplored(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    (coord,) = _safe_province_coords(open_game(tmp_path, meta.slug)[1], 1)
+    client.post(
+        f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/exploration",
+        data={"explored_1": "40"},
+    )
+
+    client.post(f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/exploration", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[coord].explored_percent_by_kingdom == {}
+
+
+def test_province_exploration_save_rejects_an_out_of_range_percent(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    (coord,) = _safe_province_coords(open_game(tmp_path, meta.slug)[1], 1)
+    _, state = open_game(tmp_path, meta.slug)
+    before = dict(state.provinces[coord].explored_percent_by_kingdom)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/exploration",
+        data={"explored_1": "150"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must be 0-100" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[coord].explored_percent_by_kingdom == before
+
+
+def test_province_exploration_save_rejects_a_non_numeric_percent(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    (coord,) = _safe_province_coords(open_game(tmp_path, meta.slug)[1], 1)
+    _, state = open_game(tmp_path, meta.slug)
+    before = dict(state.provinces[coord].explored_percent_by_kingdom)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/{coord.x}/{coord.y}/exploration",
+        data={"explored_1": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must be whole numbers" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[coord].explored_percent_by_kingdom == before
+
+
+def test_province_exploration_save_missing_province_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/999/999/exploration", data={}, follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    assert b"Province not found" in response.data
+
+
+def test_province_exploration_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/games/does-not-exist/provinces/0/0/exploration", data={}, follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_province_edit_shows_the_exploration_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/provinces/0/0")
+
+    assert response.status_code == 200
+    assert b"Exploration" in response.data
+
+
 def test_leaders_list_before_world_creation_shows_a_message_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)

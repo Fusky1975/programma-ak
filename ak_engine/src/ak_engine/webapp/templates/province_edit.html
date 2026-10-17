@@ -139,6 +139,34 @@
 </div>
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Exploration</h2>
+  <p class="hex-map-legend-note">How much of this province each Kingdom has explored (0-100%) -- normally advanced by Move/Explore orders, exposed here for the GM to set up a scenario directly or correct by hand. A Kingdom at 0% has no "known province" entry here at all, the same way the real game treats "never explored."</p>
+  {% if state.kingdoms %}
+    <form method="post" action="{{ url_for('province_exploration_save', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Kingdom</th>
+            <th>Explored %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <tr>
+              <td>{{ kingdom.name }}</td>
+              <td><input type="number" name="explored_{{ kingdom_id }}" value="{{ province.explored_percent_by_kingdom.get(kingdom_id, 0) }}" min="0" max="100" style="width: 5em;"></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit">Save Exploration</button>
+    </form>
+  {% else %}
+    <p class="empty-state">No Kingdoms yet.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Home Province</h2>
   {% set current_homes = state.kingdoms.values()|selectattr('home_province', 'equalto', province.coord)|list %}
   {% if current_homes %}
