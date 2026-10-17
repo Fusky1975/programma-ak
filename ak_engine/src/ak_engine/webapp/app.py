@@ -25,7 +25,7 @@ from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, sorted_kingdom_discoveries
 from ak_engine.models.enums import ABILITY_NAME, Ability
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
-from ak_engine.models.game_state import ArmyState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, BlackmailClaim, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
@@ -667,6 +667,62 @@ def create_app(games_root: Path | None = None) -> Flask:
         kingdom.account_number = account_number
         kingdom.king_title_prefix = request.form.get("king_title_prefix", "").strip()
         kingdom.king_title_suffix = request.form.get("king_title_suffix", "").strip()
+        save_game(root, slug, state)
+        return redirect(url_for("kingdom_edit", slug=slug, kingdom_id=kingdom_id))
+
+    @app.post("/games/<slug>/kingdoms/<int:kingdom_id>/status")
+    def kingdom_status_save(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        kingdom = state.kingdoms.get(kingdom_id)
+        if kingdom is None:
+            return redirect(url_for("world_setup", slug=slug, error="Kingdom not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("kingdom_edit", slug=slug, kingdom_id=kingdom_id, error=message))
+
+        def _int_field(field: str) -> int:
+            raw = request.form.get(field, "").strip()
+            return int(raw) if raw else 0
+
+        try:
+            treasury_raid_attempts_this_turn = _int_field("treasury_raid_attempts_this_turn")
+            valhalla_visit_count = _int_field("valhalla_visit_count")
+        except ValueError:
+            return _edit_error("Status values must be whole numbers.")
+
+        def _blackmail_claim(prefix: str) -> BlackmailClaim | None:
+            leader_raw = request.form.get(f"{prefix}_spy_leader_id", "").strip()
+            kingdom_raw = request.form.get(f"{prefix}_spy_kingdom_id", "").strip()
+            amount_raw = request.form.get(f"{prefix}_amount", "").strip()
+            if not leader_raw and not kingdom_raw and not amount_raw:
+                return None
+            if not leader_raw or not kingdom_raw or not amount_raw:
+                raise ValueError("every field of a Blackmail claim is required once any one is set")
+            spy_leader_id = int(leader_raw)
+            spy_kingdom_id = int(kingdom_raw)
+            amount = int(amount_raw)
+            if spy_leader_id not in state.leaders:
+                raise KeyError("spy leader")
+            if spy_kingdom_id not in state.kingdoms:
+                raise KeyError("spy kingdom")
+            return BlackmailClaim(spy_leader_id=spy_leader_id, spy_kingdom_id=spy_kingdom_id, amount=amount)
+
+        try:
+            pending_blackmail = _blackmail_claim("pending")
+            active_blackmail = _blackmail_claim("active")
+        except ValueError:
+            return _edit_error("A Blackmail claim needs its Spy, Spy's Kingdom, and Amount all set.")
+        except KeyError:
+            return _edit_error("Please choose a valid Spy and Spy's Kingdom for the Blackmail claim.")
+
+        kingdom.treasury_raid_attempts_this_turn = treasury_raid_attempts_this_turn
+        kingdom.valhalla_visit_count = valhalla_visit_count
+        kingdom.pending_blackmail = pending_blackmail
+        kingdom.active_blackmail = active_blackmail
         save_game(root, slug, state)
         return redirect(url_for("kingdom_edit", slug=slug, kingdom_id=kingdom_id))
 

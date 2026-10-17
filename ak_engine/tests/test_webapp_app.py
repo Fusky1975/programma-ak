@@ -11,6 +11,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
+from ak_engine.models.game_state import BlackmailClaim
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.office import Office
@@ -867,6 +868,151 @@ def test_kingdom_save_missing_game_shows_an_error_not_a_crash(tmp_path):
 
     assert response.status_code == 200
     assert b"Game not found" in response.data
+
+
+def test_kingdom_status_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    other_kingdom_id = next(kid for kid in state.kingdoms if kid != 1)
+    spy_leader_id = next(iter(state.leaders))
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1/status",
+        data={
+            "treasury_raid_attempts_this_turn": "2",
+            "valhalla_visit_count": "5",
+            "pending_spy_leader_id": str(spy_leader_id),
+            "pending_spy_kingdom_id": str(other_kingdom_id),
+            "pending_amount": "15",
+            "active_spy_leader_id": str(spy_leader_id),
+            "active_spy_kingdom_id": str(other_kingdom_id),
+            "active_amount": "30",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    kingdom = state.kingdoms[1]
+    assert kingdom.treasury_raid_attempts_this_turn == 2
+    assert kingdom.valhalla_visit_count == 5
+    assert kingdom.pending_blackmail == BlackmailClaim(
+        spy_leader_id=spy_leader_id, spy_kingdom_id=other_kingdom_id, amount=15
+    )
+    assert kingdom.active_blackmail == BlackmailClaim(
+        spy_leader_id=spy_leader_id, spy_kingdom_id=other_kingdom_id, amount=30
+    )
+
+
+def test_kingdom_status_save_can_clear_back_to_defaults(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    other_kingdom_id = next(kid for kid in state.kingdoms if kid != 1)
+    spy_leader_id = next(iter(state.leaders))
+    client.post(
+        f"/games/{meta.slug}/kingdoms/1/status",
+        data={
+            "treasury_raid_attempts_this_turn": "2",
+            "valhalla_visit_count": "5",
+            "pending_spy_leader_id": str(spy_leader_id),
+            "pending_spy_kingdom_id": str(other_kingdom_id),
+            "pending_amount": "15",
+        },
+    )
+
+    client.post(f"/games/{meta.slug}/kingdoms/1/status", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    kingdom = state.kingdoms[1]
+    assert kingdom.treasury_raid_attempts_this_turn == 0
+    assert kingdom.valhalla_visit_count == 0
+    assert kingdom.pending_blackmail is None
+    assert kingdom.active_blackmail is None
+
+
+def test_kingdom_status_save_rejects_a_partially_filled_blackmail_claim(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1/status",
+        data={"pending_amount": "15"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"all set" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.kingdoms[1].pending_blackmail is None
+
+
+def test_kingdom_status_save_rejects_an_invalid_blackmail_spy(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    other_kingdom_id = next(kid for kid in state.kingdoms if kid != 1)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1/status",
+        data={
+            "pending_spy_leader_id": "999999",
+            "pending_spy_kingdom_id": str(other_kingdom_id),
+            "pending_amount": "15",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Spy" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.kingdoms[1].pending_blackmail is None
+
+
+def test_kingdom_status_save_rejects_a_non_numeric_value(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1/status",
+        data={"treasury_raid_attempts_this_turn": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must be whole numbers" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.kingdoms[1].treasury_raid_attempts_this_turn == 0
+
+
+def test_kingdom_status_save_missing_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/kingdoms/999/status", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Kingdom not found" in response.data
+
+
+def test_kingdom_status_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/kingdoms/1/status", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_kingdom_edit_shows_the_status_effects_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/kingdoms/1")
+
+    assert response.status_code == 200
+    assert b"Status Effects" in response.data
 
 
 def test_world_setup_shows_an_edit_link_for_each_kingdom(tmp_path):
