@@ -38,6 +38,30 @@
   </div>
 
   <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>World Emperor</h2>
+    <p class="hex-map-legend-note">Normally elected by rulebook [10.2]'s own vote -- exposed here for the GM to set up a scenario directly or correct by hand. Gates the Emperor/Imperial Treasurer office perks and the STATE OF THE NATION report section.</p>
+    <form method="post" action="{{ url_for('world_emperor_save', slug=meta.slug) }}">
+      <p>
+        <label for="emperor_kingdom_id">World Emperor</label><br>
+        <select id="emperor_kingdom_id" name="emperor_kingdom_id">
+          <option value="" {% if state.emperor_kingdom_id is none %}selected{% endif %}>-- None --</option>
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <option value="{{ kingdom_id }}" {% if state.emperor_kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+          {% endfor %}
+        </select>
+      </p>
+
+      <p>
+        <label for="last_emperor_vote_turn">Last Emperor Vote Turn</label><br>
+        <input type="number" id="last_emperor_vote_turn" name="last_emperor_vote_turn" value="{{ state.last_emperor_vote_turn if state.last_emperor_vote_turn is not none else '' }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">The turn a vote was last held (win or not) -- a new vote can't be requested for the very next turn after this one. Leave blank for "never held."</span>
+      </p>
+
+      <button type="submit">Save World Emperor</button>
+    </form>
+  </div>
+
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
     <h2>Create Kingdom</h2>
     <p>Adds a brand-new Kingdom and its King to this already-created world. The Home province must be an existing,
       unowned province (not already anyone's Home) -- pick one from the Provinces map, then enter its coordinates

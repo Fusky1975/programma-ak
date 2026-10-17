@@ -1025,6 +1025,88 @@ def test_world_setup_shows_an_edit_link_for_each_kingdom(tmp_path):
     assert f'/kingdoms/1"'.encode() in response.data
 
 
+def test_world_emperor_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/emperor",
+        data={"emperor_kingdom_id": "1", "last_emperor_vote_turn": "3"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.emperor_kingdom_id == 1
+    assert state.last_emperor_vote_turn == 3
+
+
+def test_world_emperor_save_can_clear_back_to_no_emperor(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(
+        f"/games/{meta.slug}/world/emperor",
+        data={"emperor_kingdom_id": "1", "last_emperor_vote_turn": "3"},
+    )
+
+    client.post(f"/games/{meta.slug}/world/emperor", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.emperor_kingdom_id is None
+    assert state.last_emperor_vote_turn is None
+
+
+def test_world_emperor_save_rejects_an_invalid_emperor(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/emperor",
+        data={"emperor_kingdom_id": "999999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid World Emperor" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.emperor_kingdom_id is None
+
+
+def test_world_emperor_save_rejects_a_non_numeric_vote_turn(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/emperor",
+        data={"last_emperor_vote_turn": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Last Emperor Vote Turn must be a whole number" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.last_emperor_vote_turn is None
+
+
+def test_world_emperor_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/world/emperor", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_world_setup_shows_the_world_emperor_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/world")
+
+    assert response.status_code == 200
+    assert b"World Emperor" in response.data
+
+
 def test_kingdom_edit_shows_no_discoveries_for_a_new_kingdom(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

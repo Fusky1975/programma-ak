@@ -816,6 +816,44 @@ def create_app(games_root: Path | None = None) -> Flask:
             return redirect(url_for("world_setup", slug=slug, error="This game's world has already been created."))
         return redirect(url_for("world_setup", slug=slug))
 
+    @app.post("/games/<slug>/world/emperor")
+    def world_emperor_save(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _setup_error(message: str):
+            return redirect(url_for("world_setup", slug=slug, error=message))
+
+        emperor_raw = request.form.get("emperor_kingdom_id", "").strip()
+        emperor_kingdom_id: int | None
+        if emperor_raw:
+            try:
+                emperor_kingdom_id = int(emperor_raw)
+            except ValueError:
+                return _setup_error("Please choose a valid World Emperor.")
+            if emperor_kingdom_id not in state.kingdoms:
+                return _setup_error("Please choose a valid World Emperor.")
+        else:
+            emperor_kingdom_id = None
+
+        vote_turn_raw = request.form.get("last_emperor_vote_turn", "").strip()
+        last_emperor_vote_turn: int | None
+        if vote_turn_raw:
+            try:
+                last_emperor_vote_turn = int(vote_turn_raw)
+            except ValueError:
+                return _setup_error("Last Emperor Vote Turn must be a whole number.")
+        else:
+            last_emperor_vote_turn = None
+
+        state.emperor_kingdom_id = emperor_kingdom_id
+        state.last_emperor_vote_turn = last_emperor_vote_turn
+        save_game(root, slug, state)
+        return redirect(url_for("world_setup", slug=slug))
+
     @app.get("/games/<slug>/provinces")
     def provinces_list(slug: str):
         root: Path = app.config["GAMES_ROOT"]
