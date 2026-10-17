@@ -1490,6 +1490,63 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 
+    @app.post("/games/<slug>/leaders/<int:leader_id>/status")
+    def leader_status_save(slug: str, leader_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leader = state.leaders.get(leader_id)
+        if leader is None:
+            return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id, error=message))
+
+        attempts_raw = request.form.get("assassination_guild_attempts", "").strip()
+        try:
+            assassination_guild_attempts = int(attempts_raw) if attempts_raw else 0
+        except ValueError:
+            return _edit_error("Assassins Guild Attempts must be a whole number.")
+
+        exponent_raw = request.form.get("unpaid_blackmail_penalty_exponent", "").strip()
+        try:
+            unpaid_blackmail_penalty_exponent = int(exponent_raw) if exponent_raw else 0
+        except ValueError:
+            return _edit_error("Unpaid Blackmail Penalty Exponent must be a whole number.")
+
+        double_agent_raw = request.form.get("double_agent_hired_by_kingdom_id", "").strip()
+        double_agent_hired_by_kingdom_id: int | None
+        if double_agent_raw:
+            try:
+                double_agent_hired_by_kingdom_id = int(double_agent_raw)
+            except ValueError:
+                return _edit_error("Please choose a valid Double Agent Hirer.")
+            if double_agent_hired_by_kingdom_id not in state.kingdoms:
+                return _edit_error("Please choose a valid Double Agent Hirer.")
+        else:
+            double_agent_hired_by_kingdom_id = None
+
+        clairvoyance_watchers: set[int] = set()
+        for raw_id in request.form.getlist("clairvoyance_watchers"):
+            try:
+                watcher_id = int(raw_id)
+            except ValueError:
+                return _edit_error("Please choose valid Clairvoyance Watchers.")
+            if watcher_id not in state.kingdoms:
+                return _edit_error("Please choose valid Clairvoyance Watchers.")
+            clairvoyance_watchers.add(watcher_id)
+
+        leader.is_comatose = "is_comatose" in request.form
+        leader.is_royal_heir = "is_royal_heir" in request.form
+        leader.assassination_guild_attempts = assassination_guild_attempts
+        leader.unpaid_blackmail_penalty_exponent = unpaid_blackmail_penalty_exponent
+        leader.double_agent_hired_by_kingdom_id = double_agent_hired_by_kingdom_id
+        leader.clairvoyance_watchers = clairvoyance_watchers
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
     @app.post("/games/<slug>/leaders/<int:leader_id>/delete")
     def leader_delete(slug: str, leader_id: int):
         root: Path = app.config["GAMES_ROOT"]

@@ -146,6 +146,57 @@
 </div>
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Status &amp; Guild Effects</h2>
+  <p class="hex-map-legend-note">Lasting state turn processing itself writes and reads for this Hero/King -- normally set by in-game events, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('leader_status_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <p>
+      <label><input type="checkbox" name="is_comatose" {% if leader.is_comatose %}checked{% endif %}> Comatose</label>
+      <br><span class="hex-map-legend-note">Every skill reads as 0 while set, and Practice is blocked; cleared only by a successful Resurrection cast targeting this leader.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="is_royal_heir" {% if leader.is_royal_heir %}checked{% endif %}> Unfinalized Royal Heir</label>
+      <br><span class="hex-map-legend-note">Set automatically on a King's death until the Heir is finalized into a real King; Resurrection eligibility is actually decided by total skill level, not this flag alone.</span>
+    </p>
+
+    <p>
+      <label for="assassination_guild_attempts">Assassins Guild Attempts</label><br>
+      <input type="number" id="assassination_guild_attempts" name="assassination_guild_attempts" value="{{ leader.assassination_guild_attempts }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Every resolved Guild attempt against this specific leader doubles the guard and halves the following attempt's chance; never reset by anything in this project.</span>
+    </p>
+
+    <p>
+      <label for="unpaid_blackmail_penalty_exponent">Unpaid Blackmail Penalty Exponent</label><br>
+      <input type="number" id="unpaid_blackmail_penalty_exponent" name="unpaid_blackmail_penalty_exponent" value="{{ leader.unpaid_blackmail_penalty_exponent }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Halves this Spy's next Blackmail demand each time one of their demands goes unpaid; reset to 0 once a matching payment clears the claim.</span>
+    </p>
+
+    <p>
+      <label for="double_agent_hired_by_kingdom_id">Double Agent Hired By</label><br>
+      <select id="double_agent_hired_by_kingdom_id" name="double_agent_hired_by_kingdom_id">
+        <option value="" {% if leader.double_agent_hired_by_kingdom_id is none %}selected{% endif %}>-- None --</option>
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}" {% if leader.double_agent_hired_by_kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">Set when a foreign Kingdom "apparently" hires this leader via Double Agent this turn -- real kingdom_id above stays unchanged; read and cleared the same turn by the end-of-turn intel grant.</span>
+    </p>
+
+    <p>
+      <label for="clairvoyance_watchers">Clairvoyance Watchers</label><br>
+      <select id="clairvoyance_watchers" name="clairvoyance_watchers" multiple size="{{ [state.kingdoms|length, 1]|max if state.kingdoms|length < 6 else 6 }}">
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}" {% if kingdom_id in leader.clairvoyance_watchers %}selected{% endif %}>{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">Kingdoms currently watching this leader via a successful Clairvoyance cast -- not auto-cleared. Ctrl/Cmd-click to select more than one.</span>
+    </p>
+
+    <button type="submit">Save Status &amp; Guild Effects</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Items Held</h2>
   {% if items %}
     <ul class="game-list">

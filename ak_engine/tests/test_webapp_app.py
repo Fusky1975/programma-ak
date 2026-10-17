@@ -3410,6 +3410,142 @@ def test_leader_edit_shows_the_origin_and_hire_history_panel(tmp_path):
     assert b"Hire History" in response.data
 
 
+def test_leader_status_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    other_kingdom_id = next(kid for kid in state.kingdoms if kid != 1)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/status",
+        data={
+            "is_comatose": "on",
+            "is_royal_heir": "on",
+            "assassination_guild_attempts": "3",
+            "unpaid_blackmail_penalty_exponent": "2",
+            "double_agent_hired_by_kingdom_id": str(other_kingdom_id),
+            "clairvoyance_watchers": [str(other_kingdom_id)],
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    leader = state.leaders[1]
+    assert leader.is_comatose is True
+    assert leader.is_royal_heir is True
+    assert leader.assassination_guild_attempts == 3
+    assert leader.unpaid_blackmail_penalty_exponent == 2
+    assert leader.double_agent_hired_by_kingdom_id == other_kingdom_id
+    assert leader.clairvoyance_watchers == {other_kingdom_id}
+
+
+def test_leader_status_save_can_clear_back_to_defaults(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    other_kingdom_id = next(kid for kid in state.kingdoms if kid != 1)
+    client.post(
+        f"/games/{meta.slug}/leaders/1/status",
+        data={
+            "is_comatose": "on",
+            "is_royal_heir": "on",
+            "assassination_guild_attempts": "3",
+            "unpaid_blackmail_penalty_exponent": "2",
+            "double_agent_hired_by_kingdom_id": str(other_kingdom_id),
+            "clairvoyance_watchers": [str(other_kingdom_id)],
+        },
+    )
+
+    client.post(f"/games/{meta.slug}/leaders/1/status", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    leader = state.leaders[1]
+    assert leader.is_comatose is False
+    assert leader.is_royal_heir is False
+    assert leader.assassination_guild_attempts == 0
+    assert leader.unpaid_blackmail_penalty_exponent == 0
+    assert leader.double_agent_hired_by_kingdom_id is None
+    assert leader.clairvoyance_watchers == set()
+
+
+def test_leader_status_save_with_invalid_double_agent_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/status",
+        data={"double_agent_hired_by_kingdom_id": "999999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Double Agent Hirer" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[1].double_agent_hired_by_kingdom_id is None
+
+
+def test_leader_status_save_with_invalid_clairvoyance_watcher_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/status",
+        data={"clairvoyance_watchers": ["999999"]},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Clairvoyance Watchers" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[1].clairvoyance_watchers == set()
+
+
+def test_leader_status_save_rejects_a_non_numeric_value(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/status",
+        data={"assassination_guild_attempts": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must be a whole number" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[1].assassination_guild_attempts == 0
+
+
+def test_leader_status_save_missing_leader_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(f"/games/{meta.slug}/leaders/999999/status", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Hero not found" in response.data
+
+
+def test_leader_status_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/leaders/1/status", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_leader_edit_shows_the_status_and_guild_effects_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert response.status_code == 200
+    assert b"Status &amp; Guild Effects" in response.data
+
+
 def test_leader_delete_removes_a_hero(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
