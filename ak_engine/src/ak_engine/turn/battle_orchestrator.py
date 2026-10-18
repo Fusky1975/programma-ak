@@ -952,6 +952,10 @@ def _build_battle_units(
                 duellist_bonus_if_selected=duellist_bonus_if_selected,
                 alignment_king_bonus_if_selected=alignment_king_bonus_if_selected,
                 has_druidic_horse_control=has_druidic_horse_control,
+                quality=army.quality,
+                is_skeletal=army.is_skeletal,
+                kingdom_id=army.kingdom_id,
+                commanded_by=army.commanded_by,
             )
         )
     return units
@@ -2348,7 +2352,17 @@ def _apply_monster_summoning_aid(
                     illusory_terrain=illusory_terrain,
                     illusory_terrain_enhanced=illusory_terrain_enhanced,
                 )
-                units.append(BattleUnit(matching_army_type, strength, source_id=army.army_id))
+                units.append(
+                    BattleUnit(
+                        matching_army_type,
+                        strength,
+                        source_id=army.army_id,
+                        quality=army.quality,
+                        is_skeletal=army.is_skeletal,
+                        kingdom_id=None,
+                        commanded_by=None,
+                    )
+                )
             else:
                 units.extend(
                     _build_battle_units(

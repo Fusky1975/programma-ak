@@ -1387,6 +1387,7 @@ from ak_engine.turn.assassin_guild import GuildAssassinationOutcome
 from ak_engine.turn.army_quality import compute_army_modified_quality
 from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.aspy_execution import SpyReport
+from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import BattleReport, QualityChange, find_king_of_kingdom
 from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.battle_luck import (
@@ -1398,7 +1399,7 @@ from ak_engine.turn.battle_luck import (
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult, is_unfinalized_royal_heir
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
-from ak_engine.turn.combat import QUALITY_NAME
+from ak_engine.turn.combat import QUALITY_NAME, Quality
 from ak_engine.turn.emperor_election import (
     _ORDINARY_ALIGNMENTS,
     ElectionCallOutcome,
@@ -2575,6 +2576,172 @@ def _bluck_cluck_leader_id(commander_leader_id: int | None, kingdom_id: int | No
     return king.leader_id if king is not None else None
 
 
+# Phase 1035 -- the real battle-line ASCII diagram (rulebook [7.2]):
+# confirmed by reverse-engineering 102 real battle-line diagrams across
+# two real games (G6 -- `tests/fixtures/reports/G6`, 5 diagrams; G3 --
+# `tests/fixtures/reports/G3`, 97 diagrams, user-supplied). The real
+# layout: a fixed-10-char-wide grid, one column per battle-line column
+# (`BattleResult.columns`, 1-7 wide in the real corpus). Attacker block
+# first, rear line printed at the top and front line printed last,
+# directly above the separator -- `turn/battle_line.py assign_battle_
+# lines()`'s own "front line = depth 0" convention means the printed
+# order (confirmed directly against a real 5-column sample, `tests/
+# fixtures/reports/G3/SE3__T6.K1:75-93`) has to run rear-to-front so both
+# sides' own front lines end up facing each other across the separator,
+# matching a real line-of-battle picture. Then a full-width `-`
+# separator. Then the defender block, front line first (right below the
+# separator), rear lines after.
+#
+# **A ragged/partial line** (fewer units at some depth than there are
+# columns) is NOT centered -- it occupies whichever columns `assign_
+# battle_lines()`'s own round-robin dealing actually gave the extra
+# depth to (confirmed directly against the real 5-column sample above:
+# the ragged rear line sits in column 0, exactly where that same
+# round-robin algorithm would put it), so this renderer reproduces it
+# the same way: a missing unit at a given depth/column just renders as
+# a blank cell, no re-centering.
+#
+# **Attacker's own number row** (user-confirmed directly, after three
+# rejected hypotheses -- Tactical skill and column count both failed
+# real-data checks): the unit's own owning Kingdom's `kingdom_id` --
+# uniform across every attacking unit in the overwhelming majority of
+# real diagrams (a multi-Kingdom coalition attack is the one real
+# exception, and renders correctly here too, since each unit reads its
+# own `BattleUnit.kingdom_id`, never an assumed-uniform side-level
+# value).
+#
+# **Defender's own number row** (user-confirmed directly): the unit's
+# own owning Kingdom's `kingdom_id` if it belongs to a Kingdom's army;
+# otherwise the defending independent Hero's own `leader_id`
+# (`BattleUnit.commanded_by`) if the unit is guarded by a Hero defending
+# a neutral/unclaimed province with no Kingdom owner (confirmed directly
+# against the real sample above: Gnarlia, a neutral province, defended
+# by the independent Hero Fingol (#27) -- the diagram's own defender
+# number row reads "27"); otherwise the literal `"GC"` marker when no
+# commander/leader is present at all (100% correlation, 20/20 real
+# samples, with the real narrative phrase "No generals were present to
+# lead the forces of...").
+#
+# **Quality-letter suffix** (`/A`/`/V`/`/C`/`/E`/`/G`/`/D`) and the
+# Skeletal `S` flag are both real (confirmed against the exact
+# grammatical adjective slot in the surrounding narrative prose at
+# 98.8%/95.1% precision) -- but whether a given real diagram shows the
+# letter at all for an Average, non-Skeletal unit, or omits it entirely,
+# turned out NOT to be a clean deterministic rule by side (closer to
+# "usually omitted on the attacker side, usually shown on the defender
+# side" than to an exact rule -- real counter-examples exist on both
+# sides this project has no further data to explain, e.g. the same real
+# 5-column sample above shows an explicit "/A" on three different
+# Average attacker units while a fourth attacker unit elsewhere in the
+# same diagram omits its own letter entirely). This renderer always
+# shows the letter -- a documented simplification, not a guess at
+# whatever the real (apparently non-deterministic, or deterministic on
+# a fact this project doesn't track) omission rule actually is.
+#
+# **Decorative border bytes** wrapping some numbers in the real raw
+# files (CP437-era dot-matrix printer font artifacts -- inconsistent,
+# non-decodable) are deliberately not reproduced -- plain zero-padded
+# numbers (or the literal `GC`) are this project's own established
+# convention for a byte this project can't make sense of (see
+# `render_guardian_poses_riddle()`'s own `$+` stanza-marker handling).
+#
+# **Not yet implemented**: the real "The attackers had the 218th
+# Legion... in reserve." sentence (listing units past the battle-line
+# cutoff -- i.e. units whose own army never got a line-up slot at all),
+# confirmed present in the real corpus immediately after the diagram and
+# before BATLDR's own leader-roster sentences below -- it needs data
+# (which of a side's own armies were passed to `fight_battle()` but
+# never reached `assign_battle_lines()`'s own output) this composer
+# doesn't currently receive. A separate, not-yet-started follow-up, not
+# folded into this phase's own scope.
+_BATTLE_LINE_INTRO_SENTENCE = "The armies were drawn up into lines of battle as shown here:"
+
+_BATTLE_DIAGRAM_QUALITY_LETTER: dict[Quality, str] = {
+    Quality.DEPLETED: "D",
+    Quality.GREEN: "G",
+    Quality.AVERAGE: "A",
+    Quality.VETERAN: "V",
+    Quality.CRACK: "C",
+    Quality.ELITE: "E",
+}
+_BATTLE_DIAGRAM_CELL_WIDTH = 10
+
+
+def _battle_diagram_cell(text: str) -> str:
+    return text.center(_BATTLE_DIAGRAM_CELL_WIDTH)
+
+
+def _battle_diagram_blank_row(n_cols: int) -> str:
+    return " " * (_BATTLE_DIAGRAM_CELL_WIDTH * n_cols)
+
+
+def _battle_diagram_name_cell(unit: BattleUnit | None) -> str:
+    if unit is None or unit.source_id is None:
+        return _battle_diagram_cell("")
+    letter = _BATTLE_DIAGRAM_QUALITY_LETTER[unit.quality]
+    suffix = f"/{letter}{'S' if unit.is_skeletal else ''}"
+    return _battle_diagram_cell(f"{make_army_ordinal(unit.source_id)}{suffix}")
+
+
+def _battle_diagram_type_cell(unit: BattleUnit | None) -> str:
+    if unit is None or unit.source_id is None:
+        return _battle_diagram_cell("")
+    return _battle_diagram_cell(ARMY_TYPE_DESIGNATION[unit.army_type])
+
+
+def _battle_diagram_number_cell(unit: BattleUnit | None) -> str:
+    if unit is None or unit.source_id is None:
+        return _battle_diagram_cell("")
+    if unit.kingdom_id is not None:
+        marker = f"{unit.kingdom_id:02d}"
+    elif unit.commanded_by is not None:
+        marker = f"{unit.commanded_by:02d}" if unit.commanded_by < 100 else str(unit.commanded_by)
+    else:
+        marker = "GC"
+    return _battle_diagram_cell(marker)
+
+
+def render_battle_line_diagram(
+    battle_result: BattleResult, province_name: str, province_coord: HexCoord
+) -> list[str]:
+    """Renders the real battle-line ASCII diagram (rulebook [7.2]) -- see
+    this function's own module-level comment, right above, for the full
+    sourcing of every field. Returns ``[]`` when the battle has no real
+    column data at all (a manually-constructed ``BattleResult`` in a
+    test, not a real production battle -- ``resolve_battle()`` always
+    produces at least one column for a real fight).
+    """
+
+    columns = battle_result.columns
+    if not columns:
+        return []
+    n_cols = len(columns)
+
+    lines = [f"  ATTACKING ARMY, Battle of {province_name} ({province_code(province_coord):04d}):", ""]
+
+    attacker_depth = max((len(column.attacker_units) for column in columns), default=0)
+    for depth in range(attacker_depth - 1, -1, -1):
+        units = [column.attacker_units[depth] if depth < len(column.attacker_units) else None for column in columns]
+        lines.append("".join(_battle_diagram_name_cell(u) for u in units))
+        lines.append("".join(_battle_diagram_type_cell(u) for u in units))
+        lines.append("".join(_battle_diagram_number_cell(u) for u in units))
+        if depth > 0:
+            lines.append(_battle_diagram_blank_row(n_cols))
+
+    lines.append("-" * (_BATTLE_DIAGRAM_CELL_WIDTH * n_cols))
+
+    defender_depth = max((len(column.defender_units) for column in columns), default=0)
+    for depth in range(defender_depth):
+        units = [column.defender_units[depth] if depth < len(column.defender_units) else None for column in columns]
+        lines.append("".join(_battle_diagram_number_cell(u) for u in units))
+        lines.append("".join(_battle_diagram_name_cell(u) for u in units))
+        lines.append("".join(_battle_diagram_type_cell(u) for u in units))
+        lines.append(_battle_diagram_blank_row(n_cols))
+
+    lines.append("  DEFENDING ARMY")
+    return lines
+
+
 def describe_battle(
     battle_report: BattleReport,
     *,
@@ -2698,6 +2865,22 @@ def describe_battle(
 
     army_names = build_battle_army_names(state, battle_report)
     lines: list[str] = []
+
+    # Phase 1035 -- the real battle-line ASCII diagram (rulebook [7.2])
+    # prints before any of this composer's own narrative lines (confirmed
+    # directly against real SE3 letter text -- see `render_battle_line_
+    # diagram()`'s own module-level comment for the full sourcing). Its
+    # own intro sentence is a fixed, unvarying real line, not a template.
+    # Gated on `province_coord is not None`, the same "was this a real
+    # battle" signal BLUCK/CLUCK/the leader roster below already use (an
+    # instant, battle-free conquest never invents a diagram either).
+    if battle_report.province_coord is not None:
+        diagram_lines = render_battle_line_diagram(
+            battle_report.battle_result, province_name, battle_report.province_coord
+        )
+        if diagram_lines:
+            lines.append(_BATTLE_LINE_INTRO_SENTENCE)
+            lines.extend(diagram_lines)
 
     # Phase 658: each side's own real roster is commanders first, then
     # present-but-not-commanding leaders (`_BLList`'s own `lp <= cdrdex

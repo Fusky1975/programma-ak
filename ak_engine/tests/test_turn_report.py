@@ -99,6 +99,7 @@ from ak_engine.report.turn_report import (
     _bluck_cluck_leader_id,
     describe_battle,
     describe_quality_changes,
+    render_battle_line_diagram,
     describe_cast,
     describe_locate_object,
     render_locate_object,
@@ -1309,6 +1310,181 @@ def test_describe_battle_appends_quality_change_sentences_after_retreats():
     ]
 
 
+# -- render_battle_line_diagram (Phase 1035) ---------------------------------
+
+
+def test_render_battle_line_diagram_matches_a_real_one_column_sample():
+    # tests/fixtures/reports/G3/SE3__T6.K6 -- Kahn (kingdom 6) attacks
+    # Gnarlia (#1301), defended by the independent Hero Fingol (#27), no
+    # Kingdom owner. Real diagram (border bytes aside, and this
+    # renderer's own documented "always show the quality letter"
+    # simplification): 3 attacker Legions (144th, 219th, 142nd/Crack)
+    # printed rear-to-front, defender's single 141st/Average Bowmen
+    # marked with Fingol's own leader_id (27), not a Kingdom id.
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+        attacker_units=[
+            BattleUnit(ArmyType.LEGION, 10.0, source_id=144, quality=Quality.AVERAGE, kingdom_id=6),
+            BattleUnit(ArmyType.LEGION, 10.0, source_id=219, quality=Quality.AVERAGE, kingdom_id=6),
+            BattleUnit(ArmyType.LEGION, 10.0, source_id=142, quality=Quality.CRACK, kingdom_id=6),
+        ],
+        defender_units=[
+            BattleUnit(ArmyType.BOWMEN, 5.0, source_id=141, quality=Quality.AVERAGE, kingdom_id=None, commanded_by=27),
+        ],
+    )
+    result = BattleResult(columns=[column])
+
+    assert render_battle_line_diagram(result, "Gnarlia", HexCoord(13, 1)) == [
+        "  ATTACKING ARMY, Battle of Gnarlia (1301):",
+        "",
+        " 142nd/C  ",
+        "  Legion  ",
+        "    06    ",
+        "          ",
+        " 219th/A  ",
+        "  Legion  ",
+        "    06    ",
+        "          ",
+        " 144th/A  ",
+        "  Legion  ",
+        "    06    ",
+        "----------",
+        "    27    ",
+        " 141st/A  ",
+        "  Bowmen  ",
+        "          ",
+        "  DEFENDING ARMY",
+    ]
+
+
+def test_render_battle_line_diagram_a_ragged_line_sits_in_the_columns_assign_battle_lines_gave_it():
+    # tests/fixtures/reports/G3/SE3__T6.K1 -- 11 attacker units dealt
+    # round-robin into 5 columns: column 0 alone reaches a 3rd (rearmost)
+    # line (the real `assign_battle_lines()` round-robin gives the extra
+    # depth to the lowest-indexed columns, not a centered sub-block) --
+    # confirmed directly against the real sample's own raw bytes.
+    columns = [
+        BattleColumnResult(
+            attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+            attacker_units=units, defender_units=[],
+        )
+        for units in (
+            [
+                BattleUnit(ArmyType.BOWMEN, 1.0, source_id=316, quality=Quality.VETERAN, kingdom_id=1),
+                BattleUnit(ArmyType.LEGION, 1.0, source_id=282, quality=Quality.VETERAN, kingdom_id=1),
+                BattleUnit(ArmyType.LEGION, 1.0, source_id=267, quality=Quality.AVERAGE, kingdom_id=1),
+            ],
+            [
+                BattleUnit(ArmyType.DRAGON_WING, 1.0, source_id=293, quality=Quality.AVERAGE, kingdom_id=1),
+                BattleUnit(ArmyType.CHARIOTS, 1.0, source_id=70, quality=Quality.CRACK, kingdom_id=1),
+            ],
+            [
+                BattleUnit(ArmyType.TROLLS, 1.0, source_id=317, quality=Quality.AVERAGE, kingdom_id=1),
+                BattleUnit(ArmyType.LEGION, 1.0, source_id=71, quality=Quality.VETERAN, kingdom_id=1),
+            ],
+            [
+                BattleUnit(ArmyType.DRAGON_WING, 1.0, source_id=314, quality=Quality.VETERAN, kingdom_id=1),
+                BattleUnit(ArmyType.LEGION, 1.0, source_id=283, quality=Quality.VETERAN, kingdom_id=1),
+            ],
+            [
+                BattleUnit(ArmyType.TROLLS, 1.0, source_id=318, quality=Quality.AVERAGE, kingdom_id=1),
+                BattleUnit(ArmyType.CHARIOTS, 1.0, source_id=233, quality=Quality.AVERAGE, kingdom_id=1),
+            ],
+        )
+    ]
+    result = BattleResult(columns=columns)
+
+    lines = render_battle_line_diagram(result, "Chaco", HexCoord(5, 4))
+    assert lines[0] == "  ATTACKING ARMY, Battle of Chaco (0504):"
+    # The rearmost (3rd) line has only column 0 populated -- the other 4
+    # columns render as blank cells, not centered elsewhere in the row.
+    assert lines[2] == " 267th/A  " + " " * 40
+    assert lines[3] == "  Legion  " + " " * 40
+    assert lines[4] == "    01    " + " " * 40
+    assert lines[13] == "-" * 50
+
+
+def test_render_battle_line_diagram_defender_shows_kingdom_id_when_kingdom_owned():
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=False, cluck_index=9,
+        attacker_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=1, kingdom_id=1)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=2, kingdom_id=4)],
+    )
+    result = BattleResult(columns=[column])
+
+    lines = render_battle_line_diagram(result, "Keep", HexCoord(1, 1))
+    # separator, then defender number row first.
+    assert lines[5] == "----------"
+    assert lines[6] == "    04    "
+
+
+def test_render_battle_line_diagram_defender_shows_gc_when_no_commander_present():
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=False, cluck_index=9,
+        attacker_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=1, kingdom_id=1)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=2, kingdom_id=None, commanded_by=None)],
+    )
+    result = BattleResult(columns=[column])
+
+    lines = render_battle_line_diagram(result, "Keep", HexCoord(1, 1))
+    assert lines[6] == "    GC    "
+
+
+def test_render_battle_line_diagram_skeletal_flag_appends_s_after_the_quality_letter():
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+        attacker_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=71, quality=Quality.CRACK, kingdom_id=1, is_skeletal=True)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=2, kingdom_id=4)],
+    )
+    result = BattleResult(columns=[column])
+
+    lines = render_battle_line_diagram(result, "Keep", HexCoord(1, 1))
+    assert lines[2] == " 71st/CS  "
+
+
+def test_render_battle_line_diagram_skips_a_unit_with_no_source_id():
+    # No backing ArmyState (a pure combat calculation) -- rendered as a
+    # blank cell, the same "no source, don't guess" convention
+    # build_battle_army_names() already uses for this exact case.
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+        attacker_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=None, kingdom_id=1)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=2, kingdom_id=4)],
+    )
+    result = BattleResult(columns=[column])
+
+    lines = render_battle_line_diagram(result, "Keep", HexCoord(1, 1))
+    assert lines[2] == " " * 10
+    assert lines[3] == " " * 10
+    assert lines[4] == " " * 10
+
+
+def test_render_battle_line_diagram_returns_empty_list_for_no_columns():
+    result = BattleResult(columns=[])
+    assert render_battle_line_diagram(result, "Keep", HexCoord(1, 1)) == []
+
+
+def test_describe_battle_skips_diagram_when_province_coord_is_unset():
+    # The instant-conquest/no-real-battle shortcut (Phase 927's own
+    # "was this a real battle" gate) -- no province_coord means no
+    # diagram either, matching BLUCK/CLUCK/the leader roster's own gate.
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    battle_result = BattleResult(winner="attacker", columns=[column])
+    report = BattleReport(battle_result=battle_result, conquered=True)
+
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=rng,
+    )
+    assert lines[0] != "The armies were drawn up into lines of battle as shown here:"
+
+
 # -- BLUCK/CLUCK luck narration wiring (Phase 615) ---------------------------
 
 
@@ -1338,6 +1514,21 @@ def test_describe_battle_prepends_bluck_and_interleaves_cluck_when_phase_is_supp
     )
 
     assert lines == [
+        # Phase 1035: the real battle-line ASCII diagram is this
+        # composer's own first output, before any narrative line -- see
+        # `render_battle_line_diagram()`'s own module comment.
+        "The armies were drawn up into lines of battle as shown here:",
+        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
+        "",
+        "  10th/A  ",
+        " Garrison ",
+        "    GC    ",
+        "----------",
+        "    GC    ",
+        "  20th/A  ",
+        "  Legion  ",
+        "          ",
+        "  DEFENDING ARMY",
         # Phase 927: neither side's own `*_commanding_leader_ids`/
         # `*_present_leader_ids` roster is populated on this fixture (only
         # the separate, singular `attacker_commander_leader_id`/`defender_
@@ -1385,6 +1576,20 @@ def test_describe_battle_skips_bluck_and_cluck_when_phase_is_not_supplied():
     )
 
     assert lines == [
+        # Phase 1035: see the previous test's own comment -- the diagram
+        # always prints first, regardless of whether `phase` is supplied.
+        "The armies were drawn up into lines of battle as shown here:",
+        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
+        "",
+        "  10th/A  ",
+        " Garrison ",
+        "    GC    ",
+        "----------",
+        "    GC    ",
+        "  20th/A  ",
+        "  Legion  ",
+        "          ",
+        "  DEFENDING ARMY",
         # Phase 927: same "no BATLDR roster populated on this fixture"
         # case as the previous test -- see its own comment.
         "no generals were present to lead the forces of Defendia.",
@@ -1457,6 +1662,20 @@ def test_describe_battle_falls_back_to_each_sides_own_king_when_unled():
     )
 
     assert lines == [
+        # Phase 1035: the diagram prints first -- see the earlier tests'
+        # own comment.
+        "The armies were drawn up into lines of battle as shown here:",
+        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
+        "",
+        "  10th/A  ",
+        " Garrison ",
+        "    GC    ",
+        "----------",
+        "    GC    ",
+        "  20th/A  ",
+        "  Legion  ",
+        "          ",
+        "  DEFENDING ARMY",
         # Phase 927: the Kings added above are real leaders, but neither
         # is *present at the battle province* (their own `LeaderState.
         # location` is each Kingdom's home, not `HexCoord(3, 5)`) -- so
@@ -1497,6 +1716,20 @@ def test_describe_battle_skips_bluck_and_cluck_when_no_leader_id_resolves_for_ei
     )
 
     assert lines == [
+        # Phase 1035: the diagram prints first -- see the earlier tests'
+        # own comment.
+        "The armies were drawn up into lines of battle as shown here:",
+        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
+        "",
+        "  10th/A  ",
+        " Garrison ",
+        "    GC    ",
+        "----------",
+        "    GC    ",
+        "  20th/A  ",
+        "  Legion  ",
+        "          ",
+        "  DEFENDING ARMY",
         # Phase 927: no BATLDR roster on this fixture -- see the earlier
         # "phase is not supplied" test's own comment.
         "no generals were present to lead the forces of Defendia.",
@@ -1536,6 +1769,20 @@ def test_describe_battle_bluck_appears_without_cluck_for_an_ineligible_column():
     )
 
     assert lines == [
+        # Phase 1035: the diagram prints first -- see the earlier tests'
+        # own comment.
+        "The armies were drawn up into lines of battle as shown here:",
+        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
+        "",
+        "  10th/A  ",
+        " Garrison ",
+        "    GC    ",
+        "----------",
+        "    GC    ",
+        "  20th/A  ",
+        "  Legion  ",
+        "          ",
+        "  DEFENDING ARMY",
         # Phase 927: no BATLDR roster on this fixture -- see the "phase
         # is not supplied" test's own comment above.
         "no generals were present to lead the forces of Defendia.",

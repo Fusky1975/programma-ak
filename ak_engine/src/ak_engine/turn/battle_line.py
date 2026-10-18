@@ -70,7 +70,7 @@ from dataclasses import dataclass, replace
 
 from ak_engine.models.army_type import BEASTS, ArmyType, is_overflight_unit, overflight_group
 from ak_engine.models.map import TERRAIN_LINE_LENGTH_RANGE, Terrain
-from ak_engine.turn.combat import apply_nemesis_penalty, line_contribution, win_probability
+from ak_engine.turn.combat import Quality, apply_nemesis_penalty, line_contribution, win_probability
 
 
 @dataclass(slots=True)
@@ -154,6 +154,21 @@ class BattleUnit:
     # exempt specifically the `models/army_type.py BEASTS` nemesis --
     # Chariots stays a real nemesis for cavalry regardless.
     has_druidic_horse_control: bool = False
+    # Phase 1035: snapshot of the owning ``ArmyState``'s own quality/
+    # Skeletal/ownership/command facts, captured here at build time (the
+    # same "compute now, don't re-derive from `state.armies` later"
+    # reasoning already documented above for `is_humanoid_race`/
+    # `attacker_home_province_leader_ids`) -- a destroyed army is
+    # ``state.remove_army()``-ed before ``report/turn_report.py``'s own
+    # `render_battle_line_diagram()` ever runs (battle resolution and
+    # report composition are two separate passes over `state`), so these
+    # facts would otherwise be unrecoverable for a unit the battle itself
+    # destroyed. Defaults match a bare/manually-constructed ``BattleUnit``
+    # (every pre-Phase-1035 caller), not a real unit's own data.
+    quality: Quality = Quality.AVERAGE
+    is_skeletal: bool = False
+    kingdom_id: int | None = None
+    commanded_by: int | None = None
 
 
 Column = list[BattleUnit]
