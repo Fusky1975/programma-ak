@@ -13,7 +13,7 @@ from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import BlackmailClaim
 from ak_engine.models.map import HexCoord, Terrain
-from ak_engine.models.monster import Monster
+from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.sex import Sex
@@ -4818,6 +4818,8 @@ def test_feature_status_save_persists_the_new_values(tmp_path):
             "discovered_1": "2",
             "discovered_2": "3",
             "guardian_talk_reply_id": "R_RIDDLE",
+            "guardian_state": "BOLD",
+            "power_used_turn": "5",
         },
         follow_redirects=True,
     )
@@ -4829,6 +4831,8 @@ def test_feature_status_save_persists_the_new_values(tmp_path):
     assert feature.discovered_by_kingdom.get(1) == 2
     assert feature.discovered_by_kingdom.get(2) == 3
     assert feature.guardian_talk_reply_id == MonsterTalkReply.R_RIDDLE.value
+    assert feature.guardian_state == MonsterEngagementState.BOLD
+    assert feature.power_used_turn == 5
 
 
 def test_feature_status_save_can_clear_back_to_defaults(tmp_path):
@@ -4843,6 +4847,8 @@ def test_feature_status_save_can_clear_back_to_defaults(tmp_path):
             "pending_deal_leader_id": str(leader_id),
             "discovered_1": "2",
             "guardian_talk_reply_id": "R_RIDDLE",
+            "guardian_state": "BOLD",
+            "power_used_turn": "5",
         },
     )
 
@@ -4853,6 +4859,8 @@ def test_feature_status_save_can_clear_back_to_defaults(tmp_path):
     assert feature.pending_deal_leader_id is None
     assert feature.discovered_by_kingdom == {}
     assert feature.guardian_talk_reply_id is None
+    assert feature.guardian_state == MonsterEngagementState.MERCENARY
+    assert feature.power_used_turn is None
 
 
 def test_feature_status_save_rejects_an_invalid_guardian_talk_reply(tmp_path):
@@ -4925,6 +4933,40 @@ def test_feature_status_save_rejects_a_non_numeric_discovery_level(tmp_path):
     assert b"must be whole numbers" in response.data
     _, state = open_game(tmp_path, meta.slug)
     assert state.features[feature_id].discovered_by_kingdom == before
+
+
+def test_feature_status_save_rejects_an_invalid_guardian_state(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+
+    response = client.post(
+        f"/games/{meta.slug}/features/{feature_id}/status",
+        data={"guardian_state": "NOT_A_STATE"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Guardian State" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.features[feature_id].guardian_state == MonsterEngagementState.MERCENARY
+
+
+def test_feature_status_save_rejects_a_non_numeric_power_used_turn(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    feature_id = _first_feature_id(tmp_path, meta.slug)
+
+    response = client.post(
+        f"/games/{meta.slug}/features/{feature_id}/status",
+        data={"power_used_turn": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Power Used Turn must be a whole number" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.features[feature_id].power_used_turn is None
 
 
 def test_feature_status_save_missing_feature_shows_an_error_not_a_crash(tmp_path):

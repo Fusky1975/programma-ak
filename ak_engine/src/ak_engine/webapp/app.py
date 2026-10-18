@@ -29,7 +29,7 @@ from ak_engine.models.game_state import ArmyState, BlackmailClaim, LeaderState, 
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
-from ak_engine.models.monster import MONSTER_NAMES, Monster
+from ak_engine.models.monster import MONSTER_NAMES, Monster, MonsterEngagementState
 from ak_engine.models.office import OFFICE_NAME, Office
 from ak_engine.models.power import POWER_NAME, Power
 from ak_engine.models.race import RACE_NAME, Race
@@ -2056,6 +2056,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             magic_locations=list(MagicFeature),
             powers=list(Power),
             talk_replies=list(MonsterTalkReply),
+            guardian_states=list(MonsterEngagementState),
             error=request.args.get("error"),
         )
 
@@ -2146,9 +2147,30 @@ def create_app(games_root: Path | None = None) -> Flask:
         else:
             guardian_talk_reply_id = None
 
+        guardian_state_raw = request.form.get("guardian_state", "").strip()
+        if guardian_state_raw:
+            try:
+                guardian_state = MonsterEngagementState[guardian_state_raw]
+            except KeyError:
+                return _edit_error("Please choose a valid Guardian State.")
+        else:
+            guardian_state = MonsterEngagementState.MERCENARY
+
+        power_used_raw = request.form.get("power_used_turn", "").strip()
+        power_used_turn: int | None
+        if power_used_raw:
+            try:
+                power_used_turn = int(power_used_raw)
+            except ValueError:
+                return _edit_error("Power Used Turn must be a whole number.")
+        else:
+            power_used_turn = None
+
         feature.pending_deal_leader_id = pending_deal_leader_id
         feature.discovered_by_kingdom = discovered_by_kingdom
         feature.guardian_talk_reply_id = guardian_talk_reply_id
+        feature.guardian_state = guardian_state
+        feature.power_used_turn = power_used_turn
         save_game(root, slug, state)
         return redirect(url_for("feature_edit", slug=slug, feature_id=feature_id))
 
