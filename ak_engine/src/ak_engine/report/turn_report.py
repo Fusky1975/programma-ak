@@ -6411,18 +6411,21 @@ def render_monster_reinforcement_helped(monster_name: str, army_name: str, rng: 
 # sentence, describing a neighboring province seen from a distance
 # (Phase 594). `SAY.PAS:739 _LBinoc: FD('binocpr',S_Red,5)`.
 #
-# **Confirmed genuinely unwired, and unlike every other unwired renderer
-# in this file, for no documented reason until now**: no "sourced but
-# unwired" note was ever attached here, and grepping this whole project
-# for "binocular" (case-insensitive) turns up nothing else at all --
-# `models/treasure.py`'s own 113-member `Treasure` catalog has no entry
-# whose name or description plausibly matches "Binoculars." So this
-# isn't just a missing call site (the usual "sourced but unwired"
-# shape elsewhere in this file) -- the real magic item `_LBinoc` itself
-# fires for was never identified against this project's own item
-# catalog at all, and no mechanic anywhere computes "the neighboring
-# province a Binoculars holder would see." A real, separate item-
-# identification question, not attempted here.
+# **Deliberately out of scope -- explicit user decision (2026-10-18),
+# not a gap left to fill later.** Unlike every other unwired renderer
+# in this file ("sourced but unwired" = text transcribed, real trigger
+# condition already modeled elsewhere, just no call site yet), the real
+# magic item `_LBinoc` fires for was never identified against this
+# project's own 113-member `Treasure` catalog at all (grepping the
+# whole project for "binocular", case-insensitive, turns up nothing
+# else), and no mechanic anywhere computes "the neighboring province a
+# Binoculars holder would see." The user's own assessment: likely an
+# item the original game's designers planned but never finished
+# wiring into AKGEN/AK.EXE themselves, not a gap in this project's own
+# reverse-engineering. `render_binoculars_preview()` below is kept
+# (its own text is genuinely sourced and its tests cover the pure
+# rendering logic) but is NOT a candidate for closing this file's
+# "no consumer wired yet" gaps -- don't re-flag it.
 #
 # Every marker resolves through an already-established project
 # convention, not a new one invented for this phase: `*` (direction) is
