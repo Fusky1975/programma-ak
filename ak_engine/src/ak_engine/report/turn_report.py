@@ -2645,15 +2645,12 @@ def _bluck_cluck_leader_id(commander_leader_id: int | None, kingdom_id: int | No
 # convention for a byte this project can't make sense of (see
 # `render_guardian_poses_riddle()`'s own `$+` stanza-marker handling).
 #
-# **Not yet implemented**: the real "The attackers had the 218th
-# Legion... in reserve." sentence (listing units past the battle-line
-# cutoff -- i.e. units whose own army never got a line-up slot at all),
-# confirmed present in the real corpus immediately after the diagram and
-# before BATLDR's own leader-roster sentences below -- it needs data
-# (which of a side's own armies were passed to `fight_battle()` but
-# never reached `assign_battle_lines()`'s own output) this composer
-# doesn't currently receive. A separate, not-yet-started follow-up, not
-# folded into this phase's own scope.
+# **The real "The attackers had the 218th Legion... in reserve."
+# sentence** (units past the diagram's own 3-line cutoff) is Phase
+# 1036's own `render_battle_reserve_sentences()`, right after this
+# function -- see that function's own module comment for the full
+# sourcing, including why a unit past the cutoff still really fights
+# (this is a display-only limit, not a combat-participation one).
 _BATTLE_LINE_INTRO_SENTENCE = "The armies were drawn up into lines of battle as shown here:"
 
 _BATTLE_DIAGRAM_QUALITY_LETTER: dict[Quality, str] = {
@@ -2665,6 +2662,22 @@ _BATTLE_DIAGRAM_QUALITY_LETTER: dict[Quality, str] = {
     Quality.ELITE: "E",
 }
 _BATTLE_DIAGRAM_CELL_WIDTH = 10
+# Phase 1036 -- the diagram itself never shows more than 3 lines per
+# side (confirmed across every one of the 102 real diagrams: attacker
+# depth tops out at 3, defender at 3, never 4+ -- Counter({3: 50, 2: 28,
+# 1: 24}) and Counter({1: 69, 2: 19, 3: 14}) respectively). This is a
+# display-only cutoff, not a combat-participation one: `turn/combat.py
+# line_contribution()`'s own disassembly-confirmed formula keeps halving
+# a unit's strength contribution indefinitely past the 3rd line (no cap
+# at all -- `turn/aftermath.py FORMATION_DIVISOR` even has its own
+# explicit "fourth_and_later" entry), so a unit past the cutoff still
+# really fights, just isn't drawn. Every real diagram with a unit past
+# this cutoff has a matching "in reserve" sentence listing it instead
+# (100% correlation, 40/40 real cases: `render_battle_reserve_
+# sentences()`'s own module comment has the full count) -- confirmed
+# this is purely where this project's own text generator stops drawing
+# the picture, not a combat rule this engine is missing.
+_BATTLE_DIAGRAM_MAX_LINES = 3
 
 
 def _battle_diagram_cell(text: str) -> str:
@@ -2719,7 +2732,9 @@ def render_battle_line_diagram(
 
     lines = [f"  ATTACKING ARMY, Battle of {province_name} ({province_code(province_coord):04d}):", ""]
 
-    attacker_depth = max((len(column.attacker_units) for column in columns), default=0)
+    attacker_depth = min(
+        max((len(column.attacker_units) for column in columns), default=0), _BATTLE_DIAGRAM_MAX_LINES
+    )
     for depth in range(attacker_depth - 1, -1, -1):
         units = [column.attacker_units[depth] if depth < len(column.attacker_units) else None for column in columns]
         lines.append("".join(_battle_diagram_name_cell(u) for u in units))
@@ -2730,7 +2745,9 @@ def render_battle_line_diagram(
 
     lines.append("-" * (_BATTLE_DIAGRAM_CELL_WIDTH * n_cols))
 
-    defender_depth = max((len(column.defender_units) for column in columns), default=0)
+    defender_depth = min(
+        max((len(column.defender_units) for column in columns), default=0), _BATTLE_DIAGRAM_MAX_LINES
+    )
     for depth in range(defender_depth):
         units = [column.defender_units[depth] if depth < len(column.defender_units) else None for column in columns]
         lines.append("".join(_battle_diagram_number_cell(u) for u in units))
@@ -2739,6 +2756,86 @@ def render_battle_line_diagram(
         lines.append(_battle_diagram_blank_row(n_cols))
 
     lines.append("  DEFENDING ARMY")
+    return lines
+
+
+# Phase 1036 -- the real "The attackers had the 218th Legion... in
+# reserve." sentence (and its defender-side sibling, "The defenders
+# had..."): confirmed across 40 real occurrences in the corpus (32
+# attacker-side, 8 defender-side), every single one firing exactly when
+# that side's own battle-line reaches a 4th line this renderer's own
+# diagram never draws (see `_BATTLE_DIAGRAM_MAX_LINES`'s own comment).
+#
+# **Per-unit naming**: "the {ordinal} {Skeletal }{ArmyTypeName}" --
+# confirmed real (`SE3__T11.K1:416`: "the 243rd Light Cavalry..."; the
+# Skeletal case, `SE3__T6.K1:294` area/`SE3__T11.K1:913`: "the 184th
+# Skeletal Bowmen") -- the exact same "ordinal + optional 'Skeletal' +
+# `ARMY_TYPE_NAME`'s own full word, not `ARMY_TYPE_DESIGNATION`'s
+# abbreviation" convention this project already established for
+# `render_cast_announcement()`'s own Skeletal Army narration (see the
+# module comment above its own `army_names` list comprehension).
+#
+# **List join**: comma-separated, "and" before the last item, no comma
+# before "and" -- confirmed real (`SE3__T6.K1:294`: "the 241st Bowmen,
+# the 110th Bowmen, the 109th Heavy Cavalry, the 277th Eagles and the
+# 209th Warg Riders in reserve.") -- exactly `report/prose.py``^L``'s
+# own existing list-join convention, reused here via `render()`'s
+# `lists=` parameter rather than hand-rolled.
+#
+# **Order**: ascending depth, then column -- i.e. exactly the original
+# pre-sort (strongest-first) order `assign_battle_lines()`'s own
+# round-robin dealing already produces, read back out directly from
+# `BattleColumnResult`'s own per-column lists (`column.attacker_units[
+# depth]`/`defender_units[depth]`) rather than re-sorted. Confirmed
+# against the real 3-column Maplehaven sample (`SE3__T11.K1:388-417`,
+# 1 of this corpus's 2 real multi-column reserve cases): 6 real reserve
+# units across 2 leftover depths (3 and 4) x 3 columns match this order
+# exactly once laid out this way.
+#
+# **Both sides can each have their own sentence** (confirmed real,
+# `SE3__T8.K1:427-428`: "The attackers had... in reserve.  The
+# defenders had... in reserve.") -- two independent list entries, not
+# one combined sentence.
+_BATTLE_RESERVE_TEMPLATE = {
+    "attacker_units": "The attackers had ^L= in reserve.",
+    "defender_units": "The defenders had ^L= in reserve.",
+}
+
+
+def _battle_reserve_unit_name(unit: BattleUnit) -> str | None:
+    if unit.source_id is None:
+        return None
+    type_name = ARMY_TYPE_NAME[unit.army_type]
+    ordinal = make_army_ordinal(unit.source_id)
+    if unit.is_skeletal:
+        return f"the {ordinal} Skeletal {type_name}"
+    return f"the {ordinal} {type_name}"
+
+
+def render_battle_reserve_sentences(battle_result: BattleResult, rng: random.Random) -> list[str]:
+    """Renders the real "The attackers/defenders had ... in reserve."
+    sentence(s) -- see this function's own module-level comment, right
+    above, for the full sourcing. ``[]`` when nothing on either side
+    goes past the diagram's own ``_BATTLE_DIAGRAM_MAX_LINES`` cutoff
+    (the overwhelmingly common case), or when every such unit has no
+    ``source_id`` to name it (the same "no source, don't guess"
+    convention ``build_battle_army_names()`` already uses).
+    """
+
+    columns = battle_result.columns
+    lines: list[str] = []
+    for attribute, template in _BATTLE_RESERVE_TEMPLATE.items():
+        max_depth = max((len(getattr(column, attribute)) for column in columns), default=0)
+        names: list[str] = []
+        for depth in range(_BATTLE_DIAGRAM_MAX_LINES, max_depth):
+            for column in columns:
+                units = getattr(column, attribute)
+                if depth < len(units):
+                    name = _battle_reserve_unit_name(units[depth])
+                    if name is not None:
+                        names.append(name)
+        if names:
+            lines.append(render(template, {}, rng=rng, lists={"=": names}))
     return lines
 
 
@@ -2881,6 +2978,11 @@ def describe_battle(
         if diagram_lines:
             lines.append(_BATTLE_LINE_INTRO_SENTENCE)
             lines.extend(diagram_lines)
+            # Phase 1036 -- "in reserve" sentence(s), immediately after the
+            # diagram and before BATLDR's own leader-roster sentences --
+            # confirmed real order, see `render_battle_reserve_sentences()`'s
+            # own module comment.
+            lines.extend(render_battle_reserve_sentences(battle_report.battle_result, rng))
 
     # Phase 658: each side's own real roster is commanders first, then
     # present-but-not-commanding leaders (`_BLList`'s own `lp <= cdrdex

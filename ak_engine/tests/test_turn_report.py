@@ -100,6 +100,7 @@ from ak_engine.report.turn_report import (
     describe_battle,
     describe_quality_changes,
     render_battle_line_diagram,
+    render_battle_reserve_sentences,
     describe_cast,
     describe_locate_object,
     render_locate_object,
@@ -1483,6 +1484,131 @@ def test_describe_battle_skips_diagram_when_province_coord_is_unset():
         rng=rng,
     )
     assert lines[0] != "The armies were drawn up into lines of battle as shown here:"
+
+
+# -- render_battle_reserve_sentences (Phase 1036) ----------------------------
+
+
+def test_render_battle_reserve_sentences_matches_a_real_one_column_sample():
+    # tests/fixtures/reports/G3/SE3__T6.K1:274-296 (Bir Nzaran): 8 real
+    # attacker units in a single column -- only the first 3 (strongest)
+    # make it into the diagram, the other 5 go to reserve verbatim.
+    attacker_units = [
+        BattleUnit(ArmyType.BOWMEN, 1.0, source_id=240, quality=Quality.AVERAGE, kingdom_id=1),
+        BattleUnit(ArmyType.DRAGON_WING, 1.0, source_id=124, quality=Quality.AVERAGE, kingdom_id=1, is_skeletal=True),
+        BattleUnit(ArmyType.BOWMEN, 1.0, source_id=108, quality=Quality.CRACK, kingdom_id=1, is_skeletal=True),
+        BattleUnit(ArmyType.BOWMEN, 1.0, source_id=241, quality=Quality.AVERAGE, kingdom_id=1),
+        BattleUnit(ArmyType.BOWMEN, 1.0, source_id=110, quality=Quality.AVERAGE, kingdom_id=1),
+        BattleUnit(ArmyType.HVY_CAVALRY, 1.0, source_id=109, quality=Quality.AVERAGE, kingdom_id=1),
+        BattleUnit(ArmyType.EAGLE_WING, 1.0, source_id=277, quality=Quality.AVERAGE, kingdom_id=1),
+        BattleUnit(ArmyType.WARG_RIDERS, 1.0, source_id=209, quality=Quality.AVERAGE, kingdom_id=1),
+    ]
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+        attacker_units=attacker_units,
+        defender_units=[BattleUnit(ArmyType.AXEMEN, 1.0, source_id=130, quality=Quality.AVERAGE, kingdom_id=22)],
+    )
+    result = BattleResult(columns=[column])
+
+    assert render_battle_reserve_sentences(result, random.Random(0)) == [
+        "The attackers had the 241st Bowmen, the 110th Bowmen, the 109th Heavy Cavalry, "
+        "the 277th Eagles and the 209th Warg Riders in reserve.",
+    ]
+
+
+def test_render_battle_reserve_sentences_matches_a_real_three_column_sample():
+    # tests/fixtures/reports/G3/SE3__T11.K1:388-417 (Maplehaven): 15 real
+    # defender units across 3 columns -- only the first 3 lines (9 units)
+    # make it into the diagram, the other 6 (depths 3 and 4) go to
+    # reserve in depth-then-column order, matching the real sentence.
+    def col(*ids_and_types):
+        return [BattleUnit(t, 1.0, source_id=i, kingdom_id=7) for i, t in ids_and_types]
+
+    AT = ArmyType
+    columns = [
+        BattleColumnResult(
+            attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+            attacker_units=[], defender_units=units,
+        )
+        for units in (
+            col((186, AT.LEGION), (275, AT.LEGION), (242, AT.LT_CAVALRY), (243, AT.LT_CAVALRY), (248, AT.LT_CAVALRY)),
+            col((274, AT.LEGION), (299, AT.LEGION), (311, AT.LEGION), (331, AT.BOWMEN), (215, AT.CAMEL_CORPS)),
+            col((259, AT.LEGION), (177, AT.LEGION), (185, AT.LT_CAVALRY), (21, AT.LEGION), (332, AT.BOWMEN)),
+        )
+    ]
+    result = BattleResult(columns=columns)
+
+    assert render_battle_reserve_sentences(result, random.Random(0)) == [
+        "The defenders had the 243rd Light Cavalry, the 331st Bowmen, the 21st Legion, "
+        "the 248th Light Cavalry, the 215th Camel Corps and the 332nd Bowmen in reserve.",
+    ]
+
+
+def test_render_battle_reserve_sentences_both_sides_get_their_own_sentence():
+    # tests/fixtures/reports/G3/SE3__T8.K1:427-428: both sides can have a
+    # real reserve sentence in the very same battle, as two independent
+    # list entries, not one combined sentence.
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+        attacker_units=[
+            BattleUnit(ArmyType.LEGION, 1.0, source_id=i, kingdom_id=1) for i in (1, 2, 3, 4)
+        ],
+        defender_units=[
+            BattleUnit(ArmyType.BOWMEN, 1.0, source_id=i, kingdom_id=2) for i in (10, 20, 30, 40)
+        ],
+    )
+    result = BattleResult(columns=[column])
+
+    lines = render_battle_reserve_sentences(result, random.Random(0))
+    assert lines == [
+        "The attackers had the 4th Legion in reserve.",
+        "The defenders had the 40th Bowmen in reserve.",
+    ]
+
+
+def test_render_battle_reserve_sentences_returns_empty_list_when_nothing_is_held_back():
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    result = BattleResult(columns=[column])
+    assert render_battle_reserve_sentences(result, random.Random(0)) == []
+
+
+def test_render_battle_reserve_sentences_skips_a_unit_with_no_source_id():
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+        attacker_units=[
+            BattleUnit(ArmyType.LEGION, 1.0, source_id=1, kingdom_id=1),
+            BattleUnit(ArmyType.LEGION, 1.0, source_id=2, kingdom_id=1),
+            BattleUnit(ArmyType.LEGION, 1.0, source_id=3, kingdom_id=1),
+            BattleUnit(ArmyType.LEGION, 1.0, source_id=None, kingdom_id=1),
+        ],
+        defender_units=[BattleUnit(ArmyType.BOWMEN, 1.0, source_id=20, kingdom_id=2)],
+    )
+    result = BattleResult(columns=[column])
+    assert render_battle_reserve_sentences(result, random.Random(0)) == []
+
+
+def test_describe_battle_includes_reserve_sentence_right_after_the_diagram():
+    attacker_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=i) for i in (10, 11, 12, 13)]
+    column = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=10.0, bres=3, attacker_won=True, cluck_index=20,
+        attacker_units=attacker_units,
+        defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+    )
+    battle_result = BattleResult(winner="attacker", columns=[column])
+    report = BattleReport(battle_result=battle_result, conquered=True, province_coord=HexCoord(3, 5))
+
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=rng,
+    )
+    diagram_end = lines.index("  DEFENDING ARMY")
+    assert lines[diagram_end + 1] == "The attackers had the 13th Garrison in reserve."
 
 
 # -- BLUCK/CLUCK luck narration wiring (Phase 615) ---------------------------
