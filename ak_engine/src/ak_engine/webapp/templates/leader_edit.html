@@ -192,6 +192,24 @@
       <br><span class="hex-map-legend-note">Kingdoms currently watching this leader via a successful Clairvoyance cast -- not auto-cleared. Ctrl/Cmd-click to select more than one.</span>
     </p>
 
+    <p>
+      <label for="valhalla_active_turn">Valhalla Active Turn</label><br>
+      <input type="number" id="valhalla_active_turn" name="valhalla_active_turn" value="{{ leader.valhalla_active_turn if leader.valhalla_active_turn is not none else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Only for the one reserved Valhalla visitor leader (id 199): the one gameturn they're allowed to act at all. Leave blank for every other leader, or once the visit has ended.</span>
+    </p>
+
+    <p>
+      <label for="valhalla_allowed_phase_count">Valhalla Allowed Phase Count</label><br>
+      <input type="number" id="valhalla_allowed_phase_count" name="valhalla_allowed_phase_count" value="{{ leader.valhalla_allowed_phase_count if leader.valhalla_allowed_phase_count is not none else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">How many of that turn's up-to-5 phases (P0-P4) may carry a real order, per VALHALLA.txt's own escalating table.</span>
+    </p>
+
+    <p>
+      <label for="valhalla_fixed_item_id">Valhalla Fixed Item ID</label><br>
+      <input type="number" id="valhalla_fixed_item_id" name="valhalla_fixed_item_id" value="{{ leader.valhalla_fixed_item_id if leader.valhalla_fixed_item_id is not none else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">The ItemInstance.item_id of the visitor's own fixed magic item -- blocked from Give, and specifically identified for hand-off/drop on departure. None for the 2 heroes whose own item is unresolved.</span>
+    </p>
+
     <button type="submit">Save Status &amp; Guild Effects</button>
   </form>
 </div>

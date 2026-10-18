@@ -3554,6 +3554,9 @@ def test_leader_status_save_persists_the_new_values(tmp_path):
             "unpaid_blackmail_penalty_exponent": "2",
             "double_agent_hired_by_kingdom_id": str(other_kingdom_id),
             "clairvoyance_watchers": [str(other_kingdom_id)],
+            "valhalla_active_turn": "5",
+            "valhalla_allowed_phase_count": "2",
+            "valhalla_fixed_item_id": "7",
         },
         follow_redirects=True,
     )
@@ -3567,6 +3570,9 @@ def test_leader_status_save_persists_the_new_values(tmp_path):
     assert leader.unpaid_blackmail_penalty_exponent == 2
     assert leader.double_agent_hired_by_kingdom_id == other_kingdom_id
     assert leader.clairvoyance_watchers == {other_kingdom_id}
+    assert leader.valhalla_active_turn == 5
+    assert leader.valhalla_allowed_phase_count == 2
+    assert leader.valhalla_fixed_item_id == 7
 
 
 def test_leader_status_save_can_clear_back_to_defaults(tmp_path):
@@ -3583,6 +3589,9 @@ def test_leader_status_save_can_clear_back_to_defaults(tmp_path):
             "unpaid_blackmail_penalty_exponent": "2",
             "double_agent_hired_by_kingdom_id": str(other_kingdom_id),
             "clairvoyance_watchers": [str(other_kingdom_id)],
+            "valhalla_active_turn": "5",
+            "valhalla_allowed_phase_count": "2",
+            "valhalla_fixed_item_id": "7",
         },
     )
 
@@ -3596,6 +3605,9 @@ def test_leader_status_save_can_clear_back_to_defaults(tmp_path):
     assert leader.unpaid_blackmail_penalty_exponent == 0
     assert leader.double_agent_hired_by_kingdom_id is None
     assert leader.clairvoyance_watchers == set()
+    assert leader.valhalla_active_turn is None
+    assert leader.valhalla_allowed_phase_count is None
+    assert leader.valhalla_fixed_item_id is None
 
 
 def test_leader_status_save_with_invalid_double_agent_kingdom_shows_an_error_not_a_crash(tmp_path):
@@ -3644,6 +3656,22 @@ def test_leader_status_save_rejects_a_non_numeric_value(tmp_path):
     assert b"must be a whole number" in response.data
     _, state = open_game(tmp_path, meta.slug)
     assert state.leaders[1].assassination_guild_attempts == 0
+
+
+def test_leader_status_save_rejects_a_non_numeric_valhalla_field(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/status",
+        data={"valhalla_active_turn": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Valhalla Active Turn must be a whole number" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[1].valhalla_active_turn is None
 
 
 def test_leader_status_save_missing_leader_shows_an_error_not_a_crash(tmp_path):

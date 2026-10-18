@@ -1606,12 +1606,33 @@ def create_app(games_root: Path | None = None) -> Flask:
                 return _edit_error("Please choose valid Clairvoyance Watchers.")
             clairvoyance_watchers.add(watcher_id)
 
+        valhalla_active_turn_raw = request.form.get("valhalla_active_turn", "").strip()
+        try:
+            valhalla_active_turn = int(valhalla_active_turn_raw) if valhalla_active_turn_raw else None
+        except ValueError:
+            return _edit_error("Valhalla Active Turn must be a whole number.")
+
+        valhalla_allowed_phase_count_raw = request.form.get("valhalla_allowed_phase_count", "").strip()
+        try:
+            valhalla_allowed_phase_count = int(valhalla_allowed_phase_count_raw) if valhalla_allowed_phase_count_raw else None
+        except ValueError:
+            return _edit_error("Valhalla Allowed Phase Count must be a whole number.")
+
+        valhalla_fixed_item_id_raw = request.form.get("valhalla_fixed_item_id", "").strip()
+        try:
+            valhalla_fixed_item_id = int(valhalla_fixed_item_id_raw) if valhalla_fixed_item_id_raw else None
+        except ValueError:
+            return _edit_error("Valhalla Fixed Item ID must be a whole number.")
+
         leader.is_comatose = "is_comatose" in request.form
         leader.is_royal_heir = "is_royal_heir" in request.form
         leader.assassination_guild_attempts = assassination_guild_attempts
         leader.unpaid_blackmail_penalty_exponent = unpaid_blackmail_penalty_exponent
         leader.double_agent_hired_by_kingdom_id = double_agent_hired_by_kingdom_id
         leader.clairvoyance_watchers = clairvoyance_watchers
+        leader.valhalla_active_turn = valhalla_active_turn
+        leader.valhalla_allowed_phase_count = valhalla_allowed_phase_count
+        leader.valhalla_fixed_item_id = valhalla_fixed_item_id
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 
