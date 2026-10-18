@@ -99,6 +99,102 @@
   </div>
 
   <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>World Events</h2>
+    <p class="hex-map-legend-note">Gate Angel, Valhalla and Imperial Election turn-scoped facts -- normally set by the Gate Angel cast, the ordinary Valhalla rotation, the Emperor election cycle, and a Fire order's own Assassins Guild interception, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+    <form method="post" action="{{ url_for('world_events_save', slug=meta.slug) }}">
+      <p>
+        <label for="last_gate_angel_turn">Last Gate Angel Turn</label><br>
+        <input type="number" id="last_gate_angel_turn" name="last_gate_angel_turn" value="{{ state.last_gate_angel_turn if state.last_gate_angel_turn is not none else '' }}" style="width: 6em;">
+      </p>
+
+      <p>
+        <label for="last_gate_angel_kingdom">Last Gate Angel Kingdom</label><br>
+        <select id="last_gate_angel_kingdom" name="last_gate_angel_kingdom">
+          <option value="" {% if state.last_gate_angel_kingdom is none %}selected{% endif %}>-- None --</option>
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <option value="{{ kingdom_id }}" {% if state.last_gate_angel_kingdom == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">This turn's reservoir-sampling winner -- which Kingdom gets the Gate Angel visit, and when.</span>
+      </p>
+
+      <p>
+        <label for="last_valhalla_visited_kingdom_id">Last Valhalla Visited Kingdom</label><br>
+        <select id="last_valhalla_visited_kingdom_id" name="last_valhalla_visited_kingdom_id">
+          <option value="" {% if state.last_valhalla_visited_kingdom_id is none %}selected{% endif %}>-- None --</option>
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <option value="{{ kingdom_id }}" {% if state.last_valhalla_visited_kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">The Kingdom that received the immediately preceding Valhalla visit -- excluded from this turn's own candidate pool.</span>
+      </p>
+
+      <p>
+        <label for="gate_angel_due_alignment">Gate Angel Due Alignment</label><br>
+        <select id="gate_angel_due_alignment" name="gate_angel_due_alignment">
+          <option value="" {% if state.gate_angel_due_alignment is none %}selected{% endif %}>-- Unset --</option>
+          {% for alignment in all_alignments %}
+            <option value="{{ alignment.name }}" {% if state.gate_angel_due_alignment == alignment %}selected{% endif %}>{{ alignment|display_name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">This turn's randomly-chosen due alignment, cached once per turn so every caster this turn sees the same answer.</span>
+      </p>
+
+      <p>
+        <label for="gate_angel_due_alignment_turn">Gate Angel Due Alignment Turn</label><br>
+        <input type="number" id="gate_angel_due_alignment_turn" name="gate_angel_due_alignment_turn" value="{{ state.gate_angel_due_alignment_turn if state.gate_angel_due_alignment_turn is not none else '' }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">The turn the Due Alignment above was cached on.</span>
+      </p>
+
+      <p>
+        <label for="gate_angel_candidates_this_turn">Gate Angel Candidates This Turn</label><br>
+        <input type="number" id="gate_angel_candidates_this_turn" name="gate_angel_candidates_this_turn" value="{{ state.gate_angel_candidates_this_turn }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">How many successful due-alignment casters have been seen so far this turn.</span>
+      </p>
+
+      <p>
+        <label for="gate_angel_cycle_visited">Gate Angel Cycle Visited</label><br>
+        <select id="gate_angel_cycle_visited" name="gate_angel_cycle_visited" multiple size="5">
+          {% for alignment in all_alignments if alignment.name in ("GOOD", "DRUID", "NEUTRAL", "PAGAN", "EVIL") %}
+            <option value="{{ alignment.name }}" {% if alignment in state.gate_angel_cycle_visited %}selected{% endif %}>{{ alignment|display_name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">Which of the 5 eligible alignments (never Divine or Undead) have already had their turn in the current 5-turn rotation cycle. Ctrl/Cmd-click to select more than one.</span>
+      </p>
+
+      <p>
+        <label for="election_pending_turn">Election Pending Turn</label><br>
+        <input type="number" id="election_pending_turn" name="election_pending_turn" value="{{ state.election_pending_turn if state.election_pending_turn is not none else '' }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">The turn a scheduled Imperial Election vote will actually be tallied on. Leave blank for "no election currently pending."</span>
+      </p>
+
+      <p>
+        <label for="election_pending_alignment_trigger">Election Pending Alignment Trigger</label><br>
+        <select id="election_pending_alignment_trigger" name="election_pending_alignment_trigger">
+          <option value="" {% if state.election_pending_alignment_trigger is none %}selected{% endif %}>-- None (King-request weight alone) --</option>
+          {% for alignment in all_alignments %}
+            <option value="{{ alignment.name }}" {% if state.election_pending_alignment_trigger == alignment %}selected{% endif %}>{{ alignment|display_name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">The Alignment whose own world-power bloc triggered the pending election, if any.</span>
+      </p>
+
+      <p>
+        <label for="pending_guild_target">Pending Guild Target</label><br>
+        <select id="pending_guild_target" name="pending_guild_target">
+          <option value="" {% if state.pending_guild_target is none %}selected{% endif %}>-- None --</option>
+          {% for leader_id, leader in state.leaders.items() %}
+            <option value="{{ leader_id }}" {% if state.pending_guild_target == leader_id %}selected{% endif %}>{{ leader.name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">A single global slot: a Fire order's own Assassins Guild interception target, resolved and always cleared back to None once per turn after battles.</span>
+      </p>
+
+      <button type="submit">Save World Events</button>
+    </form>
+  </div>
+
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
     <h2>Create Kingdom</h2>
     <p>Adds a brand-new Kingdom and its King to this already-created world. The Home province must be an existing,
       unowned province (not already anyone's Home) -- pick one from the Provinces map, then enter its coordinates

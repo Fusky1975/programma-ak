@@ -1195,6 +1195,148 @@ def test_world_setup_shows_the_world_header_panel(tmp_path):
     assert b"World Header" in response.data
 
 
+def test_world_events_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    kingdom_id = next(iter(state.kingdoms))
+    leader_id = next(iter(state.leaders))
+
+    response = client.post(
+        f"/games/{meta.slug}/world/events",
+        data={
+            "last_gate_angel_turn": "3",
+            "last_gate_angel_kingdom": str(kingdom_id),
+            "last_valhalla_visited_kingdom_id": str(kingdom_id),
+            "gate_angel_due_alignment": "EVIL",
+            "gate_angel_due_alignment_turn": "3",
+            "gate_angel_candidates_this_turn": "2",
+            "gate_angel_cycle_visited": ["GOOD", "DRUID"],
+            "election_pending_turn": "5",
+            "election_pending_alignment_trigger": "NEUTRAL",
+            "pending_guild_target": str(leader_id),
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.last_gate_angel_turn == 3
+    assert state.last_gate_angel_kingdom == kingdom_id
+    assert state.last_valhalla_visited_kingdom_id == kingdom_id
+    assert state.gate_angel_due_alignment == Alignment.EVIL
+    assert state.gate_angel_due_alignment_turn == 3
+    assert state.gate_angel_candidates_this_turn == 2
+    assert state.gate_angel_cycle_visited == {Alignment.GOOD, Alignment.DRUID}
+    assert state.election_pending_turn == 5
+    assert state.election_pending_alignment_trigger == Alignment.NEUTRAL
+    assert state.pending_guild_target == leader_id
+
+
+def test_world_events_save_can_clear_back_to_defaults(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    kingdom_id = next(iter(state.kingdoms))
+    leader_id = next(iter(state.leaders))
+    client.post(
+        f"/games/{meta.slug}/world/events",
+        data={
+            "last_gate_angel_turn": "3",
+            "last_gate_angel_kingdom": str(kingdom_id),
+            "last_valhalla_visited_kingdom_id": str(kingdom_id),
+            "gate_angel_due_alignment": "EVIL",
+            "gate_angel_due_alignment_turn": "3",
+            "gate_angel_candidates_this_turn": "2",
+            "gate_angel_cycle_visited": ["GOOD", "DRUID"],
+            "election_pending_turn": "5",
+            "election_pending_alignment_trigger": "NEUTRAL",
+            "pending_guild_target": str(leader_id),
+        },
+    )
+
+    client.post(f"/games/{meta.slug}/world/events", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.last_gate_angel_turn is None
+    assert state.last_gate_angel_kingdom is None
+    assert state.last_valhalla_visited_kingdom_id is None
+    assert state.gate_angel_due_alignment is None
+    assert state.gate_angel_due_alignment_turn is None
+    assert state.gate_angel_candidates_this_turn == 0
+    assert state.gate_angel_cycle_visited == set()
+    assert state.election_pending_turn is None
+    assert state.election_pending_alignment_trigger is None
+    assert state.pending_guild_target is None
+
+
+def test_world_events_save_rejects_an_invalid_kingdom(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/events",
+        data={"last_gate_angel_kingdom": "999999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Last Gate Angel Kingdom" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.last_gate_angel_kingdom is None
+
+
+def test_world_events_save_rejects_an_invalid_guild_target(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/events",
+        data={"pending_guild_target": "999999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Pending Guild Target" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.pending_guild_target is None
+
+
+def test_world_events_save_rejects_a_non_numeric_turn(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/events",
+        data={"last_gate_angel_turn": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Turn numbers must be whole numbers" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.last_gate_angel_turn is None
+
+
+def test_world_events_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/world/events", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_world_setup_shows_the_world_events_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/world")
+
+    assert response.status_code == 200
+    assert b"World Events" in response.data
+
+
 def test_kingdom_edit_shows_no_discoveries_for_a_new_kingdom(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

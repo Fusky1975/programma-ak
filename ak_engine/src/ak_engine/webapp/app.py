@@ -464,6 +464,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             max_talent_points=MAX_TALENT_POINTS,
             max_points_per_ability=MAX_POINTS_PER_ABILITY,
             game_types=list(GameType),
+            all_alignments=list(Alignment),
             error=request.args.get("error"),
         )
 
@@ -895,6 +896,98 @@ def create_app(games_root: Path | None = None) -> Flask:
         state.game_type = game_type
         state.miscwrit = miscwrit
         state.gdday = gdday
+        save_game(root, slug, state)
+        return redirect(url_for("world_setup", slug=slug))
+
+    @app.post("/games/<slug>/world/events")
+    def world_events_save(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _setup_error(message: str):
+            return redirect(url_for("world_setup", slug=slug, error=message))
+
+        def _optional_int(field: str) -> int | None:
+            raw = request.form.get(field, "").strip()
+            return int(raw) if raw else None
+
+        try:
+            last_gate_angel_turn = _optional_int("last_gate_angel_turn")
+            gate_angel_due_alignment_turn = _optional_int("gate_angel_due_alignment_turn")
+            election_pending_turn = _optional_int("election_pending_turn")
+        except ValueError:
+            return _setup_error("Turn numbers must be whole numbers.")
+
+        gate_angel_candidates_raw = request.form.get("gate_angel_candidates_this_turn", "").strip()
+        try:
+            gate_angel_candidates_this_turn = int(gate_angel_candidates_raw) if gate_angel_candidates_raw else 0
+        except ValueError:
+            return _setup_error("Gate Angel Candidates This Turn must be a whole number.")
+
+        last_gate_angel_kingdom_raw = request.form.get("last_gate_angel_kingdom", "").strip()
+        last_gate_angel_kingdom: int | None
+        if last_gate_angel_kingdom_raw:
+            try:
+                last_gate_angel_kingdom = int(last_gate_angel_kingdom_raw)
+            except ValueError:
+                return _setup_error("Please choose a valid Last Gate Angel Kingdom.")
+            if last_gate_angel_kingdom not in state.kingdoms:
+                return _setup_error("Please choose a valid Last Gate Angel Kingdom.")
+        else:
+            last_gate_angel_kingdom = None
+
+        last_valhalla_visited_raw = request.form.get("last_valhalla_visited_kingdom_id", "").strip()
+        last_valhalla_visited_kingdom_id: int | None
+        if last_valhalla_visited_raw:
+            try:
+                last_valhalla_visited_kingdom_id = int(last_valhalla_visited_raw)
+            except ValueError:
+                return _setup_error("Please choose a valid Last Valhalla Visited Kingdom.")
+            if last_valhalla_visited_kingdom_id not in state.kingdoms:
+                return _setup_error("Please choose a valid Last Valhalla Visited Kingdom.")
+        else:
+            last_valhalla_visited_kingdom_id = None
+
+        try:
+            gate_angel_due_alignment = _optional_enum(Alignment, request.form.get("gate_angel_due_alignment", ""))
+            election_pending_alignment_trigger = _optional_enum(
+                Alignment, request.form.get("election_pending_alignment_trigger", "")
+            )
+        except KeyError:
+            return _setup_error("Please choose valid alignments.")
+
+        gate_angel_cycle_visited: set[Alignment] = set()
+        for raw_name in request.form.getlist("gate_angel_cycle_visited"):
+            try:
+                gate_angel_cycle_visited.add(Alignment[raw_name])
+            except KeyError:
+                return _setup_error("Please choose valid Gate Angel Cycle Visited alignments.")
+
+        guild_target_raw = request.form.get("pending_guild_target", "").strip()
+        pending_guild_target: int | None
+        if guild_target_raw:
+            try:
+                pending_guild_target = int(guild_target_raw)
+            except ValueError:
+                return _setup_error("Please choose a valid Pending Guild Target.")
+            if pending_guild_target not in state.leaders:
+                return _setup_error("Please choose a valid Pending Guild Target.")
+        else:
+            pending_guild_target = None
+
+        state.last_gate_angel_turn = last_gate_angel_turn
+        state.last_gate_angel_kingdom = last_gate_angel_kingdom
+        state.last_valhalla_visited_kingdom_id = last_valhalla_visited_kingdom_id
+        state.gate_angel_cycle_visited = gate_angel_cycle_visited
+        state.gate_angel_due_alignment = gate_angel_due_alignment
+        state.gate_angel_due_alignment_turn = gate_angel_due_alignment_turn
+        state.gate_angel_candidates_this_turn = gate_angel_candidates_this_turn
+        state.election_pending_turn = election_pending_turn
+        state.election_pending_alignment_trigger = election_pending_alignment_trigger
+        state.pending_guild_target = pending_guild_target
         save_game(root, slug, state)
         return redirect(url_for("world_setup", slug=slug))
 
