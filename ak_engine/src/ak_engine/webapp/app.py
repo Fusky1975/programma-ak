@@ -26,6 +26,7 @@ from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, sorted_kingdom
 from ak_engine.models.enums import ABILITY_NAME, Ability
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, BlackmailClaim, LeaderState, ProvinceState
+from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
 from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
@@ -462,6 +463,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             abilities=list(Ability),
             max_talent_points=MAX_TALENT_POINTS,
             max_points_per_ability=MAX_POINTS_PER_ABILITY,
+            game_types=list(GameType),
             error=request.args.get("error"),
         )
 
@@ -852,6 +854,47 @@ def create_app(games_root: Path | None = None) -> Flask:
 
         state.emperor_kingdom_id = emperor_kingdom_id
         state.last_emperor_vote_turn = last_emperor_vote_turn
+        save_game(root, slug, state)
+        return redirect(url_for("world_setup", slug=slug))
+
+    @app.post("/games/<slug>/world/header")
+    def world_header_save(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _setup_error(message: str):
+            return redirect(url_for("world_setup", slug=slug, error=message))
+
+        game_number_raw = request.form.get("game_number", "").strip()
+        try:
+            game_number = int(game_number_raw) if game_number_raw else 1
+        except ValueError:
+            return _setup_error("Game Number must be a whole number.")
+
+        try:
+            game_type = _optional_enum(GameType, request.form.get("game_type", ""))
+        except KeyError:
+            return _setup_error("Please choose a valid Game Type.")
+
+        miscwrit_raw = request.form.get("miscwrit", "").strip()
+        try:
+            miscwrit = int(miscwrit_raw) if miscwrit_raw else 2
+        except ValueError:
+            return _setup_error("Miscwrit must be a whole number.")
+
+        gdday_raw = request.form.get("gdday", "").strip()
+        try:
+            gdday = int(gdday_raw) if gdday_raw else 1
+        except ValueError:
+            return _setup_error("Due Day must be a whole number.")
+
+        state.game_number = game_number
+        state.game_type = game_type
+        state.miscwrit = miscwrit
+        state.gdday = gdday
         save_game(root, slug, state)
         return redirect(url_for("world_setup", slug=slug))
 

@@ -12,6 +12,7 @@ from ak_engine.models.army_type import ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import BlackmailClaim
+from ak_engine.models.game_type import GameType
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.office import Office
@@ -1106,6 +1107,92 @@ def test_world_setup_shows_the_world_emperor_panel(tmp_path):
 
     assert response.status_code == 200
     assert b"World Emperor" in response.data
+
+
+def test_world_header_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/header",
+        data={"game_number": "7", "game_type": "ARCANES", "miscwrit": "6", "gdday": "15"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.game_number == 7
+    assert state.game_type == GameType.ARCANES
+    assert state.miscwrit == 6
+    assert state.gdday == 15
+
+
+def test_world_header_save_can_clear_back_to_defaults(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(
+        f"/games/{meta.slug}/world/header",
+        data={"game_number": "7", "game_type": "ARCANES", "miscwrit": "6", "gdday": "15"},
+    )
+
+    client.post(f"/games/{meta.slug}/world/header", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.game_number == 1
+    assert state.game_type is None
+    assert state.miscwrit == 2
+    assert state.gdday == 1
+
+
+def test_world_header_save_rejects_an_invalid_game_type(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/header",
+        data={"game_type": "NOT_A_TYPE"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"valid Game Type" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.game_type is None
+
+
+def test_world_header_save_rejects_a_non_numeric_value(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/header",
+        data={"game_number": "lots"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Game Number must be a whole number" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.game_number == 1
+
+
+def test_world_header_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/world/header", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_world_setup_shows_the_world_header_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/world")
+
+    assert response.status_code == 200
+    assert b"World Header" in response.data
 
 
 def test_kingdom_edit_shows_no_discoveries_for_a_new_kingdom(tmp_path):

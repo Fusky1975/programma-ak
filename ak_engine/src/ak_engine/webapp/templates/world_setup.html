@@ -62,6 +62,43 @@
   </div>
 
   <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>World Header</h2>
+    <p class="hex-map-legend-note">The GW world header's own raw fields -- normally set once at world generation, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+    <form method="post" action="{{ url_for('world_header_save', slug=meta.slug) }}">
+      <p>
+        <label for="game_number">Game Number</label><br>
+        <input type="number" id="game_number" name="game_number" value="{{ state.game_number }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">AKGEN's own per-game seed source for the Advanced Ability level-schedule build.</span>
+      </p>
+
+      <p>
+        <label for="game_type">Game Type</label><br>
+        <select id="game_type" name="game_type">
+          <option value="" {% if state.game_type is none %}selected{% endif %}>-- Unset --</option>
+          {% for game_type in game_types %}
+            <option value="{{ game_type.name }}" {% if state.game_type == game_type %}selected{% endif %}>{{ game_type|display_name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">Gates the Arcane's Valor artifacts behind Arcanes. Every real observed world reads Normal.</span>
+      </p>
+
+      <p>
+        <label for="miscwrit">Miscwrit</label><br>
+        <input type="number" id="miscwrit" name="miscwrit" value="{{ state.miscwrit }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">The header's own persistent bitmask (field #33). Only bit 0x0002 has a live consumer here (Cast Spell/Answer Prayer location derivation); AKGEN sets it unconditionally on a freshly-generated world.</span>
+      </p>
+
+      <p>
+        <label for="gdday">Due Day</label><br>
+        <input type="number" id="gdday" name="gdday" value="{{ state.gdday }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">The turn's own Due date day-of-month. Feeds Power.CHANCE's own sub-power roll.</span>
+      </p>
+
+      <button type="submit">Save World Header</button>
+    </form>
+  </div>
+
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
     <h2>Create Kingdom</h2>
     <p>Adds a brand-new Kingdom and its King to this already-created world. The Home province must be an existing,
       unowned province (not already anyone's Home) -- pick one from the Provinces map, then enter its coordinates
