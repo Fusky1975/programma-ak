@@ -13390,6 +13390,9 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "GENERAL INTELLIGENCE REPORT",
         "",
         "None at present",
+        "",
+        "",
+        "END MOVES REPORT",
     ]
 
 
@@ -13631,7 +13634,25 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "GENERAL INTELLIGENCE REPORT",
         "",
         "None at present",
+        "",
+        "",
+        "END MOVES REPORT",
     ]
+
+
+def test_compose_letter_report_always_ends_with_end_moves_report():
+    # Phase 1034: confirmed present, as the letter's own final line, in
+    # all 46 of tests/fixtures/reports/G6/'s real SE6__T*.K* samples --
+    # even the thinnest "missed the turn deadline" report still ends
+    # with it (SE6__T2.K0 line 289).
+    state = _armies_state()
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    assert lines[-1] == "END MOVES REPORT"
+    assert lines[-2] == ""
+    assert lines[-3] == ""
+    assert lines[-4] != ""  # exactly two blank lines, not more
 
 
 def test_compose_letter_report_forwards_board_width_to_action_report_and_letters():

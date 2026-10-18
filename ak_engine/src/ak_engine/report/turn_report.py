@@ -16522,7 +16522,11 @@ def compose_letter_report(
     (`SE3__T2.K2` itself has no Emperor yet -- see the Phase 561 paragraph
     below for the Emperor-elected reordering, sourced from the report's
     own pseudocode rather than a real sample, since no available sample
-    has an Emperor).
+    has an Emperor). **Phase 1034**: `tests/fixtures/reports/G6/`'s own
+    46 real `SE6__T*.K*` samples confirm one more real section always
+    follows, as the letter's own final line -- `END MOVES REPORT` (a bare
+    trailing header, no body) -- see that phase's own comment at this
+    function's return statement.
     `REPORTS.PAS`'s own driver that calls these eleven sections in sequence
     lived in the missing main program -- the same "the caller is lost, not
     the callees" situation as `turn/movement.py`'s hex adjacency scheme --
@@ -17021,5 +17025,21 @@ def compose_letter_report(
     election_status_lines = describe_election_status_report(state, kingdom_id, election_outcome)
     if election_status_lines:
         _emit_section(election_status_lines[0], election_status_lines[1:])
+
+    # Phase 1034: the real letter's own closing marker -- confirmed present,
+    # as the very last section header, in all 46 of tests/fixtures/reports/
+    # G6/'s real SE6__T*.K* samples (e.g. SE6__T3.K3 line 484, SE6__T2.K2
+    # line 275), regardless of how thin the report is otherwise (even a
+    # bare "missed the turn deadline" report still ends with it, SE6__T2.K0
+    # line 289). Always the final line of the letter itself -- what follows
+    # it in every real sample (the account-balance/billing footer, the
+    # blank Moves Sheet order-entry form) is Sargona Games' own mail-
+    # fulfillment paperwork, not game content, and deliberately out of
+    # scope here. No body of its own (hence not routed through
+    # _emit_section(), which requires one) -- a bare trailing header.
+    if lines:
+        lines.append("")
+        lines.append("")
+    lines.append("END MOVES REPORT")
 
     return lines
