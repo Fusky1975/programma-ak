@@ -34,6 +34,7 @@ from ak_engine.turn.plan_dispatch import (
     NoOpResult,
     UnsupportedActionError,
     _is_undead_king,
+    _resolve_nested_plan_leader_id,
     dispatch_phase,
     run_leader_plan,
 )
@@ -2473,6 +2474,108 @@ def test_resurrections_own_nested_plan_never_dispatches_without_a_dead_leader():
     assert len(results) == 1
     assert results[0].result.applied is False
     assert not any(r.leader_id == 50 for r in results)
+
+
+def test_successful_charm_wand_use_mi_dispatches_the_charmed_characters_own_plan():
+    # Phase 1039: the same nesting as an ordinary Cast of Charm, but
+    # triggered by Use_MI-ing a Cologne of Charming wand instead.
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(LeaderState(50, None, "Wandering Hero", location))
+    item = state.add_item(Treasure.WAND_CHARM, owner_leader_id=LEADER_ID, charges=1)
+
+    charm_phase = PlanPhase(
+        label="P0",
+        action=ActionCode.USE_MI,
+        obj=item.item_id,
+        extra=[50],
+        # The real parser can never resolve this at parse time for a
+        # Use_MI phase (see use_mi_decode.py's own docstring) -- always
+        # None, same as every other wand's own nested_plan would be.
+        nested_plan=ActionPlan(
+            leader_id=None,
+            segments=[PlanSegment(1, 1, (), {"P1": PlanPhase("P1", ActionCode.PRACTICE, 14, [0])})],
+        ),
+    )
+    leader = Leader(
+        leader_id=LEADER_ID,
+        name="Charmer",
+        plan=ActionPlan(leader_id=LEADER_ID, segments=[PlanSegment(0, 0, (), {"P0": charm_phase})]),
+    )
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    charmer_results = [r for r in results if r.leader_id == LEADER_ID]
+    nested_results = [r for r in results if r.leader_id == 50]
+    assert len(charmer_results) == 1
+    assert charmer_results[0].result.applied is True
+    assert len(nested_results) == 1
+    assert nested_results[0].phase_label == "P1"
+    assert nested_results[0].error is None
+    assert isinstance(nested_results[0].result, PracticeExecutionResult)
+    assert state.leaders[50].kingdom_id == 1
+    assert item.charges == 0  # the wand's own charge was spent
+
+
+def test_resurrection_wand_use_mi_never_dispatches_without_a_dead_leader():
+    # Mirrors test_resurrections_own_nested_plan_never_dispatches_without_
+    # a_dead_leader() above, but via a Rod of Resurrection wand -- the
+    # target is a plain, living LeaderState, not archived in
+    # state.dead_leaders, so execute_cast() still refuses regardless of
+    # the embedded plan.
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(LeaderState(50, None, "Would-be Revived", location))
+    item = state.add_item(Treasure.WAND_RESURRECTION, owner_leader_id=LEADER_ID, charges=1)
+
+    resurrection_phase = PlanPhase(
+        label="P0",
+        action=ActionCode.USE_MI,
+        obj=item.item_id,
+        extra=[50],
+        nested_plan=ActionPlan(
+            leader_id=None,
+            segments=[PlanSegment(1, 1, (), {"P1": PlanPhase("P1", ActionCode.LMOVE, 94, [0])})],
+        ),
+    )
+    leader = Leader(
+        leader_id=LEADER_ID,
+        name="Necromancer",
+        plan=ActionPlan(leader_id=LEADER_ID, segments=[PlanSegment(0, 0, (), {"P0": resurrection_phase})]),
+    )
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    assert len(results) == 1
+    assert results[0].result.applied is False
+    assert not any(r.leader_id == 50 for r in results)
+    assert item.charges == 1  # not spent -- the cast never actually applied
+
+
+def test_resolve_nested_plan_leader_id_ignores_a_use_mi_wand_that_isnt_charm_or_resurrection():
+    # Direct unit check of the new split: _nested_plan_triggered() only
+    # checks "did the Use_MI apply at all," so a structurally-nested
+    # plan tagging along some other wand (e.g. Fireball) must still be
+    # refused here, by spell, not just left to applied=True.
+    fireball_request = CastRequest(spell=Spell.FIREBALL, target=0)
+    cast_result = CastExecutionResult(request=fireball_request, applied=True)
+    use_mi_result = UseMIExecutionResult(applied=True, cast_result=cast_result)
+    nested_plan = ActionPlan(leader_id=None, segments=[])
+
+    resolved = _resolve_nested_plan_leader_id(ActionCode.USE_MI, nested_plan, use_mi_result)
+
+    assert resolved is None
+
+
+def test_resolve_nested_plan_leader_id_reads_the_use_mi_cast_results_own_target():
+    charm_request = CastRequest(spell=Spell.CHARM, target=77)
+    cast_result = CastExecutionResult(request=charm_request, applied=True)
+    use_mi_result = UseMIExecutionResult(applied=True, cast_result=cast_result)
+    nested_plan = ActionPlan(leader_id=None, segments=[])
+
+    resolved = _resolve_nested_plan_leader_id(ActionCode.USE_MI, nested_plan, use_mi_result)
+
+    assert resolved == 77
 
 
 def test_nested_plan_skipped_when_target_has_no_existing_leaderstate():

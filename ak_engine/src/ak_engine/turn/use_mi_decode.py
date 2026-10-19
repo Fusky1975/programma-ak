@@ -106,10 +106,16 @@ detection is already action-agnostic (structural: "does an ``AP:``
 token immediately follow", not gated on which action triggered it), so
 it handles a Use_MI-triggered nesting correctly with no changes needed
 -- only the nested plan's inferred ``leader_id`` (Phase 23's Cast/Charm/
-Resurrection extension) doesn't currently extend to a Use_MI-cast
-Charm/Resurrection, since that extension keys off ``ActionCode.CAST``
-specifically; left as a known gap, not fixed here, since there's no
-real data to validate it against either way.
+Resurrection extension) didn't extend to a Use_MI-cast Charm/
+Resurrection, since that extension keys off ``ActionCode.CAST``
+specifically at *parse* time, before ``obj`` (an opaque item-instance
+id here, not a ``Spell`` ordinal) can be resolved at all. **Closed,
+Phase 1039** -- resolved one layer up instead, after execution, where
+``state.items`` is available: ``turn/plan_dispatch.py
+_resolve_nested_plan_leader_id()`` reads the already-resolved
+``UseMIExecutionResult.cast_result.request.target`` for exactly this
+case, so the nested plan still dispatches correctly without the parser
+itself needing any ``GameState`` access.
 
 **Zero real Use_MI phases exist in any of the 10 sample
 ``AK3__T*.K1`` files** (independently confirmed via this project's own

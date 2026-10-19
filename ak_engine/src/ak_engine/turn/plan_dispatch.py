@@ -368,6 +368,14 @@ silently skipped -- same "can't act on what doesn't exist yet" rule as
 leader's phases interleaved with any nested characters') stays
 traceable to who actually issued each phase.
 
+**Phase 1039 addendum**: a Charm/Resurrection cast from a wand
+(``ActionCode.USE_MI``, not an ordinary ``ActionCode.CAST``) nests and
+dispatches a joined character's plan the same way -- see
+``_nested_plan_triggered()``/``_resolve_nested_plan_leader_id()``'s own
+docstrings for why that needed splitting into two separate checks
+(trigger vs. identity) instead of just adding one more ``elif`` branch
+the way Hire/Cast share.
+
 Every dispatch call takes an explicit ``leader_id`` -- the acting
 character -- and ``army_ids`` defaults to whatever that leader currently
 commands (``GameState.armies_commanded_by``) unless the caller overrides
@@ -383,7 +391,7 @@ from typing import Any
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.enums import Ability, ActionCode
+from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
 from ak_engine.models.office import Office
@@ -1443,7 +1451,10 @@ def run_leader_plan(
                     results.append(PhaseDispatchResult(leader.leader_id, -1, label, None, random_encounter_result, None))
 
             if phase.nested_plan is not None and _nested_plan_triggered(phase.action, result):
-                results.extend(_dispatch_nested_plan(phase.nested_plan, state, kingdom_id, board_width, explorer_skill, rng))
+                nested_leader_id = _resolve_nested_plan_leader_id(phase.action, phase.nested_plan, result)
+                results.extend(
+                    _dispatch_nested_plan(phase.nested_plan, nested_leader_id, state, kingdom_id, board_width, explorer_skill, rng)
+                )
     return results
 
 
@@ -1459,17 +1470,74 @@ def _nested_plan_triggered(action: Any, result: Any) -> bool:
     way a successful Charm always has -- both are "a character (re-)joins
     the kingdom this turn," the same underlying condition ``applied=True``
     already captures without needing to inspect which spell it was.
+
+    **Phase 1039**: a wand's Use_MI can cast Charm/Resurrection exactly
+    the same way an ordinary Cast order can (``turn/use_mi_execution.py
+    execute_use_mi()``'s own ``SPELL_WAND`` branch dispatches into the
+    very same ``execute_cast()``) -- ``UseMIExecutionResult.cast_result``
+    is set (and mirrors ``CastExecutionResult`` exactly) whenever that
+    happened, so the same "did it apply" check extends here unchanged.
+    Which spell it actually was is deliberately not checked in this
+    trigger -- the real spell/target gating happens in
+    ``_resolve_nested_plan_leader_id()`` below instead, the same split
+    the existing Cast branch already relies on (a successful Cast of any
+    *other* spell also reaches this branch and returns ``True``, but
+    never carries a resolvable ``nested_plan.leader_id``, so ``_dispatch_
+    nested_plan`` below silently no-ops for it).
     """
 
     if action is ActionCode.HIRE:
         return isinstance(result, HireExecutionResult) and result.hired
     if action is ActionCode.CAST:
         return isinstance(result, CastExecutionResult) and result.applied
+    if action is ActionCode.USE_MI:
+        return isinstance(result, UseMIExecutionResult) and result.applied
     return False
+
+
+def _resolve_nested_plan_leader_id(action: Any, nested_plan: ActionPlan, result: Any) -> int | None:
+    """The newly-joined (or re-joined) character's own ``leader_id`` for a
+    nested plan that ``_nested_plan_triggered()`` just approved for
+    dispatch.
+
+    Hire and an ordinary Cast of Charm/Resurrection already have this
+    baked into ``nested_plan.leader_id`` at *parse* time
+    (``parser/k1_moves.py _maybe_parse_nested_plan``, Phase 23) -- the
+    move file's own tokens are self-describing enough there (``obj`` is
+    directly the target id for Hire, ``extra[0]`` directly the target id
+    for a Cast of Charm/Resurrection), no ``GameState`` needed.
+
+    **Phase 1039**: a Use_MI-triggered Charm/Resurrection cannot be
+    resolved that way -- ``turn/use_mi_decode.py``'s own docstring:
+    Use_MI's own ``obj`` is an opaque item-instance id, not a ``Spell``
+    ordinal, until ``state.items`` resolves which wand it is, which the
+    parser has no access to. So it's resolved here instead, after
+    execution, from ``UseMIExecutionResult.cast_result.request`` -- the
+    exact same ``CastRequest`` shape (``target``: "character id...
+    depending on spell") the ordinary Cast path already reads at parse
+    time, just reached one step later. Returns ``None`` (silently
+    skipping dispatch, same as an unresolvable Cast above) for any wand
+    that cast something other than Charm/Resurrection -- the structural
+    nesting condition in ``parser/k1_moves.py`` can in principle follow
+    *any* Use_MI phase, not just a Charm/Resurrection wand's own, the
+    same "nested_plan present, but not really this kind of trigger" case
+    the Cast branch already has to tolerate.
+    """
+
+    if action is ActionCode.USE_MI:
+        if (
+            isinstance(result, UseMIExecutionResult)
+            and result.cast_result is not None
+            and result.cast_result.request.spell in (Spell.CHARM, Spell.RESURRECTION)
+        ):
+            return result.cast_result.request.target
+        return None
+    return nested_plan.leader_id
 
 
 def _dispatch_nested_plan(
     nested_plan: ActionPlan,
+    nested_leader_id: int | None,
     state: GameState,
     kingdom_id: int,
     board_width: int,
@@ -1478,16 +1546,17 @@ def _dispatch_nested_plan(
 ) -> list[PhaseDispatchResult]:
     """Dispatch a newly-joined character's own embedded plan (see module docstring).
 
-    Silently skipped (empty list) if the nested plan has no resolved
-    ``leader_id`` or that character has no existing ``LeaderState`` in
-    ``state`` -- there's nothing to enrich, same "can't create from
-    nothing" rule as ``turn/kingdom_bridge.py`` (Phase 31). Never pins
-    ``army_ids``: a freshly Hired/Charmed character's own commanded armies
-    (if any) are re-derived fresh, independent of whatever the triggering
-    leader's own dispatch was pinned to.
+    Silently skipped (empty list) if ``nested_leader_id`` (``_resolve_
+    nested_plan_leader_id()``'s own result, Phase 1039 -- previously
+    always just ``nested_plan.leader_id``) couldn't be resolved, or that
+    character has no existing ``LeaderState`` in ``state`` -- there's
+    nothing to enrich, same "can't create from nothing" rule as
+    ``turn/kingdom_bridge.py`` (Phase 31). Never pins ``army_ids``: a
+    freshly Hired/Charmed character's own commanded armies (if any) are
+    re-derived fresh, independent of whatever the triggering leader's own
+    dispatch was pinned to.
     """
 
-    nested_leader_id = nested_plan.leader_id
     if nested_leader_id is None or nested_leader_id not in state.leaders:
         return []
 
