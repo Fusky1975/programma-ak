@@ -1600,8 +1600,50 @@ class GWLeaderRecord:
       two unlanded "companions" plus one further reserved roster slot,
       none of whom ever become a province's own governor. This is a
       real, structural correlation (companions never received a
-      meaningful birth coordinate), not a parsing bug -- but the exact
-      out-of-range values themselves aren't independently decoded here.
+      meaningful birth coordinate), not a parsing bug.
+
+      **Phase 1040 addendum -- the companion case's own raw value
+      re-derived, not just flagged.** Re-checked across all 12 real
+      `GW3__T1`-`GW3__T12` snapshots, tracking each stable leader by
+      name turn over turn: every one of the 20 real companions across
+      the whole corpus (389 data points total, once the same 20 stable
+      leaders are counted across 12 turns) keeps the *exact same*
+      `birth_coord` on every turn it exists -- never re-rolled, written
+      once at creation and never touched again, matching "companions
+      never land" directly. Every single one of those 389 out-of-range
+      `birth_x` values satisfies `birth_x & 0b11100000 == 0b00100000`
+      (bit 5, value 32, set; bits 6-7 clear; `birth_x & 0b00011111`
+      -- the low 5 bits -- always within `[0, 17]`, this world's own
+      real `board_width - 1`) with **zero exceptions**, and the paired
+      `birth_y` always falls within `[0, 8]`, this world's own real
+      `board_height - 1`, also with zero exceptions. Tried and ruled
+      out as the source of these values: `kingdom_id`, companion index
+      within a Kingdom (first vs. second), `race`, the owning King's
+      own `coord`, this leader's own current `coord`, and plain
+      creation/file order -- none of them predicts a given companion's
+      own `birth_x`/`birth_y` (two companions of the *same* King can
+      and do read completely different values).
+
+      Reading `birth_x`'s low 5 bits as a real, in-bounds x-coordinate
+      and bit 5 as a standalone "not actually landed" flag is a strong,
+      data-confirmed hypothesis -- `0..29`'s own compiled X ceiling
+      (this same leader-header addendum's own earlier sentence) fits
+      exactly in 5 bits, leaving bit 5 free for exactly this kind of
+      packed flag, and real uninitialized memory landing *inside* the
+      true board's own x/y bounds on every single one of 389 real
+      samples, with zero exceptions, is far too consistent to be
+      leftover noise. **Still not promoted past "strongly supported by
+      data," though**: no surviving `.PAS` fragment or disassembly
+      excerpt available to this project names this specific packing for
+      this specific field, and only one real board width (18) exists in
+      the available corpus, so whether `32` is this format's own fixed
+      constant or happens to just clear `board_width`'s own high bit for
+      *this* board can't be told apart from data alone. Not exposed as
+      a new parsed field for that reason -- there is no real consumer
+      for "the coordinate a companion almost landed at but didn't"
+      waiting on this either, so this stays a documented, closely-
+      bounded research finding rather than new API surface invented
+      without a use for it.
     - `original_liege_raw`: the Liege field's own *original* value
       (`lliege`/`liege0` are two separate Pascal fields, confirmed by
       the disassembly's own `liege0 := lliege` copy) -- always equal to
