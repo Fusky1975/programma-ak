@@ -457,6 +457,68 @@ class KingdomState:
     # as valid, never absent.
     king_title_prefix: str = ""
     king_title_suffix: str = ""
+    # Phase 1038 (`report/ascii_map.py select_layout_tier()`'s own
+    # documented 82%-accuracy gap): which known-province columns belong
+    # to this Kingdom's own historically-primary ("main") exploration
+    # region, as opposed to a separately-grown "far side of the world"
+    # region -- see `record_newly_known_column()` below for how this
+    # grows, one newly-known province at a time, as the real game is
+    # actually played. Confirmed directly against 54 real map sections
+    # in `tests/fixtures/reports/G3` (Phase 1038 addendum): the real
+    # printed tier is driven by *this* primary-region column count
+    # alone, even once a separately-grown far region becomes
+    # cylindrically adjacent to it with *zero* geometric gap (one real
+    # Kingdom's own primary region ends at column 6 while its own far
+    # region starts at column 7, immediately next to it, and the two
+    # never merge for tier-selection purposes) -- exactly the
+    # historical, not-recoverable-from-a-single-snapshot distinction
+    # `select_layout_tier()`'s own docstring already named as the
+    # blocker. Always empty for a `GameState` bridged cold from an
+    # existing `GW`/`XK` snapshot (there is no way to backfill real
+    # per-turn growth history from a single point-in-time read) --
+    # `report/turn_report.py describe_map_report()` falls back to the
+    # old, honest, 82%-accurate whole-known-columns approximation
+    # whenever this is empty, exactly matching every pre-Phase-1038
+    # caller's behavior.
+    map_primary_region_columns: set[int] = field(default_factory=set)
+
+
+def record_newly_known_column(kingdom: KingdomState, x: int, board_width: int) -> None:
+    """Grows `KingdomState.map_primary_region_columns` by one column --
+    see that field's own docstring for the real-corpus evidence this is
+    sourced from. Call this once for every province column that just
+    now crossed `ProvinceState.known_to_kingdom()` for `kingdom` (every
+    real call site already has this exact "just became known" moment
+    available, since it is the same moment that writes `explored_
+    percent_by_kingdom[kingdom.kingdom_id]` past `KNOWN_PROVINCE_MIN_
+    PERCENT` for the first time).
+
+    The first-ever known column seeds the whole set (every real game
+    starts from the King's own 100%-explored Home province, Phase 428).
+    After that, a newly-known column only joins the primary region when
+    it is cylindrically adjacent to a column *already in* the region --
+    deliberately a one-shot check against the region's current
+    membership, not a fresh geometric recompute from every known column
+    (which would silently re-merge an already-separate far region the
+    moment a later reveal closes the gap between them, exactly the
+    wrong, over-eager merge `select_layout_tier()`'s own docstring
+    already flags as the source of its accuracy gap). A column that
+    doesn't touch the region when revealed stays out of it forever,
+    even if a later reveal would make it touch -- matching the real
+    game's own observed behavior (see this field's own docstring).
+    Idempotent: calling this again for an already-member column is a
+    harmless no-op.
+    """
+
+    if not kingdom.map_primary_region_columns:
+        kingdom.map_primary_region_columns = {x}
+        return
+    if x in kingdom.map_primary_region_columns:
+        return
+    left = ((x - 2) % board_width) + 1
+    right = (x % board_width) + 1
+    if left in kingdom.map_primary_region_columns or right in kingdom.map_primary_region_columns:
+        kingdom.map_primary_region_columns.add(x)
 
 
 @dataclass(slots=True)

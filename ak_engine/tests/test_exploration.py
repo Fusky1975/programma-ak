@@ -241,6 +241,19 @@ def test_receive_society_maps_caps_at_available_unknown_provinces():
     assert len(revealed) == 2
 
 
+def test_receive_society_maps_grows_the_primary_region_when_a_kingdom_is_tracked():
+    # Phase 1038. No KingdomState at all (every test above) is already
+    # covered as a safe no-op; this covers the case where one exists.
+    state = _state_with_provinces(5)
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.kingdoms[1].map_primary_region_columns = {0}
+
+    receive_society_maps(state, kingdom_id=1, count=5, rng=random.Random(0))
+
+    assert 0 in state.kingdoms[1].map_primary_region_columns
+    assert state.kingdoms[1].map_primary_region_columns.issubset({0, 1, 2, 3, 4})
+
+
 def test_receive_society_maps_is_per_kingdom():
     state = _state_with_provinces(3)
     receive_society_maps(state, kingdom_id=1, count=3, rng=random.Random(0))

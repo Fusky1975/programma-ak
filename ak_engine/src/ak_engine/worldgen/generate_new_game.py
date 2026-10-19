@@ -369,7 +369,7 @@ from dataclasses import dataclass
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, BASE_STRENGTH, ArmyType
 from ak_engine.models.feature import Feature
-from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState, record_newly_known_column
 from ak_engine.models.hero_roster import LEADER_COUNT_BY_GAME_VERSION, RESERVED_ROSTER_HERO_NAME, STANDARD_HERO_ROSTER
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
@@ -866,6 +866,7 @@ def generate_new_game(
             # report()'s own read sites in report/turn_report.py.
             explored_percent = 100
             explored_percent_by_kingdom = {owner_kingdom_id: 100}
+            record_newly_known_column(game_state.kingdoms[owner_kingdom_id], coord.x, game_state.board_width)
         elif race in SPECIAL_RACE_BASE_COUNT:
             recruit_type_1 = special_race_recruit_slot(race)
             budget = _special_race_army_budget(race, tax, rng)

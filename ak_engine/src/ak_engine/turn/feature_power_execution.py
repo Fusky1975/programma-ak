@@ -229,7 +229,13 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import DISCOVERY_DISPLAY_VALUE, Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import Feature
-from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, ArmyState, GameState, LeaderState
+from ak_engine.models.game_state import (
+    KNOWN_PROVINCE_MIN_PERCENT,
+    ArmyState,
+    GameState,
+    LeaderState,
+    record_newly_known_column,
+)
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
@@ -894,8 +900,11 @@ def _reveal_unknown_provinces(state: GameState, leader: LeaderState, rng: random
     count = min(len(unknown), 3 + rng.randrange(3))
     rng.shuffle(unknown)
     revealed = tuple(unknown[:count])
+    kingdom = state.kingdoms.get(leader.kingdom_id)
     for coord in revealed:
         state.provinces[coord].explored_percent_by_kingdom[leader.kingdom_id] = KNOWN_PROVINCE_MIN_PERCENT
+        if kingdom is not None:
+            record_newly_known_column(kingdom, coord.x, state.board_width)
     return FeaturePowerAttemptResult(power=Power.MAP_PROV, applied=True, revealed_province_coords=revealed)
 
 

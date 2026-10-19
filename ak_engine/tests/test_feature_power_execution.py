@@ -1403,6 +1403,27 @@ def test_resolve_feature_power_attempt_map_prov_reveals_three_to_five_unknown_pr
         assert state.provinces[coord].known_to_kingdom(1) is True
 
 
+def test_resolve_feature_power_attempt_map_prov_grows_the_primary_region():
+    # Phase 1038. Order within a single reveal batch can affect which of
+    # several mutually-adjacent new columns join the tracked primary
+    # region in the same call (a documented limitation), so this only
+    # asserts the safe invariants: the pre-existing member survives, and
+    # nothing outside this reveal's own columns gets added.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.kingdoms[1].map_primary_region_columns = {LOCATION.x}
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+    coords = [HexCoord(x, 0) for x in range(10)]
+    for coord in coords:
+        state.provinces[coord] = ProvinceState(coord=coord, terrain=Terrain.PLAINS, race=Race.HUMAN)
+
+    resolve_feature_power_attempt(state, LEADER_ID, feature, _map_prov_event(), random.Random(0))
+
+    assert LOCATION.x in state.kingdoms[1].map_primary_region_columns
+    assert state.kingdoms[1].map_primary_region_columns.issubset({LOCATION.x} | {c.x for c in coords})
+
+
 def test_resolve_feature_power_attempt_map_prov_caps_reveal_count_when_few_provinces_are_unknown():
     state = _state_with_leader()
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))

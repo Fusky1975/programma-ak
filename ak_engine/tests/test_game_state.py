@@ -5,7 +5,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState, record_newly_known_column
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
@@ -341,6 +341,79 @@ def test_known_to_kingdom_is_per_kingdom():
     province.explored_percent_by_kingdom[1] = 50
 
     assert province.known_to_kingdom(2) is False
+
+
+# -- Phase 1038: KingdomState.map_primary_region_columns / record_newly_known_column() --
+
+
+def _kingdom():
+    return KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(4, 4))
+
+
+def test_record_newly_known_column_seeds_an_empty_region_unconditionally():
+    kingdom = _kingdom()
+
+    record_newly_known_column(kingdom, 4, board_width=18)
+
+    assert kingdom.map_primary_region_columns == {4}
+
+
+def test_record_newly_known_column_grows_through_a_cylindrically_adjacent_column():
+    kingdom = _kingdom()
+    kingdom.map_primary_region_columns = {4}
+
+    record_newly_known_column(kingdom, 5, board_width=18)
+    record_newly_known_column(kingdom, 3, board_width=18)
+
+    assert kingdom.map_primary_region_columns == {3, 4, 5}
+
+
+def test_record_newly_known_column_grows_across_the_cylindrical_seam():
+    kingdom = _kingdom()
+    kingdom.map_primary_region_columns = {18}
+
+    record_newly_known_column(kingdom, 1, board_width=18)
+
+    assert kingdom.map_primary_region_columns == {18, 1}
+
+
+def test_record_newly_known_column_does_not_join_a_column_with_no_adjacent_member():
+    kingdom = _kingdom()
+    kingdom.map_primary_region_columns = {4}
+
+    record_newly_known_column(kingdom, 9, board_width=18)
+
+    assert kingdom.map_primary_region_columns == {4}
+
+
+def test_record_newly_known_column_never_retroactively_merges_a_region_once_a_gap_closes():
+    # Phase 1038's own core, real-corpus-confirmed case (SE3__T10.K8):
+    # a primary region (here {4,5,6}) and an already-known-but-excluded
+    # far column (7) stay separate even once a later reveal at column 6
+    # (already primary) makes them cylindrically touch -- the real game
+    # never re-merges two regions once established.
+    kingdom = _kingdom()
+    kingdom.map_primary_region_columns = {4, 5, 6}
+
+    # Column 7 was already revealed earlier (e.g. by an unrelated Explore
+    # power) without ever touching the primary region at the time, so it
+    # was correctly left out.
+    record_newly_known_column(kingdom, 8, board_width=18)  # independent, still isolated
+    assert kingdom.map_primary_region_columns == {4, 5, 6}
+
+    # Re-recording column 6 (already a member) must stay a no-op, not an
+    # excuse to re-walk outward into neighbor 7.
+    record_newly_known_column(kingdom, 6, board_width=18)
+    assert kingdom.map_primary_region_columns == {4, 5, 6}
+
+
+def test_record_newly_known_column_is_idempotent_for_an_already_known_column():
+    kingdom = _kingdom()
+    kingdom.map_primary_region_columns = {4, 5}
+
+    record_newly_known_column(kingdom, 5, board_width=18)
+
+    assert kingdom.map_primary_region_columns == {4, 5}
 
 
 # -- Phase 223: ProvinceState.tax -------------------------------------------

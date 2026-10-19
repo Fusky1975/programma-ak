@@ -731,6 +731,13 @@ def test_every_kings_home_starts_fully_explored():
         province = result.provinces[home_coord]
         assert province.explored_percent == 100
         assert province.explored_percent_by_kingdom.get(kingdom_id) == 100
+        # Phase 1038: the Home province seeds this Kingdom's own tracked
+        # primary map region (membership, not exact equality -- Phase
+        # 982's own "a King's Home also reveals its own real neighbors"
+        # effect can legitimately grow it further in this test's own
+        # densely-packed, 10-Kings-in-a-row synthetic world, see the
+        # very next test).
+        assert home_coord.x in result.kingdoms[kingdom_id].map_primary_region_columns
 
 
 def test_every_kings_home_also_reveals_its_own_real_neighbors_to_that_kingdom():

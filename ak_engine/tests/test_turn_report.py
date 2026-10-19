@@ -12327,6 +12327,56 @@ def test_describe_map_report_wraps_at_the_real_30_wide_seam():
     assert "Nearland" in text
 
 
+def test_describe_map_report_falls_back_to_the_full_known_columns_when_no_primary_region_is_tracked():
+    # Baseline (pre-Phase-1038 behavior, still the honest fallback for a
+    # GameState bridged cold from an existing snapshot): with no
+    # ``map_primary_region_columns`` tracked, 9 genuinely contiguous
+    # known columns fit entirely within the floor tier's own 9-column
+    # page cap -- one single page, no far-side split.
+    state = GameState()
+    state.board_width = 18
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(4, 1)))
+    for x in range(1, 10):
+        state.add_province(
+            ProvinceState(
+                HexCoord(x, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name=f"P{x}", explored_percent_by_kingdom={1: 100}
+            )
+        )
+    assert state.kingdoms[1].map_primary_region_columns == set()
+
+    text = "\n".join(describe_map_report(state, 1))
+
+    assert "We also drew up this map of lands on the far side of the world:" not in text
+
+
+def test_describe_map_report_uses_the_tracked_primary_region_not_the_full_known_columns():
+    # Phase 1038's own real-corpus-confirmed case (SE3__T10.K8/SE3__T6.K6):
+    # a separately-grown far region can be cylindrically adjacent to the
+    # primary region with *zero* gap (here columns 6 and 7), yet the real
+    # report still splits them into two pages sharing a tier chosen from
+    # the smaller primary region alone. Same provinces as the fallback
+    # test above, but with the Kingdom's own tracked primary region set
+    # to just the first 6 columns -- this alone must now force a
+    # far-side split that the full-known-columns fallback does not.
+    state = GameState()
+    state.board_width = 18
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(4, 1)))
+    for x in range(1, 10):
+        state.add_province(
+            ProvinceState(
+                HexCoord(x, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name=f"P{x}", explored_percent_by_kingdom={1: 100}
+            )
+        )
+    state.kingdoms[1].map_primary_region_columns = {1, 2, 3, 4, 5, 6}
+
+    lines = describe_map_report(state, 1)
+    text = "\n".join(lines)
+
+    assert "We also drew up this map of lands on the far side of the world:" in text
+    for name in ("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9"):
+        assert name in text
+
+
 def test_compose_letter_report_places_the_map_between_provinces_and_characters():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))

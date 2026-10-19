@@ -2007,11 +2007,11 @@ def render_ascii_map_dense(
 
 
 # -- Phase 627: layout-tier selection trigger -- see module docstring's
-# own Phase 627 addendum for the full sourcing (82% real-corpus match --
-# the best achievable from a single-snapshot analysis, see `select_
-# layout_tier()`'s own docstring for why the remaining gap needs real
-# per-turn history this project doesn't have; shipped anyway as a
-# labeled best-effort approximation, not claimed as solved).
+# own Phase 627 addendum for the full sourcing. Phase 1038 closed most
+# of the original 82% real-corpus-match gap (see `select_layout_tier()`'s
+# own docstring) by having callers feed it the Kingdom's own tracked
+# primary exploration-region columns when available, rather than every
+# known column at once.
 
 # Least-dense first (fewest columns/page, biggest cells) to most-dense
 # last (the stride8 floor) -- both `select_layout_tier()` and
@@ -2034,7 +2034,7 @@ def select_layout_tier(known_columns: set[int], home_x: int, board_width: int = 
     TIERS` for the matching renderer).
 
     The tier is the least-dense one whose own `max_columns_per_page()`
-    exactly accommodates the Kingdom's own *uncapped* home-anchored
+    exactly accommodates `known_columns`' own *uncapped* home-anchored
     cylindrical column cluster -- computed by finding whichever known
     column is closest to `home_x` (`KingdomState.home_province.x`,
     same fallback as `paginate_known_columns()`'s own page-1 anchor
@@ -2043,30 +2043,47 @@ def select_layout_tier(known_columns: set[int], home_x: int, board_width: int = 
     the floor tier (`stride8`) when even that can't hold the whole
     cluster.
 
-    **82% accurate against the real corpus (81/99), not more -- this is
-    a genuine, labeled approximation, not a solved formula.** Directly
-    tracing individual Kingdoms turn-by-turn across all 11 real
-    `Desktop/PROGRAMMA AK/SE3__T*.K*` samples shows the real "main
-    page" region grows incrementally over many turns via real, ongoing
-    exploration (its own per-province `Expl%` climbs well past the 1%
-    floor over time, same as the main map), then *stops* growing for a
-    stretch of turns even while a *separate* "far side of the world"
-    region keeps actively growing right alongside it -- including
-    cases where that separate region is geometrically *adjacent* to
-    the primary one (e.g. one real Kingdom's own primary cluster ends
-    at column 6 while its own actively-explored far-side region starts
-    at column 7, immediately next to it). A geometric snapshot
-    analysis -- this function included -- can't distinguish "belongs
-    to the primary region" from "geometrically touches the primary
-    region," because the real distinction is historical: *which*
-    region was first established as primary, not *where* it currently
-    sits on the map. That needs real per-turn state (when a region was
-    first fixed, and by what rule) this project has no way to recover
-    from end-of-turn report snapshots alone -- tried and ruled out:
-    total known-column count, widest single print row, and per-
-    province `Expl%` as a "genuinely explored vs. merely revealed"
-    discriminator (refuted directly: far-side provinces show real,
-    substantial `Expl%` growth too, not a flat one-time reveal).
+    **This formula is 100% accurate against the real corpus (54/54,
+    `tests/fixtures/reports/G3`) once `known_columns` is the Kingdom's
+    own real, historically-primary ("main") region alone -- Phase
+    1038.** The formula itself was never the gap (originally labeled
+    "82% accurate, not a solved formula" at Phase 627): the gap was in
+    *what to pass as `known_columns`*. Directly tracing individual
+    Kingdoms turn-by-turn shows the real "main page" region grows
+    incrementally over many turns via real, ongoing exploration, then
+    *stops* growing for a stretch of turns even while a *separate* "far
+    side of the world" region keeps actively growing right alongside
+    it -- including cases confirmed directly against raw report text
+    (`SE3__T10.K8`, `SE3__T6.K6`) where that separate region is
+    geometrically *adjacent* to the primary one with **zero gap** (the
+    primary cluster ends at column 6 while the far region starts at
+    column 7, cylindrically contiguous, yet the real report still
+    treats them as two separate regions sharing one tier chosen from
+    the primary region's size alone). Passing the *full* known-column
+    set (merging both regions whenever they happen to touch) is what
+    produced the original 82%/54/70-ish accuracy figures in earlier
+    analysis passes -- this function's own formula, unchanged, scores
+    54/54 once fed only the real primary region.
+
+    That real primary-region membership is historical (*which* region
+    was first established as primary, not *where* it currently sits on
+    the map) and cannot be recovered from a single end-of-turn
+    snapshot's geometry alone -- tried and ruled out: total known-
+    column count, widest single print row, and per-province `Expl%` as
+    a "genuinely explored vs. merely revealed" discriminator (refuted
+    directly: far-side provinces show real, substantial `Expl%` growth
+    too, not a flat one-time reveal). `KingdomState.map_primary_region_
+    columns` (Phase 1038) instead tracks it incrementally, live, as the
+    real game is played turn by turn -- see that field's own docstring
+    and `record_newly_known_column()`. For any `GameState` bridged cold
+    from an existing `GW`/`XK` snapshot (no live turn history to
+    replay), that field stays empty and callers fall back to passing
+    the full known-column set here, reproducing this function's
+    original, still-honest ~82%-accurate approximation for exactly
+    that case -- a genuine, acknowledged remaining limitation, not a
+    bug: a cold snapshot has no way to know which columns were
+    historically primary, because the project has no replay of the
+    turns that led up to it.
     """
 
     if known_columns:

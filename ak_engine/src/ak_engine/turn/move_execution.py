@@ -278,7 +278,14 @@ from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.army_type import ARMY_TABLE, OVERFLIGHT_AIR, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.enums import Ability
 from ak_engine.models.feature import Feature
-from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, ArmyState, GameState, LeaderState, ProvinceState
+from ak_engine.models.game_state import (
+    KNOWN_PROVINCE_MIN_PERCENT,
+    ArmyState,
+    GameState,
+    LeaderState,
+    ProvinceState,
+    record_newly_known_column,
+)
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.treasure import Treasure
@@ -828,6 +835,10 @@ def record_kingdom_exploration(
         has_terrain_king_title=has_terrain_king_title,
     )
     province.explored_percent_by_kingdom[kingdom_id] = result.new_percent
+    if state is not None and prior < KNOWN_PROVINCE_MIN_PERCENT <= result.new_percent:
+        kingdom = state.kingdoms.get(kingdom_id)
+        if kingdom is not None:
+            record_newly_known_column(kingdom, province.coord.x, state.board_width)
     if state is not None and leader_id is not None:
         leader = state.leaders.get(leader_id)
         if leader is not None:
@@ -862,6 +873,9 @@ def reveal_adjacent_provinces(state: GameState, province: ProvinceState, kingdom
         neighbor_province = state.provinces.get(neighbor)
         if neighbor_province is not None and not neighbor_province.known_to_kingdom(kingdom_id):
             neighbor_province.explored_percent_by_kingdom[kingdom_id] = KNOWN_PROVINCE_MIN_PERCENT
+            kingdom = state.kingdoms.get(kingdom_id)
+            if kingdom is not None:
+                record_newly_known_column(kingdom, neighbor.x, state.board_width)
 
 
 # Phase 754: the base per-hex movement cost `Apply_Move`'s own real

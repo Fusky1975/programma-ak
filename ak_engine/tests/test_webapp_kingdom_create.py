@@ -53,6 +53,9 @@ def test_create_kingdom_builds_a_real_kingdom_and_king():
     assert province.owner_kingdom_id == kingdom_id
     assert province.race == Race.DWARVEN  # overwritten to the King's own
     assert province.explored_percent == 100
+    # Phase 1038: the Home province seeds the new Kingdom's own tracked
+    # primary map region.
+    assert kingdom.map_primary_region_columns == {3}
 
 
 def test_create_kingdom_rejects_a_coordinate_with_no_province():

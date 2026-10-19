@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState
+from ak_engine.models.game_state import GameState, KingdomState, LeaderState, record_newly_known_column
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
@@ -105,4 +105,5 @@ def create_kingdom(
     province.race = race
     province.explored_percent = 100
     province.explored_percent_by_kingdom[kingdom_id] = 100
+    record_newly_known_column(state.kingdoms[kingdom_id], coord.x, state.board_width)
     return kingdom_id

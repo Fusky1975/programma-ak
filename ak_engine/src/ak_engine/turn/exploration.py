@@ -91,7 +91,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.feature import Feature
-from ak_engine.models.game_state import GameState
+from ak_engine.models.game_state import GameState, record_newly_known_column
 from ak_engine.models.map import TERRAIN_EXPLORATION_NUMBER, HexCoord, Terrain
 from ak_engine.models.treasure import Treasure
 
@@ -267,8 +267,11 @@ def receive_society_maps(state: GameState, kingdom_id: int, count: int, rng: ran
     ]
     rng.shuffle(candidates)
     revealed = candidates[:count]
+    kingdom = state.kingdoms.get(kingdom_id)
     for coord in revealed:
         state.provinces[coord].explored_percent_by_kingdom[kingdom_id] = SOCIETY_MAPS_REVEAL_PERCENT
+        if kingdom is not None:
+            record_newly_known_column(kingdom, coord.x, state.board_width)
     return revealed
 
 

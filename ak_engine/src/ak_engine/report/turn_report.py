@@ -13138,12 +13138,22 @@ def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
     the module's Phase 624 addendum for the full sourcing.
 
     Phase 627: which of the 6 real layout tiers to use is now chosen by
-    `select_layout_tier()` -- a labeled, 82%-accurate best-effort
-    approximation, not a solved formula (see that function's own
-    docstring for why the remaining gap needs real per-turn history
-    this project can't recover from report snapshots). Every page of a
-    given report uses the same chosen tier, matching every real sample
-    (a report's own far-side page never switches tiers mid-report).
+    `select_layout_tier()`. Every page of a given report uses the same
+    chosen tier, matching every real sample (a report's own far-side
+    page never switches tiers mid-report).
+
+    Phase 1038: `select_layout_tier()` is now fed `KingdomState.map_
+    primary_region_columns` (this Kingdom's own tracked primary/"main"
+    exploration region, see that field's own docstring) instead of the
+    full known-column set whenever it's non-empty -- confirmed 100%
+    accurate (54/54) against the real `tests/fixtures/reports/G3`
+    corpus once fed the real main/far split, closing what the original
+    Phase 627 labeled an 82%-accurate best-effort approximation. Falls
+    back to the full known-column set (the original, still 82%-
+    accurate approximation) for any `GameState` bridged cold from an
+    existing snapshot, which has no way to backfill that real per-turn
+    growth history -- see `select_layout_tier()`'s own docstring for
+    the full account of why a snapshot alone can't recover it.
 
     Phase 628: only provinces this Kingdom actually knows about
     (`ProvinceState.known_to_kingdom()`, Phase 623) are rendered --
@@ -13170,7 +13180,19 @@ def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
     home_x = kingdom.home_province.x if kingdom is not None else min(known_columns)
     board_width = state.board_width
 
-    chosen_stride = select_layout_tier(known_columns, home_x, board_width)
+    # Phase 1038: feed tier selection only this Kingdom's own tracked
+    # primary ("main") exploration-region columns when available -- see
+    # `models/game_state.py KingdomState.map_primary_region_columns`'s
+    # own docstring for why this closes most of `select_layout_tier()`'s
+    # documented 82%-accuracy gap (a separately-grown far region can be
+    # geometrically adjacent to the primary one with zero gap, which
+    # would otherwise make the "uncapped home-anchored contiguous run"
+    # swallow both into one oversized cluster). Empty for any `GameState`
+    # bridged cold from an existing snapshot -- falls back to the full
+    # `known_columns` set, exactly the old, honest approximation.
+    primary_columns = kingdom.map_primary_region_columns if kingdom is not None else set()
+    tier_input_columns = primary_columns if primary_columns else known_columns
+    chosen_stride = select_layout_tier(tier_input_columns, home_x, board_width)
     renderer = next(render for stride, render in LAYOUT_TIERS if stride == chosen_stride)
     pages = paginate_known_columns(known_columns, home_x, max_columns_per_page(chosen_stride), board_width)
 

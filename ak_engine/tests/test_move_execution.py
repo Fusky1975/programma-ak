@@ -308,6 +308,32 @@ def test_record_kingdom_exploration_without_state_or_leader_id_never_doubles():
     assert result.new_percent == 50
 
 
+# -- Phase 1038: record_kingdom_exploration() also grows the Kingdom's own
+# KingdomState.map_primary_region_columns the first time a province crosses
+# the "known" floor --------------------------------------------------------
+
+
+def test_record_kingdom_exploration_grows_the_primary_region_on_first_crossing_the_known_floor():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Rangeria", Race.HUMAN, Alignment.NEUTRAL, TARGET))
+    state.kingdoms[1].map_primary_region_columns = {TARGET.x}
+    neighbor = HexCoord(TARGET.x + 1, TARGET.y)
+    province = ProvinceState(neighbor, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None)
+
+    record_kingdom_exploration(province, kingdom_id=1, explorer_skill=1, partial=False, state=state)
+
+    assert neighbor.x in state.kingdoms[1].map_primary_region_columns
+
+
+def test_record_kingdom_exploration_without_state_does_not_touch_the_primary_region():
+    province = ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None)
+
+    record_kingdom_exploration(province, kingdom_id=1, explorer_skill=1, partial=False)
+
+    # No crash, and nothing to assert on -- there is no KingdomState at
+    # all in this call, which must stay the documented no-op case.
+
+
 def test_execute_move_credits_the_movers_own_terrain_king_title():
     state = base_state()
     state.add_leader(LeaderState(1, 1, "Scout", ORIGIN))
@@ -338,6 +364,23 @@ def test_reveal_adjacent_provinces_never_lowers_an_already_better_known_neighbor
     reveal_adjacent_provinces(state, state.provinces[TARGET], kingdom_id=1, bounds=bounds)
 
     assert state.provinces[DEFENDER_HOME].explored_percent_by_kingdom[1] == 50
+
+
+def test_reveal_adjacent_provinces_grows_the_primary_region_for_a_newly_known_neighbor():
+    # Phase 1038. TARGET=(2,1) is on an odd row, whose own real offset
+    # table includes (+1, 0) -- (3,1) is a genuine geometric neighbor in
+    # a different column from TARGET's own, unlike DEFENDER_HOME (same
+    # column by construction), so this actually exercises cross-column
+    # adjacency growth, not just a same-column no-op.
+    state = base_state()
+    far_column_neighbor = HexCoord(3, 1)
+    state.add_province(ProvinceState(far_column_neighbor, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None))
+    state.kingdoms[1].map_primary_region_columns = {TARGET.x}
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+
+    reveal_adjacent_provinces(state, state.provinces[TARGET], kingdom_id=1, bounds=bounds)
+
+    assert far_column_neighbor.x in state.kingdoms[1].map_primary_region_columns
 
 
 def test_reveal_adjacent_provinces_skips_neighbors_with_no_real_province_data():
