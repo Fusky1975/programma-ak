@@ -195,6 +195,37 @@
   </div>
 
   <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>Discoveries &mdash; First Found By</h2>
+    <p class="hex-map-legend-note">The global, world-wide registry of which Kingdom was first to invent each Discovery (a Discovery is one shared invention, unlike a Feature-type secret several Kingdoms can each hold independently) -- feeds the Chancellor Merit Point formula's own "found first" (3 points) vs. "found, not first" (2 points) split. Normally written once, permanently, the instant a Kingdom's own Practice/Sage action gains a Discovery no other Kingdom already held; exposed here for the GM to set up a scenario directly or correct by hand. Granting a Discovery to a Kingdom on its own Kingdom page does not update this registry automatically.</p>
+    <form method="post" action="{{ url_for('world_discoveries_save', slug=meta.slug) }}">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Discovery</th>
+            <th>First Found By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for discovery in discoveries %}
+            <tr>
+              <td>{{ discovery|display_name }}</td>
+              <td>
+                <select name="first_found_by_{{ discovery.name }}">
+                  <option value="" {% if discovery not in state.discoveries_first_found_by %}selected{% endif %}>-- Not found yet --</option>
+                  {% for kingdom_id, kingdom in state.kingdoms.items() %}
+                    <option value="{{ kingdom_id }}" {% if state.discoveries_first_found_by.get(discovery) == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit">Save Discoveries -- First Found By</button>
+    </form>
+  </div>
+
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
     <h2>Create Kingdom</h2>
     <p>Adds a brand-new Kingdom and its King to this already-created world. The Home province must be an existing,
       unowned province (not already anyone's Home) -- pick one from the Provinces map, then enter its coordinates

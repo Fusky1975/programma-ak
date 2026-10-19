@@ -504,6 +504,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             max_points_per_ability=MAX_POINTS_PER_ABILITY,
             game_types=list(GameType),
             all_alignments=list(Alignment),
+            discoveries=list(Discovery),
             error=request.args.get("error"),
         )
 
@@ -1027,6 +1028,34 @@ def create_app(games_root: Path | None = None) -> Flask:
         state.election_pending_turn = election_pending_turn
         state.election_pending_alignment_trigger = election_pending_alignment_trigger
         state.pending_guild_target = pending_guild_target
+        save_game(root, slug, state)
+        return redirect(url_for("world_setup", slug=slug))
+
+    @app.post("/games/<slug>/world/discoveries")
+    def world_discoveries_save(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _setup_error(message: str):
+            return redirect(url_for("world_setup", slug=slug, error=message))
+
+        first_found_by: dict[Discovery, int] = {}
+        for discovery in Discovery:
+            raw = request.form.get(f"first_found_by_{discovery.name}", "").strip()
+            if not raw:
+                continue
+            try:
+                kingdom_id = int(raw)
+            except ValueError:
+                return _setup_error(f"{display_name(discovery)}: please choose a valid Kingdom.")
+            if kingdom_id not in state.kingdoms:
+                return _setup_error(f"{display_name(discovery)}: please choose a valid Kingdom.")
+            first_found_by[discovery] = kingdom_id
+
+        state.discoveries_first_found_by = first_found_by
         save_game(root, slug, state)
         return redirect(url_for("world_setup", slug=slug))
 

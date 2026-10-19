@@ -1327,6 +1327,80 @@ def test_world_events_save_missing_game_shows_an_error_not_a_crash(tmp_path):
     assert b"Game not found" in response.data
 
 
+def test_world_discoveries_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    kingdom_ids = list(state.kingdoms)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/discoveries",
+        data={
+            "first_found_by_LAND_SHIP": str(kingdom_ids[0]),
+            "first_found_by_SCYTHED_CHARIOTS": str(kingdom_ids[1]),
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.discoveries_first_found_by[Discovery.LAND_SHIP] == kingdom_ids[0]
+    assert state.discoveries_first_found_by[Discovery.SCYTHED_CHARIOTS] == kingdom_ids[1]
+    assert Discovery.PONY_EXPRESS not in state.discoveries_first_found_by
+
+
+def test_world_discoveries_save_can_clear_back_to_unset(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    kingdom_id = next(iter(state.kingdoms))
+    client.post(
+        f"/games/{meta.slug}/world/discoveries",
+        data={"first_found_by_LAND_SHIP": str(kingdom_id)},
+    )
+
+    client.post(f"/games/{meta.slug}/world/discoveries", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.discoveries_first_found_by == {}
+
+
+def test_world_discoveries_save_rejects_an_invalid_kingdom(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/discoveries",
+        data={"first_found_by_LAND_SHIP": "999999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"please choose a valid Kingdom" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert Discovery.LAND_SHIP not in state.discoveries_first_found_by
+
+
+def test_world_discoveries_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/world/discoveries", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+def test_world_setup_shows_the_discoveries_first_found_by_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/world")
+
+    assert response.status_code == 200
+    assert b"First Found By" in response.data
+    assert b"Not found yet" in response.data
+
+
 def test_world_setup_shows_the_world_events_panel(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
