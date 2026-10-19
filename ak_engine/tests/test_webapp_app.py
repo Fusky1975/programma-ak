@@ -3601,6 +3601,73 @@ def test_leader_edit_shows_emperor_points_only_for_a_king(tmp_path):
     assert king_response.data.count(b"Emperor") > hero_response.data.count(b"Emperor")
 
 
+def _race_title_tally_form_data(overrides=None):
+    from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
+
+    overrides = overrides or {}
+    data = {}
+    for race in RACE_TITLE_OFFICE:
+        won, lost = overrides.get(race, (0, 0))
+        data[f"race_title_won_{race.name}"] = str(won)
+        data[f"race_title_lost_{race.name}"] = str(lost)
+    return data
+
+
+def test_leader_edit_shows_the_race_title_tally_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert response.status_code == 200
+    assert b"Race Title Tally" in response.data
+    assert b"Front-Line Battles Won" in response.data
+    assert b"Dragon Lord" in response.data
+
+
+def test_leader_race_title_tally_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/race-title-tally",
+        data=_race_title_tally_form_data({Race.DRAGONS: (5, 2)}),
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    tally = state.leaders[1].race_title_tally[Race.DRAGONS]
+    assert tally.front_line_battles_won_points == 5
+    assert tally.front_line_battles_lost_points == 2
+
+
+def test_leader_race_title_tally_save_rejects_a_non_numeric_value(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    data = _race_title_tally_form_data()
+    data["race_title_won_DRAGONS"] = "lots"
+
+    response = client.post(f"/games/{meta.slug}/leaders/1/race-title-tally", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"must be whole numbers" in response.data
+
+
+def test_leader_race_title_tally_save_missing_leader_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/999999/race-title-tally",
+        data=_race_title_tally_form_data(),
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Hero not found" in response.data
+
+
 def test_leader_effects_save_persists_the_new_values(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

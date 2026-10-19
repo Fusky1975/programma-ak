@@ -25,7 +25,7 @@ from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, sorted_kingdom_discoveries
 from ak_engine.models.enums import ABILITY_NAME, Ability
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
-from ak_engine.models.game_state import ArmyState, BlackmailClaim, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, BlackmailClaim, LeaderState, ProvinceState, RaceTitleTally
 from ak_engine.models.game_type import GameType
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MAGIC_FEATURE_NAME, MagicFeature
@@ -1566,6 +1566,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             office_name=OFFICE_NAME,
             office_merit_points=office_merit_points,
             merit_tally_fields=MERIT_TALLY_FIELDS,
+            race_title_races=list(RACE_TITLE_OFFICE),
+            race_name=RACE_NAME,
             error=request.args.get("error"),
         )
 
@@ -1977,6 +1979,34 @@ def create_app(games_root: Path | None = None) -> Flask:
 
         for field_name, value in values.items():
             setattr(leader.merit_tally, field_name, value)
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
+    @app.post("/games/<slug>/leaders/<int:leader_id>/race-title-tally")
+    def leader_race_title_tally_save(slug: str, leader_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leader = state.leaders.get(leader_id)
+        if leader is None:
+            return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id, error=message))
+
+        tallies: dict[Race, RaceTitleTally] = {}
+        for race in RACE_TITLE_OFFICE:
+            label = RACE_NAME[race]
+            try:
+                won = int(request.form.get(f"race_title_won_{race.name}", ""))
+                lost = int(request.form.get(f"race_title_lost_{race.name}", ""))
+            except ValueError:
+                return _edit_error(f"{label}: Front-Line Battles Won/Lost must be whole numbers.")
+            tallies[race] = RaceTitleTally(front_line_battles_won_points=won, front_line_battles_lost_points=lost)
+
+        leader.race_title_tally = tallies
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 

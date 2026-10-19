@@ -355,6 +355,33 @@
 </div>
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Race Title Tally</h2>
+  <p class="hex-map-legend-note">The raw front-line-battle input to the 11 race-fanaticism title Merit Point formulas (Dragon Lord, Elven King, etc. -- one counter pair per race, doubled in the final score when it matches this leader's own race). No battle call site increments these yet, so they stay at 0 until the GM sets them directly. See "Current Merit Points by Office" below for what these currently translate to.</p>
+  <form method="post" action="{{ url_for('leader_race_title_tally_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Race</th>
+          <th>Front-Line Battles Won</th>
+          <th>Front-Line Battles Lost</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for race in race_title_races %}
+          {% set tally = leader.race_title_tally.get(race) %}
+          <tr>
+            <td>{{ race_name[race] }}</td>
+            <td><input type="number" name="race_title_won_{{ race.name }}" value="{{ tally.front_line_battles_won_points if tally else 0 }}" style="width: 6em;"></td>
+            <td><input type="number" name="race_title_lost_{{ race.name }}" value="{{ tally.front_line_battles_lost_points if tally else 0 }}" style="width: 6em;"></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit">Save Race Title Tally</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Current Merit Points by Office</h2>
   <p class="hex-map-legend-note">This Hero/King's own current score for every real office they could stand for, computed live from the Merit Tally above (and, for Emperor, Kingdom tax base) -- not just whichever office they actually hold right now. Read-only: edit the Merit Tally above to change these.</p>
   {% if office_merit_points %}
