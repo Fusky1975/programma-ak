@@ -1401,6 +1401,81 @@ def test_world_setup_shows_the_discoveries_first_found_by_panel(tmp_path):
     assert b"Not found yet" in response.data
 
 
+def test_world_setup_shows_the_office_holders_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/world")
+
+    assert response.status_code == 200
+    assert b"Office Holders" in response.data
+    assert b"Royal Treasurer" in response.data or b"Imperial Treasurer" in response.data
+    assert b"No qualifying Hero/King" in response.data
+
+
+def test_world_office_holders_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    leader_ids = list(state.leaders)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/office-holders",
+        data={
+            "office_holder_MARSHAL": str(leader_ids[0]),
+            "office_holder_ADMIRAL": str(leader_ids[1]),
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.office_holders[Office.MARSHAL] == leader_ids[0]
+    assert state.office_holders[Office.ADMIRAL] == leader_ids[1]
+    assert Office.DEFENDER not in state.office_holders
+
+
+def test_world_office_holders_save_can_clear_back_to_unset(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    leader_id = next(iter(state.leaders))
+    client.post(
+        f"/games/{meta.slug}/world/office-holders",
+        data={"office_holder_MARSHAL": str(leader_id)},
+    )
+
+    client.post(f"/games/{meta.slug}/world/office-holders", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.office_holders == {}
+
+
+def test_world_office_holders_save_rejects_an_invalid_leader(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/world/office-holders",
+        data={"office_holder_MARSHAL": "999999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"please choose a valid Hero/King" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert Office.MARSHAL not in state.office_holders
+
+
+def test_world_office_holders_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/world/office-holders", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
 def test_world_setup_shows_the_world_events_panel(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

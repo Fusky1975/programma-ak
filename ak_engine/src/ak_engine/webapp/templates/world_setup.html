@@ -226,6 +226,47 @@
   </div>
 
   <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>Office Holders</h2>
+    <p class="hex-map-legend-note">The 37 leader-scoped Imperial Offices' own sticky tie-break record (Emperor is excluded -- see the World Emperor panel above, resolved directly from Emperor Kingdom, not a Rank-contest). "Current Holder" is live-computed from each Hero/King's own Merit Tally and Race Title Tally; "Sticky Tie-Break Record" is the raw, GM-settable fact that keeps a tied title with its own previous holder rather than flipping arbitrarily turn to turn (normally set once per turn by commit_office_holders(), not auto-recomputed here).</p>
+    <form method="post" action="{{ url_for('world_office_holders_save', slug=meta.slug) }}">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Office</th>
+            <th>Current Holder (computed)</th>
+            <th>Sticky Tie-Break Record</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for office in ranked_offices %}
+            {% set current_id = office_current_holders.get(office) %}
+            {% set current_leader = state.leaders.get(current_id) if current_id is not none else none %}
+            <tr>
+              <td>{{ office_name[office] }}</td>
+              <td>
+                {% if current_leader %}
+                  {{ current_leader.name }}
+                {% else %}
+                  <span class="empty-state">No qualifying Hero/King</span>
+                {% endif %}
+              </td>
+              <td>
+                <select name="office_holder_{{ office.name }}">
+                  <option value="" {% if office not in state.office_holders %}selected{% endif %}>-- None --</option>
+                  {% for leader_id, leader in state.leaders.items() %}
+                    <option value="{{ leader_id }}" {% if state.office_holders.get(office) == leader_id %}selected{% endif %}>{{ leader.name }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit">Save Office Holders</button>
+    </form>
+  </div>
+
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
     <h2>Create Kingdom</h2>
     <p>Adds a brand-new Kingdom and its King to this already-created world. The Home province must be an existing,
       unowned province (not already anyone's Home) -- pick one from the Provinces map, then enter its coordinates

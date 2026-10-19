@@ -44,6 +44,7 @@ from ak_engine.turn.office_holder import (
     RANKED_OFFICES,
     leader_office_merit_points,
     resolve_army_office_holder,
+    resolve_office_holder,
 )
 from ak_engine.turn.merit_points import emperor_merit_points
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
@@ -493,6 +494,21 @@ def create_app(games_root: Path | None = None) -> Flask:
             meta, state = open_game(root, slug)
         except GameNotFoundError:
             return redirect(url_for("games_list", error="Game not found."))
+
+        # The 37 leader-scoped ranked offices' own live-computed current
+        # holder -- read-only context for the "Office Holders" panel,
+        # alongside the raw sticky tie-break record the GM can edit
+        # directly. Wrapped per-office so one formula's own edge case
+        # can't blank the whole page (same caution as the leader Merit
+        # Points table and the army-scoped Royal Titles panel).
+        office_current_holders: dict[Office, int | None] = {}
+        for office in RANKED_OFFICES:
+            try:
+                holder = resolve_office_holder(state, office)
+            except Exception:
+                holder = None
+            office_current_holders[office] = holder.leader_id if holder is not None else None
+
         return render_template(
             "world_setup.html",
             meta=meta,
@@ -511,6 +527,9 @@ def create_app(games_root: Path | None = None) -> Flask:
             game_types=list(GameType),
             all_alignments=list(Alignment),
             discoveries=list(Discovery),
+            ranked_offices=RANKED_OFFICES,
+            office_name=OFFICE_NAME,
+            office_current_holders=office_current_holders,
             error=request.args.get("error"),
         )
 
@@ -1062,6 +1081,34 @@ def create_app(games_root: Path | None = None) -> Flask:
             first_found_by[discovery] = kingdom_id
 
         state.discoveries_first_found_by = first_found_by
+        save_game(root, slug, state)
+        return redirect(url_for("world_setup", slug=slug))
+
+    @app.post("/games/<slug>/world/office-holders")
+    def world_office_holders_save(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _setup_error(message: str):
+            return redirect(url_for("world_setup", slug=slug, error=message))
+
+        holders: dict[Office, int] = {}
+        for office in RANKED_OFFICES:
+            raw = request.form.get(f"office_holder_{office.name}", "").strip()
+            if not raw:
+                continue
+            try:
+                leader_id = int(raw)
+            except ValueError:
+                return _setup_error(f"{OFFICE_NAME[office]}: please choose a valid Hero/King.")
+            if leader_id not in state.leaders:
+                return _setup_error(f"{OFFICE_NAME[office]}: please choose a valid Hero/King.")
+            holders[office] = leader_id
+
+        state.office_holders = holders
         save_game(root, slug, state)
         return redirect(url_for("world_setup", slug=slug))
 
