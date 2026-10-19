@@ -4356,6 +4356,82 @@ def test_armies_list_shows_every_generated_army(tmp_path):
     assert b"Edit" in response.data
 
 
+def test_armies_list_shows_the_army_scoped_royal_titles_panel(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/armies")
+
+    assert response.status_code == 200
+    assert b"Army-Scoped Royal Titles" in response.data
+    assert b"Royal Air Force" in response.data
+    assert b"Praetorian Guard" in response.data
+    assert b"Imperial Flag Squadron" in response.data
+
+
+def test_army_office_holders_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army_ids = list(state.armies)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/office-holders",
+        data={
+            "army_office_holder_AIR_FORCE": str(army_ids[0]),
+            "army_office_holder_PRAETOR": str(army_ids[1]),
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.army_office_holders[Office.AIR_FORCE] == army_ids[0]
+    assert state.army_office_holders[Office.PRAETOR] == army_ids[1]
+    assert Office.FLAGSHIP not in state.army_office_holders
+
+
+def test_army_office_holders_save_can_clear_back_to_unset(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army_id = next(iter(state.armies))
+    client.post(
+        f"/games/{meta.slug}/armies/office-holders",
+        data={"army_office_holder_AIR_FORCE": str(army_id)},
+    )
+
+    client.post(f"/games/{meta.slug}/armies/office-holders", data={})
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.army_office_holders == {}
+
+
+def test_army_office_holders_save_rejects_an_invalid_army(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/office-holders",
+        data={"army_office_holder_AIR_FORCE": "999999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"please choose a valid Army" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert Office.AIR_FORCE not in state.army_office_holders
+
+
+def test_army_office_holders_save_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post("/games/does-not-exist/armies/office-holders", data={}, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
 def test_army_edit_shows_the_current_values(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

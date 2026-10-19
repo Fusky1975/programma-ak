@@ -38,7 +38,13 @@ from ak_engine.models.sex import Sex
 from ak_engine.models.temper import TEMPER_NAME, Temper
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_NAME, Treasure
 from ak_engine.turn.combat import QUALITY_NAME, Quality
-from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES, RANKED_OFFICES, leader_office_merit_points
+from ak_engine.turn.office_holder import (
+    ALL_OFFICES,
+    ARMY_RANKED_OFFICES,
+    RANKED_OFFICES,
+    leader_office_merit_points,
+    resolve_army_office_holder,
+)
 from ak_engine.turn.merit_points import emperor_merit_points
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
 from ak_engine.turn.sea_transport import board_army, disembark_army
@@ -2050,6 +2056,21 @@ def create_app(games_root: Path | None = None) -> Flask:
             state.armies.values(),
             key=lambda army: (army.kingdom_id is None, army.kingdom_id or 0, army.location.y, army.location.x),
         )
+
+        # The 3 army-scoped Royal Titles' own live-computed current
+        # holder -- read-only context for the "Army-Scoped Royal Titles"
+        # panel, alongside the raw sticky tie-break record the GM can
+        # edit directly. Wrapped per-office so one formula's own edge
+        # case can't blank the whole page (same caution as the leader
+        # Merit Points table).
+        army_office_current_holders: dict[Office, int | None] = {}
+        for office in ARMY_RANKED_OFFICES:
+            try:
+                holder = resolve_army_office_holder(state, office)
+            except Exception:
+                holder = None
+            army_office_current_holders[office] = holder.army_id if holder is not None else None
+
         return render_template(
             "world_armies.html",
             meta=meta,
@@ -2057,6 +2078,9 @@ def create_app(games_root: Path | None = None) -> Flask:
             armies=armies,
             army_types=list(ArmyType),
             qualities=list(Quality),
+            army_ranked_offices=ARMY_RANKED_OFFICES,
+            army_office_name=OFFICE_NAME,
+            army_office_current_holders=army_office_current_holders,
             error=request.args.get("error"),
         )
 
@@ -2111,6 +2135,34 @@ def create_app(games_root: Path | None = None) -> Flask:
         )
         save_game(root, slug, state)
         return redirect(url_for("army_edit", slug=slug, army_id=army_id))
+
+    @app.post("/games/<slug>/armies/office-holders")
+    def army_office_holders_save(slug: str):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+
+        def _setup_error(message: str):
+            return redirect(url_for("armies_list", slug=slug, error=message))
+
+        holders: dict[Office, int] = {}
+        for office in ARMY_RANKED_OFFICES:
+            raw = request.form.get(f"army_office_holder_{office.name}", "").strip()
+            if not raw:
+                continue
+            try:
+                army_id = int(raw)
+            except ValueError:
+                return _setup_error(f"{OFFICE_NAME[office]}: please choose a valid Army.")
+            if army_id not in state.armies:
+                return _setup_error(f"{OFFICE_NAME[office]}: please choose a valid Army.")
+            holders[office] = army_id
+
+        state.army_office_holders = holders
+        save_game(root, slug, state)
+        return redirect(url_for("armies_list", slug=slug))
 
     @app.get("/games/<slug>/armies/<int:army_id>")
     def army_edit(slug: str, army_id: int):
