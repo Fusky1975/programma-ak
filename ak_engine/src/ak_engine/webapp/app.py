@@ -1877,7 +1877,15 @@ def create_app(games_root: Path | None = None) -> Flask:
             return _edit_error("The trailing value must be a whole number.")
         raw_values[30] = trailing_value
 
+        try:
+            experience_credit = int(request.form.get("experience_credit", ""))
+        except ValueError:
+            return _edit_error("Experience Credit must be a whole number.")
+        if experience_credit < 0:
+            return _edit_error("Experience Credit must be 0 or more.")
+
         leader.skills = SkillTable(raw_values=raw_values)
+        leader.experience_credit = experience_credit
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 

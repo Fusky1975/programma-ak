@@ -316,6 +316,12 @@
       <br><span class="hex-map-legend-note">Real field (the skill-values line's own 31st integer), but its meaning is still unconfirmed by this project -- empirically it tracks a King's own Alignment (Druidic 1, Neutral 2, everyone else 3), constant per Kingdom across turns. Not auto-derived here since this form also applies to Heroes.</span>
     </p>
 
+    <p>
+      <label for="experience_credit">Experience Credit</label><br>
+      <input type="number" id="experience_credit" name="experience_credit" value="{{ leader.experience_credit }}" min="0" style="width: 6em;">
+      <br><span class="hex-map-legend-note">One shared counter per leader, fed by both Practice and Add_Experience -- whichever ability's event happens to push it past 100 is the one that actually rises a level next (Add_Experience's own documented "occult rule"). A pure in-memory simulation value with no real GW-file byte of its own, so this is this project's only way to see or set how close a leader is to their next random skill-up.</span>
+    </p>
+
     <button type="submit">Save Skills</button>
   </form>
 </div>

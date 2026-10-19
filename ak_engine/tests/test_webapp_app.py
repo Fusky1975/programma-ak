@@ -3345,10 +3345,10 @@ def test_leader_edit_does_not_offer_an_already_held_advanced_ability_again(tmp_p
     assert b'value="TACTICAL_WARGAMES_MASTERY"' not in response.data
 
 
-def _skills_form_data(overrides=None, trailing_value=0):
+def _skills_form_data(overrides=None, trailing_value=0, experience_credit=0):
     from ak_engine.models.enums import Ability
 
-    data = {"trailing_value": str(trailing_value)}
+    data = {"trailing_value": str(trailing_value), "experience_credit": str(experience_credit)}
     overrides = overrides or {}
     for ability in Ability:
         skill, aptitude = overrides.get(ability, (0, 0))
@@ -3366,6 +3366,20 @@ def test_leader_edit_shows_the_current_skill_values(tmp_path):
     assert response.status_code == 200
     assert b"No skill data recorded" not in response.data
     assert b"Tactics" in response.data
+    assert b"Experience Credit" in response.data
+
+
+def test_leader_edit_shows_the_current_experience_credit_value(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    state.leaders[1].experience_credit = 73
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert response.status_code == 200
+    assert b'value="73"' in response.data
 
 
 def test_leader_edit_shows_no_skill_data_message_for_a_fresh_hero(tmp_path):
@@ -3393,7 +3407,7 @@ def test_leader_skills_save_persists_the_new_values(tmp_path):
 
     response = client.post(
         f"/games/{meta.slug}/leaders/1/skills",
-        data=_skills_form_data({Ability.TACTICAL: (5, 7)}, trailing_value=9),
+        data=_skills_form_data({Ability.TACTICAL: (5, 7)}, trailing_value=9, experience_credit=42),
         follow_redirects=True,
     )
 
@@ -3402,6 +3416,7 @@ def test_leader_skills_save_persists_the_new_values(tmp_path):
     skills = state.leaders[1].skills
     assert skills.pair_for_ability(Ability.TACTICAL) == (5, 7)
     assert skills.raw_values[30] == 9
+    assert state.leaders[1].experience_credit == 42
 
 
 def test_leader_skills_save_initializes_skills_when_none(tmp_path):
@@ -3455,6 +3470,30 @@ def test_leader_skills_save_rejects_a_non_numeric_value(tmp_path):
 
     assert response.status_code == 200
     assert b"must be whole numbers" in response.data
+
+
+def test_leader_skills_save_rejects_a_non_numeric_experience_credit(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    data = _skills_form_data()
+    data["experience_credit"] = "lots"
+
+    response = client.post(f"/games/{meta.slug}/leaders/1/skills", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Experience Credit must be a whole number" in response.data
+
+
+def test_leader_skills_save_rejects_a_negative_experience_credit(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    data = _skills_form_data()
+    data["experience_credit"] = "-1"
+
+    response = client.post(f"/games/{meta.slug}/leaders/1/skills", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Experience Credit must be 0 or more" in response.data
 
 
 def test_leader_skills_save_missing_leader_shows_an_error_not_a_crash(tmp_path):
