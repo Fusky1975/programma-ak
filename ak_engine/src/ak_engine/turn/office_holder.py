@@ -439,6 +439,18 @@ def _leader_merit_points(office: Office, state: GameState, leader: LeaderState) 
     raise ValueError(f"{office} is not a ranked office -- Emperor is resolved via resolve_office_holder() directly")
 
 
+def leader_office_merit_points(office: Office, state: GameState, leader: LeaderState) -> int | float:
+    """Public wrapper around ``_leader_merit_points()`` for a caller (the
+    GM web interface's own ``MeritTally`` display) that wants one
+    specific leader's own current score for one specific office,
+    regardless of who's actually winning it right now --
+    ``resolve_office_holder()`` only ever returns the current top
+    scorer, discarding every other candidate's own number.
+    """
+
+    return _leader_merit_points(office, state, leader)
+
+
 def _king_leader_id(state: GameState, kingdom_id: int) -> int | None:
     for leader in state.leaders.values():
         if leader.kingdom_id == kingdom_id and leader.is_king:

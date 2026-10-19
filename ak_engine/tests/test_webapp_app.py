@@ -22,7 +22,7 @@ from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.encounter import MonsterTalkReply
-from ak_engine.webapp.app import create_app, display_name
+from ak_engine.webapp.app import MERIT_TALLY_FIELDS, create_app, display_name
 from ak_engine.webapp.games import create_game, list_games, open_game, save_game
 
 
@@ -3506,6 +3506,99 @@ def test_leader_skills_save_missing_leader_shows_an_error_not_a_crash(tmp_path):
 
     assert response.status_code == 200
     assert b"Hero not found" in response.data
+
+
+def _merit_tally_form_data(overrides=None):
+    overrides = overrides or {}
+    data = {}
+    for field_name, _label, is_float in MERIT_TALLY_FIELDS:
+        data[field_name] = str(overrides.get(field_name, 0.0 if is_float else 0))
+    return data
+
+
+def test_leader_edit_shows_the_merit_tally_panel_and_office_points(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+
+    assert response.status_code == 200
+    assert b"Merit Tally" in response.data
+    assert b"Land Battles Won (points)" in response.data
+    assert b"Current Merit Points by Office" in response.data
+
+
+def test_leader_merit_tally_save_persists_the_new_values(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/merit-tally",
+        data=_merit_tally_form_data({"monster_hp_defeated": 17, "diplomatic_merit_points": 2.5}),
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    tally = state.leaders[1].merit_tally
+    assert tally.monster_hp_defeated == 17
+    assert tally.diplomatic_merit_points == 2.5
+
+
+def test_leader_merit_tally_save_allows_negative_net_counters(tmp_path):
+    # duel_merit_net/air_combat_merit/courage_encounter_merit are real
+    # signed running totals (see MeritTally's own docstring) -- a GM
+    # must be able to set a negative value.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/merit-tally",
+        data=_merit_tally_form_data({"duel_merit_net": -3}),
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[1].merit_tally.duel_merit_net == -3
+
+
+def test_leader_merit_tally_save_rejects_a_non_numeric_value(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    data = _merit_tally_form_data()
+    data["monster_hp_defeated"] = "lots"
+
+    response = client.post(f"/games/{meta.slug}/leaders/1/merit-tally", data=data, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Monster HP Defeated must be a number" in response.data
+
+
+def test_leader_merit_tally_save_missing_leader_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/999999/merit-tally", data=_merit_tally_form_data(), follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    assert b"Hero not found" in response.data
+
+
+def test_leader_edit_shows_emperor_points_only_for_a_king(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king_id = next(leader_id for leader_id, leader in state.leaders.items() if leader.is_king)
+    hero_id = next(leader_id for leader_id, leader in state.leaders.items() if not leader.is_king)
+
+    king_response = client.get(f"/games/{meta.slug}/leaders/{king_id}")
+    hero_response = client.get(f"/games/{meta.slug}/leaders/{hero_id}")
+
+    assert b"Emperor" in king_response.data
+    assert king_response.data.count(b"Emperor") > hero_response.data.count(b"Emperor")
 
 
 def test_leader_effects_save_persists_the_new_values(tmp_path):

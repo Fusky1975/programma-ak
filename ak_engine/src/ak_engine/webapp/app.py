@@ -38,7 +38,8 @@ from ak_engine.models.sex import Sex
 from ak_engine.models.temper import TEMPER_NAME, Temper
 from ak_engine.models.treasure import GOLD_HOARD_DISPLAY_NAME, TREASURE_NAME, Treasure
 from ak_engine.turn.combat import QUALITY_NAME, Quality
-from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES
+from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES, RANKED_OFFICES, leader_office_merit_points
+from ak_engine.turn.merit_points import emperor_merit_points
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
 from ak_engine.turn.sea_transport import board_army, disembark_army
 from ak_engine.webapp.games import (
@@ -130,6 +131,44 @@ OPTIONAL_OFFICES: tuple[Office, ...] = (
     + _MAGIC_OPTIONAL_OFFICES
     + tuple(o for o in ALL_OFFICES if o.value > Office.MAGE.value and o not in _GROUPED_OPTIONAL_OFFICES)
     + ARMY_RANKED_OFFICES
+)
+
+# Every `models/game_state.py MeritTally` field, in that class's own
+# declared order, with a GM-readable label -- the raw, cumulative inputs
+# `turn/merit_points.py`'s own per-office formulas read. `is_float` picks
+# which ones accept a fractional value (currently only Silver Tongue's
+# own `diplomatic_merit_points`, the one real `Tit_Pts`-style counter
+# this project models as a float -- see that field's own docstring).
+MERIT_TALLY_FIELDS: tuple[tuple[str, str, bool], ...] = (
+    ("land_battles_won_points", "Land Battles Won (points)", False),
+    ("land_battles_lost_points", "Land Battles Lost (points)", False),
+    ("naval_battles_won_points", "Naval Battles Won (points)", False),
+    ("naval_battles_lost_points", "Naval Battles Lost (points)", False),
+    ("monster_hp_defeated", "Monster HP Defeated", False),
+    ("monster_hp_neutralized", "Monster HP Neutralized", False),
+    ("resurrection_bless_casts", "Resurrection/Bless Casts", False),
+    ("features_discovered_first", "Features Discovered First", False),
+    ("discoveries_found_first", "Discoveries Found First", False),
+    ("discoveries_found_not_first", "Discoveries Found (Not First)", False),
+    ("discoveries_via_espionage", "Discoveries Via Espionage", False),
+    ("successful_thefts", "Successful Thefts", False),
+    ("diplomatic_merit_points", "Diplomatic Merit Points", True),
+    ("elemental_spell_casts", "Elemental Spell Casts", False),
+    ("illusionist_spell_casts", "Illusionist Spell Casts", False),
+    ("necromancy_spell_casts", "Necromancy Spell Casts", False),
+    ("psychic_spell_casts", "Psychic Spell Casts", False),
+    ("plains_explorations", "Plains Explorations", False),
+    ("desert_explorations", "Desert Explorations", False),
+    ("jungle_explorations", "Jungle Explorations", False),
+    ("forest_explorations", "Forest Explorations", False),
+    ("mountain_explorations", "Mountain Explorations", False),
+    ("sea_explorations", "Sea Explorations", False),
+    ("teaching_interactions", "Teaching Interactions", False),
+    ("successful_assassinations", "Successful Assassinations", False),
+    ("duel_merit_net", "Duel Merit (net)", False),
+    ("air_combat_merit", "Air Combat Merit", False),
+    ("courage_encounter_merit", "Courage Encounter Merit", False),
+    ("bravery_merit", "Bravery Merit", False),
 )
 
 
@@ -1488,6 +1527,28 @@ def create_app(games_root: Path | None = None) -> Flask:
         leader = state.leaders.get(leader_id)
         if leader is None:
             return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+
+        # Current Merit Point score for every real office this leader
+        # could stand for -- not just whichever office they actually hold
+        # right now (resolve_office_holder() only ever returns the single
+        # current top scorer, discarding everyone else's own number).
+        # Wrapped per-office so one formula's own edge case can't blank
+        # the whole page.
+        def _format_points(value: int | float) -> str:
+            return f"{value:.2f}" if isinstance(value, float) else str(value)
+
+        office_merit_points: list[tuple[Office, str]] = []
+        if leader.is_king and leader.kingdom_id is not None:
+            try:
+                office_merit_points.append((Office.EMPEROR, _format_points(emperor_merit_points(state, leader.kingdom_id))))
+            except Exception:
+                pass
+        for office in RANKED_OFFICES:
+            try:
+                office_merit_points.append((office, _format_points(leader_office_merit_points(office, state, leader))))
+            except Exception:
+                continue
+
         return render_template(
             "leader_edit.html",
             meta=meta,
@@ -1502,6 +1563,9 @@ def create_app(games_root: Path | None = None) -> Flask:
             advanced_abilities=sorted(leader.advanced_abilities, key=lambda a: a.name),
             available_advanced_abilities=[a for a in AdvancedAbility if a not in leader.advanced_abilities],
             skill_abilities=list(Ability),
+            office_name=OFFICE_NAME,
+            office_merit_points=office_merit_points,
+            merit_tally_fields=MERIT_TALLY_FIELDS,
             error=request.args.get("error"),
         )
 
@@ -1886,6 +1950,33 @@ def create_app(games_root: Path | None = None) -> Flask:
 
         leader.skills = SkillTable(raw_values=raw_values)
         leader.experience_credit = experience_credit
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
+    @app.post("/games/<slug>/leaders/<int:leader_id>/merit-tally")
+    def leader_merit_tally_save(slug: str, leader_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leader = state.leaders.get(leader_id)
+        if leader is None:
+            return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id, error=message))
+
+        values: dict[str, int | float] = {}
+        for field_name, label, is_float in MERIT_TALLY_FIELDS:
+            raw = request.form.get(field_name, "")
+            try:
+                values[field_name] = float(raw) if is_float else int(raw)
+            except ValueError:
+                return _edit_error(f"{label} must be a number.")
+
+        for field_name, value in values.items():
+            setattr(leader.merit_tally, field_name, value)
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 

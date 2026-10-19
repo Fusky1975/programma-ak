@@ -326,4 +326,57 @@
   </form>
 </div>
 
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Merit Tally</h2>
+  <p class="hex-map-legend-note">The raw, cumulative, game-long inputs the Imperial Office Merit Point formulas read (rulebook page 51's "TABELLA DELLE CARICHE IMPERIALI") -- normally accumulated turn by turn as this Hero/King fights, explores, casts and discovers; exposed here for the GM to set up a scenario directly or correct by hand. See "Current Merit Points by Office" below for what these numbers currently translate to.</p>
+  <form method="post" action="{{ url_for('leader_merit_tally_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Counter</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for field_name, label, is_float in merit_tally_fields %}
+          <tr>
+            <td>{{ label }}</td>
+            <td>
+              <input type="number" {% if is_float %}step="any"{% endif %} name="{{ field_name }}"
+                     value="{{ leader.merit_tally|attr(field_name) }}"
+                     style="width: 7em;">
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit">Save Merit Tally</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Current Merit Points by Office</h2>
+  <p class="hex-map-legend-note">This Hero/King's own current score for every real office they could stand for, computed live from the Merit Tally above (and, for Emperor, Kingdom tax base) -- not just whichever office they actually hold right now. Read-only: edit the Merit Tally above to change these.</p>
+  {% if office_merit_points %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Office</th>
+          <th>Merit Points</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for office, points in office_merit_points %}
+          <tr>
+            <td>{{ office_name[office] }}</td>
+            <td>{{ points }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">No office merit points to show.</p>
+  {% endif %}
+</div>
+
 {% endblock %}
