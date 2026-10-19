@@ -307,6 +307,7 @@ from ak_engine.report.turn_report import (
     render_monster_threat_death,
     render_bless_graveyard_outcome,
     render_skeletal_army_outcome,
+    render_hide_feature_outcome,
     render_tornado_outcome,
     render_charm_outcome,
     render_illus_terrain_cast_outcome,
@@ -5375,20 +5376,46 @@ def test_describe_turn_results_skips_a_hide_feature_cast_without_board_width():
     assert lines == []
 
 
-def test_describe_turn_results_skips_a_hide_feature_cast_with_more_than_one_feature():
-    # Phase 946: the deliberate, documented multi-feature exception --
-    # no real fixture example of a successful Hide_Feature cast survives
-    # to confirm the real grouping rule for more than one feature, so
-    # this stays silently unwired rather than guessed at (the same
-    # "no data to weigh a default against" reasoning this branch's own
-    # comment gives, unlike Tornado/Plague's own resolved multi-army
-    # ambiguity).
+def test_describe_turn_results_narrates_a_hide_feature_cast_with_more_than_one_feature():
+    # Phase 1037: the real multi-feature case -- modeled on Tornado/
+    # Plague's own confirmed "repeat the sentence per real target, never
+    # join into one list" precedent (no real fixture example of a
+    # multi-feature Hide_Feature cast itself survives to confirm this
+    # directly, but this project's own corpus does settle the
+    # structurally analogous multi-army case, and this reuses that
+    # reasoned default rather than staying silent forever).
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
     state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Sageleaf"))
     state.add_feature(Feature(feature_id=1, coord=HexCoord(0, 0), kind=FeatureType.DUNGEON))
     state.add_feature(Feature(feature_id=2, coord=HexCoord(0, 0), kind=FeatureType.CAVE))
+    request = CastRequest(spell=Spell.HIDE_FEATURE, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == [
+        "Aldric cast a Hide Feature spell."
+        "The Dungeon in Sageleaf was magically hidden."
+        "The Cave in Sageleaf was magically hidden."
+    ]
+
+
+def test_describe_turn_results_skips_a_hide_feature_cast_with_zero_features():
+    # The shouldn't-happen-post-success defensive fallback -- a success
+    # requires at least one real Feature at cast time (`_execute_hide_
+    # feature()`'s own "no feature to hide" failure guard), so this only
+    # covers a Feature removed later the same turn by some other event;
+    # still silently skipped rather than guessed at, the same "no
+    # source, don't guess" stance the rest of this branch already takes.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Sageleaf"))
     request = CastRequest(spell=Spell.HIDE_FEATURE, target=encode_hex_number(HexCoord(0, 0), board_width=10))
     result = CastExecutionResult(request=request, applied=True)
     entries = [
@@ -7823,6 +7850,28 @@ def test_render_tornado_outcome_with_armies_destroyed():
         "Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Limerick."
         "Tornadoes sucked up the 20th Legion in Limerick and destroyed them."
         "Tornadoes sucked up the 21st Light Cavalry in Limerick and destroyed them."
+    )
+
+
+def test_render_hide_feature_outcome_with_one_feature():
+    rng = ScriptedRandom([])
+    result = render_hide_feature_outcome("Aldric", "Sageleaf", ["Dungeon"], rng)
+    assert result == "Aldric cast a Hide Feature spell.The Dungeon in Sageleaf was magically hidden."
+
+
+def test_render_hide_feature_outcome_with_multiple_features():
+    # Phase 1037: modeled on render_tornado_outcome()'s own real
+    # "repeat the sentence per target, never join into one list"
+    # precedent -- see this function's own module comment for the full
+    # reasoning.
+    rng = ScriptedRandom([])
+
+    result = render_hide_feature_outcome("Aldric", "Sageleaf", ["Dungeon", "Cave"], rng)
+
+    assert result == (
+        "Aldric cast a Hide Feature spell."
+        "The Dungeon in Sageleaf was magically hidden."
+        "The Cave in Sageleaf was magically hidden."
     )
 
 

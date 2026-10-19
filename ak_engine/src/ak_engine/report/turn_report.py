@@ -4366,6 +4366,57 @@ def render_tornado_outcome(
     return "".join(lines)
 
 
+# Phase 1037 -- Hide_Feature's own real multi-Feature case (rulebook
+# [3.2]: "There can sometimes be more than 1 feature in a province").
+# `_execute_hide_feature()` hides every real `Feature` at the target
+# coordinate at once, with no way to disambiguate which one the base
+# `SPELL_CAST_ANNOUNCEMENT[Spell.HIDE_FEATURE]` template's own single
+# `&` slot should name -- and, reconfirmed directly against both real
+# corpora this phase, zero fixture example of a successful multi-Feature
+# cast survives to settle the real grouping convention either way
+# (unlike Tornado/Plague's own multi-army case, Phase 937/944, where
+# both a repeated-sentence and a joined-list reading are directly
+# attested in real letters).
+#
+# Rather than leave this case silently unrendered forever, this reuses
+# the one real, structurally analogous precedent this project's own
+# corpus *does* settle: Tornado/Plague's own confirmed "one spell,
+# several same-kind real targets in the same province" case always
+# repeats the full per-target sentence once per target, never joins
+# them into one list (see `render_tornado_outcome()`'s own docstring
+# for that real evidence). A documented, reasoned default built from a
+# real in-project precedent, not a blind guess.
+#
+# `HIDE_FEATURE_OUTCOME_TEMPLATE` is the exact same real
+# `SPELL_CAST_ANNOUNCEMENT[Spell.HIDE_FEATURE]` text ("the & in @ was
+# magically hidden."), capitalized to stand as its own sentence instead
+# of being glued onto `CAST_SPELL_OPENING_CONTINUED_TEMPLATE`'s "< cast
+# a ~ spell and " -- `Spell.HIDE_FEATURE` isn't one of the 3 `CAST_
+# SPELL_OPENING_COMPLETE_SPELLS`, so the single-feature case still uses
+# the glued form via `render_cast_announcement()` unchanged; only this
+# multi-feature renderer needs the opening split into its own sentence,
+# the same shape Tornado's own `CAST_SPELL_OPENING_COMPLETE_TEMPLATE`
+# opening already uses for exactly this reason.
+HIDE_FEATURE_OUTCOME_TEMPLATE = "The & in @ was magically hidden."
+
+
+def render_hide_feature_outcome(
+    caster_name: str, province_name: str, feature_names: list[str], rng: random.Random
+) -> str:
+    """Renders Hide_Feature's own real multi-Feature cast outcome -- see
+    the module comment above ``HIDE_FEATURE_OUTCOME_TEMPLATE`` for the
+    full sourcing/reasoning. ``feature_names`` is never empty -- the
+    caller already filters the (shouldn't-happen-post-success) empty
+    case the same "no source, don't guess" way the single-feature branch
+    always has.
+    """
+
+    lines = [render(CAST_SPELL_OPENING_COMPLETE_TEMPLATE, {"<": caster_name, "~": SPELL_NAME[Spell.HIDE_FEATURE]}, rng=rng)]
+    for feature_name in feature_names:
+        lines.append(render(HIDE_FEATURE_OUTCOME_TEMPLATE, {"&": feature_name, "@": province_name}, rng=rng))
+    return "".join(lines)
+
+
 # HostAK/TP/SAY.PAS `_PPlague`: "plague ravaged the province of @." (S_Comm)
 # is a DIFFERENT real text from either the caster's own top-level line or
 # `_SPlague`'s bystander notice -- see `PLAGUE_WORLD_EVENT_TEMPLATE`'s own
@@ -9361,47 +9412,60 @@ def describe_turn_results(
             if spell is Spell.HIDE_FEATURE:
                 # Phase 946: the eighth and last `_CAST_ANNOUNCEMENT_
                 # PROVINCE_SPELLS` entry -- no dedicated bypass branch
-                # needed at all, since `_CAST_ANNOUNCEMENT_FEATURE_SPELLS`
-                # already made `render_cast_announcement()`'s generic
-                # fallback support `feature_name` (Phase 193). Reads
-                # `state.features_at(coord)` directly (the same "read
-                # fresh from state, no new CastExecutionResult field"
-                # shape Illusory Terrain's own Phase 943 fix already
-                # uses) rather than storing anything on the result --
-                # `_execute_hide_feature()` itself never distinguishes
-                # *which* feature(s) it hid.
+                # needed for the single-feature case, since
+                # `_CAST_ANNOUNCEMENT_FEATURE_SPELLS` already made
+                # `render_cast_announcement()`'s generic fallback support
+                # `feature_name` (Phase 193). Reads `state.features_at(
+                # coord)` directly (the same "read fresh from state, no
+                # new CastExecutionResult field" shape Illusory Terrain's
+                # own Phase 943 fix already uses) rather than storing
+                # anything on the result -- `_execute_hide_feature()`
+                # itself never distinguishes *which* feature(s) it hid.
                 #
-                # **Deliberately scoped to the single-feature case only**:
-                # `_execute_hide_feature()`'s own docstring already
-                # documents that a province can hold more than one
-                # `Feature` ([3.2]), and this spell hides *all* of them at
-                # once with no way to disambiguate which one `&` should
-                # name -- unlike Tornado/Plague's own multi-army ambiguity
-                # (Phase 937/944), where real fixture text exists for
-                # *both* a repeated-sentence and a joined-list reading,
-                # letting a majority-supported default be picked, here
-                # zero real fixture example of a successful Hide_Feature
-                # cast survives in either corpus (confirmed again this
-                # phase) -- there is no data to weigh a default against,
-                # so a multi-feature cast is silently skipped rather than
-                # guessed at.
+                # **Phase 1037: the real multi-Feature case**
+                # ([3.2]: "There can sometimes be more than 1 feature in
+                # a province") -- `_execute_hide_feature()` hides *all*
+                # of them at once with no way to disambiguate which one
+                # `&` should name, and (reconfirmed again this phase)
+                # zero real fixture example of a successful multi-Feature
+                # Hide_Feature cast survives in either corpus to settle
+                # the real grouping convention by direct evidence, unlike
+                # Tornado/Plague's own multi-army ambiguity (Phase
+                # 937/944), where both a repeated-sentence and a
+                # joined-list reading are directly attested. Rather than
+                # stay silent forever on a real, rulebook-acknowledged
+                # case, this models Hide_Feature on the single closest
+                # real precedent this project's own corpus *does* have
+                # for "one spell, several real same-kind targets in one
+                # province": Tornado/Plague's own confirmed convention is
+                # one repeated sentence per target, never a joined list
+                # (`render_tornado_outcome()`'s own Phase 937 docstring
+                # cites the real fixture evidence for that choice
+                # directly). `render_hide_feature_outcome()` reuses that
+                # shape -- a documented, reasoned default built from a
+                # real, structurally analogous in-project precedent, not
+                # a blind guess -- see its own docstring.
                 if board_width is None:
                     continue
                 coord = decode_hex_number(entry.result.request.target, board_width)
                 features = state.features_at(coord)
-                if len(features) != 1:
+                if not features:
                     continue
                 province_name = _province_label(state, coord)
-                feature_name = FEATURE_TYPE_NAMES[features[0].kind]
-                line = describe_cast(
-                    entry.result,
-                    caster_name=caster_name,
-                    rng=rng,
-                    province_name=province_name,
-                    feature_name=feature_name,
-                )
-                if line is not None:
-                    lines.append(line)
+                if len(features) == 1:
+                    feature_name = FEATURE_TYPE_NAMES[features[0].kind]
+                    line = describe_cast(
+                        entry.result,
+                        caster_name=caster_name,
+                        rng=rng,
+                        province_name=province_name,
+                        feature_name=feature_name,
+                    )
+                    if line is not None:
+                        lines.append(line)
+                else:
+                    feature_names = [FEATURE_TYPE_NAMES[feature.kind] for feature in features]
+                    lines.append(render_hide_feature_outcome(caster_name, province_name, feature_names, rng))
                 continue
             if spell is Spell.SKELETAL_ARMY:
                 # Phase 936: a `NO_TARGET_SPELLS` entry (`cast_decode.py`)
