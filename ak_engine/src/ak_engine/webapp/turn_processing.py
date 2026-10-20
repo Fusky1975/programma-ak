@@ -11,6 +11,7 @@ same screen, until the game ends.
 
 from __future__ import annotations
 
+import struct
 from pathlib import Path
 from typing import Collection
 
@@ -158,7 +159,17 @@ def save_turn_xk_files(one_game_dir: Path, turn_number: int, state: GameState) -
     for kingdom_id, world in worlds.items():
         try:
             data = write_xk_world(world)
-        except ValueError:
+        except (ValueError, struct.error):
+            # A GM-set value (e.g. KingdomState.account_number/treasury,
+            # edited with no range check in the web editor) outside what
+            # a real field's own byte width can hold raises struct.error
+            # from the underlying struct.pack() call, not ValueError --
+            # caught here too so this Kingdom is skipped the same honest
+            # way an XKExportError already is above, instead of crashing
+            # process_and_save_current_turn() before save_game() runs
+            # and leaving state.pkl stale against the turn reports (and
+            # any sibling Kingdoms' own .xk files) already written for
+            # this same turn.
             continue
         (directory / f"{kingdom_id}.xk").write_bytes(data)
 

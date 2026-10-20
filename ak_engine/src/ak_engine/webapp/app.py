@@ -774,6 +774,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             spy_leader_id = int(leader_raw)
             spy_kingdom_id = int(kingdom_raw)
             amount = int(amount_raw)
+            if amount < 0:
+                raise ValueError("Blackmail amount must not be negative")
             if spy_leader_id not in state.leaders:
                 raise KeyError("spy leader")
             if spy_kingdom_id not in state.kingdoms:
@@ -784,7 +786,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             pending_blackmail = _blackmail_claim("pending")
             active_blackmail = _blackmail_claim("active")
         except ValueError:
-            return _edit_error("A Blackmail claim needs its Spy, Spy's Kingdom, and Amount all set.")
+            return _edit_error("A Blackmail claim needs its Spy, Spy's Kingdom, and a non-negative Amount all set.")
         except KeyError:
             return _edit_error("Please choose a valid Spy and Spy's Kingdom for the Blackmail claim.")
 
@@ -1950,6 +1952,14 @@ def create_app(games_root: Path | None = None) -> Flask:
             _, state = open_game(root, slug)
         except GameNotFoundError:
             return redirect(url_for("games_list", error="Game not found."))
+        # Bug fix: remove_item() is a bare-id pop with no ownership check
+        # of its own -- a stale or hand-crafted item_id (this leader's
+        # own item list may have changed since the page was rendered, or
+        # the form could simply be edited) must not silently delete a
+        # different Hero's item.
+        item = state.items.get(item_id)
+        if item is None or item.owner_leader_id != leader_id:
+            return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id, error="Item not found."))
         state.remove_item(item_id)
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))

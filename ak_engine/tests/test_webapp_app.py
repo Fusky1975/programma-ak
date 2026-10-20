@@ -950,6 +950,32 @@ def test_kingdom_status_save_rejects_a_partially_filled_blackmail_claim(tmp_path
     assert state.kingdoms[1].pending_blackmail is None
 
 
+def test_kingdom_status_save_rejects_a_negative_blackmail_amount(tmp_path):
+    # Bug fix: amount was parsed with no sign check at all, unlike the
+    # already-invalid-spy/incomplete-claim cases this same form already
+    # rejects.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    other_kingdom_id = next(kid for kid in state.kingdoms if kid != 1)
+    spy_leader_id = next(iter(state.leaders))
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1/status",
+        data={
+            "pending_spy_leader_id": str(spy_leader_id),
+            "pending_spy_kingdom_id": str(other_kingdom_id),
+            "pending_amount": "-500",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"non-negative" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.kingdoms[1].pending_blackmail is None
+
+
 def test_kingdom_status_save_rejects_an_invalid_blackmail_spy(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -3383,6 +3409,23 @@ def test_leader_item_delete_missing_item_is_a_no_op(tmp_path):
     response = client.post(f"/games/{meta.slug}/leaders/1/items/999999/delete", follow_redirects=True)
 
     assert response.status_code == 200
+
+
+def test_leader_item_delete_refuses_an_item_owned_by_a_different_leader(tmp_path):
+    # Bug fix: remove_item() had no ownership check of its own -- a
+    # request naming a real item_id but the wrong leader_id in the URL
+    # must not silently delete that other leader's own item.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(f"/games/{meta.slug}/leaders/1/items/new", data={"treasure": "GOLD_HOARD_HUGE"})
+    _, state = open_game(tmp_path, meta.slug)
+    item_id = state.items_held_by(1)[0].item_id
+
+    response = client.post(f"/games/{meta.slug}/leaders/2/items/{item_id}/delete", follow_redirects=True)
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    assert item_id in state.items
 
 
 def test_leader_edit_shows_no_advanced_abilities_for_a_new_hero(tmp_path):

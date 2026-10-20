@@ -225,6 +225,24 @@ def test_army_commanded_by_a_negative_synthetic_leader_id_is_reported_unled():
     assert record.commanded_by_leader_id is None
 
 
+def test_synthetic_item_feature_id_never_collides_with_a_real_features_own_id():
+    # Bug fix: the synthetic feature_id _build_treasures_from_items()
+    # assigns a Hero-held item used to start from len(state.features),
+    # not the next truly-unused id -- a real collision as soon as any
+    # feature id isn't contiguous from 0 (e.g. _realistic_state()'s own
+    # single feature already sits at feature_id=1, matching len(features)
+    # exactly, so the item below used to be assigned that same id 1,
+    # duplicating the real feature's own treasure record).
+    state = _realistic_state()
+    state.add_item(Treasure.ABILITY_TACTICAL, owner_leader_id=1)
+
+    world = build_xk_world_for_kingdom(state, 1)
+    write_xk_world(world)  # must not raise
+
+    feature_ids = [t.feature_id for t in world.treasures]
+    assert len(feature_ids) == len(set(feature_ids)), f"duplicate feature_id in treasures: {feature_ids}"
+
+
 def test_item_owned_by_a_negative_synthetic_leader_id_is_omitted():
     state = _realistic_state()
     state.add_leader(LeaderState(-1, 1, "Unidentified Valhalla Arrival", HexCoord(0, 0)))

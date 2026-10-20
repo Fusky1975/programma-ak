@@ -338,7 +338,14 @@ def _build_treasures_from_features(state: GameState, kingdom_id: int) -> list[XK
 
 def _build_treasures_from_items(state: GameState, kingdom_id: int) -> list[XKTreasureRecord]:
     treasures: list[XKTreasureRecord] = []
-    next_feature_id = len(state.features)
+    # Bug fix: `len(state.features)` collides with a real feature's own
+    # `feature_id` once ids are non-contiguous (e.g. after the GM web
+    # editor's `feature_delete` route removes one without reindexing,
+    # confirmed real here) -- `GameState.new_feature_id()`'s own
+    # `max(keys) + 1` convention is what actually guarantees no overlap
+    # with any real feature emitted by `_build_feature()`/`_build_
+    # treasures_from_features()` above.
+    next_feature_id = max((*state.features.keys(), 0)) + 1
     for item in sorted(state.items.values(), key=lambda i: i.item_id):
         owner = state.leaders.get(item.owner_leader_id) if item.owner_leader_id is not None else None
         if owner is None or owner.kingdom_id != kingdom_id:

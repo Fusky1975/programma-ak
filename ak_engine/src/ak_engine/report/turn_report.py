@@ -2708,7 +2708,10 @@ def _battle_diagram_number_cell(unit: BattleUnit | None) -> str:
     if unit.kingdom_id is not None:
         marker = f"{unit.kingdom_id:02d}"
     elif unit.commanded_by is not None:
-        marker = f"{unit.commanded_by:02d}" if unit.commanded_by < 100 else str(unit.commanded_by)
+        # `:02d` only sets a *minimum* width (never truncates), so this
+        # is already exactly right for a leader_id >= 100 too -- no
+        # separate branch needed.
+        marker = f"{unit.commanded_by:02d}"
     else:
         marker = "GC"
     return _battle_diagram_cell(marker)
@@ -11471,7 +11474,11 @@ def _resolve_ctrl_a_markers(text: str) -> str:
     pieces = text.split(_CTRL_A_MARKER)
     resolved = pieces[0]
     for piece in pieces[1:]:
-        article = "an" if piece[:1].lower() in "aeiou" else "a"
+        # Bug fix: `"" in "aeiou"` is True (an empty string is a
+        # substring of everything in Python), so a marker with nothing
+        # following it used to resolve to "an" -- guard the empty case
+        # explicitly rather than relying on substring membership.
+        article = "an" if piece[:1] and piece[0].lower() in "aeiou" else "a"
         resolved += f"{article} {piece}"
     return resolved
 

@@ -97,6 +97,7 @@ from ak_engine.report.turn_report import (
     describe_provinces_report,
     describe_aspy,
     _bluck_cluck_leader_id,
+    _resolve_ctrl_a_markers,
     describe_battle,
     describe_quality_changes,
     render_battle_line_diagram,
@@ -7376,6 +7377,21 @@ def test_render_guardian_poses_riddle_leaves_plain_entries_untouched():
     assert render_guardian_poses_riddle("the Troll", Treasure.QUEST_RA_BRIDGE) == (
         f"the Troll poses a riddle: {QUEST_RIDDLE_TEXT[Treasure.QUEST_RA_BRIDGE]}"
     )
+
+
+def test_resolve_ctrl_a_markers_defaults_to_a_when_nothing_follows():
+    # Bug fix: `"" in "aeiou"` is True in Python (empty string is a
+    # substring of everything), so a marker with no following word used
+    # to wrongly resolve to "an" with nothing after it. None of
+    # QUEST_RIDDLE_TEXT's own 7 real entries end on the marker today,
+    # but the helper itself must still degrade sanely if one ever did.
+    assert _resolve_ctrl_a_markers("a marker at the very end: ⟦CTRL-A:a/an⟧ ") == (
+        "a marker at the very end: a "
+    )
+
+
+def test_resolve_ctrl_a_markers_still_picks_an_before_a_vowel():
+    assert _resolve_ctrl_a_markers("saw ⟦CTRL-A:a/an⟧ owl") == "saw an owl"
 
 
 def test_quest_visit_text_and_fulfilled_text_cover_the_five_location_quests():

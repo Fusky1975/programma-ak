@@ -164,6 +164,39 @@ def test_process_and_save_current_turn_also_saves_real_xk_files(tmp_path):
     assert world.header.kingdom_id == 1
 
 
+def test_process_and_save_current_turn_survives_an_out_of_range_account_number(tmp_path):
+    # Bug fix: KingdomState.account_number has no range check in the GM
+    # web editor (kingdom_status_save, app.py), but write_xk_world()
+    # writes it with struct.pack("<h", ...) -- out of -32768..32767
+    # raises struct.error, not ValueError, which save_turn_xk_files()
+    # used to let through uncaught, crashing process_and_save_current_
+    # turn() *before* save_game() ran and leaving state.pkl stale
+    # against the turn reports already written for this same turn.
+    from ak_engine.webapp.games import create_game, game_dir, open_game
+
+    meta = create_game(tmp_path, "Out Of Range Campaign")
+    _, state = open_game(tmp_path, meta.slug)
+    generated = _generated_state()
+    state.kingdoms = generated.kingdoms
+    state.leaders = generated.leaders
+    state.provinces = generated.provinces
+    state.armies = generated.armies
+    state.features = generated.features
+    state.board_width = generated.board_width
+    state.board_height = generated.board_height
+    state.kingdoms[1].account_number = 999999  # past a signed 16-bit field's own range
+
+    process_and_save_current_turn(tmp_path, meta.slug, state, game_dir(tmp_path, meta.slug))
+
+    # Kingdom 1's own .xk file is skipped (the same honest "can't encode
+    # this Kingdom" convention XKExportError already used), but the turn
+    # still advances and the state still saves -- no uncaught crash, no
+    # stale state.pkl.
+    assert load_turn_xk_file(game_dir(tmp_path, meta.slug), 1, 1) is None
+    _, reloaded = open_game(tmp_path, meta.slug)
+    assert reloaded.turn_number == 2
+
+
 def test_load_turn_xk_file_missing_returns_none(tmp_path):
     assert load_turn_xk_file(tmp_path, 1, 1) is None
 
