@@ -15,6 +15,8 @@ import struct
 from pathlib import Path
 from typing import Collection
 
+from werkzeug.utils import secure_filename
+
 from ak_engine.models.game_state import GameState
 from ak_engine.orchestrator import TurnOutcome, process_turn
 from ak_engine.parser.errors import K1ParseError
@@ -86,9 +88,19 @@ def save_uploaded_move_file(
     trusting an unchecked Kingdom id would do downstream.
     """
 
+    # Bug fix: `filename` is the client-supplied multipart upload name,
+    # verbatim -- unsanitized, a crafted name like "../../etc/evil.K1"
+    # joins right past `directory` (confirmed directly: `path.write_
+    # bytes()` below then writes outside the uploads folder entirely).
+    # secure_filename() strips path separators and ".." components; a
+    # name that sanitizes away to nothing is rejected outright rather
+    # than silently writing to `directory` itself.
+    safe_filename = secure_filename(filename)
+    if not safe_filename:
+        raise InvalidMoveFileError(f"{filename!r} is not a usable filename")
     directory = turn_moves_dir(one_game_dir, turn_number)
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / filename
+    path = directory / safe_filename
     path.write_bytes(content)
     try:
         kingdom = parse_k1_moves_file(path)

@@ -88,6 +88,47 @@ def test_delete_game_missing_slug_raises(tmp_path):
         delete_game(tmp_path, "does-not-exist")
 
 
+def test_delete_game_rejects_a_path_traversal_slug(tmp_path):
+    # Bug fix: game_dir(root, slug) used to be a bare `root / slug` with
+    # no validation -- Flask's own <slug> URL converter does not reject
+    # ".." as a path segment, so POST /games/../delete used to reach
+    # delete_game(root, "..") and shutil.rmtree() the *parent* of the
+    # configured games root in full. Confirmed directly against a real
+    # sibling directory before this fix existed.
+    root = tmp_path / "games"
+    root.mkdir()
+    create_game(root, "Real Game")
+    sibling = tmp_path / "sibling"
+    sibling.mkdir()
+    (sibling / "important.txt").write_text("do not delete me")
+
+    with pytest.raises(GameNotFoundError):
+        delete_game(root, "..")
+
+    assert sibling.is_dir()
+    assert (sibling / "important.txt").read_text() == "do not delete me"
+    assert len(list_games(root)) == 1
+
+
+@pytest.mark.parametrize(
+    "malicious_slug",
+    ["..", "../escaped", "/etc", "a/b", "a\\b", "", "UPPER", "has space", "semi;colon"],
+)
+def test_game_dir_rejects_anything_not_shaped_like_a_real_slug(tmp_path, malicious_slug):
+    from ak_engine.webapp.games import game_dir
+
+    with pytest.raises(GameNotFoundError):
+        game_dir(tmp_path, malicious_slug)
+
+
+def test_game_dir_accepts_every_real_slugify_output(tmp_path):
+    from ak_engine.webapp.games import game_dir
+
+    for name in ("Third Campaign", "Game One", "G", "A--B", "Café del Rey"):
+        meta = create_game(tmp_path, name)
+        assert game_dir(tmp_path, meta.slug) == tmp_path / meta.slug
+
+
 def test_list_games_skips_a_directory_with_no_real_meta_json(tmp_path):
     # A stray/corrupt directory shouldn't take down the whole list screen.
     (tmp_path / "not-a-game").mkdir()

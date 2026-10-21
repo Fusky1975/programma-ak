@@ -25,6 +25,14 @@ from ak_engine.persistence import load_game_state, save_game_state
 _META_FILENAME = "meta.json"
 _STATE_FILENAME = "state.pkl"
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+# Bug fix: a real slug is always this shape (see _slugify() below) --
+# anything else (a literal "..", an absolute path, a path with "/" in
+# it, ...) must never reach a filesystem join. Flask's own <slug> URL
+# converter does not reject ".." as a path segment (confirmed directly:
+# POST /games/../delete reaches this module with slug="..", and before
+# this fix, game_dir(root, "..") silently resolved to root's own parent
+# directory, which delete_game() then shutil.rmtree()'d in full).
+_VALID_SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
 class GameNotFoundError(Exception):
@@ -60,8 +68,22 @@ def game_dir(root: Path, slug: str) -> Path:
     """The on-disk directory for ``slug`` -- public so sibling modules
     (``players.py``) can locate a game's own sidecar files without
     duplicating the root/slug join.
+
+    Raises ``GameNotFoundError`` for any ``slug`` that isn't shaped like
+    a real ``_slugify()`` output (see ``_VALID_SLUG_RE``'s own docstring
+    note) -- every real game directory's own name is created that way,
+    so this never rejects a genuine game, only a slug that could escape
+    ``root`` via a filesystem join (e.g. ``".."``, an absolute path, or
+    anything containing ``/``). Every caller already treats a bad/
+    missing slug as ``GameNotFoundError`` one way or another (either
+    directly, or via this same exception already propagating from here
+    before an existence check even runs), so this is a stricter version
+    of an error every real caller already handles, not a new failure
+    mode to plumb through.
     """
 
+    if not _VALID_SLUG_RE.fullmatch(slug):
+        raise GameNotFoundError(slug)
     return root / slug
 
 

@@ -78,6 +78,29 @@ def test_save_uploaded_move_file_for_a_kingdom_not_in_this_game_raises_and_clean
     with pytest.raises(InvalidMoveFileError):
         save_uploaded_move_file(tmp_path, 1, "AK3__T1.K99", _REAL_MOVE_FILE, {1, 2})
 
+
+def test_save_uploaded_move_file_rejects_a_path_traversal_filename(tmp_path):
+    # Bug fix: `filename` is the raw, client-supplied multipart upload
+    # name -- unsanitized, this used to write straight through pathlib's
+    # `/` join, landing outside the uploads directory entirely whenever
+    # the name contained ".." components. secure_filename() strips the
+    # traversal, so the upload still succeeds (its own content is a
+    # real move file), but lands safely inside the real uploads
+    # directory -- never at the escaped, outside path.
+    outside = tmp_path / "outside.K1"
+
+    kingdom_id = save_uploaded_move_file(tmp_path, 1, "../outside.K1", _REAL_MOVE_FILE, {1})
+
+    assert kingdom_id == 1
+    assert not outside.exists()
+    files = uploaded_move_files(tmp_path, 1, {1})
+    assert files[1].parent == tmp_path / "moves" / "turn_1"
+
+
+def test_save_uploaded_move_file_rejects_a_filename_that_sanitizes_to_nothing(tmp_path):
+    with pytest.raises(InvalidMoveFileError):
+        save_uploaded_move_file(tmp_path, 1, "..", _REAL_MOVE_FILE, {1})
+
     assert uploaded_move_files(tmp_path, 1, {1, 2, 99}) == {}
 
 

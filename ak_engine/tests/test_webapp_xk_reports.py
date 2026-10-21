@@ -9,8 +9,10 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
+import pytest
+
 from ak_engine.parser.xk_world import parse_xk_world
-from ak_engine.webapp.xk_reports import build_xk_file_for_kingdom, build_xk_worlds_for_all_kingdoms
+from ak_engine.webapp.xk_reports import XKExportError, build_xk_file_for_kingdom, build_xk_worlds_for_all_kingdoms
 from ak_engine.worldgen.generate_new_game import KingSetup, generate_new_game
 from ak_engine.worldgen.pascal_random import PascalRandom
 
@@ -70,6 +72,20 @@ def test_build_xk_worlds_for_all_kingdoms_share_the_same_turn_level_blocks():
     assert worlds[1].globals.flags_c3fc == worlds[2].globals.flags_c3fc
     assert worlds[1].globals.flags_c4fc == worlds[2].globals.flags_c4fc
     assert worlds[1].secondary_terrain.raw == worlds[2].secondary_terrain.raw
+
+
+def test_build_xk_file_for_kingdom_raises_a_clean_error_not_a_crash_on_an_out_of_range_field():
+    # Bug fix: write_xk_world() packs account_number with struct's own
+    # "<h" (signed 16-bit) format -- out of -32768..32767, struct.pack
+    # raises struct.error, which is NOT a ValueError subclass. This
+    # function's own docstring promises "never the writer's own bare
+    # ValueError" crashes through; before this fix, except ValueError
+    # alone let struct.error straight past it uncaught.
+    state = _generated_state()
+    state.kingdoms[1].account_number = 999999
+
+    with pytest.raises(XKExportError):
+        build_xk_file_for_kingdom(state, 1)
 
 
 def test_build_xk_file_reflects_a_world_editor_change():

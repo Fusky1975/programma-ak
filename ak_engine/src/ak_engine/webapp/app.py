@@ -74,6 +74,7 @@ from ak_engine.webapp.players import (
 from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.diplomacy import set_relation
 from ak_engine.turn.encounter import MonsterTalkReply
+from ak_engine.turn.exploration import FIND_MINES_TAX_CAP
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
 from ak_engine.webapp.kingdom_create import (
     NoProvinceAtCoordError,
@@ -762,6 +763,16 @@ def create_app(games_root: Path | None = None) -> Flask:
             valhalla_visit_count = _int_field("valhalla_visit_count")
         except ValueError:
             return _edit_error("Status values must be whole numbers.")
+        # Bug fix: both are divisor/subtraction terms downstream
+        # (turn/encounter.py steal_success_chance()'s own treasury-raid
+        # guard divisor; turn/valhalla_execution.py select_ordinary_
+        # valhalla_recipient()'s own score formula) that assume a
+        # non-negative count -- a negative treasury_raid_attempts_this_
+        # turn can drive that divisor to zero (ZeroDivisionError) or
+        # negative, and a negative valhalla_visit_count breaks the
+        # documented "fewer visits always outscores more" invariant.
+        if treasury_raid_attempts_this_turn < 0 or valhalla_visit_count < 0:
+            return _edit_error("Status values must not be negative.")
 
         def _blackmail_claim(prefix: str) -> BlackmailClaim | None:
             leader_raw = request.form.get(f"{prefix}_spy_leader_id", "").strip()
@@ -1284,6 +1295,13 @@ def create_app(games_root: Path | None = None) -> Flask:
             tax = int(tax_raw) if tax_raw else None
         except ValueError:
             return _edit_error("Tax must be a whole number.")
+        # Bug fix: an owned province's tax is written as a single
+        # unsigned byte (parser/xk_world_writer.py w.u8(province.tax)),
+        # valid only 0-255 -- out of that range used to save fine here
+        # and only fail later, as an unhandled struct.error, when a GM
+        # tried to export/download this Kingdom's own XK file.
+        if tax is not None and not (0 <= tax <= 255):
+            return _edit_error("Tax must be between 0 and 255.")
 
         def _army_type(field: str) -> ArmyType | None:
             raw = request.form.get(field, "")
@@ -1356,6 +1374,17 @@ def create_app(games_root: Path | None = None) -> Flask:
             mine_find_attempts = _int_field("mine_find_attempts")
         except ValueError:
             return _edit_error("Effect values must be whole numbers.")
+        # Bug fix: both feed turn/tax_base.py's own tax computation and
+        # turn/exploration.py resolve_find_mines()'s own halving formula
+        # with no re-clamp downstream -- models/game_state.py's own
+        # ProvinceState.mine_gold_bonus docstring documents a real,
+        # permanent cap ("capped at 10"), and a negative mine_find_
+        # attempts inflates 2**attempts_so_far into a fraction, making a
+        # mine-find roll near-certain instead of halved.
+        if not (0 <= mine_gold_bonus <= FIND_MINES_TAX_CAP):
+            return _edit_error(f"Mine Gold Bonus must be between 0 and {FIND_MINES_TAX_CAP}.")
+        if mine_find_attempts < 0:
+            return _edit_error("Mine Find Attempts must not be negative.")
 
         contested_by_raw = request.form.get("contested_by_kingdom_id", "").strip()
         contested_by_kingdom_id: int | None
@@ -1584,6 +1613,13 @@ def create_app(games_root: Path | None = None) -> Flask:
             y = int(request.form.get("location_y", ""))
         except ValueError:
             return _create_error("Location must be whole numbers.")
+        # Bug fix: an out-of-map/unprovinced location used to save fine
+        # here and only surface later, as a bare KeyError crashing turn
+        # processing, the first time this leader was given an EXPLORE
+        # order (turn/plan_dispatch.py indexes state.provinces[leader.
+        # location] directly, with no .get()/default).
+        if HexCoord(x, y) not in state.provinces:
+            return _create_error("Location must be a real province.")
 
         leader_id = state.new_leader_id()
         state.add_leader(
@@ -1710,6 +1746,12 @@ def create_app(games_root: Path | None = None) -> Flask:
             y = int(request.form.get("location_y", ""))
         except ValueError:
             return _edit_error("Location must be whole numbers.")
+        # Bug fix: see leaders_create()'s own identical comment -- an
+        # out-of-map/unprovinced location used to save fine here and
+        # only crash later, the first time this leader was given an
+        # EXPLORE order.
+        if HexCoord(x, y) not in state.provinces:
+            return _edit_error("Location must be a real province.")
 
         leader.name = name
         leader.race = race
@@ -2178,6 +2220,13 @@ def create_app(games_root: Path | None = None) -> Flask:
             y = int(request.form.get("location_y", ""))
         except ValueError:
             return _create_error("Location must be whole numbers.")
+        # Bug fix: an out-of-map location used to save fine here and
+        # only surface later, as an unhandled struct.error, when a GM
+        # tried to export/download this army's own Kingdom's XK file
+        # (parser/xk_world_writer.py writes an army's own coordinate as
+        # a single unsigned byte each, valid only 0-255).
+        if HexCoord(x, y) not in state.provinces:
+            return _create_error("Location must be a real province.")
 
         army_id = state.new_army_id()
         state.add_army(
@@ -2302,6 +2351,9 @@ def create_app(games_root: Path | None = None) -> Flask:
             y = int(request.form.get("location_y", ""))
         except ValueError:
             return _edit_error("Location must be whole numbers.")
+        # Bug fix: see armies_create()'s own identical comment.
+        if HexCoord(x, y) not in state.provinces:
+            return _edit_error("Location must be a real province.")
 
         commanded_by_raw = request.form.get("commanded_by", "").strip()
         commanded_by: int | None

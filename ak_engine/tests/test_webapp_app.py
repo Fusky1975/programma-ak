@@ -1014,6 +1014,46 @@ def test_kingdom_status_save_rejects_a_non_numeric_value(tmp_path):
     assert state.kingdoms[1].treasury_raid_attempts_this_turn == 0
 
 
+def test_kingdom_status_save_rejects_a_negative_treasury_raid_attempts(tmp_path):
+    # Bug fix: a negative count here used to save fine and only surface
+    # later as a ZeroDivisionError the first time a Thief attempted a
+    # Treasury Raid against this Kingdom's own King (turn/encounter.py
+    # steal_success_chance()'s own divisor can hit exactly 0).
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1/status",
+        data={"treasury_raid_attempts_this_turn": "-2"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must not be negative" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.kingdoms[1].treasury_raid_attempts_this_turn == 0
+
+
+def test_kingdom_status_save_rejects_a_negative_valhalla_visit_count(tmp_path):
+    # Bug fix: a negative count breaks turn/valhalla_execution.py select_
+    # ordinary_valhalla_recipient()'s own documented "fewer visits always
+    # outscores more" invariant (score = roll - 1024*count inflates
+    # instead of penalizing).
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/kingdoms/1/status",
+        data={"valhalla_visit_count": "-1"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must not be negative" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.kingdoms[1].valhalla_visit_count == 0
+
+
 def test_kingdom_status_save_missing_kingdom_shows_an_error_not_a_crash(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -1896,6 +1936,29 @@ def test_save_province_with_non_numeric_tax_shows_an_error_not_a_crash(tmp_path)
     assert b"whole number" in response.data
 
 
+def test_save_province_rejects_a_tax_outside_the_real_byte_range(tmp_path):
+    # Bug fix: an owned province's tax is written as a single unsigned
+    # byte (parser/xk_world_writer.py w.u8(province.tax)), valid only
+    # 0-255 -- out of range used to save fine here and only fail later,
+    # as an unhandled struct.error, when exporting/downloading this
+    # Kingdom's own XK file.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state_before = open_game(tmp_path, meta.slug)
+    tax_before = state_before.provinces[HexCoord(0, 0)].tax
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0",
+        data={"terrain": "PLAINS", "race": "HUMAN", "tax": "-1"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"between 0 and 255" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[HexCoord(0, 0)].tax == tax_before
+
+
 def test_save_province_missing_province_shows_an_error_not_a_crash(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -2718,6 +2781,46 @@ def test_province_effects_save_can_clear_optional_terrains_and_checkboxes(tmp_pa
     assert province.contested_from_coord is None
 
 
+def test_province_effects_save_rejects_a_mine_gold_bonus_past_the_real_cap(tmp_path):
+    # Bug fix: models/game_state.py documents mine_gold_bonus as
+    # "cumulative... capped at 10" (rulebook's own "maximum of 10
+    # gold"), but nothing downstream (turn/tax_base.py) re-clamps it --
+    # an uncapped value here used to permanently inflate this
+    # province's own tax yield every turn with no way to recover.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0/effects",
+        data={"mine_gold_bonus": "500"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"between 0 and 10" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[HexCoord(0, 0)].mine_gold_bonus == 0
+
+
+def test_province_effects_save_rejects_a_negative_mine_find_attempts(tmp_path):
+    # Bug fix: turn/exploration.py resolve_find_mines()'s own halving
+    # formula (base_chance / 2**attempts_so_far) inflates past 100%
+    # instead of halving when attempts_so_far is negative.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/provinces/0/0/effects",
+        data={"mine_find_attempts": "-1"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must not be negative" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.provinces[HexCoord(0, 0)].mine_find_attempts == 0
+
+
 def test_province_effects_save_with_invalid_contested_by_kingdom_shows_an_error_not_a_crash(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -3262,6 +3365,24 @@ def test_save_leader_with_non_numeric_location_shows_an_error_not_a_crash(tmp_pa
 
     assert response.status_code == 200
     assert b"Location must be whole numbers" in response.data
+
+
+def test_save_leader_rejects_a_location_with_no_real_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state_before = open_game(tmp_path, meta.slug)
+    location_before = state_before.leaders[1].location
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1",
+        data={"name": "Aldric", "race": "HUMAN", "location_x": "9999", "location_y": "9999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"real province" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[1].location == location_before
 
 
 def test_save_leader_cannot_move_a_king_out_of_his_own_kingdoms_service(tmp_path):
@@ -4416,6 +4537,28 @@ def test_leaders_create_with_a_monster_only_alignment_shows_an_error_not_a_crash
     assert b"valid values" in response.data
 
 
+def test_leaders_create_rejects_a_location_with_no_real_province(tmp_path):
+    # Bug fix: an out-of-map/unprovinced location used to save fine and
+    # only crash later, as a bare KeyError, the first time this leader
+    # was given an EXPLORE order (turn/plan_dispatch.py indexes state.
+    # provinces[leader.location] directly, with no .get()/default).
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    before_ids = set(state.leaders)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/new",
+        data={"name": "Lost Hero", "race": "HUMAN", "location_x": "9999", "location_y": "9999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"real province" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert set(state.leaders) == before_ids
+
+
 def test_leaders_create_with_invalid_kingdom_shows_an_error_not_a_crash(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -5029,6 +5172,25 @@ def test_save_army_with_invalid_kingdom_shows_an_error_not_a_crash(tmp_path):
     assert b"valid Kingdom" in response.data
 
 
+def test_save_army_rejects_a_location_with_no_real_province(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    army = next(iter(state.armies.values()))
+    location_before = army.location
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/{army.army_id}",
+        data={"army_type": "LEGION", "quality": "AVERAGE", "location_x": "9999", "location_y": "9999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"real province" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.armies[army.army_id].location == location_before
+
+
 def test_save_army_missing_army_shows_an_error_not_a_crash(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -5267,6 +5429,29 @@ def test_armies_create_with_invalid_kingdom_shows_an_error_not_a_crash(tmp_path)
 
     assert response.status_code == 200
     assert b"valid Kingdom" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert set(state.armies) == before_ids
+
+
+def test_armies_create_rejects_a_location_with_no_real_province(tmp_path):
+    # Bug fix: an out-of-map location used to save fine and only surface
+    # later, as an unhandled struct.error, when a GM tried to export/
+    # download this army's own Kingdom's XK file (parser/xk_world_
+    # writer.py writes an army's own coordinate as a single unsigned
+    # byte each, valid only 0-255).
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    before_ids = set(state.armies)
+
+    response = client.post(
+        f"/games/{meta.slug}/armies/new",
+        data={"army_type": "LEGION", "quality": "AVERAGE", "location_x": "9999", "location_y": "9999"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"real province" in response.data
     _, state = open_game(tmp_path, meta.slug)
     assert set(state.armies) == before_ids
 

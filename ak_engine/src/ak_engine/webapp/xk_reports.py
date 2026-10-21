@@ -11,6 +11,8 @@ nothing about the existing text-letter flow changes.
 
 from __future__ import annotations
 
+import struct
+
 from ak_engine.models.game_state import GameState
 from ak_engine.parser.xk_world import XKWorld
 from ak_engine.parser.xk_world_builder import build_xk_world_for_kingdom
@@ -55,5 +57,14 @@ def build_xk_file_for_kingdom(state: GameState, kingdom_id: int) -> bytes:
     worlds = build_xk_worlds_for_all_kingdoms(state)
     try:
         return write_xk_world(worlds[kingdom_id])
-    except ValueError as exc:
+    except (ValueError, struct.error) as exc:
+        # Bug fix: a GM-set value with no range check in the web editor
+        # (treasury/account_number, a province's tax, an army's own
+        # coordinate, ...) outside what its real field's own byte width
+        # can hold raises struct.error from the underlying struct.pack()
+        # call, not ValueError -- caught here too, the same way webapp/
+        # turn_processing.py save_turn_xk_files() already does for the
+        # turn-by-turn export, so this turn-0 preview/download path
+        # shows the same honest "couldn't build the XK file" message
+        # instead of crashing with an unhandled 500.
         raise XKExportError(str(exc)) from exc
