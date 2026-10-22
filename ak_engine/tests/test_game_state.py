@@ -369,12 +369,35 @@ def test_record_newly_known_column_grows_through_a_cylindrically_adjacent_column
 
 
 def test_record_newly_known_column_grows_across_the_cylindrical_seam():
+    # Bug fix: this used to seed {18} and record column 1 on an 18-wide
+    # board -- but a real `HexCoord.x` is 0-indexed (0..17), so 18 could
+    # never actually occur; the old formula only happened to pass this
+    # because it was itself wrong in the same (1-indexed) direction. The
+    # real cylindrical seam on an 18-wide board is between the last
+    # column (17) and the first (0).
     kingdom = _kingdom()
-    kingdom.map_primary_region_columns = {18}
+    kingdom.map_primary_region_columns = {17}
+
+    record_newly_known_column(kingdom, 0, board_width=18)
+
+    assert kingdom.map_primary_region_columns == {17, 0}
+
+
+def test_record_newly_known_column_grows_through_the_zero_indexed_seam_columns():
+    # Bug fix: the old `((x - 2) % board_width) + 1` / `(x % board_
+    # width) + 1` formula was only correct for a 1-indexed x -- every
+    # real HexCoord.x is 0-indexed, so column 1's true left neighbor
+    # (column 0) and the last column's true right neighbor (column 0,
+    # via the wrap) were both silently misplaced at column `board_
+    # width` instead, which can never be a member. Column 0 is the
+    # lowest real column on any board, so this is the one seam case the
+    # previous (inverted) test couldn't actually exercise.
+    kingdom = _kingdom()
+    kingdom.map_primary_region_columns = {0}
 
     record_newly_known_column(kingdom, 1, board_width=18)
 
-    assert kingdom.map_primary_region_columns == {18, 1}
+    assert kingdom.map_primary_region_columns == {0, 1}
 
 
 def test_record_newly_known_column_does_not_join_a_column_with_no_adjacent_member():

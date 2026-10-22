@@ -515,8 +515,16 @@ def record_newly_known_column(kingdom: KingdomState, x: int, board_width: int) -
         return
     if x in kingdom.map_primary_region_columns:
         return
-    left = ((x - 2) % board_width) + 1
-    right = (x % board_width) + 1
+    # Bug fix: this used to be `((x - 2) % board_width) + 1` / `(x %
+    # board_width) + 1` -- only correct for a 1-indexed x (1..board_
+    # width); every real caller passes a 0-indexed `HexCoord.x`
+    # (0..board_width-1, the same convention `turn/movement.py`'s own
+    # confirmed `(coord.x + dx) % board_width` wraparound uses), so the
+    # old formula silently misplaced both seam columns -- a newly-known
+    # column adjacent to column 0 (via the wrap) or to the last column
+    # could never actually be detected as adjacent at all.
+    left = (x - 1) % board_width
+    right = (x + 1) % board_width
     if left in kingdom.map_primary_region_columns or right in kingdom.map_primary_region_columns:
         kingdom.map_primary_region_columns.add(x)
 
