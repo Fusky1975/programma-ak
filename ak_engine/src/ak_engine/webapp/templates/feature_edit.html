@@ -79,7 +79,7 @@
   </form>
 
   <form method="post" action="{{ url_for('feature_delete', slug=meta.slug, feature_id=feature.feature_id) }}"
-        onsubmit="return confirm('Permanently delete this Feature?');">
+        data-confirm="Permanently delete this Feature?">
     <button type="submit" class="danger">Delete Feature</button>
   </form>
 </div>

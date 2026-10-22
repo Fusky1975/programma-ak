@@ -85,7 +85,7 @@
                       <a href="{{ url_for('leader_edit', slug=meta.slug, leader_id=leader.leader_id) }}">{{ leader.name }}{% if leader.is_king %} (King){% endif %}</a>
                       <form class="inline" method="post"
                             action="{{ url_for('leader_delete', slug=meta.slug, leader_id=leader.leader_id, return_to='provinces') }}"
-                            onsubmit="return confirm('Permanently delete {{ leader.name }}?{% if leader.is_king %} This King rules a Kingdom -- deleting him leaves it without a King (no Royal Heir is installed, unlike an in-game death).{% endif %}');">
+                            data-confirm="Permanently delete {{ leader.name }}?{% if leader.is_king %} This King rules a Kingdom -- deleting him leaves it without a King (no Royal Heir is installed, unlike an in-game death).{% endif %}">
                         <button type="submit" class="danger">Delete</button>
                       </form>
                     </li>
@@ -103,7 +103,7 @@
                       <a href="{{ url_for('army_edit', slug=meta.slug, army_id=army.army_id) }}">{{ army.army_type|display_name }}</a>
                       <form class="inline" method="post"
                             action="{{ url_for('army_delete', slug=meta.slug, army_id=army.army_id, return_to='provinces') }}"
-                            onsubmit="return confirm('Permanently delete this {{ army.army_type|display_name }} Army?');">
+                            data-confirm="Permanently delete this {{ army.army_type|display_name }} Army?">
                         <button type="submit" class="danger">Delete</button>
                       </form>
                     </li>
@@ -121,7 +121,7 @@
                       <a href="{{ url_for('province_edit', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">{{ feature.kind|display_name }}</a>
                       <form class="inline" method="post"
                             action="{{ url_for('feature_delete', slug=meta.slug, feature_id=feature.feature_id, return_to='provinces') }}"
-                            onsubmit="return confirm('Permanently delete this {{ feature.kind|display_name }} Feature?');">
+                            data-confirm="Permanently delete this {{ feature.kind|display_name }} Feature?">
                         <button type="submit" class="danger">Delete</button>
                       </form>
                     </li>

@@ -16,5 +16,30 @@
     {% endif %}
     {% block content %}{% endblock %}
   </div>
+  <script>
+    // Bug fix (security): every "Delete"/"Remove"/"Revoke" confirmation
+    // dialog used to build its JS `confirm('...')` call by interpolating
+    // a GM-settable free-text name (Kingdom/Leader/Game/Player name)
+    // straight into an inline `onsubmit` attribute's JS string literal.
+    // Jinja2's default autoescaping HTML-encodes a literal `'` as
+    // `&#39;`, but a browser HTML-entity-decodes an attribute's value
+    // *before* using it as the JS source for an inline event handler --
+    // so an attacker-controlled `'` survives as a real string-literal
+    // terminator once the JS engine parses it, letting a crafted name
+    // (e.g. containing `'),(fn()),('`) run arbitrary JS. HTML-context
+    // escaping alone does not protect this JS-attribute context.
+    // Fixed by moving the confirmation text to a plain `data-confirm`
+    // attribute (read here via `getAttribute`, never parsed as JS
+    // source -- ordinary HTML-escaping is exactly the right protection
+    // for a plain attribute value) and delegating every form's submit
+    // handling through this one listener instead.
+    document.addEventListener("submit", function (event) {
+      var form = event.target;
+      var message = form.getAttribute("data-confirm");
+      if (message !== null && !window.confirm(message)) {
+        event.preventDefault();
+      }
+    });
+  </script>
 </body>
 </html>

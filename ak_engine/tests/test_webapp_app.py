@@ -712,6 +712,47 @@ def test_kingdom_edit_shows_the_current_values(tmp_path):
     assert b"Aldric" in response.data
 
 
+def test_kingdom_edit_delete_confirm_escapes_a_malicious_kingdom_name(tmp_path):
+    # Bug fix (security, XSS): the "Delete Kingdom" confirmation used to
+    # interpolate kingdom.name straight into an inline onsubmit="return
+    # confirm('...')" JS string literal. Jinja2's default autoescaping
+    # HTML-encodes a literal "'" as "&#39;", but a browser HTML-entity-
+    # decodes an attribute's value *before* using it as the JS source
+    # for an inline event handler -- so an attacker-controlled "'"
+    # survived as a real string-literal terminator once the JS engine
+    # parsed it, letting a crafted name run arbitrary JS via the comma
+    # operator (e.g. "x'),(window.x=1),('y"). Fixed by moving the
+    # confirmation text to a plain data-confirm attribute, read via
+    # getAttribute() and never parsed as JS -- ordinary HTML-escaping
+    # is the right (and now sufficient) protection for that context.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    payload = "x'),(window.__XSS_FIRED=true),('y"
+
+    client.post(
+        f"/games/{meta.slug}/kingdoms/1",
+        data={
+            "name": payload,
+            "race": "HUMAN",
+            "alignment": "GOOD",
+            "treasury": "0",
+            "account_number": "0",
+        },
+    )
+    response = client.get(f"/games/{meta.slug}/kingdoms/1")
+
+    assert response.status_code == 200
+    # No inline onsubmit="return confirm(...)" survives anywhere on the
+    # page -- the whole class of JS-string-breakout is gone, not just
+    # this one occurrence.
+    assert b"onsubmit=" not in response.data
+    # The name is now inside a plain, HTML-escaped data-confirm
+    # attribute -- never parsed as JS, so the raw "'" from the payload
+    # must NOT appear unescaped in the rendered page.
+    assert b"data-confirm=\"Permanently delete the Kingdom of x&#39;),(window.__XSS_FIRED=true),(&#39;y?" in response.data
+    assert b"x'),(window.__XSS_FIRED=true),('y" not in response.data
+
+
 def test_kingdom_edit_missing_kingdom_shows_an_error_not_a_crash(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

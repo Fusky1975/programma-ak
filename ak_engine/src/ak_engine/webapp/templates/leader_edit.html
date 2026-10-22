@@ -79,7 +79,7 @@
   </form>
 
   <form method="post" action="{{ url_for('leader_delete', slug=meta.slug, leader_id=leader.leader_id) }}"
-        onsubmit="return confirm('Permanently delete {{ leader.name }}?{% if leader.is_king %} This King rules a Kingdom -- deleting him leaves it without a King (no Royal Heir is installed, unlike an in-game death).{% endif %}');">
+        data-confirm="Permanently delete {{ leader.name }}?{% if leader.is_king %} This King rules a Kingdom -- deleting him leaves it without a King (no Royal Heir is installed, unlike an in-game death).{% endif %}">
     <button type="submit" class="danger">Delete {{ 'King' if leader.is_king else 'Hero' }}</button>
   </form>
 </div>
@@ -223,7 +223,7 @@
           <div class="game-name">#{{ item.item_id }} &mdash; {{ item.treasure|display_name }}{% if item.charges %} ({{ item.charges }} charges){% endif %}</div>
           <form class="inline" method="post"
                 action="{{ url_for('leader_item_delete', slug=meta.slug, leader_id=leader.leader_id, item_id=item.item_id) }}"
-                onsubmit="return confirm('Permanently remove this item from {{ leader.name }}?');">
+                data-confirm="Permanently remove this item from {{ leader.name }}?">
             <button type="submit" class="danger">Remove</button>
           </form>
         </li>
@@ -259,7 +259,7 @@
           <div class="game-name">{{ ability|display_name }}</div>
           <form class="inline" method="post"
                 action="{{ url_for('leader_advanced_ability_delete', slug=meta.slug, leader_id=leader.leader_id, ability_name=ability.name) }}"
-                onsubmit="return confirm('Revoke {{ ability|display_name }} from {{ leader.name }}?');">
+                data-confirm="Revoke {{ ability|display_name }} from {{ leader.name }}?">
             <button type="submit" class="danger">Remove</button>
           </form>
         </li>

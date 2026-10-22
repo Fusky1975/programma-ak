@@ -27,7 +27,7 @@
             <div class="game-meta">{{ player.race_enum|display_name }} &middot; {{ player.alignment_enum|display_name }} &middot; {{ player.temper_enum|display_name }}</div>
           </div>
           <form class="inline" method="post" action="{{ url_for('players_remove', slug=meta.slug, player_id=player.player_id) }}"
-                onsubmit="return confirm('Remove King &quot;{{ player.name }}&quot;?');">
+                data-confirm="Remove King &quot;{{ player.name }}&quot;?">
             <button type="submit" class="danger">Remove</button>
           </form>
         </li>

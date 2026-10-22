@@ -253,7 +253,7 @@
             <a class="button" href="{{ url_for('leader_edit', slug=meta.slug, leader_id=leader.leader_id) }}">Edit</a>
             <form class="inline" method="post"
                   action="{{ url_for('leader_delete', slug=meta.slug, leader_id=leader.leader_id, return_x=province.coord.x, return_y=province.coord.y) }}"
-                  onsubmit="return confirm('Permanently delete {{ leader.name }}?{% if leader.is_king %} This King rules a Kingdom -- deleting him leaves it without a King (no Royal Heir is installed, unlike an in-game death).{% endif %}');">
+                  data-confirm="Permanently delete {{ leader.name }}?{% if leader.is_king %} This King rules a Kingdom -- deleting him leaves it without a King (no Royal Heir is installed, unlike an in-game death).{% endif %}">
               <button type="submit" class="danger">Delete</button>
             </form>
           </div>
@@ -279,7 +279,7 @@
             <a class="button" href="{{ url_for('army_edit', slug=meta.slug, army_id=army.army_id) }}">Edit</a>
             <form class="inline" method="post"
                   action="{{ url_for('army_delete', slug=meta.slug, army_id=army.army_id, return_x=province.coord.x, return_y=province.coord.y) }}"
-                  onsubmit="return confirm('Permanently delete this Army?');">
+                  data-confirm="Permanently delete this Army?">
               <button type="submit" class="danger">Delete</button>
             </form>
           </div>
@@ -302,7 +302,7 @@
             <a class="button" href="{{ url_for('feature_edit', slug=meta.slug, feature_id=feature.feature_id) }}">Edit</a>
             <form class="inline" method="post"
                   action="{{ url_for('feature_delete', slug=meta.slug, feature_id=feature.feature_id, return_x=province.coord.x, return_y=province.coord.y) }}"
-                  onsubmit="return confirm('Permanently delete this Feature?');">
+                  data-confirm="Permanently delete this Feature?">
               <button type="submit" class="danger">Delete</button>
             </form>
           </div>
@@ -319,7 +319,7 @@
   <h2>Delete Province</h2>
   <p class="hex-map-legend-note">There's no "Add Province" in this editor -- a deleted province can only come back by regenerating the whole world. Blocked while it's a Kingdom's Home province, or has any Army or Leader currently on it (move or remove them first); any Special Feature here is deleted along with it.</p>
   <form method="post" action="{{ url_for('province_delete', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}"
-        onsubmit="return confirm('Permanently delete the province at ({{ province.coord.x }}, {{ province.coord.y }})? This cannot be undone from this interface.');">
+        data-confirm="Permanently delete the province at ({{ province.coord.x }}, {{ province.coord.y }})? This cannot be undone from this interface.">
     <button type="submit" class="danger">Delete Province</button>
   </form>
 </div>

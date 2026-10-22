@@ -67,7 +67,7 @@
   </form>
 
   <form method="post" action="{{ url_for('army_delete', slug=meta.slug, army_id=army.army_id) }}"
-        onsubmit="return confirm('Permanently delete this Army?');">
+        data-confirm="Permanently delete this Army?">
     <button type="submit" class="danger">Delete Army</button>
   </form>
 </div>

@@ -59,7 +59,7 @@
   </form>
 
   <form method="post" action="{{ url_for('turns_process', slug=meta.slug) }}"
-        onsubmit="return confirm('Process Turn {{ state.turn_number }} now? Kingdoms with no uploaded moves will Defend/Wait.');">
+        data-confirm="Process Turn {{ state.turn_number }} now? Kingdoms with no uploaded moves will Defend/Wait.">
     <button type="submit">Process Turn {{ state.turn_number }}</button>
   </form>
 </div>

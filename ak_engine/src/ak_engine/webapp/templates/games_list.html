@@ -24,7 +24,7 @@
           <div style="display: flex; gap: 0.5rem;">
             <a class="button" href="{{ url_for('players_setup', slug=game.slug) }}">Open</a>
             <form class="inline" method="post" action="{{ url_for('games_delete', slug=game.slug) }}"
-                  onsubmit="return confirm('Permanently delete the game &quot;{{ game.name }}&quot;?');">
+                  data-confirm="Permanently delete the game &quot;{{ game.name }}&quot;?">
               <button type="submit" class="danger">Delete</button>
             </form>
           </div>
