@@ -4144,6 +4144,39 @@ def test_execute_search_talk_language_failure_not_set_when_dr_gate_passes():
     assert result.talk_language_failure is False
 
 
+def test_execute_search_talk_language_failure_uses_the_dead_kings_own_skill_not_the_heirs():
+    # Bug fix: _apply_talk_language_failure() used to re-fetch the
+    # leader fresh from state.leaders by id, instead of reusing the
+    # pre-encounter LeaderState object execute_search() already
+    # captured -- the same King-succession hazard _register_search_
+    # target_known()'s own docstring already warns about. A King with
+    # real Druid 2 (passes Gargoyle's own talkdiff-2 gate) dies in this
+    # plan's own leading Melee tactic, well before the Talk tactic is
+    # ever reached by the real walk; GameState.remove_leader() then
+    # installs a brand-new Royal Heir under the same leader_id with
+    # Druid 0. The bug evaluated the DR gate against that Heir's Druid 0
+    # (failing it, and fabricating a "puzzled" narrative for a Talk that
+    # was never attempted); the fix evaluates it against the dead King's
+    # own real Druid 2, which genuinely passes the gate.
+    king = _skilled_leader(Ability.DRUID, 2, is_king=True)
+    state = GameState()
+    state.add_leader(king)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.CAVE, guardian_monster=Monster.GARGOYLE))
+    request = SearchRequest(
+        feature_id=1, unconfirmed_extra0=0,
+        tactics=[SearchTactic(maneuver=Maneuver.MELEE), SearchTactic(maneuver=Maneuver.TALK)],
+    )
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="b", rounds=1)
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.leader_killed is True
+    assert state.leaders[LEADER_ID].is_royal_heir is True  # the King really was replaced by a Heir
+    assert result.talk_language_failure is False
+
+
 def test_execute_search_talk_language_failure_not_set_without_a_talk_tactic():
     # No Talk tactic in the plan at all -- the language-failure branch
     # can never apply, even against a low-intelligence guardian the

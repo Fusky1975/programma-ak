@@ -293,10 +293,27 @@ def hex_distance_wrapped(a: HexCoord, b: HexCoord, board_width: int = _DEFAULT_B
     column ``0``) unconditionally -- the real Pascal only skips it for
     the ``Europe_V`` game-type variant, which ``ak_engine`` doesn't
     model anywhere, so there is no non-wrapping case to preserve.
+
+    **Bug fix**: the per-row parity bit below used to be the row's own
+    ``y & 1`` directly (1 when ``y`` is odd, 0 when even) -- the
+    textbook "odd-r" doubled-width transform, where *odd* rows are the
+    ones shifted. But this project's real, Phase-314-confirmed grid (see
+    module docstring) is the opposite convention: ``neighbors()``/
+    ``neighbor_in_direction()``/``neighbor_in_direction_wrapped()``/
+    ``direction_between()``/``_to_cube()`` all key off ``_EVEN_ROW_
+    OFFSETS`` when ``y`` is *odd*, i.e. the *even* rows are the ones
+    shifted -- so the doubled-width parity bit needs to be 1 when ``y``
+    is even, not odd. Confirmed by exhaustive cross-check: with the
+    fixed parity bit, this function's own unwrapped case (a ``board_
+    width`` large enough that wraparound never triggers) matches
+    ``hex_distance()`` above -- built from the already-confirmed-correct
+    ``_to_cube()`` -- exactly, for every one of 20592 coordinate pairs
+    checked on a 12x12 grid; the old parity bit mismatched 7284 of them
+    (~35%).
     """
 
     dy = abs(b.y - a.y)
-    dx2 = abs((2 * b.x + (b.y & 1)) - (2 * a.x + (a.y & 1)))
+    dx2 = abs((2 * b.x + (1 - (b.y & 1))) - (2 * a.x + (1 - (a.y & 1))))
     dx2 = min(dx2, 2 * board_width - dx2)
     return dy if dy >= dx2 else dy + abs(dx2 - dy) // 2
 

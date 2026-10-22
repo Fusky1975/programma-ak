@@ -55,10 +55,9 @@ def test_partial_exploration_from_move_is_half_effect():
     assert partial.new_percent == full.new_percent // 2
 
 
-@pytest.mark.parametrize("bad_percent", [-1, 101])
-def test_invalid_current_percent_raises(bad_percent):
+def test_negative_current_percent_raises():
     with pytest.raises(ValueError):
-        resolve_explore(bad_percent, Terrain.PLAINS, explorer_skill=0)
+        resolve_explore(-1, Terrain.PLAINS, explorer_skill=0)
 
 
 @pytest.mark.parametrize("bad_skill", [-1, 10])
@@ -107,9 +106,18 @@ def test_military_maps_alone_adds_no_points():
     assert without.new_percent == with_military_maps.new_percent == 50
 
 
-def test_current_percent_above_100_is_invalid_without_military_maps():
-    with pytest.raises(ValueError):
-        resolve_explore(150, Terrain.PLAINS, explorer_skill=0)
+def test_current_percent_above_100_without_military_maps_is_a_no_op_not_an_error():
+    # Bug fix: a province pushed above 100 by an *earlier*, Military-
+    # Maps-equipped explorer legitimately exceeds a later, non-
+    # Military-Maps explorer's own cap -- that used to raise ValueError
+    # outright (crashing the whole LMOVE/EXPLORE phase for this
+    # mover, turn/plan_dispatch.py's own per-phase try/except catches
+    # it at phase granularity, not silently), instead of just reporting
+    # no further growth is possible for this roll.
+    result = resolve_explore(150, Terrain.PLAINS, explorer_skill=0)
+    assert result.new_percent == 150  # never decreased back down to the 100 cap
+    assert result.delta_applied == 0
+    assert result.fully_explored is True
 
 
 def test_current_percent_up_to_200_is_valid_with_military_maps():

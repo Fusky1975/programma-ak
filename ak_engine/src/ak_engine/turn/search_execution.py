@@ -1106,13 +1106,13 @@ def execute_search(
             if any(s.hit for s in result.fire_arrow_shots if s.shooter == "a"):
                 add_experience(leader, Ability.ARCHERY, 10, rng)
         _apply_scout(state, leader_id, request, result, rng)
-        _apply_talk_language_failure(state, leader_id, request, result)
+        _apply_talk_language_failure(state, leader, request, result)
     return result
 
 
 def _apply_talk_language_failure(
     state: GameState,
-    leader_id: int,
+    leader: LeaderState | None,
     request: SearchRequest,
     result: SearchExecutionResult,
 ) -> None:
@@ -1159,6 +1159,18 @@ def _apply_talk_language_failure(
     layer text for it is a project-original placeholder, the same
     "mechanic sourced, text is not" split Phase 543's own Arcane's
     Valor unification line already established.
+
+    **Bug fix**: ``leader`` used to be re-derived here via ``state.
+    leaders.get(leader_id)`` instead of being passed in as the caller's
+    own pre-encounter object -- the exact same King-succession hazard
+    ``_register_search_target_known()``'s own docstring already warns
+    about. If the searching King dies in an earlier tactic before this
+    plan's TALK tactic is ever reached, ``GameState.remove_leader()``
+    has already installed a brand-new Royal Heir under the same
+    ``leader_id`` with baseline skills (Druid included, at 0) -- the DR
+    gate above was then being evaluated against the Heir's skill, not
+    the dead King's, fabricating a "puzzled" failure narrative for a
+    Talk that was never actually attempted.
     """
 
     feature = state.features.get(request.feature_id)
@@ -1166,11 +1178,10 @@ def _apply_talk_language_failure(
         return
     if not any(tactic.maneuver is Maneuver.TALK for tactic in request.tactics):
         return
-    if holds_monster_command_item_for(state, leader_id, feature.guardian_monster):
-        return  # Phase 537 carve-out -- Talk's own social roll never runs at all
-    leader = state.leaders.get(leader_id)
     if leader is None:
         return
+    if holds_monster_command_item_for(state, leader.leader_id, feature.guardian_monster):
+        return  # Phase 537 carve-out -- Talk's own social roll never runs at all
     druid_level = effective_skill_level(state, leader, Ability.DRUID)
     if can_talk_to_monster(feature.guardian_monster, druid_level):
         return  # the DR gate passed -- no language-failure branch at all

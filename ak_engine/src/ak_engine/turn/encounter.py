@@ -4187,11 +4187,20 @@ def resolve_hand_of_death_channel(
     Necromancy duel: the caster's own attack always lands (``roll_hand_
     of_death_damage()`` has no hit-chance roll of its own -- it is a
     psychic, not physical, blow) for ``1 + 0.5*level`` damage, uncapped;
-    the victim's own Melee counter-attack uses their normal damage die at
-    ``HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER`` (halved) hit chance.
+    the victim's own Melee counter-attack uses their normal damage die,
+    composed exactly like every other Melee swing in this module
+    (``victim.offensive_hit_multiplier * caster.defensive_hit_multiplier``
+    -- Berserk/Duellist's-Medal/Invisibility etc.), then further halved
+    by ``HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER``.
     Initiative uses the caster's own Necromancy skill level in place of
     Melee (``hand_of_death_caster_melee_defense_skill()``, [5.0]'s
     generic rule) against the victim's own real effective Melee skill.
+
+    **Bug fix**: the victim's counter-attack used to be rolled at a flat
+    ``HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER`` only, silently
+    dropping the composed multiplier above -- an Invisible caster (or a
+    Berserk/Duellist's-Medal-equipped victim) was never consulted for
+    this one roll, unlike every other Melee swing in this module.
 
     ``winner="a"`` (the caster) only when the victim's hit points reach 0
     -- "chi lancia questo incantesimo" wins outright, same convention as
@@ -4299,7 +4308,21 @@ def resolve_hand_of_death_channel(
                 raw_damage = roll_melee_attack(
                     rng,
                     damage_range=victim.melee_damage_range,
-                    hit_chance_multiplier=HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER,
+                    # Bug fix: this used to pass only the flat Hand-of-
+                    # Death halving (0.5) as the whole hit_chance_
+                    # multiplier, silently dropping victim.offensive_
+                    # hit_multiplier/caster.defensive_hit_multiplier --
+                    # the same composition every other Melee swing in
+                    # this module applies (resolve_one_melee_round above:
+                    # attacker.offensive_hit_multiplier * defender.
+                    # defensive_hit_multiplier). An Invisible caster (or
+                    # a Berserk/Duellist's-Medal victim) was therefore
+                    # never consulted for this one roll.
+                    hit_chance_multiplier=(
+                        victim.offensive_hit_multiplier
+                        * caster.defensive_hit_multiplier
+                        * HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER
+                    ),
                 )
                 if raw_damage > 0:
                     damage = max(0, raw_damage - caster.damage_reduction)

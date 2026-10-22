@@ -2348,6 +2348,7 @@ def _apply_spy_brainwash_alignment_shift(challenger: LeaderState, target: Leader
 
 
 def _apply_duel_encounter_merit(
+    state: GameState,
     challenger: LeaderState,
     target: LeaderState,
     *,
@@ -2386,10 +2387,15 @@ def _apply_duel_encounter_merit(
     Bravest is not a transfer: only the *protagonist* (the challenger, in
     this project's framing -- the leader whose own CHALLENGE order is
     executing) is ever credited, and only when they win, for however many
-    of their own starting hit points they never got back
-    (``CHARACTER_HIT_POINTS - challenger_combatant.hit_points``). A
-    challenger who wins unscathed is credited 0, not skipped -- the
-    ``Inc_Tit`` triplet still gets created, per the source.
+    of their own starting hit points they never got back (their own real
+    starting hit points -- ``CHARACTER_HIT_POINTS`` plus whatever
+    ``arcane_valor_hit_points_bonus()`` gave them, the same total
+    ``_leader_combatant()`` seeded them with -- minus ``challenger_
+    combatant.hit_points``). **Bug fix**: this used to subtract from the
+    bare ``CHARACTER_HIT_POINTS`` constant instead, crediting a negative
+    ``bravery_merit`` to any Scepter-of-Life-boosted challenger who won
+    cleanly. A challenger who wins unscathed is credited 0, not skipped
+    -- the ``Inc_Tit`` triplet still gets created, per the source.
     """
 
     if not accepted:
@@ -2406,7 +2412,16 @@ def _apply_duel_encounter_merit(
     loser_leader.merit_tally.courage_encounter_merit -= 1
 
     if winner_leader is challenger and challenger_combatant is not None:
-        bravery_gain = CHARACTER_HIT_POINTS - challenger_combatant.hit_points
+        # Bug fix: the challenger's own real starting hit points can
+        # exceed the bare CHARACTER_HIT_POINTS constant (_leader_
+        # combatant()'s own arcane_valor_hit_points_bonus() under
+        # GameType.ARCANES, Phase 538) -- using the bare constant here
+        # instead credited a negative bravery_gain for any such
+        # challenger winning cleanly, contradicting this function's own
+        # docstring ("a challenger who wins unscathed is credited 0,
+        # not skipped").
+        starting_hit_points = CHARACTER_HIT_POINTS + arcane_valor_hit_points_bonus(state, challenger)
+        bravery_gain = starting_hit_points - challenger_combatant.hit_points
         winner_leader.merit_tally.bravery_merit += bravery_gain
 
 
@@ -2543,7 +2558,7 @@ def execute_challenge(
             accepted = False
     if not accepted:
         _apply_duel_encounter_merit(
-            challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
+            state, challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
         )
         return ChallengeExecutionResult(accepted=False, reason="encounter refused")
 
@@ -2620,6 +2635,7 @@ def execute_challenge(
     )
     winner_leader, loser_leader = (challenger, target) if combat_result.winner == "a" else (target, challenger)
     _apply_duel_encounter_merit(
+        state,
         challenger,
         target,
         accepted=True,

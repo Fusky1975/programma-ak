@@ -488,6 +488,41 @@ def test_run_turn_multi_attacker_lmove_records_each_movers_own_kingdom_explorati
     assert state.leaders[30].merit_tally.plains_explorations == 1
 
 
+def test_run_turn_multi_attacker_lmove_collapsing_to_one_survivor_credits_exploration_once():
+    # Bug fix: when a candidate multi-attacker group collapses to fewer
+    # than 2 surviving parties (here, leader B's own move is illegal from
+    # a contested origin, leaving only leader A), the sole survivor used
+    # to have record_kingdom_exploration()/reveal_adjacent_provinces()
+    # already applied once inside _dispatch_multi_attacker_lmove()'s own
+    # validation loop -- and then a *second* time via the ordinary
+    # _dispatch_single() -> execute_move() pipeline it falls back to,
+    # double-crediting the same real move. Leader A starts at ORIGIN
+    # (uncontested); leader B starts at ORIGIN2, which is contested by
+    # kingdom 1 itself, making B's own move to the enemy-owned TARGET
+    # illegal and excluding B from `parties` entirely -- leaving exactly
+    # one survivor (A), the collapse case this bug fix targets.
+    state = _base_state()
+    state.provinces[ORIGIN2].contested_by_kingdom_id = 1
+    march_4 = _skills_with(Ability.MARCH, 4, 9)
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=march_4))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=ORIGIN2, skills=march_4))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=10))
+    state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN2, movement_points=5, commanded_by=20))
+
+    leader_a = _leader_with_phase(10, "A", "P0", _lmove_phase("P0", TARGET))
+    leader_b = _leader_with_phase(20, "B", "P0", _lmove_phase("P0", TARGET))
+
+    results = run_turn(
+        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
+
+    assert len(results) == 2
+    assert any(isinstance(r.error, IllegalMoveFromContestedError) for r in results)
+    # Credited exactly once, via leader A's own single real execute_move()
+    # call -- not twice (once from the abandoned preview, once for real).
+    assert state.leaders[10].merit_tally.plains_explorations == 1
+
+
 def test_run_turn_peaceful_mover_unaffected_by_a_lone_attacker_targeting_the_same_hex():
     # Kingdom 3 is allied with both the attacker's kingdom (1) and the
     # defender's kingdom (2), so its own mover always sees only allied

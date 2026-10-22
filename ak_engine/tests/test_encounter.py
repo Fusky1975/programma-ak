@@ -2179,6 +2179,33 @@ def test_resolve_hand_of_death_channel_artificial_organs_is_a_no_op_by_default()
     assert victim.hit_points <= 0
 
 
+def test_resolve_hand_of_death_channel_victim_counter_attack_composes_the_casters_own_invisibility():
+    # Bug fix: the victim's own counter-attack used to be rolled at a
+    # flat HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER (0.5) only,
+    # dropping victim.offensive_hit_multiplier/caster.defensive_hit_
+    # multiplier -- the same composition every other Melee swing in
+    # this module applies (resolve_one_melee_round). An Invisible caster
+    # (defensive_hit_multiplier=0.5) must halve the victim's own real
+    # chance again: MELEE_HIT_CHANCE(0.5) * victim.offensive_hit_
+    # multiplier(1.0) * caster.defensive_hit_multiplier(0.5) *
+    # HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER(0.5) = 0.125 under the
+    # fix, vs. the bug's own un-composed 0.5*0.5 = 0.25 (Invisibility
+    # never consulted). A scripted roll of 0.2 falls strictly between
+    # the two: a miss under the fix, a hit under the bug -- and a landed
+    # hit ends the channel immediately (consuming the second scripted
+    # value, 0.9, as that same round's damage-amount roll, per
+    # ScriptedRandom's own randint()-via-.random() behavior), so under
+    # the bug this never reaches round 2 at all.
+    caster = Combatant("Caster", hit_points=10, defensive_hit_multiplier=0.5)
+    victim = Combatant("Victim", hit_points=10, melee_skill=0)
+    rng = ScriptedRandom([0.2, 0.9])  # fix: round 1 + round 2 counter-attack misses; bug: round 1 hit + its own damage roll
+
+    result = resolve_hand_of_death_channel(caster, victim, 2, rng, max_rounds=2)
+
+    assert caster.hit_points == 10  # the counter-attack missed both rounds under the fix
+    assert result.winner is None  # neither side won within the 2-round cap
+
+
 def test_resolve_hand_of_death_channel_respects_max_rounds_cap():
     caster = Combatant("Caster", hit_points=10)
     victim = Combatant("Victim", hit_points=999999, melee_skill=0)

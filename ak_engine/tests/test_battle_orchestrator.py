@@ -257,6 +257,63 @@ def test_attacker_forced_retreat_skips_an_origin_captured_by_a_third_kingdom():
     assert state.armies[101].location == safe_neighbor_of_origin
 
 
+def test_coalition_member_retreat_uses_its_own_alliances_not_the_claiming_kingdoms():
+    # Bug fix (see fight_battle()'s own "elif attacker_clean_swept and
+    # loser_retreats" branch): a united Multiple-Contingents coalition
+    # (turn/multiple_contingents.py) can unite kingdoms that are not all
+    # mutually allied -- eligible_to_unite() only checks each joining
+    # kingdom against the FIRST member, never against every other member
+    # -- and the whole battle is then fought under one "claiming" kingdom
+    # id (the largest contingent). Kingdom 1 (Alfia) is allied with both
+    # kingdom 3 (Betia, the claiming kingdom here, largest contingent)
+    # and kingdom 4 (Gammia), but Betia and Gammia are NOT allied with
+    # each other. Gammia's own home province is the only province
+    # adjacent to the battlefield that is friendly to Gammia; it is NOT
+    # friendly to Betia (no alliance). If a losing coalition member's own
+    # retreat destination is filtered by the *claiming* kingdom's
+    # alliances (the bug) instead of its own, Gammia's (and, here, also
+    # Alfia's) army incorrectly finds no friendly neighbor at all and
+    # disbands instead of retreating home.
+    origin_a = HexCoord(10, 10)  # Alfia's and Betia's own homes -- never
+    origin_b = HexCoord(11, 11)  # adjacent to FIELD, so neither can ever
+    #                              be a usable retreat candidate by itself.
+    gammia_home = HexCoord(1, 0)  # the ONLY friendly neighbor of FIELD
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Alfia", Race.HUMAN, Alignment.GOOD, origin_a))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_kingdom(KingdomState(3, "Betia", Race.HUMAN, Alignment.GOOD, origin_b))
+    state.add_kingdom(KingdomState(4, "Gammia", Race.HUMAN, Alignment.GOOD, gammia_home))
+    state.allied_kingdoms.add(frozenset({1, 3}))  # Alfia <-> Betia (claiming kingdom)
+    state.allied_kingdoms.add(frozenset({1, 4}))  # Alfia <-> Gammia
+    # Betia and Gammia are deliberately NOT allied with each other.
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(origin_a, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(origin_b, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+    state.add_province(ProvinceState(gammia_home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=4))
+    state.add_army(ArmyState(101, 1, ArmyType.CHARIOTS, Quality.GREEN, FIELD))
+    state.add_army(ArmyState(102, 3, ArmyType.CHARIOTS, Quality.GREEN, FIELD))
+    state.add_army(ArmyState(103, 3, ArmyType.CHARIOTS, Quality.GREEN, FIELD))  # Betia: largest contingent, claims the battle
+    state.add_army(ArmyState(104, 4, ArmyType.CHARIOTS, Quality.GREEN, FIELD))  # Gammia -- the army under test
+    state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    # seed=0 (found by search over this exact scenario) is a decisive
+    # defender win with the attacker side clean swept and all four
+    # Chariots (speed matches the pursuer, guaranteed escape -- same
+    # reasoning as test_attacker_forced_retreat_uses_the_origin_when_
+    # supplied above) surviving pursuit to reach the per-army retreat
+    # branch, with attacker_origin=None (a mixed-origin coalition has no
+    # single invaded-from province to prefer).
+
+    report = fight_battle(
+        state, attacker_kingdom_id=3, province_coord=FIELD, attacker_army_ids=[101, 102, 103, 104],
+        attacker_origin=None, rng=random.Random(0),
+    )
+
+    assert 104 in report.retreated_army_ids
+    assert 104 not in report.disbanded_army_ids
+    assert state.armies[104].location == gammia_home  # Gammia's own home, not Betia's alliances
+
+
 def test_fight_battle_records_contested_from_coord_on_a_mixed_result():
     # seed=55 (Phase 933 re-search -- the real last-column tie-break
     # correction changed which seeds land a genuine mixed/contested

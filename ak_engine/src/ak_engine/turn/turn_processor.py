@@ -1764,8 +1764,24 @@ def _dispatch_multi_attacker_lmove(
     bounds = MapBounds(board_width, state.board_height)
 
     parties: list[MultiAttackerParty] = []
-    valid: list[tuple[TurnLeader, int, PlanPhase, list[int], HexCoord]] = []
-    exploration_new_percent: int | None = None
+    # Bug fix: `exploration_new_percent` (per mover) used to carry over
+    # into `record_kingdom_exploration()`/`reveal_adjacent_provinces()`/
+    # the `target_province.explored_percent` write below, called
+    # unconditionally inside this same loop for every mover that passed
+    # validation -- before this function yet knew whether it would go
+    # on to actually unite them into a real multi-attacker battle. When
+    # fewer than 2 parties survive validation, every surviving mover is
+    # instead re-dispatched through the ordinary `_dispatch_single()` ->
+    # `execute_move()` pipeline just below, which performs the exact
+    # same real move resolution (including these same three calls) a
+    # second time for the same province entry -- double-crediting this
+    # mover's own exploration percentage, merit tally, and discovered
+    # features, and re-revealing already-revealed neighbors (harmless on
+    # its own, but a symptom of the same double-dispatch). Each mover's
+    # own `exploration_new_percent` is now carried in `valid` instead of
+    # a function-level scalar, and the three mutating calls are deferred
+    # until after the `len(parties) < 2` fallback has already returned.
+    valid: list[tuple[TurnLeader, int, PlanPhase, list[int], HexCoord, int | None]] = []
 
     for tl, segment_index, phase in movers:
         army_ids = [army.army_id for army in state.armies_commanded_by(tl.leader.leader_id)]
@@ -1812,13 +1828,6 @@ def _dispatch_multi_attacker_lmove(
                 occupied_by_enemy=True,
             )
             exploration_new_percent = move_result.exploration.new_percent
-            # Phase 69: each mover's own kingdom gets its own tracked
-            # percentage here, unlike the single shared exploration_new_percent
-            # scalar above (which only the last mover in this loop wins).
-            record_kingdom_exploration(
-                target_province, tl.kingdom_id, explorer_skill, partial=True, state=state, rng=rng, leader_id=tl.leader.leader_id
-            )
-            reveal_adjacent_provinces(state, target_province, tl.kingdom_id, bounds)
         except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
             results.append(PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, None, exc))
             continue
@@ -1826,22 +1835,36 @@ def _dispatch_multi_attacker_lmove(
         parties.append(
             MultiAttackerParty(leader_id=tl.leader.leader_id, kingdom_id=tl.kingdom_id, army_ids=army_ids, origin_province=origin)
         )
-        valid.append((tl, segment_index, phase, army_ids, origin))
-
-    if target_province is not None and exploration_new_percent is not None:
-        target_province.explored_percent = exploration_new_percent
+        valid.append((tl, segment_index, phase, army_ids, origin, exploration_new_percent))
 
     if len(parties) < 2:
         # Not enough survived validation to actually unite -- whoever's
-        # left dispatches individually and normally instead.
-        for tl, segment_index, phase, _army_ids, _origin in valid:
+        # left dispatches individually and normally instead, through the
+        # ordinary single-mover pipeline that applies its own real
+        # exploration-discovery side effects exactly once.
+        for tl, segment_index, phase, _army_ids, _origin, _exploration_new_percent in valid:
             results.extend(_dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng))
         return results
+
+    # Only now, having committed to a genuine united multi-attacker
+    # battle, apply each surviving mover's own exploration-discovery side
+    # effects -- see this function's own Bug fix note above for why this
+    # can't run inside the validation loop above.
+    for tl, segment_index, phase, _army_ids, _origin, exploration_new_percent in valid:
+        if target_province is not None and exploration_new_percent is not None:
+            # Phase 69: each mover's own kingdom gets its own tracked
+            # percentage via record_kingdom_exploration() below, unlike this
+            # single shared scalar (which only the last mover in this loop wins).
+            target_province.explored_percent = exploration_new_percent
+        record_kingdom_exploration(
+            target_province, tl.kingdom_id, explorer_skill, partial=True, state=state, rng=rng, leader_id=tl.leader.leader_id
+        )
+        reveal_adjacent_provinces(state, target_province, tl.kingdom_id, bounds)
 
     battles = fight_multi_attacker_battle(state, target, parties, apply_fanaticism=True, use_real_duel_combat=True, rng=rng)
     battle_by_leader = {leader_id: battle for battle in battles for leader_id in battle.leader_ids}
 
-    for tl, segment_index, phase, army_ids, origin in valid:
+    for tl, segment_index, phase, army_ids, origin, _exploration_new_percent in valid:
         battle = battle_by_leader[tl.leader.leader_id]
         conquered = battle.report.conquered
         cost = movement_cost_for_move(battle_occurred=True, conquered=conquered)

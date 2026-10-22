@@ -160,8 +160,16 @@ def resolve_explore(
     """
 
     max_reachable = EXPLORATION_CAP_WITH_MILITARY_MAPS if has_military_maps else EXPLORATION_CAP
-    if not 0 <= current_percent <= max_reachable:
-        raise ValueError(f"current_percent must be 0-{max_reachable}, got {current_percent}")
+    # Bug fix: this used to reject any current_percent above *this*
+    # call's own max_reachable outright, but a province already pushed
+    # past 100 by an earlier Military-Maps-equipped explorer legally
+    # exceeds a later, non-Military-Maps explorer's own cap -- that's
+    # not corrupt data, just a province no later roll without the
+    # ability can push any further. Only a genuinely out-of-range
+    # (negative) value is a real error; the upper bound is enforced
+    # below instead, as a floor on new_percent so it never *decreases*.
+    if current_percent < 0:
+        raise ValueError(f"current_percent must be >= 0, got {current_percent}")
     if not MIN_EXPLORER_SKILL <= explorer_skill <= MAX_EXPLORER_SKILL:
         raise ValueError(
             f"explorer_skill must be {MIN_EXPLORER_SKILL}-{MAX_EXPLORER_SKILL}, got {explorer_skill}"
@@ -177,7 +185,7 @@ def resolve_explore(
     if partial:
         exploration_number //= 2
 
-    new_percent = min(max_reachable, current_percent + exploration_number)
+    new_percent = max(current_percent, min(max_reachable, current_percent + exploration_number))
     return ExploreResult(
         new_percent=new_percent,
         delta_applied=new_percent - current_percent,

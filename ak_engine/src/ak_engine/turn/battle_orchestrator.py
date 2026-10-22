@@ -2964,7 +2964,16 @@ def fight_battle(
             )
         elif attacker_clean_swept and loser_retreats:
             bounds = MapBounds(state.board_width, state.board_height)
-            friendly = state.friendly_provinces_for(attacker_kingdom_id) - {province_coord}
+            # Bug fix: this used attacker_kingdom_id (the coalition's
+            # own "claiming" kingdom for a united Multiple-Contingents
+            # battle, turn/multiple_contingents.py) instead of this
+            # specific army's own kingdom_id -- the mirrored defender-
+            # side branch below already uses army.kingdom_id correctly.
+            # A non-claiming coalition member's own retreat destination
+            # must be filtered by its own alliances, not the claiming
+            # kingdom's (which can include a kingdom this army has no
+            # alliance with at all).
+            friendly = state.friendly_provinces_for(army.kingdom_id) - {province_coord}
             if attacker_origin is not None:
                 destination = select_attacker_retreat_destination(attacker_origin, army.location, bounds, friendly)
             else:

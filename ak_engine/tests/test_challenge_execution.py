@@ -2874,7 +2874,7 @@ def test_apply_duel_encounter_merit_refusal_credits_stake_one_and_cravenest_pena
     state.add_leader(target)
 
     _apply_duel_encounter_merit(
-        challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
+        state, challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
     )
 
     assert challenger.merit_tally.duel_merit_net == 1
@@ -2895,6 +2895,7 @@ def test_apply_duel_encounter_merit_decisive_win_credits_stake_two_cravenest_and
     challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS - 3)
 
     _apply_duel_encounter_merit(
+        state,
         challenger,
         target,
         accepted=True,
@@ -2920,6 +2921,7 @@ def test_apply_duel_encounter_merit_decisive_win_unscathed_credits_zero_bravery(
     challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS)
 
     _apply_duel_encounter_merit(
+        state,
         challenger,
         target,
         accepted=True,
@@ -2944,6 +2946,7 @@ def test_apply_duel_encounter_merit_target_wins_credits_no_bravery_to_anyone():
     challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS - 5)
 
     _apply_duel_encounter_merit(
+        state,
         challenger,
         target,
         accepted=True,
@@ -2959,6 +2962,61 @@ def test_apply_duel_encounter_merit_target_wins_credits_no_bravery_to_anyone():
     assert challenger.merit_tally.bravery_merit == 0
 
 
+def test_apply_duel_encounter_merit_credits_zero_bravery_for_an_unscathed_arcane_valor_winner():
+    # Bug fix: a challenger whose own real starting hit points exceed
+    # the bare CHARACTER_HIT_POINTS constant (GameType.ARCANES's own
+    # arcane_valor_hit_points_bonus(), Phase 538 -- personally holding
+    # the Scepter of Life) used to be credited a *negative*
+    # bravery_merit for winning cleanly, contradicting this function's
+    # own documented "wins unscathed is credited 0, not skipped" rule.
+    state = _base_state()
+    state.game_type = GameType.ARCANES
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+    # The challenger's own real starting hit points under this bonus:
+    # CHARACTER_HIT_POINTS + 5 (personal Scepter possession alone).
+    challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS + 5)
+
+    _apply_duel_encounter_merit(
+        state,
+        challenger,
+        target,
+        accepted=True,
+        winner_leader=challenger,
+        loser_leader=target,
+        challenger_combatant=challenger_combatant,
+    )
+
+    assert challenger.merit_tally.bravery_merit == 0
+
+
+def test_apply_duel_encounter_merit_credits_real_damage_taken_for_an_arcane_valor_winner():
+    state = _base_state()
+    state.game_type = GameType.ARCANES
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+    # Started at CHARACTER_HIT_POINTS + 5, took 3 damage along the way.
+    challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS + 2)
+
+    _apply_duel_encounter_merit(
+        state,
+        challenger,
+        target,
+        accepted=True,
+        winner_leader=challenger,
+        loser_leader=target,
+        challenger_combatant=challenger_combatant,
+    )
+
+    assert challenger.merit_tally.bravery_merit == 3
+
+
 def test_apply_duel_encounter_merit_no_op_when_no_winner_or_loser():
     # Draw or magical escape (fled) -- excluded from all three titles.
     state = _base_state()
@@ -2968,7 +3026,7 @@ def test_apply_duel_encounter_merit_no_op_when_no_winner_or_loser():
     state.add_leader(target)
 
     _apply_duel_encounter_merit(
-        challenger, target, accepted=True, winner_leader=None, loser_leader=None, challenger_combatant=None
+        state, challenger, target, accepted=True, winner_leader=None, loser_leader=None, challenger_combatant=None
     )
 
     assert challenger.merit_tally.duel_merit_net == 0

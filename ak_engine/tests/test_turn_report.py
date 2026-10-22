@@ -12716,7 +12716,12 @@ def test_tell_align_basic_arithmetic_and_the_king_vs_hero_shift():
     king_target.alignment = Alignment.GOOD
     # Same coordinates/alignment, only is_king differs -> different tdmod shift,
     # so this is NOT a copy-paste of the assertion above.
-    assert _tell_align(king_target, priest) is Alignment.DRUID
+    # Bug fix: this used to expect Alignment.DRUID, computed from the
+    # pre-fix hex_distance_wrapped()'s own wrong distance (6, not 5) for
+    # (0, 0)-(3, 5) -- see that function's own Bug fix note. The real,
+    # confirmed distance is 5 (hex_distance() agrees), which changes
+    # tdmod and so the real `ta` arithmetic here too.
+    assert _tell_align(king_target, priest) is Alignment.GOOD
 
 
 def test_tell_align_clamps_at_the_divine_floor():
@@ -12815,13 +12820,21 @@ def test_impulse3_candidates_empty_without_a_priest():
 
 
 def test_impulse3_candidates_excludes_a_hero_and_a_too_distant_king():
+    # Bug fix: (4, 1) used to be reported at distance 5 by the pre-fix
+    # hex_distance_wrapped() (the stale, un-updated-since-Phase-314
+    # parity bug -- see that function's own Bug fix note); its real,
+    # confirmed distance from (0, 0) is 4, which is *inside* this
+    # function's own <=4 threshold, so it no longer exercises the
+    # "too distant" exclusion this test is about. (5, 1) is genuinely
+    # distance 5 (confirmed against hex_distance()'s own cube-coordinate
+    # math), so it still means what the comment below says.
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     priest = _priest_leader(50, 1, HexCoord(0, 0))
     state.add_leader(priest)
-    hero = LeaderState(9, 2, "Kwoth", HexCoord(2, 1))  # distance 3, but not a King
+    hero = LeaderState(9, 2, "Kwoth", HexCoord(2, 1))  # distance 2, but not a King
     state.add_leader(hero)
-    far_king = LeaderState(10, 2, "Far King", HexCoord(4, 1), is_king=True)  # distance 5 > 4
+    far_king = LeaderState(10, 2, "Far King", HexCoord(5, 1), is_king=True)  # distance 5 > 4
     state.add_leader(far_king)
 
     assert _impulse3_candidates(state, 1, priest=priest, orig_turn=0) == []
@@ -12922,13 +12935,20 @@ def test_describe_characters_report_impulse2_secondary_reveal_fires_within_two_h
 
 
 def test_describe_characters_report_impulse2_secondary_reveal_does_not_fire_beyond_two_hexes():
+    # Bug fix: (2, 1) used to be reported at distance 3 by the pre-fix
+    # hex_distance_wrapped() (the stale, un-updated-since-Phase-314
+    # parity bug -- see that function's own Bug fix note); its real,
+    # confirmed distance from (0, 0) is only 2, inside this test's own
+    # 2-hex threshold, so it no longer exercises the "beyond two hexes"
+    # exclusion this test is about. (3, 1) is genuinely distance 3
+    # (confirmed against hex_distance()'s own cube-coordinate math).
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
-    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(2, 1)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(3, 1)))
     priest = _priest_leader(50, 1, HexCoord(0, 0))
     state.add_leader(priest)
-    state.add_province(ProvinceState(HexCoord(2, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))  # distance 3
-    stranger = LeaderState(9, 2, "Kwoth", HexCoord(2, 1))
+    state.add_province(ProvinceState(HexCoord(3, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))  # distance 3
+    stranger = LeaderState(9, 2, "Kwoth", HexCoord(3, 1))
     stranger.alignment = Alignment.GOOD
     state.add_leader(stranger)
 
