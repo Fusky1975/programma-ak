@@ -104,6 +104,24 @@ def test_save_uploaded_move_file_rejects_a_filename_that_sanitizes_to_nothing(tm
     assert uploaded_move_files(tmp_path, 1, {1, 2, 99}) == {}
 
 
+def test_save_uploaded_move_file_removes_a_stale_upload_under_a_different_filename(tmp_path):
+    # Bug fix: a GM resubmitting a corrected move file keeps the
+    # filename their player exported -- not something the GM controls
+    # -- so a resubmission can easily land under a different filename
+    # than the first upload. This used to leave BOTH files on disk for
+    # the same kingdom_id, and uploaded_move_files()'s own sorted-
+    # iterdir dict build would then pick whichever name sorts
+    # alphabetically last, not the actually-most-recent upload.
+    save_uploaded_move_file(tmp_path, 1, "AK3__T1.K1", _REAL_MOVE_FILE, {1})
+
+    save_uploaded_move_file(tmp_path, 1, "ZZZ_resubmit.K1", _REAL_MOVE_FILE, {1})
+
+    directory = tmp_path / "moves" / "turn_1"
+    assert [p.name for p in directory.iterdir()] == ["ZZZ_resubmit.K1"]
+    files = uploaded_move_files(tmp_path, 1, {1})
+    assert files[1].name == "ZZZ_resubmit.K1"
+
+
 def test_remove_uploaded_move_file_removes_it(tmp_path):
     save_uploaded_move_file(tmp_path, 1, "AK3__T1.K1", _REAL_MOVE_FILE, {1})
 

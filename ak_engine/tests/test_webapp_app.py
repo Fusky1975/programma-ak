@@ -4312,6 +4312,30 @@ def test_leader_status_save_rejects_a_non_numeric_value(tmp_path):
     assert state.leaders[1].assassination_guild_attempts == 0
 
 
+def test_leader_status_save_rejects_a_negative_assassination_guild_attempts(tmp_path):
+    # Bug fix: a negative value here used to save successfully -- but
+    # turn/assassin_guild.py resolve_grandfather_of_assassins_attempt()
+    # computes `base_percent >> target.assassination_guild_attempts`,
+    # and Python raises ValueError("negative shift count") for a
+    # negative right-shift, crashing the whole run_turn() pipeline the
+    # next time this leader is targeted. Same shape as kingdom_status_
+    # save's own treasury_raid_attempts_this_turn/valhalla_visit_count
+    # guard.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/status",
+        data={"assassination_guild_attempts": "-1"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must not be negative" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[1].assassination_guild_attempts == 0
+
+
 def test_leader_status_save_rejects_a_non_numeric_valhalla_field(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

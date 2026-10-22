@@ -1862,6 +1862,16 @@ def create_app(games_root: Path | None = None) -> Flask:
             assassination_guild_attempts = int(attempts_raw) if attempts_raw else 0
         except ValueError:
             return _edit_error("Assassins Guild Attempts must be a whole number.")
+        # Bug fix: this is a right-shift count downstream (turn/
+        # assassin_guild.py resolve_grandfather_of_assassins_attempt()'s
+        # own `base_percent >> target.assassination_guild_attempts`) --
+        # a negative value raises ValueError ("negative shift count")
+        # the next time that leader is targeted, crashing the whole
+        # run_turn() pipeline (same shape as kingdom_status_save's own
+        # treasury_raid_attempts_this_turn/valhalla_visit_count guard
+        # above).
+        if assassination_guild_attempts < 0:
+            return _edit_error("Assassins Guild Attempts must not be negative.")
 
         exponent_raw = request.form.get("unpaid_blackmail_penalty_exponent", "").strip()
         try:

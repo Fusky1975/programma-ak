@@ -113,6 +113,26 @@ def save_uploaded_move_file(
         raise InvalidMoveFileError(
             f"this file's own .K{kingdom_id} suffix doesn't match any Kingdom in this game"
         )
+    # Bug fix: a GM resubmitting a corrected move file under a different
+    # filename than their first upload (the filename comes from the
+    # player's own exported file, not something the GM controls) used
+    # to leave the earlier file on disk too -- uploaded_move_files()'s
+    # own docstring assumes at most one upload per kingdom_id, but its
+    # sorted-iterdir dict build would then pick whichever filename sorts
+    # alphabetically last, not the most recent upload, and remove_
+    # uploaded_move_file() would only ever delete that one survivor,
+    # leaving the other to resurface as "the" upload on the next call.
+    # Any other on-disk file that still parses to this same kingdom_id
+    # is now superseded by this fresh upload and removed.
+    for other_path in directory.iterdir():
+        if other_path == path or not other_path.is_file():
+            continue
+        try:
+            other_kingdom_id = parse_k1_moves_file(other_path).kingdom_id
+        except (K1ParseError, ValueError, IndexError):
+            continue
+        if other_kingdom_id == kingdom_id:
+            other_path.unlink(missing_ok=True)
     return kingdom_id
 
 
