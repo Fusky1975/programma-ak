@@ -172,6 +172,17 @@ def test_race_name_plural_regular_and_irregular():
     assert _race_name_plural(Race.DWARVEN) == "Dwarves"
 
 
+def test_race_name_plural_does_not_crash_for_a_race_with_no_race_name_entry():
+    # Bug fix (crash): RACE_NAME has no entry for Drow/Lizardman/Goblin
+    # (no sourced singular noun) -- a GM can set a province's race to
+    # any of these via the web editor, and _race_name_plural() used to
+    # crash rendering that province's map cell with a bare RACE_NAME[]
+    # KeyError. Now uses the already-complete, sourced RACE_PLURAL_NAME.
+    assert _race_name_plural(Race.DROW) == "Drow Elves"
+    assert _race_name_plural(Race.LIZARDMAN) == "Lizardmen"
+    assert _race_name_plural(Race.GOBLIN) == "Goblins"
+
+
 # -- render_cell() / render_ascii_map() -- full byte-for-byte band checks --
 
 

@@ -696,7 +696,7 @@ from collections.abc import Callable
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.game_state import GameState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain, province_code
-from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, Race
+from ak_engine.models.race import HUMANOID_RACES, RACE_NAME, RACE_PLURAL_NAME, Race
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 
 CELL_WIDTH = 16
@@ -779,17 +779,35 @@ STRIDE8_CELL_STRIDE = STRIDE8_CELL_WIDTH + 1
 STRIDE8_MAX_PROVINCE_NAME_LENGTH = STRIDE8_CELL_WIDTH
 STRIDE8_PROVINCE_NAME_TRUNCATION_TRIGGER = STRIDE8_MAX_PROVINCE_NAME_LENGTH + 1
 
+class _TerrainSymbolTable(dict):
+    """Falls back to ``"?"`` for a terrain with no real symbol, instead
+    of raising ``KeyError`` on ``[...]``.
+
+    Bug fix (defense-in-depth): ``Terrain.NO_TERRAIN`` is documented
+    just below as never appearing on a real map cell, so this gap is
+    not known to be reachable today -- but every renderer in this file
+    indexes this dict unconditionally with no guard, and the same class
+    of bug (a deliberately incomplete enum-keyed table read with a bare
+    ``[...]``) was confirmed reachable via GM edit for several sibling
+    tables elsewhere this session. "?" is an honest "unknown terrain"
+    placeholder, not a guessed real symbol.
+    """
+
+    def __missing__(self, key):
+        return "?"
+
+
 # `_` Plains, `+` Forest, `&` Jungle, `^` Mountain, `.` Desert, `~` Sea --
 # see this module's own docstring for the full sourcing. `NO_TERRAIN`
 # never appears on a real map cell.
-TERRAIN_SYMBOL: dict[Terrain, str] = {
+TERRAIN_SYMBOL: dict[Terrain, str] = _TerrainSymbolTable({
     Terrain.PLAINS: "_",
     Terrain.FOREST: "+",
     Terrain.JUNGLE: "&",
     Terrain.MTNS: "^",
     Terrain.DESERT: ".",
     Terrain.SEA: "~",
-}
+})
 
 # Confirmed directly against real map cells this phase (see module
 # docstring): single-word Army Types abbreviate to their own first two
@@ -834,6 +852,15 @@ _RACE_NAME_PLURAL_OVERRIDE: dict[Race, str] = {
 
 
 def _race_name_plural(race: Race) -> str:
+    # Bug fix: for a race with no entry in RACE_NAME (Drow/Lizardman/
+    # Goblin), RACE_NAME now falls back to a title-cased identifier
+    # rather than crashing (see that dict's own fix), but "+s"-ing that
+    # fallback would read oddly ("Lizardmans"). models/race.py's own
+    # RACE_PLURAL_NAME is already complete and sourced for all 18 real
+    # races, including these 3 ("Drow Elves"/"Lizardmen"/"Goblins") --
+    # prefer it outright over this function's own override+"s" guess.
+    if race in RACE_PLURAL_NAME:
+        return RACE_PLURAL_NAME[race]
     return _RACE_NAME_PLURAL_OVERRIDE.get(race, f"{RACE_NAME[race]}s")
 
 

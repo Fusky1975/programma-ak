@@ -236,6 +236,45 @@ def test_rejects_an_unsupported_format_revision(tmp_path):
         parse_xk_world(bad)
 
 
+def _corrupt_byte(tmp_path, offset: int, value: int):
+    data = bytearray((FIXTURE_DIR / "XK3__T1.K0").read_bytes())
+    data[offset] = value
+    corrupt = tmp_path / "XK3__T1.K0"
+    corrupt.write_bytes(bytes(data))
+    return corrupt
+
+
+def test_raises_xk_parse_error_on_an_out_of_range_temper_byte_instead_of_crashing(tmp_path):
+    # Bug fix (crash, defense-in-depth): every _read_* function
+    # constructed Temper/Terrain/Race/Monster/MonsterEngagementState/
+    # FeatureType/Treasure/DiplomaticRelation directly from a raw byte
+    # with no validation -- a single out-of-range byte anywhere these
+    # fields live raised a bare, unhandled ValueError/IndexError instead
+    # of this module's own XKParseError. Not currently reachable
+    # (parse_xk_world has no production caller today), but closed the
+    # same way this module's own sentinel()/bytes_() already do.
+    corrupt = _corrupt_byte(tmp_path, 1556, 99)  # leader[0].temper
+
+    with pytest.raises(XKParseError, match="Temper"):
+        parse_xk_world(corrupt)
+
+
+def test_raises_xk_parse_error_on_an_out_of_range_alignment_byte_instead_of_crashing(tmp_path):
+    # Same bug, the tuple-index (not enum-constructor) variant --
+    # ALIGNMENT_BY_ORDINAL[alignment] used to raise a bare IndexError.
+    corrupt = _corrupt_byte(tmp_path, 1557, 250)  # leader[0].alignment
+
+    with pytest.raises(XKParseError, match="index"):
+        parse_xk_world(corrupt)
+
+
+def test_raises_xk_parse_error_on_an_out_of_range_province_terrain_byte_instead_of_crashing(tmp_path):
+    corrupt = _corrupt_byte(tmp_path, 2362, 200)  # province.terrain
+
+    with pytest.raises(XKParseError, match="Terrain"):
+        parse_xk_world(corrupt)
+
+
 @pytest.mark.parametrize("fixture", ALL_FIXTURES)
 def test_name_table_starts_at_the_confirmed_offset(fixture):
     data = fixture.read_bytes()

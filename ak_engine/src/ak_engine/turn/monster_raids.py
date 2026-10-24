@@ -321,7 +321,23 @@ def resolve_province_raids(
 
     events: list[RaidEvent] = []
     for feature in sorted(state.features_at(province.coord), key=lambda f: f.feature_id):
-        if feature.guardian_monster is None or feature.looted or feature.magically_hidden:
+        # Bug fix (crash): `Monster.NOMONSTER` (the "no monster" sentinel)
+        # is a real, GM-selectable value of `guardian_monster` distinct
+        # from `None` -- the webapp's own Feature editor offers it as a
+        # literal dropdown option -- but `MONSTER_RUNTIME_PROFILE` has no
+        # entry for it by design (models/monster.py's own docstring).
+        # This `is None` check alone let NOMONSTER through to the bare
+        # dict index below, crashing this function with an unhandled
+        # KeyError the instant a GM set a Feature's guardian to "No
+        # monster" + "Emboldened" -- an entirely ordinary editor action
+        # -- on the very next turn's revenue processing, called
+        # unconditionally for every kingdom-owned province.
+        if (
+            feature.guardian_monster is None
+            or feature.guardian_monster is Monster.NOMONSTER
+            or feature.looted
+            or feature.magically_hidden
+        ):
             continue
         if feature.guardian_state is not MonsterEngagementState.BOLD:
             continue

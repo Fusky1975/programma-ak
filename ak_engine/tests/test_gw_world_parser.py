@@ -495,6 +495,59 @@ def test_raises_gw_parse_error_on_unrecognized_race_ordinal(tmp_path: Path):
         parse_gw_armies(bad_race)
 
 
+def _corrupt_first_province_header(tmp_path: Path, replace: str, with_: str) -> Path:
+    lines = FIXTURE.read_text(encoding="utf-8").splitlines()
+    header_idx = next(i for i, line in enumerate(lines) if line.strip() == replace)
+    lines[header_idx] = with_
+    broken = tmp_path / "GW3__Broken"
+    broken.write_text("\n".join(lines), encoding="utf-8")
+    return broken
+
+
+def test_parse_gw_world_raises_cleanly_on_an_unrecognized_terrain_ordinal(tmp_path: Path):
+    # Bug fix (crash, defense-in-depth): unlike every other record
+    # parser in this file, parse_gw_world() constructed Terrain/Race
+    # directly from the raw ordinal with no membership check -- an
+    # unhandled ValueError instead of this module's own GWParseError.
+    # Not currently reachable (parse_gw_world has no production caller
+    # today), but fixed the same way every sibling parser already is.
+    broken = _corrupt_first_province_header(tmp_path, "4 3 0 4 0 6", "4 99 0 4 0 6")
+
+    with pytest.raises(K1ParseError, match="Terrain"):
+        parse_gw_world(broken)
+
+
+def test_parse_gw_world_raises_cleanly_on_an_unrecognized_race_ordinal(tmp_path: Path):
+    broken = _corrupt_first_province_header(tmp_path, "4 3 0 4 0 6", "4 3 0 99 0 6")
+
+    with pytest.raises(K1ParseError, match="Race"):
+        parse_gw_world(broken)
+
+
+def test_parse_recruit_types_rejects_a_multi_dash_token_instead_of_crashing():
+    # Bug fix (crash): same lstrip("-").isdigit() flaw as the governor-id
+    # check above, in the sibling recruiting-types line parser.
+    from ak_engine.parser.gw_world import _parse_recruit_types
+
+    with pytest.raises(K1ParseError, match="four integers"):
+        _parse_recruit_types("--3 0 15 0", 10)
+
+
+def test_parse_gw_world_governor_line_rejects_a_multi_dash_token_instead_of_crashing(tmp_path: Path):
+    # Bug fix (crash): "--5".lstrip("-").isdigit() is True (strips to
+    # "5"), but int("--5") itself still raises ValueError -- the old
+    # guard didn't actually verify "is this a valid int() literal".
+    lines = FIXTURE.read_text(encoding="utf-8").splitlines()
+    header_idx = next(i for i, line in enumerate(lines) if line.strip() == "4 3 0 4 0 6")
+    owner_idx = header_idx + 2
+    lines[owner_idx] = "--5"
+    broken = tmp_path / "GW3__Broken"
+    broken.write_text("\n".join(lines), encoding="utf-8")
+
+    with pytest.raises(K1ParseError, match="governor"):
+        parse_gw_world(broken)
+
+
 # -- Phase 341: parse_gw_features() (Block A) ---------------------------
 
 

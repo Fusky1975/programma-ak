@@ -120,8 +120,38 @@ class Race(Enum):
 
 HUMANOID_RACES = frozenset({Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH})
 
+
+class _CuratedNameTable(dict):
+    """A ``dict`` that falls back to a title-cased identifier for a key
+    with no curated entry, instead of raising ``KeyError`` on ``[...]``.
+
+    Bug fix (crash): ``RACE_NAME`` deliberately excludes Drow/Lizardman/
+    Goblin (no sourced singular noun survives for them -- see this
+    module's own docstring) -- a correct, honest gap when every caller
+    reads it with ``.get()``, but several real callers across report/
+    turn_report.py, report/ascii_map.py and models/army_naming.py use
+    bare ``RACE_NAME[race]`` instead, and the webapp's own province/
+    leader editors let a GM set a ``Race`` field to any of these 3
+    directly (``race=list(Race)``, no filtering) -- an entirely ordinary
+    editor action. The very next turn's report generation then crashed
+    with an unhandled ``KeyError``. ``__missing__`` only ever runs for a
+    key this dict's own author never curated -- every real, sourced
+    entry below is returned completely unchanged -- and the fallback
+    itself reuses this project's own already-established, tested
+    convention for exactly this situation: ``webapp/app.py``'s
+    ``display_name()`` filter already falls back to
+    ``value.name.replace("_", " ").title()`` for an uncurated enum
+    member (confirmed by its own test,
+    ``test_display_name_falls_back_to_the_bare_identifier_when_uncurated``) --
+    not a new guess, the same one this project already accepted.
+    """
+
+    def __missing__(self, key):
+        return key.name.replace("_", " ").title()
+
+
 # CTBOTH.PAS `rname`, verbatim, positional with `Race`'s own ordinals above.
-RACE_NAME: dict[Race, str] = {
+RACE_NAME: dict[Race, str] = _CuratedNameTable({
     Race.HUMAN: "Human",
     Race.ELVEN: "Elf",
     Race.DWARVEN: "Dwarf",
@@ -137,7 +167,7 @@ RACE_NAME: dict[Race, str] = {
     Race.SAURIAN: "Dinosaur",
     Race.VAMPISH: "Vampire",
     Race.ROHAN: "Rohan",
-}
+})
 
 # CTBOTH.PAS `radj`, verbatim, positional with `Race`'s own ordinals above --
 # confirmed to be the real "$R: Race name" prose marker (see module docstring).

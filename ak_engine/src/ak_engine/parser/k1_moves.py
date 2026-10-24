@@ -103,6 +103,9 @@ def _find_moves_for_line(lines: list[str], path: Path) -> int:
     raise K1ParseError(f"{path.name}: no 'Moves for ... Kingdom (...):' line found")
 
 
+_EXPECTED_HEADER_FIELDS = 7  # KingdomMoveHeader.raw_fields' own 7 named properties, raw_fields[0..6]
+
+
 def _parse_header_line(lines: list[str], index: int, path: Path) -> KingdomMoveHeader:
     """Parse the Kingdom-header line.
 
@@ -126,6 +129,22 @@ def _parse_header_line(lines: list[str], index: int, path: Path) -> KingdomMoveH
         raw_fields = [int(tok) for tok in tokens[1:]]
     except ValueError as exc:
         raise K1ParseError("kingdom header line contains a non-integer field", line_number=index, line=line) from exc
+    # Bug fix (crash): unlike the skill-values line right below this one
+    # (_parse_skill_line(), which already checks len(raw_values) !=
+    # _EXPECTED_SKILL_VALUES), this had no length check at all --
+    # KingdomMoveHeader.raw_fields' own 7 named properties
+    # (kingdom_number/interp_vers/allreq/brreq/kacct/kpmode/kprevgold/
+    # ksendmeth) all bare-index it, so a truncated header line (fewer
+    # than 7 integers -- a plausible transcription error, not even a
+    # malicious file) parsed cleanly here and then crashed turn/
+    # emperor_election.py with an unhandled IndexError during ordinary
+    # Emperor Election processing, every turn, for every kingdom.
+    if len(raw_fields) != _EXPECTED_HEADER_FIELDS:
+        raise K1ParseError(
+            f"expected {_EXPECTED_HEADER_FIELDS} integers on the kingdom header line, got {len(raw_fields)}",
+            line_number=index,
+            line=line,
+        )
     return KingdomMoveHeader(raw_fields=raw_fields, sex=sex)
 
 

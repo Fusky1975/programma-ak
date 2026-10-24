@@ -198,6 +198,25 @@ def test_resolve_province_raids_skips_looted_hidden_and_non_bold_features():
     assert events == []
 
 
+def test_resolve_province_raids_skips_a_nomonster_bold_guardian_instead_of_crashing():
+    # Bug fix (crash): Monster.NOMONSTER (the "no monster" sentinel) is a
+    # real, GM-selectable value of guardian_monster distinct from None --
+    # the webapp's own Feature editor offers it as a literal dropdown
+    # option -- but MONSTER_RUNTIME_PROFILE has no entry for it by
+    # design. The old `is None`-only guard let it through to a bare
+    # dict index, crashing with an unhandled KeyError the instant a GM
+    # set a Feature's guardian to "No monster" + "Emboldened".
+    state = _state_with_owned_province()
+    province = state.provinces[HOME]
+    state.add_feature(_feature(feature_id=1, guardian_monster=Monster.NOMONSTER, guardian_state=MonsterEngagementState.BOLD))
+
+    income, thunder_used, events = resolve_province_raids(state, 1, province, 100, None, False, ScriptedRandom([]))
+
+    assert income == 100
+    assert thunder_used is False
+    assert events == []
+
+
 def test_resolve_province_raids_activity_check_cowardly_25_percent_boundary():
     state = _state_with_owned_province()
     province = state.provinces[HOME]

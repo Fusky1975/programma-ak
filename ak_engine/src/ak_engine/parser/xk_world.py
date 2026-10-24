@@ -1286,6 +1286,39 @@ class _Reader:
             raise XKParseError(f"{name}: expected {expected:#x}, got {got:#x}", byte_offset=start)
 
 
+def _safe_enum(cls, value: int, name: str, byte_offset: int):
+    """``cls(value)``, or ``XKParseError`` instead of a bare ``ValueError``.
+
+    Bug fix (crash, defense-in-depth): every ``_read_*`` function below
+    constructs a `Temper`/`Terrain`/`Race`/`Monster`/
+    `MonsterEngagementState`/`FeatureType`/`Treasure`/
+    `DiplomaticRelation` directly from a raw byte with no validation --
+    unlike this module's own stated contract ("Raises XKParseError on
+    anything that doesn't match the confirmed shape"), a single
+    out-of-range byte anywhere these fields live raised a bare, unhandled
+    `ValueError`/`IndexError` instead. Not currently reachable
+    (``parse_xk_world`` has no production caller anywhere in this
+    codebase, only tests), but worth closing the same way this module's
+    own `sentinel()`/`bytes_()` already turn a malformed file into a
+    clean, catchable error, before any future feature accepts an
+    untrusted ``.xk`` file.
+    """
+
+    try:
+        return cls(value)
+    except ValueError as exc:
+        raise XKParseError(f"{name}: unrecognized {cls.__name__} ordinal {value}", byte_offset=byte_offset) from exc
+
+
+def _safe_index(sequence, index: int, name: str, byte_offset: int):
+    """``sequence[index]``, or ``XKParseError`` instead of a bare ``IndexError``."""
+
+    try:
+        return sequence[index]
+    except IndexError as exc:
+        raise XKParseError(f"{name}: index {index} out of range", byte_offset=byte_offset) from exc
+
+
 @dataclass(slots=True)
 class XKHeader:
     format_revision: int
@@ -1834,8 +1867,8 @@ def _read_leader_card(r: _Reader) -> XKLeaderCard:
         lfdisc=lfdisc,
         ldiscp=ldiscp,
         lwmsp=lwmsp,
-        temper=Temper(temper),
-        alignment=ALIGNMENT_BY_ORDINAL[alignment],
+        temper=_safe_enum(Temper, temper, f"leader[{leader_id}].temper", r.offset),
+        alignment=_safe_index(ALIGNMENT_BY_ORDINAL, alignment, f"leader[{leader_id}].alignment", r.offset),
         sex_flags=sex_flags,
         actions=actions,
         objects=objects,
@@ -1850,8 +1883,8 @@ def _read_province(r: _Reader) -> XKProvinceRecord:
     y = r.u8("province.y")
     key = f"province[{x},{y}]"
     name = r.pstring(key + ".name")
-    terrain = Terrain(r.u8(key + ".terrain"))
-    race = Race(r.u8(key + ".race"))
+    terrain = _safe_enum(Terrain, r.u8(key + ".terrain"), key + ".terrain", r.offset)
+    race = _safe_enum(Race, r.u8(key + ".race"), key + ".race", r.offset)
     effects_bitmask = r.s16(key + ".effects_bitmask")
     exploration_percent = r.u8(key + ".exploration")
     marker = r.u8(key + ".ownership_marker")
@@ -1899,9 +1932,11 @@ def _read_feature(r: _Reader) -> XKFeatureRecord:
         feature_id=feature_id,
         coord=HexCoord(x, y),
         unknown_962a=unknown_962a,
-        monster=Monster(monster),
-        engagement_state=MonsterEngagementState(engagement_state),
-        feature_type=FeatureType(feature_type),
+        monster=_safe_enum(Monster, monster, f"feature[{feature_id}].monster", r.offset),
+        engagement_state=_safe_enum(
+            MonsterEngagementState, engagement_state, f"feature[{feature_id}].engagement_state", r.offset
+        ),
+        feature_type=_safe_enum(FeatureType, feature_type, f"feature[{feature_id}].feature_type", r.offset),
     )
 
 
@@ -1915,7 +1950,7 @@ def _read_treasure(r: _Reader) -> XKTreasureRecord:
     name = r.pstring(f"treasure[{feature_id}].name")
     return XKTreasureRecord(
         feature_id=feature_id,
-        treasure=Treasure(treasure_ordinal),
+        treasure=_safe_enum(Treasure, treasure_ordinal, f"treasure[{feature_id}].type", r.offset),
         trcharges=trcharges,
         trowner=trowner,
         name=name,
@@ -1923,10 +1958,12 @@ def _read_treasure(r: _Reader) -> XKTreasureRecord:
 
 
 def _read_army(r: _Reader, army_index: int) -> XKArmyRecord:
-    race = Race(r.u8(f"army[{army_index}].race"))
+    race = _safe_enum(Race, r.u8(f"army[{army_index}].race"), f"army[{army_index}].race", r.offset)
     army_type = MOD_PAT_ORDINAL_TO_ARMY_TYPE.get(r.u8(f"army[{army_index}].type"))
     quality_or_mask = r.u8(f"army[{army_index}].quality_or_mask")
-    status = MonsterEngagementState(r.u8(f"army[{army_index}].status"))
+    status = _safe_enum(
+        MonsterEngagementState, r.u8(f"army[{army_index}].status"), f"army[{army_index}].status", r.offset
+    )
     marker = r.u8(f"army[{army_index}].x_or_hidden")
     coord: HexCoord | None = None
     commanded_by_leader_id: int | None = None
@@ -1935,7 +1972,9 @@ def _read_army(r: _Reader, army_index: int) -> XKArmyRecord:
         x = marker
         y = r.u8(f"army[{army_index}].y")
         leader = r.u8(f"army[{army_index}].leader")
-        detail_status = MonsterEngagementState(r.u8(f"army[{army_index}].detail_status"))
+        detail_status = _safe_enum(
+            MonsterEngagementState, r.u8(f"army[{army_index}].detail_status"), f"army[{army_index}].detail_status", r.offset
+        )
         coord = HexCoord(x, y)
         commanded_by_leader_id = None if leader == _SENTINEL_NO_OWNER else leader
     return XKArmyRecord(
@@ -1987,7 +2026,10 @@ def parse_xk_world(path: Path) -> XKWorld:
         partial_leader_cards.append(XKPartialLeaderCard(leader_id=leader_id, coord=HexCoord(x, y)))
     r.sentinel("partial_leaders.end", _SENTINEL_END)
 
-    leader_races = [Race(r.u8(f"leader_races[{i}]")) for i in range(globals_.leader_capacity + 1)]
+    leader_races = [
+        _safe_enum(Race, r.u8(f"leader_races[{i}]"), f"leader_races[{i}]", r.offset)
+        for i in range(globals_.leader_capacity + 1)
+    ]
     leader_states = [r.u8(f"leader_states[{i}]") for i in range(globals_.leader_capacity + 1)]
 
     king_sex = tuple(
@@ -2031,8 +2073,10 @@ def parse_xk_world(path: Path) -> XKWorld:
     player_tail: dict[str, bytes] = {}
     for field_name, size in XK_PLAYER_TAIL_FIELDS_BEFORE_RELATIONS:
         player_tail[field_name] = r.bytes_(field_name, size)
+    _relations_bytes = r.bytes_("relations_D1D4", 12)
     diplomatic_relations = tuple(
-        DiplomaticRelation(value) for value in r.bytes_("relations_D1D4", 12)
+        _safe_enum(DiplomaticRelation, value, f"relations_D1D4[{i}]", r.offset)
+        for i, value in enumerate(_relations_bytes)
     )
     for field_name, size in XK_PLAYER_TAIL_FIELDS_AFTER_RELATIONS:
         player_tail[field_name] = r.bytes_(field_name, size)

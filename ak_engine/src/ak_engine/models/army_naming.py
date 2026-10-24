@@ -104,9 +104,31 @@ from __future__ import annotations
 from ak_engine.models.army_type import ARMY_TYPE_DESIGNATION, ArmyType
 from ak_engine.models.race import Race
 
+class _ShortTagTable(dict):
+    """A ``dict`` that falls back to ``""`` (no short tag) for a key
+    with no entry, instead of raising ``KeyError`` on ``[...]``.
+
+    Bug fix (crash): the source array this table transcribes has no
+    slot at all for Drow/Lizardman/Goblin (``Race`` ordinals 15-17 --
+    the same "off-by-one, no `er3`-style extension slot" gap this
+    module's own docstring already documents for Rohan, ordinal 14,
+    whose own real entry is already "" for exactly this reason). A
+    bare ``RACE_SHORT_TAG[race]`` read in ``make_army_name()`` below
+    used to raise an unhandled ``KeyError`` for these 3 -- reachable
+    the instant a GM set a province's race to one of them via the web
+    editor (an entirely ordinary action) and a mercenary army then
+    wandered through/into it. "" matches this table's own documented
+    convention for a race with no real source slot (as Rohan's own
+    real entry already shows), not a new guess.
+    """
+
+    def __missing__(self, key):
+        return ""
+
+
 # CTBOTH.PAS `rab3` (line 588), verbatim by exact array position -- see
 # module docstring for the confirmed off-by-one oddity affecting Rohan.
-RACE_SHORT_TAG: dict[Race, str] = {
+RACE_SHORT_TAG: dict[Race, str] = _ShortTagTable({
     Race.HUMAN: "",
     Race.ELVEN: "Elf",
     Race.DWARVEN: "Dwf",
@@ -122,7 +144,7 @@ RACE_SHORT_TAG: dict[Race, str] = {
     Race.SAURIAN: "",
     Race.VAMPISH: "",
     Race.ROHAN: "",
-}
+})
 
 
 def ordinal_suffix(n: int) -> str:

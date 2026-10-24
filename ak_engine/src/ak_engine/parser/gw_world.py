@@ -1486,9 +1486,43 @@ def parse_gw_world(path: Path) -> list[GWProvinceRecord]:
             int(exploitation_raw),
             int(alt_terrain_raw),
         )
+        # Bug fix (crash, defense-in-depth): unlike every other record
+        # parser in this file (parse_gw_leaders/parse_gw_armies/parse_
+        # gw_features/etc.), this one constructed Terrain/Race directly
+        # from the raw ordinal with no membership check -- an unhandled
+        # ValueError instead of this module's own GWParseError for a
+        # malformed/corrupted province-header line. Not currently
+        # reachable (parse_gw_world has no production caller anywhere
+        # in this codebase, only tests), but worth closing the same way
+        # every sibling parser already does, before any future feature
+        # accepts an untrusted .gw file.
+        if terrain_ordinal not in {member.value for member in Terrain}:
+            raise GWParseError(
+                f"unrecognized Terrain ordinal {terrain_ordinal} on a province header line",
+                line_number=i + 1,
+                line=lines[i],
+            )
+        if race_ordinal not in {member.value for member in Race}:
+            raise GWParseError(
+                f"unrecognized Race ordinal {race_ordinal} on a province header line",
+                line_number=i + 1,
+                line=lines[i],
+            )
+        if alt_terrain_ordinal not in {member.value for member in Terrain}:
+            raise GWParseError(
+                f"unrecognized alternate Terrain ordinal {alt_terrain_ordinal} on a province header line",
+                line_number=i + 1,
+                line=lines[i],
+            )
         recruit_type_1, recruit_type_2 = _parse_recruit_types(lines[line3_idx], line3_idx)
         governor_raw = lines[owner_idx].strip()
-        if not governor_raw.lstrip("-").isdigit():
+        # Bug fix (crash): `"--5".lstrip("-")` is `"5"`, which `.isdigit()`
+        # passes, but `int("--5")` itself still raises -- this guard
+        # didn't actually verify "is this a valid int() literal", just
+        # "does stripping every leading dash leave only digits". Replaced
+        # with `_all_int()`, the same real int()-based check every other
+        # token-validation site in this file already uses.
+        if not _all_int([governor_raw]):
             raise GWParseError(
                 "expected an integer governor id after the province record",
                 line_number=owner_idx + 1,
@@ -1522,7 +1556,11 @@ def _parse_recruit_types(line3: str, line_number: int) -> tuple[ArmyType | None,
     """
 
     tokens = line3.split()
-    if len(tokens) != 4 or not all(t.lstrip("-").isdigit() for t in tokens):
+    # Bug fix (crash): same flaw as parse_gw_world's own governor-id
+    # check -- `t.lstrip("-").isdigit()` is fooled by a multi-dash token
+    # like "--3" (strips to "3", passes .isdigit(), but int("--3") still
+    # raises) -- replaced with `_all_int()`, the real int()-based check.
+    if len(tokens) != 4 or not _all_int(tokens):
         raise GWParseError(
             "expected four integers on the recruiting-types line "
             '("<type1_ord> 0  <type2_ord> 0")',

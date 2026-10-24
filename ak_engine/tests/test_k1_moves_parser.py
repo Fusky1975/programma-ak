@@ -382,6 +382,25 @@ def test_malformed_header_multichar_sex_raises(tmp_path: Path) -> None:
         parse_k1_moves_file(broken_file)
 
 
+def test_truncated_header_line_raises_instead_of_crashing_emperor_election(tmp_path: Path) -> None:
+    # Bug fix (crash): unlike the skill-values line right below the
+    # header line (already validated), the header line itself had no
+    # length check at all -- KingdomMoveHeader.raw_fields' own 7 named
+    # properties all bare-index it, so a truncated header line (a
+    # plausible transcription error, not even a malicious file) used to
+    # parse cleanly here and crash turn/emperor_election.py with an
+    # unhandled IndexError during ordinary Emperor Election processing.
+    original = (GAME_DATA_DIR / "AK3__T1.K1").read_text(encoding="utf-8")
+    lines = original.splitlines()
+    header_line_index = next(i for i, line in enumerate(lines) if line.strip().startswith("M 27"))
+    lines[header_line_index] = "M 27 1 0"  # only 3 integer fields, needs 7
+    broken_file = tmp_path / "AK3__Broken.K1"
+    broken_file.write_text("\n".join(lines), encoding="utf-8")
+
+    with pytest.raises(K1ParseError, match="expected 7 integers"):
+        parse_k1_moves_file(broken_file)
+
+
 def test_malformed_skill_line_raises(tmp_path: Path) -> None:
     original = (GAME_DATA_DIR / "AK3__T1.K1").read_text(encoding="utf-8")
     lines = original.splitlines()

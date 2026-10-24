@@ -15844,6 +15844,34 @@ def test_record_spell_world_events_tornado_notifies_a_victim_kingdom():
     assert notices[0].endswith("Tornadoes sucked up the 20th Legion in Border Fort and destroyed them.")
 
 
+def test_record_spell_world_events_tornado_destroying_an_artillery_army_does_not_crash():
+    # Bug fix (crash): ARMY_TYPE_NAME deliberately excludes ArmyType.
+    # ARTILLERY/D_TURTLE (no confirmed full atname form) -- a correct
+    # gap when read via .get(), but this function's own victim-notice
+    # rendering used a bare ARMY_TYPE_NAME[army.army_type]. A GM can set
+    # an army's type to ARTILLERY directly via the web editor (an
+    # entirely ordinary action, no filtering on that form); Tornado
+    # destroying that army then crashed this function -- called
+    # unconditionally once per turn from orchestrator.py, before any
+    # per-kingdom report, so this crashed the whole turn for everyone.
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    state.add_kingdom(KingdomState(9, "Victimia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
+    request = CastRequest(spell=Spell.TORNADO, target=encode_hex_number(battle_coord, board_width))
+    destroyed = [ArmyState(20, 9, ArmyType.ARTILLERY, Quality.AVERAGE, battle_coord)]
+    result = CastExecutionResult(request, applied=True, tornado_destroyed=destroyed)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    notices = state.tornado_victim_notices_by_kingdom[9]
+    assert len(notices) == 1
+    assert "20th Artillery" in notices[0]
+
+
 def test_record_spell_world_events_tornado_excludes_the_casters_own_kingdom():
     # The caster's own kingdom (leader_id=1 -> kingdom_id=1, see
     # _gir_state()) already sees every destroyed army via their own
