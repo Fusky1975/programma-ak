@@ -1399,6 +1399,17 @@ def test_execute_challenge_cast_fireball_target_kingdom_without_asbestos_clothin
 
 
 def test_execute_challenge_cast_words_of_healing_heals_the_caster():
+    # Bug fix: the caster never takes any damage before Heal resolves in
+    # this plan (CAST(HEAL) is the first tactic), so `caster_combatant.
+    # hit_points == CHARACTER_HIT_POINTS` held trivially either way --
+    # a dropped `words_of_healing_heal()` call would leave the caster at
+    # exactly the same already-full value. Verified concretely: with
+    # the real `words_of_healing_heal()` call deleted from challenge_
+    # execution.py's own Spell.HEAL branch, this assertion still passed.
+    # Fixed to assert the real dispatch instead: words_of_healing_heal()
+    # (already unit-tested on its own in test_encounter.py) must be
+    # called once, with the real caster combatant that goes on to fight
+    # the Melee duel, and the real CHARACTER_HIT_POINTS ceiling.
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.WHITE, 5, 9)))
     state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 9, 9)))
@@ -1406,12 +1417,14 @@ def test_execute_challenge_cast_words_of_healing_heals_the_caster():
 
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.challenge_execution.resolve_melee_duel"
-    ) as mock_melee:
+    ) as mock_melee, patch("ak_engine.turn.challenge_execution.words_of_healing_heal") as mock_heal:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
         execute_challenge(state, 1, request, rng=ScriptedRandom([]))
 
-    caster_combatant = mock_melee.call_args[0][0]
-    assert caster_combatant.hit_points == CHARACTER_HIT_POINTS
+    mock_heal.assert_called_once()
+    healed_combatant, max_hit_points = mock_heal.call_args[0]
+    assert healed_combatant is mock_melee.call_args[0][0]  # the real caster, not a disconnected object
+    assert max_hit_points == CHARACTER_HIT_POINTS
 
 
 def test_execute_challenge_cast_words_of_healing_level_gate_blocks_low_white_skill():
