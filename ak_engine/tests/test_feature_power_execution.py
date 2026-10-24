@@ -461,17 +461,28 @@ def test_new_sex_toggles():
 
 
 def test_new_temp_already_matched_is_a_real_no_op():
-    feature_type, feature_id = FeatureType.PYRAMID, 3
+    # Bug fix: (FeatureType.PYRAMID, feature_id=3) at coord (0, 0) does
+    # not actually derive to Power.NEW_TEMP at all (resolve_power()
+    # gives Power.PNONE for this combo) -- derive_feature_event() is
+    # deterministic with no state involved, so the `if event.power is
+    # Power.NEW_TEMP:` branch below was unreachable on every run, not
+    # just by chance; every real assertion lived inside it, so this
+    # test executed zero assertions while still reporting as passed.
+    # (FeatureType.TOMB, feature_id=34) at coord (2, 0) (found by
+    # search) is a real combo that derives Power.NEW_TEMP with a
+    # PC_NONE condition (no Scout/alignment/etc. gate in the way of
+    # reaching the already_matched check this test is actually about).
+    feature_type, feature_id = FeatureType.TOMB, 34
     from ak_engine.worldgen.internal_magical_locations import power_temper_parameter
 
     temper = power_temper_parameter(feature_type, feature_id)
     state = _state_with_leader(temper=temper)
-    feature = Feature(feature_id=feature_id, coord=HexCoord(0, 0), kind=feature_type)
+    feature = Feature(feature_id=feature_id, coord=HexCoord(2, 0), kind=feature_type)
     event = derive_feature_event(feature)
+    assert event.power is Power.NEW_TEMP
     result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
-    if event.power is Power.NEW_TEMP:
-        assert result.already_matched is True
-        assert state.leaders[LEADER_ID].temper is temper
+    assert result.already_matched is True
+    assert state.leaders[LEADER_ID].temper is temper
 
 
 def test_up_skill_succeeds_and_increments_when_roll_favors_it():

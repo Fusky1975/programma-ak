@@ -165,28 +165,50 @@ def test_accept_wander_direction_no_reference_independent_province_20_percent():
 
 
 def test_accept_wander_direction_reference_closer_always_accepts():
+    # Bug fix: direction=2 steps purely horizontally (current and
+    # neighbor both stay on y=2), so hex_distance_wrapped()'s own
+    # per-row parity bit is identical on both sides of every distance
+    # comparison this test makes and cancels out algebraically -- the
+    # same (now-fixed) row-parity bug a previous round found in that
+    # function would have produced byte-identical results here either
+    # way, so this test could never catch a regression of that fix.
+    # direction=3 steps diagonally (current (1,2) -> neighbor (1,3)),
+    # putting them on different rows, and (0,3) is a real coordinate
+    # (found by search) where the two conventions actually disagree:
+    # the real convention says (1,3) is strictly closer to (0,3) than
+    # (1,2) is (distances 1 vs 2), while the old, buggy convention saw
+    # them as tied (1 vs 1) -- not closer -- and would have fallen
+    # through to the third roll instead of accepting immediately here.
     state = build_state()
     attractor_id = 42
-    state.add_leader(LeaderState(attractor_id, None, "Attractor", HexCoord(3, 2)))
-    state.add_province(_province(HexCoord(2, 2), owner=None))
-    # (2,2) is closer to (3,2) than (1,2) is -- accept regardless of the third roll.
+    state.add_leader(LeaderState(attractor_id, None, "Attractor", HexCoord(0, 3)))
+    state.add_province(_province(HexCoord(1, 3), owner=None))
     rng = ScriptedRandom([WANDER_ATTRACTOR_ROLL_THRESHOLD + 0.01])
-    result = _accept_wander_direction(state, HexCoord(1, 2), 2, 99, attractor_id, _bounds(state), rng)
-    assert result == HexCoord(2, 2)
+    result = _accept_wander_direction(state, HexCoord(1, 2), 3, 99, attractor_id, _bounds(state), rng)
+    assert result == HexCoord(1, 3)
 
 
 def test_accept_wander_direction_reference_farther_falls_through_to_third_roll():
+    # Bug fix: same row-parity blind spot as the "closer" test above --
+    # direction=2 keeps current and neighbor on the same row, so the
+    # fixed and the old, buggy hex_distance_wrapped() conventions
+    # always agreed here too. direction=3 (current (1,2) -> neighbor
+    # (1,3)) and attractor (2,3) (found by search) make them disagree:
+    # the real convention says (1,3) is NOT closer to (2,3) than (1,2)
+    # is (both distance 1, a tie) -- falls through to the third roll,
+    # as this test exercises -- while the old, buggy convention saw
+    # (1,3) as strictly closer (1 vs 2) and would have accepted
+    # immediately, skipping the third roll this test is actually about.
     state = build_state()
     attractor_id = 42
-    state.add_leader(LeaderState(attractor_id, None, "Attractor", HexCoord(0, 2)))
-    state.add_province(_province(HexCoord(2, 2), owner=None))
-    # (2,2) is farther from (0,2) than (1,2) is -- falls through.
+    state.add_leader(LeaderState(attractor_id, None, "Attractor", HexCoord(2, 3)))
+    state.add_province(_province(HexCoord(1, 3), owner=None))
     rng = ScriptedRandom([WANDER_ATTRACTOR_ROLL_THRESHOLD + 0.01, WANDER_ATTRACTOR_ROLL_THRESHOLD - 0.01])
-    result = _accept_wander_direction(state, HexCoord(1, 2), 2, 99, attractor_id, _bounds(state), rng)
-    assert result == HexCoord(2, 2)
+    result = _accept_wander_direction(state, HexCoord(1, 2), 3, 99, attractor_id, _bounds(state), rng)
+    assert result == HexCoord(1, 3)
 
     rng = ScriptedRandom([WANDER_ATTRACTOR_ROLL_THRESHOLD + 0.01, WANDER_ATTRACTOR_ROLL_THRESHOLD + 0.01])
-    result = _accept_wander_direction(state, HexCoord(1, 2), 2, 99, attractor_id, _bounds(state), rng)
+    result = _accept_wander_direction(state, HexCoord(1, 2), 3, 99, attractor_id, _bounds(state), rng)
     assert result is None
 
 

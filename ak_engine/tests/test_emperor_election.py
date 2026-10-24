@@ -11,7 +11,6 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.emperor_election import (
-    ELECTION_REQUEST_THRESHOLD_PERCENT,
     ElectionCallOutcome,
     ElectionResult,
     _alignment_auto_trigger,
@@ -82,6 +81,15 @@ def test_can_request_election_exactly_at_threshold_is_not_enough():
 
 
 def test_can_request_election_via_alliance_combined_total():
+    # Bug fix: "neither ally alone clears the threshold" used to be
+    # checked as `30 * 100 <= ELECTION_REQUEST_THRESHOLD_PERCENT * 100`
+    # -- pure constant arithmetic (3000 <= 5500) with no call into
+    # can_request_election()/state at all, true unconditionally
+    # regardless of its actual behavior. Replaced with a real control:
+    # an unallied variant of this same tax distribution, where kingdom
+    # 1's and kingdom 2's own 30% each really do fail the threshold
+    # alone, proving the True result above genuinely comes from the
+    # alliance combining them (60%), not from some other path.
     state = make_state()
     state.allied_kingdoms.add(frozenset({1, 2}))
     give_tax(state, 1, HexCoord(0, 0), 30)
@@ -89,8 +97,13 @@ def test_can_request_election_via_alliance_combined_total():
     give_tax(state, 3, HexCoord(2, 2), 40)
 
     assert can_request_election(state, 1, current_turn=5) is True
-    # Neither ally alone clears the threshold.
-    assert 30 * 100 <= ELECTION_REQUEST_THRESHOLD_PERCENT * 100
+
+    unallied_state = make_state()
+    give_tax(unallied_state, 1, HexCoord(0, 0), 30)
+    give_tax(unallied_state, 2, HexCoord(1, 1), 30)
+    give_tax(unallied_state, 3, HexCoord(2, 2), 40)
+    assert can_request_election(unallied_state, 1, current_turn=5) is False
+    assert can_request_election(unallied_state, 2, current_turn=5) is False
 
 
 def test_can_request_election_alliance_is_transitive():
