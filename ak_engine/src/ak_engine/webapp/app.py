@@ -2833,11 +2833,18 @@ def create_app(games_root: Path | None = None) -> Flask:
             data = build_xk_file_for_kingdom(state, kingdom_id)
         except XKExportError as exc:
             return redirect(url_for("turn_zero_view", slug=slug, kingdom_id=kingdom_id, error=f"Couldn't build the XK file: {exc}"))
-        kingdom_name = state.kingdoms[kingdom_id].name.replace(" ", "_")
+        game_label = meta.name.replace(" ", "_")
+        # Turn-zero's own file is what this King needs to plan their
+        # very first real move -- state.turn_number already reads 1 at
+        # this point (never yet incremented), matching the "turn about
+        # to be processed" convention this filename's own T<n> component
+        # uses everywhere else, so no separate turn-zero special case.
         return Response(
             data,
             mimetype="application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="XK_T0_{kingdom_name}.xk"'},
+            headers={
+                "Content-Disposition": f'attachment; filename="XK{game_label}T{state.turn_number}.K{kingdom_id}"'
+            },
         )
 
     @app.get("/games/<slug>/turns")
@@ -3046,11 +3053,19 @@ def create_app(games_root: Path | None = None) -> Flask:
             return redirect(
                 url_for("turn_report_list", slug=slug, turn_number=turn_number, error="XK file not found for this Kingdom.")
             )
-        kingdom_name = (state.kingdoms[kingdom_id].name if kingdom_id in state.kingdoms else f"Kingdom_{kingdom_id}").replace(" ", "_")
+        game_label = meta.name.replace(" ", "_")
+        # `turn_number` here is the turn that was already processed (the
+        # URL/storage convention `save_turn_xk_files()` uses) -- this
+        # file is what the Kingdom needs to plan its *next* turn, so the
+        # filename's own T<n> component is one past it, matching the
+        # same "turn about to be processed" convention turn_zero_
+        # download_xk() above uses.
         return Response(
             data,
             mimetype="application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="XK_T{turn_number}_{kingdom_name}.xk"'},
+            headers={
+                "Content-Disposition": f'attachment; filename="XK{game_label}T{turn_number + 1}.K{kingdom_id}"'
+            },
         )
 
     return app

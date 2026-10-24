@@ -6115,6 +6115,10 @@ def test_turn_zero_download_xk_serves_a_real_xk_file(tmp_path):
     assert response.status_code == 200
     assert response.mimetype == "application/octet-stream"
     assert "attachment" in response.headers["Content-Disposition"]
+    # Game/turn/Kingdom's own naming convention: XK<game>T<turn to
+    # process>.K<kingdom id> -- turn-zero's own file is what this
+    # Kingdom needs to plan turn 1, so it's labelled T1, not T0.
+    assert 'filename="XKThird_CampaignT1.K1"' in response.headers["Content-Disposition"]
     path = pathlib.Path(tempfile.mktemp())
     try:
         path.write_bytes(response.data)
@@ -6550,6 +6554,11 @@ def test_turn_report_download_xk_after_processing_serves_a_real_xk_file(tmp_path
     assert response.status_code == 200
     assert response.mimetype == "application/octet-stream"
     assert "attachment" in response.headers["Content-Disposition"]
+    # This file (saved under turn 1, the turn that was just processed)
+    # is what the Kingdom needs to plan turn 2 -- labelled T2, one past
+    # the URL's own turn_number, matching turn_zero_download_xk()'s own
+    # "turn about to be processed" convention.
+    assert 'filename="XKThird_CampaignT2.K1"' in response.headers["Content-Disposition"]
     path = pathlib.Path(tempfile.mktemp())
     try:
         path.write_bytes(response.data)
