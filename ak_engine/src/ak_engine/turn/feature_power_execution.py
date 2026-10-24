@@ -285,7 +285,20 @@ def parse_sa_argument(say_text: str) -> int | None:
     except ValueError:
         pass
     match = _SA_ARGUMENT_RE.search(stripped)
-    return int(match.group()) if match is not None else None
+    if match is None:
+        return None
+    try:
+        return int(match.group())
+    except ValueError:
+        # Bug fix (crash): Python 3.11+ caps int(str) conversion at
+        # sys.get_int_max_str_digits() (4300 by default) and raises
+        # ValueError above that. say_text comes straight from a Search
+        # order's SAY tactic free text (parser/k1_moves.py's own
+        # _recover_say_text(), no length cap), so a player naming a
+        # Feature with a 5000-digit SAY argument used to raise this
+        # unhandled ValueError here -- the first int(stripped) call
+        # already guards the same conversion, this second one didn't.
+        return None
 
 # FPDESC.X2's own "up to a maximum of 4" -- real for UP_SKILL, source-
 # confirmed stale for UP_APT (see power_condition_cost's own module).

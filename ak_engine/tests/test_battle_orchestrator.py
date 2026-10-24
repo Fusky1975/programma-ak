@@ -5556,3 +5556,88 @@ def test_fight_multi_attacker_battle_treats_a_shielded_guest_as_uncontested():
     assert battles[0].report.conquered is True
     assert battles[0].report.battle_result.winner == "attacker"
     assert state.armies[201].location == FIELD  # Y's shielded guest army untouched
+
+
+def test_fight_battle_allows_a_kingdomless_mercenary_as_an_attacker():
+    # Bug fix (crash): a kingdomless mercenary (`ArmyState.kingdom_id is
+    # None`) picked up and commanded into battle by a leader (`turn/
+    # plan_dispatch.py`'s ordinary Pick Up mechanic) used to crash
+    # `_build_battle_units()` with `KeyError: None` the instant it
+    # reached `state.kingdoms[army.kingdom_id]` -- the defender side was
+    # already filtered on `army.kingdom_id is not None`, but the
+    # attacker side never was. Any of the mutually-untrusting players
+    # can trigger this deliberately (pick up a loose mercenary, then
+    # attack with it); since run_turn() dispatches every player's plan
+    # in one pass, this crashed the whole turn for every player, not
+    # just the one who triggered it.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(102, None, ArmyType.LEGION, Quality.AVERAGE, FIELD, commanded_by=50))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD))
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101, 102])
+
+    assert report is not None
+
+
+def test_build_battle_units_gives_a_kingdomless_mercenary_no_race_bonus():
+    # Same bug as above, checked directly at _build_battle_units()'s own
+    # level: a mundane (non-monstrous) army type has no source for what
+    # race a kingdomless mercenary should fight as, so it gets no race-
+    # type/race-terrain bonus at all (not a guessed one) -- Human Legion
+    # gets +1 in any terrain (RACE_TYPE_BONUS), so a kingdomless Legion
+    # must score strictly less than an otherwise-identical Human-owned
+    # one to prove no bonus leaked in.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    owned_army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, FIELD)
+    mercenary_army = ArmyState(102, None, ArmyType.LEGION, Quality.AVERAGE, FIELD)
+
+    owned_units = _build_battle_units(
+        [owned_army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+    )
+    mercenary_units = _build_battle_units(
+        [mercenary_army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=random.Random(0),
+    )
+
+    assert mercenary_units[0].effective_strength < owned_units[0].effective_strength
+
+
+def test_build_battle_units_gives_a_kingdomless_monstrous_mercenary_its_intrinsic_race():
+    # A kingdomless mercenary of a monstrous type (e.g. a loose Troll
+    # army) DOES have a sourced, knowable race regardless of ownership
+    # (MONSTROUS_ARMY_RACE) -- same as turn/army_quality.py's own
+    # army_peacetime_strength() already resolves it. Trolls get +1 in
+    # Mountains (RACE_TERRAIN_BONUS), so this must still apply.
+    state = GameState()
+    state.add_province(ProvinceState(FIELD, Terrain.MTNS, Race.TROLLISH, owner_kingdom_id=None))
+    mercenary_army = ArmyState(102, None, ArmyType.TROLLS, Quality.AVERAGE, FIELD)
+    flat_terrain_units = _build_battle_units(
+        [mercenary_army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=random.Random(0),
+    )
+    mountain_units = _build_battle_units(
+        [mercenary_army], state, is_defender=False, terrain=Terrain.MTNS, province_coord=FIELD,
+        rng=random.Random(0),
+    )
+
+    assert mountain_units[0].effective_strength > flat_terrain_units[0].effective_strength
+
+
+def test_qual_modfr_score_by_army_id_allows_a_kingdomless_mercenary():
+    # Same root cause, same fix, in the post-battle quality-gain scorer.
+    state = GameState()
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None))
+    mercenary_army = ArmyState(102, None, ArmyType.LEGION, Quality.AVERAGE, FIELD)
+
+    scores = _qual_modfr_score_by_army_id(
+        [mercenary_army], state, terrain=Terrain.PLAINS, province_coord=FIELD, explorer_find_water=False,
+    )
+
+    assert 102 in scores

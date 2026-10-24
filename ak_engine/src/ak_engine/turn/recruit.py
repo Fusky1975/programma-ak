@@ -153,6 +153,20 @@ def resolve_recruit(
         raise IncompatibleRaceError(
             f"{army_type.name} can't be recruited in a {province_race.name} province"
         )
+    if army_type not in ARMY_TABLE:
+        # Bug fix (crash): 8 real ArmyType ordinals (Vampires, Marauders,
+        # Shamans, Crossbow, Javelins, Artillery, Spiders, D_Turtle --
+        # models/army_type.py's own Phase 383 addendum) never appear in
+        # the rulebook's own Army Type Table [6.3], so ARMY_TABLE has no
+        # entry -- an honest sourcing gap, not something to invent a pay
+        # cost for. is_army_type_compatible_with_race() still lets them
+        # through in any ordinary humanoid province (none of them has a
+        # MONSTROUS_ARMY_RACE entry either), so the bare `.pay` lookup
+        # below used to raise an unhandled KeyError the instant a player
+        # named one of these ordinals in a Recruit order. Treated the
+        # same as an incompatible-race rejection: there's no rulebook
+        # data to recruit by, so it can't be recruited, full stop.
+        raise IncompatibleRaceError(f"{army_type.name} has no rulebook recruiting cost and can't be recruited")
 
     base_pay = ARMY_TABLE[army_type].pay
     if chief_of_staff_discount:

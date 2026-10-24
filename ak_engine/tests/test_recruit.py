@@ -130,6 +130,23 @@ def test_resolve_recruit_raises_for_incompatible_race():
         )
 
 
+def test_resolve_recruit_raises_cleanly_for_an_army_type_with_no_rulebook_cost():
+    # Bug fix (crash): Vampires/Marauders/Shamans/Crossbow/Javelins/
+    # Artillery/Spiders/D_Turtle never appear in the rulebook's own Army
+    # Type Table [6.3], so ARMY_TABLE has no entry for them -- an honest
+    # sourcing gap. is_army_type_compatible_with_race() still lets them
+    # through in any ordinary humanoid province (none has a
+    # MONSTROUS_ARMY_RACE entry), so this used to crash with a bare,
+    # unhandled KeyError on the `.pay` lookup instead of this clean,
+    # already-handled IncompatibleRaceError.
+    for army_type in (ArmyType.VAMPIRES, ArmyType.MARAUDERS, ArmyType.CROSSBOW):
+        with pytest.raises(IncompatibleRaceError):
+            resolve_recruit(
+                army_type, Race.HUMAN,
+                is_home_province=False, is_native_to_province=True,
+            )
+
+
 # -- Phase 663: Chief of Staff's own -1 gold discount --
 
 

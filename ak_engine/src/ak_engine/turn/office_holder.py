@@ -724,9 +724,30 @@ def _army_ranking_candidates(state: GameState, office: Office) -> list[tuple[int
         modified_quality = compute_army_modified_quality(state, army)
         if not _army_office_eligible(office, army, modified_quality):
             continue
-        score = army_peacetime_strength(state, army, ability)
-        if office is Office.PRAETOR:
-            score += ARMY_TABLE[army.army_type].speed
+        # Bug fix (crash): Elephants/Dinosaurs have no fixed base strength
+        # outside an actual battle (it's rolled per-battle, see turn/
+        # strength.py's own _base_strength() -- army_peacetime_strength()
+        # never has a battle roll to supply as its override, so it always
+        # raises here for these two). 8 further real ArmyType ordinals
+        # (Vampires/Marauders/Shamans/Crossbow/Javelins/Artillery/Spiders/
+        # D_Turtle -- models/army_type.py's own Phase 383 addendum) have
+        # no rulebook-sourced Speed/Strength data at all -- an honest
+        # sourcing gap, not something to invent a number for -- and raise
+        # a bare KeyError from ARMY_TABLE/BASE_STRENGTH instead. Any one
+        # of these army types reaching Quality Crack/Elite (an entirely
+        # ordinary outcome of ordinary battle/Oratory for Elephants) used
+        # to crash this whole function -- and therefore every Royal Title
+        # resolution, called unconditionally every turn with no caller
+        # anywhere up to the Flask route catching it. No sourced rule
+        # says how an army whose own strength can't be computed at rest
+        # should rank for a Royal Title, so it's excluded from candidacy
+        # here instead -- the safe, non-inventive choice.
+        try:
+            score = army_peacetime_strength(state, army, ability)
+            if office is Office.PRAETOR:
+                score += ARMY_TABLE[army.army_type].speed
+        except (ValueError, KeyError):
+            continue
         candidates.append((army_id, score))
     return candidates
 

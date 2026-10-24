@@ -702,6 +702,18 @@ def test_parse_sa_argument_full_sentence():
 
 def test_parse_sa_argument_no_digits_returns_none():
     assert parse_sa_argument("Take that!") is None
+
+
+def test_parse_sa_argument_returns_none_instead_of_crashing_on_an_oversized_digit_run():
+    # Bug fix (crash): Python 3.11+ caps int(str) conversion at 4300
+    # digits by default and raises ValueError above that. say_text comes
+    # straight from a Search order's SAY tactic free text (parser/
+    # k1_moves.py's own _recover_say_text(), no length cap), so this used
+    # to raise an unhandled ValueError on the second (regex-matched)
+    # int() conversion -- the first one (the bare-number path) was
+    # already guarded, this one wasn't.
+    assert parse_sa_argument("9" * 5000) is None
+    assert parse_sa_argument("Tell me about character " + "9" * 5000) is None
     assert parse_sa_argument("") is None
 
 

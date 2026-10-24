@@ -78,6 +78,21 @@ def test_elephants_require_base_strength_override():
     assert strength == pytest.approx(4 * int(Quality.GREEN))
 
 
+def test_dinosaurs_require_base_strength_override():
+    # Bug fix (crash): Dinosaurs are the same "variable strength, rolled
+    # per-battle" case as Elephants, but _base_strength() used to have no
+    # explicit raise for them -- they fell through to a bare KeyError
+    # from BASE_STRENGTH (which also has no Dinosaurs entry, for the
+    # same reason) instead of this clean, documented ValueError.
+    with pytest.raises(ValueError):
+        compute_effective_strength(ArmyType.DINOSAURS, Race.HUMAN, Quality.GREEN, Terrain.PLAINS)
+
+    strength = compute_effective_strength(
+        ArmyType.DINOSAURS, Race.HUMAN, Quality.GREEN, Terrain.PLAINS, base_strength_override=7
+    )
+    assert strength == pytest.approx(7 * int(Quality.GREEN))
+
+
 def test_roll_elephants_strength_within_range():
     rng = random.Random(0)
     for _ in range(200):

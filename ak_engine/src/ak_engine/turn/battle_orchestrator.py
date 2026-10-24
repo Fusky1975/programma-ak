@@ -820,8 +820,29 @@ def _build_battle_units(
 
     units = []
     for army in armies:
-        kingdom = state.kingdoms[army.kingdom_id]
-        is_home = province_coord == kingdom.home_province
+        # Bug fix (crash): an unowned mercenary (`army.kingdom_id is
+        # None`, picked up and commanded into battle by any leader --
+        # `plan_dispatch.py`'s ordinary Pick Up mechanic) has no owning
+        # Kingdom to read a race/alignment/home-province from at all --
+        # `state.kingdoms[army.kingdom_id]` used to raise `KeyError:
+        # None` here unconditionally, the instant such an army ever
+        # attacked or defended. Every Kingdom-sourced value below falls
+        # back to the same "no data, no bonus/penalty" default this
+        # project already uses for an analogous gap (turn/trail_
+        # execution.py's own Phase 165 addendum: "an independent Hero
+        # genuinely has no kingdom to infer a race from"), rather than
+        # guessing: no home province, no national alignment to roll
+        # fanaticism from. `army_race` is still knowable when this army's
+        # own type has a fixed, intrinsic race regardless of ownership
+        # (`MONSTROUS_ARMY_RACE`, the same lookup turn/army_quality.py
+        # army_peacetime_strength() already uses for this exact purpose)
+        # -- `None` (no race-based bonus at all, never a guessed one;
+        # every real use below is a dict `.get()`/`in` check that's
+        # already safe with `None`) only for an unowned, non-monstrous
+        # army type, where no source says what race it should fight as.
+        kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
+        army_race = kingdom.race if kingdom is not None else MONSTROUS_ARMY_RACE.get(army.army_type)
+        is_home = kingdom is not None and province_coord == kingdom.home_province
         if army.army_type is ArmyType.ELEPHANTS:
             override = roll_elephants_strength(rng)
         elif army.army_type is ArmyType.DINOSAURS:
@@ -830,17 +851,17 @@ def _build_battle_units(
             override = None
         # Short-circuited: roll_fanaticism (and its rng.random() call) never
         # runs at all when apply_fanaticism is False -- see docstring.
-        is_fanatical = apply_fanaticism and roll_fanaticism(kingdom.alignment, rng)
+        is_fanatical = apply_fanaticism and kingdom is not None and roll_fanaticism(kingdom.alignment, rng)
         if apply_fanaticism and not is_fanatical and army.commanded_by is not None:
             # See this function's own Phase 390 addendum: an independent,
             # additive second chance, only rolled (consuming rng) when a
             # real title-race match exists.
-            title_office = RACE_TITLE_OFFICE.get(kingdom.race)
+            title_office = RACE_TITLE_OFFICE.get(army_race)
             if title_office is not None and _title_holder_leader_id(title_office) == army.commanded_by:
                 is_fanatical = roll_title_fanaticism(title_office, rng)
                 if is_fanatical and race_fanatic_units is not None:
-                    race_fanatic_units.append((army.army_id, kingdom.race, army.commanded_by))
-        druidic_shortfall = druidic_shortfall_for(army, state, kingdom.race, province_coord)
+                    race_fanatic_units.append((army.army_id, army_race, army.commanded_by))
+        druidic_shortfall = druidic_shortfall_for(army, state, army_race, province_coord)
         phantasmal_armies_level = _phantasmal_armies_level_for(army, state)
         mystic_winds_active = mystic_winds_active_for(army, state)
         illusory_fog_affected = illusory_fog_active and is_illusory_fog_affected_air_unit(
@@ -851,7 +872,7 @@ def _build_battle_units(
             battle_quality = quality_one_level_down(battle_quality)
         race_item_bonus = 0
         if army.commanded_by is not None:
-            needed_treasure = RACE_LEADERSHIP_TREASURE.get(kingdom.race)
+            needed_treasure = RACE_LEADERSHIP_TREASURE.get(army_race)
             if needed_treasure is not None and any(
                 item.treasure == needed_treasure for item in state.items_held_by(army.commanded_by)
             ):
@@ -885,7 +906,7 @@ def _build_battle_units(
             )
         strength = compute_effective_strength(
             army.army_type,
-            kingdom.race,
+            army_race,
             battle_quality,
             terrain,
             is_defender=is_defender,
@@ -914,7 +935,7 @@ def _build_battle_units(
         if duellist_side or alignment_king_eligible:
             fanatic_strength = compute_effective_strength(
                 army.army_type,
-                kingdom.race,
+                army_race,
                 battle_quality,
                 terrain,
                 is_defender=is_defender,
@@ -948,7 +969,7 @@ def _build_battle_units(
                 source_id=army.army_id,
                 druidic_rear_targeting_blocked=rear_targeting_blocked,
                 led_by_insufficient_druid=druidic_shortfall > 0,
-                is_humanoid_race=kingdom.race in HUMANOID_RACES,
+                is_humanoid_race=army_race in HUMANOID_RACES,
                 duellist_bonus_if_selected=duellist_bonus_if_selected,
                 alignment_king_bonus_if_selected=alignment_king_bonus_if_selected,
                 has_druidic_horse_control=has_druidic_horse_control,
@@ -1880,10 +1901,16 @@ def _apply_pursuit(
 
     retreating_units = []
     for army in losing_armies:
-        kingdom = state.kingdoms[army.kingdom_id]
+        # Bug fix (crash): same root cause as _build_battle_units()'s own
+        # fix -- an unowned mercenary (`army.kingdom_id is None`) has no
+        # Kingdom to read a race from. Same fallback: MONSTROUS_ARMY_RACE
+        # for an army type with a fixed, intrinsic race, else `None` (no
+        # sourced race, no race-based strength bonus -- not a guess).
+        kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
+        army_race = kingdom.race if kingdom is not None else MONSTROUS_ARMY_RACE.get(army.army_type)
         pursued_quality = Quality(max(int(Quality.DEPLETED), int(army.quality) - 1))
         strength = compute_effective_strength(
-            army.army_type, kingdom.race, pursued_quality, terrain, is_defender=True, is_island=is_island,
+            army.army_type, army_race, pursued_quality, terrain, is_defender=True, is_island=is_island,
             illusory_terrain=illusory_terrain, illusory_terrain_enhanced=illusory_terrain_enhanced,
         )
         retreating_units.append(BattleUnit(army.army_type, strength, source_id=army.army_id))
@@ -2169,17 +2196,24 @@ def _qual_modfr_score_by_army_id(
 
     scores: dict[int, int] = {}
     for army in armies:
-        kingdom = state.kingdoms[army.kingdom_id]
-        is_home = province_coord == kingdom.home_province
+        # Bug fix (crash): same root cause as _build_battle_units()'s own
+        # fix -- an unowned mercenary (`army.kingdom_id is None`) has no
+        # Kingdom to read a race/home-province from. Same fallbacks: no
+        # home province, and MONSTROUS_ARMY_RACE for an army type with a
+        # fixed, intrinsic race else `None` (no sourced race -- not a
+        # guess).
+        kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
+        army_race = kingdom.race if kingdom is not None else MONSTROUS_ARMY_RACE.get(army.army_type)
+        is_home = kingdom is not None and province_coord == kingdom.home_province
         desert_without_camels = (
             terrain is Terrain.DESERT
             and not explorer_find_water
             and not any(a.army_type is ArmyType.CAMEL_CORPS for a in armies)
         )
-        druidic_shortfall = druidic_shortfall_for(army, state, kingdom.race, province_coord)
+        druidic_shortfall = druidic_shortfall_for(army, state, army_race, province_coord)
         race_item_bonus = 0
         if army.commanded_by is not None:
-            needed_treasure = RACE_LEADERSHIP_TREASURE.get(kingdom.race)
+            needed_treasure = RACE_LEADERSHIP_TREASURE.get(army_race)
             if needed_treasure is not None and any(
                 item.treasure == needed_treasure for item in state.items_held_by(army.commanded_by)
             ):

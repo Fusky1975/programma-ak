@@ -448,6 +448,18 @@ def _base_strength(army_type: ArmyType, *, is_defender: bool, base_strength_over
             "Elephants have variable strength (2-5); roll it with roll_elephants_strength() "
             "and pass it as base_strength_override"
         )
+    # Bug fix (crash): Dinosaurs are the same "variable strength, rolled
+    # per-battle" case as Elephants (models/army_type.py's own Phase 691
+    # addendum, roll_dinosaurs_strength() below) and were never given the
+    # same explicit, documented raise here -- they fell through to the
+    # bare BASE_STRENGTH[army_type] lookup below and crashed with a bare
+    # KeyError instead (BASE_STRENGTH has no Dinosaurs entry either, for
+    # the same reason).
+    if army_type is ArmyType.DINOSAURS:
+        raise ValueError(
+            "Dinosaurs have variable strength (5-10); roll it with roll_dinosaurs_strength() "
+            "and pass it as base_strength_override"
+        )
     return BASE_STRENGTH[army_type]
 
 
