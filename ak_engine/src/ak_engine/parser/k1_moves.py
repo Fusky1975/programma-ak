@@ -194,6 +194,9 @@ def _parse_leader_blocks(lines: list[str], start: int, path: Path) -> tuple[list
     return leaders, trailer_comments
 
 
+_MAX_NESTED_PLAN_DEPTH = 100
+
+
 def _build_leader(leader_id: int, name: str | None, body_lines: list[str]) -> Leader:
     tokens, token_line = flatten_tokens_with_lines(body_lines)
     plan, i = _parse_action_plan(
@@ -206,7 +209,14 @@ def _build_leader(leader_id: int, name: str | None, body_lines: list[str]) -> Le
 
 
 def _parse_action_plan(
-    tokens: list[str], i: int, leader_id: int | None, *, owner_desc: str, token_line: list[int], lines: list[str]
+    tokens: list[str],
+    i: int,
+    leader_id: int | None,
+    *,
+    owner_desc: str,
+    token_line: list[int],
+    lines: list[str],
+    depth: int = 0,
 ) -> tuple[ActionPlan, int]:
     """Parse as many consecutive ``AP:`` segments as appear at ``i``.
 
@@ -218,17 +228,36 @@ def _parse_action_plan(
     ``token_line``/``lines`` (Phase 618) are threaded through purely so a
     nested plan can also decode a Search phase's own ``SAY`` tactic
     correctly -- see this module's own docstring.
+
+    Bug fix (crash/DoS): ``depth`` caps the ``_parse_segment() ->
+    _maybe_parse_nested_plan() -> _parse_action_plan()`` recursion this
+    function is part of. A move file with a few thousand consecutive
+    ``AP: 0 0 P0 ... AP: 0 0 P0 ...`` segments -- each one's own phase
+    immediately followed by another ``AP:``, which is *all* it takes to
+    trigger a nested-plan parse regardless of that phase's actual action
+    -- used to blow Python's own recursion limit with an unhandled
+    ``RecursionError``, uncaught by every one of this parser's own
+    callers (which only ever catch ``K1ParseError``/``ValueError``/
+    ``IndexError``). No real move file nests anywhere close to this deep
+    (Hire/Charm/Resurrection's own embedded-plan nesting is the only real
+    trigger, and even that rarely goes more than one or two levels), so
+    the cap is purely a safety net, raised as the same kind of clean,
+    already-handled parse error every other malformed-input case here
+    produces.
     """
+
+    if depth > _MAX_NESTED_PLAN_DEPTH:
+        raise K1ParseError(f"{owner_desc}: nested plans are more than {_MAX_NESTED_PLAN_DEPTH} levels deep")
 
     segments: list[PlanSegment] = []
     while i < len(tokens) and tokens[i] == "AP:":
-        segment, i = _parse_segment(tokens, i, owner_desc=owner_desc, token_line=token_line, lines=lines)
+        segment, i = _parse_segment(tokens, i, owner_desc=owner_desc, token_line=token_line, lines=lines, depth=depth)
         segments.append(segment)
     return ActionPlan(leader_id=leader_id, segments=segments), i
 
 
 def _parse_segment(
-    tokens: list[str], i: int, *, owner_desc: str, token_line: list[int], lines: list[str]
+    tokens: list[str], i: int, *, owner_desc: str, token_line: list[int], lines: list[str], depth: int = 0
 ) -> tuple[PlanSegment, int]:
     """Parse one ``AP: <start> <end> SP: ... P<start>..P<end>`` group.
 
@@ -300,7 +329,7 @@ def _parse_segment(
         phase = PlanPhase(label=label, action=action_from_int(action_val), obj=obj_val, extra=extra_val)
 
         phase.nested_plan, i = _maybe_parse_nested_plan(
-            tokens, i, phase, label_num, owner_desc=owner_desc, token_line=token_line, lines=lines
+            tokens, i, phase, label_num, owner_desc=owner_desc, token_line=token_line, lines=lines, depth=depth
         )
         segment.phases[label] = phase
 
@@ -429,6 +458,7 @@ def _maybe_parse_nested_plan(
     owner_desc: str,
     token_line: list[int],
     lines: list[str],
+    depth: int = 0,
 ) -> tuple[ActionPlan | None, int]:
     """If ``phase`` triggers a nested plan, parse and return it; else ``(None, i)`` unchanged.
 
@@ -457,5 +487,11 @@ def _maybe_parse_nested_plan(
     else:
         nested_leader_id = None
     return _parse_action_plan(
-        tokens, i, nested_leader_id, owner_desc=f"{owner_desc} > nested plan", token_line=token_line, lines=lines
+        tokens,
+        i,
+        nested_leader_id,
+        owner_desc=f"{owner_desc} > nested plan",
+        token_line=token_line,
+        lines=lines,
+        depth=depth + 1,
     )
