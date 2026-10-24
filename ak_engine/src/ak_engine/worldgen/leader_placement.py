@@ -192,6 +192,9 @@ def independent_lord_effects(
     )
 
 
+MERCENARY_RELOCATION_ATTEMPT_CAP = 10_000
+
+
 def draw_mercenary_relocation_coordinate(
     rng: PascalRandom,
     width: int,
@@ -199,9 +202,17 @@ def draw_mercenary_relocation_coordinate(
     is_sea: Callable[[HexCoord], bool],
     is_king_owned: Callable[[HexCoord], bool],
 ) -> HexCoord:
-    """Uniform coordinate draw, rejecting and redrawing while on Sea or in a King-owned province."""
+    """Uniform coordinate draw, rejecting and redrawing while on Sea or in a King-owned province.
 
-    while True:
+    Bug fix (crash/DoS): capped like every sibling rejection-sampling
+    loop in this module (``feature_placement.place_feature``'s
+    ``MAX_ATTEMPTS``, ``special_race_placement.place_special_race``'s
+    ``ATTEMPT_CAP``) -- this was an uncapped ``while True``, which would
+    spin forever if every cell were ever Sea or King-owned.
+    """
+
+    for _ in range(MERCENARY_RELOCATION_ATTEMPT_CAP):
         candidate = HexCoord(rng.irand() % width, rng.irand() % height)
         if not is_sea(candidate) and not is_king_owned(candidate):
             return candidate
+    raise ValueError("No eligible mercenary relocation coordinate found -- map too small or too crowded.")

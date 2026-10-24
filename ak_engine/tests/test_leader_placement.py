@@ -5,6 +5,7 @@ from ak_engine.models.race import Race
 from ak_engine.worldgen.pascal_random import PascalRandom
 from ak_engine.worldgen.leader_placement import (
     COMPANIONS_PER_KING,
+    MERCENARY_RELOCATION_ATTEMPT_CAP,
     RESERVED_ROSTER_COUNT,
     IndependentLordEffects,
     KingHomeEffects,
@@ -129,3 +130,24 @@ def test_draw_mercenary_relocation_coordinate_never_lands_on_sea_or_king_owned()
         assert result != king_owned_coord
         assert 0 <= result.x < 5
         assert 0 <= result.y < 5
+
+
+def test_draw_mercenary_relocation_coordinate_raises_instead_of_hanging_when_no_coordinate_is_eligible():
+    # Bug fix (crash/DoS): this used to be an uncapped `while True`, so a
+    # map where every cell is Sea or King-owned (the real call shape
+    # from generate_new_game.py) would spin forever. Capped like every
+    # sibling rejection-sampling loop in this module (feature_placement's
+    # MAX_ATTEMPTS, special_race_placement's ATTEMPT_CAP) and raises
+    # instead, matching king_home_placement.choose_king_home's own
+    # "map too small or too crowded" fallback.
+    rng = PascalRandom(seed=4)
+    try:
+        draw_mercenary_relocation_coordinate(rng, 1, 1, lambda c: False, lambda c: True)
+        assert False, "expected a ValueError"
+    except ValueError as exc:
+        assert "too small or too crowded" in str(exc)
+
+
+def test_mercenary_relocation_attempt_cap_is_bounded():
+    # Guards against the cap itself being raised back to "unbounded".
+    assert 0 < MERCENARY_RELOCATION_ATTEMPT_CAP <= 1_000_000

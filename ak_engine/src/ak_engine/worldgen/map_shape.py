@@ -119,10 +119,24 @@ def main_land_threshold(goal: int) -> int:
     return goal // 2
 
 
-def band_for_row(y: int, bottom_y: int) -> int:
-    """``min(y, bottom_y - y)`` -- symmetric latitude band index for map row ``y``."""
+_MAX_SOURCED_BAND = max(LATITUDE_TERRAIN_WEIGHTS)
 
-    return min(y, bottom_y - y)
+
+def band_for_row(y: int, bottom_y: int) -> int:
+    """``min(y, bottom_y - y)`` -- symmetric latitude band index for map row ``y``.
+
+    Bug fix (crash): the disassembly source this table was confirmed
+    against only ever had a default 18x9 board, so the raw formula's
+    own band index (``min(y, bottom_y - y)``) never exceeded 4 there.
+    On a taller board (``bottom_y > 2 * _MAX_SOURCED_BAND``), the raw
+    index runs past the sourced bands and crashes every caller with a
+    ``KeyError``. Clamped to the real, sourced band range instead --
+    rows beyond it reuse the nearest sourced band's own data (the
+    outermost latitude band already has the real source's own values,
+    there is simply no further-out band to source).
+    """
+
+    return min(y, bottom_y - y, _MAX_SOURCED_BAND)
 
 
 def draw_terrain(band: int, rng: PascalRandom) -> Terrain:

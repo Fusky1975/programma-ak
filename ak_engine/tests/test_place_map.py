@@ -97,3 +97,15 @@ def test_draw_land_terrain_never_returns_sea():
     for band in range(5):
         for _ in range(2000):
             assert draw_land_terrain(band, rng) is not Terrain.SEA
+
+
+def test_generate_map_does_not_crash_on_the_games_own_maximum_super_ak_board():
+    # Bug fix (crash): the latitude-band terrain weights were only ever
+    # confirmed for the default 18x9 board. On a taller board -- up to
+    # and including the game's own documented 30x15 "Super-AK" maximum
+    # (Regolamento AK.txt [12.1]) -- band_for_row() used to return band
+    # indices with no entry in the weights table, crashing with a
+    # KeyError deep inside draw_land_terrain().
+    rng = PascalRandom(seed=1)
+    grid = generate_map(rng, width=30, height=15, king_count=10)
+    assert len(grid) == 30 * 15

@@ -100,6 +100,7 @@ from ak_engine.webapp.world_creation import (
     WorldAlreadyCreatedError,
     create_world,
 )
+from ak_engine.turn.movement import NORMAL_MAP_BOUNDS
 from ak_engine.worldgen.king_talent import MAX_POINTS_PER_ABILITY, MAX_TALENT_POINTS
 from ak_engine.worldgen.place_map import DEFAULT_HEIGHT, DEFAULT_WIDTH
 
@@ -882,6 +883,22 @@ def create_app(games_root: Path | None = None) -> Flask:
             return redirect(url_for("world_setup", slug=slug, error="Width, height, and seed must be whole numbers."))
         if width < 1 or height < 1:
             return redirect(url_for("world_setup", slug=slug, error="Width and height must be positive."))
+        # Bug fix (security: unbounded resource-exhaustion DoS): this had
+        # no upper bound at all -- a crafted width/height (e.g. 10**9)
+        # reaches generate_new_game() directly, which allocates and
+        # iterates a province/feature/army grid sized off them. Capped
+        # at the real game's own documented maximum map size, Regolamento
+        # AK.txt [12.1]'s "Super-AK" variant (turn/movement.py's own
+        # confirmed NORMAL_MAP_BOUNDS) -- nothing in this project's own
+        # worldgen ever legitimately needs a larger board than that.
+        max_width, max_height = NORMAL_MAP_BOUNDS
+        if width > max_width or height > max_height:
+            return redirect(
+                url_for(
+                    "world_setup", slug=slug,
+                    error=f"Width and height can't exceed the game's own maximum map size ({max_width}x{max_height}).",
+                )
+            )
 
         try:
             create_world(root, slug, width=width, height=height, seed=seed)
@@ -1220,6 +1237,16 @@ def create_app(games_root: Path | None = None) -> Flask:
                 f"Can't shrink the map (currently {old_width}x{old_height}) -- delete provinces "
                 "individually first if you want a smaller map."
             )
+        # Bug fix (security: unbounded resource-exhaustion DoS): this had
+        # no upper bound at all -- a crafted new_width/new_height (e.g.
+        # 10**9) reaches the real `for y in range(new_height): for x in
+        # range(new_width):` double loop below directly. Same cap as
+        # world_create()'s own identical fix: the real game's own
+        # documented maximum map size (NORMAL_MAP_BOUNDS, Regolamento
+        # AK.txt [12.1]'s "Super-AK" variant).
+        max_width, max_height = NORMAL_MAP_BOUNDS
+        if new_width > max_width or new_height > max_height:
+            return _resize_error(f"Can't grow the map past its own maximum size ({max_width}x{max_height}).")
 
         try:
             terrain = Terrain[request.form.get("terrain", "")]

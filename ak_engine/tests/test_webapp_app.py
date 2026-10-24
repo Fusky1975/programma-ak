@@ -490,6 +490,28 @@ def test_create_world_twice_shows_an_error_not_a_crash(tmp_path):
     assert b"World Created" in response.data
 
 
+def test_create_world_rejects_a_width_or_height_above_the_real_maximum(tmp_path):
+    # Bug fix (security: unbounded resource-exhaustion DoS): width/
+    # height used to have no upper bound at all here -- a crafted,
+    # huge value reached generate_new_game() directly, which allocates
+    # and iterates a province/feature/army grid sized off them. Capped
+    # at the real game's own documented maximum (NORMAL_MAP_BOUNDS,
+    # 30x15, Regolamento AK.txt [12.1]'s "Super-AK" variant).
+    meta = create_game(tmp_path, "Third Campaign")
+    client = _client(tmp_path)
+    _add_king(client, meta.slug, "Aldric", "HUMAN", "GOOD")
+    _add_king(client, meta.slug, "Elara", "ELVEN", "NEUTRAL")
+
+    response = client.post(
+        f"/games/{meta.slug}/world", data={"width": "1000000000", "height": "9", "seed": "1"}, follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    assert b"maximum map size" in response.data
+    # The world was never actually created -- still on the setup screen.
+    assert b"World Created" not in response.data
+
+
 def test_create_world_with_non_numeric_seed_shows_an_error_not_a_crash(tmp_path):
     meta = create_game(tmp_path, "Third Campaign")
     client = _client(tmp_path)
@@ -2677,6 +2699,30 @@ def test_world_resize_rejects_shrinking(tmp_path):
 
     assert response.status_code == 200
     assert b"Can&#39;t shrink the map" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.board_width == old_width
+    assert state.board_height == old_height
+
+
+def test_world_resize_rejects_growing_past_the_real_maximum(tmp_path):
+    # Bug fix (security: unbounded resource-exhaustion DoS): new_width/
+    # new_height used to have no upper bound at all here -- a crafted,
+    # huge value reaches the real `for y in range(new_height): for x
+    # in range(new_width):` double loop directly. Capped at the real
+    # game's own documented maximum (NORMAL_MAP_BOUNDS, 30x15).
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    old_width, old_height = state.board_width, state.board_height
+
+    response = client.post(
+        f"/games/{meta.slug}/world/resize",
+        data={"new_width": "1000000000", "new_height": str(old_height), "terrain": "PLAINS", "race": "HUMAN"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"maximum size" in response.data
     _, state = open_game(tmp_path, meta.slug)
     assert state.board_width == old_width
     assert state.board_height == old_height
