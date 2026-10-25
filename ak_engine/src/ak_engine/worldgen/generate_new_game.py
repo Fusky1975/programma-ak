@@ -730,6 +730,7 @@ def generate_new_game(
 
     for king in kings:
         king_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
+        king_alignment = game_state.kingdoms[king_kingdom_id].alignment
         home_coord = home_coord_by_king[king.leader_id]
         for companion_index in range(COMPANIONS_PER_KING):
             hero_id = next(unused_hero_ids, None)
@@ -737,6 +738,27 @@ def generate_new_game(
                 break
             alignment, skills, temper = hero_pool[hero_id]
             companion_race = king.race if companion_index == 0 else draw_second_companion_race(king.race, rng)
+            # Bug fix, sourced directly from the user (2026-10-25) and
+            # independently confirmed by this project's own real sample
+            # (SE3__T0.K1: Uga-Buga Makumb, Elf/Undead, has companion
+            # Guerin -- same race as the King (Elf), Undead-aligned --
+            # and companion Teleko -- a different, drawn race (Dwarf),
+            # Evil-aligned): an Undead King's first companion (same race
+            # as the King, companion_index 0) is always Undead-aligned;
+            # the second (companion_index 1, a drawn race) is Evil or
+            # Pagan -- a fresh 50/50 draw, the user's own "uno evil o
+            # pagan" being a choice between the two, not a fixed one.
+            # Both overrides also re-roll the skill/aptitude table,
+            # since roll_aptitude() (inside roll_skill_and_aptitude_
+            # table()) depends on the alignment passed in -- reusing the
+            # pre-rolled hero_pool table here would leave aptitudes
+            # rolled for the wrong alignment.
+            if king_alignment is Alignment.UNDEAD:
+                if companion_index == 0:
+                    alignment = Alignment.UNDEAD
+                else:
+                    alignment = Alignment.EVIL if rng.irand() % 2 == 0 else Alignment.PAGAN
+                skills = roll_skill_and_aptitude_table(hero_id, alignment, rng)
             game_state.add_leader(
                 LeaderState(
                     leader_id=hero_id,
@@ -843,7 +865,7 @@ def generate_new_game(
             # see worldgen/king_home_placement.py's own module docstring
             # for the user-confirmed terrain/Naval-talent rules.
             naval = king_is_naval(game_state.leaders[king.leader_id].skills)
-            recruit_type_2 = second_recruit_slot(terrain, rng, naval=naval)
+            recruit_type_2 = second_recruit_slot(terrain, rng, naval=naval, king_race=king.race)
             owner_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
             # Phase 987: King Home spends each army's `pay` (recruit/
             # maintenance cost), not `BASE_STRENGTH` ("Str") -- see

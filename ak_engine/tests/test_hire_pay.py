@@ -109,6 +109,21 @@ def test_required_pay_defaults_to_cheapest_when_king_is_none():
     assert required_pay(make_state(), hero, None) == 1
 
 
+def test_required_pay_undead_hero_is_always_one_regardless_of_king():
+    # Bug fix: sourced directly from the user (2026-10-25), confirmed as
+    # a fixed rule (not descriptive flavor text) via an explicit follow-
+    # up question -- an Undead-aligned Hero always costs exactly 1 gold,
+    # unconditionally overriding the alignment-distance ladder even at
+    # its worst case (GOOD vs EVIL would otherwise cap at 5).
+    hero = _leader(_HERO_ID, alignment=Alignment.UNDEAD, temper=Temper.BRAVE)
+    assert required_pay(make_state(), hero, _ladder_king(Alignment.GOOD)) == 1
+
+
+def test_required_pay_undead_hero_is_always_one_even_as_a_starting_companion_under_an_undead_king():
+    hero = _leader(_HERO_ID, alignment=Alignment.UNDEAD, temper=Temper.BRAVE, is_starting_companion=True)
+    assert required_pay(make_state(), hero, _ladder_king(Alignment.UNDEAD)) == 1
+
+
 # -- bias/race/temper personal-bit mechanics (Phase 505's own real
 # formula). All four cases below hold the same DRUID-vs-GOOD real
 # distance 1 (align_penalty=1, bias=0 -- king id 2, no other friction

@@ -199,7 +199,21 @@ def required_pay(state: GameState, hero: LeaderState, king: LeaderState | None) 
     ``hero.is_starting_companion`` (Phase 984) skips the "conquest
     surcharge" term -- see module docstring's own Phase 984 addendum for
     the real-sample evidence this exclusion is based on.
+
+    **Undead fixed pay, sourced directly from the user (2026-10-25,
+    confirmed as a fixed rule via an explicit follow-up question rather
+    than assumed from phrasing)**: an Undead-aligned Hero always costs
+    exactly 1 gold/turn, unconditionally bypassing the ``like``-based
+    formula above (and its King-is-``None`` default, which already
+    happens to be 1 but for an unrelated reason). This is deliberately
+    unconditional on `hero.is_starting_companion`/race/temper -- the
+    user confirmed it as a flat rule for the alignment itself, not a
+    byproduct of the liking formula finally landing on 1 for some other
+    reason.
     """
+
+    if hero.alignment is Alignment.UNDEAD:
+        return 1
 
     if king is None:
         return 1

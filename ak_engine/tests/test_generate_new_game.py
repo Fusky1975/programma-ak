@@ -460,6 +460,59 @@ def test_every_king_gets_exactly_two_companions_at_their_own_home():
             assert companion.is_starting_companion is True
 
 
+def test_undead_king_companions_are_always_undead_and_evil_or_pagan():
+    # Bug fix: sourced directly from the user (2026-10-25) and
+    # independently confirmed by this project's own real sample
+    # (SE3__T0.K1: Uga-Buga Makumb, Elf/Undead, has companion Guerin --
+    # same race as the King (Elf), Undead-aligned -- and companion
+    # Teleko -- a different, drawn race (Dwarf), Evil-aligned): an
+    # Undead King's first companion (companion_index 0, same race as
+    # the King) is always Undead-aligned; the second (companion_index
+    # 1, a drawn race) is always Evil or Pagan.
+    game_state, kings = _setup()
+    game_state.kingdoms[0].alignment = Alignment.UNDEAD
+    rng = PascalRandom(seed=3)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    undead_king = kings[0]
+    king_kingdom_id = result.leaders[undead_king.leader_id].kingdom_id
+    companions = [
+        leader
+        for leader in result.leaders.values()
+        if leader.leader_id != undead_king.leader_id
+        and leader.kingdom_id == king_kingdom_id
+        and leader.location == undead_king.home_coord
+    ]
+    assert len(companions) == COMPANIONS_PER_KING
+
+    same_race_companions = [c for c in companions if c.race == undead_king.race]
+    other_companions = [c for c in companions if c.race != undead_king.race]
+    assert len(same_race_companions) == 1
+    assert len(other_companions) == 1
+    assert same_race_companions[0].alignment is Alignment.UNDEAD
+    assert other_companions[0].alignment in (Alignment.EVIL, Alignment.PAGAN)
+    for companion in companions:
+        assert companion.skills is not None
+
+
+def test_non_undead_king_companions_are_unaffected_by_the_undead_override():
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=3)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        king_kingdom_id = result.leaders[king.leader_id].kingdom_id
+        companions = [
+            leader
+            for leader in result.leaders.values()
+            if leader.leader_id != king.leader_id
+            and leader.kingdom_id == king_kingdom_id
+            and leader.location == king.home_coord
+        ]
+        for companion in companions:
+            assert companion.alignment is not Alignment.UNDEAD
+
+
 def _lords(result, kings):
     # Phase 979: generate_new_game() now also places "remaining mercenary
     # heroes" (kingdom_id=None, same as a lord) at coordinates not tied to

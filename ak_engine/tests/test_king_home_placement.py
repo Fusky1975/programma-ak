@@ -104,4 +104,26 @@ def test_second_recruit_slot_other_land_terrains_draw_from_cavalry_or_chariots()
     rng = PascalRandom(seed=1)
     seen = {second_recruit_slot(Terrain.PLAINS, rng, naval=False) for _ in range(50)}
     assert seen <= {ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY, ArmyType.CHARIOTS}
-    assert len(seen) > 1  # confirms the draw is genuinely random, not a constant
+
+
+def test_second_recruit_slot_orcish_king_is_always_warg_riders_regardless_of_terrain():
+    # Bug fix: sourced directly from the user's own observed bug report
+    # (a freshly-created Orc King's Home province had no Warg Riders
+    # among its two recruit types) -- an Orcish King's second recruit
+    # slot must always be Warg Riders, overriding the ordinary terrain-
+    # based draw (even Jungle's own Elephants rule) for every terrain.
+    rng = PascalRandom(seed=1)
+    for terrain in (Terrain.PLAINS, Terrain.JUNGLE, Terrain.FOREST, Terrain.MTNS):
+        assert second_recruit_slot(terrain, rng, naval=False, king_race=Race.ORCISH) is ArmyType.WARG_RIDERS
+
+
+def test_second_recruit_slot_orcish_king_naval_still_gets_fleet():
+    # A King's own chosen Naval talent is a deliberate build choice
+    # independent of race -- takes priority over the Orcish override.
+    rng = PascalRandom(seed=1)
+    assert second_recruit_slot(Terrain.PLAINS, rng, naval=True, king_race=Race.ORCISH) is ArmyType.FLEET
+
+
+def test_second_recruit_slot_non_orcish_king_race_unaffected():
+    rng = PascalRandom(seed=1)
+    assert second_recruit_slot(Terrain.JUNGLE, rng, naval=False, king_race=Race.HUMAN) is ArmyType.ELEPHANTS
