@@ -476,6 +476,12 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         if mercenary is not None:
             mercenary.kingdom_id = kingdom_id
             mercenary.commanded_by = commanded_by
+            # Bug fix (2026-10-25): a hired mercenary transitions out of
+            # the real `astate=Mercenary` state -- it's no longer
+            # "available to Recruit" (see `ArmyState.is_mercenary`'s own
+            # docstring) -- matching `Known_Merc`'s own real formula,
+            # which already requires `astate[an] = Mercenary`.
+            mercenary.is_mercenary = False
             army_id = mercenary.army_id
             hired = True
         else:

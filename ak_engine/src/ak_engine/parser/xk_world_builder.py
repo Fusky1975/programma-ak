@@ -377,7 +377,12 @@ def _treasure_display_name(treasure: Treasure) -> str:
 def _build_army(state: GameState, army: ArmyState, army_index: int, kingdom_id: int) -> XKArmyRecord:
     if army.is_skeletal:
         status = MonsterEngagementState.ZOMBOID
-    elif army.kingdom_id is None:
+    elif army.is_mercenary:
+        # Bug fix (2026-10-25): `army.is_mercenary`, not merely
+        # `army.kingdom_id is None` -- an ordinary unclaimed province's
+        # own native garrison also has no owning Kingdom but is real
+        # `HIRED` state, not `Mercenary` -- see `ArmyState.is_mercenary`'s
+        # own docstring for the real-sample evidence.
         status = MonsterEngagementState.MERCENARY
     else:
         status = MonsterEngagementState.HIRED

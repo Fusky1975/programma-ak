@@ -96,9 +96,18 @@ def test_friendly_provinces_for_includes_owned_and_allied():
 
 def test_mercenaries_at_returns_only_ownerless_armies_at_that_location():
     state = make_state()
-    state.add_army(ArmyState(301, None, ArmyType.BOWMEN, Quality.AVERAGE, FIELD))
+    state.add_army(ArmyState(301, None, ArmyType.BOWMEN, Quality.AVERAGE, FIELD, is_mercenary=True))
     assert {a.army_id for a in state.mercenaries_at(FIELD)} == {301}
     assert state.mercenaries_at(HOME) == []
+
+
+def test_mercenaries_at_excludes_an_ownerless_army_that_is_not_flagged_mercenary():
+    # Bug fix (2026-10-25): an ordinary unclaimed province's own native
+    # garrison also has `kingdom_id=None` but isn't a real recruitable
+    # mercenary band -- see `ArmyState.is_mercenary`'s own docstring.
+    state = make_state()
+    state.add_army(ArmyState(301, None, ArmyType.BOWMEN, Quality.AVERAGE, FIELD))
+    assert state.mercenaries_at(FIELD) == []
 
 
 def test_is_allied_none_kingdom_id_is_allied_with_nobody():

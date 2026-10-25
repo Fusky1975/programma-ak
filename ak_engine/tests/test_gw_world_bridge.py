@@ -298,6 +298,33 @@ def test_army_bridging_splits_mercenary_king_led_and_hero_led_correctly():
                 if a.location == record.coord and a.army_type == record.army_type and a.quality == record.quality
             ]
             assert any(a.commanded_by is None and a.kingdom_id is None for a in matches)
+            # Bug fix (2026-10-25): the real `is_mercenary` marker used
+            # to be silently dropped on import -- see `ArmyState.
+            # is_mercenary`'s own docstring.
+            assert any(a.is_mercenary for a in matches)
+
+    # And an *unled* row at a province with no real owning Kingdom (a
+    # native garrison, not a real mercenary) must bridge to
+    # `is_mercenary=False`, even though it also lands at
+    # `kingdom_id=None` -- same bug fix, the other direction.
+    unled_unowned_non_mercenary_records = [
+        r
+        for r in army_records
+        if not r.is_mercenary and r.commanded_by_leader_id is None and r.state is not MonsterEngagementState.DEAD
+    ]
+    found_any_unled_unowned = False
+    for record in unled_unowned_non_mercenary_records:
+        province = state.provinces.get(record.coord)
+        if province is None or province.owner_kingdom_id is not None:
+            continue
+        found_any_unled_unowned = True
+        matches = [
+            a
+            for a in state.armies.values()
+            if a.location == record.coord and a.army_type == record.army_type and a.quality == record.quality
+        ]
+        assert any(a.kingdom_id is None and a.is_mercenary is False for a in matches)
+    assert found_any_unled_unowned
 
     # No King happens to command a Block B row at T1 in this fixture, but
     # the invariant must hold for any that do: a King's own leader_id

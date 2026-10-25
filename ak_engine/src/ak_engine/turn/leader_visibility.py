@@ -137,13 +137,16 @@ def known_mercenary(
     ``Known_Merc := (astate[an] = Mercenary) and ((powner[ax,ay] = kng)
     or (Ldr_Near(kng,ax,ay,1)))``
 
-    ``astate[an] = Mercenary`` is ``army.kingdom_id is None`` -- the
-    exact predicate `GameState.mercenaries_at()` already uses. `radius=1`
-    here (adjacent province counts), unlike `Known_Loc`'s own `radius=0`
-    for the CHARACTERS report.
+    ``astate[an] = Mercenary`` is ``army.is_mercenary`` -- the exact
+    predicate `GameState.mercenaries_at()` already uses (bug fix,
+    2026-10-25: previously read as `army.kingdom_id is None`, which
+    also matched every ordinary unowned province's own native garrison
+    -- see `ArmyState.is_mercenary`'s own docstring for the real-sample
+    evidence). `radius=1` here (adjacent province counts), unlike
+    `Known_Loc`'s own `radius=0` for the CHARACTERS report.
     """
 
-    if army.kingdom_id is not None:
+    if not army.is_mercenary:
         return False
     province = state.provinces.get(army.location)
     owner_kingdom_id = province.owner_kingdom_id if province is not None else None

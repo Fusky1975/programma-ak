@@ -161,7 +161,7 @@ def test_known_loc_false_for_an_unknown_leader_id():
 
 
 def _mercenary(army_id: int, coord: HexCoord) -> ArmyState:
-    return ArmyState(army_id, None, ArmyType.BOWMEN, Quality.AVERAGE, coord)
+    return ArmyState(army_id, None, ArmyType.BOWMEN, Quality.AVERAGE, coord, is_mercenary=True)
 
 
 def test_known_mercenary_true_in_an_owned_province():
@@ -194,3 +194,14 @@ def test_known_mercenary_false_for_an_owned_army():
     state.provinces[HOME] = _province(HOME, owner=1)
     owned_army = ArmyState(9, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME)
     assert known_mercenary(state, owned_army, 1) is False
+
+
+def test_known_mercenary_false_for_an_unowned_army_not_flagged_mercenary():
+    # Bug fix, sourced directly from the user (2026-10-25, "troppe
+    # truppe mercenarie"): an ordinary unclaimed province's own native
+    # garrison has `kingdom_id=None` too, but is not a real `astate=
+    # Mercenary` army -- see `ArmyState.is_mercenary`'s own docstring.
+    state = GameState()
+    state.provinces[HOME] = _province(HOME, owner=1)
+    native_garrison = ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HOME)
+    assert known_mercenary(state, native_garrison, 1) is False

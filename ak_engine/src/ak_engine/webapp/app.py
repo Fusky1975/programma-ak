@@ -2417,6 +2417,7 @@ def create_app(games_root: Path | None = None) -> Flask:
         army.location = HexCoord(x, y)
         army.commanded_by = commanded_by
         army.is_skeletal = request.form.get("is_skeletal") == "on"
+        army.is_mercenary = request.form.get("is_mercenary") == "on"
         army.plague_immune = request.form.get("plague_immune") == "on"
         save_game(root, slug, state)
         return redirect(url_for("army_edit", slug=slug, army_id=army_id))

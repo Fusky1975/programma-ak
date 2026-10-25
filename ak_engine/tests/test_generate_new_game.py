@@ -165,6 +165,38 @@ def test_king_gets_a_real_extra_mercenary_band_at_home():
         assert band.commanded_by is None
         assert isinstance(band.army_type, ArmyType)
         assert band.movement_points == ARMY_TABLE[band.army_type].speed
+        # Bug fix, sourced directly from the user (2026-10-25, "troppe
+        # truppe mercenarie... 1 per ogni Re") and independently
+        # confirmed against the real GW3__T1 sample (10 Kings, exactly
+        # 10 `is_mercenary=True` army rows out of 218 total) -- this is
+        # the one genuinely sourced mercenary band per King, distinct
+        # from every ordinary unclaimed province's own native garrison,
+        # which also has `kingdom_id=None` but must never be flagged
+        # `is_mercenary`. See `ArmyState.is_mercenary`'s own docstring.
+        assert band.is_mercenary is True
+
+
+def test_exactly_one_mercenary_band_exists_per_king_world_wide():
+    # The same bug fix as above, checked the other way around: across
+    # *every* army generate_new_game() creates (every King Home, every
+    # ordinary humanoid province, every special-race province), the
+    # total `is_mercenary=True` count must be exactly len(kings) -- not
+    # inflated by the many other `kingdom_id=None` native-garrison
+    # armies this same pipeline also creates at every unclaimed
+    # province.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=3)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    mercenary_armies = [a for a in result.armies.values() if a.is_mercenary]
+    assert len(mercenary_armies) == len(kings)
+
+    # And every ordinary province's own native garrison with no owning
+    # Kingdom (there are many, on any real map) is NOT one of them.
+    unowned_non_mercenary_armies = [
+        a for a in result.armies.values() if a.kingdom_id is None and not a.is_mercenary
+    ]
+    assert len(unowned_non_mercenary_armies) > 0
 
 
 def test_extra_mercenary_band_type_is_compatible_or_fallback():

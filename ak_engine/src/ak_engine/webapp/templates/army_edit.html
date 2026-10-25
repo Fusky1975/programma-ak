@@ -60,6 +60,10 @@
     </p>
 
     <p>
+      <label><input type="checkbox" name="is_mercenary" {% if army.is_mercenary %}checked{% endif %}> Mercenary (an independent band any Kingdom may Recruit -- not just "no Kingdom owns it", a real separate flag)</label>
+    </p>
+
+    <p>
       <label><input type="checkbox" name="plague_immune" {% if army.plague_immune %}checked{% endif %}> Plague Immune (survived a past Plague -- a future one downgrades Quality instead of destroying it)</label>
     </p>
 

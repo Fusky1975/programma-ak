@@ -80,7 +80,7 @@ def test_recruit_falls_back_to_unled_leaves_a_colocated_mercenary_unaffected_by_
     # Same "nonexistent target -> garrison" fallback, exercised through
     # the mercenary-hiring branch instead of the fresh-levy branch.
     state = build_state()
-    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))
+    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, is_mercenary=True))
     request = RecruitRequest(leader_id=999, army_types=[ArmyType.BOWMEN])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -250,7 +250,7 @@ def test_mercenary_hire_still_works_in_hostile_territory_where_a_levy_would_be_b
     state = build_state(treasury=100)
     state.add_kingdom(KingdomState(2, "Hostilia", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0), treasury=0))
     state.provinces[LOCATION].owner_kingdom_id = 2
-    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))
+    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, is_mercenary=True))
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -380,7 +380,7 @@ def test_mod_pat_unknown_falls_back_to_race_compatibility_single_cost():
 
 def test_recruit_hires_colocated_mercenary_instead_of_levying_new_army():
     state = build_state()
-    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION))
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION, is_mercenary=True))
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -393,11 +393,14 @@ def test_recruit_hires_colocated_mercenary_instead_of_levying_new_army():
     assert state.armies[999].commanded_by is None
     assert state.armies[999].quality == Quality.VETERAN  # preserved, not reset to Average
     assert len(state.armies) == 1  # no new army created
+    # Bug fix (2026-10-25): a hired mercenary is no longer "available to
+    # Recruit" -- see `ArmyState.is_mercenary`'s own docstring.
+    assert state.armies[999].is_mercenary is False
 
 
 def test_recruit_ignores_mercenary_below_average_quality():
     state = build_state()
-    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.GREEN, LOCATION))
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.GREEN, LOCATION, is_mercenary=True))
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -409,7 +412,7 @@ def test_recruit_ignores_mercenary_below_average_quality():
 
 def test_recruit_ignores_unhireable_mercenary():
     state = build_state()
-    mercenary = ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION)
+    mercenary = ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION, is_mercenary=True)
     mercenary.unhireable_this_turn = True
     state.add_army(mercenary)
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
@@ -422,8 +425,8 @@ def test_recruit_ignores_unhireable_mercenary():
 
 def test_recruit_ignores_mercenary_of_a_different_type_or_location():
     state = build_state()
-    state.add_army(ArmyState(998, None, ArmyType.AXEMEN, Quality.VETERAN, LOCATION))  # wrong type
-    state.add_army(ArmyState(997, None, ArmyType.BOWMEN, Quality.VETERAN, HexCoord(0, 0)))  # wrong place
+    state.add_army(ArmyState(998, None, ArmyType.AXEMEN, Quality.VETERAN, LOCATION, is_mercenary=True))  # wrong type
+    state.add_army(ArmyState(997, None, ArmyType.BOWMEN, Quality.VETERAN, HexCoord(0, 0), is_mercenary=True))  # wrong place
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -665,7 +668,7 @@ def test_no_neutral_king_discount_by_default():
     # title yet, matching the same "alignment alone isn't enough"
     # distinction the merit-formula itself makes.
     state = build_neutral_king_state()
-    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION))
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION, is_mercenary=True))
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -676,7 +679,7 @@ def test_no_neutral_king_discount_by_default():
 def test_neutral_king_hires_a_mercenary_for_1_gold():
     state = build_neutral_king_state()
     _grant_neutral_king_title(state)
-    state.add_army(ArmyState(999, None, ArmyType.HVY_CAVALRY, Quality.VETERAN, LOCATION))  # pay 3 normally
+    state.add_army(ArmyState(999, None, ArmyType.HVY_CAVALRY, Quality.VETERAN, LOCATION, is_mercenary=True))  # pay 3 normally
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.HVY_CAVALRY])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -708,7 +711,7 @@ def test_neutral_king_discount_still_adds_the_ally_fee_in_ally_territory():
     state.allied_kingdoms.add(frozenset({1, 2}))
     state.provinces[LOCATION].owner_kingdom_id = 2
     state.treat_permissions.add((2, 1))
-    state.add_army(ArmyState(999, None, ArmyType.HVY_CAVALRY, Quality.VETERAN, LOCATION))
+    state.add_army(ArmyState(999, None, ArmyType.HVY_CAVALRY, Quality.VETERAN, LOCATION, is_mercenary=True))
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.HVY_CAVALRY])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)

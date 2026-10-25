@@ -526,6 +526,11 @@ def bridge_new_game_state(
                 location=record.coord,
                 commanded_by=commanded_by,
                 is_skeletal=record.is_skeletal,
+                # Bug fix (2026-10-25): this real flag used to be
+                # silently dropped on import -- see `ArmyState.
+                # is_mercenary`'s own docstring for why it isn't simply
+                # `owner_kingdom_id is None`.
+                is_mercenary=record.is_mercenary,
             )
         )
         armies_created += 1
@@ -614,6 +619,11 @@ def apply_confirmed_hero_ids(
                     location=record.coord,
                     commanded_by=real_id,
                     is_skeletal=record.is_skeletal,
+                    # A Hero-led record (the only kind that can land
+                    # here) is never `is_mercenary` by construction --
+                    # see the main bridging loop's own branching above
+                    # -- passed through anyway for consistency.
+                    is_mercenary=record.is_mercenary,
                 )
             )
             report.armies_recovered += 1

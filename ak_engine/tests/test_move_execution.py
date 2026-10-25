@@ -530,7 +530,7 @@ def test_move_into_province_with_only_a_mercenary_band_is_uncontested():
     # Phase 754's own "Wandering Mercenaries" following is gated on a
     # real general, so it's never even considered for this call.
     state = base_state()
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET, is_mercenary=True))
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
 
@@ -549,7 +549,7 @@ def test_move_into_province_with_only_a_mercenary_band_is_uncontested():
 
 def test_resolve_wandering_mercenary_following_success():
     state = base_state()
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
 
     followed = resolve_wandering_mercenary_following(
         state, ORIGIN, TARGET, state.provinces[ORIGIN], state.provinces[TARGET]
@@ -564,7 +564,7 @@ def test_resolve_wandering_mercenary_following_success():
 
 def test_resolve_wandering_mercenary_following_refuses_without_movement_points():
     state = base_state()
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN))  # movement_points=0 default
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, is_mercenary=True))  # movement_points=0 default
 
     followed = resolve_wandering_mercenary_following(
         state, ORIGIN, TARGET, state.provinces[ORIGIN], state.provinces[TARGET]
@@ -579,7 +579,7 @@ def test_resolve_wandering_mercenary_following_refuses_an_illegal_transport_hop(
     # `find_transport_illegality()` (Phase 737) reused directly, the same
     # real gate any ordinary army making this hop would face.
     state = base_state()
-    state.add_army(ArmyState(301, None, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=2))
+    state.add_army(ArmyState(301, None, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
 
     followed = resolve_wandering_mercenary_following(
         state, ORIGIN, TARGET, state.provinces[ORIGIN], state.provinces[TARGET]
@@ -591,8 +591,8 @@ def test_resolve_wandering_mercenary_following_refuses_an_illegal_transport_hop(
 
 def test_resolve_wandering_mercenary_following_processes_every_eligible_army_in_sorted_order():
     state = base_state()
-    state.add_army(ArmyState(302, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
+    state.add_army(ArmyState(302, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
 
     followed = resolve_wandering_mercenary_following(
         state, ORIGIN, TARGET, state.provinces[ORIGIN], state.provinces[TARGET]
@@ -628,7 +628,7 @@ def test_resolve_wandering_mercenary_following_with_none_present():
 def test_execute_move_a_mercenary_left_at_the_origin_follows_the_general():
     state = base_state()
     state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10)
 
@@ -644,7 +644,7 @@ def test_execute_move_a_mercenary_left_at_the_destination_does_not_follow():
     # mercenary already standing at the destination is simply unaffected.
     state = base_state()
     state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET, movement_points=2))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET, movement_points=2, is_mercenary=True))
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10)
 
@@ -659,7 +659,7 @@ def test_execute_move_leader_alone_does_not_trigger_wandering_mercenary_followin
     # still have positive movement points. An armyless leader has none.
     state = base_state()
     state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
 
     result = execute_move(state, kingdom_id=1, army_ids=[], target=TARGET, leader_id=10)
 
@@ -676,7 +676,7 @@ def test_execute_move_failed_conquest_does_not_trigger_wandering_mercenary_follo
     state = base_state()
     state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
     state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET))
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
     # Phase 906: turn/pursuit.py's own real, byte-confirmed mechanism
     # always runs once the attacker is clean swept (no "decline" roll
     # left) -- one extra .choice() draw (the sole retreating target) plus

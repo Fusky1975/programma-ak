@@ -1042,6 +1042,14 @@ def generate_new_game(
                 location=home_coord,
                 commanded_by=None,
                 movement_points=ARMY_TABLE[band_type].speed,
+                # Bug fix, sourced directly from the user (2026-10-25):
+                # this is the one genuinely sourced "mercenary" army per
+                # King -- see `ArmyState.is_mercenary`'s own docstring.
+                # Every *other* `kingdom_id=None` army created elsewhere
+                # in this function (an ordinary unclaimed province's own
+                # native garrison) is deliberately left at the default
+                # `is_mercenary=False`.
+                is_mercenary=True,
             )
         )
 

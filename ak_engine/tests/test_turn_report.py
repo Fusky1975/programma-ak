@@ -10575,7 +10575,7 @@ _ARMIES_MERCENARY_COLUMN_HEADER = "Province          Leader         Designation 
 
 def test_describe_armies_report_known_mercenary_in_owned_province():
     state = _armies_state()
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10592,7 +10592,7 @@ def test_describe_armies_report_known_mercenary_via_adjacent_leader():
     state = _armies_state()
     state.add_province(ProvinceState(HexCoord(1, 0), Terrain.PLAINS, Race.HUMAN))  # unowned, adjacent to (0,0)
     state.add_leader(LeaderState(1, 1, "Sir Aldric", HexCoord(0, 0)))  # this kingdom's own leader, radius 1 away
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(1, 0)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(1, 0), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10610,7 +10610,7 @@ def test_describe_armies_report_known_mercenary_uses_the_real_board_width():
     assert state.board_width == 30
     state.add_leader(LeaderState(1, 1, "Sir Aldric", HexCoord(1, 2)))
     state.add_province(ProvinceState(HexCoord(18, 2), Terrain.PLAINS, Race.HUMAN))
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(18, 2)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(18, 2), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10620,7 +10620,7 @@ def test_describe_armies_report_known_mercenary_uses_the_real_board_width():
 def test_describe_armies_report_unknown_mercenary_is_absent():
     state = _armies_state()
     state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN))  # unowned, far away
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(5, 5)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(5, 5), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10637,12 +10637,29 @@ def test_describe_armies_report_no_mercenary_section_when_none_known():
     assert _ARMIES_MERCENARY_INTRO not in lines
 
 
+def test_describe_armies_report_unowned_native_garrison_is_not_a_mercenary():
+    # Bug fix, sourced directly from the user (2026-10-25, "troppe
+    # truppe mercenarie... 1 per ogni Re") and independently confirmed
+    # against the real GW3__T1 sample: an ordinary unclaimed province's
+    # own native garrison (`kingdom_id=None`, not flagged
+    # `is_mercenary`) must never appear in the "independent mercenaries
+    # which you may Recruit" section, even sitting right in the
+    # viewer's own owned province -- see `ArmyState.is_mercenary`'s own
+    # docstring.
+    state = _armies_state()
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert _ARMIES_MERCENARY_INTRO not in lines
+
+
 def test_describe_armies_report_mercenary_section_appears_even_with_no_owned_armies():
     # The real `none`/`strip` state is per-passtype (Phase 642 mirrors
     # Phase 639's own CHARACTERS-report fix for the identical bug class):
     # an empty Hired pass must not suppress a real Mercenary pass.
     state = _armies_state()
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10652,8 +10669,8 @@ def test_describe_armies_report_mercenary_section_appears_even_with_no_owned_arm
 
 def test_describe_armies_report_mercenary_suppresses_province_column_after_the_second():
     state = _armies_state()
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
-    state.add_army(ArmyState(10, None, ArmyType.AXEMEN, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), is_mercenary=True))
+    state.add_army(ArmyState(10, None, ArmyType.AXEMEN, Quality.AVERAGE, HexCoord(0, 0), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10667,7 +10684,7 @@ def test_describe_armies_report_mercenary_suppresses_province_column_after_the_s
 def test_describe_armies_report_mercenary_race_falls_back_to_the_provinces_own_race():
     state = _armies_state()  # viewing kingdom (Testland) is Human
     state.add_province(ProvinceState(HexCoord(2, 2), Terrain.PLAINS, Race.ELVEN, owner_kingdom_id=1))
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(2, 2)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(2, 2), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10678,7 +10695,7 @@ def test_describe_armies_report_mercenary_race_falls_back_to_the_provinces_own_r
 
 def test_describe_armies_report_mercenary_leader_column_is_blank_not_garrison():
     state = _armies_state()
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 

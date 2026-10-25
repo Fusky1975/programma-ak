@@ -532,7 +532,11 @@ def record_newly_known_column(kingdom: KingdomState, x: int, board_width: int) -
 @dataclass(slots=True)
 class ArmyState:
     army_id: int
-    kingdom_id: int | None  # None = unowned mercenary
+    # `None` = no Kingdom currently owns/controls this army -- this
+    # alone does NOT mean "a recruitable mercenary band" (see
+    # `is_mercenary` below): an ordinary unclaimed province's own
+    # native garrison also has `kingdom_id=None`.
+    kingdom_id: int | None
     army_type: ArmyType
     quality: Quality
     location: HexCoord
@@ -579,6 +583,28 @@ class ArmyState:
     # army raised via the Skeletal_Army spell, so `turn/cast_execution.py
     # _execute_skeletal_army()` sets this field on every army it raises.
     is_skeletal: bool = False
+    # Bug fix, sourced directly from the user (2026-10-25, "troppe truppe
+    # mercenarie... 1 per ogni Re") and independently confirmed against
+    # the real `GW3__T1` sample: that file's own `astate` enum (see
+    # `is_skeletal`'s own docstring above) has a genuine, separate
+    # `Mercenary` value (`parser/gw_world.py GWArmyRecord.is_mercenary`,
+    # Phase 337, "85 of 85 real letter cross-checks matched") that is
+    # NOT simply "no Kingdom owns this army" -- parsing that file's own
+    # Block B directly shows exactly 10 `is_mercenary=True` armies for
+    # its 10 Kings (one each, matching this project's own already-
+    # confirmed `worldgen/mercenary_band.py` "one extra mercenary band
+    # per King" sourcing) out of 218 total armies, the rest (every
+    # ordinary province's own native garrison with no owning Kingdom)
+    # correctly NOT flagged. Before this field existed, every one of
+    # those ordinary unowned garrisons was indistinguishable from a true
+    # recruitable mercenary band under the old `kingdom_id is None`
+    # proxy this field now replaces everywhere that proxy meant
+    # "mercenary" specifically (`mercenaries_at()` below, `turn/
+    # leader_visibility.py known_mercenary()`, `parser/xk_world_builder.py
+    # _build_army()`) -- every OTHER real use of `kingdom_id is None`
+    # (combat, office eligibility, spying: "no Kingdom controls this at
+    # all") is a separate, correct, unrelated concept and is left alone.
+    is_mercenary: bool = False
     # Phase 521: AdvancedAbility.MARCH_CAVALRY/_INFANTRY (+ Mastery tiers)
     # -- rulebook [6.2]: "The increased army-movement allowed by the March
     # and Naval abilities is always calculated at the moment an army
@@ -2204,7 +2230,9 @@ class GameState:
         return [army for army in self.armies.values() if army.commanded_by == leader_id]
 
     def mercenaries_at(self, coord: HexCoord) -> list[ArmyState]:
-        return [army for army in self.armies.values() if army.location == coord and army.kingdom_id is None]
+        # Bug fix (2026-10-25): `army.is_mercenary`, not merely `army.
+        # kingdom_id is None` -- see that field's own docstring.
+        return [army for army in self.armies.values() if army.location == coord and army.is_mercenary]
 
     # Phase 876: this class's own symmetric `independent_heroes_at(coord)`
     # (a per-coordinate mirror of the method above, for leaders instead of

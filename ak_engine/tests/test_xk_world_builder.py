@@ -21,7 +21,7 @@ from ak_engine.models.army_type import ArmyType
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
-from ak_engine.models.monster import Monster
+from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.parser.gw_world import DiplomaticRelation
@@ -135,6 +135,28 @@ def test_nearby_mercenary_army_is_known_via_known_mercenary_rule():
     world = build_xk_world_for_kingdom(state, 1)
     mercenary_records = [a for a in world.armies if a.race is not None and a.coord == HexCoord(0, 0) and a.commanded_by_leader_id is None]
     assert len(mercenary_records) == 1
+
+
+def test_build_army_status_distinguishes_a_real_mercenary_from_an_unowned_native_garrison():
+    # Bug fix, sourced directly from the user (2026-10-25, "troppe
+    # truppe mercenarie"): an ordinary unclaimed province's own native
+    # garrison (`kingdom_id=None`, `is_mercenary=False`) must report
+    # XKArmyRecord `status=HIRED`, not `MERCENARY` -- only a real
+    # `is_mercenary=True` army gets `MERCENARY` -- see `ArmyState.
+    # is_mercenary`'s own docstring. Both armies are placed inside
+    # kingdom 1's own owned province (0, 0) so `known_location` is
+    # `True` regardless of `known_mercenary()`'s own separate
+    # visibility gate, isolating the status check from it.
+    state = _realistic_state()
+    state.add_army(ArmyState(201, None, ArmyType.AXEMEN, Quality.AVERAGE, HexCoord(0, 0), is_mercenary=True))
+    state.add_army(ArmyState(202, None, ArmyType.CHARIOTS, Quality.AVERAGE, HexCoord(0, 0), is_mercenary=False))
+
+    world = build_xk_world_for_kingdom(state, 1)
+
+    mercenary_record = next(a for a in world.armies if a.army_type is ArmyType.AXEMEN)
+    garrison_record = next(a for a in world.armies if a.army_type is ArmyType.CHARIOTS)
+    assert mercenary_record.status is MonsterEngagementState.MERCENARY
+    assert garrison_record.status is MonsterEngagementState.HIRED
 
 
 def test_account_number_and_treasury_are_read_from_kingdom_state():
