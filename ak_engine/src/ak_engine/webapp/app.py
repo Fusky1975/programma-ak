@@ -3012,6 +3012,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             phase_numbers=range(PHASE_COUNT),
             actions=list(ActionCode),
             move_action_value=int(ActionCode.LMOVE),
+            explore_action_value=int(ActionCode.EXPLORE),
             province_choices=province_options(state),
             error=request.args.get("error"),
         )

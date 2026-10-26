@@ -9,10 +9,11 @@
 <div class="panel" style="border-left: 6px solid var(--phase-turns);">
   <h2>{{ kingdom.name }} &mdash; Compose Moves for Turn {{ state.turn_number }}</h2>
   <p class="hex-map-legend-note">
-    A base editor, filled in one Action at a time: Move now has its own destination dropdown; every other
-    Action still takes the same plain Object + Extra numbers a real move file's own "P&lt;n&gt; : &lt;action&gt;
-    &lt;object&gt; &lt;extra...&gt;" line carries, until it gets its own friendlier form too. Saving builds a real
-    move file from these and stores it exactly like an uploaded one.
+    A base editor, filled in one Action at a time: Move has its own destination dropdown, Explore needs no
+    input at all (it always targets the leader's own current province); every other Action still takes the
+    same plain Object + Extra numbers a real move file's own "P&lt;n&gt; : &lt;action&gt; &lt;object&gt;
+    &lt;extra...&gt;" line carries, until it gets its own friendlier form too. Saving builds a real move file
+    from these and stores it exactly like an uploaded one.
   </p>
 
   <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
@@ -24,6 +25,7 @@
             <th>Phase</th>
             <th>Action</th>
             <th>Move Destination</th>
+            <th>Explore</th>
             <th>Object</th>
             <th>Extra (space or comma separated)</th>
           </tr>
@@ -47,6 +49,7 @@
                   {% endfor %}
                 </select>
               </td>
+              <td class="compose-explore-cell hex-map-legend-note">No input needed -- explores wherever this leader currently is.</td>
               <td class="compose-generic-cell"><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
               <td class="compose-generic-cell"><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>
             </tr>
@@ -61,23 +64,28 @@
 
 <script>
   // Progressive enhancement only: every row works with plain HTML/CSS
-  // alone (both the Move Destination and the Object/Extra columns are
-  // always real, submittable fields) -- this just hides whichever pair
-  // doesn't match the row's own current Action, mirroring the real
-  // rule that Move reads its own destination, never Object/Extra (see
+  // alone (every column's own field is always real and submittable) --
+  // this just hides whichever ones don't match the row's own current
+  // Action, mirroring the real rule that Move reads its own
+  // destination and Explore reads nothing, never Object/Extra (see
   // webapp/moves_compose.py's own docstring). Server-side validation
   // (build_composed_kingdom()) is the real source of truth either way.
   var MOVE_ACTION_VALUE = "{{ move_action_value }}";
+  var EXPLORE_ACTION_VALUE = "{{ explore_action_value }}";
 
   function updateComposeRow(select) {
     var row = select.closest("tr");
     if (!row) return;
     var isMove = select.value === MOVE_ACTION_VALUE;
+    var isExplore = select.value === EXPLORE_ACTION_VALUE;
     row.querySelectorAll(".compose-move-cell").forEach(function (cell) {
       cell.style.display = isMove ? "" : "none";
     });
+    row.querySelectorAll(".compose-explore-cell").forEach(function (cell) {
+      cell.style.display = isExplore ? "" : "none";
+    });
     row.querySelectorAll(".compose-generic-cell").forEach(function (cell) {
-      cell.style.display = isMove ? "none" : "";
+      cell.style.display = (isMove || isExplore) ? "none" : "";
     });
   }
 

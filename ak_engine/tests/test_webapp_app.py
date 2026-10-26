@@ -6338,6 +6338,45 @@ def test_turns_compose_save_move_order_without_a_destination_shows_an_error(tmp_
     assert b"choose a Move destination" in response.data
 
 
+def test_turns_compose_shows_an_explore_no_input_note(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"No input needed" in response.data
+
+
+def test_turns_compose_save_explore_order_ignores_stray_object_and_extra(tmp_path):
+    # Sourced directly from the user (2026-10-26): Explore always
+    # targets the leader's own current province, so nothing typed into
+    # the generic Object/Extra fields should end up in the real file.
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.EXPLORE))
+    form[f"obj_{king.leader_id}_0"] = "999"
+    form[f"extra_{king.leader_id}_0"] = "1 2 3"
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    explore_phase = king_block.plan.segments[0].phases["P0"]
+    assert explore_phase.action is ActionCode.EXPLORE
+    assert explore_phase.obj == 0
+    assert explore_phase.extra == []
+
+
 def test_turns_compose_save_rejects_an_invalid_action(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

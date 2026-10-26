@@ -3,7 +3,11 @@ editor's own form-to-Kingdom logic. Move (``ActionCode.LMOVE``) is the
 first action to get its own dedicated syntax (a province-name dropdown
 instead of the raw, encoded Object field) -- see that module's own
 docstring for the ``turn/plan_dispatch.py``-sourced confirmation that
-Move reads only ``obj`` (never ``extra``).
+Move reads only ``obj`` (never ``extra``). Explore (``ActionCode.
+EXPLORE``) is the second (sourced directly from the user, 2026-10-26,
+and independently confirmed from ``turn/plan_dispatch.py``'s own
+EXPLORE branch): it reads neither ``obj`` nor ``extra`` at all, always
+targeting the acting leader's own current province.
 """
 
 from __future__ import annotations
@@ -123,3 +127,39 @@ def test_build_composed_kingdom_round_trips_a_move_order_to_the_real_target_coor
 
     phase0 = kingdom.leaders[0].plan.segments[0].phases["P0"]
     assert decode_hex_number(phase0.obj, state.board_width) == HexCoord(3, 2)
+
+
+def test_explore_phase_ignores_any_generic_object_or_extra_input():
+    # Sourced directly from the user (2026-10-26): "non c'è bisogno di
+    # mettere la provincia perché si può esplorare solo la provincia
+    # dove si trova l'eroe o il Re" -- confirmed from turn/plan_
+    # dispatch.py's own EXPLORE branch, which reads neither obj nor
+    # extra at all. Stray values left over in the generic fields (e.g.
+    # from switching the Action dropdown away from something else)
+    # must be silently ignored, not written into the real move file.
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_3"] = str(int(ActionCode.EXPLORE))
+    form[f"obj_{KING_ID}_3"] = "999"
+    form[f"extra_{KING_ID}_3"] = "1 2 3"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    explore_phase = phases[3]
+    assert explore_phase.action is ActionCode.EXPLORE
+    assert explore_phase.obj == 0
+    assert explore_phase.extra == []
+
+
+def test_build_composed_kingdom_explore_phase_carries_no_object_or_extra():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.EXPLORE))
+    form[f"obj_{KING_ID}_0"] = "999"
+    form[f"extra_{KING_ID}_0"] = "1 2 3"
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+
+    phase0 = kingdom.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.EXPLORE
+    assert phase0.obj == 0
+    assert phase0.extra == []

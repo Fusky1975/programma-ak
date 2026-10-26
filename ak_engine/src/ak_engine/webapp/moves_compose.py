@@ -17,7 +17,14 @@ province) -- ``extra`` is never consulted; every army the moving leader
 already commands (``GameState.armies_commanded_by(leader_id)``) moves
 together automatically, nothing to list. The GM's own chosen syntax
 (2026-10-26): a province-name dropdown (``province_options()`` below)
-replaces the raw Object field for a Move phase specifically; every
+replaces the raw Object field for a Move phase specifically. **Explore
+(``ActionCode.EXPLORE``) is the second one** (2026-10-26, the user's own
+choice -- rulebook's own second-listed action, and their own direct
+observation): confirmed directly from ``turn/plan_dispatch.py``'s own
+EXPLORE branch that neither ``obj`` nor ``extra`` is read at all --
+``province = state.provinces[state.leaders[leader_id].location]``, the
+acting leader's own current province, always. Explore needs no input
+whatsoever; ``obj``/``extra`` are simply forced to ``0``/``[]``. Every
 other not-yet-designed action still falls back to the plain Object/
 Extra integers. A Special Encounter Plan (``PlanSegment.sp``) and a
 nested Hire/Charm/Resurrection plan (``PlanPhase.nested_plan``) aren't
@@ -172,7 +179,11 @@ def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int
     ``move_target_<leader_id>_<n>`` dropdown field instead of the
     generic Object field (see this module's own docstring for why) --
     ``extra`` is always empty for Move, matching ``turn/plan_dispatch.py``'s
-    own confirmed "Move's extra is never read" finding.
+    own confirmed "Move's extra is never read" finding. An Explore
+    (``ActionCode.EXPLORE``) phase needs no field at all -- ``obj``/
+    ``extra`` are forced to ``0``/``[]`` regardless of whatever the
+    generic form fields happen to hold, since Explore always targets
+    the acting leader's own current province (same module docstring).
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -183,6 +194,9 @@ def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int
                 form.get(f"move_target_{leader_id}_{n}", ""), board_width=board_width, phase_label=f"P{n}"
             )
             extra: list[int] = []
+        elif action is ActionCode.EXPLORE:
+            obj = 0
+            extra = []
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))
