@@ -82,6 +82,7 @@ from ak_engine.webapp.moves_compose import (
     InvalidComposedMovesError,
     build_composed_kingdom,
     kingdom_leaders_for_compose,
+    province_options,
 )
 from ak_engine.webapp.kingdom_create import (
     NoProvinceAtCoordError,
@@ -3010,6 +3011,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             roster=roster,
             phase_numbers=range(PHASE_COUNT),
             actions=list(ActionCode),
+            move_action_value=int(ActionCode.LMOVE),
+            province_choices=province_options(state),
             error=request.args.get("error"),
         )
 

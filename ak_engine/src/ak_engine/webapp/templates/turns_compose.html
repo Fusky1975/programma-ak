@@ -9,10 +9,10 @@
 <div class="panel" style="border-left: 6px solid var(--phase-turns);">
   <h2>{{ kingdom.name }} &mdash; Compose Moves for Turn {{ state.turn_number }}</h2>
   <p class="hex-map-legend-note">
-    A base editor: each Phase (P0-P4) below is a plain Action + Object + Extra numbers, the same three
-    values a real move file's own "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries.
-    Saving builds a real move file from these and stores it exactly like an uploaded one -- it will show up
-    on the Turn page as this Kingdom's own Move File, and can be removed or replaced the same way.
+    A base editor, filled in one Action at a time: Move now has its own destination dropdown; every other
+    Action still takes the same plain Object + Extra numbers a real move file's own "P&lt;n&gt; : &lt;action&gt;
+    &lt;object&gt; &lt;extra...&gt;" line carries, until it gets its own friendlier form too. Saving builds a real
+    move file from these and stores it exactly like an uploaded one.
   </p>
 
   <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
@@ -23,6 +23,7 @@
           <tr>
             <th>Phase</th>
             <th>Action</th>
+            <th>Move Destination</th>
             <th>Object</th>
             <th>Extra (space or comma separated)</th>
           </tr>
@@ -32,14 +33,22 @@
             <tr>
               <td>P{{ n }}</td>
               <td>
-                <select name="action_{{ leader.leader_id }}_{{ n }}">
+                <select class="compose-action" name="action_{{ leader.leader_id }}_{{ n }}">
                   {% for action in actions %}
                     <option value="{{ action.value }}" {% if action.name == "DEFEND" %}selected{% endif %}>{{ action|display_name }}</option>
                   {% endfor %}
                 </select>
               </td>
-              <td><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
-              <td><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>
+              <td class="compose-move-cell">
+                <select name="move_target_{{ leader.leader_id }}_{{ n }}">
+                  <option value="">-- choose a province --</option>
+                  {% for value, label in province_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="compose-generic-cell"><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
+              <td class="compose-generic-cell"><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>
             </tr>
           {% endfor %}
         </tbody>
@@ -49,5 +58,35 @@
     <button type="submit">Save Composed Moves for Turn {{ state.turn_number }}</button>
   </form>
 </div>
+
+<script>
+  // Progressive enhancement only: every row works with plain HTML/CSS
+  // alone (both the Move Destination and the Object/Extra columns are
+  // always real, submittable fields) -- this just hides whichever pair
+  // doesn't match the row's own current Action, mirroring the real
+  // rule that Move reads its own destination, never Object/Extra (see
+  // webapp/moves_compose.py's own docstring). Server-side validation
+  // (build_composed_kingdom()) is the real source of truth either way.
+  var MOVE_ACTION_VALUE = "{{ move_action_value }}";
+
+  function updateComposeRow(select) {
+    var row = select.closest("tr");
+    if (!row) return;
+    var isMove = select.value === MOVE_ACTION_VALUE;
+    row.querySelectorAll(".compose-move-cell").forEach(function (cell) {
+      cell.style.display = isMove ? "" : "none";
+    });
+    row.querySelectorAll(".compose-generic-cell").forEach(function (cell) {
+      cell.style.display = isMove ? "none" : "";
+    });
+  }
+
+  document.querySelectorAll(".compose-action").forEach(updateComposeRow);
+  document.addEventListener("change", function (event) {
+    if (event.target.classList && event.target.classList.contains("compose-action")) {
+      updateComposeRow(event.target);
+    }
+  });
+</script>
 
 {% endblock %}

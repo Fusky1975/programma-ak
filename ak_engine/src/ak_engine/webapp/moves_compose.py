@@ -7,14 +7,23 @@ interface, instead of always having to upload a real ``.K1`` file
 a plain ``ActionCode`` + an ``obj`` integer + a list of ``extra``
 integers -- the exact same three values a real move file's own ``P<n>
 : <action> <obj> <extra...>`` line carries, with no command-specific
-guidance (a friendlier "Move to province X"/"Recruit 3 Bowmen" form per
-action is deliberately left for a later round, decided one command at a
-time with the user -- see this module's own commit message). A Special
-Encounter Plan (``PlanSegment.sp``) and a nested Hire/Charm/Resurrection
-plan (``PlanPhase.nested_plan``) aren't exposed here yet either, for the
-same reason -- every composed leader gets the plain ``(10, -1)``
-"nothing special configured" ``SP:`` value every real sample already
-shows by default, and no nested plan.
+guidance. A friendlier form per action is being decided one command at
+a time with the user; **Move (``ActionCode.LMOVE``) is the first one**
+(2026-10-26, the user's own choice -- rulebook's own first-listed
+action): confirmed directly from ``turn/plan_dispatch.py``'s own LMOVE
+branch that ``obj`` is the *only* field Move reads (``turn/hex_
+numbering.py decode_hex_number(phase.obj, board_width)``, the target
+province) -- ``extra`` is never consulted; every army the moving leader
+already commands (``GameState.armies_commanded_by(leader_id)``) moves
+together automatically, nothing to list. The GM's own chosen syntax
+(2026-10-26): a province-name dropdown (``province_options()`` below)
+replaces the raw Object field for a Move phase specifically; every
+other not-yet-designed action still falls back to the plain Object/
+Extra integers. A Special Encounter Plan (``PlanSegment.sp``) and a
+nested Hire/Charm/Resurrection plan (``PlanPhase.nested_plan``) aren't
+exposed here yet either, for the same reason -- every composed leader
+gets the plain ``(10, -1)`` "nothing special configured" ``SP:`` value
+every real sample already shows by default, and no nested plan.
 
 **Why this goes through a real ``Kingdom`` + ``parser/k1_moves_writer.py``
 rather than writing straight to ``GameState``**: the exact same shape a
@@ -35,7 +44,9 @@ from ak_engine.models.enums import ActionCode
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader
 from ak_engine.models.leader import Leader
+from ak_engine.models.map import HexCoord
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
+from ak_engine.turn.hex_numbering import encode_hex_number
 
 PHASE_COUNT = 5  # P0..P4 -- every real AK3__T*.K1 sample's own leader block shape.
 
@@ -66,6 +77,23 @@ def kingdom_leaders_for_compose(state: GameState, kingdom_id: int) -> list[Leade
     leaders = [leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id]
     leaders.sort(key=lambda leader: (not leader.is_king, leader.leader_id))
     return leaders
+
+
+def province_options(state: GameState) -> list[tuple[str, str]]:
+    """Every province as a ``(value, label)`` pair for a Move phase's own
+    destination dropdown -- ``value`` is ``"x,y"`` (parsed back by
+    ``_parse_move_target()``), ``label`` is the province's own real name
+    where one exists, else just its coordinate. Sorted in map reading
+    order (row by row, left to right).
+    """
+
+    provinces = sorted(state.provinces.values(), key=lambda province: (province.coord.y, province.coord.x))
+    options = []
+    for province in provinces:
+        value = f"{province.coord.x},{province.coord.y}"
+        label = f"{province.name} ({province.coord.x}, {province.coord.y})" if province.name else f"({province.coord.x}, {province.coord.y})"
+        options.append((value, label))
+    return options
 
 
 def compose_filename(game_label: str, turn_number: int, kingdom_id: int) -> str:
@@ -113,17 +141,38 @@ def _parse_extra(raw: str) -> list[int]:
     return values
 
 
-def parse_phase_inputs(form: dict[str, str], leader_id: int) -> list[ComposedPhaseInput]:
+def _parse_move_target(raw: str, *, board_width: int, phase_label: str) -> int:
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Move destination.")
+    x_str, _, y_str = raw.partition(",")
+    x = _parse_int(x_str, field_label=f"{phase_label} Move destination")
+    y = _parse_int(y_str, field_label=f"{phase_label} Move destination")
+    return encode_hex_number(HexCoord(x, y), board_width)
+
+
+def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int) -> list[ComposedPhaseInput]:
     """Reads this one leader's own ``action_<leader_id>_<n>``/``obj_<leader_id>_<n>``/
     ``extra_<leader_id>_<n>`` form fields (``n`` in ``0..PHASE_COUNT-1``)
     into ``PHASE_COUNT`` validated phase inputs, in ``P0..P4`` order.
+
+    A Move (``ActionCode.LMOVE``) phase reads its own dedicated
+    ``move_target_<leader_id>_<n>`` dropdown field instead of the
+    generic Object field (see this module's own docstring for why) --
+    ``extra`` is always empty for Move, matching ``turn/plan_dispatch.py``'s
+    own confirmed "Move's extra is never read" finding.
     """
 
     phases: list[ComposedPhaseInput] = []
     for n in range(PHASE_COUNT):
         action = _parse_action(form.get(f"action_{leader_id}_{n}", ""))
-        obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
-        extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))
+        if action is ActionCode.LMOVE:
+            obj = _parse_move_target(
+                form.get(f"move_target_{leader_id}_{n}", ""), board_width=board_width, phase_label=f"P{n}"
+            )
+            extra: list[int] = []
+        else:
+            obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
+            extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))
         phases.append(ComposedPhaseInput(action=action, obj=obj, extra=extra))
     return phases
 
@@ -151,7 +200,7 @@ def build_composed_kingdom(
 
     leaders: list[Leader] = []
     for leader_state in roster:
-        phase_inputs = parse_phase_inputs(form, leader_state.leader_id)
+        phase_inputs = parse_phase_inputs(form, leader_state.leader_id, board_width=state.board_width)
         phases = {
             f"P{n}": PlanPhase(label=f"P{n}", action=phase_input.action, obj=phase_input.obj, extra=phase_input.extra)
             for n, phase_input in enumerate(phase_inputs)
