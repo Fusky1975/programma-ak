@@ -24,13 +24,28 @@ observation): confirmed directly from ``turn/plan_dispatch.py``'s own
 EXPLORE branch that neither ``obj`` nor ``extra`` is read at all --
 ``province = state.provinces[state.leaders[leader_id].location]``, the
 acting leader's own current province, always. Explore needs no input
-whatsoever; ``obj``/``extra`` are simply forced to ``0``/``[]``. Every
-other not-yet-designed action still falls back to the plain Object/
-Extra integers. A Special Encounter Plan (``PlanSegment.sp``) and a
-nested Hire/Charm/Resurrection plan (``PlanPhase.nested_plan``) aren't
-exposed here yet either, for the same reason -- every composed leader
-gets the plain ``(10, -1)`` "nothing special configured" ``SP:`` value
-every real sample already shows by default, and no nested plan.
+whatsoever; ``obj``/``extra`` are simply forced to ``0``/``[]``.
+**Search (``ActionCode.SEARCH``) is the third, and the user's own
+explicit "telaio" (skeleton/frame) request** (2026-10-26): only the
+target feature number is composable here for now, via a dedicated
+feature dropdown (``feature_options()`` below) -- confirmed directly
+from ``turn/search_decode.py``'s own module docstring/``SearchRequest``:
+``obj`` is the target feature's own number, ``extra[0]`` ("tl") is an
+unconfirmed, always-``0``-in-every-real-sample slot, and the remainder
+of ``extra`` is a ``-1``-terminated **Encounter Plan** tactic list
+(Cast, Use Item, Talk, Say, Give, Fulfill, Steal, Shoot, Melee, Flee,
+Beg, Scout -- rulebook [5.1]-[5.8]) -- deliberately **not** composable
+yet, exactly matching the user's own plan to design it "per una fase
+successiva" (a later round). A Search phase composed here always gets
+the immediately-terminated empty tactic list ``[0, -1]`` ("tl=0, no
+tactics") until that round designs real tactic input.
+
+Every other not-yet-designed action still falls back to the plain
+Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
+and a nested Hire/Charm/Resurrection plan (``PlanPhase.nested_plan``)
+aren't exposed here yet either, for the same reason -- every composed
+leader gets the plain ``(10, -1)`` "nothing special configured" ``SP:``
+value every real sample already shows by default, and no nested plan.
 
 **Why this goes through a real ``Kingdom`` + ``parser/k1_moves_writer.py``
 rather than writing straight to ``GameState``**: the exact same shape a
@@ -48,13 +63,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ak_engine.models.enums import ActionCode
+from ak_engine.models.feature import FEATURE_TYPE_NAMES
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord
+from ak_engine.models.monster import MONSTER_NAMES
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.report.turn_report import real_province_number
 from ak_engine.turn.hex_numbering import encode_hex_number
+
+# Search's own "tl" slot (``turn/search_decode.py SearchRequest.
+# unconfirmed_extra0``, always 0 in every real sample) followed by the
+# Encounter Plan's own -1 terminator with no tactics in between --
+# "nothing composed yet", pending that later round's own tactic input.
+EMPTY_SEARCH_EXTRA: list[int] = [0, -1]
 
 PHASE_COUNT = 5  # P0..P4 -- every real AK3__T*.K1 sample's own leader block shape.
 
@@ -116,6 +139,32 @@ def province_options(state: GameState) -> list[tuple[str, str]]:
     return options
 
 
+def feature_options(state: GameState) -> list[tuple[str, str]]:
+    """Every feature as a ``(value, label)`` pair for a Search phase's own
+    target-feature dropdown -- ``value`` is the feature's own real
+    ``feature_id`` (exactly what ``obj`` is for Search, so no separate
+    encoding step is needed the way Move's own coordinate needs
+    ``encode_hex_number()``). ``label`` names its kind, the province
+    it sits in (name where one exists, else coordinate), and its
+    guardian monster where one is known and the feature hasn't already
+    been looted -- e.g. "#3 Altar -- Numenor (3, 9) -- Necromancer".
+    Sorted by ``feature_id``, the same "#<N>" a GM would already look
+    the feature up by on a PROVINCES report's own "Features and F#"
+    column.
+    """
+
+    features = sorted(state.features.values(), key=lambda feature: feature.feature_id)
+    options = []
+    for feature in features:
+        province = state.provinces.get(feature.coord)
+        place = province.name if province is not None and province.name else f"({feature.coord.x}, {feature.coord.y})"
+        label = f"#{feature.feature_id} {FEATURE_TYPE_NAMES[feature.kind]} -- {place}"
+        if feature.guardian_monster is not None and not feature.looted:
+            label += f" -- {MONSTER_NAMES.get(feature.guardian_monster, feature.guardian_monster.name.title())}"
+        options.append((str(feature.feature_id), label))
+    return options
+
+
 def compose_filename(game_label: str, turn_number: int, kingdom_id: int) -> str:
     """Same Game+Turn+Kingdom naming convention as the XK/SE downloads
     (``webapp/app.py``'s own ``turn_zero_download_xk()``/``turn_report_
@@ -170,6 +219,12 @@ def _parse_move_target(raw: str, *, board_width: int, phase_label: str) -> int:
     return encode_hex_number(HexCoord(x, y), board_width)
 
 
+def _parse_search_feature(raw: str, *, phase_label: str) -> int:
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Feature to Search.")
+    return _parse_int(raw, field_label=f"{phase_label} Search feature")
+
+
 def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int) -> list[ComposedPhaseInput]:
     """Reads this one leader's own ``action_<leader_id>_<n>``/``obj_<leader_id>_<n>``/
     ``extra_<leader_id>_<n>`` form fields (``n`` in ``0..PHASE_COUNT-1``)
@@ -183,7 +238,12 @@ def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int
     (``ActionCode.EXPLORE``) phase needs no field at all -- ``obj``/
     ``extra`` are forced to ``0``/``[]`` regardless of whatever the
     generic form fields happen to hold, since Explore always targets
-    the acting leader's own current province (same module docstring).
+    the acting leader's own current province (same module docstring). A
+    Search (``ActionCode.SEARCH``) phase reads its own dedicated
+    ``search_feature_<leader_id>_<n>`` dropdown field for ``obj`` (the
+    target feature's own ``feature_id``) and always gets the
+    placeholder ``EMPTY_SEARCH_EXTRA`` for ``extra`` -- the Encounter
+    Plan tactic list isn't composable here yet (same module docstring).
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -197,6 +257,9 @@ def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int
         elif action is ActionCode.EXPLORE:
             obj = 0
             extra = []
+        elif action is ActionCode.SEARCH:
+            obj = _parse_search_feature(form.get(f"search_feature_{leader_id}_{n}", ""), phase_label=f"P{n}")
+            extra = list(EMPTY_SEARCH_EXTRA)
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))

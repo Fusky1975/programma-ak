@@ -10,10 +10,11 @@
   <h2>{{ kingdom.name }} &mdash; Compose Moves for Turn {{ state.turn_number }}</h2>
   <p class="hex-map-legend-note">
     A base editor, filled in one Action at a time: Move has its own destination dropdown, Explore needs no
-    input at all (it always targets the leader's own current province); every other Action still takes the
-    same plain Object + Extra numbers a real move file's own "P&lt;n&gt; : &lt;action&gt; &lt;object&gt;
-    &lt;extra...&gt;" line carries, until it gets its own friendlier form too. Saving builds a real move file
-    from these and stores it exactly like an uploaded one.
+    input at all (it always targets the leader's own current province), Search has its own target-feature
+    dropdown (its own Encounter Plan -- how to react to the guardian -- isn't composable yet, a later round);
+    every other Action still takes the same plain Object + Extra numbers a real move file's own
+    "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries, until it gets its own
+    friendlier form too. Saving builds a real move file from these and stores it exactly like an uploaded one.
   </p>
 
   <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
@@ -26,6 +27,7 @@
             <th>Action</th>
             <th>Move Destination</th>
             <th>Explore</th>
+            <th>Search Feature</th>
             <th>Object</th>
             <th>Extra (space or comma separated)</th>
           </tr>
@@ -41,7 +43,7 @@
                   {% endfor %}
                 </select>
               </td>
-              <td class="compose-move-cell">
+              <td class="compose-special-cell" data-action="{{ move_action_value }}">
                 <select name="move_target_{{ leader.leader_id }}_{{ n }}">
                   <option value="">-- choose a province --</option>
                   {% for value, label in province_choices %}
@@ -49,7 +51,16 @@
                   {% endfor %}
                 </select>
               </td>
-              <td class="compose-explore-cell hex-map-legend-note">No input needed -- explores wherever this leader currently is.</td>
+              <td class="compose-special-cell hex-map-legend-note" data-action="{{ explore_action_value }}">No input needed -- explores wherever this leader currently is.</td>
+              <td class="compose-special-cell" data-action="{{ search_action_value }}">
+                <select name="search_feature_{{ leader.leader_id }}_{{ n }}">
+                  <option value="">-- choose a feature --</option>
+                  {% for value, label in feature_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <br><span class="hex-map-legend-note">Encounter Plan (how to react to the guardian) not composable yet.</span>
+              </td>
               <td class="compose-generic-cell"><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
               <td class="compose-generic-cell"><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>
             </tr>
@@ -66,26 +77,25 @@
   // Progressive enhancement only: every row works with plain HTML/CSS
   // alone (every column's own field is always real and submittable) --
   // this just hides whichever ones don't match the row's own current
-  // Action, mirroring the real rule that Move reads its own
-  // destination and Explore reads nothing, never Object/Extra (see
-  // webapp/moves_compose.py's own docstring). Server-side validation
-  // (build_composed_kingdom()) is the real source of truth either way.
-  var MOVE_ACTION_VALUE = "{{ move_action_value }}";
-  var EXPLORE_ACTION_VALUE = "{{ explore_action_value }}";
-
+  // Action, mirroring the real rule that each designed Action (Move,
+  // Explore, Search so far) reads only its own dedicated field, never
+  // the generic Object/Extra (see webapp/moves_compose.py's own
+  // docstring). Server-side validation (build_composed_kingdom()) is
+  // the real source of truth either way. Data-driven (a `data-action`
+  // attribute on each `.compose-special-cell`) rather than one
+  // hardcoded variable per Action, so a later-designed command's own
+  // dedicated cell needs no further changes here.
   function updateComposeRow(select) {
     var row = select.closest("tr");
     if (!row) return;
-    var isMove = select.value === MOVE_ACTION_VALUE;
-    var isExplore = select.value === EXPLORE_ACTION_VALUE;
-    row.querySelectorAll(".compose-move-cell").forEach(function (cell) {
-      cell.style.display = isMove ? "" : "none";
-    });
-    row.querySelectorAll(".compose-explore-cell").forEach(function (cell) {
-      cell.style.display = isExplore ? "" : "none";
+    var matched = false;
+    row.querySelectorAll(".compose-special-cell").forEach(function (cell) {
+      var isMatch = cell.getAttribute("data-action") === select.value;
+      cell.style.display = isMatch ? "" : "none";
+      matched = matched || isMatch;
     });
     row.querySelectorAll(".compose-generic-cell").forEach(function (cell) {
-      cell.style.display = (isMove || isExplore) ? "none" : "";
+      cell.style.display = matched ? "none" : "";
     });
   }
 

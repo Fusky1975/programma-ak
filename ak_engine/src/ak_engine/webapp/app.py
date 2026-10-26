@@ -81,6 +81,7 @@ from ak_engine.webapp.moves_compose import (
     PHASE_COUNT,
     InvalidComposedMovesError,
     build_composed_kingdom,
+    feature_options,
     kingdom_leaders_for_compose,
     province_options,
 )
@@ -3013,7 +3014,9 @@ def create_app(games_root: Path | None = None) -> Flask:
             actions=list(ActionCode),
             move_action_value=int(ActionCode.LMOVE),
             explore_action_value=int(ActionCode.EXPLORE),
+            search_action_value=int(ActionCode.SEARCH),
             province_choices=province_options(state),
+            feature_choices=feature_options(state),
             error=request.args.get("error"),
         )
 

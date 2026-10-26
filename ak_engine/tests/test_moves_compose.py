@@ -7,21 +7,30 @@ Move reads only ``obj`` (never ``extra``). Explore (``ActionCode.
 EXPLORE``) is the second (sourced directly from the user, 2026-10-26,
 and independently confirmed from ``turn/plan_dispatch.py``'s own
 EXPLORE branch): it reads neither ``obj`` nor ``extra`` at all, always
-targeting the acting leader's own current province.
+targeting the acting leader's own current province. Search
+(``ActionCode.SEARCH``) is the third -- sourced directly from the user
+(2026-10-26, their own explicit "telaio"/skeleton request) and
+independently confirmed from ``turn/search_decode.py``'s own module
+docstring: ``obj`` is the target feature's own number; only that much
+is composable so far, not yet the Encounter Plan tactic list.
 """
 
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import ActionCode
+from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.webapp.moves_compose import (
+    EMPTY_SEARCH_EXTRA,
     InvalidComposedMovesError,
     build_composed_kingdom,
+    feature_options,
     parse_phase_inputs,
     province_options,
 )
@@ -49,6 +58,7 @@ def _state() -> GameState:
     )
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor"))
     state.add_province(ProvinceState(HexCoord(3, 2), Terrain.FOREST, Race.HUMAN, name=None))
+    state.add_feature(Feature(feature_id=3, coord=HOME, kind=FeatureType.ALTAR, guardian_monster=Monster.NEC_MAGE))
     return state
 
 
@@ -163,3 +173,57 @@ def test_build_composed_kingdom_explore_phase_carries_no_object_or_extra():
     assert phase0.action is ActionCode.EXPLORE
     assert phase0.obj == 0
     assert phase0.extra == []
+
+
+def test_feature_options_names_the_kind_province_and_guardian():
+    state = _state()
+    options = feature_options(state)
+    assert ("3", "#3 Altar -- Numenor -- Renegade Necromancer") in options
+
+
+def test_feature_options_omits_guardian_for_a_looted_feature():
+    state = _state()
+    state.features[3].looted = True
+    options = feature_options(state)
+    assert ("3", "#3 Altar -- Numenor") in options
+
+
+def test_search_phase_reads_its_own_dropdown_not_the_generic_object_field():
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_1"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{KING_ID}_1"] = "3"
+    form[f"obj_{KING_ID}_1"] = "999"  # must be ignored for a Search phase
+    form[f"extra_{KING_ID}_1"] = "7 8 9"  # must be ignored too -- not composable yet
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    search_phase = phases[1]
+    assert search_phase.action is ActionCode.SEARCH
+    assert search_phase.obj == 3
+    assert search_phase.extra == EMPTY_SEARCH_EXTRA
+
+
+def test_search_phase_without_a_chosen_feature_is_rejected():
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{KING_ID}_0"] = ""
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Feature to Search" in str(exc)
+
+
+def test_build_composed_kingdom_round_trips_a_search_order_to_the_real_feature_id():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{KING_ID}_0"] = "3"
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+
+    phase0 = kingdom.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.SEARCH
+    assert phase0.obj == 3
+    assert phase0.extra == EMPTY_SEARCH_EXTRA
