@@ -9,12 +9,13 @@
 <div class="panel" style="border-left: 6px solid var(--phase-turns);">
   <h2>{{ kingdom.name }} &mdash; Compose Moves for Turn {{ state.turn_number }}</h2>
   <p class="hex-map-legend-note">
-    A base editor, filled in one Action at a time: Move has its own destination dropdown, Explore needs no
-    input at all (it always targets the leader's own current province), Search has its own target-feature
-    dropdown (its own Encounter Plan -- how to react to the guardian -- isn't composable yet, a later round);
-    every other Action still takes the same plain Object + Extra numbers a real move file's own
-    "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries, until it gets its own
-    friendlier form too. Saving builds a real move file from these and stores it exactly like an uploaded one.
+    A base editor, filled in one Action (and, for Search, one Encounter Plan tactic) at a time: Move has its
+    own destination dropdown, Explore needs no input at all (it always targets the leader's own current
+    province), Search has its own target-feature dropdown plus Encounter Plan tactic slots (so far only Talk
+    has its own rules wired in -- every other tactic takes a plain sub-object number, until it gets its own
+    friendlier form too); every other Action still takes the same plain Object + Extra numbers a real move
+    file's own "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a
+    real move file from these and stores it exactly like an uploaded one.
   </p>
 
   <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
@@ -59,7 +60,27 @@
                     <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
-                <br><span class="hex-map-legend-note">Encounter Plan (how to react to the guardian) not composable yet.</span>
+                <br><span class="hex-map-legend-note">Encounter Plan (empty slots stop the list there):</span>
+                <table class="data-table compose-encounter-plan">
+                  <thead><tr><th>Tactic</th><th>Sub-object</th></tr></thead>
+                  <tbody>
+                    {% for slot in tactic_slot_numbers %}
+                      <tr>
+                        <td>
+                          <select class="compose-tactic-slot" name="tactic_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- no tactic --</option>
+                            {% for value, label in tactic_choices_by_slot[slot] %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </td>
+                        <td class="compose-tactic-sub-cell">
+                          <input type="text" name="tactic_sub_{{ leader.leader_id }}_{{ n }}_{{ slot }}" value="0" size="4">
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
               </td>
               <td class="compose-generic-cell"><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
               <td class="compose-generic-cell"><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>
@@ -103,6 +124,57 @@
   document.addEventListener("change", function (event) {
     if (event.target.classList && event.target.classList.contains("compose-action")) {
       updateComposeRow(event.target);
+    }
+  });
+
+  // Encounter Plan tactic slots (so far only Talk has real rules wired
+  // in here -- see webapp/moves_compose.py's own docstring for the
+  // user-sourced "Talk only as the first tactic" / "Talk and Fulfill
+  // can't coexist" rules). Progressive enhancement only: build_
+  // composed_kingdom()'s own server-side validation is authoritative
+  // either way, so a disabled <option> here is just a hint, not the
+  // real enforcement.
+  var TACTICS_WITH_SUB_OBJECT = {{ tactics_with_sub_object }}.map(String);
+  var TALK_VALUE = "{{ talk_value }}";
+  var FULFILL_VALUE = "{{ fulfill_value }}";
+
+  function updateTacticSubCell(select) {
+    var row = select.closest("tr");
+    if (!row) return;
+    var subCell = row.querySelector(".compose-tactic-sub-cell");
+    if (subCell) {
+      subCell.style.display = TACTICS_WITH_SUB_OBJECT.indexOf(select.value) !== -1 ? "" : "none";
+    }
+  }
+
+  function updateEncounterPlan(plan) {
+    var slots = plan.querySelectorAll(".compose-tactic-slot");
+    if (!slots.length) return;
+    var talkChosen = slots[0].value === TALK_VALUE;
+    var fulfillChosen = Array.prototype.some.call(slots, function (select) {
+      return select.value === FULFILL_VALUE;
+    });
+    slots.forEach(function (select) {
+      var talkOption = select.querySelector('option[value="' + TALK_VALUE + '"]');
+      if (talkOption) {
+        talkOption.disabled = fulfillChosen && select.value !== TALK_VALUE;
+      }
+      var fulfillOption = select.querySelector('option[value="' + FULFILL_VALUE + '"]');
+      if (fulfillOption) {
+        fulfillOption.disabled = talkChosen && select.value !== FULFILL_VALUE;
+      }
+    });
+  }
+
+  document.querySelectorAll(".compose-tactic-slot").forEach(function (select) {
+    updateTacticSubCell(select);
+  });
+  document.querySelectorAll(".compose-encounter-plan").forEach(updateEncounterPlan);
+  document.addEventListener("change", function (event) {
+    if (event.target.classList && event.target.classList.contains("compose-tactic-slot")) {
+      updateTacticSubCell(event.target);
+      var plan = event.target.closest(".compose-encounter-plan");
+      if (plan) updateEncounterPlan(plan);
     }
   });
 </script>

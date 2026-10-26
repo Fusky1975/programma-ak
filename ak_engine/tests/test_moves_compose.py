@@ -11,14 +11,21 @@ targeting the acting leader's own current province. Search
 (``ActionCode.SEARCH``) is the third -- sourced directly from the user
 (2026-10-26, their own explicit "telaio"/skeleton request) and
 independently confirmed from ``turn/search_decode.py``'s own module
-docstring: ``obj`` is the target feature's own number; only that much
-is composable so far, not yet the Encounter Plan tactic list.
+docstring: ``obj`` is the target feature's own number. Its own
+Encounter Plan tactic list is being designed one tactic at a time;
+Talk (``Maneuver.TALK``) is the first -- sourced directly from the
+user (2026-10-26): "può essere usata solo all'inizio del piano
+d'incontro. Se viene usata dopo un'altra tattica viene semplicemente
+ignorata" and "Non è possibile usare sia la tattica Talk che Fulfill
+nello stesso Piano d'Incontro" (independently confirmed from
+``turn/search_execution.py``'s own ``_resolve_fulfill()`` docstring,
+rulebook [5.6]).
 """
 
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.enums import ActionCode
+from ak_engine.models.enums import ActionCode, Maneuver
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
@@ -33,6 +40,7 @@ from ak_engine.webapp.moves_compose import (
     feature_options,
     parse_phase_inputs,
     province_options,
+    tactic_options,
 )
 
 BOARD_WIDTH = 6
@@ -227,3 +235,135 @@ def test_build_composed_kingdom_round_trips_a_search_order_to_the_real_feature_i
     assert phase0.action is ActionCode.SEARCH
     assert phase0.obj == 3
     assert phase0.extra == EMPTY_SEARCH_EXTRA
+
+
+# -- Encounter Plan tactic slots (Talk is the first tactic designed) --
+
+
+def _search_form(feature_id: int = 3, tactics: dict[int, int] | None = None, subs: dict[int, int] | None = None):
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{KING_ID}_0"] = str(feature_id)
+    for slot, maneuver_value in (tactics or {}).items():
+        form[f"tactic_{KING_ID}_0_{slot}"] = str(maneuver_value)
+    for slot, sub_value in (subs or {}).items():
+        form[f"tactic_sub_{KING_ID}_0_{slot}"] = str(sub_value)
+    return form
+
+
+def test_tactic_options_offers_talk_only_in_slot_zero():
+    slot0_values = {value for value, _ in tactic_options(0)}
+    slot1_values = {value for value, _ in tactic_options(1)}
+    assert int(Maneuver.TALK) in slot0_values
+    assert int(Maneuver.TALK) not in slot1_values
+
+
+def test_tactic_options_excludes_say_and_none_everywhere():
+    for slot in (0, 1):
+        values = {value for value, _ in tactic_options(slot)}
+        assert int(Maneuver.SAY) not in values
+        assert int(Maneuver.NONE) not in values
+
+
+def test_search_phase_with_a_simple_tactic_sequence():
+    form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.MELEE), int(Maneuver.SCOUT), -1]
+
+
+def test_search_phase_tactic_with_sub_object_is_included():
+    form = _search_form(tactics={0: int(Maneuver.CAST)}, subs={0: 7})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.CAST), 7, -1]
+
+
+def test_search_phase_talk_as_the_first_tactic_is_accepted():
+    form = _search_form(tactics={0: int(Maneuver.TALK)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.TALK), -1]
+
+
+def test_search_phase_talk_after_another_tactic_is_rejected():
+    # Sourced directly from the user (2026-10-26): "può essere usata
+    # solo all'inizio del piano d'incontro. Se viene usata dopo
+    # un'altra tattica viene semplicemente ignorata" -- rejected here
+    # rather than silently accepted-but-inert, so a direct/tampered
+    # submission never produces a quietly-wrong file.
+    form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.TALK)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "first tactic" in str(exc)
+
+
+def test_search_phase_talk_and_fulfill_together_is_rejected():
+    # Sourced directly from the user (2026-10-26): "Non è possibile
+    # usare sia la tattica Talk che Fulfill nello stesso Piano
+    # d'Incontro" -- independently confirmed from turn/search_
+    # execution.py's own _resolve_fulfill() docstring (rulebook [5.6]).
+    form = _search_form(tactics={0: int(Maneuver.TALK), 1: int(Maneuver.FULFILL)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Talk and Fulfill" in str(exc)
+
+
+def test_search_phase_fulfill_alone_is_accepted():
+    form = _search_form(tactics={0: int(Maneuver.FULFILL)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.FULFILL), -1]
+
+
+def test_search_phase_fulfill_after_talk_slot_but_not_in_slot_zero_is_still_rejected():
+    # Talk must be in slot 0 specifically -- Fulfill anywhere else is
+    # fine on its own, but combining it with Talk (wherever Talk sits)
+    # is still rejected by the Talk/Fulfill exclusion rule above.
+    form = _search_form(tactics={0: int(Maneuver.TALK), 1: int(Maneuver.FULFILL)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Talk and Fulfill" in str(exc)
+
+
+def test_search_phase_rejects_a_gap_between_tactic_slots():
+    form = _search_form(tactics={0: int(Maneuver.MELEE), 2: int(Maneuver.SCOUT)})  # slot 1 left empty
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "gaps" in str(exc)
+
+
+def test_search_phase_rejects_say_and_none_even_via_a_direct_tampered_value():
+    for maneuver in (Maneuver.SAY, Maneuver.NONE):
+        form = _search_form(tactics={0: int(maneuver)})
+        try:
+            parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+            assert False, "expected InvalidComposedMovesError"
+        except InvalidComposedMovesError as exc:
+            assert "isn't composable" in str(exc)
+
+
+def test_build_composed_kingdom_round_trips_an_encounter_plan():
+    state = _state()
+    form = _search_form(tactics={0: int(Maneuver.TALK)})
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+
+    phase0 = kingdom.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.extra == [0, int(Maneuver.TALK), -1]

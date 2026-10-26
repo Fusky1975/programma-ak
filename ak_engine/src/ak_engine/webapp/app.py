@@ -23,7 +23,7 @@ from ak_engine.models.advanced_ability import ADVANCED_ABILITY_NAME, AdvancedAbi
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, sorted_kingdom_discoveries
-from ak_engine.models.enums import ABILITY_NAME, Ability, ActionCode
+from ak_engine.models.enums import ABILITY_NAME, TACTICS_WITH_SUB_OBJECT, Ability, ActionCode, Maneuver
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, BlackmailClaim, LeaderState, ProvinceState, RaceTitleTally
 from ak_engine.models.game_type import GameType
@@ -79,11 +79,13 @@ from ak_engine.parser.k1_moves_writer import K1WriteError, write_k1_moves_file
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
 from ak_engine.webapp.moves_compose import (
     PHASE_COUNT,
+    TACTIC_SLOT_COUNT,
     InvalidComposedMovesError,
     build_composed_kingdom,
     feature_options,
     kingdom_leaders_for_compose,
     province_options,
+    tactic_options,
 )
 from ak_engine.webapp.kingdom_create import (
     NoProvinceAtCoordError,
@@ -3017,6 +3019,11 @@ def create_app(games_root: Path | None = None) -> Flask:
             search_action_value=int(ActionCode.SEARCH),
             province_choices=province_options(state),
             feature_choices=feature_options(state),
+            tactic_slot_numbers=range(TACTIC_SLOT_COUNT),
+            tactic_choices_by_slot=[tactic_options(slot) for slot in range(TACTIC_SLOT_COUNT)],
+            tactics_with_sub_object=[int(maneuver) for maneuver in TACTICS_WITH_SUB_OBJECT],
+            talk_value=int(Maneuver.TALK),
+            fulfill_value=int(Maneuver.FULFILL),
             error=request.args.get("error"),
         )
 

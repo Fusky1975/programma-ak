@@ -26,19 +26,41 @@ EXPLORE branch that neither ``obj`` nor ``extra`` is read at all --
 acting leader's own current province, always. Explore needs no input
 whatsoever; ``obj``/``extra`` are simply forced to ``0``/``[]``.
 **Search (``ActionCode.SEARCH``) is the third, and the user's own
-explicit "telaio" (skeleton/frame) request** (2026-10-26): only the
-target feature number is composable here for now, via a dedicated
-feature dropdown (``feature_options()`` below) -- confirmed directly
-from ``turn/search_decode.py``'s own module docstring/``SearchRequest``:
-``obj`` is the target feature's own number, ``extra[0]`` ("tl") is an
-unconfirmed, always-``0``-in-every-real-sample slot, and the remainder
-of ``extra`` is a ``-1``-terminated **Encounter Plan** tactic list
-(Cast, Use Item, Talk, Say, Give, Fulfill, Steal, Shoot, Melee, Flee,
-Beg, Scout -- rulebook [5.1]-[5.8]) -- deliberately **not** composable
-yet, exactly matching the user's own plan to design it "per una fase
-successiva" (a later round). A Search phase composed here always gets
-the immediately-terminated empty tactic list ``[0, -1]`` ("tl=0, no
-tactics") until that round designs real tactic input.
+explicit "telaio" (skeleton/frame) request** (2026-10-26): the target
+feature number, via a dedicated feature dropdown (``feature_options()``
+below) -- confirmed directly from ``turn/search_decode.py``'s own
+module docstring/``SearchRequest``: ``obj`` is the target feature's own
+number, ``extra[0]`` ("tl") is an unconfirmed, always-``0``-in-every-
+real-sample slot, and the remainder of ``extra`` is a ``-1``-terminated
+**Encounter Plan** tactic list (Cast, Use Item, Talk, Say, Give,
+Fulfill, Steal, Shoot, Melee, Flee, Beg, Scout -- rulebook [5.1]-[5.8]),
+designed with the user one tactic at a time, via ``TACTIC_SLOT_COUNT``
+(``7``, the longest real ``AK3__T*.K1`` sample's own tactic list)
+dedicated ``tactic_<leader>_<n>_<slot>`` dropdowns per Search phase,
+each with an optional ``tactic_sub_<leader>_<n>_<slot>`` sub-object
+field for a ``TACTICS_WITH_SUB_OBJECT`` maneuver (Cast/Use Item/Give).
+An empty slot stops the list there -- a later non-empty slot after one
+is rejected, not silently dropped. ``Say``'s own free-text argument
+isn't composable yet (not offered in the dropdown at all -- see
+``parser/k1_moves_writer.py``'s own matching "SAY not supported"
+decision), nor is ``Maneuver.NONE`` (a sentinel, never a real tactic).
+
+**Talk ([5.5]), the user's own first tactic to design** (2026-10-26,
+sourced directly from them): "può essere usata solo all'inizio del
+piano d'incontro. Se viene usata dopo un'altra tattica viene
+semplicemente ignorata" -- confirmed structurally impossible to even
+select here instead of silently inert: Talk is only ever offered in
+slot 0's own dropdown, and ``_parse_search_tactics()`` rejects it
+outright at any other slot (a direct, tampered POST bypassing the
+dropdown) rather than letting a real-but-inert tactic through quietly.
+"Come da regolamento, Non è possibile usare sia la tattica Talk che
+Fulfill nello stesso Piano d'Incontro" -- independently confirmed from
+``turn/search_execution.py``'s own ``_resolve_fulfill()`` docstring
+(rulebook [5.6]): rejected if both appear in the same tactic list.
+
+A Search phase composed here always gets the immediately-terminated
+empty tactic list ``[0, -1]`` ("tl=0, no tactics") when every slot is
+left empty, matching the previous round's own placeholder default.
 
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
@@ -62,7 +84,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ak_engine.models.enums import ActionCode
+from ak_engine.models.enums import TACTICS_WITH_SUB_OBJECT, ActionCode, Maneuver
 from ak_engine.models.feature import FEATURE_TYPE_NAMES
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader
@@ -76,8 +98,21 @@ from ak_engine.turn.hex_numbering import encode_hex_number
 # Search's own "tl" slot (``turn/search_decode.py SearchRequest.
 # unconfirmed_extra0``, always 0 in every real sample) followed by the
 # Encounter Plan's own -1 terminator with no tactics in between --
-# "nothing composed yet", pending that later round's own tactic input.
+# "nothing composed yet", the default when every tactic slot is empty.
 EMPTY_SEARCH_EXTRA: list[int] = [0, -1]
+
+# The longest real Encounter Plan tactic list across every AK3__T*.K1
+# sample (``AK3__T10.K1`` leader 72's own 7-tactic CAST/CAST/CAST/CAST/
+# CAST/MELEE/SCOUT plan) -- a generous, real-data-sourced slot count,
+# not an arbitrary round number.
+TACTIC_SLOT_COUNT = 7
+
+# Every Maneuver a GM can compose here -- Maneuver.SAY is excluded (its
+# own free-text argument isn't composable yet, see this module's own
+# docstring) and Maneuver.NONE is a sentinel, never a real tactic.
+_COMPOSABLE_MANEUVERS: tuple[Maneuver, ...] = tuple(
+    maneuver for maneuver in Maneuver if maneuver not in (Maneuver.SAY, Maneuver.NONE)
+)
 
 PHASE_COUNT = 5  # P0..P4 -- every real AK3__T*.K1 sample's own leader block shape.
 
@@ -165,6 +200,21 @@ def feature_options(state: GameState) -> list[tuple[str, str]]:
     return options
 
 
+def tactic_options(slot: int) -> list[tuple[int, str]]:
+    """Every composable ``Maneuver`` for one Encounter Plan tactic slot,
+    as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only ever
+    included for ``slot == 0`` (see this module's own docstring for the
+    user-sourced "Talk can only be the first tactic" rule); every other
+    slot gets the same ``_COMPOSABLE_MANEUVERS`` list minus Talk.
+    """
+
+    return [
+        (int(maneuver), maneuver.name.replace("_", " ").title())
+        for maneuver in _COMPOSABLE_MANEUVERS
+        if maneuver is not Maneuver.TALK or slot == 0
+    ]
+
+
 def compose_filename(game_label: str, turn_number: int, kingdom_id: int) -> str:
     """Same Game+Turn+Kingdom naming convention as the XK/SE downloads
     (``webapp/app.py``'s own ``turn_zero_download_xk()``/``turn_report_
@@ -225,6 +275,60 @@ def _parse_search_feature(raw: str, *, phase_label: str) -> int:
     return _parse_int(raw, field_label=f"{phase_label} Search feature")
 
 
+def _parse_search_tactics(form: dict[str, str], leader_id: int, n: int, *, phase_label: str) -> list[int]:
+    """Reads this Search phase's own ``tactic_<leader_id>_<n>_<slot>``/
+    ``tactic_sub_<leader_id>_<n>_<slot>`` fields (``slot`` in
+    ``0..TACTIC_SLOT_COUNT-1``) into a real, ``-1``-terminated Encounter
+    Plan tactic list -- see this module's own docstring for the Talk-
+    position and Talk/Fulfill-exclusion rules enforced here.
+    """
+
+    tokens: list[int] = []
+    has_talk = False
+    has_fulfill = False
+    stopped_at: int | None = None
+    for slot in range(TACTIC_SLOT_COUNT):
+        raw = form.get(f"tactic_{leader_id}_{n}_{slot}", "")
+        if not raw:
+            if stopped_at is None:
+                stopped_at = slot
+            continue
+        if stopped_at is not None:
+            raise InvalidComposedMovesError(
+                f"{phase_label}: tactic slot {slot + 1} follows empty slot {stopped_at + 1} -- "
+                "fill the Encounter Plan without gaps."
+            )
+        try:
+            maneuver = Maneuver(int(raw))
+        except (TypeError, ValueError) as exc:
+            raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1} is not a valid tactic.") from exc
+        if maneuver not in _COMPOSABLE_MANEUVERS:
+            # Defense in depth: Say/None are never offered in the
+            # dropdown, but a direct, tampered POST could still name
+            # their real ordinal.
+            raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1} isn't composable here yet.")
+        if maneuver is Maneuver.TALK:
+            if slot != 0:
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: Talk can only be the first tactic in the Encounter Plan."
+                )
+            has_talk = True
+        if maneuver is Maneuver.FULFILL:
+            has_fulfill = True
+        tokens.append(int(maneuver))
+        if maneuver in TACTICS_WITH_SUB_OBJECT:
+            sub_raw = form.get(f"tactic_sub_{leader_id}_{n}_{slot}", "0")
+            tokens.append(_parse_int(sub_raw or "0", field_label=f"{phase_label} tactic {slot + 1} sub-object"))
+
+    if has_talk and has_fulfill:
+        raise InvalidComposedMovesError(
+            f"{phase_label}: Talk and Fulfill can't both be used in the same Encounter Plan."
+        )
+
+    tokens.append(-1)
+    return tokens
+
+
 def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int) -> list[ComposedPhaseInput]:
     """Reads this one leader's own ``action_<leader_id>_<n>``/``obj_<leader_id>_<n>``/
     ``extra_<leader_id>_<n>`` form fields (``n`` in ``0..PHASE_COUNT-1``)
@@ -241,9 +345,9 @@ def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int
     the acting leader's own current province (same module docstring). A
     Search (``ActionCode.SEARCH``) phase reads its own dedicated
     ``search_feature_<leader_id>_<n>`` dropdown field for ``obj`` (the
-    target feature's own ``feature_id``) and always gets the
-    placeholder ``EMPTY_SEARCH_EXTRA`` for ``extra`` -- the Encounter
-    Plan tactic list isn't composable here yet (same module docstring).
+    target feature's own ``feature_id``) and its own Encounter Plan
+    tactic slots (``_parse_search_tactics()``) for ``extra`` (same
+    module docstring).
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -259,7 +363,7 @@ def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int
             extra = []
         elif action is ActionCode.SEARCH:
             obj = _parse_search_feature(form.get(f"search_feature_{leader_id}_{n}", ""), phase_label=f"P{n}")
-            extra = list(EMPTY_SEARCH_EXTRA)
+            extra = [0, *_parse_search_tactics(form, leader_id, n, phase_label=f"P{n}")]
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))
