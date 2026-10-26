@@ -2814,11 +2814,15 @@ def create_app(games_root: Path | None = None) -> Flask:
         if kingdom_id not in state.kingdoms:
             return redirect(url_for("turn_zero_list", slug=slug, error="Kingdom not found."))
         lines = turn_zero_report(state, kingdom_id)
-        kingdom_name = state.kingdoms[kingdom_id].name.replace(" ", "_")
+        game_label = meta.name.replace(" ", "_")
+        # Same Game/Turn/Kingdom naming convention as the XK download
+        # right below -- "T0" literally here (this *is* the turn-0
+        # report itself, unlike the XK file, which is materials for the
+        # turn *about to be processed*).
         return Response(
             "\n".join(lines),
             mimetype="text/plain",
-            headers={"Content-Disposition": f'attachment; filename="SE_T0_{kingdom_name}.txt"'},
+            headers={"Content-Disposition": f'attachment; filename="SE{game_label}T0.K{kingdom_id}"'},
         )
 
     @app.get("/games/<slug>/turn0/<int:kingdom_id>/download/xk")
@@ -3035,11 +3039,15 @@ def create_app(games_root: Path | None = None) -> Flask:
         lines = load_turn_report(game_dir(root, slug), turn_number, kingdom_id)
         if lines is None:
             return redirect(url_for("turn_report_list", slug=slug, turn_number=turn_number, error="Report not found."))
-        kingdom_name = (state.kingdoms[kingdom_id].name if kingdom_id in state.kingdoms else f"Kingdom_{kingdom_id}").replace(" ", "_")
+        game_label = meta.name.replace(" ", "_")
+        # Same Game/Turn/Kingdom naming convention as the XK download
+        # right below -- "T<turn_number>" literally here (this *is* the
+        # report for that turn, unlike the XK file, labelled one turn
+        # ahead).
         return Response(
             "\n".join(lines),
             mimetype="text/plain",
-            headers={"Content-Disposition": f'attachment; filename="SE_T{turn_number}_{kingdom_name}.txt"'},
+            headers={"Content-Disposition": f'attachment; filename="SE{game_label}T{turn_number}.K{kingdom_id}"'},
         )
 
     @app.get("/games/<slug>/turns/<int:turn_number>/report/<int:kingdom_id>/download/xk")

@@ -6089,6 +6089,10 @@ def test_turn_zero_download_serves_a_text_attachment(tmp_path):
     assert response.status_code == 200
     assert response.mimetype == "text/plain"
     assert "attachment" in response.headers["Content-Disposition"]
+    # Same Game/Turn/Kingdom naming convention as the sibling XK
+    # download -- "T0" literally here, since this *is* the turn-0
+    # report itself.
+    assert 'filename="SEThird_CampaignT0.K1"' in response.headers["Content-Disposition"]
     assert b"PROVINCES" in response.data
 
 
@@ -6537,6 +6541,10 @@ def test_turn_report_view_and_download_after_processing(tmp_path):
     assert download.status_code == 200
     assert download.mimetype == "text/plain"
     assert "attachment" in download.headers["Content-Disposition"]
+    # Same Game/Turn/Kingdom naming convention as the sibling XK
+    # download -- "T1" literally here, since this *is* the report for
+    # turn 1 (unlike the XK file, labelled one turn ahead).
+    assert 'filename="SEThird_CampaignT1.K1"' in download.headers["Content-Disposition"]
 
 
 def test_turn_report_download_xk_after_processing_serves_a_real_xk_file(tmp_path):
