@@ -46,7 +46,7 @@
             </td>
           {% else %}
             <td class="status-warning">Not uploaded</td>
-            <td></td>
+            <td><a class="button" href="{{ url_for('turns_compose', slug=meta.slug, kingdom_id=kingdom_id) }}">Compose Manually</a></td>
           {% endif %}
         </tr>
       {% endfor %}

@@ -23,7 +23,7 @@ from ak_engine.models.advanced_ability import ADVANCED_ABILITY_NAME, AdvancedAbi
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, sorted_kingdom_discoveries
-from ak_engine.models.enums import ABILITY_NAME, Ability
+from ak_engine.models.enums import ABILITY_NAME, Ability, ActionCode
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, BlackmailClaim, LeaderState, ProvinceState, RaceTitleTally
 from ak_engine.models.game_type import GameType
@@ -75,7 +75,14 @@ from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.diplomacy import set_relation
 from ak_engine.turn.encounter import MonsterTalkReply
 from ak_engine.turn.exploration import FIND_MINES_TAX_CAP
+from ak_engine.parser.k1_moves_writer import K1WriteError, write_k1_moves_file
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
+from ak_engine.webapp.moves_compose import (
+    PHASE_COUNT,
+    InvalidComposedMovesError,
+    build_composed_kingdom,
+    kingdom_leaders_for_compose,
+)
 from ak_engine.webapp.kingdom_create import (
     NoProvinceAtCoordError,
     ProvinceAlreadyAHomeError,
@@ -2980,6 +2987,63 @@ def create_app(games_root: Path | None = None) -> Flask:
         except GameNotFoundError:
             return redirect(url_for("games_list", error="Game not found."))
         remove_uploaded_move_file(game_dir(root, slug), state.turn_number, kingdom_id, state.kingdoms.keys())
+        return redirect(url_for("turns_hub", slug=slug))
+
+    @app.get("/games/<slug>/turns/<int:kingdom_id>/compose")
+    def turns_compose(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        if kingdom_id not in state.kingdoms:
+            return redirect(url_for("turns_hub", slug=slug, error="Kingdom not found."))
+        roster = kingdom_leaders_for_compose(state, kingdom_id)
+        if not any(leader.is_king for leader in roster):
+            return redirect(url_for("turns_hub", slug=slug, error="This Kingdom has no King on record."))
+        return render_template(
+            "turns_compose.html",
+            meta=meta,
+            state=state,
+            kingdom_id=kingdom_id,
+            kingdom=state.kingdoms[kingdom_id],
+            roster=roster,
+            phase_numbers=range(PHASE_COUNT),
+            actions=list(ActionCode),
+            error=request.args.get("error"),
+        )
+
+    @app.post("/games/<slug>/turns/<int:kingdom_id>/compose")
+    def turns_compose_save(slug: str, kingdom_id: int):
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            meta, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        if kingdom_id not in state.kingdoms:
+            return redirect(url_for("turns_hub", slug=slug, error="Kingdom not found."))
+
+        def _compose_error(message: str):
+            return redirect(url_for("turns_compose", slug=slug, kingdom_id=kingdom_id, error=message))
+
+        game_label = meta.name.replace(" ", "_")
+        try:
+            kingdom = build_composed_kingdom(
+                state, game_label=game_label, turn_number=state.turn_number, kingdom_id=kingdom_id, form=request.form
+            )
+            content = write_k1_moves_file(kingdom)
+        except (InvalidComposedMovesError, K1WriteError) as exc:
+            return _compose_error(str(exc))
+
+        try:
+            save_uploaded_move_file(
+                game_dir(root, slug), state.turn_number, kingdom.source_filename, content.encode("utf-8"), state.kingdoms.keys()
+            )
+        except InvalidMoveFileError as exc:
+            # Would only mean a bug in build_composed_kingdom()/the
+            # writer itself producing an unparseable file -- every
+            # genuinely invalid *input* is already caught above.
+            return _compose_error(f"Couldn't save the composed moves: {exc}")
         return redirect(url_for("turns_hub", slug=slug))
 
     @app.post("/games/<slug>/turns/process")

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Turn {{ state.turn_number }} -- Compose Moves -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('turns_hub', slug=meta.slug) }}">&larr; Turn {{ state.turn_number }}</a></p>
+
+{% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+
+<div class="panel" style="border-left: 6px solid var(--phase-turns);">
+  <h2>{{ kingdom.name }} &mdash; Compose Moves for Turn {{ state.turn_number }}</h2>
+  <p class="hex-map-legend-note">
+    A base editor: each Phase (P0-P4) below is a plain Action + Object + Extra numbers, the same three
+    values a real move file's own "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries.
+    Saving builds a real move file from these and stores it exactly like an uploaded one -- it will show up
+    on the Turn page as this Kingdom's own Move File, and can be removed or replaced the same way.
+  </p>
+
+  <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
+    {% for leader in roster %}
+      <h3>{{ leader.name }}{% if leader.is_king %} (King){% endif %}</h3>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Phase</th>
+            <th>Action</th>
+            <th>Object</th>
+            <th>Extra (space or comma separated)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for n in phase_numbers %}
+            <tr>
+              <td>P{{ n }}</td>
+              <td>
+                <select name="action_{{ leader.leader_id }}_{{ n }}">
+                  {% for action in actions %}
+                    <option value="{{ action.value }}" {% if action.name == "DEFEND" %}selected{% endif %}>{{ action|display_name }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
+              <td><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endfor %}
+
+    <button type="submit">Save Composed Moves for Turn {{ state.turn_number }}</button>
+  </form>
+</div>
+
+{% endblock %}

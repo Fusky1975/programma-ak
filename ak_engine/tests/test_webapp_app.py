@@ -10,7 +10,7 @@ from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.discovery import Discovery
-from ak_engine.models.enums import Ability
+from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import BlackmailClaim
 from ak_engine.models.game_type import GameType
 from ak_engine.models.map import HexCoord, Terrain
@@ -23,7 +23,8 @@ from ak_engine.models.treasure import Treasure
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.encounter import MonsterTalkReply
 from ak_engine.webapp.app import MERIT_TALLY_FIELDS, create_app, display_name
-from ak_engine.webapp.games import create_game, list_games, open_game, save_game
+from ak_engine.webapp.games import create_game, game_dir, list_games, open_game, save_game
+from ak_engine.webapp.moves_compose import kingdom_leaders_for_compose
 
 
 def _client(tmp_path):
@@ -6219,6 +6220,127 @@ def test_turns_hub_shows_the_emperor_banner_once_one_is_crowned(tmp_path):
     assert response.status_code == 200
     assert b"has been crowned" in response.data
     assert b"Aldric" in response.data
+
+
+def _compose_form(leader_ids, *, action=ActionCode.DEFEND, obj=0, extra=""):
+    # 5 phases (P0..P4), the base editor's own fixed PHASE_COUNT, every
+    # one Defend by default -- see webapp/moves_compose.py's own
+    # docstring for why the base offers no smarter per-action default.
+    form = {}
+    for leader_id in leader_ids:
+        for n in range(5):
+            form[f"action_{leader_id}_{n}"] = str(int(action))
+            form[f"obj_{leader_id}_{n}"] = str(obj)
+            form[f"extra_{leader_id}_{n}"] = extra
+    return form
+
+
+def test_turns_compose_shows_the_kings_own_roster(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"Aldric" in response.data
+    assert b"King" in response.data
+
+
+def test_turns_compose_unknown_kingdom_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/999/compose", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Kingdom not found" in response.data
+
+
+def test_turns_compose_save_produces_a_real_move_file(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    response = client.post(
+        f"/games/{meta.slug}/turns/1/compose", data=_compose_form(roster_ids), follow_redirects=True
+    )
+
+    assert response.status_code == 200
+    # Same Game+Turn+Kingdom naming convention as the XK/SE downloads.
+    assert b"AKThird_CampaignT1.K1" in response.data
+    assert b"Not uploaded" in response.data  # still true for K2
+
+    saved = (
+        game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    )
+    assert saved.exists()
+    # It really is a valid, real move file -- the parser accepts it.
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    kingdom = parse_k1_moves_file(saved)
+    assert kingdom.king_name == "Aldric"
+    assert len(kingdom.leaders) == len(kingdom_leaders_for_compose(state, 1))
+
+
+def test_turns_compose_save_rejects_an_invalid_action(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = "999"  # not a real ActionCode ordinal
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"not a valid Action" in response.data
+
+
+def test_turns_compose_save_rejects_a_non_numeric_object(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    form = _compose_form(roster_ids)
+    form[f"obj_{king.leader_id}_0"] = "not-a-number"
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"whole number" in response.data
+
+
+def test_turns_compose_save_then_full_turn_processes_cleanly(tmp_path):
+    # The real end-to-end proof this base editor is meant to deliver:
+    # a composed move file is indistinguishable from an uploaded one to
+    # the rest of the pipeline -- composing moves for both Kingdoms and
+    # processing the turn must work exactly like two real uploads would.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+
+    for kingdom_id in (1, 2):
+        roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, kingdom_id)]
+        response = client.post(
+            f"/games/{meta.slug}/turns/{kingdom_id}/compose",
+            data=_compose_form(roster_ids),
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+
+    response = client.post(f"/games/{meta.slug}/turns/process", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Aldric" in response.data
+    assert b"Elara" in response.data
+    _, processed_state = open_game(tmp_path, meta.slug)
+    assert processed_state.turn_number == 2
+
+    report_response = client.get(f"/games/{meta.slug}/turns/1/report/1")
+    assert b"PROVINCES" in report_response.data
 
 
 def test_upload_move_file_shows_it_as_uploaded(tmp_path):
