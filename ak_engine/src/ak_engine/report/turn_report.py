@@ -12962,12 +12962,21 @@ _NORTH_ICE_CAP_LINE = "To the north lay an icy expanse which extends as far as t
 _SOUTH_ICE_CAP_LINE = "To the south lay an icy expanse which extends as far as the eye can see."
 
 
-def _real_province_number(coord: HexCoord) -> str:
+def real_province_number(coord: HexCoord) -> str:
     """The real province-number convention confirmed by `turn/movement.py`'s
     own Phase 314 addendum (`x*100 + y`, each zero-padded to 2 digits
     before concatenation, e.g. ``(3, 5)`` -> ``"0305"``) -- distinct
     from, and not reusing, `turn/hex_numbering.py encode_hex_number()`'s
     own row-major formula, an earlier hypothesis Phase 314 superseded.
+
+    Public (no leading underscore) since this is also the real "#<N>"
+    number the GM webapp's own Move-order province dropdown shows
+    (``webapp/moves_compose.py``, sourced directly from the user,
+    2026-10-26: "il numero d'ordine della provincia come nell'AK
+    originale") -- not to be confused with that same dropdown's own
+    internal destination encoding, which still goes through `turn/
+    hex_numbering.py encode_hex_number()` unchanged (a different,
+    separately-confirmed scheme -- see that function's own docstring).
     """
 
     return f"{coord.x:02d}{coord.y:02d}"
@@ -13001,7 +13010,7 @@ def _describe_neighbor_sentence(direction: Direction, coord: HexCoord, state: Ga
         return None
 
     name = province.name if province.name else f"({coord.x}, {coord.y})"
-    number = _real_province_number(coord)
+    number = real_province_number(coord)
     terrain_name = TERRAIN_NAME[province.effective_terrain()]
     race_plural = RACE_PLURAL_NAME[province.race]
     race_adjective = RACE_ADJECTIVE[province.race]

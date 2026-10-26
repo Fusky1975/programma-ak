@@ -46,6 +46,7 @@ from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
+from ak_engine.report.turn_report import real_province_number
 from ak_engine.turn.hex_numbering import encode_hex_number
 
 PHASE_COUNT = 5  # P0..P4 -- every real AK3__T*.K1 sample's own leader block shape.
@@ -83,15 +84,27 @@ def province_options(state: GameState) -> list[tuple[str, str]]:
     """Every province as a ``(value, label)`` pair for a Move phase's own
     destination dropdown -- ``value`` is ``"x,y"`` (parsed back by
     ``_parse_move_target()``), ``label`` is the province's own real name
-    where one exists, else just its coordinate. Sorted in map reading
-    order (row by row, left to right).
+    where one exists (else just its coordinate), its ``(x, y)``
+    coordinate, and its real "#<N>" province number (``report/turn_
+    report.py real_province_number()``, the same ``x*100+y`` convention
+    real reports already show, e.g. "Mongu (#305)" -- sourced directly
+    from the user, 2026-10-26, who asked for it alongside the name/
+    coordinates "come nell'AK originale"). This is purely a display
+    label: the dropdown's own submitted ``value``, and the destination
+    this module actually encodes into the move file, is still the
+    plain ``x,y`` coordinate -- see this module's own docstring for why
+    the real province number is a different, display-only scheme from
+    the internal Move-order encoding. Sorted in map reading order (row
+    by row, left to right).
     """
 
     provinces = sorted(state.provinces.values(), key=lambda province: (province.coord.y, province.coord.x))
     options = []
     for province in provinces:
         value = f"{province.coord.x},{province.coord.y}"
-        label = f"{province.name} ({province.coord.x}, {province.coord.y})" if province.name else f"({province.coord.x}, {province.coord.y})"
+        name_part = province.name if province.name else ""
+        number = real_province_number(province.coord)
+        label = f"{name_part} ({province.coord.x}, {province.coord.y}) #{number}".strip()
         options.append((value, label))
     return options
 

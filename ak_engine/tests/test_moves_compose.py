@@ -58,10 +58,14 @@ def _all_defend_form(leader_id: int) -> dict[str, str]:
 
 
 def test_province_options_names_a_named_province_and_falls_back_for_an_unnamed_one():
+    # Bug fix, sourced directly from the user (2026-10-26): the label
+    # also carries the province's own real "#<N>" order number (the
+    # same x*100+y convention real reports already show, e.g. "Mongu
+    # (#305)") "come nell'AK originale" -- not just name/coordinates.
     state = _state()
     options = province_options(state)
-    assert ("1,1", "Numenor (1, 1)") in options
-    assert ("3,2", "(3, 2)") in options
+    assert ("1,1", "Numenor (1, 1) #0101") in options
+    assert ("3,2", "(3, 2) #0302") in options
 
 
 def test_province_options_sorted_in_map_reading_order():
