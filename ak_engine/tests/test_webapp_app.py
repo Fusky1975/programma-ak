@@ -6535,6 +6535,105 @@ def test_turns_compose_save_talk_and_fulfill_together_shows_an_error(tmp_path):
     assert b"Talk and Fulfill" in response.data
 
 
+def test_turns_compose_shows_a_say_text_field(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"compose-tactic-say-cell" in response.data
+    assert b"tactic_say_" in response.data
+
+
+def test_turns_compose_save_say_tactic_text_round_trips(tmp_path):
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.SAY))
+    form[f"tactic_say_{king.leader_id}_0_0"] = "Eccoti un bell'hot dog, muso gelato!"
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    search_phase = king_block.plan.segments[0].phases["P0"]
+    assert search_phase.extra == [0, int(Maneuver.SAY), "Eccoti un bell'hot dog, muso gelato!", -1]
+
+
+def test_turns_compose_save_say_tactic_without_text_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.SAY))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Say&#39;s own text" in response.data or b"Say's own text" in response.data
+
+
+def test_turns_compose_save_say_tactic_over_160_characters_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.SAY))
+    form[f"tactic_say_{king.leader_id}_0_0"] = "x" * 161
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"160 characters or fewer" in response.data
+
+
+def test_turns_compose_save_say_then_another_tactic_then_full_turn_processes_cleanly(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.SAY))
+    form[f"tactic_say_{king.leader_id}_0_0"] = "Take that!"
+    form[f"tactic_{king.leader_id}_0_1"] = str(int(Maneuver.MELEE))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"error-banner" not in response.data
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    assert saved.exists()
+
+
 def test_turns_compose_save_rejects_an_invalid_action(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

@@ -38,12 +38,11 @@ designed with the user one tactic at a time, via ``TACTIC_SLOT_COUNT``
 (``7``, the longest real ``AK3__T*.K1`` sample's own tactic list)
 dedicated ``tactic_<leader>_<n>_<slot>`` dropdowns per Search phase,
 each with an optional ``tactic_sub_<leader>_<n>_<slot>`` sub-object
-field for a ``TACTICS_WITH_SUB_OBJECT`` maneuver (Cast/Use Item/Give).
-An empty slot stops the list there -- a later non-empty slot after one
-is rejected, not silently dropped. ``Say``'s own free-text argument
-isn't composable yet (not offered in the dropdown at all -- see
-``parser/k1_moves_writer.py``'s own matching "SAY not supported"
-decision), nor is ``Maneuver.NONE`` (a sentinel, never a real tactic).
+field for a ``TACTICS_WITH_SUB_OBJECT`` maneuver (Cast/Use Item/Give)
+or a ``tactic_say_<leader>_<n>_<slot>`` free-text field for Say (see
+below). An empty slot stops the list there -- a later non-empty slot
+after one is rejected, not silently dropped. ``Maneuver.NONE`` is
+never composable (a sentinel, never a real tactic).
 
 **Talk ([5.5]), the user's own first tactic to design** (2026-10-26,
 sourced directly from them): "può essere usata solo all'inizio del
@@ -79,6 +78,27 @@ parameter flags a feature this leader already holds a pending deal on
 ("-- pending quest for this leader"), so the GM can actually tell,
 right in the Search dropdown, which feature a Fulfill tactic would do
 something on this turn.
+
+**Say ([5.3]), the third tactic designed** (2026-10-27, sourced
+directly from the user, rulebook text pasted verbatim): "Un personaggio
+può dire tutte le parole indicate dal giocatore, entro un limite di
+160 caratteri. Questa azione non fa consumare tempo di combattimento.
+La successiva tattica del personaggio è eseguita nello stesso round di
+combattimento della tattica Say" -- confirmed structurally from
+``turn/search_execution.py``'s own ``Maneuver.SAY`` branch (a
+documented no-op: ``continue``, never consumes a combat round, exactly
+matching "non fa consumare tempo di combattimento"). Unlike Talk, Say
+has no position restriction of its own -- the rulebook text the user
+pasted never says otherwise, and "il personaggio può fare tutti i
+tentativi che vuole" (repeated riddle attempts) implies it can appear
+more than once in the same Encounter Plan, anywhere in the sequence,
+including right before another real tactic in the same round. Its own
+free-text argument -- a real on-disk exception, written on the line(s)
+right after the SAY ordinal's own line rather than as a plain int (see
+``parser/k1_moves_writer.py``'s own matching support) -- is read from
+a dedicated ``tactic_say_<leader>_<n>_<slot>`` field instead of the
+generic sub-object one, validated non-blank and at most 160 characters
+(the rulebook's own stated limit) by ``_parse_search_tactics()``.
 
 A Search phase composed here always gets the immediately-terminated
 empty tactic list ``[0, -1]`` ("tl=0, no tactics") when every slot is
@@ -129,12 +149,12 @@ EMPTY_SEARCH_EXTRA: list[int] = [0, -1]
 # not an arbitrary round number.
 TACTIC_SLOT_COUNT = 7
 
-# Every Maneuver a GM can compose here -- Maneuver.SAY is excluded (its
-# own free-text argument isn't composable yet, see this module's own
-# docstring) and Maneuver.NONE is a sentinel, never a real tactic.
-_COMPOSABLE_MANEUVERS: tuple[Maneuver, ...] = tuple(
-    maneuver for maneuver in Maneuver if maneuver not in (Maneuver.SAY, Maneuver.NONE)
-)
+# Every Maneuver a GM can compose here -- Maneuver.NONE is a sentinel,
+# never a real tactic, so it's the only one excluded.
+_COMPOSABLE_MANEUVERS: tuple[Maneuver, ...] = tuple(maneuver for maneuver in Maneuver if maneuver is not Maneuver.NONE)
+
+# Rulebook [5.3]'s own stated limit ("entro un limite di 160 caratteri").
+SAY_TEXT_MAX_LENGTH = 160
 
 PHASE_COUNT = 5  # P0..P4 -- every real AK3__T*.K1 sample's own leader block shape.
 
@@ -269,7 +289,7 @@ class ComposedPhaseInput:
 
     action: ActionCode
     obj: int
-    extra: list[int]
+    extra: list[int | str]
 
 
 def _parse_action(raw: str) -> ActionCode:
@@ -311,15 +331,18 @@ def _parse_search_feature(raw: str, *, phase_label: str) -> int:
     return _parse_int(raw, field_label=f"{phase_label} Search feature")
 
 
-def _parse_search_tactics(form: dict[str, str], leader_id: int, n: int, *, phase_label: str) -> list[int]:
+def _parse_search_tactics(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str
+) -> list[int | str]:
     """Reads this Search phase's own ``tactic_<leader_id>_<n>_<slot>``/
-    ``tactic_sub_<leader_id>_<n>_<slot>`` fields (``slot`` in
-    ``0..TACTIC_SLOT_COUNT-1``) into a real, ``-1``-terminated Encounter
-    Plan tactic list -- see this module's own docstring for the Talk-
-    position and Talk/Fulfill-exclusion rules enforced here.
+    ``tactic_sub_<leader_id>_<n>_<slot>``/``tactic_say_<leader_id>_<n>_
+    <slot>`` fields (``slot`` in ``0..TACTIC_SLOT_COUNT-1``) into a
+    real, ``-1``-terminated Encounter Plan tactic list -- see this
+    module's own docstring for the Talk-position, Talk/Fulfill-
+    exclusion, and Say free-text rules enforced here.
     """
 
-    tokens: list[int] = []
+    tokens: list[int | str] = []
     has_talk = False
     has_fulfill = False
     stopped_at: int | None = None
@@ -339,9 +362,9 @@ def _parse_search_tactics(form: dict[str, str], leader_id: int, n: int, *, phase
         except (TypeError, ValueError) as exc:
             raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1} is not a valid tactic.") from exc
         if maneuver not in _COMPOSABLE_MANEUVERS:
-            # Defense in depth: Say/None are never offered in the
+            # Defense in depth: Maneuver.NONE is never offered in the
             # dropdown, but a direct, tampered POST could still name
-            # their real ordinal.
+            # its real ordinal.
             raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1} isn't composable here yet.")
         if maneuver is Maneuver.TALK:
             if slot != 0:
@@ -352,7 +375,17 @@ def _parse_search_tactics(form: dict[str, str], leader_id: int, n: int, *, phase
         if maneuver is Maneuver.FULFILL:
             has_fulfill = True
         tokens.append(int(maneuver))
-        if maneuver in TACTICS_WITH_SUB_OBJECT:
+        if maneuver is Maneuver.SAY:
+            say_text = form.get(f"tactic_say_{leader_id}_{n}_{slot}", "").strip()
+            if not say_text:
+                raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1} needs Say's own text.")
+            if len(say_text) > SAY_TEXT_MAX_LENGTH:
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: tactic slot {slot + 1}'s Say text must be "
+                    f"{SAY_TEXT_MAX_LENGTH} characters or fewer, got {len(say_text)}."
+                )
+            tokens.append(say_text)
+        elif maneuver in TACTICS_WITH_SUB_OBJECT:
             sub_raw = form.get(f"tactic_sub_{leader_id}_{n}_{slot}", "0")
             tokens.append(_parse_int(sub_raw or "0", field_label=f"{phase_label} tactic {slot + 1} sub-object"))
 
@@ -393,7 +426,7 @@ def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int
             obj = _parse_move_target(
                 form.get(f"move_target_{leader_id}_{n}", ""), board_width=board_width, phase_label=f"P{n}"
             )
-            extra: list[int] = []
+            extra: list[int | str] = []
         elif action is ActionCode.EXPLORE:
             obj = 0
             extra = []

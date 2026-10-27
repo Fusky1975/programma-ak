@@ -1,4 +1,4 @@
-"""Writer for the player move-submission .K1 format -- the exact inverse
+r"""Writer for the player move-submission .K1 format -- the exact inverse
 of ``parser/k1_moves.py``'s ``parse_k1_moves_file()``.
 
 **Why this exists**: the GM webapp's manual "compose moves" editor (and,
@@ -25,27 +25,46 @@ grammar requires matching the original file's own line breaks.
   ``AK3__T*.K1`` samples use one), so a writer that couldn't round-trip
   it would fail on most real files, not just an edge case.
 - A ``SAY`` tactic's own free-text argument (inside a Search/Challenge/
-  Pursue phase's own ``extra``, or a plan's own ``SP:`` tactic list) is
-  **not** supported here -- ``tests/test_k1_moves_parser.py``'s own
-  docstring confirms no real ``AK3__T*.K1`` sample contains one, and
-  writing its on-disk shape back out (free text on its own line(s),
-  blank-line-terminated) is exactly the kind of per-command syntax
-  decision the user asked to make deliberately, one command at a time,
-  rather than guessed at here. ``write_k1_moves_file()`` raises
-  ``K1WriteError`` if it ever encounters one, rather than silently
-  emitting a file that wouldn't re-parse correctly.
-- Every other phase's ``extra`` (plain ``int``s only) round-trips as
-  plain whitespace-separated integers -- exactly what
-  ``parser/tokens.py consume_ints()`` already expects.
+  Pursue phase's own ``extra``, or a plan's own ``SP:`` tactic list) --
+  sourced directly from the user (2026-10-27) when designing the
+  Encounter Plan's own Say tactic -- is written on its own line right
+  after the ``SAY`` ordinal's own line, terminated by a blank line,
+  exactly the shape ``parser/k1_moves.py _recover_say_text()`` expects
+  (its own docstring: "the text sits on the line(s) immediately after
+  the SAY ordinal's own line, terminated by a blank line"). This is
+  the one case where this module's own "line layout doesn't matter"
+  claim above doesn't hold -- ``_render_leader_lines()`` below breaks
+  the leader's own flat token stream into several physical lines
+  around every ``_SayText`` marker for exactly this reason, unlike
+  every other value (plain integers), which still round-trips fine on
+  one flat line regardless of where line breaks fall. A resumption
+  line (the one right after a SAY's own blank terminator) that starts
+  with a bare positive ordinal immediately followed by a token
+  starting with ``-`` (most commonly the tactic list's own ``-1``
+  terminator, e.g. a Say then a Melee in the same round) would
+  otherwise collide with ``parser/tokens.py match_leader_header()``'s
+  own ``^(\d+)\s+-(.+)$`` pattern and get misread as a brand new
+  leader block -- ``_render_leader_lines()`` guards against exactly
+  this by prefixing such a line's own first token with a harmless
+  ``+`` (``int("+9") == 9``, and the ``+`` spelling isn't a digit, so
+  the header regex no longer matches at position 0).
+- Every other phase's ``extra`` (plain ``int``s) round-trips as plain
+  whitespace-separated integers -- exactly what ``parser/tokens.py
+  consume_ints()`` already expects.
 
 **Verified**: ``tests/test_k1_moves_writer.py`` round-trips all 10 real
-``AK3__T*.K1`` samples (parse -> write -> re-parse -> same structure).
+``AK3__T*.K1`` samples (parse -> write -> re-parse -> same structure),
+plus hand-built SAY fixtures (no real sample contains one, confirmed by
+``tests/test_k1_moves_parser.py``'s own docstring).
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from ak_engine.models.kingdom import Kingdom
 from ak_engine.models.plan import ActionPlan, PlanSegment
+from ak_engine.parser.tokens import match_leader_header
 
 _BOILERPLATE = (
     "    This moves file contains the moves of your King and his characters.\n"
@@ -56,6 +75,15 @@ _BOILERPLATE = (
 
 class K1WriteError(ValueError):
     """Raised when a ``Kingdom`` carries a shape this writer doesn't support yet."""
+
+
+@dataclass(frozen=True, slots=True)
+class _SayText:
+    """Marks a SAY tactic's own free-text argument in a leader's flat token
+    stream, so ``_render_leader_lines()`` can split that stream onto several
+    physical lines around it, instead of folding it in as a plain token."""
+
+    text: str
 
 
 def write_k1_moves_file(kingdom: Kingdom) -> str:
@@ -88,8 +116,7 @@ def write_k1_moves_file(kingdom: Kingdom) -> str:
         # of that line part of the regex's own greedy name capture.
         lines.append(f" {leader.leader_id} -{leader.name}")
         tokens = _plan_tokens(leader.plan)
-        if tokens:
-            lines.append(" " + " ".join(tokens))
+        lines.extend(_render_leader_lines(tokens))
 
     lines.append(" 255")
     if kingdom.trailer_comments:
@@ -98,15 +125,15 @@ def write_k1_moves_file(kingdom: Kingdom) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _plan_tokens(plan: ActionPlan) -> list[str]:
-    tokens: list[str] = []
+def _plan_tokens(plan: ActionPlan) -> list[str | _SayText]:
+    tokens: list[str | _SayText] = []
     for segment in plan.segments:
         tokens.extend(_segment_tokens(segment))
     return tokens
 
 
-def _segment_tokens(segment: PlanSegment) -> list[str]:
-    tokens = ["AP:", str(segment.plan_start), str(segment.plan_end)]
+def _segment_tokens(segment: PlanSegment) -> list[str | _SayText]:
+    tokens: list[str | _SayText] = ["AP:", str(segment.plan_start), str(segment.plan_end)]
     if segment.sp:
         tokens.append("SP:")
         tokens.extend(_value_token(value) for value in segment.sp)
@@ -135,10 +162,39 @@ def _segment_tokens(segment: PlanSegment) -> list[str]:
     return tokens
 
 
-def _value_token(value: int | str) -> str:
+def _value_token(value: int | str) -> str | _SayText:
     if isinstance(value, str):
-        raise K1WriteError(
-            f"a SAY tactic's own free-text argument ({value!r}) isn't supported by this writer yet "
-            "-- see this module's own docstring"
-        )
+        return _SayText(value)
     return str(int(value))
+
+
+def _render_leader_lines(tokens: list[str | _SayText]) -> list[str]:
+    """Splits a leader's own flat token stream into physical lines, matching
+    ``parser/k1_moves.py _recover_say_text()``'s own requirement: a SAY
+    tactic's free text sits on the line right after the SAY ordinal's own
+    line, terminated by a blank line. Every other token is line-break-
+    agnostic (see this module's own docstring), so they're all folded onto
+    one line together, right up to (and including) the SAY ordinal itself;
+    whatever follows a SAY text resumes on a fresh line of its own."""
+
+    lines: list[str] = []
+    current: list[str] = []
+    for token in tokens:
+        if isinstance(token, _SayText):
+            lines.append(_render_line(current))
+            current = []
+            lines.append(f" {token.text}")
+            lines.append("")
+        else:
+            current.append(token)
+    if current:
+        lines.append(_render_line(current))
+    return lines
+
+
+def _render_line(tokens: list[str]) -> str:
+    line = " " + " ".join(tokens)
+    if match_leader_header(line) is not None:
+        tokens = [f"+{tokens[0]}", *tokens[1:]]
+        line = " " + " ".join(tokens)
+    return line

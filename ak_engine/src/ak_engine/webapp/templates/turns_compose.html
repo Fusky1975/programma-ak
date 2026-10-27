@@ -11,11 +11,11 @@
   <p class="hex-map-legend-note">
     A base editor, filled in one Action (and, for Search, one Encounter Plan tactic) at a time: Move has its
     own destination dropdown, Explore needs no input at all (it always targets the leader's own current
-    province), Search has its own target-feature dropdown plus Encounter Plan tactic slots (so far only Talk
-    has its own rules wired in -- every other tactic takes a plain sub-object number, until it gets its own
-    friendlier form too); every other Action still takes the same plain Object + Extra numbers a real move
-    file's own "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a
-    real move file from these and stores it exactly like an uploaded one.
+    province), Search has its own target-feature dropdown plus Encounter Plan tactic slots (Talk, Fulfill, and
+    Say so far have their own rules wired in -- every other tactic takes a plain sub-object number, until it
+    gets its own friendlier form too); every other Action still takes the same plain Object + Extra numbers a
+    real move file's own "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving
+    builds a real move file from these and stores it exactly like an uploaded one.
   </p>
 
   <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
@@ -62,7 +62,7 @@
                 </select>
                 <br><span class="hex-map-legend-note">Encounter Plan (empty slots stop the list there):</span>
                 <table class="data-table compose-encounter-plan">
-                  <thead><tr><th>Tactic</th><th>Sub-object</th></tr></thead>
+                  <thead><tr><th>Tactic</th><th>Sub-object</th><th>Say text</th></tr></thead>
                   <tbody>
                     {% for slot in tactic_slot_numbers %}
                       <tr>
@@ -76,6 +76,9 @@
                         </td>
                         <td class="compose-tactic-sub-cell">
                           <input type="text" name="tactic_sub_{{ leader.leader_id }}_{{ n }}_{{ slot }}" value="0" size="4">
+                        </td>
+                        <td class="compose-tactic-say-cell">
+                          <input type="text" name="tactic_say_{{ leader.leader_id }}_{{ n }}_{{ slot }}" value="" size="24" maxlength="{{ say_text_max_length }}">
                         </td>
                       </tr>
                     {% endfor %}
@@ -127,16 +130,17 @@
     }
   });
 
-  // Encounter Plan tactic slots (so far only Talk has real rules wired
-  // in here -- see webapp/moves_compose.py's own docstring for the
-  // user-sourced "Talk only as the first tactic" / "Talk and Fulfill
-  // can't coexist" rules). Progressive enhancement only: build_
-  // composed_kingdom()'s own server-side validation is authoritative
-  // either way, so a disabled <option> here is just a hint, not the
-  // real enforcement.
+  // Encounter Plan tactic slots -- see webapp/moves_compose.py's own
+  // docstring for the user-sourced "Talk only as the first tactic" /
+  // "Talk and Fulfill can't coexist" / Say free-text rules this hides
+  // or disables here. Progressive enhancement only: build_composed_
+  // kingdom()'s own server-side validation is authoritative either
+  // way, so a disabled <option> or hidden cell here is just a hint,
+  // not the real enforcement.
   var TACTICS_WITH_SUB_OBJECT = {{ tactics_with_sub_object }}.map(String);
   var TALK_VALUE = "{{ talk_value }}";
   var FULFILL_VALUE = "{{ fulfill_value }}";
+  var SAY_VALUE = "{{ say_value }}";
 
   function updateTacticSubCell(select) {
     var row = select.closest("tr");
@@ -144,6 +148,10 @@
     var subCell = row.querySelector(".compose-tactic-sub-cell");
     if (subCell) {
       subCell.style.display = TACTICS_WITH_SUB_OBJECT.indexOf(select.value) !== -1 ? "" : "none";
+    }
+    var sayCell = row.querySelector(".compose-tactic-say-cell");
+    if (sayCell) {
+      sayCell.style.display = select.value === SAY_VALUE ? "" : "none";
     }
   }
 

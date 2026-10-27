@@ -24,6 +24,9 @@ rulebook [5.6]).
 
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import ActionCode, Maneuver
 from ak_engine.models.feature import Feature, FeatureType
@@ -32,6 +35,8 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
+from ak_engine.parser.k1_moves import parse_k1_moves_file
+from ak_engine.parser.k1_moves_writer import write_k1_moves_file
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.webapp.moves_compose import (
     EMPTY_SEARCH_EXTRA,
@@ -268,7 +273,12 @@ def test_build_composed_kingdom_round_trips_a_search_order_to_the_real_feature_i
 # -- Encounter Plan tactic slots (Talk is the first tactic designed) --
 
 
-def _search_form(feature_id: int = 3, tactics: dict[int, int] | None = None, subs: dict[int, int] | None = None):
+def _search_form(
+    feature_id: int = 3,
+    tactics: dict[int, int] | None = None,
+    subs: dict[int, int] | None = None,
+    says: dict[int, str] | None = None,
+):
     form = _all_defend_form(KING_ID)
     form[f"action_{KING_ID}_0"] = str(int(ActionCode.SEARCH))
     form[f"search_feature_{KING_ID}_0"] = str(feature_id)
@@ -276,6 +286,8 @@ def _search_form(feature_id: int = 3, tactics: dict[int, int] | None = None, sub
         form[f"tactic_{KING_ID}_0_{slot}"] = str(maneuver_value)
     for slot, sub_value in (subs or {}).items():
         form[f"tactic_sub_{KING_ID}_0_{slot}"] = str(sub_value)
+    for slot, say_value in (says or {}).items():
+        form[f"tactic_say_{KING_ID}_0_{slot}"] = say_value
     return form
 
 
@@ -286,10 +298,12 @@ def test_tactic_options_offers_talk_only_in_slot_zero():
     assert int(Maneuver.TALK) not in slot1_values
 
 
-def test_tactic_options_excludes_say_and_none_everywhere():
+def test_tactic_options_includes_say_everywhere_but_excludes_none():
+    # Unlike Talk, Say has no position restriction of its own (sourced
+    # directly from the user, 2026-10-27) -- offered in every slot.
     for slot in (0, 1):
         values = {value for value, _ in tactic_options(slot)}
-        assert int(Maneuver.SAY) not in values
+        assert int(Maneuver.SAY) in values
         assert int(Maneuver.NONE) not in values
 
 
@@ -398,14 +412,77 @@ def test_search_phase_rejects_a_gap_between_tactic_slots():
         assert "gaps" in str(exc)
 
 
-def test_search_phase_rejects_say_and_none_even_via_a_direct_tampered_value():
-    for maneuver in (Maneuver.SAY, Maneuver.NONE):
-        form = _search_form(tactics={0: int(maneuver)})
-        try:
-            parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
-            assert False, "expected InvalidComposedMovesError"
-        except InvalidComposedMovesError as exc:
-            assert "isn't composable" in str(exc)
+def test_search_phase_rejects_none_even_via_a_direct_tampered_value():
+    form = _search_form(tactics={0: int(Maneuver.NONE)})
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "isn't composable" in str(exc)
+
+
+def test_search_phase_say_tactic_text_is_included():
+    form = _search_form(tactics={0: int(Maneuver.SAY)}, says={0: "Take that!"})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.SAY), "Take that!", -1]
+
+
+def test_search_phase_say_tactic_followed_by_another_tactic_is_included():
+    # "La successiva tattica del personaggio è eseguita nello stesso
+    # round di combattimento della tattica Say" -- confirms Say can be
+    # followed by a real tactic in the same Encounter Plan.
+    form = _search_form(
+        tactics={0: int(Maneuver.SAY), 1: int(Maneuver.MELEE)},
+        says={0: "Eccoti un bell'hot dog, muso gelato!"},
+    )
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.SAY), "Eccoti un bell'hot dog, muso gelato!", int(Maneuver.MELEE), -1]
+
+
+def test_search_phase_say_tactic_without_text_is_rejected():
+    form = _search_form(tactics={0: int(Maneuver.SAY)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Say's own text" in str(exc)
+
+
+def test_search_phase_say_tactic_over_160_characters_is_rejected():
+    form = _search_form(tactics={0: int(Maneuver.SAY)}, says={0: "x" * 161})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "160 characters or fewer" in str(exc)
+
+
+def test_search_phase_say_tactic_at_exactly_160_characters_is_accepted():
+    text = "x" * 160
+    form = _search_form(tactics={0: int(Maneuver.SAY)}, says={0: text})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.SAY), text, -1]
+
+
+def test_search_phase_say_tactic_can_repeat_for_riddle_attempts():
+    # "il personaggio può fare tutti i tentativi che vuole utilizzando
+    # la tattica Say" -- repeated Say tactics in the same plan.
+    form = _search_form(
+        tactics={0: int(Maneuver.SAY), 1: int(Maneuver.SAY)},
+        says={0: "First guess", 1: "Second guess"},
+    )
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.SAY), "First guess", int(Maneuver.SAY), "Second guess", -1]
 
 
 def test_build_composed_kingdom_round_trips_an_encounter_plan():
@@ -416,3 +493,24 @@ def test_build_composed_kingdom_round_trips_an_encounter_plan():
 
     phase0 = kingdom.leaders[0].plan.segments[0].phases["P0"]
     assert phase0.extra == [0, int(Maneuver.TALK), -1]
+
+
+def test_build_composed_kingdom_round_trips_a_say_tactic_through_the_real_writer():
+    # Goes through write_k1_moves_file() + parse_k1_moves_file() for
+    # real, not just an in-memory Kingdom assertion -- the whole point
+    # of composing through a real Kingdom is that this exact file is
+    # what turn processing would actually read back.
+    state = _state()
+    form = _search_form(tactics={0: int(Maneuver.SAY)}, says={0: "Take that!"})
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.extra == [0, int(Maneuver.SAY), "Take that!", -1]

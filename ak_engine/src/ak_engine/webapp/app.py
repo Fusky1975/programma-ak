@@ -79,6 +79,7 @@ from ak_engine.parser.k1_moves_writer import K1WriteError, write_k1_moves_file
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
 from ak_engine.webapp.moves_compose import (
     PHASE_COUNT,
+    SAY_TEXT_MAX_LENGTH,
     TACTIC_SLOT_COUNT,
     InvalidComposedMovesError,
     build_composed_kingdom,
@@ -3026,6 +3027,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             tactics_with_sub_object=[int(maneuver) for maneuver in TACTICS_WITH_SUB_OBJECT],
             talk_value=int(Maneuver.TALK),
             fulfill_value=int(Maneuver.FULFILL),
+            say_value=int(Maneuver.SAY),
+            say_text_max_length=SAY_TEXT_MAX_LENGTH,
             error=request.args.get("error"),
         )
 
