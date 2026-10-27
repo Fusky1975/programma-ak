@@ -3018,7 +3018,9 @@ def create_app(games_root: Path | None = None) -> Flask:
             explore_action_value=int(ActionCode.EXPLORE),
             search_action_value=int(ActionCode.SEARCH),
             province_choices=province_options(state),
-            feature_choices=feature_options(state),
+            feature_choices_by_leader={
+                leader.leader_id: feature_options(state, leader_id=leader.leader_id) for leader in roster
+            },
             tactic_slot_numbers=range(TACTIC_SLOT_COUNT),
             tactic_choices_by_slot=[tactic_options(slot) for slot in range(TACTIC_SLOT_COUNT)],
             tactics_with_sub_object=[int(maneuver) for maneuver in TACTICS_WITH_SUB_OBJECT],

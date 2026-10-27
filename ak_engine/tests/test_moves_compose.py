@@ -196,6 +196,34 @@ def test_feature_options_omits_guardian_for_a_looted_feature():
     assert ("3", "#3 Altar -- Numenor") in options
 
 
+def test_feature_options_flags_a_pending_quest_for_this_leader():
+    # Sourced directly from the user (2026-10-27, designing Fulfill):
+    # "Funziona solo se un eroe o un re ha ricevuto da un mostro nei
+    # turni precedenti dopo una tattica TALK una quest (numerata col
+    # numero d'ordine del feature)" -- Fulfill always resolves whichever
+    # feature the same Search phase's own obj already names, so
+    # flagging which feature holds a pending deal for this leader is
+    # what actually helps the GM use Fulfill correctly.
+    state = _state()
+    state.features[3].pending_deal_leader_id = KING_ID
+    options = feature_options(state, leader_id=KING_ID)
+    assert ("3", "#3 Altar -- Numenor -- Renegade Necromancer -- pending quest for this leader") in options
+
+
+def test_feature_options_does_not_flag_a_pending_quest_for_a_different_leader():
+    state = _state()
+    state.features[3].pending_deal_leader_id = 999
+    options = feature_options(state, leader_id=KING_ID)
+    assert ("3", "#3 Altar -- Numenor -- Renegade Necromancer") in options
+
+
+def test_feature_options_with_no_leader_id_never_flags_a_pending_quest():
+    state = _state()
+    state.features[3].pending_deal_leader_id = KING_ID
+    options = feature_options(state)
+    assert ("3", "#3 Altar -- Numenor -- Renegade Necromancer") in options
+
+
 def test_search_phase_reads_its_own_dropdown_not_the_generic_object_field():
     form = _all_defend_form(KING_ID)
     form[f"action_{KING_ID}_1"] = str(int(ActionCode.SEARCH))
@@ -320,6 +348,27 @@ def test_search_phase_talk_and_fulfill_together_is_rejected():
 
 def test_search_phase_fulfill_alone_is_accepted():
     form = _search_form(tactics={0: int(Maneuver.FULFILL)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.FULFILL), -1]
+
+
+def test_search_phase_fulfill_has_no_position_restriction_unlike_talk():
+    # Sourced directly from the user (2026-10-27): Fulfill has no
+    # "first tactic only" rule of its own -- confirmed from turn/
+    # search_execution.py's own _resolve_fulfill(), which never checks
+    # a tactic's own position, unlike the module docstring's own
+    # discussion of Talk.
+    form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT), 2: int(Maneuver.FULFILL)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.MELEE), int(Maneuver.SCOUT), int(Maneuver.FULFILL), -1]
+
+
+def test_search_phase_fulfill_carries_no_sub_object():
+    form = _search_form(tactics={0: int(Maneuver.FULFILL)}, subs={0: 42})  # must be ignored
 
     phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
 

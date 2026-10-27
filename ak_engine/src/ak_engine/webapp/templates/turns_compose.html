@@ -56,7 +56,7 @@
               <td class="compose-special-cell" data-action="{{ search_action_value }}">
                 <select name="search_feature_{{ leader.leader_id }}_{{ n }}">
                   <option value="">-- choose a feature --</option>
-                  {% for value, label in feature_choices %}
+                  {% for value, label in feature_choices_by_leader[leader.leader_id] %}
                     <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>

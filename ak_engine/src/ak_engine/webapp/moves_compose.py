@@ -58,6 +58,28 @@ Fulfill nello stesso Piano d'Incontro" -- independently confirmed from
 ``turn/search_execution.py``'s own ``_resolve_fulfill()`` docstring
 (rulebook [5.6]): rejected if both appear in the same tactic list.
 
+**Fulfill ([5.7]), the second tactic designed** (2026-10-27, sourced
+directly from the user): "Funziona solo se un eroe o un re ha
+ricevuto da un mostro nei turni precedenti dopo una tattica TALK una
+quest (numerata col numero d'ordine del feature). Se la quest è
+risolta l'eroe o il re riceve il premio" -- independently confirmed
+from ``turn/search_execution.py``'s own ``_resolve_fulfill()``:
+``feature.pending_deal_leader_id`` (set by a *prior* turn's successful
+Talk, ``_resolve_talk()``) must equal the acting leader's own id, and
+the targeted feature is already exactly the one this same Search
+phase's own ``obj`` names -- there is no separate "quest id" to pick,
+only the feature dropdown already built for Search itself.
+**Nothing new to compose for Fulfill, structurally**: it carries no
+sub-object (confirmed absent from ``TACTICS_WITH_SUB_OBJECT``) and has
+no position restriction of its own (unlike Talk) -- it was already
+fully selectable, in any slot, the moment ``_COMPOSABLE_MANEUVERS`` and
+the Talk/Fulfill exclusion above existed. The one real, useful addition
+here is informational: ``feature_options()``'s own ``leader_id``
+parameter flags a feature this leader already holds a pending deal on
+("-- pending quest for this leader"), so the GM can actually tell,
+right in the Search dropdown, which feature a Fulfill tactic would do
+something on this turn.
+
 A Search phase composed here always gets the immediately-terminated
 empty tactic list ``[0, -1]`` ("tl=0, no tactics") when every slot is
 left empty, matching the previous round's own placeholder default.
@@ -174,7 +196,7 @@ def province_options(state: GameState) -> list[tuple[str, str]]:
     return options
 
 
-def feature_options(state: GameState) -> list[tuple[str, str]]:
+def feature_options(state: GameState, *, leader_id: int | None = None) -> list[tuple[str, str]]:
     """Every feature as a ``(value, label)`` pair for a Search phase's own
     target-feature dropdown -- ``value`` is the feature's own real
     ``feature_id`` (exactly what ``obj`` is for Search, so no separate
@@ -186,6 +208,18 @@ def feature_options(state: GameState) -> list[tuple[str, str]]:
     Sorted by ``feature_id``, the same "#<N>" a GM would already look
     the feature up by on a PROVINCES report's own "Features and F#"
     column.
+
+    ``leader_id`` (sourced directly from the user, 2026-10-27, as part
+    of designing the Fulfill tactic): when given, a feature this leader
+    currently holds a pending deal on (``Feature.pending_deal_leader_id``
+    -- the one a prior turn's successful Talk set, per ``turn/search_
+    execution.py``'s own ``_resolve_talk()``/``_resolve_fulfill()``) is
+    flagged "-- pending quest for this leader", since Fulfill (this
+    module's own docstring has its full sourcing) always resolves
+    *whichever* feature the same Search phase's own ``obj`` already
+    names -- there's no separate quest id to pick, only this same
+    feature dropdown, so surfacing the one feature Fulfill would
+    actually do something on here is the whole point.
     """
 
     features = sorted(state.features.values(), key=lambda feature: feature.feature_id)
@@ -196,6 +230,8 @@ def feature_options(state: GameState) -> list[tuple[str, str]]:
         label = f"#{feature.feature_id} {FEATURE_TYPE_NAMES[feature.kind]} -- {place}"
         if feature.guardian_monster is not None and not feature.looted:
             label += f" -- {MONSTER_NAMES.get(feature.guardian_monster, feature.guardian_monster.name.title())}"
+        if leader_id is not None and feature.pending_deal_leader_id == leader_id:
+            label += " -- pending quest for this leader"
         options.append((str(feature.feature_id), label))
     return options
 

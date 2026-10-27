@@ -6389,6 +6389,26 @@ def test_turns_compose_shows_a_search_feature_dropdown(tmp_path):
     assert b"Encounter Plan" in response.data
 
 
+def test_turns_compose_shows_a_pending_quest_flag_for_this_leader(tmp_path):
+    # Sourced directly from the user (2026-10-27, designing Fulfill):
+    # the Search feature dropdown flags a feature this leader already
+    # holds a pending deal on (set by a prior turn's successful Talk),
+    # since that's the one feature a Fulfill tactic would actually do
+    # something on this turn.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    feature_id = next(iter(state.features))
+    state.features[feature_id].pending_deal_leader_id = king.leader_id
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"pending quest for this leader" in response.data
+
+
 def test_turns_compose_save_search_order_encodes_the_feature_and_ignores_extra(tmp_path):
     # Sourced directly from the user (2026-10-26, their own explicit
     # "telaio"/skeleton request): only the target feature number is
