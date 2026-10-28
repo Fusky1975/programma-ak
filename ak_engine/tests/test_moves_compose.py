@@ -463,6 +463,53 @@ def test_search_phase_flee_twice_is_rejected():
         assert "Flee can only be used once in the same Encounter Plan" in str(exc)
 
 
+def test_tactic_options_offers_scout_in_every_slot_with_no_restriction():
+    # Unlike Talk/Steal (position) or Flee (at-most-once), Scout's own
+    # position is irrelevant and a second occurrence is a real, distinct
+    # input (the game's own consent signal for costed Feature Powers),
+    # so nothing filters it out of any slot.
+    for slot in (0, 1, 3):
+        values = {value for value, _ in tactic_options(slot)}
+        assert int(Maneuver.SCOUT) in values
+
+
+def test_search_phase_scout_alone_is_accepted():
+    form = _search_form(tactics={0: int(Maneuver.SCOUT)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.SCOUT), -1]
+
+
+def test_search_phase_scout_twice_is_accepted_not_rejected():
+    # A second Scout is the real, meaningful consent signal for costed
+    # Feature Powers (Pay Up/Drain Skill/Drain Courage) -- not a repeat
+    # to reject the way a second Flee is.
+    form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT), 2: int(Maneuver.SCOUT)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.MELEE), int(Maneuver.SCOUT), int(Maneuver.SCOUT), -1]
+
+
+def test_search_phase_scout_combined_with_talk_is_accepted():
+    form = _search_form(tactics={0: int(Maneuver.TALK), 1: int(Maneuver.SCOUT)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.TALK), int(Maneuver.SCOUT), -1]
+
+
+def test_search_phase_scout_combined_with_steal_and_flee_is_accepted():
+    form = _search_form(
+        tactics={0: int(Maneuver.STEAL), 1: int(Maneuver.SCOUT), 2: int(Maneuver.FLEE)},
+    )
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.STEAL), int(Maneuver.SCOUT), int(Maneuver.FLEE), -1]
+
+
 def test_search_phase_with_a_simple_tactic_sequence():
     form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT)})
 
@@ -707,3 +754,20 @@ def test_build_composed_kingdom_round_trips_a_flee_after_melee():
 
     phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
     assert phase0.extra == [0, int(Maneuver.MELEE), int(Maneuver.FLEE), -1]
+
+
+def test_build_composed_kingdom_round_trips_a_double_scout_consent_signal():
+    state = _state()
+    form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT), 2: int(Maneuver.SCOUT)})
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.extra == [0, int(Maneuver.MELEE), int(Maneuver.SCOUT), int(Maneuver.SCOUT), -1]

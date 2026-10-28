@@ -222,6 +222,43 @@ on a direct, tampered POST), the same shape as Give's own exclusion
 above. ``turn/search_execution.py``'s own ``_resolve_beg()`` is left
 untouched -- out of scope for this editor, not a correctness question.
 
+**Scout, the seventh tactic designed -- needed no new validation code
+at all** (2026-10-28, sourced directly from the user, rulebook text
+pasted verbatim): "E' assolutamente irrilevante in che punto del Piano
+d'Incontro si trova l'ordine relativo a questa tattica. Il computer si
+limiterà a prender nota della tattica Perlustrare e la gestirà dopo
+che tutte le altre tattiche di incontro sono state eseguite" --
+independently confirmed structurally from ``turn/search_execution.py``'s
+own ``_apply_scout()``: it's a genuine post-processing pass, applied
+once *after* the whole tactic walk finishes, regardless of Scout's own
+slot index, and ``turn/sep_decode.py plan_intent()`` (the classifier
+that decides whether Scout *discovers* or *triggers* a Special
+Location's event, based on which other tactics are in the plan) treats
+``Maneuver.SCOUT`` itself as a transparent no-op in its own walk --
+Scout genuinely never affects, or is affected by, its own position.
+Carries no sub-object, like Fulfill/Steal/Flee. **Unlike Flee, Scout
+has no "at most once" cap** -- a *second* Scout occurrence in the same
+plan is a real, meaningful, different input (not a harmless repeat):
+it's this game's own consent signal for a handful of costed Feature
+Powers (Pay Up/Drain Skill/Drain Courage, confirmed in ``turn/
+feature_power_execution.py``'s own condition gate, each requiring
+``scout_orders_given >= 2`` to accept their own terms) and separately
+caps Scout's own discovery depth at "blind use" rather than full
+disclosure. So every slot already offers Scout with no filtering, and
+``_parse_search_tactics()`` needed no new rule at all -- the existing,
+generic per-slot walk already composes any number of Scout entries
+correctly, by construction.
+
+This also answers the user's own, explicitly-flagged-as-uncertain
+gameplay memory about "a double Scout command (SC, SC) to activate a
+Special Location later": confirmed, but not quite as recalled -- it's
+not "discover now, then give two separate Scout orders on some future
+turn to activate it." It's two Scout tactics in the *same* Encounter
+Plan, for the *same* Search order, in the *same* turn, read as this
+game's consent-to-pay signal for the three costed Powers named above
+-- there's no code anywhere (engine or report generation) that frames
+it as a later-turn reactivation ritual.
+
 A Search phase composed here always gets the immediately-terminated
 empty tactic list ``[0, -1]`` ("tl=0, no tactics") when every slot is
 left empty, matching the previous round's own placeholder default.
