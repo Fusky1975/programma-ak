@@ -307,6 +307,25 @@ def test_tactic_options_includes_say_everywhere_but_excludes_none():
         assert int(Maneuver.NONE) not in values
 
 
+def test_tactic_options_excludes_give_everywhere():
+    # Give isn't a Search Encounter Plan tactic at all (sourced directly
+    # from the user, 2026-10-28): it's used only after Challenge (EN) or
+    # Pursue (PU), never against a monster encountered in a Feature.
+    for slot in (0, 1):
+        values = {value for value, _ in tactic_options(slot)}
+        assert int(Maneuver.GIVE) not in values
+
+
+def test_search_phase_rejects_give_even_via_a_direct_tampered_value():
+    form = _search_form(tactics={0: int(Maneuver.GIVE)}, subs={0: 7})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Give isn't usable in a Search Encounter Plan" in str(exc)
+
+
 def test_search_phase_with_a_simple_tactic_sequence():
     form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT)})
 

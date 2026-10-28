@@ -6634,6 +6634,41 @@ def test_turns_compose_save_say_then_another_tactic_then_full_turn_processes_cle
     assert saved.exists()
 
 
+def test_turns_compose_does_not_offer_give_in_the_tactic_dropdown(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    # Maneuver.GIVE (5) happens to share its raw ordinal with
+    # ActionCode.HIRE, which *does* legitimately appear in the Action
+    # dropdown's own `value="5"` option -- matching the value *and*
+    # label together is what actually pins this down to the tactic
+    # dropdown's own (now-absent) Give option.
+    assert f'value="{int(Maneuver.GIVE)}">Give<'.encode() not in response.data
+
+
+def test_turns_compose_save_give_tactic_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.GIVE))
+    form[f"tactic_sub_{king.leader_id}_0_0"] = "7"
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"isn&#39;t usable in a Search Encounter Plan" in response.data
+
+
 def test_turns_compose_save_rejects_an_invalid_action(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

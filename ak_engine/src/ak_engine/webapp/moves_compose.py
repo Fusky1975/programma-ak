@@ -38,11 +38,13 @@ designed with the user one tactic at a time, via ``TACTIC_SLOT_COUNT``
 (``7``, the longest real ``AK3__T*.K1`` sample's own tactic list)
 dedicated ``tactic_<leader>_<n>_<slot>`` dropdowns per Search phase,
 each with an optional ``tactic_sub_<leader>_<n>_<slot>`` sub-object
-field for a ``TACTICS_WITH_SUB_OBJECT`` maneuver (Cast/Use Item/Give)
-or a ``tactic_say_<leader>_<n>_<slot>`` free-text field for Say (see
-below). An empty slot stops the list there -- a later non-empty slot
-after one is rejected, not silently dropped. ``Maneuver.NONE`` is
-never composable (a sentinel, never a real tactic).
+field for a ``TACTICS_WITH_SUB_OBJECT`` maneuver composable here
+(Cast/Use Item -- see below for why Give, also in that frozenset, is
+excluded from Search specifically) or a ``tactic_say_<leader>_<n>_
+<slot>`` free-text field for Say (see below). An empty slot stops the
+list there -- a later non-empty slot after one is rejected, not
+silently dropped. ``Maneuver.NONE`` is never composable (a sentinel,
+never a real tactic).
 
 **Talk ([5.5]), the user's own first tactic to design** (2026-10-26,
 sourced directly from them): "può essere usata solo all'inizio del
@@ -99,6 +101,33 @@ right after the SAY ordinal's own line rather than as a plain int (see
 a dedicated ``tactic_say_<leader>_<n>_<slot>`` field instead of the
 generic sub-object one, validated non-blank and at most 160 characters
 (the rulebook's own stated limit) by ``_parse_search_tactics()``.
+
+**Give, the fourth tactic considered -- deliberately excluded from
+Search's own Encounter Plan here** (2026-10-28, sourced directly from
+the user, rulebook text pasted verbatim): "si può dare qualsiasi
+numero di oggetti a chiunque si incontra... Non è però possibile
+scambiare oggetti per denaro... il comando GIVE non si usa in un piano
+d'incontro quando si incontra un mostro in un feature. Ma solo quando
+si crea un piano d'incontro dopo l'uso del comando EN (encounter) o il
+comando PU (pursue)" -- independently investigated against ``turn/
+search_execution.py``'s own ``_resolve_give_tactic()``: the *only*
+real, wired effect ``Maneuver.GIVE`` has anywhere in the engine today
+is a narrow, unrelated mechanic (the ``AdvancedAbility.DRUIDIC_TRADES``
+Druid-trades-an-item-for-a-monster's-treasure special ability, gated
+behind that specific ability and a live, un-looted guardian) that
+happens to share the same ``GI`` wire token -- not the general
+"hand over any number of items to whoever you meet" tactic the user
+described. ``turn/challenge_execution.py`` (Challenge/``EN``) and
+``turn/pursue_execution.py`` (Pursue/``PU``) don't dispatch ``Maneuver.
+GIVE`` at all yet ("every other tactic is unwired -- skip it and keep
+walking"), and neither has its own Encounter Plan editor here yet
+either. Rather than offer a tactic that would either (a) silently
+trigger the unrelated Druidic Trades mechanic when the user asked for
+the general item-giving one, or (b) be a true no-op in a Challenge/
+Pursue plan this editor can't even build yet, Give is excluded from
+``tactic_options()``'s own Search dropdown entirely (and rejected
+server-side on a direct, tampered POST) until Challenge/Pursue's own
+Encounter Plan editor exists to give it a real home.
 
 A Search phase composed here always gets the immediately-terminated
 empty tactic list ``[0, -1]`` ("tl=0, no tactics") when every slot is
@@ -257,17 +286,21 @@ def feature_options(state: GameState, *, leader_id: int | None = None) -> list[t
 
 
 def tactic_options(slot: int) -> list[tuple[int, str]]:
-    """Every composable ``Maneuver`` for one Encounter Plan tactic slot,
-    as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only ever
-    included for ``slot == 0`` (see this module's own docstring for the
-    user-sourced "Talk can only be the first tactic" rule); every other
-    slot gets the same ``_COMPOSABLE_MANEUVERS`` list minus Talk.
+    """Every composable ``Maneuver`` for one Search Encounter Plan tactic
+    slot, as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only
+    ever included for ``slot == 0`` (see this module's own docstring for
+    the user-sourced "Talk can only be the first tactic" rule); every
+    other slot gets the same ``_COMPOSABLE_MANEUVERS`` list minus Talk.
+    ``Maneuver.GIVE`` is excluded for every slot here -- it isn't a
+    Search Encounter Plan tactic at all (see this module's own docstring
+    for the user-sourced "Give isn't used against a monster in a
+    Feature" rule).
     """
 
     return [
         (int(maneuver), maneuver.name.replace("_", " ").title())
         for maneuver in _COMPOSABLE_MANEUVERS
-        if maneuver is not Maneuver.TALK or slot == 0
+        if maneuver is not Maneuver.GIVE and (maneuver is not Maneuver.TALK or slot == 0)
     ]
 
 
@@ -366,6 +399,14 @@ def _parse_search_tactics(
             # dropdown, but a direct, tampered POST could still name
             # its real ordinal.
             raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1} isn't composable here yet.")
+        if maneuver is Maneuver.GIVE:
+            # Defense in depth: Give is never offered in a Search tactic
+            # slot's own dropdown (see tactic_options()), but a direct,
+            # tampered POST could still name its real ordinal.
+            raise InvalidComposedMovesError(
+                f"{phase_label}: tactic slot {slot + 1}: Give isn't usable in a Search Encounter Plan -- "
+                "only after Challenge (EN) or Pursue (PU)."
+            )
         if maneuver is Maneuver.TALK:
             if slot != 0:
                 raise InvalidComposedMovesError(
