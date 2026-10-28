@@ -419,6 +419,30 @@ def test_search_phase_steal_and_fulfill_together_is_rejected():
         assert "Fulfill and Steal can't be used together" in str(exc)
 
 
+def test_tactic_options_offers_flee_in_every_slot():
+    for slot in (0, 1, 3):
+        values = {value for value, _ in tactic_options(slot)}
+        assert int(Maneuver.FLEE) in values
+
+
+def test_search_phase_flee_once_is_accepted():
+    form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.FLEE)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.MELEE), int(Maneuver.FLEE), -1]
+
+
+def test_search_phase_flee_twice_is_rejected():
+    form = _search_form(tactics={0: int(Maneuver.FLEE), 1: int(Maneuver.MELEE), 2: int(Maneuver.FLEE)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Flee can only be used once in the same Encounter Plan" in str(exc)
+
+
 def test_search_phase_with_a_simple_tactic_sequence():
     form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT)})
 
@@ -646,3 +670,20 @@ def test_build_composed_kingdom_round_trips_a_steal_after_cast_invisibility():
 
     phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
     assert phase0.extra == [0, int(Maneuver.CAST), int(Spell.INVISIBILITY), int(Maneuver.STEAL), -1]
+
+
+def test_build_composed_kingdom_round_trips_a_flee_after_melee():
+    state = _state()
+    form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.FLEE)})
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.extra == [0, int(Maneuver.MELEE), int(Maneuver.FLEE), -1]

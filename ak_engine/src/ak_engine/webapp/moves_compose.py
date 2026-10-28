@@ -161,6 +161,40 @@ dropdown filtering to apply the way Talk's "slot 0 only" rule allows
 -- Steal stays offered in every slot's dropdown, and a position
 violation is only ever caught by posting the form.
 
+**Flee, the sixth tactic designed** (2026-10-28, sourced directly from
+the user, rulebook text pasted verbatim): "La probabilità di fuggire
+davanti ai mostri veloci è del 20%, davanti a quelli di media velocità
+o di altri personaggi è del 50%, mentre davanti a quelli lenti è
+dell'80%... I personaggi Cauti hanno il 30% in più di possibilità di
+fuggire... la tattica flee si può usare solo una volta a piano
+d'incontro" -- independently investigated against ``turn/search_
+execution.py``'s own ``FLEE_CHANCE``/``effective_flee_chance()``: the
+speed-based 20/50/80% base chance and the Cautious +30% bonus are
+*already fully implemented and tested* -- nothing new to execute, only
+to compose (Flee carries no sub-object, like Fulfill/Steal/Scout). Two
+pieces of the pasted text describe mechanics this investigation found
+are **not** GM-composable at all, for two different reasons, so
+neither gets anything added here: a weak-tempered character fleeing
+*involuntarily, without being ordered to at all* ("indipendentemente
+dal Piano d'Incontro") is a genuinely open engine gap today (confirmed
+absent from both ``search_execution.py`` and ``challenge_execution.py``
+-- there's nothing yet to compose against); a Cowardly/Cautious
+non-King refusing an Encounter order outright is instead fully
+implemented, but as an automatic, pre-tactic-list engine check run
+before the Encounter Plan is ever consulted (``turn/encounter.py
+resolve_refusal_to_meet()``), the same "automatic, zero GM-composable
+surface" category as the pending-deal flag Fulfill's own dropdown
+label surfaces, or the always-on no-op this module's own Say section
+already identified for a different tactic. The one real, new rule
+``_parse_search_tactics()`` enforces here: Flee can appear **at most
+once** per Encounter Plan -- a genuine, currently *unenforced*
+rulebook rule (same category Talk's and Steal's own position rules
+were before this round), not merely redundant with Flee's own control
+flow: a *successful* Flee always ends the Encounter Plan on the spot,
+but a *failed* one falls through to whatever comes next, so nothing
+in the engine's own tactic walk stops a second Flee entry later in the
+same plan from being reached and rolled again.
+
 A Search phase composed here always gets the immediately-terminated
 empty tactic list ``[0, -1]`` ("tl=0, no tactics") when every slot is
 left empty, matching the previous round's own placeholder default.
@@ -404,13 +438,15 @@ def _parse_search_tactics(
     <slot>`` fields (``slot`` in ``0..TACTIC_SLOT_COUNT-1``) into a
     real, ``-1``-terminated Encounter Plan tactic list -- see this
     module's own docstring for the Talk-position, Steal-position,
-    Steal/Talk/Fulfill-exclusion, and Say free-text rules enforced here.
+    Steal/Talk/Fulfill-exclusion, Flee-at-most-once, and Say free-text
+    rules enforced here.
     """
 
     tokens: list[int | str] = []
     has_talk = False
     has_fulfill = False
     has_steal = False
+    has_flee = False
     stopped_at: int | None = None
     previous_maneuver: Maneuver | None = None
     previous_sub_object: int | None = None
@@ -460,6 +496,12 @@ def _parse_search_tactics(
                     "Encounter Plan, or come right after casting Invisibility."
                 )
             has_steal = True
+        if maneuver is Maneuver.FLEE:
+            if has_flee:
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: tactic slot {slot + 1}: Flee can only be used once in the same Encounter Plan."
+                )
+            has_flee = True
         tokens.append(int(maneuver))
         sub_object: int | None = None
         if maneuver is Maneuver.SAY:
