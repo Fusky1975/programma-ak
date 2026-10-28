@@ -107,6 +107,17 @@ different cause this time): feature_id 1 is now guarded by a ``GENIE``
 (good-aligned), win seed ``2``; the ``SKILL_BOOK``-category feature moved
 to feature_id 21, guarded by a ``MEDUSA`` and carrying a different book,
 ``BOOK_TACTICAL``, win seed ``30``.
+
+Re-scanned again (2026-10-28) after ``turn/encounter.py roll_melee_
+attack()`` gained its own ``skill_difference_bonus`` (sourced directly
+from the user: "+1 per differenza nel Talento Melee tra chi attacca e
+difende") -- a combat-formula change this time, not a world-gen RNG
+shift, but the identical class of "re-scan the same fixed scenario"
+fix: feature_id 1 keeps its own real facts unchanged (still the same
+``GENIE``, hp 18-23, melee skill 1, good-aligned), but the guardian's
+own +1 Melee-skill advantage over the unskilled Searcher now lets it
+hit harder too, so seed ``2`` no longer wins -- re-scanned to seed
+``13``.
 """
 
 from __future__ import annotations
@@ -133,7 +144,7 @@ _SEARCHER_LEADER_ID = 999
 # 986 rescan paragraph above) -- a fixed, reproducible fact of this
 # scenario, not a tuning choice. The first treasure+guardian feature
 # (feature_id 1) is now guarded by a good-aligned GENIE.
-_SEARCH_WIN_SEED = 2
+_SEARCH_WIN_SEED = 13
 # feature_id 21 (a MEDUSA guarding a Tactical skill book) is the
 # SKILL_BOOK-category feature this test now targets.
 _BOOK_FEATURE_ID = 21

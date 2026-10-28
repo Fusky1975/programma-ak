@@ -329,6 +329,7 @@ from ak_engine.turn.encounter import (
     bow_of_elven_kings_archery_damage_bonus,
     bow_of_elven_kings_archery_hit_multiplier,
     control_undead_anti_holy_resist_chance,
+    effective_melee_skill,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
     weapon_melee_damage_bonus,
@@ -1240,7 +1241,10 @@ def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, rng: random
     while attacker.bonus_unanswered_attacks > 0:
         attacker.bonus_unanswered_attacks -= 1
         damage = roll_melee_attack(
-            rng, damage_range=attacker.melee_damage_range, hit_chance_multiplier=defender.defensive_hit_multiplier
+            rng,
+            damage_range=attacker.melee_damage_range,
+            hit_chance_multiplier=defender.defensive_hit_multiplier,
+            skill_difference_bonus=max(0, effective_melee_skill(attacker) - effective_melee_skill(defender)),
         )
         damage = max(0, damage - attacker.melee_damage_dealt_reduction)
         defender.hit_points -= damage

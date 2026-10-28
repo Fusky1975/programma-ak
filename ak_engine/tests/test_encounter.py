@@ -263,6 +263,19 @@ def test_roll_melee_attack_miss_returns_zero():
     assert roll_melee_attack(rng) == 0
 
 
+def test_roll_melee_attack_skill_difference_bonus_adds_to_a_hit():
+    # Sourced directly from the user, 2026-10-28: "+1 per differenza nel
+    # Talento Melee tra chi attacca e chi difende."
+    rng = ScriptedRandom([0.49, 0.0])  # hit, then the minimum die roll (1)
+    damage = roll_melee_attack(rng, skill_difference_bonus=3)
+    assert damage == 1 + 3
+
+
+def test_roll_melee_attack_skill_difference_bonus_never_applies_to_a_miss():
+    rng = ScriptedRandom([0.5])  # miss
+    assert roll_melee_attack(rng, skill_difference_bonus=3) == 0
+
+
 def test_roll_fire_arrow_attack_hit_returns_damage_in_range():
     rng = ScriptedRandom([0.29, 0.5])  # under the level-0 30% chance -> hit
     damage = roll_fire_arrow_attack(0, rng)
@@ -366,6 +379,35 @@ def test_resolve_one_melee_round_no_death_reports_both_sides_damage():
     assert outcome.damage_dealt_to_a > 0  # B's landed damage against A
     assert a.hit_points == 10 - outcome.damage_dealt_to_a
     assert b.hit_points == 10 - outcome.damage_dealt_to_b
+
+
+def test_resolve_one_melee_round_more_skilled_attacker_gets_a_damage_bonus():
+    a = Combatant("A", melee_skill=5, hit_points=10)
+    b = Combatant("B", melee_skill=0, hit_points=10)
+    # A acts first (higher skill, no tie-break roll needed): A hits with
+    # the minimum die roll (1), B then misses its own swing.
+    rng = ScriptedRandom([0.1, 0.0, 0.6])
+
+    outcome = resolve_one_melee_round(a, b, rng, round_number=1)
+
+    assert outcome.damage_dealt_to_b == 1 + 5  # base die + the +5 skill-difference bonus
+    assert b.hit_points == 10 - 6
+
+
+def test_resolve_one_melee_round_less_skilled_attacker_gets_no_penalty():
+    # Sourced directly from the user's own confirmation (2026-10-28): the
+    # skill-difference term is only ever a bonus, floored at 0 -- a
+    # less-skilled attacker never deals less than the base die roll.
+    a = Combatant("A", melee_skill=0, hit_points=10)
+    b = Combatant("B", melee_skill=5, hit_points=10)
+    # B acts first (higher skill): B hits (gets its own +5 bonus), then
+    # A hits back with no bonus and no penalty (base die only).
+    rng = ScriptedRandom([0.1, 0.0, 0.1, 0.0])
+
+    outcome = resolve_one_melee_round(a, b, rng, round_number=1)
+
+    assert outcome.damage_dealt_to_a == 1 + 5  # B's own +5 bonus
+    assert outcome.damage_dealt_to_b == 1  # A's own difference is negative -- floored at 0, not a penalty
 
 
 def test_resolve_one_melee_round_carries_a_shadow_sword_proc_onto_its_own_swing():
@@ -4117,13 +4159,14 @@ def test_resolve_one_melee_round_psychic_flail_stun_grants_a_bonus_swing_within_
 
 def test_resolve_one_melee_round_psychic_flail_bonus_swing_can_itself_end_the_round():
     attacker = Combatant("A", melee_skill=5, equipped_weapon=Treasure.WEAPON_4, hit_points=CHARACTER_HIT_POINTS)
-    defender = Combatant("B", melee_skill=0, hit_points=2)
-    # A's hit roll (hits), A's damage roll (1 -- leaves defender at 1 HP,
-    # not yet dead), the Psychic Flail stun roll (succeeds), the bonus
-    # swing's own hit roll (hits), the bonus swing's own damage roll (1
-    # -- exactly enough to finish the defender off). Proves the bonus
-    # swing itself can be the decisive blow, not just pad an already-
-    # lethal regular swing.
+    defender = Combatant("B", melee_skill=0, hit_points=10)
+    # A's hit roll (hits), A's damage roll (1 -- plus the +5 skill-
+    # difference bonus, 6 total, leaves defender at 4 HP, not yet
+    # dead), the Psychic Flail stun roll (succeeds), the bonus swing's
+    # own hit roll (hits), the bonus swing's own damage roll (1 -- plus
+    # the same +5 bonus, 6 total, exactly enough to finish the defender
+    # off). Proves the bonus swing itself can be the decisive blow, not
+    # just pad an already-lethal regular swing.
     rng = ScriptedRandom([0.1, 0.0, 0.1, 0.1, 0.0])
 
     outcome = resolve_one_melee_round(attacker, defender, rng, round_number=1)

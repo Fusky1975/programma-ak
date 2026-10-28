@@ -717,6 +717,24 @@ def test_search_phase_scout_combined_with_steal_and_flee_is_accepted():
     assert phases[0].extra == [0, int(Maneuver.STEAL), int(Maneuver.SCOUT), int(Maneuver.FLEE), -1]
 
 
+def test_tactic_options_offers_melee_in_every_slot_with_no_restriction():
+    for slot in (0, 1, 3):
+        values = {value for value, _ in tactic_options(slot)}
+        assert int(Maneuver.MELEE) in values
+
+
+def test_search_phase_melee_twice_is_accepted_not_rejected():
+    # Unlike Flee/Shoot, Melee has no "at most once" cap -- the engine
+    # is explicitly written to support more than one explicit Melee
+    # tactic in the same plan (each fights exactly one round unless
+    # it's genuinely the plan's own last tactic).
+    form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT), 2: int(Maneuver.MELEE)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+
+    assert phases[0].extra == [0, int(Maneuver.MELEE), int(Maneuver.SCOUT), int(Maneuver.MELEE), -1]
+
+
 def test_search_phase_with_a_simple_tactic_sequence():
     form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT)})
 

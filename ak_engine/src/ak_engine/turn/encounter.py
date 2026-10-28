@@ -26,9 +26,16 @@ connects them.
 
 **[5.3] Melee**: "You can enter melee even if you have no skill in melee
 combat... A character has a base chance to hit of 50%, and does 1-6
-damage points per swing." -- flat 50%, **not** skill-scaled (unlike Fire
-Arrow); the Melee `Ability` level still matters for initiative ordering
-per [5.0]'s generic rule, just not for the hit chance itself.
+damage points per swing." -- flat 50% *hit chance*, **not** skill-scaled
+(unlike Fire Arrow); the Melee `Ability` level still matters for
+initiative ordering per [5.0]'s generic rule. **Damage, however, does
+scale with skill** (sourced directly from the user, 2026-10-28, who
+corrected this module's own prior reading): "+1 per differenza nel
+Talento Melee tra chi attacca e chi difende" -- on a successful hit,
+``roll_melee_attack()``'s own ``skill_difference_bonus`` parameter adds
+``max(0, attacker's effective Melee skill - defender's)`` to the die
+roll, so a more-skilled attacker hits harder but a less-skilled one
+never does less than the base 1-6 die.
 
 **[5.2] Fire Arrow**: "You can have a number of free attacks equal to
 the level of archery skill... The base chance to hit is 30%, plus 10%
@@ -3596,7 +3603,11 @@ def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random)
 
 
 def roll_melee_attack(
-    rng: random.Random, damage_range: tuple[int, int] = MELEE_DAMAGE_RANGE, *, hit_chance_multiplier: float = 1.0
+    rng: random.Random,
+    damage_range: tuple[int, int] = MELEE_DAMAGE_RANGE,
+    *,
+    hit_chance_multiplier: float = 1.0,
+    skill_difference_bonus: int = 0,
 ) -> int:
     """Rulebook [5.3]: one Melee swing. Returns damage dealt (0 on a miss).
 
@@ -3606,10 +3617,22 @@ def roll_melee_attack(
     defaults to 1.0 (every pre-Phase-209 caller unaffected); pass a
     defender's own ``Combatant.defensive_hit_multiplier`` (Phase 209) to
     apply Holy Symbol's/Invisibility's own hit-chance reduction.
+
+    ``skill_difference_bonus`` -- sourced directly from the user
+    (2026-10-28): "infligge 1-6 punti danno per colpo più 1 per
+    differenza nel Talento Melee tra chi attacca e chi difende."
+    Defaults to 0 (every earlier caller unaffected -- this project's
+    own prior sourced reading of [5.3] had no such term at all, see
+    this module's own docstring). Added only on a successful hit (a
+    miss stays 0, never turned into damage); callers pass ``max(0,
+    effective_melee_skill(attacker) - effective_melee_skill(defender))``
+    -- floored at 0 per the user's own confirmation, so a less-skilled
+    attacker never deals *less* than the base die roll, only ever a
+    bonus when more skilled than the defender.
     """
 
     if rng.random() < MELEE_HIT_CHANCE * hit_chance_multiplier:
-        return rng.randint(*damage_range)
+        return rng.randint(*damage_range) + skill_difference_bonus
     return 0
 
 
@@ -3835,6 +3858,7 @@ def resolve_one_melee_round(
             rng,
             damage_range=attacker.melee_damage_range,
             hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
+            skill_difference_bonus=max(0, effective_melee_skill(attacker) - effective_melee_skill(defender)),
         )
         damage = _melee_landed_damage(raw_damage, attacker, defender)
         defender.hit_points -= damage
@@ -3864,6 +3888,7 @@ def resolve_one_melee_round(
                 rng,
                 damage_range=attacker.melee_damage_range,
                 hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
+                skill_difference_bonus=max(0, effective_melee_skill(attacker) - effective_melee_skill(defender)),
             )
             bonus_damage = _melee_landed_damage(bonus_raw_damage, attacker, defender)
             defender.hit_points -= bonus_damage
@@ -3910,6 +3935,7 @@ def resolve_reactive_melee_swing(attacker: Combatant, defender: Combatant, rng: 
         rng,
         damage_range=attacker.melee_damage_range,
         hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
+        skill_difference_bonus=max(0, effective_melee_skill(attacker) - effective_melee_skill(defender)),
     )
     damage = _melee_landed_damage(raw_damage, attacker, defender)
     defender.hit_points -= damage

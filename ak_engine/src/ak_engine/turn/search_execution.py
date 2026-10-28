@@ -603,6 +603,7 @@ from ak_engine.turn.encounter import (
     can_talk_to_monster,
     control_undead_anti_holy_resist_chance,
     control_undead_failure_new_hit_points,
+    effective_melee_skill,
     weapon_defensive_hit_multiplier,
     holy_symbol_hit_chance,
     ice_suspension_is_frozen,
@@ -2633,7 +2634,10 @@ def _resolve_search_encounter(
         while attacker.bonus_unanswered_attacks > 0:
             attacker.bonus_unanswered_attacks -= 1
             damage = roll_melee_attack(
-                rng, damage_range=attacker.melee_damage_range, hit_chance_multiplier=defender.defensive_hit_multiplier
+                rng,
+                damage_range=attacker.melee_damage_range,
+                hit_chance_multiplier=defender.defensive_hit_multiplier,
+                skill_difference_bonus=max(0, effective_melee_skill(attacker) - effective_melee_skill(defender)),
             )
             damage = max(0, damage - attacker.melee_damage_dealt_reduction)
             defender.hit_points -= damage

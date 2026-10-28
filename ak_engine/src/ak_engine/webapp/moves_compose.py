@@ -376,6 +376,44 @@ lives in Challenge's own encounter resolution, which has no composer
 of its own yet (same situation as Give/Beg's Challenge/Pursue
 carve-outs above) -- nothing to compose differently here either way.
 
+**Melee, the eleventh and last Encounter Plan tactic designed** --
+needed an engine fix, not a composer change (2026-10-28, sourced
+directly from the user, rulebook text pasted verbatim): "Un personaggio
+ha una probabilità di base di colpire del 50% e infligge 1-6 punti
+danno per colpo più 1 per differenza nel Talento Melee tra chi attacca
+e chi difende" -- independently investigated against ``turn/
+encounter.py``'s own ``roll_melee_attack()``/``MELEE_HIT_CHANCE``/
+``MELEE_DAMAGE_RANGE``: the 50% hit chance and 1-6 damage die matched
+exactly, but this project's own prior sourced reading of [5.3]
+(quoted verbatim in that module's own docstring) explicitly had *no*
+skill-difference term on damage at all -- flagged to the user, who
+confirmed the term is real and asked for it to be added. ``turn/
+encounter.py``'s ``roll_melee_attack()`` now takes a
+``skill_difference_bonus`` parameter (every real Melee-tactic caller
+in ``turn/encounter.py``/``turn/search_execution.py``/``turn/
+challenge_execution.py`` passes ``max(0, effective_melee_skill(
+attacker) - effective_melee_skill(defender))`` -- floored at 0 per the
+user's own confirmation, so a less-skilled attacker never deals less
+than the base die roll, only ever a bonus when more skilled). Hand of
+Death's own bonus swing and Mirror-Image/Illusory-Hero's own disbelief
+duels, which happen to reuse the same flat melee-attack roll as a
+building block for their own, separately-sourced spell mechanics,
+were deliberately left untouched -- this change is scoped to the
+actual [5.3] Melee tactic's own resolution, not every incidental
+consumer of the same low-level roll function.
+
+Like Flee/Scout/Shoot, nothing in Melee's own rulebook text depends
+on player input beyond placing the tactic in a slot -- no sub-object,
+no position restriction, and (confirmed directly from the engine's own
+``is_last_leader_tactic``/``skip_temper_setup`` plumbing) no
+"at most once" cap either, unlike Flee/Shoot: the engine is explicitly
+written to support more than one explicit Melee tactic in the same
+plan (e.g. ``[MELEE, SCOUT, MELEE]``), each one fighting exactly one
+round unless it's genuinely the plan's own last tactic. So
+``tactic_options()``/``_parse_search_tactics()`` needed no new code at
+all for Melee, the same "zero validation needed" shape Scout's own
+round already found.
+
 A Search phase composed here always gets the immediately-terminated
 empty tactic list ``[0, -1]`` ("tl=0, no tactics") when every slot is
 left empty, matching the previous round's own placeholder default.
