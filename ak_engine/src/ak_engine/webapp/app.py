@@ -86,6 +86,7 @@ from ak_engine.webapp.moves_compose import (
     feature_options,
     kingdom_leaders_for_compose,
     province_options,
+    spell_options,
     tactic_options,
 )
 from ak_engine.webapp.kingdom_create import (
@@ -3024,11 +3025,16 @@ def create_app(games_root: Path | None = None) -> Flask:
             },
             tactic_slot_numbers=range(TACTIC_SLOT_COUNT),
             tactic_choices_by_slot=[tactic_options(slot) for slot in range(TACTIC_SLOT_COUNT)],
-            tactics_with_sub_object=[int(maneuver) for maneuver in TACTICS_WITH_SUB_OBJECT],
+            # Cast gets its own dedicated spell-name dropdown (below)
+            # instead of the generic numeric sub-object field -- only
+            # Use Item still uses that one in Search's own composer.
+            tactics_with_sub_object=[int(maneuver) for maneuver in TACTICS_WITH_SUB_OBJECT if maneuver is not Maneuver.CAST],
             talk_value=int(Maneuver.TALK),
             fulfill_value=int(Maneuver.FULFILL),
             say_value=int(Maneuver.SAY),
             say_text_max_length=SAY_TEXT_MAX_LENGTH,
+            cast_value=int(Maneuver.CAST),
+            spell_choices=spell_options(),
             error=request.args.get("error"),
         )
 

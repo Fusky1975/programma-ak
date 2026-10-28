@@ -40,11 +40,13 @@ from ak_engine.parser.k1_moves_writer import write_k1_moves_file
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.webapp.moves_compose import (
     EMPTY_SEARCH_EXTRA,
+    ENCOUNTER_PLAN_CASTABLE_SPELLS,
     InvalidComposedMovesError,
     build_composed_kingdom,
     feature_options,
     parse_phase_inputs,
     province_options,
+    spell_options,
     tactic_options,
 )
 
@@ -278,6 +280,7 @@ def _search_form(
     tactics: dict[int, int] | None = None,
     subs: dict[int, int] | None = None,
     says: dict[int, str] | None = None,
+    spells: dict[int, int] | None = None,
 ):
     form = _all_defend_form(KING_ID)
     form[f"action_{KING_ID}_0"] = str(int(ActionCode.SEARCH))
@@ -288,6 +291,8 @@ def _search_form(
         form[f"tactic_sub_{KING_ID}_0_{slot}"] = str(sub_value)
     for slot, say_value in (says or {}).items():
         form[f"tactic_say_{KING_ID}_0_{slot}"] = say_value
+    for slot, spell_value in (spells or {}).items():
+        form[f"tactic_spell_{KING_ID}_0_{slot}"] = str(spell_value)
     return form
 
 
@@ -346,6 +351,61 @@ def test_search_phase_rejects_beg_even_via_a_direct_tampered_value():
         assert "Beg isn't a real Encounter Plan tactic" in str(exc)
 
 
+def test_spell_options_lists_exactly_the_17_encounter_plan_castable_spells():
+    values = {value for value, _ in spell_options()}
+    assert values == {int(spell) for spell in ENCOUNTER_PLAN_CASTABLE_SPELLS}
+    assert len(ENCOUNTER_PLAN_CASTABLE_SPELLS) == 17
+    assert Spell.GATE_ANGEL in ENCOUNTER_PLAN_CASTABLE_SPELLS
+
+
+def test_search_phase_cast_an_encounter_plan_spell_is_included():
+    form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: int(Spell.FIREBALL)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.CAST), int(Spell.FIREBALL), -1]
+
+
+def test_search_phase_cast_gate_angel_is_included():
+    form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: int(Spell.GATE_ANGEL)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.CAST), int(Spell.GATE_ANGEL), -1]
+
+
+def test_search_phase_cast_an_action_only_spell_is_rejected():
+    # Resurrection is a real spell, but it's Action-Cast-only -- never
+    # dispatched inside a Search Encounter Plan's own CAST tactic.
+    form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: int(Spell.RESURRECTION)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "can't be cast in an Encounter Plan" in str(exc)
+
+
+def test_search_phase_cast_without_choosing_a_spell_is_rejected():
+    form = _search_form(tactics={0: int(Maneuver.CAST)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a spell to Cast" in str(exc)
+
+
+def test_search_phase_cast_an_invalid_spell_ordinal_is_rejected():
+    form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: 9999})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a spell to Cast" in str(exc)
+
+
 def test_tactic_options_offers_steal_in_every_slot():
     # Unlike Talk, Steal's own position rule depends on the *previous*
     # slot's own content (slot 0, or right after Cast Invisibility), not
@@ -367,7 +427,7 @@ def test_search_phase_steal_as_the_first_tactic():
 def test_search_phase_steal_right_after_cast_invisibility():
     form = _search_form(
         tactics={0: int(Maneuver.CAST), 1: int(Maneuver.STEAL)},
-        subs={0: int(Spell.INVISIBILITY)},
+        spells={0: int(Spell.INVISIBILITY)},
     )
 
     phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
@@ -378,7 +438,7 @@ def test_search_phase_steal_right_after_cast_invisibility():
 def test_search_phase_steal_after_a_different_spell_is_rejected():
     form = _search_form(
         tactics={0: int(Maneuver.CAST), 1: int(Maneuver.STEAL)},
-        subs={0: int(Spell.INVISIBILITY) + 1},
+        spells={0: int(Spell.SPIRITWRACK)},
     )
 
     try:
@@ -420,7 +480,10 @@ def test_search_phase_aggressive_tactics_can_follow_steal():
 
 
 def test_search_phase_steal_and_talk_together_is_rejected():
-    form = _search_form(tactics={0: int(Maneuver.TALK), 1: int(Maneuver.CAST), 2: int(Maneuver.STEAL)}, subs={1: int(Spell.INVISIBILITY)})
+    form = _search_form(
+        tactics={0: int(Maneuver.TALK), 1: int(Maneuver.CAST), 2: int(Maneuver.STEAL)},
+        spells={1: int(Spell.INVISIBILITY)},
+    )
 
     try:
         parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
@@ -519,11 +582,14 @@ def test_search_phase_with_a_simple_tactic_sequence():
 
 
 def test_search_phase_tactic_with_sub_object_is_included():
-    form = _search_form(tactics={0: int(Maneuver.CAST)}, subs={0: 7})
+    # Cast now gets its own dedicated spell dropdown (see the Cast
+    # tests below) -- Use Item is the one remaining tactic still
+    # reading the generic numeric sub-object field.
+    form = _search_form(tactics={0: int(Maneuver.USE_MI)}, subs={0: 7})
 
     phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
 
-    assert phases[0].extra == [0, int(Maneuver.CAST), 7, -1]
+    assert phases[0].extra == [0, int(Maneuver.USE_MI), 7, -1]
 
 
 def test_search_phase_talk_as_the_first_tactic_is_accepted():
@@ -723,7 +789,7 @@ def test_build_composed_kingdom_round_trips_a_steal_after_cast_invisibility():
     state = _state()
     form = _search_form(
         tactics={0: int(Maneuver.CAST), 1: int(Maneuver.STEAL)},
-        subs={0: int(Spell.INVISIBILITY)},
+        spells={0: int(Spell.INVISIBILITY)},
     )
 
     kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
@@ -771,3 +837,20 @@ def test_build_composed_kingdom_round_trips_a_double_scout_consent_signal():
 
     phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
     assert phase0.extra == [0, int(Maneuver.MELEE), int(Maneuver.SCOUT), int(Maneuver.SCOUT), -1]
+
+
+def test_build_composed_kingdom_round_trips_a_cast_gate_angel():
+    state = _state()
+    form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: int(Spell.GATE_ANGEL)})
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.extra == [0, int(Maneuver.CAST), int(Spell.GATE_ANGEL), -1]

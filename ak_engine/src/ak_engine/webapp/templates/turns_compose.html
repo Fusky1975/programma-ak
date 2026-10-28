@@ -11,11 +11,12 @@
   <p class="hex-map-legend-note">
     A base editor, filled in one Action (and, for Search, one Encounter Plan tactic) at a time: Move has its
     own destination dropdown, Explore needs no input at all (it always targets the leader's own current
-    province), Search has its own target-feature dropdown plus Encounter Plan tactic slots (Talk, Fulfill, and
-    Say so far have their own rules wired in -- every other tactic takes a plain sub-object number, until it
-    gets its own friendlier form too); every other Action still takes the same plain Object + Extra numbers a
-    real move file's own "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving
-    builds a real move file from these and stores it exactly like an uploaded one.
+    province), Search has its own target-feature dropdown plus Encounter Plan tactic slots (Talk, Fulfill, Say,
+    Steal, Flee, Scout, and Cast so far have their own rules wired in, Give and Beg are excluded entirely --
+    every other tactic still takes a plain sub-object number, until it gets its own friendlier form too); every
+    other Action still takes the same plain Object + Extra numbers a real move file's own "P&lt;n&gt; :
+    &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a real move file from these and
+    stores it exactly like an uploaded one.
   </p>
 
   <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
@@ -62,7 +63,7 @@
                 </select>
                 <br><span class="hex-map-legend-note">Encounter Plan (empty slots stop the list there):</span>
                 <table class="data-table compose-encounter-plan">
-                  <thead><tr><th>Tactic</th><th>Sub-object</th><th>Say text</th></tr></thead>
+                  <thead><tr><th>Tactic</th><th>Sub-object</th><th>Say text</th><th>Spell</th></tr></thead>
                   <tbody>
                     {% for slot in tactic_slot_numbers %}
                       <tr>
@@ -79,6 +80,14 @@
                         </td>
                         <td class="compose-tactic-say-cell">
                           <input type="text" name="tactic_say_{{ leader.leader_id }}_{{ n }}_{{ slot }}" value="" size="24" maxlength="{{ say_text_max_length }}">
+                        </td>
+                        <td class="compose-tactic-cast-cell">
+                          <select name="tactic_spell_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- choose a spell --</option>
+                            {% for value, label in spell_choices %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
                         </td>
                       </tr>
                     {% endfor %}
@@ -141,6 +150,7 @@
   var TALK_VALUE = "{{ talk_value }}";
   var FULFILL_VALUE = "{{ fulfill_value }}";
   var SAY_VALUE = "{{ say_value }}";
+  var CAST_VALUE = "{{ cast_value }}";
 
   function updateTacticSubCell(select) {
     var row = select.closest("tr");
@@ -152,6 +162,10 @@
     var sayCell = row.querySelector(".compose-tactic-say-cell");
     if (sayCell) {
       sayCell.style.display = select.value === SAY_VALUE ? "" : "none";
+    }
+    var castCell = row.querySelector(".compose-tactic-cast-cell");
+    if (castCell) {
+      castCell.style.display = select.value === CAST_VALUE ? "" : "none";
     }
   }
 

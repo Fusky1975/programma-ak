@@ -259,6 +259,49 @@ game's consent-to-pay signal for the three costed Powers named above
 -- there's no code anywhere (engine or report generation) that frames
 it as a later-turn reactivation ritual.
 
+**Cast, the eighth tactic designed** (2026-10-28, sourced directly
+from the user, rulebook text pasted verbatim): "Qualsiasi incantesimo
+di combattimento può essere usato una sola volta in combattimento...
+non tutti gli incantesimi possono essere usati in un piano
+d'incontro" -- confirmed by direct investigation of ``turn/search_
+execution.py``'s own ``_resolve_cast_tactic()``: exactly 17 of the 35
+real spells are ever dispatched there (``ENCOUNTER_PLAN_CASTABLE_
+SPELLS`` below) -- every other spell is an Action-Cast-only spell
+(castable in one of the 5 regular phases, never in an Encounter Plan)
+and falls through to a silent no-op there today. Offering every spell
+in the sub-object field the way CAST's generic ``TACTICS_WITH_SUB_
+OBJECT`` membership would otherwise invite -- a raw, unvalidated
+integer -- would let the GM compose a spell that silently does
+nothing; instead Cast gets its own dedicated ``tactic_spell_<leader>_
+<n>_<slot>`` spell-name dropdown (``spell_options()`` below), and
+``_parse_search_tactics()`` rejects any spell outside the allowed 17
+server-side. The once-per-combat cap, the stacking defensive-hit-
+reduction math, and the spell-dissolve-on-damage checks are all
+already fully implemented and tested in the engine -- nothing new to
+execute, only the allowed-spell list to compose against.
+
+Gate Angel is the one spell on that list that needed new engine work,
+not just composer wiring, **flagged here as project-original, not
+sourced from any rulebook or Pascal text**: the user asked for it
+alongside Gate Demon (2026-10-28) even after this project's own
+investigation found Gate Angel's real, documented effect --
+``AdvancedAbility.GATE_ANGEL_SPELL``'s own description -- is a
+world-level "a Valhalla hero visits your Kingdom at the end of this
+turn" lottery with zero combat content, unlike Gate Demon's own
+description, which explicitly describes a fight. ``turn/search_
+execution.py``'s own new ``Spell.GATE_ANGEL`` branch mirrors Gate
+Demon's shape exactly (same ``Ability.WHITE``-ladder secret-spell
+skill-5+ gate, matching this spell's own existing Action-Cast gate),
+except the summoned combatant is whichever hero is currently visiting
+Valhalla (the same "no hero currently visiting -> no effect"
+convention ``Spell.ILLUS_HERO`` already uses) rather than a randomly
+rolled demon species, since no "angel" entity exists anywhere in this
+project's own bestiary, and there is no refusal roll, since Gate
+Demon's own "a Demon may refuse an Evil-to-Undead opponent" mechanic
+has no stated analog anywhere in Gate Angel's own rule text. See
+``GATE_ANGEL_KNOWN_ABILITY_LEVEL``'s own docstring in ``turn/search_
+execution.py`` for the full rationale.
+
 A Search phase composed here always gets the immediately-terminated
 empty tactic list ``[0, -1]`` ("tl=0, no tactics") when every slot is
 left empty, matching the previous round's own placeholder default.
@@ -285,7 +328,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ak_engine.models.enums import TACTICS_WITH_SUB_OBJECT, ActionCode, Maneuver, Spell
+from ak_engine.models.enums import SPELL_NAME, TACTICS_WITH_SUB_OBJECT, ActionCode, Maneuver, Spell
 from ak_engine.models.feature import FEATURE_TYPE_NAMES
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader
@@ -314,6 +357,36 @@ _COMPOSABLE_MANEUVERS: tuple[Maneuver, ...] = tuple(maneuver for maneuver in Man
 
 # Rulebook [5.3]'s own stated limit ("entro un limite di 160 caratteri").
 SAY_TEXT_MAX_LENGTH = 160
+
+# The exact 17 spells `turn/search_execution.py _resolve_cast_tactic()`
+# dispatches inside a Search Encounter Plan -- every other real Spell
+# is an Action-Cast-only spell (one of the 5 regular phases, never a
+# Encounter Plan) and silently no-ops there today. Confirmed directly
+# against that function's own exhaustive `if/elif ... else: return
+# None` branch (2026-10-28 investigation) -- Gate Angel is the one
+# entry added alongside this round, see this module's own docstring
+# for its full, explicitly-project-original sourcing.
+ENCOUNTER_PLAN_CASTABLE_SPELLS: frozenset[Spell] = frozenset(
+    {
+        Spell.HOLY_SYMBOL,
+        Spell.SPIRITWRACK,
+        Spell.HEAL,
+        Spell.HAND_OF_DEATH,
+        Spell.CONTROL_UNDEAD,
+        Spell.CHARM,
+        Spell.GATE_DEMON,
+        Spell.GATE_ANGEL,
+        Spell.FIREBALL,
+        Spell.ICE_SUSPEND,
+        Spell.LAVA_POOL,
+        Spell.PSYCHIC_BLAST,
+        Spell.TELEK_STORM,
+        Spell.AUGUR_COMBAT,
+        Spell.INVISIBILITY,
+        Spell.MIRROR_IMAGE,
+        Spell.ILLUS_HERO,
+    }
+)
 
 PHASE_COUNT = 5  # P0..P4 -- every real AK3__T*.K1 sample's own leader block shape.
 
@@ -415,6 +488,22 @@ def feature_options(state: GameState, *, leader_id: int | None = None) -> list[t
     return options
 
 
+def spell_options() -> list[tuple[int, str]]:
+    """Every spell a Cast tactic can actually use inside a Search
+    Encounter Plan (``ENCOUNTER_PLAN_CASTABLE_SPELLS``), as ``(value,
+    display_name)`` pairs for the Cast tactic's own dedicated spell
+    dropdown -- see this module's own docstring for why Cast gets a
+    named dropdown instead of the generic numeric sub-object field
+    every other ``TACTICS_WITH_SUB_OBJECT`` maneuver uses. Sorted by
+    the spell's own real ordinal.
+    """
+
+    return [
+        (int(spell), SPELL_NAME.get(spell, spell.name.replace("_", " ").title()))
+        for spell in sorted(ENCOUNTER_PLAN_CASTABLE_SPELLS, key=int)
+    ]
+
+
 def tactic_options(slot: int) -> list[tuple[int, str]]:
     """Every composable ``Maneuver`` for one Search Encounter Plan tactic
     slot, as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only
@@ -498,11 +587,12 @@ def _parse_search_tactics(
 ) -> list[int | str]:
     """Reads this Search phase's own ``tactic_<leader_id>_<n>_<slot>``/
     ``tactic_sub_<leader_id>_<n>_<slot>``/``tactic_say_<leader_id>_<n>_
-    <slot>`` fields (``slot`` in ``0..TACTIC_SLOT_COUNT-1``) into a
-    real, ``-1``-terminated Encounter Plan tactic list -- see this
-    module's own docstring for the Talk-position, Steal-position,
-    Steal/Talk/Fulfill-exclusion, Flee-at-most-once, and Say free-text
-    rules enforced here.
+    <slot>``/``tactic_spell_<leader_id>_<n>_<slot>`` fields (``slot``
+    in ``0..TACTIC_SLOT_COUNT-1``) into a real, ``-1``-terminated
+    Encounter Plan tactic list -- see this module's own docstring for
+    the Talk-position, Steal-position, Steal/Talk/Fulfill-exclusion,
+    Flee-at-most-once, Say free-text, and Cast-spell-allowlist rules
+    enforced here.
     """
 
     tokens: list[int | str] = []
@@ -584,6 +674,19 @@ def _parse_search_tactics(
                     f"{SAY_TEXT_MAX_LENGTH} characters or fewer, got {len(say_text)}."
                 )
             tokens.append(say_text)
+        elif maneuver is Maneuver.CAST:
+            spell_raw = form.get(f"tactic_spell_{leader_id}_{n}_{slot}", "")
+            try:
+                spell = Spell(int(spell_raw))
+            except (TypeError, ValueError) as exc:
+                raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1}: choose a spell to Cast.") from exc
+            if spell not in ENCOUNTER_PLAN_CASTABLE_SPELLS:
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: tactic slot {slot + 1}: "
+                    f"{SPELL_NAME.get(spell, spell.name)} can't be cast in an Encounter Plan."
+                )
+            sub_object = int(spell)
+            tokens.append(sub_object)
         elif maneuver in TACTICS_WITH_SUB_OBJECT:
             sub_raw = form.get(f"tactic_sub_{leader_id}_{n}_{slot}", "0")
             sub_object = _parse_int(sub_raw or "0", field_label=f"{phase_label} tactic {slot + 1} sub-object")

@@ -6742,7 +6742,7 @@ def test_turns_compose_save_steal_after_cast_invisibility(tmp_path):
     form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
     form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
     form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.CAST))
-    form[f"tactic_sub_{king.leader_id}_0_0"] = str(int(Spell.INVISIBILITY))
+    form[f"tactic_spell_{king.leader_id}_0_0"] = str(int(Spell.INVISIBILITY))
     form[f"tactic_{king.leader_id}_0_1"] = str(int(Maneuver.STEAL))
 
     response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
@@ -6788,7 +6788,7 @@ def test_turns_compose_save_steal_and_talk_together_shows_an_error(tmp_path):
     form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
     form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.TALK))
     form[f"tactic_{king.leader_id}_0_1"] = str(int(Maneuver.CAST))
-    form[f"tactic_sub_{king.leader_id}_0_1"] = str(int(Spell.INVISIBILITY))
+    form[f"tactic_spell_{king.leader_id}_0_1"] = str(int(Spell.INVISIBILITY))
     form[f"tactic_{king.leader_id}_0_2"] = str(int(Maneuver.STEAL))
 
     response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
@@ -6892,6 +6892,64 @@ def test_turns_compose_save_double_scout_processes_cleanly(tmp_path):
     king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
     search_phase = king_block.plan.segments[0].phases["P0"]
     assert search_phase.extra == [0, int(Maneuver.MELEE), int(Maneuver.SCOUT), int(Maneuver.SCOUT), -1]
+
+
+def test_turns_compose_shows_a_cast_spell_dropdown(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"compose-tactic-cast-cell" in response.data
+    assert b"tactic_spell_" in response.data
+    assert b"Gate Angel" in response.data
+
+
+def test_turns_compose_save_cast_an_encounter_plan_spell(tmp_path):
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.CAST))
+    form[f"tactic_spell_{king.leader_id}_0_0"] = str(int(Spell.GATE_ANGEL))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    search_phase = king_block.plan.segments[0].phases["P0"]
+    assert search_phase.extra == [0, int(Maneuver.CAST), int(Spell.GATE_ANGEL), -1]
+
+
+def test_turns_compose_save_cast_an_action_only_spell_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.CAST))
+    form[f"tactic_spell_{king.leader_id}_0_0"] = str(int(Spell.RESURRECTION))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"can&#39;t be cast in an Encounter Plan" in response.data
 
 
 def test_turns_compose_save_rejects_an_invalid_action(tmp_path):

@@ -3326,6 +3326,101 @@ def test_execute_search_cast_gate_demon_missing_stats_has_no_effect():
     assert mock_melee.call_count == 1  # only the plan's own Melee tactic -- no demon duel attempted
 
 
+# -- Gate Angel: project-original, not sourced -- mirrors Gate Demon's own
+# shape, see GATE_ANGEL_KNOWN_ABILITY_LEVEL's own docstring in search_
+# execution.py for the full rationale (sourced directly from the user,
+# 2026-10-28).
+
+
+def _gate_angel_known_skills() -> SkillTable:
+    raw = [0] * 30
+    raw[Ability.WHITE.value * 2] = 5
+    raw[Ability.WHITE.value * 2 + 1] = 9
+    return SkillTable(raw_values=raw)
+
+
+def test_execute_search_cast_gate_angel_win_credits_the_caster():
+    state = _state_with_leader(skills=_gate_angel_known_skills())
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_ANGEL)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=3)
+    ):
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "leader"
+    assert result.feature_looted is True
+
+
+def test_execute_search_cast_gate_angel_loss_lets_the_plan_continue():
+    state = _state_with_leader(skills=_gate_angel_known_skills())
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_ANGEL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()
+    ), patch("ak_engine.turn.search_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.side_effect = [
+            EncounterCombatResult(winner="b", rounds=2),  # the angel loses to the guardian
+            EncounterCombatResult(winner="a", rounds=1),  # the plan's own following Melee
+        ]
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.call_count == 2
+    assert result.winner == "leader"  # decided by the second (real) duel, not the angel's loss
+
+
+def test_execute_search_cast_gate_angel_no_hero_visiting_has_no_effect():
+    state = _state_with_leader(skills=_gate_angel_known_skills())
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_ANGEL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.call_count == 1  # only the plan's own Melee tactic -- no angel duel attempted
+
+
+def test_execute_search_cast_gate_angel_level_gate_blocks_low_white_skill():
+    leader = _skilled_leader(Ability.WHITE, 4)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_ANGEL, Maneuver.MELEE)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast") as mock_cast_roll, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_cast_roll.called
+    assert mock_melee.call_count == 1  # falls through to the plan's own Melee tactic
+
+
+def test_execute_search_cast_gate_angel_level_gate_allows_exactly_level_5():
+    leader = _skilled_leader(Ability.WHITE, 5)
+    state = GameState()
+    state.add_leader(leader)
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_ANGEL)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.called
+    assert result.winner == "leader"
+
+
 def test_execute_search_cast_lava_pool_immune_species_has_no_effect():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.SPECTRE))

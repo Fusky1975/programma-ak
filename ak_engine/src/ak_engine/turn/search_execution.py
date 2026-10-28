@@ -700,6 +700,29 @@ GATE_DEMON_KNOWN_ABILITY_LEVEL = 5
 LAVA_POOL_KNOWN_ABILITY_LEVEL = 5
 AUGUR_COMBAT_KNOWN_ABILITY_LEVEL = 5
 
+# Gate Angel's own Personal-Combat duel -- **project-original, not
+# sourced from any rulebook or Pascal text** (sourced directly from the
+# user, 2026-10-28, who asked for it deliberately as a design choice,
+# after this project's own investigation confirmed Gate Angel's real,
+# documented effect -- `AdvancedAbility.GATE_ANGEL_SPELL`'s own
+# description, `models/advanced_ability.py` -- is purely a world-level
+# "a Valhalla hero visits your Kingdom at the end of this turn"
+# lottery, with zero combat content, unlike Gate Demon's own
+# description, which explicitly describes a fight). Mirrors Gate
+# Demon's own shape exactly (same `Ability.WHITE`-ladder secret-spell
+# skill-5+ gate below, matching this spell's own existing Action-Cast
+# gate, `turn/cast_execution.py SECRET_ACTION_SPELL_KNOWN_ABILITY_
+# LEVEL`), except: the summoned combatant is whichever hero is
+# currently visiting Valhalla (`models/valhalla.py
+# VALHALLA_VISITOR_LEADER_ID`, the same "no hero currently visiting ->
+# no effect" convention `Spell.ILLUS_HERO` above already uses) rather
+# than a randomly rolled demon species, since no "angel" entity exists
+# anywhere in this project's own bestiary to invent stats for; and
+# there is no refusal roll, since Gate Demon's own "a Demon may refuse
+# an Evil-to-Undead opponent" mechanic has no stated analog anywhere in
+# Gate Angel's own rule text.
+GATE_ANGEL_KNOWN_ABILITY_LEVEL = 5
+
 # Rulebook [5.6] Flee, transcribed verbatim -- see this module's own
 # docstring addendum and models/monster.py's own [5.6] quote.
 FLEE_CHANCE: dict[MonsterSpeed, float] = {
@@ -1870,19 +1893,29 @@ def _resolve_search_encounter(
         hostile"), Gate Demon/Lava Pool from Phase 237 (a summoned
         demon fights the opponent in Gate Demon's own place via a fresh
         ``resolve_melee_duel()``; Lava Pool is a flat, speed-keyed
-        instant-kill-or-escape roll), and Augur Combat from Phase 238
+        instant-kill-or-escape roll), Augur Combat from Phase 238
         (``is_first_tactic`` -- true position within the caster's own
         full plan, not just among its own ``CAST`` entries -- decides
         whether this runs the real "silent simulation" (a throwaway
         ``resolve_melee_duel()`` on cloned combatants, discarded after
         reading only its winner) or acts as an attempted Flee, per
-        ``turn/encounter.py``'s own Phase 205 addendum), and Words of
+        ``turn/encounter.py``'s own Phase 205 addendum), Words of
         Healing from Phase 289 (``words_of_healing_heal()`` -- self-only,
         gated by the same secret-spell skill-5+ eligibility check as
-        Illusory Hero, no target interaction at all -- this closes the
-        last gap in this function's own spell coverage: all 16 real
-        Personal-Combat spell mechanics ``turn/encounter.py`` documents
-        are now dispatched here). Returns a terminal
+        Illusory Hero, no target interaction at all -- this closed the
+        gap in this function's own spell coverage of all 16 real,
+        rulebook/Pascal-sourced Personal-Combat spell mechanics ``turn/
+        encounter.py`` documents), and **Gate Angel, project-original,
+        not sourced from any rulebook or Pascal text** (sourced
+        directly from the user, 2026-10-28, who asked for this duel
+        deliberately even after this project's own investigation found
+        Gate Angel's real, documented effect is a world-level Valhalla-
+        visit lottery with zero combat content -- see ``GATE_ANGEL_
+        KNOWN_ABILITY_LEVEL``'s own docstring above for the full
+        rationale): mirrors Gate Demon's own shape exactly, but the
+        summoned combatant is whichever hero is currently visiting
+        Valhalla rather than a randomly rolled demon species, and there
+        is no refusal roll. Returns a terminal
         ``SearchExecutionResult`` (a kill, a neutralization, Charm's own
         guaranteed Flee, or nothing terminal for a self-only effect like
         Words of Healing), or ``None`` if the encounter continues (a
@@ -1942,6 +1975,13 @@ def _resolve_search_encounter(
             # Phase 237: secret spell, tied to Ability.NECROMANCY
             # (`turn/encounter.py`'s own Phase 202 addendum).
             ability = Ability.NECROMANCY
+        elif spell is Spell.GATE_ANGEL:
+            # Project-original Personal-Combat duel (see
+            # GATE_ANGEL_KNOWN_ABILITY_LEVEL's own docstring above) --
+            # tied to Ability.WHITE, matching this spell's real,
+            # existing Action-Cast gate (`turn/cast_execution.py`'s own
+            # `SECRET_ACTION_SPELLS`/`Ability.WHITE` ladder).
+            ability = Ability.WHITE
         elif spell is Spell.LAVA_POOL:
             # Phase 237: secret spell, tied to Ability.ELEMENTAL
             # (`turn/encounter.py`'s own Phase 203 addendum).
@@ -2034,6 +2074,8 @@ def _resolve_search_encounter(
         # fixture is how this project already exercises that hypothetical
         # path, see this module's own test suite).
         if spell is Spell.GATE_DEMON and level < GATE_DEMON_KNOWN_ABILITY_LEVEL:
+            return None
+        if spell is Spell.GATE_ANGEL and level < GATE_ANGEL_KNOWN_ABILITY_LEVEL:
             return None
         if spell is Spell.LAVA_POOL and level < LAVA_POOL_KNOWN_ABILITY_LEVEL:
             return None
@@ -2477,6 +2519,29 @@ def _resolve_search_encounter(
                 return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
             # GATE_DEMON_LOSS_CASTER_RESUMES_FIGHT_AT_CURRENT_RANGE -- no
             # direct penalty on the caster; the plan simply continues.
+            return None
+
+        if spell is Spell.GATE_ANGEL:
+            # Project-original (see GATE_ANGEL_KNOWN_ABILITY_LEVEL's own
+            # docstring above): mirrors Gate Demon's own shape exactly,
+            # but the combatant is the hero currently visiting Valhalla
+            # (same "no hero currently visiting -> no effect" fetch
+            # ILLUS_HERO above already uses) rather than a randomly
+            # rolled demon, and there's no refusal roll (no stated
+            # analog for an angel refusing anywhere in this spell's own
+            # rule text).
+            hero = state.leaders.get(VALHALLA_VISITOR_LEADER_ID)
+            if hero is None:
+                return None
+            angel = _leader_combatant(state, hero)
+            # "The Angel fights in place of the spellcaster" -- Melee
+            # only, the same scope Gate Demon's own duel above carries.
+            duel_result = resolve_melee_duel(angel, target, rng)
+            if duel_result.winner == "a":
+                # The caster is credited with the win, same as Gate
+                # Demon's own win above.
+                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            # No direct penalty on the caster; the plan simply continues.
             return None
 
         if spell is Spell.LAVA_POOL:
