@@ -195,6 +195,33 @@ but a *failed* one falls through to whatever comes next, so nothing
 in the engine's own tactic walk stops a second Flee entry later in the
 same plan from being reached and rolled again.
 
+**Beg, considered next -- deliberately excluded, like Give above**
+(2026-10-28, the user's own question: "Questa tattica non esiste. Non
+c'è nel regolamento e io per esperienza personale non l'ho mai usata e
+vista usare... credo che con beg tu ti riferisca a quando un mostro o
+un eroe codardo chieda di avere salva la vita"): independently
+confirmed against ``Regolamento AK.txt`` itself -- Beg is genuinely
+**not** one of the Encounter Plan's eight numbered [5.1]-[5.8]
+tactics (Cast/Fire-Arrow/Melee/Negotiations/Steal/Flee/Give/Scout);
+the rulebook instead documents "Implorare pietà" (beg for mercy)
+purely as an *automatic* behavior of the Cowardly Temperament,
+parallel to involuntary Flee, in the separate Temperament Table --
+exactly the user's own guess. ``turn/search_execution.py``'s own
+``_resolve_beg()``, however, *does* wire ``Maneuver.BEG`` as a genuine,
+player-orderable Search tactic (damaged leader only, alignment-based
+~50% mercy roll, ends the encounter like a successful Flee on
+success) -- real, tested code, but sourced from reverse-engineering
+the compiled game binary rather than from the rulebook text or any
+surviving Pascal source the project has, and never exercised by any
+real ``AK3__T*.K1`` sample. Offering a tactic the rulebook never lists
+as composable, in a dropdown meant to mirror the rulebook's own
+numbered list, would mislead the GM into thinking it's a real [5.x]
+command -- so, per the user's own choice, Beg is excluded from
+``tactic_options()``'s own Search dropdown (and rejected server-side
+on a direct, tampered POST), the same shape as Give's own exclusion
+above. ``turn/search_execution.py``'s own ``_resolve_beg()`` is left
+untouched -- out of scope for this editor, not a correctness question.
+
 A Search phase composed here always gets the immediately-terminated
 empty tactic list ``[0, -1]`` ("tl=0, no tactics") when every slot is
 left empty, matching the previous round's own placeholder default.
@@ -357,16 +384,15 @@ def tactic_options(slot: int) -> list[tuple[int, str]]:
     ever included for ``slot == 0`` (see this module's own docstring for
     the user-sourced "Talk can only be the first tactic" rule); every
     other slot gets the same ``_COMPOSABLE_MANEUVERS`` list minus Talk.
-    ``Maneuver.GIVE`` is excluded for every slot here -- it isn't a
-    Search Encounter Plan tactic at all (see this module's own docstring
-    for the user-sourced "Give isn't used against a monster in a
-    Feature" rule).
+    ``Maneuver.GIVE`` and ``Maneuver.BEG`` are excluded for every slot
+    here -- neither is a real Search Encounter Plan tactic (see this
+    module's own docstring for the user-sourced rationale for each).
     """
 
     return [
         (int(maneuver), maneuver.name.replace("_", " ").title())
         for maneuver in _COMPOSABLE_MANEUVERS
-        if maneuver is not Maneuver.GIVE and (maneuver is not Maneuver.TALK or slot == 0)
+        if maneuver not in (Maneuver.GIVE, Maneuver.BEG) and (maneuver is not Maneuver.TALK or slot == 0)
     ]
 
 
@@ -477,6 +503,13 @@ def _parse_search_tactics(
             raise InvalidComposedMovesError(
                 f"{phase_label}: tactic slot {slot + 1}: Give isn't usable in a Search Encounter Plan -- "
                 "only after Challenge (EN) or Pursue (PU)."
+            )
+        if maneuver is Maneuver.BEG:
+            # Defense in depth: Beg is never offered in a Search tactic
+            # slot's own dropdown (see tactic_options()), but a direct,
+            # tampered POST could still name its real ordinal.
+            raise InvalidComposedMovesError(
+                f"{phase_label}: tactic slot {slot + 1}: Beg isn't a real Encounter Plan tactic."
             )
         if maneuver is Maneuver.TALK:
             if slot != 0:

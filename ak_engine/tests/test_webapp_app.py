@@ -6669,6 +6669,40 @@ def test_turns_compose_save_give_tactic_shows_an_error(tmp_path):
     assert b"isn&#39;t usable in a Search Encounter Plan" in response.data
 
 
+def test_turns_compose_does_not_offer_beg_in_the_tactic_dropdown(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    # Maneuver.BEG (11) happens to share its raw ordinal with
+    # ActionCode.CHALLENGE, which *does* legitimately appear in the
+    # Action dropdown's own `value="11"` option -- matching the value
+    # *and* label together pins this down to the tactic dropdown's own
+    # (now-absent) Beg option.
+    assert f'value="{int(Maneuver.BEG)}">Beg<'.encode() not in response.data
+
+
+def test_turns_compose_save_beg_tactic_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.BEG))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Beg isn&#39;t a real Encounter Plan tactic" in response.data
+
+
 def test_turns_compose_save_steal_as_the_first_tactic(tmp_path):
     from ak_engine.parser.k1_moves import parse_k1_moves_file
 

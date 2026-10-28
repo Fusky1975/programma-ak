@@ -326,6 +326,26 @@ def test_search_phase_rejects_give_even_via_a_direct_tampered_value():
         assert "Give isn't usable in a Search Encounter Plan" in str(exc)
 
 
+def test_tactic_options_excludes_beg_everywhere():
+    # Beg isn't one of the rulebook's eight numbered Encounter Plan
+    # tactics at all (sourced directly from the user, 2026-10-28) --
+    # "Implorare pietà" is documented only as automatic Cowardly
+    # Temperament behavior, never a tactic a player orders.
+    for slot in (0, 1):
+        values = {value for value, _ in tactic_options(slot)}
+        assert int(Maneuver.BEG) not in values
+
+
+def test_search_phase_rejects_beg_even_via_a_direct_tampered_value():
+    form = _search_form(tactics={0: int(Maneuver.BEG)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Beg isn't a real Encounter Plan tactic" in str(exc)
+
+
 def test_tactic_options_offers_steal_in_every_slot():
     # Unlike Talk, Steal's own position rule depends on the *previous*
     # slot's own content (slot 0, or right after Cast Invisibility), not
