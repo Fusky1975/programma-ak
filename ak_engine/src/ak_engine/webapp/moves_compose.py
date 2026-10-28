@@ -129,6 +129,38 @@ Pursue plan this editor can't even build yet, Give is excluded from
 server-side on a direct, tampered POST) until Challenge/Pursue's own
 Encounter Plan editor exists to give it a real home.
 
+**Steal, the fifth tactic designed** (2026-10-28, sourced directly
+from the user, rulebook text pasted verbatim): "si può rubare... o ci
+riesce oppure viene scoperto... Le tattiche Steal, Talk, Fulfill si
+escludono a vicenda e solo una di esse può essere usata in ciascun
+Piano d'Incontro... il comando steal può essere usato solo all'inizio
+o dopo un comando CA-IN (cast invisibility)" -- independently
+investigated against ``turn/search_execution.py``'s own ``_resolve_
+steal()``: in a Search-triggered encounter the target is always the
+feature's own guardian monster (never a King/army-leading Hero, so the
+rulebook's own army-halving/execution/ransom branches structurally
+never apply here -- those only fire in a Challenge/Pursue encounter,
+which has no composer of its own yet, same situation as Give above).
+What *does* apply, and is already fully implemented and tested there:
+the success roll, the monster's own intelligence-weighted item-hiding
+scan, the evasion-on-failure roll, and (if caught) combat at a
+randomly chosen range -- nothing new to execute, only to compose.
+Carries no sub-object (absent from ``TACTICS_WITH_SUB_OBJECT``, like
+Fulfill). Three rules enforced by ``_parse_search_tactics()``: (1) the
+three-way Steal/Talk/Fulfill exclusion, generalizing the existing
+Talk/Fulfill one above; (2) Steal's own position restriction --
+slot 0, or immediately after a slot holding ``Maneuver.CAST`` with
+``Spell.INVISIBILITY`` as its sub-object (confirmed: ``CAST``'s
+sub-object *is* the spell id, and there is no other, separate
+"Enhanced Invisibility" spell to also allow -- only ``Spell.
+INVISIBILITY`` itself). This position rule is enforced server-side
+only, unlike Talk's: whether a given slot is legal depends on the
+*previous* slot's own two fields (its maneuver and its sub-object
+text), not on the slot index alone, so there's no static per-slot
+dropdown filtering to apply the way Talk's "slot 0 only" rule allows
+-- Steal stays offered in every slot's dropdown, and a position
+violation is only ever caught by posting the form.
+
 A Search phase composed here always gets the immediately-terminated
 empty tactic list ``[0, -1]`` ("tl=0, no tactics") when every slot is
 left empty, matching the previous round's own placeholder default.
@@ -155,7 +187,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ak_engine.models.enums import TACTICS_WITH_SUB_OBJECT, ActionCode, Maneuver
+from ak_engine.models.enums import TACTICS_WITH_SUB_OBJECT, ActionCode, Maneuver, Spell
 from ak_engine.models.feature import FEATURE_TYPE_NAMES
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader
@@ -371,14 +403,17 @@ def _parse_search_tactics(
     ``tactic_sub_<leader_id>_<n>_<slot>``/``tactic_say_<leader_id>_<n>_
     <slot>`` fields (``slot`` in ``0..TACTIC_SLOT_COUNT-1``) into a
     real, ``-1``-terminated Encounter Plan tactic list -- see this
-    module's own docstring for the Talk-position, Talk/Fulfill-
-    exclusion, and Say free-text rules enforced here.
+    module's own docstring for the Talk-position, Steal-position,
+    Steal/Talk/Fulfill-exclusion, and Say free-text rules enforced here.
     """
 
     tokens: list[int | str] = []
     has_talk = False
     has_fulfill = False
+    has_steal = False
     stopped_at: int | None = None
+    previous_maneuver: Maneuver | None = None
+    previous_sub_object: int | None = None
     for slot in range(TACTIC_SLOT_COUNT):
         raw = form.get(f"tactic_{leader_id}_{n}_{slot}", "")
         if not raw:
@@ -415,7 +450,18 @@ def _parse_search_tactics(
             has_talk = True
         if maneuver is Maneuver.FULFILL:
             has_fulfill = True
+        if maneuver is Maneuver.STEAL:
+            cast_invisibility_precedes = (
+                previous_maneuver is Maneuver.CAST and previous_sub_object == int(Spell.INVISIBILITY)
+            )
+            if slot != 0 and not cast_invisibility_precedes:
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: tactic slot {slot + 1}: Steal can only be the first tactic in the "
+                    "Encounter Plan, or come right after casting Invisibility."
+                )
+            has_steal = True
         tokens.append(int(maneuver))
+        sub_object: int | None = None
         if maneuver is Maneuver.SAY:
             say_text = form.get(f"tactic_say_{leader_id}_{n}_{slot}", "").strip()
             if not say_text:
@@ -428,12 +474,19 @@ def _parse_search_tactics(
             tokens.append(say_text)
         elif maneuver in TACTICS_WITH_SUB_OBJECT:
             sub_raw = form.get(f"tactic_sub_{leader_id}_{n}_{slot}", "0")
-            tokens.append(_parse_int(sub_raw or "0", field_label=f"{phase_label} tactic {slot + 1} sub-object"))
+            sub_object = _parse_int(sub_raw or "0", field_label=f"{phase_label} tactic {slot + 1} sub-object")
+            tokens.append(sub_object)
+        previous_maneuver = maneuver
+        previous_sub_object = sub_object
 
-    if has_talk and has_fulfill:
-        raise InvalidComposedMovesError(
-            f"{phase_label}: Talk and Fulfill can't both be used in the same Encounter Plan."
+    mutually_exclusive = [name for flag, name in [(has_talk, "Talk"), (has_fulfill, "Fulfill"), (has_steal, "Steal")] if flag]
+    if len(mutually_exclusive) > 1:
+        names = (
+            " and ".join(mutually_exclusive)
+            if len(mutually_exclusive) == 2
+            else ", ".join(mutually_exclusive[:-1]) + ", and " + mutually_exclusive[-1]
         )
+        raise InvalidComposedMovesError(f"{phase_label}: {names} can't be used together in the same Encounter Plan.")
 
     tokens.append(-1)
     return tokens

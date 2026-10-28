@@ -28,7 +28,7 @@ import tempfile
 from pathlib import Path
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.enums import ActionCode, Maneuver
+from ak_engine.models.enums import ActionCode, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
@@ -326,6 +326,99 @@ def test_search_phase_rejects_give_even_via_a_direct_tampered_value():
         assert "Give isn't usable in a Search Encounter Plan" in str(exc)
 
 
+def test_tactic_options_offers_steal_in_every_slot():
+    # Unlike Talk, Steal's own position rule depends on the *previous*
+    # slot's own content (slot 0, or right after Cast Invisibility), not
+    # the slot index alone -- so there's no static per-slot filtering to
+    # apply here the way Talk's "slot 0 only" rule allows.
+    for slot in (0, 1, 3):
+        values = {value for value, _ in tactic_options(slot)}
+        assert int(Maneuver.STEAL) in values
+
+
+def test_search_phase_steal_as_the_first_tactic():
+    form = _search_form(tactics={0: int(Maneuver.STEAL)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.STEAL), -1]
+
+
+def test_search_phase_steal_right_after_cast_invisibility():
+    form = _search_form(
+        tactics={0: int(Maneuver.CAST), 1: int(Maneuver.STEAL)},
+        subs={0: int(Spell.INVISIBILITY)},
+    )
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.CAST), int(Spell.INVISIBILITY), int(Maneuver.STEAL), -1]
+
+
+def test_search_phase_steal_after_a_different_spell_is_rejected():
+    form = _search_form(
+        tactics={0: int(Maneuver.CAST), 1: int(Maneuver.STEAL)},
+        subs={0: int(Spell.INVISIBILITY) + 1},
+    )
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Steal can only be the first tactic" in str(exc)
+
+
+def test_search_phase_steal_after_a_non_cast_tactic_is_rejected():
+    form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.STEAL)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Steal can only be the first tactic" in str(exc)
+
+
+def test_search_phase_steal_as_a_later_tactic_with_no_predecessor_is_rejected():
+    # Direct, tampered POST: slot 0 left empty but slot 1 holds Steal --
+    # this is already rejected as a "gap", but confirms Steal doesn't
+    # get a pass just because there's nothing recognizable before it.
+    form = _search_form(tactics={1: int(Maneuver.STEAL)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "fill the Encounter Plan without gaps" in str(exc)
+
+
+def test_search_phase_aggressive_tactics_can_follow_steal():
+    form = _search_form(tactics={0: int(Maneuver.STEAL), 1: int(Maneuver.MELEE)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+
+    assert phases[0].extra == [0, int(Maneuver.STEAL), int(Maneuver.MELEE), -1]
+
+
+def test_search_phase_steal_and_talk_together_is_rejected():
+    form = _search_form(tactics={0: int(Maneuver.TALK), 1: int(Maneuver.CAST), 2: int(Maneuver.STEAL)}, subs={1: int(Spell.INVISIBILITY)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Talk and Steal can't be used together" in str(exc)
+
+
+def test_search_phase_steal_and_fulfill_together_is_rejected():
+    form = _search_form(tactics={0: int(Maneuver.STEAL), 1: int(Maneuver.FULFILL)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Fulfill and Steal can't be used together" in str(exc)
+
+
 def test_search_phase_with_a_simple_tactic_sequence():
     form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT)})
 
@@ -533,3 +626,23 @@ def test_build_composed_kingdom_round_trips_a_say_tactic_through_the_real_writer
 
     phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
     assert phase0.extra == [0, int(Maneuver.SAY), "Take that!", -1]
+
+
+def test_build_composed_kingdom_round_trips_a_steal_after_cast_invisibility():
+    state = _state()
+    form = _search_form(
+        tactics={0: int(Maneuver.CAST), 1: int(Maneuver.STEAL)},
+        subs={0: int(Spell.INVISIBILITY)},
+    )
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.extra == [0, int(Maneuver.CAST), int(Spell.INVISIBILITY), int(Maneuver.STEAL), -1]

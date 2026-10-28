@@ -10,7 +10,7 @@ from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.discovery import Discovery
-from ak_engine.models.enums import Ability, ActionCode, Maneuver
+from ak_engine.models.enums import Ability, ActionCode, Maneuver, Spell
 from ak_engine.models.game_state import BlackmailClaim
 from ak_engine.models.game_type import GameType
 from ak_engine.models.map import HexCoord, Terrain
@@ -6667,6 +6667,122 @@ def test_turns_compose_save_give_tactic_shows_an_error(tmp_path):
 
     assert response.status_code == 200
     assert b"isn&#39;t usable in a Search Encounter Plan" in response.data
+
+
+def test_turns_compose_save_steal_as_the_first_tactic(tmp_path):
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.STEAL))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    search_phase = king_block.plan.segments[0].phases["P0"]
+    assert search_phase.extra == [0, int(Maneuver.STEAL), -1]
+
+
+def test_turns_compose_save_steal_after_cast_invisibility(tmp_path):
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.CAST))
+    form[f"tactic_sub_{king.leader_id}_0_0"] = str(int(Spell.INVISIBILITY))
+    form[f"tactic_{king.leader_id}_0_1"] = str(int(Maneuver.STEAL))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    search_phase = king_block.plan.segments[0].phases["P0"]
+    assert search_phase.extra == [0, int(Maneuver.CAST), int(Spell.INVISIBILITY), int(Maneuver.STEAL), -1]
+
+
+def test_turns_compose_save_steal_without_invisibility_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.MELEE))
+    form[f"tactic_{king.leader_id}_0_1"] = str(int(Maneuver.STEAL))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Steal can only be the first tactic" in response.data
+
+
+def test_turns_compose_save_steal_and_talk_together_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.TALK))
+    form[f"tactic_{king.leader_id}_0_1"] = str(int(Maneuver.CAST))
+    form[f"tactic_sub_{king.leader_id}_0_1"] = str(int(Spell.INVISIBILITY))
+    form[f"tactic_{king.leader_id}_0_2"] = str(int(Maneuver.STEAL))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"Talk and Steal can&#39;t be used together" in response.data
+
+
+def test_turns_compose_save_steal_then_aggressive_tactic_processes_cleanly(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    feature_id = next(iter(state.features))
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
+    form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.STEAL))
+    form[f"tactic_{king.leader_id}_0_1"] = str(int(Maneuver.MELEE))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"error-banner" not in response.data
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    assert saved.exists()
 
 
 def test_turns_compose_save_rejects_an_invalid_action(tmp_path):
