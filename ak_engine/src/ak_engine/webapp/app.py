@@ -23,7 +23,7 @@ from ak_engine.models.advanced_ability import ADVANCED_ABILITY_NAME, AdvancedAbi
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, sorted_kingdom_discoveries
-from ak_engine.models.enums import ABILITY_NAME, TACTICS_WITH_SUB_OBJECT, Ability, ActionCode, Maneuver
+from ak_engine.models.enums import ABILITY_NAME, Ability, ActionCode, Maneuver
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, BlackmailClaim, LeaderState, ProvinceState, RaceTitleTally
 from ak_engine.models.game_type import GameType
@@ -84,6 +84,7 @@ from ak_engine.webapp.moves_compose import (
     InvalidComposedMovesError,
     build_composed_kingdom,
     feature_options,
+    item_options,
     kingdom_leaders_for_compose,
     province_options,
     spell_options,
@@ -3025,16 +3026,20 @@ def create_app(games_root: Path | None = None) -> Flask:
             },
             tactic_slot_numbers=range(TACTIC_SLOT_COUNT),
             tactic_choices_by_slot=[tactic_options(slot) for slot in range(TACTIC_SLOT_COUNT)],
-            # Cast gets its own dedicated spell-name dropdown (below)
-            # instead of the generic numeric sub-object field -- only
-            # Use Item still uses that one in Search's own composer.
-            tactics_with_sub_object=[int(maneuver) for maneuver in TACTICS_WITH_SUB_OBJECT if maneuver is not Maneuver.CAST],
             talk_value=int(Maneuver.TALK),
             fulfill_value=int(Maneuver.FULFILL),
             say_value=int(Maneuver.SAY),
             say_text_max_length=SAY_TEXT_MAX_LENGTH,
             cast_value=int(Maneuver.CAST),
             spell_choices=spell_options(),
+            # Both Cast and Use Item now get their own dedicated named
+            # dropdown (spell / this leader's own owned items) instead
+            # of a generic numeric sub-object field -- nothing in
+            # Search's own composer still needs that generic field.
+            use_mi_value=int(Maneuver.USE_MI),
+            item_choices_by_leader={
+                leader.leader_id: item_options(state, leader.leader_id) for leader in roster
+            },
             error=request.args.get("error"),
         )
 

@@ -35,6 +35,7 @@ from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
+from ak_engine.models.treasure import Treasure
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.parser.k1_moves_writer import write_k1_moves_file
 from ak_engine.turn.hex_numbering import decode_hex_number
@@ -44,6 +45,7 @@ from ak_engine.webapp.moves_compose import (
     InvalidComposedMovesError,
     build_composed_kingdom,
     feature_options,
+    item_options,
     parse_phase_inputs,
     province_options,
     spell_options,
@@ -74,6 +76,7 @@ def _state() -> GameState:
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor"))
     state.add_province(ProvinceState(HexCoord(3, 2), Terrain.FOREST, Race.HUMAN, name=None))
     state.add_feature(Feature(feature_id=3, coord=HOME, kind=FeatureType.ALTAR, guardian_monster=Monster.NEC_MAGE))
+    state.add_item(Treasure.WAND_FIREBALL, KING_ID, charges=3)
     return state
 
 
@@ -110,7 +113,7 @@ def test_move_phase_reads_its_own_dropdown_not_the_generic_object_field():
     form[f"move_target_{KING_ID}_2"] = "3,2"
     form[f"obj_{KING_ID}_2"] = "999"  # must be ignored for a Move phase
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     move_phase = phases[2]
     assert move_phase.action is ActionCode.LMOVE
@@ -124,7 +127,7 @@ def test_move_phase_without_a_chosen_destination_is_rejected():
     form[f"move_target_{KING_ID}_0"] = ""
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Move destination" in str(exc)
@@ -135,7 +138,7 @@ def test_non_move_phase_is_unaffected_by_the_move_destination_field():
     form[f"obj_{KING_ID}_1"] = "42"
     form[f"extra_{KING_ID}_1"] = "1, 2 3"
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[1].action is ActionCode.DEFEND
     assert phases[1].obj == 42
@@ -167,7 +170,7 @@ def test_explore_phase_ignores_any_generic_object_or_extra_input():
     form[f"obj_{KING_ID}_3"] = "999"
     form[f"extra_{KING_ID}_3"] = "1 2 3"
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     explore_phase = phases[3]
     assert explore_phase.action is ActionCode.EXPLORE
@@ -238,7 +241,7 @@ def test_search_phase_reads_its_own_dropdown_not_the_generic_object_field():
     form[f"obj_{KING_ID}_1"] = "999"  # must be ignored for a Search phase
     form[f"extra_{KING_ID}_1"] = "7 8 9"  # must be ignored too -- not composable yet
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     search_phase = phases[1]
     assert search_phase.action is ActionCode.SEARCH
@@ -252,7 +255,7 @@ def test_search_phase_without_a_chosen_feature_is_rejected():
     form[f"search_feature_{KING_ID}_0"] = ""
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Feature to Search" in str(exc)
@@ -281,6 +284,7 @@ def _search_form(
     subs: dict[int, int] | None = None,
     says: dict[int, str] | None = None,
     spells: dict[int, int] | None = None,
+    items: dict[int, int] | None = None,
 ):
     form = _all_defend_form(KING_ID)
     form[f"action_{KING_ID}_0"] = str(int(ActionCode.SEARCH))
@@ -293,6 +297,8 @@ def _search_form(
         form[f"tactic_say_{KING_ID}_0_{slot}"] = say_value
     for slot, spell_value in (spells or {}).items():
         form[f"tactic_spell_{KING_ID}_0_{slot}"] = str(spell_value)
+    for slot, item_value in (items or {}).items():
+        form[f"tactic_item_{KING_ID}_0_{slot}"] = str(item_value)
     return form
 
 
@@ -325,7 +331,7 @@ def test_search_phase_rejects_give_even_via_a_direct_tampered_value():
     form = _search_form(tactics={0: int(Maneuver.GIVE)}, subs={0: 7})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Give isn't usable in a Search Encounter Plan" in str(exc)
@@ -345,7 +351,7 @@ def test_search_phase_rejects_beg_even_via_a_direct_tampered_value():
     form = _search_form(tactics={0: int(Maneuver.BEG)})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Beg isn't a real Encounter Plan tactic" in str(exc)
@@ -361,7 +367,7 @@ def test_spell_options_lists_exactly_the_17_encounter_plan_castable_spells():
 def test_search_phase_cast_an_encounter_plan_spell_is_included():
     form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: int(Spell.FIREBALL)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.CAST), int(Spell.FIREBALL), -1]
 
@@ -369,7 +375,7 @@ def test_search_phase_cast_an_encounter_plan_spell_is_included():
 def test_search_phase_cast_gate_angel_is_included():
     form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: int(Spell.GATE_ANGEL)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.CAST), int(Spell.GATE_ANGEL), -1]
 
@@ -380,7 +386,7 @@ def test_search_phase_cast_an_action_only_spell_is_rejected():
     form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: int(Spell.RESURRECTION)})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "can't be cast in an Encounter Plan" in str(exc)
@@ -390,7 +396,7 @@ def test_search_phase_cast_without_choosing_a_spell_is_rejected():
     form = _search_form(tactics={0: int(Maneuver.CAST)})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "choose a spell to Cast" in str(exc)
@@ -400,10 +406,123 @@ def test_search_phase_cast_an_invalid_spell_ordinal_is_rejected():
     form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: 9999})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "choose a spell to Cast" in str(exc)
+
+
+def test_item_options_lists_only_this_leaders_own_usable_wands():
+    state = _state()
+    usable_item = state.items_held_by(KING_ID)[0]  # WAND_FIREBALL, 3 charges, from _state()
+    state.add_item(Treasure.WAND_ORATORY, KING_ID, charges=3)  # owned, but Oratory isn't composable here
+    state.add_item(Treasure.WAND_FIREBALL, None, charges=3)  # usable spell, but nobody owns it
+    other_leader_id = 2
+    state.add_leader(LeaderState(leader_id=other_leader_id, kingdom_id=1, name="Other", location=HOME))
+    state.add_item(Treasure.WAND_FIREBALL, other_leader_id, charges=3)  # usable spell, owned by someone else
+    state.add_item(Treasure.WAND_FIREBALL, KING_ID, charges=0)  # usable spell, owned, but no charges left
+
+    values = {value for value, _ in item_options(state, KING_ID)}
+
+    assert values == {str(usable_item.item_id)}
+
+
+def test_search_phase_use_item_a_usable_wand_is_included():
+    state = _state()
+    item = state.items_held_by(KING_ID)[0]
+    form = _search_form(tactics={0: int(Maneuver.USE_MI)}, items={0: item.item_id})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [0, int(Maneuver.USE_MI), item.item_id, -1]
+
+
+def test_search_phase_use_item_can_repeat_with_different_items():
+    # "Se un personaggio ha due armi magiche, può... specificare quale
+    # delle due intende adoperare" -- and "non hanno limite".
+    state = _state()
+    first_item = state.items_held_by(KING_ID)[0]
+    second_item = state.add_item(Treasure.WAND_INVISIBILITY, KING_ID, charges=1)
+    form = _search_form(
+        tactics={0: int(Maneuver.USE_MI), 1: int(Maneuver.USE_MI)},
+        items={0: first_item.item_id, 1: second_item.item_id},
+    )
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [0, int(Maneuver.USE_MI), first_item.item_id, int(Maneuver.USE_MI), second_item.item_id, -1]
+
+
+def test_search_phase_use_item_without_choosing_an_item_is_rejected():
+    form = _search_form(tactics={0: int(Maneuver.USE_MI)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose an item to Use" in str(exc)
+
+
+def test_search_phase_use_item_an_item_not_owned_by_this_leader_is_rejected():
+    state = _state()
+    other_leader_id = 2
+    state.add_leader(LeaderState(leader_id=other_leader_id, kingdom_id=1, name="Other", location=HOME))
+    item = state.add_item(Treasure.WAND_FIREBALL, other_leader_id, charges=3)
+    form = _search_form(tactics={0: int(Maneuver.USE_MI)}, items={0: item.item_id})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose an item to Use" in str(exc)
+
+
+def test_search_phase_use_item_a_nonexistent_item_id_is_rejected():
+    form = _search_form(tactics={0: int(Maneuver.USE_MI)}, items={0: 999999})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose an item to Use" in str(exc)
+
+
+def test_search_phase_use_item_a_wand_with_an_unmodeled_spell_is_rejected():
+    # Oratory is a real spell, but Action-Cast-only -- never dispatched
+    # inside a Search Encounter Plan's own Use Item tactic either.
+    state = _state()
+    item = state.add_item(Treasure.WAND_ORATORY, KING_ID, charges=3)
+    form = _search_form(tactics={0: int(Maneuver.USE_MI)}, items={0: item.item_id})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "can't be used in an Encounter Plan" in str(exc)
+
+
+def test_search_phase_use_item_a_non_wand_item_is_rejected():
+    state = _state()
+    item = state.add_item(Treasure.GOLD_HOARD_LARGE, KING_ID, charges=0)
+    form = _search_form(tactics={0: int(Maneuver.USE_MI)}, items={0: item.item_id})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "can't be used in an Encounter Plan" in str(exc)
+
+
+def test_search_phase_use_item_a_wand_with_no_charges_left_is_rejected():
+    state = _state()
+    item = state.add_item(Treasure.WAND_FIREBALL, KING_ID, charges=0)
+    form = _search_form(tactics={0: int(Maneuver.USE_MI)}, items={0: item.item_id})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "has no charges left" in str(exc)
 
 
 def test_tactic_options_offers_steal_in_every_slot():
@@ -419,7 +538,7 @@ def test_tactic_options_offers_steal_in_every_slot():
 def test_search_phase_steal_as_the_first_tactic():
     form = _search_form(tactics={0: int(Maneuver.STEAL)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.STEAL), -1]
 
@@ -430,7 +549,7 @@ def test_search_phase_steal_right_after_cast_invisibility():
         spells={0: int(Spell.INVISIBILITY)},
     )
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.CAST), int(Spell.INVISIBILITY), int(Maneuver.STEAL), -1]
 
@@ -442,7 +561,7 @@ def test_search_phase_steal_after_a_different_spell_is_rejected():
     )
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Steal can only be the first tactic" in str(exc)
@@ -452,7 +571,7 @@ def test_search_phase_steal_after_a_non_cast_tactic_is_rejected():
     form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.STEAL)})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Steal can only be the first tactic" in str(exc)
@@ -465,7 +584,7 @@ def test_search_phase_steal_as_a_later_tactic_with_no_predecessor_is_rejected():
     form = _search_form(tactics={1: int(Maneuver.STEAL)})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "fill the Encounter Plan without gaps" in str(exc)
@@ -474,7 +593,7 @@ def test_search_phase_steal_as_a_later_tactic_with_no_predecessor_is_rejected():
 def test_search_phase_aggressive_tactics_can_follow_steal():
     form = _search_form(tactics={0: int(Maneuver.STEAL), 1: int(Maneuver.MELEE)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.STEAL), int(Maneuver.MELEE), -1]
 
@@ -486,7 +605,7 @@ def test_search_phase_steal_and_talk_together_is_rejected():
     )
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Talk and Steal can't be used together" in str(exc)
@@ -496,7 +615,7 @@ def test_search_phase_steal_and_fulfill_together_is_rejected():
     form = _search_form(tactics={0: int(Maneuver.STEAL), 1: int(Maneuver.FULFILL)})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Fulfill and Steal can't be used together" in str(exc)
@@ -511,7 +630,7 @@ def test_tactic_options_offers_flee_in_every_slot():
 def test_search_phase_flee_once_is_accepted():
     form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.FLEE)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.MELEE), int(Maneuver.FLEE), -1]
 
@@ -520,7 +639,7 @@ def test_search_phase_flee_twice_is_rejected():
     form = _search_form(tactics={0: int(Maneuver.FLEE), 1: int(Maneuver.MELEE), 2: int(Maneuver.FLEE)})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Flee can only be used once in the same Encounter Plan" in str(exc)
@@ -539,7 +658,7 @@ def test_tactic_options_offers_scout_in_every_slot_with_no_restriction():
 def test_search_phase_scout_alone_is_accepted():
     form = _search_form(tactics={0: int(Maneuver.SCOUT)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.SCOUT), -1]
 
@@ -550,7 +669,7 @@ def test_search_phase_scout_twice_is_accepted_not_rejected():
     # to reject the way a second Flee is.
     form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT), 2: int(Maneuver.SCOUT)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.MELEE), int(Maneuver.SCOUT), int(Maneuver.SCOUT), -1]
 
@@ -558,7 +677,7 @@ def test_search_phase_scout_twice_is_accepted_not_rejected():
 def test_search_phase_scout_combined_with_talk_is_accepted():
     form = _search_form(tactics={0: int(Maneuver.TALK), 1: int(Maneuver.SCOUT)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.TALK), int(Maneuver.SCOUT), -1]
 
@@ -568,7 +687,7 @@ def test_search_phase_scout_combined_with_steal_and_flee_is_accepted():
         tactics={0: int(Maneuver.STEAL), 1: int(Maneuver.SCOUT), 2: int(Maneuver.FLEE)},
     )
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.STEAL), int(Maneuver.SCOUT), int(Maneuver.FLEE), -1]
 
@@ -576,26 +695,17 @@ def test_search_phase_scout_combined_with_steal_and_flee_is_accepted():
 def test_search_phase_with_a_simple_tactic_sequence():
     form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.MELEE), int(Maneuver.SCOUT), -1]
 
 
-def test_search_phase_tactic_with_sub_object_is_included():
-    # Cast now gets its own dedicated spell dropdown (see the Cast
-    # tests below) -- Use Item is the one remaining tactic still
-    # reading the generic numeric sub-object field.
-    form = _search_form(tactics={0: int(Maneuver.USE_MI)}, subs={0: 7})
-
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
-
-    assert phases[0].extra == [0, int(Maneuver.USE_MI), 7, -1]
 
 
 def test_search_phase_talk_as_the_first_tactic_is_accepted():
     form = _search_form(tactics={0: int(Maneuver.TALK)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.TALK), -1]
 
@@ -609,7 +719,7 @@ def test_search_phase_talk_after_another_tactic_is_rejected():
     form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.TALK)})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "first tactic" in str(exc)
@@ -623,7 +733,7 @@ def test_search_phase_talk_and_fulfill_together_is_rejected():
     form = _search_form(tactics={0: int(Maneuver.TALK), 1: int(Maneuver.FULFILL)})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Talk and Fulfill" in str(exc)
@@ -632,7 +742,7 @@ def test_search_phase_talk_and_fulfill_together_is_rejected():
 def test_search_phase_fulfill_alone_is_accepted():
     form = _search_form(tactics={0: int(Maneuver.FULFILL)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.FULFILL), -1]
 
@@ -645,7 +755,7 @@ def test_search_phase_fulfill_has_no_position_restriction_unlike_talk():
     # discussion of Talk.
     form = _search_form(tactics={0: int(Maneuver.MELEE), 1: int(Maneuver.SCOUT), 2: int(Maneuver.FULFILL)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.MELEE), int(Maneuver.SCOUT), int(Maneuver.FULFILL), -1]
 
@@ -653,7 +763,7 @@ def test_search_phase_fulfill_has_no_position_restriction_unlike_talk():
 def test_search_phase_fulfill_carries_no_sub_object():
     form = _search_form(tactics={0: int(Maneuver.FULFILL)}, subs={0: 42})  # must be ignored
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.FULFILL), -1]
 
@@ -665,7 +775,7 @@ def test_search_phase_fulfill_after_talk_slot_but_not_in_slot_zero_is_still_reje
     form = _search_form(tactics={0: int(Maneuver.TALK), 1: int(Maneuver.FULFILL)})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Talk and Fulfill" in str(exc)
@@ -675,7 +785,7 @@ def test_search_phase_rejects_a_gap_between_tactic_slots():
     form = _search_form(tactics={0: int(Maneuver.MELEE), 2: int(Maneuver.SCOUT)})  # slot 1 left empty
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "gaps" in str(exc)
@@ -684,7 +794,7 @@ def test_search_phase_rejects_a_gap_between_tactic_slots():
 def test_search_phase_rejects_none_even_via_a_direct_tampered_value():
     form = _search_form(tactics={0: int(Maneuver.NONE)})
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "isn't composable" in str(exc)
@@ -693,7 +803,7 @@ def test_search_phase_rejects_none_even_via_a_direct_tampered_value():
 def test_search_phase_say_tactic_text_is_included():
     form = _search_form(tactics={0: int(Maneuver.SAY)}, says={0: "Take that!"})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.SAY), "Take that!", -1]
 
@@ -707,7 +817,7 @@ def test_search_phase_say_tactic_followed_by_another_tactic_is_included():
         says={0: "Eccoti un bell'hot dog, muso gelato!"},
     )
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.SAY), "Eccoti un bell'hot dog, muso gelato!", int(Maneuver.MELEE), -1]
 
@@ -716,7 +826,7 @@ def test_search_phase_say_tactic_without_text_is_rejected():
     form = _search_form(tactics={0: int(Maneuver.SAY)})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Say's own text" in str(exc)
@@ -726,7 +836,7 @@ def test_search_phase_say_tactic_over_160_characters_is_rejected():
     form = _search_form(tactics={0: int(Maneuver.SAY)}, says={0: "x" * 161})
 
     try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "160 characters or fewer" in str(exc)
@@ -736,7 +846,7 @@ def test_search_phase_say_tactic_at_exactly_160_characters_is_accepted():
     text = "x" * 160
     form = _search_form(tactics={0: int(Maneuver.SAY)}, says={0: text})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.SAY), text, -1]
 
@@ -749,7 +859,7 @@ def test_search_phase_say_tactic_can_repeat_for_riddle_attempts():
         says={0: "First guess", 1: "Second guess"},
     )
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.SAY), "First guess", int(Maneuver.SAY), "Second guess", -1]
 
@@ -854,3 +964,21 @@ def test_build_composed_kingdom_round_trips_a_cast_gate_angel():
 
     phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
     assert phase0.extra == [0, int(Maneuver.CAST), int(Spell.GATE_ANGEL), -1]
+
+
+def test_build_composed_kingdom_round_trips_a_use_item_wand_of_fireball():
+    state = _state()
+    item = state.items_held_by(KING_ID)[0]
+    form = _search_form(tactics={0: int(Maneuver.USE_MI)}, items={0: item.item_id})
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.extra == [0, int(Maneuver.USE_MI), item.item_id, -1]

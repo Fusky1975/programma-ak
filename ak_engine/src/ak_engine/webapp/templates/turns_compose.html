@@ -12,9 +12,9 @@
     A base editor, filled in one Action (and, for Search, one Encounter Plan tactic) at a time: Move has its
     own destination dropdown, Explore needs no input at all (it always targets the leader's own current
     province), Search has its own target-feature dropdown plus Encounter Plan tactic slots (Talk, Fulfill, Say,
-    Steal, Flee, Scout, and Cast so far have their own rules wired in, Give and Beg are excluded entirely --
-    every other tactic still takes a plain sub-object number, until it gets its own friendlier form too); every
-    other Action still takes the same plain Object + Extra numbers a real move file's own "P&lt;n&gt; :
+    Steal, Flee, Scout, Cast, and Use Item so far have their own rules wired in, Give and Beg are excluded
+    entirely -- only Shoot and Melee, which take no sub-object at all, are still undesigned); every other
+    Action still takes the same plain Object + Extra numbers a real move file's own "P&lt;n&gt; :
     &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a real move file from these and
     stores it exactly like an uploaded one.
   </p>
@@ -63,7 +63,7 @@
                 </select>
                 <br><span class="hex-map-legend-note">Encounter Plan (empty slots stop the list there):</span>
                 <table class="data-table compose-encounter-plan">
-                  <thead><tr><th>Tactic</th><th>Sub-object</th><th>Say text</th><th>Spell</th></tr></thead>
+                  <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th></tr></thead>
                   <tbody>
                     {% for slot in tactic_slot_numbers %}
                       <tr>
@@ -75,9 +75,6 @@
                             {% endfor %}
                           </select>
                         </td>
-                        <td class="compose-tactic-sub-cell">
-                          <input type="text" name="tactic_sub_{{ leader.leader_id }}_{{ n }}_{{ slot }}" value="0" size="4">
-                        </td>
                         <td class="compose-tactic-say-cell">
                           <input type="text" name="tactic_say_{{ leader.leader_id }}_{{ n }}_{{ slot }}" value="" size="24" maxlength="{{ say_text_max_length }}">
                         </td>
@@ -85,6 +82,14 @@
                           <select name="tactic_spell_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
                             <option value="">-- choose a spell --</option>
                             {% for value, label in spell_choices %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </td>
+                        <td class="compose-tactic-use-mi-cell">
+                          <select name="tactic_item_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- choose an item --</option>
+                            {% for value, label in item_choices_by_leader[leader.leader_id] %}
                               <option value="{{ value }}">{{ label }}</option>
                             {% endfor %}
                           </select>
@@ -146,19 +151,15 @@
   // kingdom()'s own server-side validation is authoritative either
   // way, so a disabled <option> or hidden cell here is just a hint,
   // not the real enforcement.
-  var TACTICS_WITH_SUB_OBJECT = {{ tactics_with_sub_object }}.map(String);
   var TALK_VALUE = "{{ talk_value }}";
   var FULFILL_VALUE = "{{ fulfill_value }}";
   var SAY_VALUE = "{{ say_value }}";
   var CAST_VALUE = "{{ cast_value }}";
+  var USE_MI_VALUE = "{{ use_mi_value }}";
 
   function updateTacticSubCell(select) {
     var row = select.closest("tr");
     if (!row) return;
-    var subCell = row.querySelector(".compose-tactic-sub-cell");
-    if (subCell) {
-      subCell.style.display = TACTICS_WITH_SUB_OBJECT.indexOf(select.value) !== -1 ? "" : "none";
-    }
     var sayCell = row.querySelector(".compose-tactic-say-cell");
     if (sayCell) {
       sayCell.style.display = select.value === SAY_VALUE ? "" : "none";
@@ -166,6 +167,10 @@
     var castCell = row.querySelector(".compose-tactic-cast-cell");
     if (castCell) {
       castCell.style.display = select.value === CAST_VALUE ? "" : "none";
+    }
+    var useMiCell = row.querySelector(".compose-tactic-use-mi-cell");
+    if (useMiCell) {
+      useMiCell.style.display = select.value === USE_MI_VALUE ? "" : "none";
     }
   }
 

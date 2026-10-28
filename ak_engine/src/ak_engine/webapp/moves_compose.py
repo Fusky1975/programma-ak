@@ -302,6 +302,42 @@ has no stated analog anywhere in Gate Angel's own rule text. See
 ``GATE_ANGEL_KNOWN_ABILITY_LEVEL``'s own docstring in ``turn/search_
 execution.py`` for the full rationale.
 
+**Use Item, the ninth tactic designed** (2026-10-28, sourced directly
+from the user, rulebook text pasted verbatim): "Use Item requires the
+item's own ordinal number... obviously only items that cast combat
+spells usable in an Encounter Plan can be used in one... they succeed
+automatically and have no limit (more than one can be cast in the
+same combat plan)... if a character has two magic weapons, they can
+specify which one to use" -- independently confirmed against ``turn/
+search_execution.py``'s own ``_resolve_use_mi_tactic()``: ``sub_
+object`` is a real item-instance id (``GameState.items``, the same
+registry Give already reads), not a spell id, resolved through
+``models/treasure.py TREASURE_WAND_SPELL`` to the one fixed spell that
+item casts, then dispatched straight through ``_resolve_cast_tactic()``
+with ``forced_level=SEARCH_USE_MI_WAND_SKILL_LEVEL`` -- automatic
+success, no once-per-combat slot consumed, and no round consumed
+(a plain ``continue`` in the tactic walk, same as Say/Cast) are all
+*already* fully implemented and tested; nothing new to execute, only
+to compose safely. Only 6 of the 20 real wand treasures map to one of
+``ENCOUNTER_PLAN_CASTABLE_SPELLS`` (Golden Cross/Holy Symbol, Glove of
+Death/Hand of Death, Wand of Fire/Fireball, Cologne of Charming/Charm,
+Antennae of Psychic Blasting/Psychic Blast, Ring of Invisibility/
+Invisibility) -- every other wand, and every non-wand item (Skill
+Books have no Encounter-Plan role at all), is a documented engine-side
+no-effect if named here, the same "offering it would mislead the GM"
+reasoning Give/Beg were excluded for. Use Item therefore gets its own
+dedicated ``tactic_item_<leader>_<n>_<slot>`` dropdown (``item_
+options()`` below) listing only *this leader's own, currently-owned,
+still-charged* wands whose spell is one of the 17 -- not a global item
+catalog, since ``sub_object`` names a specific item instance this
+leader must actually hold, and ``_parse_search_tactics()`` rejects a
+direct, tampered POST naming an item this leader doesn't own, that
+isn't a matching wand, or that's already out of charges. Unlike every
+other tactic designed so far, this one needed ``state`` threaded all
+the way through ``parse_phase_inputs()``/``_parse_search_tactics()``
+to do that ownership/category/charge lookup -- every earlier tactic's
+own validation was state-independent.
+
 A Search phase composed here always gets the immediately-terminated
 empty tactic list ``[0, -1]`` ("tl=0, no tactics") when every slot is
 left empty, matching the previous round's own placeholder default.
@@ -336,6 +372,7 @@ from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import MONSTER_NAMES
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
+from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_NAME, TREASURE_WAND_SPELL, TreasureCategory
 from ak_engine.report.turn_report import real_province_number
 from ak_engine.turn.hex_numbering import encode_hex_number
 
@@ -504,6 +541,35 @@ def spell_options() -> list[tuple[int, str]]:
     ]
 
 
+def item_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every magic item this leader could actually use via a Use Item
+    tactic inside a Search Encounter Plan, as ``(value, display_name)``
+    pairs for Use Item's own dedicated item dropdown -- see this
+    module's own docstring for why this lists only *this leader's own,
+    currently-owned, still-charged* wands whose own fixed spell is one
+    of ``ENCOUNTER_PLAN_CASTABLE_SPELLS``, not a global item catalog:
+    ``sub_object`` names a specific item instance this leader must
+    actually hold (``GameState.items_held_by()``), and every other
+    item (a non-wand, or a wand whose spell isn't composable here) is
+    a documented engine-side no-effect if offered. Sorted by the
+    item's own real id.
+    """
+
+    options = []
+    for item in sorted(state.items_held_by(leader_id), key=lambda item: item.item_id):
+        if TREASURE_CATEGORY.get(item.treasure) is not TreasureCategory.SPELL_WAND:
+            continue
+        spell = TREASURE_WAND_SPELL.get(item.treasure)
+        if spell is None or spell not in ENCOUNTER_PLAN_CASTABLE_SPELLS or item.charges <= 0:
+            continue
+        item_name = TREASURE_NAME.get(item.treasure, item.treasure.name.replace("_", " ").title())
+        spell_name = SPELL_NAME.get(spell, spell.name.replace("_", " ").title())
+        charge_word = "charge" if item.charges == 1 else "charges"
+        label = f"#{item.item_id} {item_name} -- casts {spell_name} ({item.charges} {charge_word} left)"
+        options.append((str(item.item_id), label))
+    return options
+
+
 def tactic_options(slot: int) -> list[tuple[int, str]]:
     """Every composable ``Maneuver`` for one Search Encounter Plan tactic
     slot, as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only
@@ -583,16 +649,19 @@ def _parse_search_feature(raw: str, *, phase_label: str) -> int:
 
 
 def _parse_search_tactics(
-    form: dict[str, str], leader_id: int, n: int, *, phase_label: str
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
 ) -> list[int | str]:
     """Reads this Search phase's own ``tactic_<leader_id>_<n>_<slot>``/
     ``tactic_sub_<leader_id>_<n>_<slot>``/``tactic_say_<leader_id>_<n>_
-    <slot>``/``tactic_spell_<leader_id>_<n>_<slot>`` fields (``slot``
-    in ``0..TACTIC_SLOT_COUNT-1``) into a real, ``-1``-terminated
+    <slot>``/``tactic_spell_<leader_id>_<n>_<slot>``/``tactic_item_
+    <leader_id>_<n>_<slot>`` fields (``slot`` in
+    ``0..TACTIC_SLOT_COUNT-1``) into a real, ``-1``-terminated
     Encounter Plan tactic list -- see this module's own docstring for
     the Talk-position, Steal-position, Steal/Talk/Fulfill-exclusion,
-    Flee-at-most-once, Say free-text, and Cast-spell-allowlist rules
-    enforced here.
+    Flee-at-most-once, Say free-text, Cast-spell-allowlist, and
+    Use-Item-ownership rules enforced here. ``state`` is only needed
+    for Use Item's own ownership/category/charge lookup -- every
+    other tactic's own validation is state-independent.
     """
 
     tokens: list[int | str] = []
@@ -687,6 +756,29 @@ def _parse_search_tactics(
                 )
             sub_object = int(spell)
             tokens.append(sub_object)
+        elif maneuver is Maneuver.USE_MI:
+            item_raw = form.get(f"tactic_item_{leader_id}_{n}_{slot}", "")
+            item_id = _parse_int(item_raw, field_label=f"{phase_label} tactic {slot + 1} item") if item_raw else None
+            item = state.items.get(item_id) if item_id is not None else None
+            if item is None or item.owner_leader_id != leader_id:
+                raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1}: choose an item to Use.")
+            item_spell = TREASURE_WAND_SPELL.get(item.treasure)
+            if (
+                TREASURE_CATEGORY.get(item.treasure) is not TreasureCategory.SPELL_WAND
+                or item_spell is None
+                or item_spell not in ENCOUNTER_PLAN_CASTABLE_SPELLS
+            ):
+                item_name = TREASURE_NAME.get(item.treasure, item.treasure.name)
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: tactic slot {slot + 1}: {item_name} can't be used in an Encounter Plan."
+                )
+            if item.charges <= 0:
+                item_name = TREASURE_NAME.get(item.treasure, item.treasure.name)
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: tactic slot {slot + 1}: {item_name} has no charges left."
+                )
+            sub_object = item_id
+            tokens.append(sub_object)
         elif maneuver in TACTICS_WITH_SUB_OBJECT:
             sub_raw = form.get(f"tactic_sub_{leader_id}_{n}_{slot}", "0")
             sub_object = _parse_int(sub_raw or "0", field_label=f"{phase_label} tactic {slot + 1} sub-object")
@@ -707,7 +799,9 @@ def _parse_search_tactics(
     return tokens
 
 
-def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int) -> list[ComposedPhaseInput]:
+def parse_phase_inputs(
+    form: dict[str, str], leader_id: int, *, board_width: int, state: GameState
+) -> list[ComposedPhaseInput]:
     """Reads this one leader's own ``action_<leader_id>_<n>``/``obj_<leader_id>_<n>``/
     ``extra_<leader_id>_<n>`` form fields (``n`` in ``0..PHASE_COUNT-1``)
     into ``PHASE_COUNT`` validated phase inputs, in ``P0..P4`` order.
@@ -725,7 +819,9 @@ def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int
     ``search_feature_<leader_id>_<n>`` dropdown field for ``obj`` (the
     target feature's own ``feature_id``) and its own Encounter Plan
     tactic slots (``_parse_search_tactics()``) for ``extra`` (same
-    module docstring).
+    module docstring). ``state`` is threaded through to
+    ``_parse_search_tactics()`` purely for Use Item's own ownership
+    lookup -- see that function's own docstring.
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -741,7 +837,7 @@ def parse_phase_inputs(form: dict[str, str], leader_id: int, *, board_width: int
             extra = []
         elif action is ActionCode.SEARCH:
             obj = _parse_search_feature(form.get(f"search_feature_{leader_id}_{n}", ""), phase_label=f"P{n}")
-            extra = [0, *_parse_search_tactics(form, leader_id, n, phase_label=f"P{n}")]
+            extra = [0, *_parse_search_tactics(form, leader_id, n, phase_label=f"P{n}", state=state)]
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))
@@ -772,7 +868,7 @@ def build_composed_kingdom(
 
     leaders: list[Leader] = []
     for leader_state in roster:
-        phase_inputs = parse_phase_inputs(form, leader_state.leader_id, board_width=state.board_width)
+        phase_inputs = parse_phase_inputs(form, leader_state.leader_id, board_width=state.board_width, state=state)
         phases = {
             f"P{n}": PlanPhase(label=f"P{n}", action=phase_input.action, obj=phase_input.obj, extra=phase_input.extra)
             for n, phase_input in enumerate(phase_inputs)
