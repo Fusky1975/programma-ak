@@ -645,6 +645,31 @@ def test_search_phase_flee_twice_is_rejected():
         assert "Flee can only be used once in the same Encounter Plan" in str(exc)
 
 
+def test_tactic_options_labels_shoot_as_fire_arrow():
+    # Maneuver.SHOOT's own Python name isn't the rulebook's name for it
+    # (rulebook [5.2] "Fire Arrow [FI]") -- the dropdown says so.
+    labels = dict(tactic_options(0))
+    assert labels[int(Maneuver.SHOOT)] == "Fire Arrow"
+
+
+def test_search_phase_shoot_once_is_accepted():
+    form = _search_form(tactics={0: int(Maneuver.SHOOT)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+
+    assert phases[0].extra == [0, int(Maneuver.SHOOT), -1]
+
+
+def test_search_phase_shoot_twice_is_rejected():
+    form = _search_form(tactics={0: int(Maneuver.SHOOT), 1: int(Maneuver.MELEE), 2: int(Maneuver.SHOOT)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Fire Arrow can only be used once in the same Encounter Plan" in str(exc)
+
+
 def test_tactic_options_offers_scout_in_every_slot_with_no_restriction():
     # Unlike Talk/Steal (position) or Flee (at-most-once), Scout's own
     # position is irrelevant and a second occurrence is a real, distinct
@@ -930,6 +955,23 @@ def test_build_composed_kingdom_round_trips_a_flee_after_melee():
 
     phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
     assert phase0.extra == [0, int(Maneuver.MELEE), int(Maneuver.FLEE), -1]
+
+
+def test_build_composed_kingdom_round_trips_a_shoot_then_melee():
+    state = _state()
+    form = _search_form(tactics={0: int(Maneuver.SHOOT), 1: int(Maneuver.MELEE)})
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.extra == [0, int(Maneuver.SHOOT), int(Maneuver.MELEE), -1]
 
 
 def test_build_composed_kingdom_round_trips_a_double_scout_consent_signal():

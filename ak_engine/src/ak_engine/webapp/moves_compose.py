@@ -338,6 +338,44 @@ the way through ``parse_phase_inputs()``/``_parse_search_tactics()``
 to do that ownership/category/charge lookup -- every earlier tactic's
 own validation was state-independent.
 
+**Shoot, the tenth tactic designed** (2026-10-28, sourced directly
+from the user, rulebook text pasted verbatim, who also flagged that
+``Maneuver.SHOOT``'s own Python name is really rulebook [5.2]'s "Fire
+Arrow [FI]" -- the dropdown now says "Fire Arrow", not the enum's own
+internal "Shoot"): "La probabilità base di colpire è del 30% più 10%
+per livello e il danno è 1-6 punti danno... alcuni mostri hanno punti
+nel talento FIRE AN ARROW (FI) e fanno danni differenti" --
+independently confirmed against ``turn/encounter.py``'s own
+``fire_arrow_hit_chance()``/``fire_arrow_free_attacks()``/
+``FIRE_ARROW_DAMAGE_RANGE``: unlike Steal/Flee, Fire Arrow's real
+formula matches its rulebook paraphrase *exactly* (30%+10%/level,
+1-6 damage, free attacks = Archery skill level, one-for-one). The
+"both sides roughly double their free attacks, but randomness means
+the better archer might get zero shots" behavior is a confirmed
+*emergent* property of ``resolve_fire_arrow_duel()``'s own per-round,
+both-sides-fire simultaneously loop, not a separate doubling formula
+-- nothing to compose differently. Carries no sub-object, no position
+restriction, and -- like Flee/Scout/Fulfill -- no rulebook mechanic
+anywhere in it depends on player input beyond placing the tactic in a
+slot. The one real rule enforced here: Fire Arrow can appear **at most
+once** per Encounter Plan -- a rule this project's own code already
+confirms directly from the user ("Si può dare un solo ordine di FI
+durante un piano speciale di incontro", ``turn/search_execution.py``'s
+own module docstring) but, like Flee's own cap before this round,
+left completely unenforced in both the engine's tactic walk and this
+composer -- fixed the same way, mirroring Flee's exact shape.
+
+Not touched here, out of scope for this round: ``turn/challenge_
+execution.py``'s own range-closing helper, ``_close_to()``, is a
+zero-cost, instant move bundled into the same tactic-resolution step
+that then immediately fires -- unlike the rulebook text's own "closing
+to archery range consumes a round, then shoots the following round"
+reading, which this module's own earlier docstring aspired to but
+never actually built this way. This is a real discrepancy, but it
+lives in Challenge's own encounter resolution, which has no composer
+of its own yet (same situation as Give/Beg's Challenge/Pursue
+carve-outs above) -- nothing to compose differently here either way.
+
 A Search phase composed here always gets the immediately-terminated
 empty tactic list ``[0, -1]`` ("tl=0, no tactics") when every slot is
 left empty, matching the previous round's own placeholder default.
@@ -582,7 +620,7 @@ def tactic_options(slot: int) -> list[tuple[int, str]]:
     """
 
     return [
-        (int(maneuver), maneuver.name.replace("_", " ").title())
+        (int(maneuver), "Fire Arrow" if maneuver is Maneuver.SHOOT else maneuver.name.replace("_", " ").title())
         for maneuver in _COMPOSABLE_MANEUVERS
         if maneuver not in (Maneuver.GIVE, Maneuver.BEG) and (maneuver is not Maneuver.TALK or slot == 0)
     ]
@@ -669,6 +707,7 @@ def _parse_search_tactics(
     has_fulfill = False
     has_steal = False
     has_flee = False
+    has_shoot = False
     stopped_at: int | None = None
     previous_maneuver: Maneuver | None = None
     previous_sub_object: int | None = None
@@ -731,6 +770,12 @@ def _parse_search_tactics(
                     f"{phase_label}: tactic slot {slot + 1}: Flee can only be used once in the same Encounter Plan."
                 )
             has_flee = True
+        if maneuver is Maneuver.SHOOT:
+            if has_shoot:
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: tactic slot {slot + 1}: Fire Arrow can only be used once in the same Encounter Plan."
+                )
+            has_shoot = True
         tokens.append(int(maneuver))
         sub_object: int | None = None
         if maneuver is Maneuver.SAY:
