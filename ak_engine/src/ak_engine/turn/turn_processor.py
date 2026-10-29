@@ -925,6 +925,12 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
       after a battle) could never be hired/recruited again, ever
       (`turn/recruit_execution.py`'s own ``not unhireable_this_turn``
       gate).
+    - ``ArmyState.recruited_this_turn`` -> ``False`` (2026-10-29) --
+      rulebook [3.9]'s own "can't Pick Up a freshly recruited unit this
+      same turn" is scoped to the turn the unit was recruited in, not
+      forever; otherwise a freshly levied army would stay permanently
+      un-Pick-Up-able for the rest of the game (`turn/plan_dispatch.py
+      _dispatch_pick_up()`'s own real consumer).
     - ``LeaderState.oratory_boosted_this_turn`` -> ``False`` -- otherwise
       a leader who ever benefited from Oratory once could never benefit
       from it again for the rest of the game (`turn/cast_execution.py`'s
@@ -1032,6 +1038,7 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         army.naval_bonus_applied_this_turn = False
         army.march_table_bonus_applied_this_turn = False
         army.unhireable_this_turn = False
+        army.recruited_this_turn = False
         army.flood_dams_exempt_at = None
     for province in state.provinces.values():
         province.recruited_this_turn = {}

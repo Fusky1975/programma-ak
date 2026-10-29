@@ -584,6 +584,52 @@ plus "Garrison Commander" -- instead of raw Object/Extra integers, so
 there's no way to compose an order the engine would just silently skip
 or reject anyway.
 
+**Pick Up Army(s) [PI], the fourth non-Search-tactic Action designed**
+(2026-10-29, sourced directly from the user, rulebook [3.9] text
+pasted verbatim): "Questo comando serve ad associare un personaggio a
+una o più unità militari... Si può prendere un'unità militare
+comandata da un personaggio che si trova nella stessa provincia...
+Non è invece possibile usare questo ordine nello stesso turno in cui
+un'unità militare viene reclutata... ad eccezione delle unità
+mercenarie... Un personaggio non può utilizzare questo comando a
+favore di un altro personaggio" -- shares ``turn/army_list_decode.py
+decode_army_list_phase()`` with Leave/Disband, but ``_dispatch_pick_
+up()`` never reads ``request.target_leader_id`` at all -- confirmed
+structurally that Pick Up can never act on another character's
+behalf, matching that last sentence exactly (Leave is the order for
+that, per the rulebook's own text). ``obj`` and ``extra[0]`` are both
+unconfirmed/unread (forced to ``0`` here, the same convention
+Disband's own ``extra[0]`` already uses); the rest of ``extra`` is a
+``-1``-terminated army-id list, or the lone ``255`` for "PI ALL."
+
+Two bug fixes, sourced directly from the user, fixed in ``turn/plan_
+dispatch.py _dispatch_pick_up()`` (see that function's own 2026-10-29
+docstring addendum for the full citations): (1) a specific army-id
+list previously had no Kingdom-boundary check at all (only
+``all_armies`` restricted to unled armies, and even that had no
+Kingdom check) -- investigated with the user whether a specific list
+should also require the target to be unled, mirroring ``all_armies``;
+their own call, unlike Leave/Disband: no, a specific Pick Up may still
+take over an army actively commanded by *anyone* co-located (
+reorganizing one's own forces), but now only within the acting
+leader's own Kingdom, never a different one; (2) "non è possibile
+usare questo ordine nello stesso turno in cui un'unità militare viene
+reclutata" had no supporting engine state at all -- ``models/game_
+state.py ArmyState`` gains ``recruited_this_turn`` (set only by a
+fresh levy, never a mercenary hire, reset every turn), closing a real,
+confirmed same-turn exploit (a move file listing Recruit then Pick Up
+of the newly, predictably assigned id in a later phase of the same
+turn previously succeeded).
+
+The composer gets a dedicated, repeated army-target dropdown
+(``pick_up_army_target_options()``, ``PICK_UP_SLOT_COUNT`` slots,
+reusing ``_disband_army_label()``) pre-filtered to exactly what this
+leader could actually Pick Up post-fix, plus a "Pick Up ALL unled
+armies here" pseudo-option in slot 0 (``PICK_UP_ALL_VALUE``, the same
+mutually-exclusive-with-a-specific-list shape ``DISBAND_ALL_VALUE``/
+``LEAVE_ALL_VALUE`` already use) -- no separate target dropdown, since
+Pick Up always and only acts for the ordering leader himself.
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
 and a nested Hire/Charm/Resurrection plan (``PlanPhase.nested_plan``)
@@ -674,6 +720,16 @@ LEAVE_ALL_VALUE = "all"
 # own Garrison Commander sentinel value, parsed back to the real
 # ``NO_LEADER_SENTINEL`` encoding by ``_parse_leave_target()``.
 LEAVE_GARRISON_VALUE = "garrison"
+
+# Same reasoning as DISBAND_SLOT_COUNT/LEAVE_SLOT_COUNT -- no real
+# PICK_UP sample exists at all (``turn/army_list_decode.py``'s own
+# docstring), so this is a generous, round number.
+PICK_UP_SLOT_COUNT = 6
+
+# Slot 0's own dedicated "Pick Up every unled army here" pseudo-option
+# (rulebook [3.9]: "[PI]ck Up [All]") -- same mutually-exclusive-with-
+# a-specific-list shape as ``DISBAND_ALL_VALUE``/``LEAVE_ALL_VALUE``.
+PICK_UP_ALL_VALUE = "all"
 
 # Every Maneuver a GM can compose here -- Maneuver.NONE is a sentinel,
 # never a real tactic, so it's the only one excluded.
@@ -1098,6 +1154,40 @@ def leave_army_target_options(state: GameState, leader_id: int, *, slot: int) ->
     return options
 
 
+def pick_up_army_target_options(state: GameState, leader_id: int, *, slot: int) -> list[tuple[str, str]]:
+    """Every army this leader could actually Pick Up post-fix, as
+    ``(value, label)`` pairs for a Pick Up phase's own repeated
+    army-target dropdowns, reusing ``_disband_army_label()`` for each
+    option's own display -- matching ``turn/plan_dispatch.py
+    _dispatch_pick_up()``'s own eligibility rule exactly: every
+    co-located army of this leader's own Kingdom (commanded by anyone,
+    or unled -- the user's own explicit choice, unlike Leave/Disband:
+    Pick Up may reorganize command among one's own co-located forces,
+    just never reach into a different Kingdom), except one that was
+    freshly levied (not hired as a mercenary) this very turn
+    (``ArmyState.recruited_this_turn``).
+
+    ``slot`` controls whether the list's own dedicated ``PICK_UP_ALL_
+    VALUE`` pseudo-option ("Pick Up ALL unled armies here") is
+    prepended -- only ever offered in slot 0, the same shape ``disband_
+    target_options()``/``leave_army_target_options()`` already use.
+    """
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return []
+    options: list[tuple[str, str]] = []
+    if slot == 0:
+        options.append((PICK_UP_ALL_VALUE, "Pick Up ALL unled armies here"))
+    for army in sorted(state.armies.values(), key=lambda army: army.army_id):
+        if army.location != leader.location or army.kingdom_id != leader.kingdom_id:
+            continue
+        if army.recruited_this_turn and not army.is_mercenary:
+            continue
+        options.append((str(army.army_id), _disband_army_label(state, army)))
+    return options
+
+
 def tactic_options(slot: int) -> list[tuple[int, str]]:
     """Every composable ``Maneuver`` for one Search Encounter Plan tactic
     slot, as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only
@@ -1369,6 +1459,64 @@ def _parse_leave_army_targets(
     return army_ids
 
 
+def _parse_pick_up_targets(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
+) -> list[int]:
+    """Reads this Pick Up phase's own ``pick_up_target_<leader_id>_<n>_
+    <slot>`` fields (``slot`` in ``0..PICK_UP_SLOT_COUNT-1``) into the
+    real Pick Up army-id list -- the same no-gaps convention and
+    ``PICK_UP_ALL_VALUE`` mutual-exclusivity shape ``_parse_disband_
+    targets()``/``_parse_leave_army_targets()`` already use. At least
+    one target must be chosen.
+    """
+
+    leader = state.leaders.get(leader_id)
+    if form.get(f"pick_up_target_{leader_id}_{n}_0", "") == PICK_UP_ALL_VALUE:
+        for slot in range(1, PICK_UP_SLOT_COUNT):
+            if form.get(f"pick_up_target_{leader_id}_{n}_{slot}", ""):
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: 'Pick Up ALL unled armies here' can't be combined with another army "
+                    "in the same order."
+                )
+        return [ALL_ARMIES_SENTINEL]
+
+    army_ids: list[int] = []
+    stopped_at: int | None = None
+    for slot in range(PICK_UP_SLOT_COUNT):
+        raw = form.get(f"pick_up_target_{leader_id}_{n}_{slot}", "")
+        if not raw:
+            if stopped_at is None:
+                stopped_at = slot
+            continue
+        if stopped_at is not None:
+            raise InvalidComposedMovesError(
+                f"{phase_label}: pick up target slot {slot + 1} follows empty slot {stopped_at + 1} -- "
+                "fill the Pick Up order without gaps."
+            )
+        army_id = _parse_int(raw, field_label=f"{phase_label} Pick Up target {slot + 1}")
+        army = state.armies.get(army_id)
+        if (
+            army is None
+            or leader is None
+            or army.location != leader.location
+            or army.kingdom_id != leader.kingdom_id
+            or (army.recruited_this_turn and not army.is_mercenary)
+        ):
+            # Defense in depth: every dropdown-offered army_id is one
+            # pick_up_army_target_options() already filtered to exactly
+            # what this leader could Pick Up, but a direct, tampered
+            # POST could still name any other army id.
+            raise InvalidComposedMovesError(
+                f"{phase_label}: pick up target slot {slot + 1} isn't an army this leader can Pick Up."
+            )
+        army_ids.append(army_id)
+    if not army_ids:
+        raise InvalidComposedMovesError(
+            f"{phase_label}: choose at least one army to Pick Up (or 'Pick Up ALL unled armies here')."
+        )
+    return army_ids
+
+
 def _parse_search_tactics(
     form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
 ) -> list[int | str]:
@@ -1564,7 +1712,13 @@ def parse_phase_inputs(
     own ``leave_target_<leader_id>_<n>`` "to" dropdown plus its own
     repeated ``leave_army_<leader_id>_<n>_<slot>`` army-target
     dropdowns for ``extra`` (``_parse_leave_target()``/``_parse_leave_
-    army_targets()``, same module docstring's own Leave section).
+    army_targets()``, same module docstring's own Leave section). A
+    Pick Up (``ActionCode.PICK_UP``) phase also needs no real ``obj``
+    (forced to ``0``) and reads its own repeated ``pick_up_target_
+    <leader_id>_<n>_<slot>`` army-target dropdowns for ``extra``
+    (``_parse_pick_up_targets()``, same module docstring's own Pick Up
+    section) -- unlike Leave, it has no separate target dropdown, since
+    Pick Up always acts for the ordering leader himself.
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -1593,6 +1747,9 @@ def parse_phase_inputs(
             obj = 0
             target = _parse_leave_target(form, leader_id, n, phase_label=f"P{n}", state=state)
             extra = [target, *_parse_leave_army_targets(form, leader_id, n, phase_label=f"P{n}", state=state), -1]
+        elif action is ActionCode.PICK_UP:
+            obj = 0
+            extra = [0, *_parse_pick_up_targets(form, leader_id, n, phase_label=f"P{n}", state=state), -1]
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))

@@ -1653,6 +1653,92 @@ def test_dispatch_pick_up_all_only_attaches_unled_armies():
     assert state.armies[2].commanded_by == 2  # already led by someone else -> untouched
 
 
+# -- Bug fixes, sourced directly from the user (2026-10-29), designing
+# Pick Up's own move-composer UI: a specific army-id list can take over
+# a co-located army actively commanded by anyone, but only within the
+# acting leader's own Kingdom; and a freshly-levied (non-mercenary)
+# army can't be picked up the same turn it was recruited. ------------
+
+
+def test_dispatch_pick_up_specific_list_can_take_over_a_colocated_armys_own_kingdom_army():
+    # The user's own explicit choice: unlike Leave/Disband, a specific
+    # Pick Up list may reassign an army away from another co-located
+    # Hero of the SAME Kingdom (reorganizing one's own forces) -- no
+    # "must be unled" restriction for the specific-list path.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(2, 1, "Other Leader", location))
+    state.armies[army_id].commanded_by = 2
+    phase = PlanPhase(label="P0", action=ActionCode.PICK_UP, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert state.armies[army_id].commanded_by == LEADER_ID
+
+
+def test_dispatch_pick_up_specific_list_skips_a_different_kingdoms_colocated_army():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.armies[army_id].kingdom_id = 2
+    state.armies[army_id].commanded_by = None
+    phase = PlanPhase(label="P0", action=ActionCode.PICK_UP, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_pick_up_all_skips_a_different_kingdoms_unled_colocated_army():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.armies[army_id].kingdom_id = 2
+    state.armies[army_id].commanded_by = None
+    phase = PlanPhase(label="P0", action=ActionCode.PICK_UP, obj=0, extra=[255, 255, -1])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_pick_up_skips_an_army_recruited_this_same_turn():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.armies[army_id].commanded_by = None
+    state.armies[army_id].recruited_this_turn = True
+    phase = PlanPhase(label="P0", action=ActionCode.PICK_UP, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_pick_up_allows_a_mercenary_recruited_this_same_turn():
+    # Rulebook [3.9]'s own exception: a hired mercenary already existed
+    # with a real id before this turn, so it's exempt from the
+    # same-turn restriction even though `recruited_this_turn` happens
+    # to be set (a fresh levy and a mercenary hire share one Recruit
+    # code path -- see `turn/recruit_execution.py`, which never sets
+    # this flag for an actual mercenary hire; this test instead directly
+    # confirms the dispatcher's own exemption for `is_mercenary` armies,
+    # independent of how that combination could arise).
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.armies[army_id].commanded_by = None
+    state.armies[army_id].recruited_this_turn = True
+    state.armies[army_id].is_mercenary = True
+    phase = PlanPhase(label="P0", action=ActionCode.PICK_UP, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert state.armies[army_id].commanded_by == LEADER_ID
+
+
 def test_dispatch_disband_releases_army_into_mercenary_status():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P0", action=ActionCode.DISBAND, obj=0, extra=[0, army_id, -1])

@@ -6691,6 +6691,88 @@ def test_turns_compose_save_leave_order_with_no_target_chosen_shows_an_error(tmp
     assert b"choose at least one army to Leave" in response.data
 
 
+def test_turns_compose_shows_a_pick_up_target_dropdown_and_all_option(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"pick_up_target_" in response.data
+    assert b"Pick Up ALL unled armies here" in response.data
+
+
+def test_turns_compose_save_pick_up_order_encodes_the_target_army(tmp_path):
+    from ak_engine.models.game_state import ArmyState
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    army_id = state.new_army_id()
+    state.add_army(ArmyState(army_id, 1, ArmyType.BOWMEN, Quality.AVERAGE, king.location, commanded_by=None))
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.PICK_UP))
+    form[f"pick_up_target_{king.leader_id}_0_0"] = str(army_id)
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    pick_up_phase = king_block.plan.segments[0].phases["P0"]
+    assert pick_up_phase.action is ActionCode.PICK_UP
+    assert pick_up_phase.obj == 0
+    assert pick_up_phase.extra == [0, army_id, -1]
+
+
+def test_turns_compose_save_pick_up_all_encodes_the_sentinel(tmp_path):
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+    from ak_engine.turn.army_list_decode import ALL_ARMIES_SENTINEL
+    from ak_engine.webapp.moves_compose import PICK_UP_ALL_VALUE
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.PICK_UP))
+    form[f"pick_up_target_{king.leader_id}_0_0"] = PICK_UP_ALL_VALUE
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    pick_up_phase = king_block.plan.segments[0].phases["P0"]
+    assert pick_up_phase.extra == [0, ALL_ARMIES_SENTINEL, -1]
+
+
+def test_turns_compose_save_pick_up_order_with_no_target_chosen_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.PICK_UP))
+    # pick_up_target_<king>_0_0 deliberately left unset.
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"choose at least one army to Pick Up" in response.data
+
+
 def test_turns_compose_shows_encounter_plan_tactic_slots(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

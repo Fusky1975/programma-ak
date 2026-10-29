@@ -2352,6 +2352,19 @@ def test_replenish_turn_scoped_state_clears_unhireable_this_turn():
     assert state.armies[101].unhireable_this_turn is False
 
 
+def test_replenish_turn_scoped_state_clears_recruited_this_turn():
+    # Bug fix, sourced directly from the user (2026-10-29): otherwise a
+    # freshly levied army would stay permanently un-Pick-Up-able for
+    # the rest of the game (turn/plan_dispatch.py _dispatch_pick_up()).
+    state = _base_state()
+    army = ArmyState(101, None, ArmyType.LEGION, Quality.AVERAGE, ORIGIN, recruited_this_turn=True)
+    state.add_army(army)
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.armies[101].recruited_this_turn is False
+
+
 def test_replenish_turn_scoped_state_clears_oratory_boosted_this_turn():
     state = _base_state()
     state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, oratory_boosted_this_turn=True))

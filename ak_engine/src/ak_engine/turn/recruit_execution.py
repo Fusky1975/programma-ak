@@ -569,6 +569,7 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
                     location=location,
                     commanded_by=commanded_by,
                     movement_points=0,
+                    recruited_this_turn=True,
                 )
             )
             hired = False

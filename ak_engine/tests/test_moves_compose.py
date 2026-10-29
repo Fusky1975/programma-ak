@@ -48,6 +48,7 @@ from ak_engine.webapp.moves_compose import (
     ENCOUNTER_PLAN_CASTABLE_SPELLS,
     LEAVE_ALL_VALUE,
     LEAVE_GARRISON_VALUE,
+    PICK_UP_ALL_VALUE,
     InvalidComposedMovesError,
     build_composed_kingdom,
     disband_target_options,
@@ -56,6 +57,7 @@ from ak_engine.webapp.moves_compose import (
     leave_army_target_options,
     leave_target_options,
     parse_phase_inputs,
+    pick_up_army_target_options,
     province_options,
     recruit_target_options,
     recruit_type_options,
@@ -1655,3 +1657,182 @@ def test_build_composed_kingdom_round_trips_a_leave_order():
     assert phase0.action is ActionCode.LEAVE
     assert phase0.obj == 0
     assert phase0.extra == [2, 50, -1]
+
+
+def test_pick_up_army_target_options_lists_a_colocated_army_of_either_commander():
+    # The user's own explicit choice: unlike Leave/Disband, Pick Up may
+    # take over an army actively commanded by anyone, as long as it's
+    # of the acting leader's own Kingdom.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=2))
+
+    options = pick_up_army_target_options(state, KING_ID, slot=1)
+
+    values = [value for value, _label in options]
+    assert "50" in values
+
+
+def test_pick_up_army_target_options_excludes_a_different_kingdoms_colocated_army():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_army(ArmyState(50, 2, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None))
+
+    options = pick_up_army_target_options(state, KING_ID, slot=1)
+
+    values = [value for value, _label in options]
+    assert "50" not in values
+
+
+def test_pick_up_army_target_options_excludes_a_noncolocated_army():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 2), commanded_by=None))
+
+    options = pick_up_army_target_options(state, KING_ID, slot=1)
+
+    values = [value for value, _label in options]
+    assert "50" not in values
+
+
+def test_pick_up_army_target_options_excludes_an_army_recruited_this_turn():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None, recruited_this_turn=True))
+
+    options = pick_up_army_target_options(state, KING_ID, slot=1)
+
+    values = [value for value, _label in options]
+    assert "50" not in values
+
+
+def test_pick_up_army_target_options_includes_a_mercenary_recruited_this_turn():
+    state = _state()
+    state.add_army(
+        ArmyState(
+            50, 1, ArmyType.BOWMEN, Quality.VETERAN, HOME, commanded_by=None,
+            recruited_this_turn=True, is_mercenary=True,
+        )
+    )
+
+    options = pick_up_army_target_options(state, KING_ID, slot=1)
+
+    values = [value for value, _label in options]
+    assert "50" in values
+
+
+def test_pick_up_army_target_options_slot_zero_offers_pick_up_all():
+    state = _state()
+    options = pick_up_army_target_options(state, KING_ID, slot=0)
+    assert (PICK_UP_ALL_VALUE, "Pick Up ALL unled armies here") in options
+
+
+def test_pick_up_army_target_options_other_slots_do_not_offer_pick_up_all():
+    state = _state()
+    options = pick_up_army_target_options(state, KING_ID, slot=1)
+    values = [value for value, _label in options]
+    assert PICK_UP_ALL_VALUE not in values
+
+
+def test_pick_up_phase_reads_its_own_dropdown_not_the_generic_object_field():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PICK_UP))
+    form[f"pick_up_target_{KING_ID}_0_0"] = "50"
+    form[f"obj_{KING_ID}_0"] = "999"  # must be ignored for a Pick Up phase
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    pick_up_phase = phases[0]
+    assert pick_up_phase.action is ActionCode.PICK_UP
+    assert pick_up_phase.obj == 0
+    assert pick_up_phase.extra == [0, 50, -1]
+
+
+def test_pick_up_phase_pick_up_all_collapses_to_the_sentinel():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PICK_UP))
+    form[f"pick_up_target_{KING_ID}_0_0"] = PICK_UP_ALL_VALUE
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [0, ALL_ARMIES_SENTINEL, -1]
+
+
+def test_pick_up_phase_pick_up_all_combined_with_another_slot_is_rejected():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PICK_UP))
+    form[f"pick_up_target_{KING_ID}_0_0"] = PICK_UP_ALL_VALUE
+    form[f"pick_up_target_{KING_ID}_0_1"] = "50"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "can't be combined" in str(exc)
+
+
+def test_pick_up_phase_rejects_a_gap_between_slots():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None))
+    state.add_army(ArmyState(51, 1, ArmyType.AXEMEN, Quality.AVERAGE, HOME, commanded_by=None))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PICK_UP))
+    form[f"pick_up_target_{KING_ID}_0_0"] = "50"
+    form[f"pick_up_target_{KING_ID}_0_2"] = "51"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "follows empty slot" in str(exc)
+
+
+def test_pick_up_phase_rejects_an_army_this_leader_cannot_pick_up_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None, recruited_this_turn=True))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PICK_UP))
+    form[f"pick_up_target_{KING_ID}_0_0"] = "50"  # recruited this turn, never offered in the dropdown
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "isn't an army this leader can Pick Up" in str(exc)
+
+
+def test_pick_up_phase_without_choosing_any_target_is_rejected():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PICK_UP))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose at least one army to Pick Up" in str(exc)
+
+
+def test_build_composed_kingdom_round_trips_a_pick_up_order():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PICK_UP))
+    form[f"pick_up_target_{KING_ID}_0_0"] = "50"
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.PICK_UP
+    assert phase0.obj == 0
+    assert phase0.extra == [0, 50, -1]

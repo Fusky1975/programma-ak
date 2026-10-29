@@ -605,6 +605,18 @@ class ArmyState:
     # (combat, office eligibility, spying: "no Kingdom controls this at
     # all") is a separate, correct, unrelated concept and is left alone.
     is_mercenary: bool = False
+    # Bug fix, sourced directly from the user (2026-10-29), rulebook
+    # [3.9]: "Non è invece possibile usare [Pick Up] nello stesso turno
+    # in cui un'unità militare viene reclutata... ad eccezione delle
+    # unità mercenarie." Set True only by a fresh levy (``turn/recruit_
+    # execution.py``'s own non-mercenary branch) -- a hired mercenary is
+    # explicitly exempted by that same text ("already constituted, with
+    # their own id") and never sets this. Reset to False at the end of
+    # every `run_turn()` call, alongside `unhireable_this_turn`/
+    # `movement_points` (Phase 573) -- see `turn/plan_dispatch.py
+    # _dispatch_pick_up()`'s own 2026-10-29 docstring addendum for the
+    # real consumer.
+    recruited_this_turn: bool = False
     # Phase 521: AdvancedAbility.MARCH_CAVALRY/_INFANTRY (+ Mastery tiers)
     # -- rulebook [6.2]: "The increased army-movement allowed by the March
     # and Naval abilities is always calculated at the moment an army

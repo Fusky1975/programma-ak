@@ -40,6 +40,11 @@ def test_recruits_and_debits_exact_cost():
     assert state.armies[new_army_id].army_type == ArmyType.BOWMEN
     assert state.armies[new_army_id].location == LOCATION
     assert state.armies[new_army_id].commanded_by is None
+    # Bug fix, sourced directly from the user (2026-10-29), rulebook
+    # [3.9]: a fresh levy can't be Pick Up'd the same turn it was
+    # recruited -- turn/plan_dispatch.py _dispatch_pick_up()'s own
+    # real consumer of this flag.
+    assert state.armies[new_army_id].recruited_this_turn is True
 
 
 def test_new_army_commanded_by_requested_leader():
@@ -446,6 +451,10 @@ def test_recruit_hires_colocated_mercenary_instead_of_levying_new_army():
     assert state.armies[999].commanded_by is None
     assert state.armies[999].quality == Quality.VETERAN  # preserved, not reset to Average
     assert len(state.armies) == 1  # no new army created
+    # Rulebook [3.9]'s own exception: a hired mercenary "already
+    # existed, with its own id" -- exempt from the same-turn Pick Up
+    # restriction, unlike a fresh levy.
+    assert state.armies[999].recruited_this_turn is False
     # Bug fix (2026-10-25): a hired mercenary is no longer "available to
     # Recruit" -- see `ArmyState.is_mercenary`'s own docstring.
     assert state.armies[999].is_mercenary is False

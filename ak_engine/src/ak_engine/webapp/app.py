@@ -83,6 +83,8 @@ from ak_engine.webapp.moves_compose import (
     LEAVE_ALL_VALUE,
     LEAVE_SLOT_COUNT,
     PHASE_COUNT,
+    PICK_UP_ALL_VALUE,
+    PICK_UP_SLOT_COUNT,
     RECRUIT_TYPE_SLOT_COUNT,
     SAY_TEXT_MAX_LENGTH,
     TACTIC_SLOT_COUNT,
@@ -94,6 +96,7 @@ from ak_engine.webapp.moves_compose import (
     kingdom_leaders_for_compose,
     leave_army_target_options,
     leave_target_options,
+    pick_up_army_target_options,
     province_options,
     recruit_target_options,
     recruit_type_options,
@@ -3056,6 +3059,16 @@ def create_app(games_root: Path | None = None) -> Flask:
             leave_army_choices_by_leader={
                 leader.leader_id: [
                     leave_army_target_options(state, leader.leader_id, slot=slot) for slot in range(LEAVE_SLOT_COUNT)
+                ]
+                for leader in roster
+            },
+            pick_up_action_value=int(ActionCode.PICK_UP),
+            pick_up_slot_numbers=range(PICK_UP_SLOT_COUNT),
+            pick_up_all_value=PICK_UP_ALL_VALUE,
+            pick_up_choices_by_leader={
+                leader.leader_id: [
+                    pick_up_army_target_options(state, leader.leader_id, slot=slot)
+                    for slot in range(PICK_UP_SLOT_COUNT)
                 ]
                 for leader in roster
             },

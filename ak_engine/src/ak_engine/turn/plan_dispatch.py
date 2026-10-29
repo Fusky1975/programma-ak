@@ -1225,6 +1225,43 @@ def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
     established "a missing acting leader can't act at all" stance: with
     no leader to resolve a location from, every explicitly-listed army
     is skipped and an ``all_armies`` request finds nothing to pick up.
+
+    **Two bug fixes, sourced directly from the user (2026-10-29), the
+    fuller rulebook [3.9] text they pasted while designing this
+    Action's own move-composer UI**:
+
+    (1) A specific army-id list used to only check co-location, with no
+    check at all that the targeted army belongs to the acting leader's
+    own Kingdom. Investigated with the user whether a specific list
+    should instead be restricted to *unled* armies only (mirroring
+    ``all_armies``'s own restriction) -- their own call: no, a specific
+    Pick Up can still take over an army actively commanded by *anyone*
+    co-located, but only within the acting leader's own Kingdom (e.g.
+    reorganizing command among one's own Heroes) -- never a different
+    Kingdom's army, allied or not. Every target, whether from
+    ``all_armies`` or a specific list, now requires ``army.kingdom_id
+    == acting_leader.kingdom_id``.
+
+    (2) "Non è invece possibile usare questo ordine nello stesso turno
+    in cui un'unità militare viene reclutata... ad eccezione delle
+    unità mercenarie" -- a real precondition this project never
+    enforced at all: nothing previously tracked "this specific army was
+    freshly levied this turn" (``ProvinceState.recruited_this_turn`` is
+    a per-type *count* for the Recruit per-turn limit, not an identity
+    marker), so a move file listing Recruit in an earlier phase and
+    Pick Up (naming the newly assigned id) in a later phase of the
+    *same* turn could actually succeed -- a real, confirmed exploit
+    this project's own deterministic, sequential ``GameState.new_
+    army_id()`` makes the new id straightforwardly predictable for,
+    especially when the GM composer itself already shows the live
+    state. ``ArmyState.recruited_this_turn`` (new field, reset to
+    ``False`` alongside ``unhireable_this_turn`` in ``turn/turn_
+    processor.py _replenish_turn_scoped_state()``) is set ``True`` only
+    by a fresh levy (``turn/recruit_execution.py``'s own non-mercenary
+    branch) -- a hired mercenary is explicitly exempted by the
+    rulebook's own text ("already constituted, with their own id"), so
+    ``execute_recruit()`` never sets it there. A target carrying this
+    flag is skipped here, same as any other ineligible target.
     """
 
     request = decode_army_list_phase(phase)
@@ -1244,9 +1281,14 @@ def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
 
     for army_id in target_ids:
         army = state.armies.get(army_id)
-        if army is None or army.location != acting_leader.location:
+        if (
+            army is None
+            or army.location != acting_leader.location  # rulebook: can only pick up a co-located army
+            or army.kingdom_id != acting_leader.kingdom_id
+            or (army.recruited_this_turn and not army.is_mercenary)
+        ):
             result.skipped.append(army_id)
-            continue  # rulebook: can only pick up a co-located army
+            continue
         army.commanded_by = leader_id
         result.succeeded.append(army_id)
 
