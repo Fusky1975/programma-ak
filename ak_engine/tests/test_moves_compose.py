@@ -1934,7 +1934,8 @@ def test_trade_phase_reads_its_own_dropdowns_for_an_item_gift():
 
 def test_trade_phase_gold_gift_reads_the_free_text_amount():
     state = _state()
-    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME, is_king=True))
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="Bram", location=HOME, is_king=True))
     form = _all_defend_form(KING_ID)
     form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRADE))
     form[f"trade_recipient_{KING_ID}_0"] = "2"
@@ -1990,6 +1991,26 @@ def test_trade_phase_rejects_a_non_positive_gold_amount():
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "must be a positive number" in str(exc)
+
+
+def test_trade_phase_rejects_a_gold_gift_to_the_givers_own_kingdom():
+    # Bug fix, sourced directly from the user (2026-10-29), independently
+    # confirmed in both RULES.AK and ADDEND.AK: a gold gift's recipient
+    # must belong to a genuinely different Kingdom -- unlike the item
+    # path, which crosses Kingdoms freely with no such restriction.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME, is_king=True))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_recipient_{KING_ID}_0"] = "2"
+    form[f"trade_gift_{KING_ID}_0"] = "gold"
+    form[f"trade_gold_{KING_ID}_0"] = "5"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "must belong to a different Kingdom" in str(exc)
 
 
 def test_build_composed_kingdom_round_trips_a_trade_item_give():

@@ -72,6 +72,41 @@ def test_execute_gold_give_cap_is_exactly_10_percent():
     assert state.kingdoms[GIVER_KINGDOM].treasury == 225
 
 
+def test_execute_gold_give_floor_allows_10_gold_when_10_percent_is_lower():
+    # Bug fix, sourced directly from the user (2026-10-29), independently
+    # confirmed in both RULES.AK and ADDEND.AK verbatim: "he may always
+    # give out at least 10 gold if he has it in his treasury." 10% of
+    # 50 is 5, but the King has 50 in treasury, so the real floor of 10
+    # applies instead.
+    state = _state(giver_treasury=50)
+
+    result = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 10)
+
+    assert result.applied is True
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 40
+
+
+def test_execute_gold_give_floor_still_rejects_more_than_the_floor():
+    state = _state(giver_treasury=50)
+
+    result = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 11)
+
+    assert result.applied is False
+    assert "exceeds 10% treasury cap" in result.reason
+
+
+def test_execute_gold_give_floor_never_exceeds_the_givers_real_treasury():
+    # "if he has it in his treasury" -- with only 7 in treasury, the
+    # King can't reach the 10-gold floor at all; the ordinary 10% cap
+    # (0, floored) still applies.
+    state = _state(giver_treasury=7)
+
+    result = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 10)
+
+    assert result.applied is False
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 7
+
+
 def test_execute_gold_give_rejects_non_king_giver():
     state = _state(giver_is_king=False)
 
@@ -238,16 +273,42 @@ def test_execute_give_rejects_not_co_located():
     assert result.reason == "not co-located with recipient"
 
 
-def test_execute_give_rejects_non_king_recipient():
-    # "You can give limited amounts of gold to other Kings" -- the
-    # recipient, not just the giver, must be a King.
+def test_execute_give_gold_path_allows_a_hero_recipient_of_a_different_kingdom():
+    # Bug fix, sourced directly from the user (2026-10-29), independently
+    # confirmed in both RULES.AK and ADDEND.AK verbatim: "giving it to
+    # another player's character (King or Hero)" -- a Hero recipient of
+    # a genuinely different Kingdom is just as valid as a King.
     state = _state_with_recipient(recipient_is_king=False)
     request = TradeRequest(obj=100, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
 
     result = execute_give(state, GIVER_LEADER, request)
 
+    assert result.applied is True
+    assert result.gold_transferred == 100
+
+
+def test_execute_give_gold_path_rejects_a_recipient_of_the_givers_own_kingdom():
+    # Confirmed with the user: "another player's character" requires a
+    # genuinely different Kingdom, not merely "not a King."
+    state = _state_with_recipient(recipient_is_king=False)
+    state.leaders[RECIPIENT_LEADER].kingdom_id = GIVER_KINGDOM
+    request = TradeRequest(obj=100, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
     assert result.applied is False
-    assert result.reason == "gold Give recipient must be a King"
+    assert result.reason == "gold Give recipient must belong to a different Kingdom"
+
+
+def test_execute_give_gold_path_rejects_a_recipient_with_no_kingdom():
+    state = _state_with_recipient(recipient_is_king=False)
+    state.leaders[RECIPIENT_LEADER].kingdom_id = None
+    request = TradeRequest(obj=100, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
+    assert result.applied is False
+    assert result.reason == "gold Give recipient must belong to a different Kingdom"
 
 
 def test_execute_give_gold_path_still_enforces_the_10_percent_cap():

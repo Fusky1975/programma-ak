@@ -6818,15 +6818,17 @@ def test_turns_compose_save_give_order_encodes_the_item_and_recipient(tmp_path):
 
 
 def test_turns_compose_save_give_gold_order_encodes_the_amount(tmp_path):
-    from ak_engine.models.game_state import LeaderState
+    from ak_engine.models.game_state import KingdomState, LeaderState
     from ak_engine.parser.k1_moves import parse_k1_moves_file
 
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
     _, state = open_game(tmp_path, meta.slug)
     king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    other_kingdom_id = max(state.kingdoms) + 1
     other_id = max(state.leaders) + 1
-    state.add_leader(LeaderState(other_id, 1, "Other King", king.location, is_king=True))
+    state.add_kingdom(KingdomState(other_kingdom_id, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(other_id, other_kingdom_id, "Other King", king.location, is_king=True))
     save_game(tmp_path, meta.slug, state)
     roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
 

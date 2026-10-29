@@ -643,34 +643,62 @@ Pascal ``action`` enum at all). Everything about this Action was
 already fully implemented and tested end-to-end across several
 earlier phases (132/133/140/214/397/547/667/713, see ``turn/trade_
 decode.py``/``turn/trade_execution.py``'s own docstrings for the full
-history) before this round -- no engine bug found or fixed here, only
-a composer UI built against already-correct, already-sourced
-behavior. ``obj`` is overloaded: an item id the giver actually owns
-(checked first, takes priority -- "si passa l'oggetto e non l'oro"),
-or else a gold amount (giver and recipient must both be Kings, capped
-at 10% of the giver's treasury); ``extra`` is ``[0, recipient_leader_
-id]`` -- no ``-1`` terminator, confirmed from this project's own real-
-shaped test fixtures (``tests/test_trade_decode.py``), unlike every
-List-shaped action designed so far.
+history) before this round -- no engine bug found or fixed in *this*
+round, only a composer UI built against already-correct, already-
+sourced behavior. ``obj`` is overloaded: an item id the giver actually
+owns (checked first, takes priority -- "si passa l'oggetto e non
+l'oro"), or else a gold amount (giver must be a King, recipient must
+belong to a genuinely different Kingdom, King or Hero either way,
+capped at 10% of the giver's treasury with a real 10-gold floor -- see
+below); ``extra`` is ``[0, recipient_leader_id]`` -- no ``-1``
+terminator, confirmed from this project's own real-shaped test
+fixtures (``tests/test_trade_decode.py``), unlike every List-shaped
+action designed so far.
+
+**2026-10-29 addendum -- the user's own fuller Italian rulebook text
+for [3.18] found two real engine bugs in a follow-up round**, both
+independently confirmed in RULES.AK/ADDEND.AK and fixed in ``turn/
+trade_execution.py`` (see that module's own 2026-10-29 docstring
+addendum for the full citations): the 10% gold cap gained a real
+minimum floor of 10 gold (``GOLD_GIVE_MINIMUM_FLOOR``, never above
+what the giver actually has), and the gold recipient check was
+loosened from "must be a King" to "must belong to a genuinely
+different Kingdom" (a Hero recipient is equally valid -- the earlier
+reading over-read a shorter English excerpt). This composer's own
+``_parse_trade_gift()`` now also enforces that same different-Kingdom
+requirement for a gold gift specifically (the item path has no such
+restriction), matching the engine rather than only discovering the
+mismatch at turn-processing time. Two further things that same fuller
+text confirmed as real, sourced mechanics were deliberately NOT
+touched, per the user's own explicit choice: the 10% cap still uses
+the giver's live treasury rather than a "treasury at the start of the
+gameturn" snapshot (no such snapshot exists anywhere in ``GameState``
+today), and the real conditional/barter Give ("the gift is made only
+if the recipient Gives back a specified item in the same phase") has
+no execution-layer support at all -- see ``turn/trade_execution.py``'s
+own docstring for why neither is a quick fix.
 
 The composer gets a dedicated recipient dropdown (``trade_recipient_
 options()``) and a dedicated gift dropdown (``trade_gift_options()``,
 toggling a free-text gold-amount field, the same reveal-on-selection
 shape Say's own free-text field already uses) instead of raw Object/
 Extra integers. The recipient dropdown offers every co-located leader
-(any Kingdom -- Give explicitly crosses Kingdoms freely, unlike Leave,
-so there's no alliance filter here), plus two further, real, already-
-implemented cases worth surfacing rather than leaving the GM to
-discover by trial and error: "Self," shown only when the acting leader
-currently holds ``Office.CURATOR`` (rerouting to ``execute_curator_
-research()`` -- "the Guild will research any item number in the
-world"), and the blackmailer's own King, shown even when NOT co-located,
-when the acting leader's own Kingdom carries an active ``KingdomState.
-active_blackmail`` claim (``AdvancedAbility.SPY_BLACKMAIL``'s own
-documented co-location waiver for paying it off). The gift dropdown
-lists this leader's own currently-owned items (excluding a Valhalla
-visitor's own fixed item, which can never be given away) plus a "Gold"
-option. Deliberately NOT exposed here: ``turn/trade_decode.py``'s own
+(any Kingdom -- the item path explicitly crosses Kingdoms freely,
+unlike Leave, so there's no alliance filter here; the gold path's own
+different-Kingdom requirement is instead enforced at parse time, once
+both the recipient and the gift are known), plus two further, real,
+already-implemented cases worth surfacing rather than leaving the GM
+to discover by trial and error: "Self," shown only when the acting
+leader currently holds ``Office.CURATOR`` (rerouting to ``execute_
+curator_research()`` -- "the Guild will research any item number in
+the world"), and the blackmailer's own King, shown even when NOT
+co-located, when the acting leader's own Kingdom carries an active
+``KingdomState.active_blackmail`` claim (``AdvancedAbility.SPY_
+BLACKMAIL``'s own documented co-location waiver for paying it off).
+The gift dropdown lists this leader's own currently-owned items
+(excluding a Valhalla visitor's own fixed item, which can never be
+given away) plus a "Gold" option. Deliberately NOT exposed here:
+``turn/trade_decode.py``'s own
 Phase 397 Trade->Cast rewrite for the 10 secret spells (a self-targeted
 Give naming one of their ordinals as ``obj`` silently becomes a Cast
 instead) -- this composer always encodes ``extra[0]`` as ``0``, so that
@@ -1681,14 +1709,20 @@ def _parse_trade_recipient(form: dict[str, str], leader_id: int, n: int, *, phas
     return target_id
 
 
-def _parse_trade_gift(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
+def _parse_trade_gift(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState, recipient_id: int
+) -> int:
     """Reads a Give phase's own ``trade_gift_<leader_id>_<n>`` dropdown
     (an owned item id, or ``TRADE_GOLD_VALUE``) and, for the gold case,
     its own ``trade_gold_<leader_id>_<n>`` free-text amount field, into
     the real ``obj`` encoding -- an item id the giver actually owns, or
     a positive gold amount. See ``trade_gift_options()``'s own
     docstring for why an owned item is never offered if it's a
-    Valhalla visitor's own fixed item.
+    Valhalla visitor's own fixed item. ``recipient_id`` is the already-
+    parsed ``_parse_trade_recipient()`` result, needed here only to
+    enforce the gold path's own different-Kingdom requirement
+    (``turn/trade_execution.py execute_give()``'s own 2026-10-29
+    addendum) -- the item path has no such restriction.
     """
 
     raw = form.get(f"trade_gift_{leader_id}_{n}", "")
@@ -1699,6 +1733,16 @@ def _parse_trade_gift(form: dict[str, str], leader_id: int, n: int, *, phase_lab
         amount = _parse_int(gold_raw, field_label=f"{phase_label} Give gold amount")
         if amount <= 0:
             raise InvalidComposedMovesError(f"{phase_label}: Give gold amount must be a positive number.")
+        leader = state.leaders.get(leader_id)
+        recipient = state.leaders.get(recipient_id)
+        if (
+            leader is not None
+            and recipient is not None
+            and (recipient.kingdom_id is None or recipient.kingdom_id == leader.kingdom_id)
+        ):
+            raise InvalidComposedMovesError(
+                f"{phase_label}: a gold gift's recipient must belong to a different Kingdom."
+            )
         return amount
 
     item_id = _parse_int(raw, field_label=f"{phase_label} Give item")
@@ -1955,8 +1999,11 @@ def parse_phase_inputs(
             obj = 0
             extra = [0, *_parse_pick_up_targets(form, leader_id, n, phase_label=f"P{n}", state=state), -1]
         elif action is ActionCode.TRADE:
-            obj = _parse_trade_gift(form, leader_id, n, phase_label=f"P{n}", state=state)
-            extra = [0, _parse_trade_recipient(form, leader_id, n, phase_label=f"P{n}", state=state)]
+            trade_recipient_id = _parse_trade_recipient(form, leader_id, n, phase_label=f"P{n}", state=state)
+            obj = _parse_trade_gift(
+                form, leader_id, n, phase_label=f"P{n}", state=state, recipient_id=trade_recipient_id
+            )
+            extra = [0, trade_recipient_id]
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))
