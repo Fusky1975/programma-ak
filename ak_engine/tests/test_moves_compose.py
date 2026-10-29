@@ -39,13 +39,16 @@ from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.parser.k1_moves_writer import write_k1_moves_file
+from ak_engine.turn.army_list_decode import ALL_ARMIES_SENTINEL
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.webapp.moves_compose import (
+    DISBAND_ALL_VALUE,
     EMPTY_SEARCH_EXTRA,
     ENCOUNTER_PLAN_CASTABLE_SPELLS,
     InvalidComposedMovesError,
     build_composed_kingdom,
+    disband_target_options,
     feature_options,
     item_options,
     parse_phase_inputs,
@@ -1228,3 +1231,177 @@ def test_build_composed_kingdom_round_trips_a_recruit_order():
     phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
     assert phase0.obj == KING_ID
     assert phase0.extra == [0, int(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN]), -1]
+
+
+def test_disband_target_options_lists_an_army_this_leader_commands():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+
+    options = disband_target_options(state, KING_ID, slot=1)
+
+    values = dict(options)
+    assert "Bowmen (Average)" in values["50"]
+    assert "Aldric" in values["50"]
+    assert "Numenor" in values["50"]
+
+
+def test_disband_target_options_labels_a_garrison_commanded_army():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None))
+
+    options = disband_target_options(state, KING_ID, slot=1)
+
+    values = dict(options)
+    assert "Garrison" in values["50"]
+
+
+def test_disband_target_options_slot_zero_offers_disband_all():
+    state = _state()
+    options = disband_target_options(state, KING_ID, slot=0)
+    assert (DISBAND_ALL_VALUE, "Disband ALL I command") in options
+
+
+def test_disband_target_options_other_slots_do_not_offer_disband_all():
+    state = _state()
+    options = disband_target_options(state, KING_ID, slot=1)
+    values = [value for value, _label in options]
+    assert DISBAND_ALL_VALUE not in values
+
+
+def test_disband_target_options_excludes_a_different_kingdoms_army():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_army(ArmyState(50, 2, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None))
+
+    options = disband_target_options(state, KING_ID, slot=1)
+
+    values = [value for value, _label in options]
+    assert "50" not in values
+
+
+def test_disband_target_options_for_a_hero_excludes_a_noncolocated_army():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(3, 2), is_king=False))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+
+    options = disband_target_options(state, 2, slot=1)
+
+    values = [value for value, _label in options]
+    assert "50" not in values
+
+
+def test_disband_target_options_for_a_king_includes_a_noncolocated_army():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 2), commanded_by=None))
+
+    options = disband_target_options(state, KING_ID, slot=1)
+
+    values = [value for value, _label in options]
+    assert "50" in values
+
+
+def test_disband_phase_reads_its_own_dropdowns_not_the_generic_object_field():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.DISBAND))
+    form[f"disband_target_{KING_ID}_0_0"] = "50"
+    form[f"obj_{KING_ID}_0"] = "999"  # must be ignored for a Disband phase
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    disband_phase = phases[0]
+    assert disband_phase.action is ActionCode.DISBAND
+    assert disband_phase.obj == 0
+    assert disband_phase.extra == [0, 50, -1]
+
+
+def test_disband_phase_disband_all_collapses_to_the_sentinel():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.DISBAND))
+    form[f"disband_target_{KING_ID}_0_0"] = DISBAND_ALL_VALUE
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [0, ALL_ARMIES_SENTINEL, -1]
+
+
+def test_disband_phase_disband_all_combined_with_another_slot_is_rejected():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.DISBAND))
+    form[f"disband_target_{KING_ID}_0_0"] = DISBAND_ALL_VALUE
+    form[f"disband_target_{KING_ID}_0_1"] = "50"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "can't be combined" in str(exc)
+
+
+def test_disband_phase_rejects_a_gap_between_slots():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    state.add_army(ArmyState(51, 1, ArmyType.AXEMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.DISBAND))
+    form[f"disband_target_{KING_ID}_0_0"] = "50"
+    form[f"disband_target_{KING_ID}_0_2"] = "51"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "follows empty slot" in str(exc)
+
+
+def test_disband_phase_rejects_an_army_this_leader_cannot_disband_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_army(ArmyState(50, 2, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.DISBAND))
+    form[f"disband_target_{KING_ID}_0_0"] = "50"  # a different Kingdom's army, never offered in the dropdown
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "isn't an army this leader can Disband" in str(exc)
+
+
+def test_disband_phase_without_choosing_any_target_is_rejected():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.DISBAND))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose at least one army to Disband" in str(exc)
+
+
+def test_build_composed_kingdom_round_trips_a_disband_order():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.DISBAND))
+    form[f"disband_target_{KING_ID}_0_0"] = "50"
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.DISBAND
+    assert phase0.obj == 0
+    assert phase0.extra == [0, 50, -1]

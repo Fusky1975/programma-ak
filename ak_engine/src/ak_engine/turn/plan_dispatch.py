@@ -1171,6 +1171,41 @@ def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
 def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListExecutionResult:
     """Phase 420: returns a real ``ArmyListExecutionResult`` -- see
     ``_dispatch_leave()``'s own note above.
+
+    **Two bug fixes, sourced directly from the user (2026-10-29), the
+    fuller rulebook [3.6] text they pasted while designing this
+    Action's own move-composer UI**: (1) a King's own bypass used to
+    check co-location only, never that the targeted army actually
+    belongs to his own Kingdom -- "Se il comando lo fa il RE può
+    sciogliere qualsiasi unità militare del regno anche quelle al
+    garrison commander... o comandate da un altro eroe (sempre di
+    quel regno)" names the Kingdom boundary explicitly; a King could
+    previously target *any* ``army_id`` anywhere on the map, including
+    another Kingdom's. (2) An ordinary Hero's own co-location check had
+    the same gap -- the rulebook text only ever discusses disbanding
+    one's own forces, so a Hero merely standing in the same province as
+    a foreign army could disband it too, confirmed with the user as
+    unintended rather than a real mechanic. Both branches now also
+    require ``army.kingdom_id == acting_leader.kingdom_id``; the King's
+    own Phase 40 bypass still only ever waives *co-location*, never
+    this Kingdom-ownership check.
+
+    (3) The disbanded army now also gets ``is_mercenary = True`` -- the
+    rulebook text's own "i suoi soldati si trasformano in mercenari"
+    ("its soldiers turn into mercenaries"), and the real, dedicated flag
+    the rest of the engine already keys "is this army an ownerless,
+    hireable mercenary band" on (``GameState.mercenaries_at()``, read by
+    both ``turn/recruit_execution.py`` and ``turn/move_execution.py
+    resolve_wandering_mercenary_following()`` -- the latter is this
+    same rulebook paragraph's own "mercenaries in a province a general
+    passes through may follow him instead of staying put," the
+    mechanic the user's text says exists specifically to close the
+    disband-to-dodge-then-rehire loophole). Clearing ``kingdom_id``/
+    ``commanded_by`` alone was never a safe proxy for this (an unowned
+    native garrison also has ``kingdom_id=None`` but isn't a
+    mercenary) -- without this flag, a freshly-disbanded army silently
+    couldn't be followed or re-hired, exactly the loophole this
+    mechanic exists to close.
     """
 
     request = decode_army_list_phase(phase)
@@ -1187,15 +1222,21 @@ def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
             result.skipped.append(army_id)
             continue
         # "Releases the army(s) into mercenary status" (rulebook [3.6]:
-        # "A King may Disband any army at any time. A character can
-        # Disband an army only if he is in the same province.") --
-        # ownerless and unled, available to be hired later. A Hero must
-        # be co-located with the army; a King (Phase 40) bypasses that.
-        if not is_king and (acting_leader is None or army.location != acting_leader.location):
+        # "A King may Disband any army of his Kingdom at any time. A
+        # character can Disband an army of his Kingdom only if he is in
+        # the same province.") -- ownerless and unled, available to be
+        # hired later. Every target must belong to the acting leader's
+        # own Kingdom; a Hero must additionally be co-located with the
+        # army, a King (Phase 40) bypasses only that co-location check.
+        if acting_leader is None or army.kingdom_id != acting_leader.kingdom_id:
+            result.skipped.append(army_id)
+            continue
+        if not is_king and army.location != acting_leader.location:
             result.skipped.append(army_id)
             continue
         army.kingdom_id = None
         army.commanded_by = None
+        army.is_mercenary = True
         result.succeeded.append(army_id)
 
     return result

@@ -475,6 +475,57 @@ slot) rather than the generic non-native-ownership one, since
 the new check on top would have made a first Dinosaur unit permanently
 unrecruitable).
 
+**Disband/Fire Army(s) [DI], the second non-Search-tactic Action
+designed** (2026-10-29, sourced directly from the user, rulebook [3.6]
+text pasted verbatim): "L'unità militare viene così sciolta e i suoi
+soldati si trasformano in mercenari. Un Re può sciogliere qualsiasi
+unità militare in qualunque momento. Un personaggio può sciogliere una
+unità militare solo se si trova nella stessa provincia... Per
+sciogliere tutte le unità militari che il personaggio comanda,
+scrivere: '[DI]sband [All]'... Se il comando lo fa il RE può sciogliere
+qualsiasi unità militare del regno anche quelle al garrison commander
+di una provincia del regno o comandate da un altro eroe (sempre di
+quel regno)" -- independently confirmed against ``turn/army_list_
+decode.py decode_army_list_phase()`` (shared with Leave/Pick_Up) and
+``turn/plan_dispatch.py _dispatch_disband()``: ``obj`` is always ``0``
+and unconfirmed/unread (forced to ``0`` here, the same "Explore needs
+no real obj" shape); ``extra`` is ``[0, <army id>, ..., -1]``, or
+``[0, 255, -1]`` for "DI ALL" (``ArmyType``'s own ``NO_LEADER_
+SENTINEL``/255-reuse, ``ALL_ARMIES_SENTINEL`` in that module) --
+"every army this leader personally commands" (``GameState.armies_
+commanded_by()``), confirmed distinct from "every army of the whole
+Kingdom."
+
+This investigation found two real engine bugs, not just a composer
+gap -- fixed in ``turn/plan_dispatch.py`` (see ``_dispatch_disband()``'s
+own 2026-10-29 docstring addendum for the full citations), both
+confirmed with the user before fixing: (1) a disbanded army never got
+``ArmyState.is_mercenary = True``, so it could never actually be
+followed by a passing general (``turn/move_execution.py resolve_
+wandering_mercenary_following()``, the exact mechanic this rulebook
+paragraph's own "I mercenari possono seguire un generale" addendum
+describes) or re-hired via Recruit -- the "turn mercenary" half of
+Disband was silently inert; (2) neither a King's own co-location bypass
+nor an ordinary Hero's co-location check verified the targeted army
+actually belongs to the acting leader's own Kingdom, so either could
+previously target *any* army anywhere in the game, including another
+Kingdom's -- now both require ``army.kingdom_id == acting_leader.
+kingdom_id``, and only co-location is ever bypassed for a King.
+
+The composer gets a dedicated, repeated army-target dropdown
+(``disband_target_options()``, ``DISBAND_SLOT_COUNT`` slots, the same
+no-gaps convention Search/Recruit's own slots already use) instead of
+raw Object/Extra integers -- pre-filtered to exactly what this leader
+could actually disband post-fix (every army of this leader's own
+Kingdom; a King's own list spans every province of the Kingdom, a
+Hero's is narrowed further to the leader's own current location), so
+there's no way to compose an order the engine would just silently skip
+anyway. Slot 0 alone also offers a dedicated "Disband ALL I command"
+pseudo-option (``DISBAND_ALL_VALUE``) -- mirroring Talk's own "only
+slot 0" shape -- which, when chosen, must be the *only* thing filled in
+(rejected otherwise, since a real order is either a specific list or
+the lone ``255`` sentinel, never both at once).
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
 and a nested Hire/Charm/Resurrection plan (``PlanPhase.nested_plan``)
@@ -500,7 +551,7 @@ from dataclasses import dataclass
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_BY_ORDINAL, ARMY_TYPE_NAME, NO_LEADER_SENTINEL
 from ak_engine.models.enums import SPELL_NAME, TACTICS_WITH_SUB_OBJECT, ActionCode, Maneuver, Spell
 from ak_engine.models.feature import FEATURE_TYPE_NAMES
-from ak_engine.models.game_state import GameState, LeaderState
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord
@@ -508,7 +559,8 @@ from ak_engine.models.monster import MONSTER_NAMES
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_NAME, TREASURE_WAND_SPELL, TreasureCategory
 from ak_engine.report.turn_report import real_province_number
-from ak_engine.turn.combat import Quality
+from ak_engine.turn.army_list_decode import ALL_ARMIES_SENTINEL
+from ak_engine.turn.combat import QUALITY_NAME, Quality
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.recruit import is_army_type_compatible_with_race, recruit_limit
 
@@ -532,6 +584,22 @@ TACTIC_SLOT_COUNT = 7
 # maximum the way TACTIC_SLOT_COUNT has one; 8 comfortably covers that
 # worked example with room to spare.
 RECRUIT_TYPE_SLOT_COUNT = 8
+
+# A generous slot count for a Disband phase's own repeated army-target
+# dropdowns -- a King's Kingdom-wide roster could plausibly list more
+# than a few armies to dissolve at once, but there's no fixed
+# real-sample maximum here either (only one real DISBAND sample exists
+# at all, a single army id -- ``turn/army_list_decode.py``'s own
+# docstring).
+DISBAND_SLOT_COUNT = 6
+
+# Slot 0's own dedicated "Disband every army I personally command"
+# pseudo-option (rulebook [3.6]: "[DI]sband [All]") -- the real wire
+# value this collapses to is the lone ``ALL_ARMIES_SENTINEL`` (255),
+# never combined with a specific army id list (``turn/army_list_
+# decode.py decode_army_list_phase()`` only recognizes ``ids == [255]``
+# as ALL, not a list containing 255 alongside other ids).
+DISBAND_ALL_VALUE = "all"
 
 # Every Maneuver a GM can compose here -- Maneuver.NONE is a sentinel,
 # never a real tactic, so it's the only one excluded.
@@ -827,6 +895,63 @@ def recruit_type_options(state: GameState, leader_id: int) -> list[tuple[str, st
     return options
 
 
+def _disband_army_label(state: GameState, army: ArmyState) -> str:
+    type_name = ARMY_TYPE_NAME[army.army_type]
+    quality_name = QUALITY_NAME[army.quality]
+    if army.commanded_by is not None:
+        commander = state.leaders.get(army.commanded_by)
+        commander_part = commander.name if commander is not None else f"leader #{army.commanded_by}"
+    else:
+        commander_part = "Garrison"
+    province = state.provinces.get(army.location)
+    place = (
+        province.name
+        if province is not None and province.name
+        else f"({army.location.x}, {army.location.y})"
+    )
+    return f"#{army.army_id} {type_name} ({quality_name}) -- {commander_part} -- {place}"
+
+
+def disband_target_options(state: GameState, leader_id: int, *, slot: int) -> list[tuple[str, str]]:
+    """Every army this leader could actually Disband post-fix, as
+    ``(value, label)`` pairs for a Disband phase's own repeated
+    army-target dropdowns -- ``value`` is the army's own real
+    ``army_id`` as a string (exactly what a real Disband phase's own
+    ``extra`` tail lists), so no separate encoding step is needed.
+
+    Pre-filtered to match ``turn/plan_dispatch.py _dispatch_disband()``'s
+    own (now Kingdom-boundary-checked) rules exactly, so there's no way
+    to compose an order the engine would just silently skip: every army
+    of this leader's own Kingdom (``ArmyState.kingdom_id``), further
+    narrowed to this leader's own current location unless this leader
+    ``is_king`` (the real Phase 40 co-location bypass -- a King's own
+    list spans the whole Kingdom's armies, garrison-commanded or
+    commanded by another Hero included, exactly the rulebook's own
+    "anche quelle al garrison commander... o comandate da un altro
+    eroe"). Sorted by the army's own real id.
+
+    ``slot`` controls whether the list's own dedicated ``DISBAND_ALL_
+    VALUE`` pseudo-option ("Disband ALL I command") is prepended --
+    only ever offered in slot 0, mirroring Talk's own "only the first
+    slot" shape in Search's Encounter Plan -- see this module's own
+    docstring for why it can't be combined with a specific army list.
+    """
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return []
+    options: list[tuple[str, str]] = []
+    if slot == 0:
+        options.append((DISBAND_ALL_VALUE, "Disband ALL I command"))
+    for army in sorted(state.armies.values(), key=lambda army: army.army_id):
+        if army.kingdom_id != leader.kingdom_id:
+            continue
+        if not leader.is_king and army.location != leader.location:
+            continue
+        options.append((str(army.army_id), _disband_army_label(state, army)))
+    return options
+
+
 def tactic_options(slot: int) -> list[tuple[int, str]]:
     """Every composable ``Maneuver`` for one Search Encounter Plan tactic
     slot, as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only
@@ -955,6 +1080,64 @@ def _parse_recruit_types(form: dict[str, str], leader_id: int, n: int, *, phase_
     if not ordinals:
         raise InvalidComposedMovesError(f"{phase_label}: choose at least one army type to Recruit.")
     return ordinals
+
+
+def _parse_disband_targets(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
+) -> list[int]:
+    """Reads this Disband phase's own ``disband_target_<leader_id>_<n>_
+    <slot>`` fields (``slot`` in ``0..DISBAND_SLOT_COUNT-1``) into the
+    real Disband army-id list -- the same no-gaps convention Search/
+    Recruit's own slots already use. ``DISBAND_ALL_VALUE`` in slot 0
+    collapses the whole order to the lone ``ALL_ARMIES_SENTINEL`` and
+    must be the only thing filled in (see this module's own docstring
+    for why a real order is either a specific list or the ALL
+    sentinel, never both). At least one target must be chosen.
+    """
+
+    leader = state.leaders.get(leader_id)
+    if form.get(f"disband_target_{leader_id}_{n}_0", "") == DISBAND_ALL_VALUE:
+        for slot in range(1, DISBAND_SLOT_COUNT):
+            if form.get(f"disband_target_{leader_id}_{n}_{slot}", ""):
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: 'Disband ALL I command' can't be combined with another army in the same order."
+                )
+        return [ALL_ARMIES_SENTINEL]
+
+    army_ids: list[int] = []
+    stopped_at: int | None = None
+    for slot in range(DISBAND_SLOT_COUNT):
+        raw = form.get(f"disband_target_{leader_id}_{n}_{slot}", "")
+        if not raw:
+            if stopped_at is None:
+                stopped_at = slot
+            continue
+        if stopped_at is not None:
+            raise InvalidComposedMovesError(
+                f"{phase_label}: disband target slot {slot + 1} follows empty slot {stopped_at + 1} -- "
+                "fill the Disband order without gaps."
+            )
+        army_id = _parse_int(raw, field_label=f"{phase_label} Disband target {slot + 1}")
+        army = state.armies.get(army_id)
+        if (
+            army is None
+            or leader is None
+            or army.kingdom_id != leader.kingdom_id
+            or (not leader.is_king and army.location != leader.location)
+        ):
+            # Defense in depth: every dropdown-offered army_id is one
+            # disband_target_options() already filtered to exactly what
+            # this leader could Disband, but a direct, tampered POST
+            # could still name any other army id.
+            raise InvalidComposedMovesError(
+                f"{phase_label}: disband target slot {slot + 1} isn't an army this leader can Disband."
+            )
+        army_ids.append(army_id)
+    if not army_ids:
+        raise InvalidComposedMovesError(
+            f"{phase_label}: choose at least one army to Disband (or 'Disband ALL I command')."
+        )
+    return army_ids
 
 
 def _parse_search_tactics(
@@ -1143,7 +1326,11 @@ def parse_phase_inputs(
     and its own repeated ``recruit_type_<leader_id>_<n>_<slot>`` army-
     type dropdowns for ``extra`` (``_parse_recruit_target()``/
     ``_parse_recruit_types()``, same module docstring's own Recruit
-    section).
+    section). A Disband (``ActionCode.DISBAND``) phase needs no real
+    ``obj`` (forced to ``0``, same as Explore) and reads its own
+    repeated ``disband_target_<leader_id>_<n>_<slot>`` army-target
+    dropdowns for ``extra`` (``_parse_disband_targets()``, same module
+    docstring's own Disband section).
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -1165,6 +1352,9 @@ def parse_phase_inputs(
                 form.get(f"recruit_target_{leader_id}_{n}", ""), leader_id=leader_id, phase_label=f"P{n}"
             )
             extra = [0, *_parse_recruit_types(form, leader_id, n, phase_label=f"P{n}"), -1]
+        elif action is ActionCode.DISBAND:
+            obj = 0
+            extra = [0, *_parse_disband_targets(form, leader_id, n, phase_label=f"P{n}", state=state), -1]
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))

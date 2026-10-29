@@ -1549,6 +1549,13 @@ def test_dispatch_disband_releases_army_into_mercenary_status():
     assert army_id in state.armies  # not removed -- still exists as an unowned mercenary
     assert state.armies[army_id].kingdom_id is None
     assert state.armies[army_id].commanded_by is None
+    # Bug fix, sourced directly from the user (2026-10-29): rulebook
+    # [3.6]'s own "i suoi soldati si trasformano in mercenari" -- the
+    # disbanded army must actually carry the real `is_mercenary` flag
+    # the rest of the engine keys "hireable mercenary band" on
+    # (`GameState.mercenaries_at()`), not just a cleared kingdom/
+    # commander.
+    assert state.armies[army_id].is_mercenary is True
 
 
 def test_dispatch_disband_all_releases_every_commanded_army():
@@ -1883,6 +1890,41 @@ def test_dispatch_disband_by_a_king_bypasses_colocation():
 
     assert state.armies[army_id].kingdom_id is None
     assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_disband_by_a_king_skips_a_different_kingdoms_army_even_though_colocation_is_bypassed():
+    # Bug fix, sourced directly from the user (2026-10-29): the fuller
+    # rulebook [3.6] text names "qualsiasi unità militare del regno" --
+    # a King's own co-location bypass was never meant to also bypass
+    # the Kingdom boundary. Co-located here specifically to isolate
+    # the Kingdom check from the co-location one.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(50, 2, "A Different King", location, is_king=True))
+    phase = PlanPhase(label="P0", action=ActionCode.DISBAND, obj=0, extra=[0, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=2, leader_id=50, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].kingdom_id == 1  # untouched -- a different Kingdom's army
+    assert state.armies[army_id].commanded_by == LEADER_ID
+
+
+def test_dispatch_disband_by_a_colocated_hero_skips_a_different_kingdoms_army():
+    # Same Kingdom-boundary fix as above, for an ordinary (non-King)
+    # Hero: co-location alone was never meant to be sufficient either.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(50, 2, "A Foreign Hero", location, is_king=False))
+    phase = PlanPhase(label="P0", action=ActionCode.DISBAND, obj=0, extra=[0, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=2, leader_id=50, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].kingdom_id == 1
+    assert state.armies[army_id].commanded_by == LEADER_ID
 
 
 def test_dispatch_fire_by_a_hero_fails_when_not_colocated():

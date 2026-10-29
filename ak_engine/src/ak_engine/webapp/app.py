@@ -78,12 +78,15 @@ from ak_engine.turn.exploration import FIND_MINES_TAX_CAP
 from ak_engine.parser.k1_moves_writer import K1WriteError, write_k1_moves_file
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
 from ak_engine.webapp.moves_compose import (
+    DISBAND_ALL_VALUE,
+    DISBAND_SLOT_COUNT,
     PHASE_COUNT,
     RECRUIT_TYPE_SLOT_COUNT,
     SAY_TEXT_MAX_LENGTH,
     TACTIC_SLOT_COUNT,
     InvalidComposedMovesError,
     build_composed_kingdom,
+    disband_target_options,
     feature_options,
     item_options,
     kingdom_leaders_for_compose,
@@ -3030,6 +3033,15 @@ def create_app(games_root: Path | None = None) -> Flask:
             },
             recruit_type_choices_by_leader={
                 leader.leader_id: recruit_type_options(state, leader.leader_id) for leader in roster
+            },
+            disband_action_value=int(ActionCode.DISBAND),
+            disband_slot_numbers=range(DISBAND_SLOT_COUNT),
+            disband_all_value=DISBAND_ALL_VALUE,
+            disband_choices_by_leader={
+                leader.leader_id: [
+                    disband_target_options(state, leader.leader_id, slot=slot) for slot in range(DISBAND_SLOT_COUNT)
+                ]
+                for leader in roster
             },
             province_choices=province_options(state),
             feature_choices_by_leader={

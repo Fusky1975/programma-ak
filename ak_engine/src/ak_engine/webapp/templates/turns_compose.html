@@ -15,9 +15,11 @@
     Steal, Flee, Scout, Cast, and Use Item so far have their own rules wired in, Give and Beg are excluded
     entirely -- only Shoot and Melee, which take no sub-object at all, are still undesigned), Recruit has its
     own commander dropdown plus repeated army-type slots (cost/limit/mercenary preview only -- the engine is
-    still the real arbiter at turn-processing time); every other Action still takes the same plain Object +
-    Extra numbers a real move file's own "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line
-    carries. Saving builds a real move file from these and stores it exactly like an uploaded one.
+    still the real arbiter at turn-processing time), Disband has its own repeated army-target slots
+    (pre-filtered to exactly what this leader could actually Disband) plus a "Disband ALL I command"
+    pseudo-option in the first slot; every other Action still takes the same plain Object + Extra numbers a
+    real move file's own "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving
+    builds a real move file from these and stores it exactly like an uploaded one.
   </p>
 
   <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
@@ -32,6 +34,7 @@
             <th>Explore</th>
             <th>Search Feature</th>
             <th>Recruit</th>
+            <th>Disband</th>
             <th>Object</th>
             <th>Extra (space or comma separated)</th>
           </tr>
@@ -116,6 +119,25 @@
                           <select name="recruit_type_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
                             <option value="">-- no type --</option>
                             {% for value, label in recruit_type_choices_by_leader[leader.leader_id] %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </td>
+              <td class="compose-special-cell" data-action="{{ disband_action_value }}">
+                <span class="hex-map-legend-note">Armies to disband (empty slots stop the list there; "Disband ALL I command" must be alone):</span>
+                <table class="data-table compose-disband-plan">
+                  <tbody>
+                    {% for slot in disband_slot_numbers %}
+                      <tr>
+                        <td>
+                          <select class="compose-disband-slot" name="disband_target_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- no army --</option>
+                            {% for value, label in disband_choices_by_leader[leader.leader_id][slot] %}
                               <option value="{{ value }}">{{ label }}</option>
                             {% endfor %}
                           </select>
@@ -228,6 +250,32 @@
       updateTacticSubCell(event.target);
       var plan = event.target.closest(".compose-encounter-plan");
       if (plan) updateEncounterPlan(plan);
+    }
+  });
+
+  // Disband's own "Disband ALL I command" pseudo-option (slot 0 only)
+  // can't be combined with a specific army in another slot (see
+  // webapp/moves_compose.py's own docstring) -- disabling the other
+  // slots here is a hint only, build_composed_kingdom()'s own
+  // server-side check is what actually enforces it.
+  var DISBAND_ALL_VALUE = "{{ disband_all_value }}";
+
+  function updateDisbandPlan(plan) {
+    var slots = plan.querySelectorAll(".compose-disband-slot");
+    if (!slots.length) return;
+    var allChosen = slots[0].value === DISBAND_ALL_VALUE;
+    slots.forEach(function (select, index) {
+      if (index === 0) return;
+      select.disabled = allChosen;
+      if (allChosen) select.value = "";
+    });
+  }
+
+  document.querySelectorAll(".compose-disband-plan").forEach(updateDisbandPlan);
+  document.addEventListener("change", function (event) {
+    if (event.target.classList && event.target.classList.contains("compose-disband-slot")) {
+      var plan = event.target.closest(".compose-disband-plan");
+      if (plan) updateDisbandPlan(plan);
     }
   });
 </script>
