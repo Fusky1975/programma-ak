@@ -630,6 +630,55 @@ mutually-exclusive-with-a-specific-list shape ``DISBAND_ALL_VALUE``/
 ``LEAVE_ALL_VALUE`` already use) -- no separate target dropdown, since
 Pick Up always and only acts for the ordering leader himself.
 
+**Give [GI] (the engine's own ``ActionCode.TRADE``), the fifth
+non-Search-tactic Action designed** (2026-10-29) -- a naming mismatch
+the user themselves caught and asked about first: there is no rulebook
+"Trade (TR)" at all; "TR" is actually Trail [3.17] (follow-and-spy, not
+designed yet), and this project's internal ``ActionCode.TRADE`` (ordinal
+14) is really the rulebook's own Give order [3.18] -- confirmed
+directly in the Pascal source's own two-letter abbreviation table
+(``actab[Trade] = 'GI'``, see ``turn/trade_decode.py``'s own docstring
+for the full citation; there is no separate ``Give`` member in the
+Pascal ``action`` enum at all). Everything about this Action was
+already fully implemented and tested end-to-end across several
+earlier phases (132/133/140/214/397/547/667/713, see ``turn/trade_
+decode.py``/``turn/trade_execution.py``'s own docstrings for the full
+history) before this round -- no engine bug found or fixed here, only
+a composer UI built against already-correct, already-sourced
+behavior. ``obj`` is overloaded: an item id the giver actually owns
+(checked first, takes priority -- "si passa l'oggetto e non l'oro"),
+or else a gold amount (giver and recipient must both be Kings, capped
+at 10% of the giver's treasury); ``extra`` is ``[0, recipient_leader_
+id]`` -- no ``-1`` terminator, confirmed from this project's own real-
+shaped test fixtures (``tests/test_trade_decode.py``), unlike every
+List-shaped action designed so far.
+
+The composer gets a dedicated recipient dropdown (``trade_recipient_
+options()``) and a dedicated gift dropdown (``trade_gift_options()``,
+toggling a free-text gold-amount field, the same reveal-on-selection
+shape Say's own free-text field already uses) instead of raw Object/
+Extra integers. The recipient dropdown offers every co-located leader
+(any Kingdom -- Give explicitly crosses Kingdoms freely, unlike Leave,
+so there's no alliance filter here), plus two further, real, already-
+implemented cases worth surfacing rather than leaving the GM to
+discover by trial and error: "Self," shown only when the acting leader
+currently holds ``Office.CURATOR`` (rerouting to ``execute_curator_
+research()`` -- "the Guild will research any item number in the
+world"), and the blackmailer's own King, shown even when NOT co-located,
+when the acting leader's own Kingdom carries an active ``KingdomState.
+active_blackmail`` claim (``AdvancedAbility.SPY_BLACKMAIL``'s own
+documented co-location waiver for paying it off). The gift dropdown
+lists this leader's own currently-owned items (excluding a Valhalla
+visitor's own fixed item, which can never be given away) plus a "Gold"
+option. Deliberately NOT exposed here: ``turn/trade_decode.py``'s own
+Phase 397 Trade->Cast rewrite for the 10 secret spells (a self-targeted
+Give naming one of their ordinals as ``obj`` silently becomes a Cast
+instead) -- this composer always encodes ``extra[0]`` as ``0``, so that
+rewrite's own trigger condition (``extra[0] == leader_id``) can never
+fire through it; a GM who wants to Cast a secret spell has the actual
+Cast composer for that, and this one should only ever produce a real
+Give order.
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
 and a nested Hire/Charm/Resurrection plan (``PlanPhase.nested_plan``)
@@ -660,12 +709,14 @@ from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader
 from ak_engine.models.leader import Leader
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import MONSTER_NAMES
+from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_NAME, TREASURE_WAND_SPELL, TreasureCategory
 from ak_engine.report.turn_report import real_province_number
 from ak_engine.turn.army_list_decode import ALL_ARMIES_SENTINEL
 from ak_engine.turn.combat import QUALITY_NAME, Quality
 from ak_engine.turn.hex_numbering import encode_hex_number
+from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.recruit import is_army_type_compatible_with_race, recruit_limit
 
 # Search's own "tl" slot (``turn/search_decode.py SearchRequest.
@@ -730,6 +781,11 @@ PICK_UP_SLOT_COUNT = 6
 # (rulebook [3.9]: "[PI]ck Up [All]") -- same mutually-exclusive-with-
 # a-specific-list shape as ``DISBAND_ALL_VALUE``/``LEAVE_ALL_VALUE``.
 PICK_UP_ALL_VALUE = "all"
+
+# Give [GI]'s own gift dropdown's dedicated "give gold instead of an
+# item" pseudo-option -- reveals a free-text gold-amount field, the
+# same shape Say's own free-text field already uses.
+TRADE_GOLD_VALUE = "gold"
 
 # Every Maneuver a GM can compose here -- Maneuver.NONE is a sentinel,
 # never a real tactic, so it's the only one excluded.
@@ -1188,6 +1244,94 @@ def pick_up_army_target_options(state: GameState, leader_id: int, *, slot: int) 
     return options
 
 
+def trade_recipient_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every valid Give recipient for this leader, as ``(value, label)``
+    pairs -- rulebook [3.18]: the recipient must be co-located ("che si
+    trova nella stessa provincia"), with no Kingdom restriction at all
+    (Give explicitly crosses Kingdoms freely, unlike Leave). ``value``
+    is the recipient's own leader id as a string -- the real wire
+    encoding already is a bare leader id, so no special sentinel is
+    needed even for the two further cases below.
+
+    Two further, already-implemented real cases are surfaced here too,
+    rather than left for the GM to discover only by a failed order:
+    "Self" (the acting leader's own id again), offered only when he
+    currently holds ``Office.CURATOR`` (rerouting to ``execute_
+    curator_research()`` instead of an ordinary Give -- see ``turn/
+    plan_dispatch.py _dispatch_trade()``'s own Phase 667 addendum), and
+    the blackmailer's own King, offered even when NOT co-located, when
+    this leader's own Kingdom currently carries an active ``KingdomState.
+    active_blackmail`` claim (``turn/trade_execution.py execute_give()``'s
+    own Phase 713 co-location waiver for paying it off).
+    """
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return []
+    options: list[tuple[str, str]] = []
+    offered_ids: set[int] = set()
+    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+        if other.leader_id == leader_id or other.location != leader.location:
+            continue
+        kingdom = state.kingdoms.get(other.kingdom_id)
+        kingdom_part = (
+            f", {kingdom.name}" if kingdom is not None and kingdom.kingdom_id != leader.kingdom_id else ""
+        )
+        options.append((str(other.leader_id), f"{other.name}{kingdom_part}"))
+        offered_ids.add(other.leader_id)
+
+    curator_holder = resolve_office_holder(state, Office.CURATOR)
+    if curator_holder is not None and curator_holder.leader_id == leader_id:
+        options.append((str(leader_id), "Self (research an item's magical function)"))
+
+    giver_kingdom = state.kingdoms.get(leader.kingdom_id) if leader.is_king else None
+    claim = giver_kingdom.active_blackmail if giver_kingdom is not None else None
+    if claim is not None:
+        blackmail_king = next(
+            (
+                other
+                for other in state.leaders.values()
+                if other.kingdom_id == claim.spy_kingdom_id and other.is_king
+            ),
+            None,
+        )
+        if blackmail_king is not None and blackmail_king.leader_id not in offered_ids:
+            kingdom = state.kingdoms.get(claim.spy_kingdom_id)
+            kingdom_name = kingdom.name if kingdom is not None else f"Kingdom {claim.spy_kingdom_id}"
+            options.append(
+                (
+                    str(blackmail_king.leader_id),
+                    f"Pay blackmail: {blackmail_king.name}, {kingdom_name} ({claim.amount} gold owed)",
+                )
+            )
+    return options
+
+
+def trade_gift_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every item this leader could actually Give, as ``(value, label)``
+    pairs for Give's own gift dropdown, plus ``TRADE_GOLD_VALUE``
+    ("Gold") first -- rulebook [3.18]: an owned item takes priority
+    over gold whenever both could apply ("si passa l'oggetto e non
+    l'oro"), so this dropdown only ever lists items this leader
+    genuinely owns (``GameState.items_held_by()``), excluding a
+    Valhalla visitor's own fixed item (``LeaderState.valhalla_fixed_
+    item_id``), which rulebook VALHALLA.txt says can never be given
+    away at all (``turn/trade_execution.py execute_give()``'s own
+    Phase 547 addendum).
+    """
+
+    options: list[tuple[str, str]] = [(TRADE_GOLD_VALUE, "Gold (type an amount)")]
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return options
+    for item in sorted(state.items_held_by(leader_id), key=lambda item: item.item_id):
+        if item.item_id == leader.valhalla_fixed_item_id:
+            continue
+        item_name = TREASURE_NAME.get(item.treasure, item.treasure.name.replace("_", " ").title())
+        options.append((str(item.item_id), f"#{item.item_id} {item_name}"))
+    return options
+
+
 def tactic_options(slot: int) -> list[tuple[int, str]]:
     """Every composable ``Maneuver`` for one Search Encounter Plan tactic
     slot, as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only
@@ -1517,6 +1661,61 @@ def _parse_pick_up_targets(
     return army_ids
 
 
+def _parse_trade_recipient(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
+    """Reads a Give phase's own ``trade_recipient_<leader_id>_<n>``
+    field into the real recipient leader id -- the wire encoding is
+    already a bare leader id (``trade_recipient_options()``'s own
+    dropdown value), so no sentinel decoding is needed, unlike Leave's
+    own target field.
+    """
+
+    raw = form.get(f"trade_recipient_{leader_id}_{n}", "")
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Give recipient.")
+    target_id = _parse_int(raw, field_label=f"{phase_label} Give recipient")
+    if state.leaders.get(target_id) is None:
+        # Defense in depth: every dropdown-offered id is a real,
+        # currently-live leader, but a direct, tampered POST could
+        # still name one that doesn't exist.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Give recipient.")
+    return target_id
+
+
+def _parse_trade_gift(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
+    """Reads a Give phase's own ``trade_gift_<leader_id>_<n>`` dropdown
+    (an owned item id, or ``TRADE_GOLD_VALUE``) and, for the gold case,
+    its own ``trade_gold_<leader_id>_<n>`` free-text amount field, into
+    the real ``obj`` encoding -- an item id the giver actually owns, or
+    a positive gold amount. See ``trade_gift_options()``'s own
+    docstring for why an owned item is never offered if it's a
+    Valhalla visitor's own fixed item.
+    """
+
+    raw = form.get(f"trade_gift_{leader_id}_{n}", "")
+    if not raw or raw == TRADE_GOLD_VALUE:
+        gold_raw = form.get(f"trade_gold_{leader_id}_{n}", "")
+        if not gold_raw:
+            raise InvalidComposedMovesError(f"{phase_label}: enter a gold amount to Give.")
+        amount = _parse_int(gold_raw, field_label=f"{phase_label} Give gold amount")
+        if amount <= 0:
+            raise InvalidComposedMovesError(f"{phase_label}: Give gold amount must be a positive number.")
+        return amount
+
+    item_id = _parse_int(raw, field_label=f"{phase_label} Give item")
+    item = state.items.get(item_id)
+    leader = state.leaders.get(leader_id)
+    if item is None or item.owner_leader_id != leader_id:
+        # Defense in depth: every dropdown-offered item id is one this
+        # leader actually owns, but a direct, tampered POST could still
+        # name any other item id.
+        raise InvalidComposedMovesError(f"{phase_label}: choose an item this leader owns to Give.")
+    if leader is not None and leader.valhalla_fixed_item_id == item_id:
+        raise InvalidComposedMovesError(
+            f"{phase_label}: the Valhalla visitor's own fixed item can't be given away."
+        )
+    return item_id
+
+
 def _parse_search_tactics(
     form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
 ) -> list[int | str]:
@@ -1718,7 +1917,12 @@ def parse_phase_inputs(
     <leader_id>_<n>_<slot>`` army-target dropdowns for ``extra``
     (``_parse_pick_up_targets()``, same module docstring's own Pick Up
     section) -- unlike Leave, it has no separate target dropdown, since
-    Pick Up always acts for the ordering leader himself.
+    Pick Up always acts for the ordering leader himself. A Give
+    (``ActionCode.TRADE``) phase reads its own ``trade_recipient_
+    <leader_id>_<n>`` dropdown for ``extra`` and its own ``trade_gift_
+    <leader_id>_<n>``/``trade_gold_<leader_id>_<n>`` dropdown-plus-
+    free-text pair for ``obj`` (``_parse_trade_recipient()``/``_parse_
+    trade_gift()``, same module docstring's own Give section).
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -1750,6 +1954,9 @@ def parse_phase_inputs(
         elif action is ActionCode.PICK_UP:
             obj = 0
             extra = [0, *_parse_pick_up_targets(form, leader_id, n, phase_label=f"P{n}", state=state), -1]
+        elif action is ActionCode.TRADE:
+            obj = _parse_trade_gift(form, leader_id, n, phase_label=f"P{n}", state=state)
+            extra = [0, _parse_trade_recipient(form, leader_id, n, phase_label=f"P{n}", state=state)]
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))

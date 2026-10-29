@@ -31,7 +31,7 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TYPE_BY_ORDINAL, NO_LEADER_SENTINEL, ArmyType
 from ak_engine.models.enums import ActionCode, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, BlackmailClaim, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
@@ -63,6 +63,8 @@ from ak_engine.webapp.moves_compose import (
     recruit_type_options,
     spell_options,
     tactic_options,
+    trade_gift_options,
+    trade_recipient_options,
 )
 
 _ORDINAL_BY_ARMY_TYPE = {army_type: ordinal for ordinal, army_type in ARMY_TYPE_BY_ORDINAL.items()}
@@ -1836,3 +1838,179 @@ def test_build_composed_kingdom_round_trips_a_pick_up_order():
     assert phase0.action is ActionCode.PICK_UP
     assert phase0.obj == 0
     assert phase0.extra == [0, 50, -1]
+
+
+def test_trade_recipient_options_lists_a_colocated_leader_of_any_kingdom():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="Guest", location=HOME))
+
+    options = trade_recipient_options(state, KING_ID)
+
+    values = dict(options)
+    assert values["2"] == "Guest, Allia"
+
+
+def test_trade_recipient_options_excludes_a_noncolocated_leader():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Elsewhere", location=HexCoord(3, 2)))
+
+    options = trade_recipient_options(state, KING_ID)
+
+    values = [value for value, _label in options]
+    assert "2" not in values
+
+
+def test_trade_recipient_options_includes_self_for_curator_titleholder():
+    state = _state()
+    # _state() already gives KING_ID one item (WAND_FIREBALL); two more
+    # (BOOK_WHITE, ABILITY_MELEE) reach OFFICE_MIN_POINTS[Office.CURATOR]
+    # (3), matching tests/test_plan_dispatch.py's own Curator fixture.
+    state.add_item(Treasure.BOOK_WHITE, owner_leader_id=KING_ID)
+    state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=KING_ID)
+
+    options = trade_recipient_options(state, KING_ID)
+
+    values = dict(options)
+    assert values[str(KING_ID)] == "Self (research an item's magical function)"
+
+
+def test_trade_recipient_options_excludes_self_when_not_curator():
+    state = _state()
+    options = trade_recipient_options(state, KING_ID)
+    values = [value for value, _label in options]
+    assert str(KING_ID) not in values
+
+
+def test_trade_recipient_options_includes_a_noncolocated_blackmail_king():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Spyria", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="Spymaster King", location=HexCoord(9, 9), is_king=True))
+    state.kingdoms[1].active_blackmail = BlackmailClaim(spy_leader_id=2, spy_kingdom_id=2, amount=15)
+
+    options = trade_recipient_options(state, KING_ID)
+
+    values = dict(options)
+    assert values["2"] == "Pay blackmail: Spymaster King, Spyria (15 gold owed)"
+
+
+def test_trade_gift_options_lists_owned_items_and_gold():
+    state = _state()
+    options = trade_gift_options(state, KING_ID)
+    item_id = state.items_held_by(KING_ID)[0].item_id
+    values = dict(options)
+    assert values["gold"] == "Gold (type an amount)"
+    assert f"#{item_id}" in values[str(item_id)]
+
+
+def test_trade_gift_options_excludes_the_valhalla_fixed_item():
+    state = _state()
+    item_id = state.items_held_by(KING_ID)[0].item_id
+    state.leaders[KING_ID].valhalla_fixed_item_id = item_id
+
+    options = trade_gift_options(state, KING_ID)
+
+    values = [value for value, _label in options]
+    assert str(item_id) not in values
+
+
+def test_trade_phase_reads_its_own_dropdowns_for_an_item_gift():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    item_id = state.items_held_by(KING_ID)[0].item_id
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_recipient_{KING_ID}_0"] = "2"
+    form[f"trade_gift_{KING_ID}_0"] = str(item_id)
+    form[f"obj_{KING_ID}_0"] = "999"  # must be ignored for a Give phase
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    trade_phase = phases[0]
+    assert trade_phase.action is ActionCode.TRADE
+    assert trade_phase.obj == item_id
+    assert trade_phase.extra == [0, 2]
+
+
+def test_trade_phase_gold_gift_reads_the_free_text_amount():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME, is_king=True))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_recipient_{KING_ID}_0"] = "2"
+    form[f"trade_gift_{KING_ID}_0"] = "gold"
+    form[f"trade_gold_{KING_ID}_0"] = "5"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].obj == 5
+    assert phases[0].extra == [0, 2]
+
+
+def test_trade_phase_without_choosing_a_recipient_is_rejected():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_gift_{KING_ID}_0"] = "gold"
+    form[f"trade_gold_{KING_ID}_0"] = "5"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Give recipient" in str(exc)
+
+
+def test_trade_phase_rejects_an_item_not_owned_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_recipient_{KING_ID}_0"] = "2"
+    form[f"trade_gift_{KING_ID}_0"] = "999999"  # never owned, never offered in the dropdown
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose an item this leader owns to Give" in str(exc)
+
+
+def test_trade_phase_rejects_a_non_positive_gold_amount():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME, is_king=True))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_recipient_{KING_ID}_0"] = "2"
+    form[f"trade_gift_{KING_ID}_0"] = "gold"
+    form[f"trade_gold_{KING_ID}_0"] = "0"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "must be a positive number" in str(exc)
+
+
+def test_build_composed_kingdom_round_trips_a_trade_item_give():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    item_id = state.items_held_by(KING_ID)[0].item_id
+    form = {**_all_defend_form(KING_ID), **_all_defend_form(2)}
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_recipient_{KING_ID}_0"] = "2"
+    form[f"trade_gift_{KING_ID}_0"] = str(item_id)
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.TRADE
+    assert phase0.obj == item_id
+    assert phase0.extra == [0, 2]

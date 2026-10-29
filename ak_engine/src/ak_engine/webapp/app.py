@@ -88,6 +88,7 @@ from ak_engine.webapp.moves_compose import (
     RECRUIT_TYPE_SLOT_COUNT,
     SAY_TEXT_MAX_LENGTH,
     TACTIC_SLOT_COUNT,
+    TRADE_GOLD_VALUE,
     InvalidComposedMovesError,
     build_composed_kingdom,
     disband_target_options,
@@ -102,6 +103,8 @@ from ak_engine.webapp.moves_compose import (
     recruit_type_options,
     spell_options,
     tactic_options,
+    trade_gift_options,
+    trade_recipient_options,
 )
 from ak_engine.webapp.kingdom_create import (
     NoProvinceAtCoordError,
@@ -3071,6 +3074,14 @@ def create_app(games_root: Path | None = None) -> Flask:
                     for slot in range(PICK_UP_SLOT_COUNT)
                 ]
                 for leader in roster
+            },
+            trade_action_value=int(ActionCode.TRADE),
+            trade_gold_value=TRADE_GOLD_VALUE,
+            trade_recipient_choices_by_leader={
+                leader.leader_id: trade_recipient_options(state, leader.leader_id) for leader in roster
+            },
+            trade_gift_choices_by_leader={
+                leader.leader_id: trade_gift_options(state, leader.leader_id) for leader in roster
             },
             province_choices=province_options(state),
             feature_choices_by_leader={

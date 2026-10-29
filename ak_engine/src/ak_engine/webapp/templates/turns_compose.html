@@ -12,17 +12,25 @@
     A base editor, filled in one Action (and, for Search, one Encounter Plan tactic) at a time: Move has its
     own destination dropdown, Explore needs no input at all (it always targets the leader's own current
     province), Search has its own target-feature dropdown plus Encounter Plan tactic slots (Talk, Fulfill, Say,
-    Steal, Flee, Scout, Cast, and Use Item so far have their own rules wired in, Give and Beg are excluded
-    entirely -- only Shoot and Melee, which take no sub-object at all, are still undesigned), Recruit has its
-    own commander dropdown plus repeated army-type slots (cost/limit/mercenary preview only -- the engine is
-    still the real arbiter at turn-processing time), Disband has its own repeated army-target slots
-    (pre-filtered to exactly what this leader could actually Disband) plus a "Disband ALL I command"
-    pseudo-option in the first slot, Leave has its own "to" dropdown (another co-located, allied leader, or
-    the Garrison Commander) plus the same repeated army-target slot shape as Disband, Pick Up has the same
-    repeated army-target slot shape too (no separate target dropdown -- it always acts for the ordering
-    leader himself); every other Action still takes the same plain Object + Extra numbers a real move
-    file's own "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a
-    real move file from these and stores it exactly like an uploaded one.
+    Steal, Flee, Scout, Cast, and Use Item so far have their own rules wired in, the Search Encounter Plan's
+    own Give tactic and Beg are excluded entirely -- only Shoot and Melee, which take no sub-object at all, are
+    still undesigned), Recruit has its own commander dropdown plus repeated army-type slots (cost/limit/
+    mercenary preview only -- the engine is still the real arbiter at turn-processing time), Disband has its
+    own repeated army-target slots (pre-filtered to exactly what this leader could actually Disband) plus a
+    "Disband ALL I command" pseudo-option in the first slot, Leave has its own "to" dropdown (another
+    co-located, allied leader, or the Garrison Commander) plus the same repeated army-target slot shape as
+    Disband, Pick Up has the same repeated army-target slot shape too (no separate target dropdown -- it
+    always acts for the ordering leader himself), Give (the Action internally still named "Trade" -- see
+    below) has its own recipient dropdown plus a gift dropdown (an owned item, or Gold with a free-text
+    amount); every other Action still takes the same plain Object + Extra numbers a real move file's own
+    "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a real move
+    file from these and stores it exactly like an uploaded one.
+  </p>
+  <p class="hex-map-legend-note">
+    The Action dropdown shows "Give" where the engine's own internal name is "Trade" -- a real naming
+    mismatch confirmed in the original Pascal source (its own two-letter abbreviation table gives this
+    Action "GI," matching the rulebook's Give order [3.18]; the rulebook's own "Trail (TR)" is a separate,
+    not-yet-designed Action).
   </p>
 
   <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
@@ -40,6 +48,7 @@
             <th>Disband</th>
             <th>Leave</th>
             <th>Pick Up</th>
+            <th>Give</th>
             <th>Object</th>
             <th>Extra (space or comma separated)</th>
           </tr>
@@ -51,7 +60,7 @@
               <td>
                 <select class="compose-action" name="action_{{ leader.leader_id }}_{{ n }}">
                   {% for action in actions %}
-                    <option value="{{ action.value }}" {% if action.name == "DEFEND" %}selected{% endif %}>{{ action|display_name }}</option>
+                    <option value="{{ action.value }}" {% if action.name == "DEFEND" %}selected{% endif %}>{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
                   {% endfor %}
                 </select>
               </td>
@@ -195,6 +204,23 @@
                   </tbody>
                 </table>
               </td>
+              <td class="compose-special-cell" data-action="{{ trade_action_value }}">
+                <select name="trade_recipient_{{ leader.leader_id }}_{{ n }}">
+                  <option value="">-- choose a recipient --</option>
+                  {% for value, label in trade_recipient_choices_by_leader[leader.leader_id] %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <br>
+                <select class="compose-trade-gift" name="trade_gift_{{ leader.leader_id }}_{{ n }}">
+                  {% for value, label in trade_gift_choices_by_leader[leader.leader_id] %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <span class="compose-trade-gold-cell">
+                  <input type="text" name="trade_gold_{{ leader.leader_id }}_{{ n }}" value="" size="6" placeholder="gold amount">
+                </span>
+              </td>
               <td class="compose-generic-cell"><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
               <td class="compose-generic-cell"><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>
             </tr>
@@ -326,6 +352,27 @@
     if (event.target.classList && event.target.classList.contains("compose-army-all-slot")) {
       var plan = event.target.closest(".compose-army-all-plan");
       if (plan) updateArmyAllPlan(plan);
+    }
+  });
+
+  // Give's own gift dropdown reveals its free-text gold-amount field
+  // only when "Gold" (TRADE_GOLD_VALUE) is chosen -- the same reveal-
+  // on-selection shape Say's own free-text field already uses above.
+  var TRADE_GOLD_VALUE = "{{ trade_gold_value }}";
+
+  function updateTradeGiftCell(select) {
+    var row = select.closest("tr");
+    if (!row) return;
+    var goldCell = row.querySelector(".compose-trade-gold-cell");
+    if (goldCell) {
+      goldCell.style.display = select.value === TRADE_GOLD_VALUE ? "" : "none";
+    }
+  }
+
+  document.querySelectorAll(".compose-trade-gift").forEach(updateTradeGiftCell);
+  document.addEventListener("change", function (event) {
+    if (event.target.classList && event.target.classList.contains("compose-trade-gift")) {
+      updateTradeGiftCell(event.target);
     }
   });
 </script>

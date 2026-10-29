@@ -6773,6 +6773,99 @@ def test_turns_compose_save_pick_up_order_with_no_target_chosen_shows_an_error(t
     assert b"choose at least one army to Pick Up" in response.data
 
 
+def test_turns_compose_shows_a_give_recipient_and_gift_dropdown(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"trade_recipient_" in response.data
+    assert b"trade_gift_" in response.data
+    assert b"Gold (type an amount)" in response.data
+    assert b">Give<" in response.data  # the Action dropdown's own relabeling of Trade
+
+
+def test_turns_compose_save_give_order_encodes_the_item_and_recipient(tmp_path):
+    from ak_engine.models.game_state import LeaderState
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    other_id = max(state.leaders) + 1
+    state.add_leader(LeaderState(other_id, 1, "Other Hero", king.location))
+    item = state.add_item(Treasure.WAND_FIREBALL, king.leader_id, charges=3)
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_recipient_{king.leader_id}_0"] = str(other_id)
+    form[f"trade_gift_{king.leader_id}_0"] = str(item.item_id)
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    trade_phase = king_block.plan.segments[0].phases["P0"]
+    assert trade_phase.action is ActionCode.TRADE
+    assert trade_phase.obj == item.item_id
+    assert trade_phase.extra == [0, other_id]
+
+
+def test_turns_compose_save_give_gold_order_encodes_the_amount(tmp_path):
+    from ak_engine.models.game_state import LeaderState
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    other_id = max(state.leaders) + 1
+    state.add_leader(LeaderState(other_id, 1, "Other King", king.location, is_king=True))
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_recipient_{king.leader_id}_0"] = str(other_id)
+    form[f"trade_gift_{king.leader_id}_0"] = "gold"
+    form[f"trade_gold_{king.leader_id}_0"] = "3"
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    trade_phase = king_block.plan.segments[0].phases["P0"]
+    assert trade_phase.obj == 3
+    assert trade_phase.extra == [0, other_id]
+
+
+def test_turns_compose_save_give_order_with_no_recipient_chosen_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_gift_{king.leader_id}_0"] = "gold"
+    form[f"trade_gold_{king.leader_id}_0"] = "3"
+    # trade_recipient_<king>_0 deliberately left unset.
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"choose a Give recipient" in response.data
+
+
 def test_turns_compose_shows_encounter_plan_tactic_slots(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
