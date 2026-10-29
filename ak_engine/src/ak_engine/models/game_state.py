@@ -1188,6 +1188,33 @@ class LeaderState:
     # that read or wrote it, is Phase 456's own correction now that Add_
     # Experience's SS2.2/SS3.3 text makes the sharing explicit.
     experience_credit: int = 0
+    # Bug fix, sourced directly from the user (2026-10-29), rulebook
+    # [3.13]: "L'avanzamento avrà effetto fin dalla fase successiva" (a
+    # Practice skill/aptitude rise only takes effect starting the next
+    # phase, not the one it was earned in). ``turn/practice_execution.py``
+    # used to write a rise straight into ``SkillTable.raw_values`` the
+    # instant it resolved -- visible to any same-phase combat strength
+    # lookup (``effective_skill_level()``) for a leader who both
+    # practiced and passively commanded an army drawn into that same
+    # phase's own combat. Holds ``(ability, new_skill, new_aptitude)``
+    # from the most recent rise not yet committed; ``turn/turn_
+    # processor.py run_turn()``'s own ``commit_pending_skill_
+    # advancements()`` call, at the very start of every phase before
+    # that phase dispatches anything, writes it into ``LeaderState.
+    # skills`` and clears this field -- so it's already in effect by
+    # the time the *next* phase (including next turn's own P0, if
+    # earned in P4) runs. Deliberately NOT reset by ``_replenish_turn_
+    # scoped_state()`` -- it must survive a turn boundary exactly like
+    # a P4 rise surviving into next turn's P0. At most one entry at a
+    # time per leader (one Practice order per phase; always already
+    # committed, by construction, before this phase's own Practice can
+    # set a new one) -- see ``turn/practice_execution.py``'s own module
+    # docstring for the full citation and scope (this delay applies
+    # only to the core [3.13] skill/aptitude pair, not to the same
+    # Practice attempt's other, separately-sourced side effects --
+    # Advanced Ability grants, Discoveries, Society Maps, gems, bandit
+    # loot -- none of which carry a "next phase" qualifier of their own).
+    pending_skill_advancement: tuple[Ability, int, int] | None = None
     # Phase 493 -- which of the 89 catalogued Advanced Abilities (Phase
     # 128) this leader has actually been granted. A flat set, not keyed
     # by Ability category: the source excerpt's own rule (``models/

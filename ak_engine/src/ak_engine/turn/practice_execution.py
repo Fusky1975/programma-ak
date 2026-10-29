@@ -780,6 +780,33 @@ def _get_or_create_skills(leader: LeaderState) -> SkillTable:
     return leader.skills
 
 
+def commit_pending_skill_advancements(state: GameState) -> None:
+    """Applies every leader's ``LeaderState.pending_skill_advancement``
+    (set by ``execute_practice()``/``execute_practice_group()`` when a
+    Practice attempt raised a skill or aptitude) into their real
+    ``SkillTable``, then clears it.
+
+    Sourced from [3.13]: "L'avanzamento avrà effetto fin dalla fase
+    successiva" -- a rise earned in phase N must stay invisible to
+    anything reading that leader's skill level during phase N itself,
+    and only take effect starting phase N+1. ``turn/turn_processor.py
+    run_turn()`` calls this once, as the very first statement of its
+    phase loop, before that phase dispatches anything -- so a rise
+    earned last phase (including the previous turn's own P4, carried
+    across the turn boundary by this field deliberately surviving
+    ``_replenish_turn_scoped_state()``) is already committed by the time
+    anything in the new phase runs.
+    """
+
+    for leader in state.leaders.values():
+        pending = leader.pending_skill_advancement
+        if pending is None:
+            continue
+        ability, new_skill, new_aptitude = pending
+        _get_or_create_skills(leader).set_pair_for_ability(ability, new_skill, new_aptitude)
+        leader.pending_skill_advancement = None
+
+
 def _maybe_grant_advanced_ability(
     state: GameState, leader: LeaderState, ability: Ability, skill_rose: bool, new_skill: int | None
 ) -> AdvancedAbility | None:
@@ -1289,7 +1316,14 @@ def execute_practice(
     current_skill, aptitude = skills.pair_for_ability(ability)
     credit = leader.experience_credit
     outcome = resolve_practice_solo(current_skill, aptitude, credit, rng)
-    skills.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
+    if outcome.skill_rose or outcome.aptitude_rose:
+        # [3.13]: "L'avanzamento avrà effetto fin dalla fase successiva" --
+        # deferred to LeaderState.pending_skill_advancement, applied by
+        # commit_pending_skill_advancements() at the start of the next
+        # phase. See that field's own docstring for the full citation.
+        leader.pending_skill_advancement = (ability, outcome.new_skill, outcome.new_aptitude)
+    else:
+        skills.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
     if outcome.new_credit is not None:
         leader.experience_credit = outcome.new_credit
     # Phase 553 correction: this call site used to clear is_royal_heir
@@ -1487,7 +1521,12 @@ def execute_practice_group(
             # circuit (it returns before ever reaching that roll).
             results.append(PracticeExecutionResult(ability=ability))
             continue
-        table.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
+        if outcome.skill_rose or outcome.aptitude_rose:
+            # [3.13] "effetto fin dalla fase successiva" -- same deferral
+            # as execute_practice()'s own; see that call site's comment.
+            leader.pending_skill_advancement = (ability, outcome.new_skill, outcome.new_aptitude)
+        else:
+            table.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
         if outcome.new_credit is not None:
             leader.experience_credit = outcome.new_credit
         # Phase 553: same removal as execute_practice()'s own -- see that

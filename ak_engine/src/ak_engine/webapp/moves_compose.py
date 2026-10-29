@@ -707,6 +707,30 @@ fire through it; a GM who wants to Cast a secret spell has the actual
 Cast composer for that, and this one should only ever produce a real
 Give order.
 
+**Practice [PR] (``ActionCode.PRACTICE``), the sixth Action designed**
+(2026-10-29) -- confirmed against the user's own fuller Italian [3.13]
+text and ``turn/practice_decode.py``/``turn/practice_execution.py``'s
+own docstrings. Decode-wise this is this project's simplest Action:
+``obj`` is just the ``Ability`` ordinal being practiced (0-14, this
+project's own ``Ability`` enum -- no new mapping needed), and ``extra``
+carries no real meaning at all (confirmed from real data: every one of
+189 real Practice phases across the sample ``.K1`` files has
+``extra == [0]``, see that module's own docstring). So the composer
+needs only one dropdown -- ``practice_ability_options()``, every
+``Ability`` member by its own ``ABILITY_NAME`` display string -- and
+one parse function, ``_parse_practice_ability()``; ``extra`` is always
+encoded as ``[0]``. This round's own fuller-rulebook-text check did
+find one real engine gap -- a Practice skill/aptitude rise used to be
+written into ``LeaderState.skills`` the instant it resolved, visible to
+anything reading that same leader's skill level later in the *same*
+phase, contradicting [3.13]'s own "L'avanzamento avrà effetto fin dalla
+fase successiva" (takes effect starting the next phase, not this one).
+Fixed directly in ``turn/practice_execution.py``/``turn/turn_processor.
+py`` per the user's own explicit choice to fix it now rather than defer
+it (see ``LeaderState.pending_skill_advancement``'s own docstring for
+the full citation and mechanism) -- nothing about that fix touches this
+composer, since the GM still just picks which Ability to practice.
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
 and a nested Hire/Charm/Resurrection plan (``PlanPhase.nested_plan``)
@@ -730,7 +754,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_BY_ORDINAL, ARMY_TYPE_NAME, NO_LEADER_SENTINEL
-from ak_engine.models.enums import SPELL_NAME, TACTICS_WITH_SUB_OBJECT, ActionCode, Maneuver, Spell
+from ak_engine.models.enums import ABILITY_NAME, SPELL_NAME, TACTICS_WITH_SUB_OBJECT, Ability, ActionCode, Maneuver, Spell
 from ak_engine.models.feature import FEATURE_TYPE_NAMES
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader
@@ -1360,6 +1384,18 @@ def trade_gift_options(state: GameState, leader_id: int) -> list[tuple[str, str]
     return options
 
 
+def practice_ability_options() -> list[tuple[int, str]]:
+    """Every ``Ability`` a Practice order can target, as ``(value,
+    display_name)`` pairs for Practice's own single dropdown -- rulebook
+    [3.13]'s syntax is just "PR (sigla del talento)", one Talent per
+    order, so this is the whole composer surface for this Action. Sorted
+    by the ability's own real ordinal, matching ``ABILITY_NAME``'s own
+    display strings used everywhere else in this project.
+    """
+
+    return [(ability.value, ABILITY_NAME[ability]) for ability in sorted(Ability, key=lambda a: a.value)]
+
+
 def tactic_options(slot: int) -> list[tuple[int, str]]:
     """Every composable ``Maneuver`` for one Search Encounter Plan tactic
     slot, as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only
@@ -1760,6 +1796,27 @@ def _parse_trade_gift(
     return item_id
 
 
+def _parse_practice_ability(raw: str, *, phase_label: str) -> int:
+    """Reads a Practice phase's own ``practice_ability_<leader_id>_<n>``
+    dropdown into the real ``obj`` encoding -- just the ``Ability``
+    ordinal, matching ``practice_ability_options()``'s own dropdown
+    value (and, in turn, ``turn/practice_decode.py``'s own ``Ability(phase.obj)``
+    decode).
+    """
+
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Talent to Practice.")
+    ability_ordinal = _parse_int(raw, field_label=f"{phase_label} Practice ability")
+    try:
+        Ability(ability_ordinal)
+    except ValueError:
+        # Defense in depth: every dropdown-offered value is a real
+        # Ability ordinal, but a direct, tampered POST could still name
+        # one outside the enum's own range.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Talent to Practice.") from None
+    return ability_ordinal
+
+
 def _parse_search_tactics(
     form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
 ) -> list[int | str]:
@@ -1966,7 +2023,11 @@ def parse_phase_inputs(
     <leader_id>_<n>`` dropdown for ``extra`` and its own ``trade_gift_
     <leader_id>_<n>``/``trade_gold_<leader_id>_<n>`` dropdown-plus-
     free-text pair for ``obj`` (``_parse_trade_recipient()``/``_parse_
-    trade_gift()``, same module docstring's own Give section).
+    trade_gift()``, same module docstring's own Give section). A
+    Practice (``ActionCode.PRACTICE``) phase reads its own single
+    ``practice_ability_<leader_id>_<n>`` dropdown for ``obj`` (``_parse_
+    practice_ability()``, same module docstring's own Practice section)
+    and always encodes ``extra`` as ``[0]``.
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -2004,6 +2065,9 @@ def parse_phase_inputs(
                 form, leader_id, n, phase_label=f"P{n}", state=state, recipient_id=trade_recipient_id
             )
             extra = [0, trade_recipient_id]
+        elif action is ActionCode.PRACTICE:
+            obj = _parse_practice_ability(form.get(f"practice_ability_{leader_id}_{n}", ""), phase_label=f"P{n}")
+            extra = [0]
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))

@@ -37,6 +37,7 @@ from ak_engine.turn.practice_execution import (
     _select_discovery_to_grant,
     _teacher_aptitude_bonus,
     _wargames_mastery_multiplier,
+    commit_pending_skill_advancements,
     execute_practice,
     execute_practice_group,
     execute_practice_tactical,
@@ -357,9 +358,16 @@ def test_execute_practice_credit_carries_over_and_raises_a_different_ability():
 
     assert result.skill_rose is True
     assert result.new_skill == 3
-    assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (3, 9)
+    # [3.13] "effetto fin dalla fase successiva" -- not yet written into
+    # the real skill table until commit_pending_skill_advancements() runs.
+    assert state.leaders[1].pending_skill_advancement == (Ability.NECROMANCY, 3, 9)
+    assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (2, 9)
     assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (0, 0)  # never touched by the credit it earned
     assert state.leaders[1].experience_credit == 1  # 96 + 5 - 100
+
+    commit_pending_skill_advancements(state)
+    assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (3, 9)
+    assert state.leaders[1].pending_skill_advancement is None
 
 
 def test_execute_practice_blocked_while_comatose():
@@ -950,7 +958,7 @@ def _skills_with(ability: Ability, skill: int, aptitude: int) -> SkillTable:
     return SkillTable(raw)
 
 
-def test_execute_practice_group_lower_skill_member_gets_immediate_rise():
+def test_execute_practice_group_lower_skill_member_gets_deferred_rise():
     state = _state_with_leaders(
         1,
         2,
@@ -967,9 +975,15 @@ def test_execute_practice_group_lower_skill_member_gets_immediate_rise():
     assert results[0].new_skill == 2
     assert results[1].skill_rose is False
     assert results[1].new_skill == 3
-    assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (2, 9)
+    # [3.13] "effetto fin dalla fase successiva" -- deferred, not immediate.
+    assert state.leaders[1].pending_skill_advancement == (Ability.NECROMANCY, 2, 9)
+    assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (1, 9)
+    assert state.leaders[2].pending_skill_advancement is None
     assert state.leaders[2].skills.pair_for_ability(Ability.NECROMANCY) == (3, 9)
     assert state.leaders[1].experience_credit == 0  # immediate rise, no credit
+
+    commit_pending_skill_advancements(state)
+    assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (2, 9)
 
 
 def test_execute_practice_group_tied_skill_earns_credit_independently_for_each():
@@ -1813,7 +1827,11 @@ def test_execute_practice_one_skill_rise_below_threshold_stays_resurrection_elig
 
 def test_execute_practice_skill_rise_crossing_threshold_ends_resurrection_eligibility():
     # Total_USkill reaches 7 with this rise -- the numeric check alone
-    # (not a flag mutation) now correctly reports ineligible.
+    # (not a flag mutation) now correctly reports ineligible. [3.13]'s
+    # own "effetto fin dalla fase successiva" means the rise -- and so
+    # the new Total_USkill reading -- isn't live until the next phase's
+    # commit_pending_skill_advancements() call, same as the real skill
+    # table itself.
     state = _state_with_leader(skills=SkillTable(raw_values=[0] * 31))
     state.leaders[1].skills.set_pair_for_ability(Ability.MELEE, skill=6, aptitude=9)
     state.leaders[1].experience_credit = 96
@@ -1823,7 +1841,10 @@ def test_execute_practice_skill_rise_crossing_threshold_ends_resurrection_eligib
 
     assert result.skill_rose is True
     assert state.leaders[1].is_royal_heir is True  # flag itself untouched
-    assert is_unfinalized_royal_heir(state.leaders[1]) is False  # but no longer eligible
+    assert is_unfinalized_royal_heir(state.leaders[1]) is True  # rise not yet committed
+
+    commit_pending_skill_advancements(state)
+    assert is_unfinalized_royal_heir(state.leaders[1]) is False  # now no longer eligible
 
 
 # -- Phase 396: Sage's device-discovery roll extended to group practice ---

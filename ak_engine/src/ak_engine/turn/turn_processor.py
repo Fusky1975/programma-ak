@@ -308,7 +308,7 @@ from ak_engine.turn.movement import MapBounds, resolve_move
 from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, apply_cravenest_temperament_escalation
 from ak_engine.turn.plan_dispatch import PhaseDispatchResult, dispatch_phase, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
-from ak_engine.turn.practice_execution import execute_practice_group
+from ak_engine.turn.practice_execution import commit_pending_skill_advancements, execute_practice_group
 from ak_engine.turn.patrol_execution import execute_patrol
 from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue
 from ak_engine.turn.scientific_treaty import execute_scientific_treaties
@@ -486,6 +486,13 @@ def run_turn(
         leader_state.special_encounter_plan = tuple(decode_special_encounter_plan(tl.leader.plan.segments[0]))
 
     for phase_index, label in enumerate(PHASE_LABELS):
+        # [3.13]: a Practice skill/aptitude rise earned last phase (or,
+        # carried across the turn boundary, last turn's own P4) takes
+        # effect starting now -- before anything else this phase reads
+        # a skill level. See LeaderState.pending_skill_advancement's own
+        # docstring and commit_pending_skill_advancements()'s.
+        commit_pending_skill_advancements(state)
+
         if phase_index > 0:
             results.extend(_dispatch_contested_rebattles(state, rng))
             newly_infected = resolve_plague_spread(state, rng, bounds)

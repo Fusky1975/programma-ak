@@ -98,6 +98,7 @@ from ak_engine.webapp.moves_compose import (
     leave_army_target_options,
     leave_target_options,
     pick_up_army_target_options,
+    practice_ability_options,
     province_options,
     recruit_target_options,
     recruit_type_options,
@@ -3083,6 +3084,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             trade_gift_choices_by_leader={
                 leader.leader_id: trade_gift_options(state, leader.leader_id) for leader in roster
             },
+            practice_action_value=int(ActionCode.PRACTICE),
+            practice_ability_choices=practice_ability_options(),
             province_choices=province_options(state),
             feature_choices_by_leader={
                 leader.leader_id: feature_options(state, leader_id=leader.leader_id) for leader in roster

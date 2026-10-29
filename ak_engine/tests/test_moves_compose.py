@@ -29,7 +29,7 @@ from pathlib import Path
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TYPE_BY_ORDINAL, NO_LEADER_SENTINEL, ArmyType
-from ak_engine.models.enums import ActionCode, Maneuver, Spell
+from ak_engine.models.enums import ABILITY_NAME, Ability, ActionCode, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, BlackmailClaim, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
@@ -58,6 +58,7 @@ from ak_engine.webapp.moves_compose import (
     leave_target_options,
     parse_phase_inputs,
     pick_up_army_target_options,
+    practice_ability_options,
     province_options,
     recruit_target_options,
     recruit_type_options,
@@ -2035,3 +2036,73 @@ def test_build_composed_kingdom_round_trips_a_trade_item_give():
     assert phase0.action is ActionCode.TRADE
     assert phase0.obj == item_id
     assert phase0.extra == [0, 2]
+
+
+def test_practice_ability_options_lists_every_ability_by_display_name():
+    options = practice_ability_options()
+
+    assert options[0] == (Ability.TACTICAL.value, ABILITY_NAME[Ability.TACTICAL])
+    assert len(options) == len(list(Ability))
+    assert (Ability.SAGE.value, ABILITY_NAME[Ability.SAGE]) in options
+
+
+def test_practice_phase_reads_its_own_ability_dropdown():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PRACTICE))
+    form[f"practice_ability_{KING_ID}_0"] = str(Ability.SAGE.value)
+    form[f"obj_{KING_ID}_0"] = "999"  # must be ignored for a Practice phase
+    form[f"extra_{KING_ID}_0"] = "5"  # must be ignored too -- always [0]
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    practice_phase = phases[0]
+    assert practice_phase.action is ActionCode.PRACTICE
+    assert practice_phase.obj == Ability.SAGE.value
+    assert practice_phase.extra == [0]
+
+
+def test_practice_phase_without_choosing_an_ability_is_rejected():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PRACTICE))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Talent to Practice" in str(exc)
+
+
+def test_practice_phase_rejects_an_out_of_range_ability_even_via_a_direct_tampered_value():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PRACTICE))
+    form[f"practice_ability_{KING_ID}_0"] = "999999"  # never offered in the dropdown
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Talent to Practice" in str(exc)
+
+
+def test_build_composed_kingdom_round_trips_a_practice_order():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PRACTICE))
+    form[f"practice_ability_{KING_ID}_0"] = str(Ability.NECROMANCY.value)
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.PRACTICE
+    assert phase0.obj == Ability.NECROMANCY.value
+    assert phase0.extra == [0]

@@ -22,7 +22,7 @@
     Disband, Pick Up has the same repeated army-target slot shape too (no separate target dropdown -- it
     always acts for the ordering leader himself), Give (the Action internally still named "Trade" -- see
     below) has its own recipient dropdown plus a gift dropdown (an owned item, or Gold with a free-text
-    amount); every other Action still takes the same plain Object + Extra numbers a real move file's own
+    amount), Practice has its own single Talent dropdown; every other Action still takes the same plain Object + Extra numbers a real move file's own
     "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a real move
     file from these and stores it exactly like an uploaded one.
   </p>
@@ -49,6 +49,7 @@
             <th>Leave</th>
             <th>Pick Up</th>
             <th>Give</th>
+            <th>Practice</th>
             <th>Object</th>
             <th>Extra (space or comma separated)</th>
           </tr>
@@ -220,6 +221,14 @@
                 <span class="compose-trade-gold-cell">
                   <input type="text" name="trade_gold_{{ leader.leader_id }}_{{ n }}" value="" size="6" placeholder="gold amount">
                 </span>
+              </td>
+              <td class="compose-special-cell" data-action="{{ practice_action_value }}">
+                <select name="practice_ability_{{ leader.leader_id }}_{{ n }}">
+                  <option value="">-- choose a Talent --</option>
+                  {% for value, label in practice_ability_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
               </td>
               <td class="compose-generic-cell"><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
               <td class="compose-generic-cell"><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>
