@@ -80,6 +80,8 @@ from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_tu
 from ak_engine.webapp.moves_compose import (
     DISBAND_ALL_VALUE,
     DISBAND_SLOT_COUNT,
+    LEAVE_ALL_VALUE,
+    LEAVE_SLOT_COUNT,
     PHASE_COUNT,
     RECRUIT_TYPE_SLOT_COUNT,
     SAY_TEXT_MAX_LENGTH,
@@ -90,6 +92,8 @@ from ak_engine.webapp.moves_compose import (
     feature_options,
     item_options,
     kingdom_leaders_for_compose,
+    leave_army_target_options,
+    leave_target_options,
     province_options,
     recruit_target_options,
     recruit_type_options,
@@ -3040,6 +3044,18 @@ def create_app(games_root: Path | None = None) -> Flask:
             disband_choices_by_leader={
                 leader.leader_id: [
                     disband_target_options(state, leader.leader_id, slot=slot) for slot in range(DISBAND_SLOT_COUNT)
+                ]
+                for leader in roster
+            },
+            leave_action_value=int(ActionCode.LEAVE),
+            leave_slot_numbers=range(LEAVE_SLOT_COUNT),
+            leave_all_value=LEAVE_ALL_VALUE,
+            leave_target_choices_by_leader={
+                leader.leader_id: leave_target_options(state, leader.leader_id) for leader in roster
+            },
+            leave_army_choices_by_leader={
+                leader.leader_id: [
+                    leave_army_target_options(state, leader.leader_id, slot=slot) for slot in range(LEAVE_SLOT_COUNT)
                 ]
                 for leader in roster
             },

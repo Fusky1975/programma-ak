@@ -526,6 +526,64 @@ slot 0" shape -- which, when chosen, must be the *only* thing filled in
 (rejected otherwise, since a real order is either a specific list or
 the lone ``255`` sentinel, never both at once).
 
+**Leave Army(s) [LE], the third non-Search-tactic Action designed**
+(2026-10-29, sourced directly from the user, rulebook [3.8] text pasted
+verbatim): "L'unità militare specificata rimane nella provincia o ad un
+altro generale. Un'unità lasciata a un generale o ad una provincia di
+un altro Reame diventa di proprietà di quest'ultimo... LE #numero unità
+(anche più di una) to #numero eroe o GC (garrison commander) oppure LE
+ALL to #numero eroe o GC" -- shares ``turn/army_list_decode.py decode_
+army_list_phase()`` with Disband/Pick_Up: ``extra[0]`` is the target
+leader id (``NO_LEADER_SENTINEL`` for "GC"), the rest is a ``-1``-
+terminated army-id list, or the lone ``255`` for "LE ALL."
+
+This investigation found the same class of real engine gaps Disband's
+own round found, fixed in ``turn/plan_dispatch.py`` ``_dispatch_leave()``
+(see that function's own 2026-10-29 docstring addendum for the full
+citations), all confirmed with the user before fixing: (1) a specific
+army-id list previously reassigned command of *any* army in the game,
+with no check that the acting leader actually commands it, is
+co-located with it, or that it belongs to his own Kingdom -- fixed,
+while deliberately preserving the rulebook's own "novità" (passing a
+Garrison-commanded army along to another Hero, not just one's own
+commanded armies); (2) leaving to a named Hero of a hostile/unrelated
+Kingdom previously succeeded silently -- now requires ``GameState.
+is_allied()`` and blocks the whole order otherwise ("anche di un altro
+Reame, basta che sia alleato"); (3) "un generale... di un altro Reame
+diventa di proprietà di quest'ultimo" is a second, independent
+Kingdom-transfer trigger from the pre-existing province-ownership one,
+now also implemented.
+
+**Deliberately NOT implemented here either, same as Disband's own
+Kingdom-boundary fix had nothing to do with the composer UI**: the
+user's own further text describes a genuinely new, currently entirely
+unimplemented engine mechanic -- when an order targets another leader
+of the same or an allied Kingdom, the higher-``character_initiative()``
+leader's own same-phase action waits for the lower-Initiative leader's
+targeting order to resolve first, even out of ordinary Initiative
+order. Confirmed absent from ``turn/turn_processor.py``'s own per-phase
+dispatch loop (no Initiative-based reordering or cross-leader
+dependency mechanism exists at all today), and -- per the user's own
+explicit choice -- deliberately deferred rather than fixed in this
+round: it's a structural change to the *general* phase-dispatch loop
+(every same-phase order targeting another leader, Recruit's own
+commander dropdown included, not just Leave), well beyond what this
+one Action's own composer round should take on. See ``_dispatch_
+leave()``'s own docstring for the full citation.
+
+The composer gets a dedicated, repeated army-target dropdown
+(``leave_army_target_options()``, ``LEAVE_SLOT_COUNT`` slots, reusing
+``_disband_army_label()`` for each option's own label -- the same
+display shape already works for both) pre-filtered to exactly what
+this leader could actually Leave post-fix, plus a "Leave ALL I command"
+pseudo-option in slot 0 (``LEAVE_ALL_VALUE``, the same mutually-
+exclusive-with-a-specific-list shape ``DISBAND_ALL_VALUE`` already
+uses), and a dedicated target dropdown (``leave_target_options()``) --
+every co-located leader of this leader's own or an allied Kingdom,
+plus "Garrison Commander" -- instead of raw Object/Extra integers, so
+there's no way to compose an order the engine would just silently skip
+or reject anyway.
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
 and a nested Hire/Charm/Resurrection plan (``PlanPhase.nested_plan``)
@@ -600,6 +658,22 @@ DISBAND_SLOT_COUNT = 6
 # decode.py decode_army_list_phase()`` only recognizes ``ids == [255]``
 # as ALL, not a list containing 255 alongside other ids).
 DISBAND_ALL_VALUE = "all"
+
+# Same reasoning as DISBAND_SLOT_COUNT -- the only real LEAVE sample
+# available lists a single army id (``turn/army_list_decode.py``'s own
+# docstring), so this is a generous, round number, not a real-sample
+# maximum.
+LEAVE_SLOT_COUNT = 6
+
+# Slot 0's own dedicated "Leave every army I personally command"
+# pseudo-option (rulebook [3.8]: "LE ALL to ...") -- same mutually-
+# exclusive-with-a-specific-list shape as ``DISBAND_ALL_VALUE``.
+LEAVE_ALL_VALUE = "all"
+
+# "LE ... to #numero eroe o GC" -- the dedicated "to" target dropdown's
+# own Garrison Commander sentinel value, parsed back to the real
+# ``NO_LEADER_SENTINEL`` encoding by ``_parse_leave_target()``.
+LEAVE_GARRISON_VALUE = "garrison"
 
 # Every Maneuver a GM can compose here -- Maneuver.NONE is a sentinel,
 # never a real tactic, so it's the only one excluded.
@@ -952,6 +1026,78 @@ def disband_target_options(state: GameState, leader_id: int, *, slot: int) -> li
     return options
 
 
+def leave_target_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every valid "to" choice for a Leave phase's own target dropdown,
+    as ``(value, label)`` pairs -- rulebook [3.8]: "LE ... to #numero
+    eroe o GC." Offers every other leader (any Kingdom) co-located with
+    the acting leader *and* of his own or an allied Kingdom
+    (``GameState.is_allied()`` -- "anche di un altro Reame, basta che
+    sia alleato"; a hostile/unrelated Kingdom's leader is never offered,
+    matching ``turn/plan_dispatch.py _dispatch_leave()``'s own new
+    alliance gate), then "Garrison Commander" last. ``value`` is the
+    other leader's own id as a string, or ``LEAVE_GARRISON_VALUE`` --
+    parsed back by ``_parse_leave_target()`` into the real ``obj``
+    encoding (``turn/army_list_decode.py``'s own leader id/
+    ``NO_LEADER_SENTINEL``).
+    """
+
+    leader = state.leaders.get(leader_id)
+    options: list[tuple[str, str]] = []
+    if leader is not None:
+        others = sorted(
+            (
+                other
+                for other in state.leaders.values()
+                if other.leader_id != leader_id
+                and other.location == leader.location
+                and state.is_allied(leader.kingdom_id, other.kingdom_id)
+            ),
+            key=lambda other: other.leader_id,
+        )
+        for other in others:
+            kingdom = state.kingdoms.get(other.kingdom_id)
+            ally_part = (
+                f", {kingdom.name}" if kingdom is not None and kingdom.kingdom_id != leader.kingdom_id else ""
+            )
+            options.append((str(other.leader_id), f"{other.name}{ally_part}"))
+    options.append((LEAVE_GARRISON_VALUE, "Garrison Commander"))
+    return options
+
+
+def leave_army_target_options(state: GameState, leader_id: int, *, slot: int) -> list[tuple[str, str]]:
+    """Every army this leader could actually Leave post-fix, as
+    ``(value, label)`` pairs for a Leave phase's own repeated
+    army-target dropdowns -- the same eligibility rule and
+    ``_disband_army_label()`` display shape ``disband_target_options()``
+    already uses, since ``turn/plan_dispatch.py _dispatch_leave()``'s
+    own new ownership check is identical to Disband's: every army
+    commanded by this leader, plus (the rulebook's own "novità")
+    any Garrison-commanded (``commanded_by is None``) army of this
+    leader's own Kingdom that's co-located with him -- this is the
+    one real difference from Disband's own dropdown, which never
+    offers a Garrison-commanded army at all for a non-King Hero.
+
+    ``slot`` controls whether the list's own dedicated ``LEAVE_ALL_
+    VALUE`` pseudo-option ("Leave ALL I command") is prepended -- only
+    ever offered in slot 0, the same shape ``disband_target_options()``
+    already uses for ``DISBAND_ALL_VALUE``.
+    """
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return []
+    options: list[tuple[str, str]] = []
+    if slot == 0:
+        options.append((LEAVE_ALL_VALUE, "Leave ALL I command"))
+    for army in sorted(state.armies.values(), key=lambda army: army.army_id):
+        if army.kingdom_id != leader.kingdom_id:
+            continue
+        if army.commanded_by != leader_id and not (army.commanded_by is None and army.location == leader.location):
+            continue
+        options.append((str(army.army_id), _disband_army_label(state, army)))
+    return options
+
+
 def tactic_options(slot: int) -> list[tuple[int, str]]:
     """Every composable ``Maneuver`` for one Search Encounter Plan tactic
     slot, as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only
@@ -1136,6 +1282,89 @@ def _parse_disband_targets(
     if not army_ids:
         raise InvalidComposedMovesError(
             f"{phase_label}: choose at least one army to Disband (or 'Disband ALL I command')."
+        )
+    return army_ids
+
+
+def _parse_leave_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
+    """Reads a Leave phase's own ``leave_target_<leader_id>_<n>`` field
+    into the real ``obj`` encoding -- ``LEAVE_GARRISON_VALUE``/empty
+    resolves to ``NO_LEADER_SENTINEL`` ("GC"), anything else to another
+    leader's own id (``leave_target_options()``'s own dropdown value),
+    matching ``turn/army_list_decode.py``'s own leader-id-or-255
+    encoding. Rejects a target leader who isn't of this leader's own
+    or an allied Kingdom -- defense in depth: every dropdown-offered
+    value is already filtered this way, but a direct, tampered POST
+    could still name a hostile/unrelated leader.
+    """
+
+    raw = form.get(f"leave_target_{leader_id}_{n}", "")
+    if not raw or raw == LEAVE_GARRISON_VALUE:
+        return NO_LEADER_SENTINEL
+    target_id = _parse_int(raw, field_label=f"{phase_label} Leave target")
+    leader = state.leaders.get(leader_id)
+    target_leader = state.leaders.get(target_id)
+    if leader is None or target_leader is None or not state.is_allied(leader.kingdom_id, target_leader.kingdom_id):
+        raise InvalidComposedMovesError(
+            f"{phase_label}: choose a Leave target that's this leader's own Kingdom or an ally's."
+        )
+    return target_id
+
+
+def _parse_leave_army_targets(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
+) -> list[int]:
+    """Reads this Leave phase's own ``leave_army_<leader_id>_<n>_<slot>``
+    fields (``slot`` in ``0..LEAVE_SLOT_COUNT-1``) into the real Leave
+    army-id list -- the same no-gaps convention and ``LEAVE_ALL_VALUE``
+    mutual-exclusivity shape ``_parse_disband_targets()`` already uses
+    for ``DISBAND_ALL_VALUE``. At least one target must be chosen.
+    """
+
+    leader = state.leaders.get(leader_id)
+    if form.get(f"leave_army_{leader_id}_{n}_0", "") == LEAVE_ALL_VALUE:
+        for slot in range(1, LEAVE_SLOT_COUNT):
+            if form.get(f"leave_army_{leader_id}_{n}_{slot}", ""):
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: 'Leave ALL I command' can't be combined with another army in the same order."
+                )
+        return [ALL_ARMIES_SENTINEL]
+
+    army_ids: list[int] = []
+    stopped_at: int | None = None
+    for slot in range(LEAVE_SLOT_COUNT):
+        raw = form.get(f"leave_army_{leader_id}_{n}_{slot}", "")
+        if not raw:
+            if stopped_at is None:
+                stopped_at = slot
+            continue
+        if stopped_at is not None:
+            raise InvalidComposedMovesError(
+                f"{phase_label}: leave army slot {slot + 1} follows empty slot {stopped_at + 1} -- "
+                "fill the Leave order without gaps."
+            )
+        army_id = _parse_int(raw, field_label=f"{phase_label} Leave army {slot + 1}")
+        army = state.armies.get(army_id)
+        if (
+            army is None
+            or leader is None
+            or army.kingdom_id != leader.kingdom_id
+            or (
+                army.commanded_by != leader_id
+                and not (army.commanded_by is None and army.location == leader.location)
+            )
+        ):
+            # Defense in depth: every dropdown-offered army_id is one
+            # leave_army_target_options() already filtered to exactly
+            # what this leader could Leave, but a direct, tampered POST
+            # could still name any other army id.
+            raise InvalidComposedMovesError(
+                f"{phase_label}: leave army slot {slot + 1} isn't an army this leader can Leave."
+            )
+        army_ids.append(army_id)
+    if not army_ids:
+        raise InvalidComposedMovesError(
+            f"{phase_label}: choose at least one army to Leave (or 'Leave ALL I command')."
         )
     return army_ids
 
@@ -1330,7 +1559,12 @@ def parse_phase_inputs(
     ``obj`` (forced to ``0``, same as Explore) and reads its own
     repeated ``disband_target_<leader_id>_<n>_<slot>`` army-target
     dropdowns for ``extra`` (``_parse_disband_targets()``, same module
-    docstring's own Disband section).
+    docstring's own Disband section). A Leave (``ActionCode.LEAVE``)
+    phase also needs no real ``obj`` (forced to ``0``) and reads its
+    own ``leave_target_<leader_id>_<n>`` "to" dropdown plus its own
+    repeated ``leave_army_<leader_id>_<n>_<slot>`` army-target
+    dropdowns for ``extra`` (``_parse_leave_target()``/``_parse_leave_
+    army_targets()``, same module docstring's own Leave section).
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -1355,6 +1589,10 @@ def parse_phase_inputs(
         elif action is ActionCode.DISBAND:
             obj = 0
             extra = [0, *_parse_disband_targets(form, leader_id, n, phase_label=f"P{n}", state=state), -1]
+        elif action is ActionCode.LEAVE:
+            obj = 0
+            target = _parse_leave_target(form, leader_id, n, phase_label=f"P{n}", state=state)
+            extra = [target, *_parse_leave_army_targets(form, leader_id, n, phase_label=f"P{n}", state=state), -1]
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))

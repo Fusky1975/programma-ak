@@ -1344,6 +1344,121 @@ def test_dispatch_leave_in_allied_province_transfers_kingdom_ownership():
     assert state.armies[army_id].kingdom_id == 2
 
 
+# -- Bug fixes, sourced directly from the user (2026-10-29), designing
+# Leave's own move-composer UI: ownership/co-location gate on a
+# specific army-id list, the Garrison-to-Hero "novità" pass-along, the
+# alliance gate on a named target leader, and the second (target-
+# leader-based) Kingdom-transfer trigger. ----------------------------
+
+
+def test_dispatch_leave_specific_army_not_commanded_by_acting_leader_is_skipped():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(2, 1, "Other Leader", location))
+    state.armies[army_id].commanded_by = 2  # not this leader's own army
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by == 2  # untouched
+
+
+def test_dispatch_leave_can_pass_a_colocated_garrison_commanded_army_to_another_hero():
+    # The rulebook's own "novità": a Hero merely co-located with (not
+    # personally commanding) a Garrison-commanded army of his own
+    # Kingdom can still pass it along to another Hero.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.armies[army_id].commanded_by = None  # Garrison-commanded
+    state.add_leader(LeaderState(2, 1, "Other Leader", location))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert state.armies[army_id].commanded_by == 2
+
+
+def test_dispatch_leave_a_noncolocated_garrison_commanded_army_is_skipped():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.armies[army_id].commanded_by = None
+    state.leaders[LEADER_ID].location = HexCoord(9, 9)  # not co-located with the army
+    state.add_leader(LeaderState(2, 1, "Other Leader", HexCoord(9, 9)))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_leave_a_colocated_garrison_commanded_army_of_a_different_kingdom_is_skipped():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.armies[army_id].commanded_by = None
+    state.armies[army_id].kingdom_id = 2  # a different Kingdom's idle garrison unit
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(3, 1, "Other Leader", location))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[3, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_leave_to_a_hostile_leader_is_rejected():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(2, 2, "Hostile Hero", location))  # not allied with Kingdom 1
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by == LEADER_ID  # untouched
+
+
+def test_dispatch_leave_to_an_unknown_leader_id_is_rejected():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[999, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by == LEADER_ID
+
+
+def test_dispatch_leave_to_an_allied_kingdoms_hero_transfers_the_armys_kingdom():
+    # "Un'unità lasciata a un generale... di un altro Reame diventa di
+    # proprietà di quest'ultimo" -- independent of who owns the
+    # province the army is standing in (still Kingdom 1's own here).
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.add_leader(LeaderState(2, 2, "Allied Hero", location))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert state.armies[army_id].commanded_by == 2
+    assert state.armies[army_id].kingdom_id == 2
+
+
+def test_dispatch_leave_to_a_same_kingdoms_hero_does_not_change_kingdom_id():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.add_leader(LeaderState(2, 1, "Other Leader", HexCoord(3, 9)))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert state.armies[army_id].kingdom_id == 1
+
+
 # -- Phase 647: Skeletal Army "digs its own grave" on Leave/reassign --
 
 
@@ -1404,6 +1519,7 @@ def test_dispatch_leave_skeletal_army_handed_to_undead_king_survives():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     state.armies[army_id].is_skeletal = True
     state.add_kingdom(KingdomState(2, "Nekrotia", Race.HUMAN, Alignment.UNDEAD, HexCoord(3, 9)))
+    state.allied_kingdoms.add(frozenset({1, 2}))
     state.add_leader(LeaderState(2, 2, "Lich King", HexCoord(3, 9), is_king=True))
     phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
 

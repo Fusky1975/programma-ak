@@ -46,11 +46,15 @@ from ak_engine.webapp.moves_compose import (
     DISBAND_ALL_VALUE,
     EMPTY_SEARCH_EXTRA,
     ENCOUNTER_PLAN_CASTABLE_SPELLS,
+    LEAVE_ALL_VALUE,
+    LEAVE_GARRISON_VALUE,
     InvalidComposedMovesError,
     build_composed_kingdom,
     disband_target_options,
     feature_options,
     item_options,
+    leave_army_target_options,
+    leave_target_options,
     parse_phase_inputs,
     province_options,
     recruit_target_options,
@@ -1405,3 +1409,249 @@ def test_build_composed_kingdom_round_trips_a_disband_order():
     assert phase0.action is ActionCode.DISBAND
     assert phase0.obj == 0
     assert phase0.extra == [0, 50, -1]
+
+
+def test_leave_target_options_offers_a_colocated_leader_and_garrison():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+
+    options = leave_target_options(state, KING_ID)
+
+    assert ("2", "Bram") in options
+    assert (LEAVE_GARRISON_VALUE, "Garrison Commander") in options
+
+
+def test_leave_target_options_excludes_a_noncolocated_leader():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Elsewhere", location=HexCoord(3, 2)))
+
+    options = leave_target_options(state, KING_ID)
+
+    values = [value for value, _label in options]
+    assert "2" not in values
+
+
+def test_leave_target_options_excludes_a_hostile_leader():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="Hostile Hero", location=HOME))
+
+    options = leave_target_options(state, KING_ID)
+
+    values = [value for value, _label in options]
+    assert "2" not in values
+
+
+def test_leave_target_options_includes_an_allied_kingdoms_colocated_leader():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="Allied Hero", location=HOME))
+
+    options = leave_target_options(state, KING_ID)
+
+    values = dict(options)
+    assert values["2"] == "Allied Hero, Allia"
+
+
+def test_leave_army_target_options_lists_an_army_this_leader_commands():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+
+    options = leave_army_target_options(state, KING_ID, slot=1)
+
+    values = [value for value, _label in options]
+    assert "50" in values
+
+
+def test_leave_army_target_options_includes_a_colocated_garrison_commanded_army():
+    # The rulebook's own "novità": passing a Garrison-commanded army
+    # along to another Hero.
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None))
+
+    options = leave_army_target_options(state, KING_ID, slot=1)
+
+    values = [value for value, _label in options]
+    assert "50" in values
+
+
+def test_leave_army_target_options_excludes_a_noncolocated_garrison_commanded_army():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(3, 2), commanded_by=None))
+
+    options = leave_army_target_options(state, KING_ID, slot=1)
+
+    values = [value for value, _label in options]
+    assert "50" not in values
+
+
+def test_leave_army_target_options_excludes_an_army_commanded_by_someone_else():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=2))
+
+    options = leave_army_target_options(state, KING_ID, slot=1)
+
+    values = [value for value, _label in options]
+    assert "50" not in values
+
+
+def test_leave_army_target_options_slot_zero_offers_leave_all():
+    state = _state()
+    options = leave_army_target_options(state, KING_ID, slot=0)
+    assert (LEAVE_ALL_VALUE, "Leave ALL I command") in options
+
+
+def test_leave_army_target_options_other_slots_do_not_offer_leave_all():
+    state = _state()
+    options = leave_army_target_options(state, KING_ID, slot=1)
+    values = [value for value, _label in options]
+    assert LEAVE_ALL_VALUE not in values
+
+
+def test_leave_phase_reads_its_own_dropdowns_not_the_generic_object_field():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LEAVE))
+    form[f"leave_target_{KING_ID}_0"] = "2"
+    form[f"leave_army_{KING_ID}_0_0"] = "50"
+    form[f"obj_{KING_ID}_0"] = "999"  # must be ignored for a Leave phase
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    leave_phase = phases[0]
+    assert leave_phase.action is ActionCode.LEAVE
+    assert leave_phase.obj == 0
+    assert leave_phase.extra == [2, 50, -1]
+
+
+def test_leave_phase_garrison_target_resolves_to_sentinel():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LEAVE))
+    form[f"leave_target_{KING_ID}_0"] = LEAVE_GARRISON_VALUE
+    form[f"leave_army_{KING_ID}_0_0"] = "50"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [NO_LEADER_SENTINEL, 50, -1]
+
+
+def test_leave_phase_rejects_a_hostile_target_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="Hostile Hero", location=HOME))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LEAVE))
+    form[f"leave_target_{KING_ID}_0"] = "2"
+    form[f"leave_army_{KING_ID}_0_0"] = "50"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "own Kingdom or an ally's" in str(exc)
+
+
+def test_leave_phase_leave_all_collapses_to_the_sentinel():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LEAVE))
+    form[f"leave_target_{KING_ID}_0"] = LEAVE_GARRISON_VALUE
+    form[f"leave_army_{KING_ID}_0_0"] = LEAVE_ALL_VALUE
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [NO_LEADER_SENTINEL, ALL_ARMIES_SENTINEL, -1]
+
+
+def test_leave_phase_leave_all_combined_with_another_slot_is_rejected():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LEAVE))
+    form[f"leave_target_{KING_ID}_0"] = LEAVE_GARRISON_VALUE
+    form[f"leave_army_{KING_ID}_0_0"] = LEAVE_ALL_VALUE
+    form[f"leave_army_{KING_ID}_0_1"] = "50"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "can't be combined" in str(exc)
+
+
+def test_leave_phase_rejects_a_gap_between_slots():
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    state.add_army(ArmyState(51, 1, ArmyType.AXEMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LEAVE))
+    form[f"leave_target_{KING_ID}_0"] = LEAVE_GARRISON_VALUE
+    form[f"leave_army_{KING_ID}_0_0"] = "50"
+    form[f"leave_army_{KING_ID}_0_2"] = "51"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "follows empty slot" in str(exc)
+
+
+def test_leave_phase_rejects_an_army_this_leader_cannot_leave_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=2))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LEAVE))
+    form[f"leave_target_{KING_ID}_0"] = LEAVE_GARRISON_VALUE
+    form[f"leave_army_{KING_ID}_0_0"] = "50"  # commanded by someone else, never offered in the dropdown
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "isn't an army this leader can Leave" in str(exc)
+
+
+def test_leave_phase_without_choosing_any_target_is_rejected():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LEAVE))
+    form[f"leave_target_{KING_ID}_0"] = LEAVE_GARRISON_VALUE
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose at least one army to Leave" in str(exc)
+
+
+def test_build_composed_kingdom_round_trips_a_leave_order():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = {**_all_defend_form(KING_ID), **_all_defend_form(2)}
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LEAVE))
+    form[f"leave_target_{KING_ID}_0"] = "2"
+    form[f"leave_army_{KING_ID}_0_0"] = "50"
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.LEAVE
+    assert phase0.obj == 0
+    assert phase0.extra == [2, 50, -1]

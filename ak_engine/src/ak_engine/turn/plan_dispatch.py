@@ -1084,6 +1084,70 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
     own already-correct "a missing acting leader can't act at all"
     stance -- so a dead leader's Leave order now skips every listed
     army cleanly, the same as it already does for Disband.
+
+    **Three bug fixes, sourced directly from the user (2026-10-29), the
+    fuller rulebook [3.8] text they pasted while designing this
+    Action's own move-composer UI**:
+
+    (1) A *specific* army-id list (``request.all_armies`` is ``False``)
+    used to reassign command of *any* ``army_id`` present in ``state.
+    armies``, with no check that the acting leader actually commands
+    it, is co-located with it, or that it belongs to his own Kingdom at
+    all. Every target now must be either already commanded by the
+    acting leader (``army.commanded_by == leader_id``), or -- the
+    rulebook's own "novità" ("con questo comando si potranno passare
+    unità dal Comando di Guarnigione a un Eroe") -- unled and co-located
+    with the acting leader (``army.commanded_by is None and army.
+    location == acting_leader.location``); either way the army must
+    belong to the acting leader's own Kingdom. ``request.all_armies``
+    needs no equivalent check: it already resolves to ``armies_
+    commanded_by(leader_id)``, which trivially satisfies this rule.
+
+    (2) Leaving to a named Hero (``request.target_leader_id is not
+    None``) now requires that Hero to be of the acting leader's own
+    Kingdom or an allied one (``GameState.is_allied()``) -- "si può
+    lasciare... ad un altro Eroe, anche di un altro Reame, basta che sia
+    alleato." A target leader id that doesn't resolve to a real
+    ``LeaderState``, or belongs to a hostile/unrelated Kingdom, now
+    blocks the *whole* order (every requested army skipped) rather than
+    silently reassigning command to an invalid or hostile target --
+    there is no sourced "partial order" behavior for this case, so
+    skipping outright is the same conservative "no source, no guess"
+    choice `_dispatch_leave()`'s own pre-existing checks already make
+    elsewhere.
+
+    (3) "Un'unità lasciata a un generale... di un altro Reame diventa di
+    proprietà di quest'ultimo" is a *second*, independent Kingdom-
+    transfer trigger from the pre-existing "left in an ally's province"
+    one right below -- leaving directly to a named, allied-Kingdom Hero
+    (now guaranteed allied by check (2) above) transfers the army to
+    that Hero's own Kingdom, regardless of which Kingdom currently owns
+    the province the army happens to be standing in. The two triggers
+    are mutually exclusive by construction here (a named-Hero target
+    always takes the Hero's own Kingdom; only a Garrison target
+    (``target_leader_id is None``) ever falls back to the province-
+    ownership rule), avoiding an unsourced tie-break between the two
+    for the case where they'd otherwise disagree.
+
+    **Deliberately NOT implemented in this round -- confirmed with the
+    user as a real, separate engine gap, deferred rather than fixed
+    here**: "quello che ha iniziativa più alta aspetta quello che ha
+    iniziativa più bassa" -- when an order targets another leader of the
+    same (or an allied) Kingdom, the rulebook's own fuller text says the
+    higher-``character_initiative()`` leader's own same-phase action
+    waits for the lower-Initiative leader's targeting order to actually
+    resolve first, even out of the ordinary Initiative order (worked
+    example: Hero #13, Initiative 20, Leaves all his armies to Hero #14,
+    Initiative 40, in P2; Hero #14's own P2 Move waits for that Leave to
+    land first, despite his higher Initiative). `turn/turn_processor.py
+    run_turn()`'s own per-phase dispatch loop (`_collect_phase_entries()`)
+    has no Initiative-based reordering or cross-leader dependency
+    mechanism at all today -- confirmed absent, not just unconfirmed --
+    and would need one for this to work correctly, not just for Leave
+    but for *any* same-phase order targeting another leader (Recruit's
+    own commander dropdown included). That's a structural change to the
+    general phase-dispatch loop, well beyond this one function -- out of
+    scope for this round.
     """
 
     request = decode_army_list_phase(phase)
@@ -1097,9 +1161,23 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
         [army.army_id for army in state.armies_commanded_by(leader_id)] if request.all_armies else request.army_ids
     )
 
+    target_leader = state.leaders.get(request.target_leader_id) if request.target_leader_id is not None else None
+    if request.target_leader_id is not None and (
+        target_leader is None or not state.is_allied(acting_leader.kingdom_id, target_leader.kingdom_id)
+    ):
+        result.skipped.extend(target_ids)
+        return result
+
     for army_id in target_ids:
         army = state.armies.get(army_id)
         if army is None:
+            result.skipped.append(army_id)
+            continue
+        owns_or_may_pass_along = army.kingdom_id == acting_leader.kingdom_id and (
+            army.commanded_by == leader_id
+            or (army.commanded_by is None and army.location == acting_leader.location)
+        )
+        if not owns_or_may_pass_along:
             result.skipped.append(army_id)
             continue
         if (
@@ -1111,16 +1189,23 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
             state.remove_army(army_id)
             continue
         army.commanded_by = request.target_leader_id
-        province = state.provinces.get(army.location)
-        if (
-            province is not None
-            and province.owner_kingdom_id is not None
-            and province.owner_kingdom_id != army.kingdom_id
-            and state.is_allied(province.owner_kingdom_id, army.kingdom_id)
-        ):
-            # "If you Leave an army in an ally's province, the army then
-            # belongs to the ally." (rulebook [3.8])
-            army.kingdom_id = province.owner_kingdom_id
+        if target_leader is not None:
+            if target_leader.kingdom_id != army.kingdom_id:
+                # "An army left to a general of another Realm becomes
+                # that Realm's property" (rulebook [3.8]) -- already
+                # confirmed allied above.
+                army.kingdom_id = target_leader.kingdom_id
+        else:
+            province = state.provinces.get(army.location)
+            if (
+                province is not None
+                and province.owner_kingdom_id is not None
+                and province.owner_kingdom_id != army.kingdom_id
+                and state.is_allied(province.owner_kingdom_id, army.kingdom_id)
+            ):
+                # "If you Leave an army in an ally's province, the army then
+                # belongs to the ally." (rulebook [3.8])
+                army.kingdom_id = province.owner_kingdom_id
         result.succeeded.append(army_id)
 
     return result

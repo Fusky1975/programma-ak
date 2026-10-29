@@ -17,9 +17,11 @@
     own commander dropdown plus repeated army-type slots (cost/limit/mercenary preview only -- the engine is
     still the real arbiter at turn-processing time), Disband has its own repeated army-target slots
     (pre-filtered to exactly what this leader could actually Disband) plus a "Disband ALL I command"
-    pseudo-option in the first slot; every other Action still takes the same plain Object + Extra numbers a
-    real move file's own "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving
-    builds a real move file from these and stores it exactly like an uploaded one.
+    pseudo-option in the first slot, Leave has its own "to" dropdown (another co-located, allied leader, or
+    the Garrison Commander) plus the same repeated army-target slot shape as Disband; every other Action
+    still takes the same plain Object + Extra numbers a real move file's own "P&lt;n&gt; : &lt;action&gt;
+    &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a real move file from these and stores it
+    exactly like an uploaded one.
   </p>
 
   <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
@@ -35,6 +37,7 @@
             <th>Search Feature</th>
             <th>Recruit</th>
             <th>Disband</th>
+            <th>Leave</th>
             <th>Object</th>
             <th>Extra (space or comma separated)</th>
           </tr>
@@ -130,14 +133,38 @@
               </td>
               <td class="compose-special-cell" data-action="{{ disband_action_value }}">
                 <span class="hex-map-legend-note">Armies to disband (empty slots stop the list there; "Disband ALL I command" must be alone):</span>
-                <table class="data-table compose-disband-plan">
+                <table class="data-table compose-army-all-plan" data-all-value="{{ disband_all_value }}">
                   <tbody>
                     {% for slot in disband_slot_numbers %}
                       <tr>
                         <td>
-                          <select class="compose-disband-slot" name="disband_target_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                          <select class="compose-army-all-slot" name="disband_target_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
                             <option value="">-- no army --</option>
                             {% for value, label in disband_choices_by_leader[leader.leader_id][slot] %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </td>
+              <td class="compose-special-cell" data-action="{{ leave_action_value }}">
+                <select name="leave_target_{{ leader.leader_id }}_{{ n }}">
+                  {% for value, label in leave_target_choices_by_leader[leader.leader_id] %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <br><span class="hex-map-legend-note">Armies to leave (empty slots stop the list there; "Leave ALL I command" must be alone):</span>
+                <table class="data-table compose-army-all-plan" data-all-value="{{ leave_all_value }}">
+                  <tbody>
+                    {% for slot in leave_slot_numbers %}
+                      <tr>
+                        <td>
+                          <select class="compose-army-all-slot" name="leave_army_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- no army --</option>
+                            {% for value, label in leave_army_choices_by_leader[leader.leader_id][slot] %}
                               <option value="{{ value }}">{{ label }}</option>
                             {% endfor %}
                           </select>
@@ -253,17 +280,19 @@
     }
   });
 
-  // Disband's own "Disband ALL I command" pseudo-option (slot 0 only)
-  // can't be combined with a specific army in another slot (see
-  // webapp/moves_compose.py's own docstring) -- disabling the other
-  // slots here is a hint only, build_composed_kingdom()'s own
-  // server-side check is what actually enforces it.
-  var DISBAND_ALL_VALUE = "{{ disband_all_value }}";
-
-  function updateDisbandPlan(plan) {
-    var slots = plan.querySelectorAll(".compose-disband-slot");
+  // Disband's and Leave's own "<Action> ALL I command" pseudo-option
+  // (slot 0 only) can't be combined with a specific army in another
+  // slot (see webapp/moves_compose.py's own docstring) -- disabling
+  // the other slots here is a hint only, build_composed_kingdom()'s
+  // own server-side check is what actually enforces it. Shared, data-
+  // driven (`data-all-value` on each `.compose-army-all-plan`) rather
+  // than one hardcoded variable+function per Action, so a later
+  // Action with the same "ALL in slot 0" shape needs no further
+  // changes here.
+  function updateArmyAllPlan(plan) {
+    var slots = plan.querySelectorAll(".compose-army-all-slot");
     if (!slots.length) return;
-    var allChosen = slots[0].value === DISBAND_ALL_VALUE;
+    var allChosen = slots[0].value === plan.getAttribute("data-all-value");
     slots.forEach(function (select, index) {
       if (index === 0) return;
       select.disabled = allChosen;
@@ -271,11 +300,11 @@
     });
   }
 
-  document.querySelectorAll(".compose-disband-plan").forEach(updateDisbandPlan);
+  document.querySelectorAll(".compose-army-all-plan").forEach(updateArmyAllPlan);
   document.addEventListener("change", function (event) {
-    if (event.target.classList && event.target.classList.contains("compose-disband-slot")) {
-      var plan = event.target.closest(".compose-disband-plan");
-      if (plan) updateDisbandPlan(plan);
+    if (event.target.classList && event.target.classList.contains("compose-army-all-slot")) {
+      var plan = event.target.closest(".compose-army-all-plan");
+      if (plan) updateArmyAllPlan(plan);
     }
   });
 </script>
