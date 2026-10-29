@@ -216,6 +216,32 @@ works this way, fixed at creation, never corrected later), so there is
 no "was Elven, became Saurian" moment for an announcement to narrate in
 the first place -- a Dinosaur army is simply Saurian from the moment
 it's recruited.
+
+**Non-native double-cost recruiting now needs an existing unit of that
+type (2026-10-28), RULES.AK [3.4], sourced directly from the user**: "se
+non è possibile reclutare un certo tipo di unità militare perché non
+previsto per la popolazione nativa, si può comunque effettuare
+l'arruolamento se il comandante, o il personaggio a favore del quale
+viene dato l'ordine, ha già ai suoi ordini un'altra unità del tipo."
+Through this phase, Phase 407's own double-cost path (above) applied
+unconditionally to any race-compatible-but-non-native type -- a real gap,
+since the rulebook ties that option to a precondition, not an
+unconditional price bump. ``turn/recruit.py resolve_recruit()`` now takes
+``commander_already_has_type`` and raises a new, distinct
+``NonNativeTypeNotYetOwnedError`` (not ``IncompatibleRaceError`` -- the
+race *is* compatible here, only the ownership precondition fails) when
+it's ``False``; this module computes it fresh on every loop iteration
+(so a unit of that type recruited earlier in the very same request also
+counts) by scanning ``state.armies`` for one already ``commanded_by``
+the resolved ``commanded_by`` of this order. A Garrison-targeted order
+(``commanded_by is None``) has no commander roster to check against, so
+this precondition can never be satisfied for it -- the rulebook's own
+wording names "the commander, or the [...] favored character," never the
+garrison, so a Garrison-targeted recruit of a non-native type is always
+blocked, reported via the new ``RecruitExecutionResult.non_native_type_
+not_owned``, same "no sourced narrative template yet" convention as
+every other blocked-request list (see ``report/turn_report.py describe_
+recruit()``'s own docstring).
 """
 
 from __future__ import annotations
@@ -230,7 +256,12 @@ from ak_engine.models.office import Office
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.office_holder import resolve_office_holder
-from ak_engine.turn.recruit import IncompatibleRaceError, is_army_type_compatible_with_race, resolve_recruit
+from ak_engine.turn.recruit import (
+    IncompatibleRaceError,
+    NonNativeTypeNotYetOwnedError,
+    is_army_type_compatible_with_race,
+    resolve_recruit,
+)
 from ak_engine.turn.recruit_decode import RecruitRequest
 
 # Phase 691: Druid skill required for full Dinosaur quality
@@ -286,6 +317,14 @@ class RecruitExecutionResult:
     # has already been recruited this turn); this one blocks the very
     # first attempt when the province's own recruit slots don't qualify.
     elven_slot_required: list[ArmyType] = field(default_factory=list)
+    # Sourced directly from the user (2026-10-28), RULES.AK [3.4]: a
+    # non-native type is recruitable at double cost only if the
+    # commander already has another unit of that same type under their
+    # command; without that, the type isn't recruitable here at all --
+    # a separate reason from `incompatible` (race-incompatible), so it
+    # gets its own bucket, matching this dataclass's own established
+    # one-field-per-distinct-block-reason convention.
+    non_native_type_not_owned: list[ArmyType] = field(default_factory=list)
     total_gold_spent: int = 0
 
 
@@ -394,6 +433,33 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             is_native = army_type in (province.recruit_type_1, province.recruit_type_2)
         else:
             is_native = is_army_type_compatible_with_race(army_type, province.race)
+        # Sourced directly from the user (2026-10-28), RULES.AK [3.4]:
+        # "il comandante, o il personaggio a favore del quale viene dato
+        # l'ordine, ha già ai suoi ordini un'altra unità del tipo" --
+        # checked against `commanded_by` (the actual resolved commander
+        # for this order, already co-location-checked above), re-scanned
+        # fresh on every loop iteration so a unit of this same type
+        # recruited earlier in this SAME request also counts. A
+        # Garrison-targeted order (`commanded_by is None`) has no
+        # commander roster to check, so this precondition can never be
+        # met for it -- the literal text ties the exception to a named
+        # commander/favored character, not to the garrison.
+        #
+        # Dinosaurs are exempt: their own non-native-race eligibility is
+        # already fully governed by a separate, previously user-confirmed
+        # precondition chain (`AdvancedAbility.DRUIDIC_DINOSAURS` plus the
+        # province's own Elephants/Lt Cavalry/Hvy Cavalry slot requirement,
+        # Phase 691/980 above) -- that chain *is* this army type's own real
+        # "why a non-native type is recruitable here" story, not the
+        # generic one this new check targets. Layering the new check on
+        # top as well would make a first Dinosaur unit permanently
+        # unrecruitable anywhere (nobody can ever already own one), which
+        # would silently break that already-shipped, already-confirmed
+        # mechanic.
+        commander_already_has_type = army_type is ArmyType.DINOSAURS or (
+            commanded_by is not None
+            and any(army.commanded_by == commanded_by and army.army_type is army_type for army in state.armies.values())
+        )
         try:
             resolution = resolve_recruit(
                 army_type,
@@ -403,9 +469,13 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
                 in_ally_territory=in_ally_territory,
                 is_former_home_province_now_allied=is_former_home_province_now_allied,
                 chief_of_staff_discount=leader_is_chief_of_staff,
+                commander_already_has_type=commander_already_has_type,
             )
         except IncompatibleRaceError:
             result.incompatible.append(army_type)
+            continue
+        except NonNativeTypeNotYetOwnedError:
+            result.non_native_type_not_owned.append(army_type)
             continue
 
         # Phase 691: the race gate (Race.ELVEN, checked above via

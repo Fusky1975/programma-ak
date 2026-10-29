@@ -6459,6 +6459,65 @@ def test_turns_compose_save_search_order_without_a_chosen_feature_shows_an_error
     assert b"choose a Feature to Search" in response.data
 
 
+def test_turns_compose_shows_a_recruit_target_and_type_dropdown(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"recruit_target_" in response.data
+    assert b"Garrison (unled)" in response.data
+    assert b"recruit_type_" in response.data
+    assert b"-- no type --" in response.data
+
+
+def test_turns_compose_save_recruit_order_encodes_target_and_types(tmp_path):
+    from ak_engine.models.army_type import ARMY_TYPE_BY_ORDINAL, ArmyType
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    ordinal_by_type = {army_type: ordinal for ordinal, army_type in ARMY_TYPE_BY_ORDINAL.items()}
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{king.leader_id}_0"] = "self"
+    form[f"recruit_type_{king.leader_id}_0_0"] = str(ordinal_by_type[ArmyType.BOWMEN])
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    recruit_phase = king_block.plan.segments[0].phases["P0"]
+    assert recruit_phase.action is ActionCode.RECRUIT
+    assert recruit_phase.obj == king.leader_id
+    assert recruit_phase.extra == [0, ordinal_by_type[ArmyType.BOWMEN], -1]
+
+
+def test_turns_compose_save_recruit_order_with_no_type_chosen_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{king.leader_id}_0"] = "self"
+    # recruit_type_<king>_0_0 deliberately left unset.
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"choose at least one army type" in response.data
+
+
 def test_turns_compose_shows_encounter_plan_tactic_slots(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

@@ -7,6 +7,7 @@ from ak_engine.models.race import Race
 from ak_engine.turn.recruit import (
     FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT,
     IncompatibleRaceError,
+    NonNativeTypeNotYetOwnedError,
     is_army_type_compatible_with_race,
     recruit_limit,
     resolve_recruit,
@@ -108,10 +109,21 @@ def test_resolve_recruit_native_cost_matches_army_table_pay():
 def test_resolve_recruit_non_native_cost_is_doubled():
     result = resolve_recruit(
         ArmyType.HVY_CAVALRY, Race.HUMAN,
-        is_home_province=False, is_native_to_province=False,
+        is_home_province=False, is_native_to_province=False, commander_already_has_type=True,
     )
     assert result.gold_per_unit == 6
     assert result.is_double_cost is True
+
+
+def test_resolve_recruit_non_native_without_an_existing_unit_is_not_recruitable():
+    # RULES.AK [3.4], sourced directly from the user: a non-native type is
+    # only recruitable at double cost if the commander already has another
+    # unit of that type -- without that, it isn't recruitable at all.
+    with pytest.raises(NonNativeTypeNotYetOwnedError):
+        resolve_recruit(
+            ArmyType.HVY_CAVALRY, Race.HUMAN,
+            is_home_province=False, is_native_to_province=False,
+        )
 
 
 def test_resolve_recruit_in_ally_territory_adds_flat_fee():
@@ -172,6 +184,7 @@ def test_resolve_recruit_chief_of_staff_discount_taken_before_non_native_doublin
     result = resolve_recruit(
         ArmyType.HVY_CAVALRY, Race.HUMAN,
         is_home_province=False, is_native_to_province=False, chief_of_staff_discount=True,
+        commander_already_has_type=True,
     )
     assert result.gold_per_unit == 4
 

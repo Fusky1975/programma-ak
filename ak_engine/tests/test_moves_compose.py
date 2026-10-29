@@ -28,9 +28,10 @@ import tempfile
 from pathlib import Path
 
 from ak_engine.models.alignment import Alignment
+from ak_engine.models.army_type import ARMY_TYPE_BY_ORDINAL, NO_LEADER_SENTINEL, ArmyType
 from ak_engine.models.enums import ActionCode, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
-from ak_engine.models.game_state import GameState, KingdomState, LeaderState, ProvinceState
+from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState, ProvinceState
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
@@ -38,6 +39,7 @@ from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.parser.k1_moves import parse_k1_moves_file
 from ak_engine.parser.k1_moves_writer import write_k1_moves_file
+from ak_engine.turn.combat import Quality
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.webapp.moves_compose import (
     EMPTY_SEARCH_EXTRA,
@@ -48,9 +50,13 @@ from ak_engine.webapp.moves_compose import (
     item_options,
     parse_phase_inputs,
     province_options,
+    recruit_target_options,
+    recruit_type_options,
     spell_options,
     tactic_options,
 )
+
+_ORDINAL_BY_ARMY_TYPE = {army_type: ordinal for ordinal, army_type in ARMY_TYPE_BY_ORDINAL.items()}
 
 BOARD_WIDTH = 6
 BOARD_HEIGHT = 4
@@ -1042,3 +1048,183 @@ def test_build_composed_kingdom_round_trips_a_use_item_wand_of_fireball():
 
     phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
     assert phase0.extra == [0, int(Maneuver.USE_MI), item.item_id, -1]
+
+
+def test_recruit_target_options_lists_self_and_garrison_and_colocated_leaders():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    state.add_leader(LeaderState(leader_id=3, kingdom_id=1, name="Elsewhere", location=HexCoord(3, 2)))
+
+    options = recruit_target_options(state, KING_ID)
+
+    assert options[0] == ("self", "Self (Aldric)")
+    assert ("2", "Bram") in options
+    assert not any(label == "Elsewhere" for _value, label in options)
+    assert options[-1] == ("garrison", "Garrison (unled)")
+
+
+def test_recruit_target_options_labels_a_different_kingdoms_colocated_leader():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Allyria", Race.HUMAN, Alignment.GOOD, HexCoord(5, 5)))
+    state.add_leader(LeaderState(leader_id=9, kingdom_id=2, name="Guest", location=HOME, is_king=True))
+
+    options = recruit_target_options(state, KING_ID)
+
+    assert ("9", "Guest, Allyria") in options
+
+
+def test_recruit_type_options_lists_native_type_at_base_cost():
+    state = _state()
+    options = recruit_type_options(state, KING_ID)
+    values = dict(options)
+    bowmen_value = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+    assert "native, 2 gold" in values[bowmen_value]
+
+
+def test_recruit_type_options_labels_non_native_type_at_double_cost_with_ownership_note():
+    state = _state()
+    state.provinces[HOME].recruit_type_1 = ArmyType.LEGION
+    options = recruit_type_options(state, KING_ID)
+    values = dict(options)
+    bowmen_value = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+    assert "non-native, 4 gold -- needs an existing unit of this type" in values[bowmen_value]
+
+
+def test_recruit_type_options_excludes_race_incompatible_types():
+    state = _state()  # HOME is a Human province
+    options = recruit_type_options(state, KING_ID)
+    values = [value for value, _label in options]
+    assert str(_ORDINAL_BY_ARMY_TYPE[ArmyType.DRAGON_WING]) not in values
+
+
+def test_recruit_type_options_excludes_ordinals_with_no_cost_data():
+    # Marauders (ordinal 22) has no ARMY_TABLE entry -- resolve_recruit()
+    # always rejects it outright, so it's never offered here either.
+    state = _state()
+    options = recruit_type_options(state, KING_ID)
+    values = [value for value, _label in options]
+    assert str(_ORDINAL_BY_ARMY_TYPE[ArmyType.MARAUDERS]) not in values
+
+
+def test_recruit_type_options_flags_mercenary_presence():
+    state = _state()
+    state.add_army(ArmyState(900, None, ArmyType.BOWMEN, Quality.VETERAN, HOME, is_mercenary=True))
+    options = recruit_type_options(state, KING_ID)
+    values = dict(options)
+    bowmen_value = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+    assert "1 mercenary unit present" in values[bowmen_value]
+
+
+def test_recruit_phase_reads_its_own_dropdowns_not_the_generic_object_field():
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "self"
+    bowmen = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+    form[f"recruit_type_{KING_ID}_0_0"] = bowmen
+    form[f"obj_{KING_ID}_0"] = "999"  # must be ignored for a Recruit phase
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+
+    recruit_phase = phases[0]
+    assert recruit_phase.action is ActionCode.RECRUIT
+    assert recruit_phase.obj == KING_ID
+    assert recruit_phase.extra == [0, int(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN]), -1]
+
+
+def test_recruit_phase_target_garrison_resolves_to_sentinel():
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "garrison"
+    form[f"recruit_type_{KING_ID}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+
+    assert phases[0].obj == NO_LEADER_SENTINEL
+
+
+def test_recruit_phase_target_another_leader_resolves_to_that_leader_id():
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "2"
+    form[f"recruit_type_{KING_ID}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+
+    assert phases[0].obj == 2
+
+
+def test_recruit_phase_can_list_several_types_in_one_order():
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "self"
+    form[f"recruit_type_{KING_ID}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+    form[f"recruit_type_{KING_ID}_0_1"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.GARRISON])
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+
+    assert phases[0].extra == [
+        0,
+        int(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN]),
+        int(_ORDINAL_BY_ARMY_TYPE[ArmyType.GARRISON]),
+        -1,
+    ]
+
+
+def test_recruit_phase_without_choosing_any_type_is_rejected():
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "self"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose at least one army type" in str(exc)
+
+
+def test_recruit_phase_rejects_a_gap_between_type_slots():
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "self"
+    form[f"recruit_type_{KING_ID}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+    form[f"recruit_type_{KING_ID}_0_2"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.GARRISON])
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "follows empty slot" in str(exc)
+
+
+def test_recruit_phase_rejects_an_unknown_type_ordinal_even_via_a_direct_tampered_value():
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "self"
+    form[f"recruit_type_{KING_ID}_0_0"] = "999"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "isn't a known army type" in str(exc)
+
+
+def test_build_composed_kingdom_round_trips_a_recruit_order():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "self"
+    form[f"recruit_type_{KING_ID}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.obj == KING_ID
+    assert phase0.extra == [0, int(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN]), -1]

@@ -79,6 +79,7 @@ from ak_engine.parser.k1_moves_writer import K1WriteError, write_k1_moves_file
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
 from ak_engine.webapp.moves_compose import (
     PHASE_COUNT,
+    RECRUIT_TYPE_SLOT_COUNT,
     SAY_TEXT_MAX_LENGTH,
     TACTIC_SLOT_COUNT,
     InvalidComposedMovesError,
@@ -87,6 +88,8 @@ from ak_engine.webapp.moves_compose import (
     item_options,
     kingdom_leaders_for_compose,
     province_options,
+    recruit_target_options,
+    recruit_type_options,
     spell_options,
     tactic_options,
 )
@@ -3020,6 +3023,14 @@ def create_app(games_root: Path | None = None) -> Flask:
             move_action_value=int(ActionCode.LMOVE),
             explore_action_value=int(ActionCode.EXPLORE),
             search_action_value=int(ActionCode.SEARCH),
+            recruit_action_value=int(ActionCode.RECRUIT),
+            recruit_slot_numbers=range(RECRUIT_TYPE_SLOT_COUNT),
+            recruit_target_choices_by_leader={
+                leader.leader_id: recruit_target_options(state, leader.leader_id) for leader in roster
+            },
+            recruit_type_choices_by_leader={
+                leader.leader_id: recruit_type_options(state, leader.leader_id) for leader in roster
+            },
             province_choices=province_options(state),
             feature_choices_by_leader={
                 leader.leader_id: feature_options(state, leader_id=leader.leader_id) for leader in roster

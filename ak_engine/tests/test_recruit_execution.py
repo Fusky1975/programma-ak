@@ -356,13 +356,66 @@ def test_race_compatible_but_unlisted_type_costs_double_when_mod_pat_known():
     state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
     # Bowmen is humanoid-compatible (race-approximation would call it
     # "native"), but this province's own real Mod_PAT list only names
-    # Legion -- still recruitable, just at double cost.
-    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])  # pay 2 -> 4
+    # Legion -- still recruitable at double cost, provided the commander
+    # already has another Bowmen unit (RULES.AK [3.4], sourced directly
+    # from the user, 2026-10-28).
+    state.add_army(ArmyState(900, 1, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, commanded_by=LEADER_ID))
+    request = RecruitRequest(leader_id=LEADER_ID, army_types=[ArmyType.BOWMEN])  # pay 2 -> 4
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
 
     assert result.recruited[0].gold_paid == 4
     assert result.recruited[0].army_type == ArmyType.BOWMEN
+
+
+def test_race_compatible_but_unlisted_type_without_an_existing_unit_is_not_recruitable():
+    # Same scenario as above, but the commander has no pre-existing
+    # Bowmen unit -- the new ownership precondition blocks it outright,
+    # rather than merely doubling the price.
+    state = build_state()
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    request = RecruitRequest(leader_id=LEADER_ID, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.non_native_type_not_owned == [ArmyType.BOWMEN]
+
+
+def test_non_native_type_blocked_for_a_garrison_targeted_order():
+    # A Garrison-targeted order (leader_id=None) has no commander roster
+    # to check ownership against, so a non-native type can never pass
+    # this precondition for it -- even with an existing Garrison-
+    # commanded unit of that type already present.
+    state = build_state()
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    state.add_army(ArmyState(900, 1, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, commanded_by=None))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.non_native_type_not_owned == [ArmyType.BOWMEN]
+
+
+def test_non_native_type_ownership_check_is_re_evaluated_for_every_unit_in_the_request():
+    # The ownership check is re-scanned fresh on every loop iteration
+    # (not cached once up front) -- a single pre-existing Bowmen unit
+    # from an earlier turn still satisfies the precondition for every
+    # Bowmen unit requested in this one call, not just the first.
+    # Home province: the per-turn limit for Bowmen is 2, so both units in
+    # this one request can actually be recruited -- isolating the
+    # ownership check from the separate per-type limit check.
+    state = build_state(is_home_province=True)
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    state.provinces[LOCATION].recruit_type_2 = ArmyType.LEGION
+    state.add_army(ArmyState(900, 1, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, commanded_by=LEADER_ID))
+    request = RecruitRequest(leader_id=LEADER_ID, army_types=[ArmyType.BOWMEN, ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 2
+    assert all(unit.army_type is ArmyType.BOWMEN for unit in result.recruited)
 
 
 def test_mod_pat_unknown_falls_back_to_race_compatibility_single_cost():
