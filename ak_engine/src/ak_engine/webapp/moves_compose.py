@@ -731,6 +731,39 @@ it (see ``LeaderState.pending_skill_advancement``'s own docstring for
 the full citation and mechanism) -- nothing about that fix touches this
 composer, since the GM still just picks which Ability to practice.
 
+**Trail [TR] (``ActionCode.TRAIL``), the seventh Action designed**
+(2026-10-30) -- confirmed against the user's own full Italian [3.17]
+text and ``turn/trail_decode.py``/``turn/trail_execution.py``'s own
+docstrings. One of the most faithfully implemented Actions reviewed so
+far: every element of the pasted rulebook paragraph (the target's own
+Actions, race, Temperament, Alignment, treasures, armies commanded, plus
+a King target's own treasury/alliances/controlled-provinces; the
+trailer-leads-an-army rejection; "ends once reached and spied on for one
+phase, needs re-issuing to continue"; no Encounter Plan, unlike Pursue)
+has a direct, cited code path -- the one confirmed gap is the
+rulebook's own "nemici" (enemies): ``turn/trail_execution.py``'s own
+``KingIntelligence`` carries no enemies field at all, because this
+project has no positive war/hostility registry anywhere (only a
+friendly-pairs ``allied_kingdoms`` one) and deliberately refuses to
+infer "not allied == enemy." Left deferred per the user's own explicit
+choice -- not fixed in this round. ``obj`` is simply the target's own
+real ``leader_id`` (confirmed from the Pascal source itself,
+``RUMORS.PAS Set_Intel`` comparing this field directly against other
+character ids -- *not* a roster-position ordinal, despite the Italian
+syntax's own "numero d'ordine" phrasing); ``extra`` carries no decoded
+meaning (``TrailRequest.unconfirmed_extra0``, always ``0`` in the one
+real-ish sample). So the composer needs only one dropdown --
+``trail_target_options()``, every *other* leader in the game, any
+Kingdom, independent Heroes included (unlike Give/Leave, Trail needs no
+co-location at all between trailer and target -- ``execute_trail()``
+computes a distance-based catch-up chance instead) -- and one parse
+function, ``_parse_trail_target()``; ``extra`` is always encoded as
+``[0]``. ``_parse_trail_target()`` also enforces, at compose time rather
+than only at turn-processing time, the one real restriction the
+rulebook names: a leader who already commands an army can't be given a
+Trail order at all (``GameState.armies_commanded_by()``, the same check
+``execute_trail()`` itself makes).
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
 and a nested Hire/Charm/Resurrection plan (``PlanPhase.nested_plan``)
@@ -1396,6 +1429,32 @@ def practice_ability_options() -> list[tuple[int, str]]:
     return [(ability.value, ABILITY_NAME[ability]) for ability in sorted(Ability, key=lambda a: a.value)]
 
 
+def trail_target_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every other leader in the game as a ``(value, label)`` pair for
+    Trail's own target dropdown -- rulebook [3.17]'s own "#(numero
+    d'ordine del re o dell'eroe)" is the real target ``leader_id``
+    (``turn/trail_decode.py``'s own docstring; despite the Italian
+    phrasing, not a roster-position ordinal), and, unlike Give/Leave,
+    Trail needs no co-location at all between trailer and target
+    (``turn/trail_execution.py execute_trail()`` computes a distance-
+    based catch-up chance instead of requiring the two already be
+    together) -- so every other living leader in the world is a valid
+    target, any Kingdom, independent Heroes included.
+    """
+
+    if leader_id not in state.leaders:
+        return []
+    options: list[tuple[str, str]] = []
+    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+        if other.leader_id == leader_id:
+            continue
+        kingdom = state.kingdoms.get(other.kingdom_id)
+        kingdom_part = kingdom.name if kingdom is not None else "independent"
+        title_part = "King" if other.is_king else "Hero"
+        options.append((str(other.leader_id), f"{other.name} ({title_part}, {kingdom_part})"))
+    return options
+
+
 def tactic_options(slot: int) -> list[tuple[int, str]]:
     """Every composable ``Maneuver`` for one Search Encounter Plan tactic
     slot, as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only
@@ -1817,6 +1876,34 @@ def _parse_practice_ability(raw: str, *, phase_label: str) -> int:
     return ability_ordinal
 
 
+def _parse_trail_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
+    """Reads a Trail phase's own ``trail_target_<leader_id>_<n>`` field
+    into the real target ``leader_id`` -- the wire encoding is already a
+    bare leader id (``trail_target_options()``'s own dropdown value), so
+    no sentinel decoding is needed. Also enforces, at compose time
+    rather than only at turn-processing time, rulebook [3.17]'s own "a
+    character leading an army may not be ordered to Trail" -- the same
+    check ``turn/trail_execution.py execute_trail()`` itself makes
+    (``GameState.armies_commanded_by()``), restricting the *trailer*
+    only -- the target may freely command an army.
+    """
+
+    raw = form.get(f"trail_target_{leader_id}_{n}", "")
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Trail target.")
+    target_id = _parse_int(raw, field_label=f"{phase_label} Trail target")
+    if target_id == leader_id or state.leaders.get(target_id) is None:
+        # Defense in depth: every dropdown-offered id is a real, other
+        # leader, but a direct, tampered POST could still name the
+        # acting leader himself or one that doesn't exist.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Trail target.")
+    if state.armies_commanded_by(leader_id):
+        raise InvalidComposedMovesError(
+            f"{phase_label}: a character leading an army may not be ordered to Trail."
+        )
+    return target_id
+
+
 def _parse_search_tactics(
     form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
 ) -> list[int | str]:
@@ -2027,7 +2114,11 @@ def parse_phase_inputs(
     Practice (``ActionCode.PRACTICE``) phase reads its own single
     ``practice_ability_<leader_id>_<n>`` dropdown for ``obj`` (``_parse_
     practice_ability()``, same module docstring's own Practice section)
-    and always encodes ``extra`` as ``[0]``.
+    and always encodes ``extra`` as ``[0]``. A Trail (``ActionCode.
+    TRAIL``) phase reads its own single ``trail_target_<leader_id>_<n>``
+    dropdown for ``obj`` (``_parse_trail_target()``, same module
+    docstring's own Trail section) and always encodes ``extra`` as
+    ``[0]``.
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -2067,6 +2158,9 @@ def parse_phase_inputs(
             extra = [0, trade_recipient_id]
         elif action is ActionCode.PRACTICE:
             obj = _parse_practice_ability(form.get(f"practice_ability_{leader_id}_{n}", ""), phase_label=f"P{n}")
+            extra = [0]
+        elif action is ActionCode.TRAIL:
+            obj = _parse_trail_target(form, leader_id, n, phase_label=f"P{n}", state=state)
             extra = [0]
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")

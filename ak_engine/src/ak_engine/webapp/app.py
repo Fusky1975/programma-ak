@@ -106,6 +106,7 @@ from ak_engine.webapp.moves_compose import (
     tactic_options,
     trade_gift_options,
     trade_recipient_options,
+    trail_target_options,
 )
 from ak_engine.webapp.kingdom_create import (
     NoProvinceAtCoordError,
@@ -3086,6 +3087,10 @@ def create_app(games_root: Path | None = None) -> Flask:
             },
             practice_action_value=int(ActionCode.PRACTICE),
             practice_ability_choices=practice_ability_options(),
+            trail_action_value=int(ActionCode.TRAIL),
+            trail_target_choices_by_leader={
+                leader.leader_id: trail_target_options(state, leader.leader_id) for leader in roster
+            },
             province_choices=province_options(state),
             feature_choices_by_leader={
                 leader.leader_id: feature_options(state, leader_id=leader.leader_id) for leader in roster

@@ -60,6 +60,7 @@ from ak_engine.webapp.moves_compose import (
     pick_up_army_target_options,
     practice_ability_options,
     province_options,
+    trail_target_options,
     recruit_target_options,
     recruit_type_options,
     spell_options,
@@ -2105,4 +2106,113 @@ def test_build_composed_kingdom_round_trips_a_practice_order():
     phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
     assert phase0.action is ActionCode.PRACTICE
     assert phase0.obj == Ability.NECROMANCY.value
+    assert phase0.extra == [0]
+
+
+def test_trail_target_options_lists_every_other_leader_any_kingdom_no_colocation_needed():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="Bram", location=HexCoord(9, 9), is_king=True))
+    state.add_leader(LeaderState(leader_id=3, kingdom_id=None, name="Wanda", location=HOME))
+
+    options = trail_target_options(state, KING_ID)
+
+    values = {value for value, _label in options}
+    assert values == {"2", "3"}
+    assert str(KING_ID) not in values  # never offers the acting leader himself
+
+
+def test_trail_phase_reads_its_own_target_dropdown():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRAIL))
+    form[f"trail_target_{KING_ID}_0"] = "2"
+    form[f"obj_{KING_ID}_0"] = "999"  # must be ignored for a Trail phase
+    form[f"extra_{KING_ID}_0"] = "5"  # must be ignored too -- always [0]
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    trail_phase = phases[0]
+    assert trail_phase.action is ActionCode.TRAIL
+    assert trail_phase.obj == 2
+    assert trail_phase.extra == [0]
+
+
+def test_trail_phase_without_choosing_a_target_is_rejected():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRAIL))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Trail target" in str(exc)
+
+
+def test_trail_phase_rejects_targeting_self_even_via_a_direct_tampered_value():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRAIL))
+    form[f"trail_target_{KING_ID}_0"] = str(KING_ID)  # never offered in the dropdown
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Trail target" in str(exc)
+
+
+def test_trail_phase_rejects_an_unknown_target_even_via_a_direct_tampered_value():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRAIL))
+    form[f"trail_target_{KING_ID}_0"] = "999999"  # never offered in the dropdown
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Trail target" in str(exc)
+
+
+def test_trail_phase_rejects_a_trailer_who_already_commands_an_army():
+    # Rulebook [3.17]: "Un personaggio che comanda un'unita' militare non
+    # puo' ricevere il comando Trail" -- enforced at compose time, not
+    # just at turn-processing time (turn/trail_execution.py execute_
+    # trail()'s own identical check).
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRAIL))
+    form[f"trail_target_{KING_ID}_0"] = "2"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "a character leading an army may not be ordered to Trail" in str(exc)
+
+
+def test_build_composed_kingdom_round_trips_a_trail_order():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    form = {**_all_defend_form(KING_ID), **_all_defend_form(2)}
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRAIL))
+    form[f"trail_target_{KING_ID}_0"] = "2"
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.TRAIL
+    assert phase0.obj == 2
     assert phase0.extra == [0]
