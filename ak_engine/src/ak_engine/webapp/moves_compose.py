@@ -947,7 +947,7 @@ The remaining 19 spells split into 4 target shapes (``turn/cast_
 decode.py``'s own frozensets), each composed differently: a generic
 character-target dropdown (``cast_character_target_options()``, every
 leader in the game, no further per-spell eligibility filtering this
-round -- Kill Enemy/Charm/Oratory/Clairvoyance/Phantasmal Armies/Mystic
+round -- Kill Enemy/Oratory/Clairvoyance/Phantasmal Armies/Mystic
 Winds); a province-target dropdown (reusing Move's own ``province_
 options()``/``_parse_move_target()`` directly -- Part Sea/Bless/Plague/
 Flood/Tornado/Earthquake/Illusory Terrain/Hide Feature/Scar Terrain/
@@ -957,12 +957,34 @@ one no-target spell left after excluding Gate Angel); and an item
 dropdown listing every item in the game, not just this leader's own
 (``cast_item_target_options()`` -- Locate Object, since the spell's own
 point is finding an item whose location isn't already known). Resurrection
-gets its own, deliberately more elaborate target handling
-(``resurrection_target_options()``/``_parse_resurrection_target()``),
-merging all three of ``_execute_resurrection()``'s own eligibility
-branches (comatose cure, Royal Heir restoration, ordinary dead-Hero
-revival from ``GameState.dead_leaders``) into one dropdown, each
-labelled by which branch it resolves to.
+and Charm each get their own, deliberately more elaborate target
+handling instead of the generic character-target dropdown.
+Resurrection's own (``resurrection_target_options()``/``_parse_
+resurrection_target()``) merges all three of ``_execute_resurrection()``'s
+own eligibility branches (comatose cure, Royal Heir restoration,
+ordinary dead-Hero revival from ``GameState.dead_leaders``) into one
+dropdown, each labelled by which branch it resolves to. Charm's own
+(``charm_target_options()``/``_parse_charm_target()``, 2026-11-01,
+confirmed against the user's own full Italian text) lists every co-
+located, army-less, non-King leader of *any* Kingdom -- including an
+enemy's or another independent character's own, a deliberate, user-
+confirmed choice: Charm's own free-hire branch, unlike Hire, has no
+"must already be independent" requirement, so poaching a foreign Hero
+outright is real, tested engine behavior, not an extension of this
+composer's own scope. When the acting leader is themself an Undead King
+(``LeaderState.alignment is Alignment.UNDEAD`` and ``is_king``), the
+template surfaces a conditional note next to this same dropdown about
+the "Seduzione" Undead-conversion side effect (``turn/cast_execution.py
+_apply_undead_king_alignment_conversion()``) -- a caster-conditional
+*effect* layered on the identical target pool, not a second dropdown,
+since the eligibility set never differs based on it. One correction
+to the pasted rulebook text worth flagging, already correctly
+implemented and disassembly-sourced in an earlier round, not a bug:
+"l'allineamento cambierà di 1-3 posizioni" is superseded by a real
+deterministic step-budget formula (``12 // max(1, Total_USkill(target))``
+ordinal steps per successful cast) -- harsher on a weak target (a
+single cast can go all the way to Undead), far gentler on a skilled one
+(always exactly one step, however high skill climbs).
 
 Charm and Resurrection (``CAST_NESTED_PLAN_SPELLS``) are the two spells
 whose successful cast embeds a ``PlanPhase.nested_plan`` for the newly-
@@ -1137,15 +1159,20 @@ ENCOUNTER_PLAN_CASTABLE_SPELLS: frozenset[Spell] = frozenset(
 # modeled by ``turn/cast_execution.py``'s own Action-Cast branch, but
 # the user chose to keep it exposed only as the Encounter Plan's own
 # Personal-Combat tactic -- see this module's own docstring's Cast
-# section for the full history), and minus ``Spell.RESURRECTION`` from
-# the generic character-target set (it gets its own dedicated,
-# considerably more elaborate target handling below, not the generic
-# "any leader in the game" dropdown every other character-target spell
-# gets this round).
-CAST_CHARACTER_TARGET_SPELLS: frozenset[Spell] = frozenset(_CAST_CHARACTER_TARGET_SPELLS_RAW - {Spell.RESURRECTION})
+# section for the full history), and minus ``Spell.RESURRECTION``/
+# ``Spell.CHARM`` from the generic character-target set -- both get
+# their own dedicated, more elaborate target handling below (co-located/
+# army-less/non-King for Charm, confirmed 2026-11-01; Resurrection's own
+# three-branch handling from the previous round), not the generic "any
+# leader in the game" dropdown every other character-target spell gets.
+CAST_CHARACTER_TARGET_SPELLS: frozenset[Spell] = frozenset(_CAST_CHARACTER_TARGET_SPELLS_RAW - {Spell.RESURRECTION, Spell.CHARM})
 CAST_NO_TARGET_SPELLS: frozenset[Spell] = frozenset(_CAST_NO_TARGET_SPELLS_RAW - {Spell.GATE_ANGEL})
 CAST_ACTION_SPELLS: frozenset[Spell] = (
-    frozenset({Spell.RESURRECTION}) | CAST_CHARACTER_TARGET_SPELLS | CAST_PROVINCE_TARGET_SPELLS | CAST_NO_TARGET_SPELLS | CAST_ITEM_TARGET_SPELLS
+    frozenset({Spell.RESURRECTION, Spell.CHARM})
+    | CAST_CHARACTER_TARGET_SPELLS
+    | CAST_PROVINCE_TARGET_SPELLS
+    | CAST_NO_TARGET_SPELLS
+    | CAST_ITEM_TARGET_SPELLS
 )
 # Every real Terrain a GM could plausibly pick for Illusory Terrain's
 # own fake-terrain field -- ``Terrain.NO_TERRAIN`` is a placeholder
@@ -1820,16 +1847,16 @@ def cast_spell_options() -> list[tuple[int, str]]:
 def cast_character_target_options(state: GameState) -> list[tuple[str, str]]:
     """Every leader in the game as a ``(value, label)`` pair for the
     generic character-target Cast spells (``CAST_CHARACTER_TARGET_
-    SPELLS`` -- Kill Enemy, Charm, Oratory, Clairvoyance, Phantasmal
-    Armies, Mystic Winds). Deliberately NOT scoped to each spell's own
-    further eligibility rules (e.g. Charm's own co-located/army-less/
-    non-King requirements, already partially sourced while designing
-    Hire) -- that per-spell research hasn't been done yet for any of
-    these six, so this round offers every leader generically, same
-    "any leader in the world" shape Trail's own target dropdown
-    already uses, and leaves turn-processing time as the real arbiter.
-    Resurrection gets its own, considerably more elaborate target
-    handling instead (``resurrection_target_options()`` below).
+    SPELLS`` -- Kill Enemy, Oratory, Clairvoyance, Phantasmal Armies,
+    Mystic Winds). Deliberately NOT scoped to each spell's own further
+    eligibility rules -- that per-spell research hasn't been done yet
+    for any of these five, so this round offers every leader
+    generically, same "any leader in the world" shape Trail's own
+    target dropdown already uses, and leaves turn-processing time as
+    the real arbiter. Resurrection and Charm each get their own,
+    considerably more elaborate target handling instead
+    (``resurrection_target_options()``/``charm_target_options()``
+    below).
     """
 
     options: list[tuple[str, str]] = []
@@ -1899,6 +1926,48 @@ def resurrection_target_options(state: GameState, leader_id: int) -> list[tuple[
         if dead.location != leader.location or dead.leader_id in state.leaders:
             continue
         options.append((str(dead.leader_id), f"{dead.name} (dead -- revive)"))
+    return options
+
+
+def charm_target_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every legal Charm target as a ``(value, label)`` pair -- rulebook
+    [3.10]/Charm's own text: co-located, commands no military unit, and
+    never a King (``turn/cast_execution.py _execute_charm()``'s own
+    three preconditions, confirmed real, enforced checks, not prose).
+    2026-11-01, confirmed directly against the engine and the user's own
+    follow-up choice: **any Kingdom is a valid source**, including an
+    enemy's or another independent Hero's own Kingdom -- Charm's free-
+    hire branch, unlike Hire, has no "must already be independent"
+    requirement (confirmed by ``turn/cast_execution.py``'s own test
+    suite: Charm can poach an already-employed Hero of a different
+    Kingdom outright). The acting leader's own self is never offered --
+    nothing in Charm's own rule text or execution models self-targeting.
+
+    When the acting leader is themself an Undead King
+    (``LeaderState.alignment is Alignment.UNDEAD`` and ``is_king``), a
+    successful Charm against any of these same targets *additionally*
+    attempts ``_apply_undead_king_alignment_conversion()`` -- the
+    deterministic, skill-gated "Seduzione" alignment-shift mechanic.
+    This is a caster-conditional *effect*, not a separate target pool
+    (the eligible-target set is identical either way) -- the composer
+    surfaces it as a conditional note next to this same dropdown rather
+    than a second one.
+    """
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return []
+    options: list[tuple[str, str]] = []
+    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+        if other.leader_id == leader_id:
+            continue
+        if other.location != leader.location or other.is_king:
+            continue
+        if state.armies_commanded_by(other.leader_id):
+            continue
+        kingdom = state.kingdoms.get(other.kingdom_id)
+        kingdom_part = kingdom.name if kingdom is not None else "independent"
+        options.append((str(other.leader_id), f"{other.name} (Hero, {kingdom_part})"))
     return options
 
 
@@ -2558,6 +2627,38 @@ def _parse_resurrection_target(form: dict[str, str], leader_id: int, n: int, *, 
     return target_id
 
 
+def _parse_charm_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
+    """Reads a Charm Cast phase's own ``cast_charm_target_<leader_id>_<n>``
+    field into the real target id -- the wire encoding is already a bare
+    character id (``charm_target_options()``'s own dropdown value), so
+    no sentinel decoding is needed. Also enforces, at compose time
+    rather than only at turn-processing time, ``_execute_charm()``'s own
+    three preconditions (co-located, army-less, never a King) --
+    deliberately NOT a same-Kingdom requirement, matching the engine's
+    own confirmed "Charm can poach a foreign Hero" behavior.
+    """
+
+    raw = form.get(f"cast_charm_target_{leader_id}_{n}", "")
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Charm target.")
+    target_id = _parse_int(raw, field_label=f"{phase_label} Charm target")
+    leader = state.leaders.get(leader_id)
+    target = state.leaders.get(target_id)
+    if (
+        leader is None
+        or target is None
+        or target.leader_id == leader_id
+        or target.location != leader.location
+        or target.is_king
+        or state.armies_commanded_by(target.leader_id)
+    ):
+        # Defense in depth: every dropdown-offered id is a real,
+        # co-located, army-less, non-King leader, but a direct,
+        # tampered POST could still name anything else.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Charm target.")
+    return target_id
+
+
 def _parse_cast_character_target(raw: str, *, phase_label: str, state: GameState) -> int:
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Cast target character.")
@@ -2634,6 +2735,10 @@ def _parse_cast_phase(
 
     if spell is Spell.RESURRECTION:
         target = _parse_resurrection_target(form, leader_id, n, phase_label=phase_label, state=state)
+        return int(spell), [target], target
+
+    if spell is Spell.CHARM:
+        target = _parse_charm_target(form, leader_id, n, phase_label=phase_label, state=state)
         return int(spell), [target], target
 
     if spell in CAST_CHARACTER_TARGET_SPELLS:

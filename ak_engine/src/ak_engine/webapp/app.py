@@ -100,6 +100,7 @@ from ak_engine.webapp.moves_compose import (
     cast_character_target_options,
     cast_item_target_options,
     cast_spell_options,
+    charm_target_options,
     challenge_target_options,
     disband_target_options,
     feature_options,
@@ -3129,6 +3130,13 @@ def create_app(games_root: Path | None = None) -> Flask:
                 leader.leader_id: resurrection_target_options(state, leader.leader_id) for leader in roster
             },
             cast_resurrection_value=int(Spell.RESURRECTION),
+            charm_target_choices_by_leader={
+                leader.leader_id: charm_target_options(state, leader.leader_id) for leader in roster
+            },
+            cast_charm_value=int(Spell.CHARM),
+            is_undead_king_by_leader={
+                leader.leader_id: leader.is_king and leader.alignment is Alignment.UNDEAD for leader in roster
+            },
             cast_character_target_spell_values=[int(s) for s in CAST_CHARACTER_TARGET_SPELLS],
             cast_province_target_spell_values=[int(s) for s in CAST_PROVINCE_TARGET_SPELLS],
             cast_item_target_spell_values=[int(s) for s in CAST_ITEM_TARGET_SPELLS],

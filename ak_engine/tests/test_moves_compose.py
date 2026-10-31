@@ -60,6 +60,7 @@ from ak_engine.webapp.moves_compose import (
     cast_character_target_options,
     cast_item_target_options,
     cast_spell_options,
+    charm_target_options,
     challenge_target_options,
     disband_target_options,
     feature_options,
@@ -2743,6 +2744,24 @@ def test_resurrection_target_options_lists_comatose_heir_and_dead_colocated():
     assert values == {"2", "3", "4"}  # not 5/6 -- not co-located
 
 
+def test_charm_target_options_lists_colocated_army_less_non_king_any_kingdom():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Own Hero", location=HOME))
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=3, kingdom_id=2, name="Foreign Hero", location=HOME))
+    state.add_leader(LeaderState(leader_id=4, kingdom_id=None, name="Free Hero", location=HOME))
+    state.add_leader(LeaderState(leader_id=5, kingdom_id=1, name="Army Commander", location=HOME))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=5))
+    state.add_kingdom(KingdomState(3, "Farland", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=6, kingdom_id=3, name="A Foreign King", location=HOME, is_king=True))
+    state.add_leader(LeaderState(leader_id=7, kingdom_id=1, name="Faraway Hero", location=HexCoord(9, 9)))
+
+    options = charm_target_options(state, KING_ID)
+
+    values = {value for value, _label in options}
+    assert values == {"2", "3", "4"}  # not 5 (leads an army), not 6 (a King), not 7 (not co-located), never self
+
+
 def _cast_form(leader_id: int = KING_ID, **fields: str) -> dict[str, str]:
     form = _all_defend_form(leader_id)
     form[f"action_{leader_id}_0"] = str(int(ActionCode.CAST))
@@ -2817,7 +2836,7 @@ def test_cast_phase_reads_a_generic_character_target_spell():
 def test_cast_phase_charm_embeds_a_nested_plan():
     state = _state()
     state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
-    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_character_target="2")
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_charm_target="2")
     form[f"cast_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.WAIT))
 
     phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
@@ -2828,6 +2847,58 @@ def test_cast_phase_charm_embeds_a_nested_plan():
     assert cast_phase.nested_plan is not None
     assert cast_phase.nested_plan.leader_id == 2
     assert cast_phase.nested_plan.segments[0].phases["P1"].action is ActionCode.WAIT
+
+
+def test_cast_phase_charm_can_poach_a_foreign_kingdoms_hero():
+    # Confirmed real engine behavior (2026-11-01): unlike Hire, Charm's
+    # free-hire branch has no "must already be independent" requirement.
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="Foreign Hero", location=HOME))
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_charm_target="2")
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].obj == int(Spell.CHARM)
+    assert phases[0].extra == [2]
+
+
+def test_cast_phase_charm_rejects_a_king_target_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HOME))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="A King", location=HOME, is_king=True))
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_charm_target="2")
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Charm target" in str(exc)
+
+
+def test_cast_phase_charm_rejects_a_target_who_leads_an_army_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Army Commander", location=HOME))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=2))
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_charm_target="2")
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Charm target" in str(exc)
+
+
+def test_cast_phase_charm_rejects_a_noncolocated_target_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Faraway Hero", location=HexCoord(9, 9)))
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_charm_target="2")
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Charm target" in str(exc)
 
 
 def test_cast_phase_resurrection_embeds_a_nested_plan():
