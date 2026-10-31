@@ -32,9 +32,11 @@
     its own target dropdown (own-Kingdom Heroes only, co-located unless this leader is a King, "Self" always
     included), Cast has its own spell dropdown (19 Action spells, Gate Angel excluded -- combat-tactic use
     only) plus whichever target field matches that spell's own shape (character/province/item/none, or
-    Resurrection's/Charm's own more elaborate, accurately-filtered target lists -- Charm's own list includes
-    any Kingdom, poaching included, plus an Undead-King-only conversion note), with the same nested-plan
-    editor Hire uses for a successful Charm or Resurrection; every other Action still takes the same plain Object + Extra numbers a real move file's own
+    Resurrection's/Charm's/Kill Enemy's own more elaborate, accurately-filtered target lists -- Charm's own
+    list includes any Kingdom, poaching included, plus an Undead-King-only conversion note; Kill Enemy's own
+    list excludes Kings and Undead targets but, unlike Charm, still includes an army-leading Hero with a
+    halved-chance note, since that only penalizes the roll rather than blocking it outright), with the same
+    nested-plan editor Hire uses for a successful Charm or Resurrection; every other Action still takes the same plain Object + Extra numbers a real move file's own
     "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a real move
     file from these and stores it exactly like an uploaded one.
   </p>
@@ -381,6 +383,14 @@
                     <br><span class="hex-map-legend-note">As an Undead King, a successful Charm here may also attempt to convert the target toward Undead.</span>
                   {% endif %}
                 </span>
+                <span class="compose-cast-kill-enemy-cell">
+                  <br><select name="cast_kill_enemy_target_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- choose a target --</option>
+                    {% for value, label in kill_enemy_target_choices_by_leader[leader.leader_id] %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
                 <span class="compose-cast-province-cell">
                   <br><select name="cast_province_target_{{ leader.leader_id }}_{{ n }}">
                     <option value="">-- choose a province --</option>
@@ -552,6 +562,7 @@
   var CAST_NESTED_PLAN_SPELLS = {{ cast_nested_plan_spell_values | tojson }};
   var CAST_RESURRECTION_VALUE = {{ cast_resurrection_value }};
   var CAST_CHARM_VALUE = {{ cast_charm_value }};
+  var CAST_KILL_ENEMY_VALUE = {{ cast_kill_enemy_value }};
   var CAST_ILLUS_TERRAIN_VALUE = {{ cast_illus_terrain_value }};
 
   function updateCastCell(select) {
@@ -565,6 +576,7 @@
     show(".compose-cast-character-cell", CAST_CHARACTER_TARGET_SPELLS.indexOf(value) !== -1);
     show(".compose-cast-resurrection-cell", value === CAST_RESURRECTION_VALUE);
     show(".compose-cast-charm-cell", value === CAST_CHARM_VALUE);
+    show(".compose-cast-kill-enemy-cell", value === CAST_KILL_ENEMY_VALUE);
     show(".compose-cast-province-cell", CAST_PROVINCE_TARGET_SPELLS.indexOf(value) !== -1);
     show(".compose-cast-terrain-cell", value === CAST_ILLUS_TERRAIN_VALUE);
     show(".compose-cast-item-cell", CAST_ITEM_TARGET_SPELLS.indexOf(value) !== -1);

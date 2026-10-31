@@ -1962,6 +1962,16 @@ def _execute_kill_enemy(
        through too, both now consumed by ``report/turn_report.py
        describe_kill_enemy_berserk_retaliation()``.
 
+    **2026-11-01, bug fix sourced directly from the user**: 5. **Undead
+    immunity** ("è inefficace contro Non-Morti, fantasmi, demoni e
+    simili, perché queste creature esistono solo parzialmente nel mondo
+    materiale"). Checked right after King immunity, same "before any
+    roll" order. Only the Undead-*aligned character* case is reachable
+    (``target.alignment is Alignment.UNDEAD``) -- "fantasmi, demoni e
+    simili" describes Monster-type creatures, and (per point 2 above)
+    this project's Kill_Enemy has no Monster-targeted path to attach
+    that half of the immunity to.
+
     **Hidden Tattoos** (Discovery.txt, Phase 270): "neutralize the Kill
     Enemy spell of Necromancers... All characters of the Kingdom are
     protected. Instead of being killed, the target character will be
@@ -1974,6 +1984,18 @@ def _execute_kill_enemy(
     sickness/forced-Practice mechanic the source doesn't specify the
     parameters of (same "don't guess" convention as Flood's own
     unmodeled land-units-trapped clause).
+
+    **2026-10-31 update**: this function remains the Action-Cast half
+    only -- the "no Individual-Combat-mode dispatch path" and "no
+    Monster-targeted path" statements in points 2-5 above described a
+    real gap at the time they were written, now closed, but only on
+    the *other*, newly-built half of this dual-natured spell:
+    ``turn/search_execution.py _resolve_cast_tactic()``/``turn/
+    challenge_execution.py _resolve_personal_combat_cast()``'s own Kill
+    Enemy branches, which do reach a Monster target (Search) and do
+    produce a real outright kill rather than this function's coma
+    substitute. This Action-Cast function itself is unchanged by that
+    build -- still character-only, still coma-on-success.
     """
 
     caster = state.leaders[leader_id]
@@ -1984,6 +2006,17 @@ def _execute_kill_enemy(
         return CastExecutionResult(request, applied=False, reason="not co-located")
     if target.is_king:
         return CastExecutionResult(request, applied=False, reason="target is a King, immune to Kill Enemy")
+    if target.alignment is Alignment.UNDEAD:
+        # Bug fix, sourced directly from the user (2026-11-01): "è
+        # inefficace contro Non-Morti, fantasmi, demoni e simili, perché
+        # queste creature esistono solo parzialmente nel mondo
+        # materiale." This project has no Monster-targeted path for
+        # Kill_Enemy to cover the "fantasmi, demoni" half of that
+        # clause (see this function's own docstring point 2) -- only
+        # an Undead-*aligned character* target is a reachable case, so
+        # only that one is checked here, before any roll, same "check
+        # applicability first" order the King immunity above uses.
+        return CastExecutionResult(request, applied=False, reason="target is Undead, immune to Kill Enemy")
 
     halving_applies = bool(state.features_at(caster.location)) or bool(state.armies_commanded_by(target.leader_id))
     multiplier = 0.5 if halving_applies else 1.0

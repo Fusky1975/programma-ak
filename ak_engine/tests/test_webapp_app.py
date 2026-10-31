@@ -7286,6 +7286,69 @@ def test_turns_compose_save_cast_charm_order_with_no_target_chosen_shows_an_erro
     assert b"choose a Charm target" in response.data
 
 
+def test_turns_compose_shows_a_kill_enemy_target_dropdown(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"cast_kill_enemy_target_" in response.data
+
+
+def test_turns_compose_save_cast_kill_enemy_order_can_target_a_foreign_kingdoms_hero(tmp_path):
+    from ak_engine.models.alignment import Alignment
+    from ak_engine.models.game_state import KingdomState, LeaderState
+    from ak_engine.models.map import HexCoord
+    from ak_engine.models.race import Race
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    other_kingdom_id = max(state.kingdoms) + 1
+    other_id = max(state.leaders) + 1
+    state.add_kingdom(KingdomState(other_kingdom_id, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(other_id, other_kingdom_id, "Foreign Hero", king.location))
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.CAST))
+    form[f"cast_spell_{king.leader_id}_0"] = str(int(Spell.KILL_ENEMY))
+    form[f"cast_kill_enemy_target_{king.leader_id}_0"] = str(other_id)
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    cast_phase = king_block.plan.segments[0].phases["P0"]
+    assert cast_phase.action is ActionCode.CAST
+    assert cast_phase.obj == int(Spell.KILL_ENEMY)
+    assert cast_phase.extra == [other_id]
+
+
+def test_turns_compose_save_cast_kill_enemy_order_with_no_target_chosen_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.CAST))
+    form[f"cast_spell_{king.leader_id}_0"] = str(int(Spell.KILL_ENEMY))
+    # cast_kill_enemy_target_<king>_0 deliberately left unset.
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"choose a Kill Enemy target" in response.data
+
+
 def test_turns_compose_shows_encounter_plan_tactic_slots(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

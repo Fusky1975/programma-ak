@@ -100,13 +100,14 @@ from ak_engine.webapp.moves_compose import (
     cast_character_target_options,
     cast_item_target_options,
     cast_spell_options,
-    charm_target_options,
     challenge_target_options,
+    charm_target_options,
     disband_target_options,
     feature_options,
     fire_target_options,
     hire_target_options,
     item_options,
+    kill_enemy_target_options,
     kingdom_leaders_for_compose,
     leave_army_target_options,
     leave_target_options,
@@ -3134,6 +3135,10 @@ def create_app(games_root: Path | None = None) -> Flask:
                 leader.leader_id: charm_target_options(state, leader.leader_id) for leader in roster
             },
             cast_charm_value=int(Spell.CHARM),
+            kill_enemy_target_choices_by_leader={
+                leader.leader_id: kill_enemy_target_options(state, leader.leader_id) for leader in roster
+            },
+            cast_kill_enemy_value=int(Spell.KILL_ENEMY),
             is_undead_king_by_leader={
                 leader.leader_id: leader.is_king and leader.alignment is Alignment.UNDEAD for leader in roster
             },

@@ -2617,7 +2617,12 @@ PERSONAL_COMBAT_PLACES_BONUS_PERCENT = 0.20
 
 
 def personal_combat_spell_cast_chance(
-    skill_level: int, *, caster_is_pagan: bool = False, damp_magic: bool = False, places_bonus: bool = False
+    skill_level: int,
+    *,
+    caster_is_pagan: bool = False,
+    damp_magic: bool = False,
+    places_bonus: bool = False,
+    success_chance_multiplier: float = 1.0,
 ) -> float:
     """"Gli Incantesimi di Combattimento Individuale hanno una
     probabilità di riuscita del 30% più 15% per livello," capped at
@@ -2664,6 +2669,18 @@ def personal_combat_spell_cast_chance(
     Advanced Ability and the Feature currently being searched is one of
     that ability's own 3 named types; this function itself has no
     Feature concept to check.
+
+    **2026-10-31**: ``success_chance_multiplier`` (default 1.0, every
+    earlier caller unaffected) is a per-attempt multiplier applied
+    before the cap, in the same additive-then-cap block as the two
+    bonuses above -- mirrors ``cast_execution.py``'s own
+    ``_roll_cast_success()`` ``success_chance_multiplier`` parameter
+    exactly (same name, same "before the cap" placement, same
+    reasoning: keeps the cap the one final ceiling regardless of any
+    spell-specific modifier).
+    Kill Enemy's own Personal-Combat halving (``turn/search_
+    execution.py``/``turn/challenge_execution.py``'s own Kill Enemy
+    branches) is the first real caller.
     """
 
     effective_level = min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)
@@ -2672,6 +2689,7 @@ def personal_combat_spell_cast_chance(
         chance += PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS
     if places_bonus:
         chance += PERSONAL_COMBAT_PLACES_BONUS_PERCENT
+    chance *= success_chance_multiplier
     chance = min(chance, PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP)
     if damp_magic:
         chance *= DAMP_MAGIC_CAST_CHANCE_MULTIPLIER
@@ -2679,7 +2697,13 @@ def personal_combat_spell_cast_chance(
 
 
 def resolve_personal_combat_spell_cast(
-    skill_level: int, rng: random.Random, *, caster_is_pagan: bool = False, damp_magic: bool = False, places_bonus: bool = False
+    skill_level: int,
+    rng: random.Random,
+    *,
+    caster_is_pagan: bool = False,
+    damp_magic: bool = False,
+    places_bonus: bool = False,
+    success_chance_multiplier: float = 1.0,
 ) -> bool:
     """Rolls whether a Personal-Combat spell attempt succeeds, using
     ``personal_combat_spell_cast_chance()``'s own formula. Governs all
@@ -2689,7 +2713,11 @@ def resolve_personal_combat_spell_cast(
     """
 
     return rng.random() < personal_combat_spell_cast_chance(
-        skill_level, caster_is_pagan=caster_is_pagan, damp_magic=damp_magic, places_bonus=places_bonus
+        skill_level,
+        caster_is_pagan=caster_is_pagan,
+        damp_magic=damp_magic,
+        places_bonus=places_bonus,
+        success_chance_multiplier=success_chance_multiplier,
     )
 
 
@@ -2785,6 +2813,11 @@ PERSONAL_COMBAT_SPELL_ABILITY: dict[Spell, Ability] = {
     Spell.ICE_SUSPEND: Ability.ELEMENTAL,
     Spell.HAND_OF_DEATH: Ability.NECROMANCY,
     Spell.CONTROL_UNDEAD: Ability.NECROMANCY,
+    # Kill Enemy [4.25.2] (2026-10-31, user-requested Personal-Combat
+    # build): tied to Ability.NECROMANCY -- same [4.25] citation block
+    # as Hand of Death/Control Undead above, and the same Ability its
+    # own Action-Cast form uses (`cast_execution.py _SPELL_ABILITY`).
+    Spell.KILL_ENEMY: Ability.NECROMANCY,
 }
 
 

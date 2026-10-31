@@ -1935,6 +1935,24 @@ def _resolve_search_encounter(
         is passed, letting a Use_MI caller know whether to spend a
         charge regardless of which further branch the spell's own
         effect takes.
+
+        **Kill Enemy [4.25.2] (2026-10-31, user-requested Personal-
+        Combat build)**: joins the 16 spells above as a 17th branch --
+        King immunity, Undead-target immunity (reachable against a real
+        Monster target here, unlike the Action-Cast sibling in
+        ``cast_execution.py``), the Special-Place/army-leading halving
+        (always true in this module, since a Search encounter is
+        definitionally "in un Luogo Speciale"), Hidden Tattoos' survival
+        ward, and a real outright kill on success (not the Action-Cast
+        form's coma substitute) or an inline Berserk-retaliation
+        ``resolve_melee_duel()`` on failure -- see this branch's own
+        inline comments below for the full citation trail. The
+        rulebook's own "un negromante non può usarlo per difendere sé
+        stesso in un piano incontro" restriction has no analog here --
+        Search has no defensive-queue concept distinct from each side's
+        own offensive tactic list, unlike Challenge/Pursue's target-side
+        defensive Cast; see ``challenge_execution.py``'s own Kill Enemy
+        addendum for where that restriction is actually enforced.
         """
 
         nonlocal cast_attempt_applied
@@ -2038,6 +2056,27 @@ def _resolve_search_encounter(
             if not eligible:
                 return None
 
+        # Kill Enemy's own eligibility precondition, same "ineligible
+        # means no roll at all" pattern as Control Undead above: Kings
+        # are immune ("I Re sono immuni a questo incantesimo"), and
+        # Undead targets are immune ("inefficace contro Non-Morti,
+        # fantasmi, demoni e simili, perche' queste creature esistono
+        # solo parzialmente nel mondo materiale") -- for a monster
+        # target, read as the same SPIRITWRACK_UNDEAD_MONSTERS set
+        # every other Undead-eligibility check in this module already
+        # uses. This Personal-Combat path is the one place Kill Enemy
+        # can actually reach a Monster target -- `cast_execution.py`'s
+        # own Action-Cast sibling only ever targets a LeaderState, so
+        # its docstring flags the "fantasmi, demoni" half of the
+        # immunity clause as structurally unreachable there; here it
+        # is reachable, and checked.
+        if spell is Spell.KILL_ENEMY:
+            if target_is_monster:
+                if monster_species in SPIRITWRACK_UNDEAD_MONSTERS:
+                    return None
+            elif leader.is_king or leader.alignment is Alignment.UNDEAD:
+                return None
+
         if forced_level is not None:
             # Phase 274: a wand-cast spell -- TREASAB.X2's own fixed
             # "at skill-2" label overrides the caster's real ability
@@ -2114,8 +2153,26 @@ def _resolve_search_encounter(
                 and places_ability in leader.advanced_abilities
                 and feature.kind in PLACES_FEATURE_TYPES[places_ability]
             )
+            # Kill Enemy [4.25.2]: "la possibilita' di riuscita e'
+            # ridotta alla metà in un incontro in un Luogo Speciale o
+            # contro un Eroe che comanda unità militari" -- a Search
+            # encounter is, by construction, always an encounter at a
+            # Feature (`feature = state.features.get(request.feature_
+            # id)`, set once at the top of `execute_search()`), so the
+            # "in un Luogo Speciale" half of this OR is unconditionally
+            # true here; the army-leading half is therefore redundant
+            # with it in this module (unlike `challenge_execution.py`,
+            # where neither side is ever at a searched Feature and the
+            # army-leading check is the only trigger) and isn't checked
+            # separately.
+            kill_enemy_multiplier = 0.5 if spell is Spell.KILL_ENEMY else 1.0
             succeeded = resolve_personal_combat_spell_cast(
-                level, rng, caster_is_pagan=caster_is_pagan, damp_magic=damp_magic, places_bonus=places_bonus
+                level,
+                rng,
+                caster_is_pagan=caster_is_pagan,
+                damp_magic=damp_magic,
+                places_bonus=places_bonus,
+                success_chance_multiplier=kill_enemy_multiplier,
             )
 
         # Phase 531: AKGEN_reverse_engineering_report (4).md SS8 -- only
@@ -2149,6 +2206,50 @@ def _resolve_search_encounter(
                 return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
             target.hit_points = control_undead_failure_new_hit_points(target.hit_points, rng)
             return None
+
+        if spell is Spell.KILL_ENEMY:
+            if succeeded:
+                # Hidden Tattoos (Discovery.txt, Phase 270): "neutralize
+                # the Kill Enemy spell of Necromancers... All characters
+                # of the Kingdom are protected" -- only reachable for a
+                # leader target (a monster has no Kingdom). Checked
+                # after the generic Anti-Necromancy-Amulet immunity
+                # above (lines 2129-2138), same order as `cast_
+                # execution.py _execute_kill_enemy()`'s own True-Cross-
+                # then-Hidden-Tattoos sequence.
+                target_has_hidden_tattoos = (
+                    not target_is_monster
+                    and leader.kingdom_id is not None
+                    and Discovery.HIDDEN_TATTOOS in state.kingdoms[leader.kingdom_id].discoveries
+                )
+                if target_has_hidden_tattoos:
+                    return None
+                # "Se l'incantesimo riesce, la vittima viene uccisa" --
+                # unlike the Action-Cast form (which substitutes a coma,
+                # [4.25.2]'s own documented Action-only exception), a
+                # Personal-Combat success is the real kill the rulebook
+                # describes as the spell's primary effect.
+                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            # "Se fallisce, la vittima designata attaccherà l'autore
+            # dell'incantesimo assumendo per l'occasione un
+            # temperamento Berserk, se necessario anche aggredendolo in
+            # quella stessa fase" -- an immediate `resolve_melee_duel()`
+            # between the designated victim (temper forced to Berserk
+            # "for the occasion", mirroring `cast_execution.py
+            # _kill_enemy_combatant()`'s own Action-Cast precedent) and
+            # the caster, resolved inline rather than deferred. The
+            # retaliator is passed first (this sub-duel's own local
+            # "a"=retaliator/"b"=caster convention), then translated
+            # back into this function's outer "a"=leader/"b"=monster
+            # convention exactly like Gate Demon/Gate Angel's own demon/
+            # angel duels above.
+            retaliator = replace(target, temper=Temper.BERSERK)
+            duel_result = resolve_melee_duel(retaliator, caster, rng)
+            if duel_result.winner == "a":  # the designated victim's Berserk retaliation kills the caster
+                return _outcome_from(EncounterCombatResult(winner=("b" if target_is_monster else "a"), rounds=0))
+            if duel_result.winner == "b":  # the caster survives and wins the retaliation
+                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            return None  # the vanishingly rare max-rounds-exhausted draw -- the encounter continues
 
         if not succeeded:
             # Phase 858: SBUNGLE.X's own real "personal-combat Cast that

@@ -986,6 +986,26 @@ ordinal steps per successful cast) -- harsher on a weak target (a
 single cast can go all the way to Undead), far gentler on a skilled one
 (always exactly one step, however high skill climbs).
 
+Kill Enemy (rulebook [4.25.2]) also gets its own dedicated target
+handling (``kill_enemy_target_options()``/``_parse_kill_enemy_target()``,
+2026-11-01), confirmed against the user's own full Italian text: co-
+located, never a King, never Undead-aligned (a real engine gap found
+and fixed this round, see ``turn/cast_execution.py _execute_kill_
+enemy()``'s own 2026-11-01 docstring addendum -- the target's own
+alignment was never checked at all before), never the active Valhalla
+visitor; no allegiance restriction whatsoever (a necromancer may
+legally target a co-located ally or even their own Kingdom's Hero).
+Unlike Charm, an army-leading Hero is a *legal* target here, only
+annotated with a "halved chance" note rather than excluded -- leading
+an army only halves ``_execute_kill_enemy()``'s own success roll
+(alongside an independent halving for a Special-Place Feature in the
+caster's own province), it never blocks the cast outright. A target
+holding the True Cross/Anti-Necromancy Amulet, or whose Kingdom owns
+Hidden Tattoos, is deliberately NOT excluded either -- both are post-
+roll wards, not preconditions, so the cast can still be rolled for and
+fail normally against them, same "never pre-filter a merely-likely-to-
+fail target" convention every other dropdown on this page follows.
+
 Charm and Resurrection (``CAST_NESTED_PLAN_SPELLS``) are the two spells
 whose successful cast embeds a ``PlanPhase.nested_plan`` for the newly-
 (re)joined character, the exact same mechanism Hire uses -- generalized
@@ -1021,6 +1041,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_BY_ORDINAL, ARMY_TYPE_NAME, NO_LEADER_SENTINEL
 from ak_engine.models.enums import ABILITY_NAME, SPELL_NAME, TACTICS_WITH_SUB_OBJECT, Ability, ActionCode, Maneuver, Spell
 from ak_engine.models.feature import FEATURE_TYPE_NAMES
@@ -1032,6 +1053,7 @@ from ak_engine.models.monster import MONSTER_NAMES
 from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_NAME, TREASURE_WAND_SPELL, TreasureCategory
+from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.report.turn_report import real_province_number
 from ak_engine.turn.army_list_decode import ALL_ARMIES_SENTINEL
 from ak_engine.turn.cast_decode import (
@@ -1122,14 +1144,18 @@ _COMPOSABLE_MANEUVERS: tuple[Maneuver, ...] = tuple(maneuver for maneuver in Man
 # Rulebook [5.3]'s own stated limit ("entro un limite di 160 caratteri").
 SAY_TEXT_MAX_LENGTH = 160
 
-# The exact 17 spells `turn/search_execution.py _resolve_cast_tactic()`
+# The exact 18 spells `turn/search_execution.py _resolve_cast_tactic()`
 # dispatches inside a Search Encounter Plan -- every other real Spell
 # is an Action-Cast-only spell (one of the 5 regular phases, never a
 # Encounter Plan) and silently no-ops there today. Confirmed directly
 # against that function's own exhaustive `if/elif ... else: return
 # None` branch (2026-10-28 investigation) -- Gate Angel is the one
 # entry added alongside this round, see this module's own docstring
-# for its full, explicitly-project-original sourcing.
+# for its full, explicitly-project-original sourcing. Kill Enemy
+# (2026-10-31) is the newest addition: a brand-new Personal-Combat
+# dispatch branch, user-requested rather than deferred alongside its
+# own Action-Cast handling -- see this module's own Cast docstring
+# section for the full history.
 ENCOUNTER_PLAN_CASTABLE_SPELLS: frozenset[Spell] = frozenset(
     {
         Spell.HOLY_SYMBOL,
@@ -1149,6 +1175,7 @@ ENCOUNTER_PLAN_CASTABLE_SPELLS: frozenset[Spell] = frozenset(
         Spell.INVISIBILITY,
         Spell.MIRROR_IMAGE,
         Spell.ILLUS_HERO,
+        Spell.KILL_ENEMY,
     }
 )
 
@@ -1160,15 +1187,19 @@ ENCOUNTER_PLAN_CASTABLE_SPELLS: frozenset[Spell] = frozenset(
 # the user chose to keep it exposed only as the Encounter Plan's own
 # Personal-Combat tactic -- see this module's own docstring's Cast
 # section for the full history), and minus ``Spell.RESURRECTION``/
-# ``Spell.CHARM`` from the generic character-target set -- both get
-# their own dedicated, more elaborate target handling below (co-located/
-# army-less/non-King for Charm, confirmed 2026-11-01; Resurrection's own
-# three-branch handling from the previous round), not the generic "any
+# ``Spell.CHARM``/``Spell.KILL_ENEMY`` from the generic character-target
+# set -- all three get their own dedicated, more elaborate target
+# handling below (co-located/army-less/non-King for Charm, confirmed
+# 2026-11-01; co-located/non-King/non-Undead, army-leading legal but
+# halved, for Kill Enemy, confirmed 2026-11-01; Resurrection's own
+# three-branch handling from an earlier round), not the generic "any
 # leader in the game" dropdown every other character-target spell gets.
-CAST_CHARACTER_TARGET_SPELLS: frozenset[Spell] = frozenset(_CAST_CHARACTER_TARGET_SPELLS_RAW - {Spell.RESURRECTION, Spell.CHARM})
+CAST_CHARACTER_TARGET_SPELLS: frozenset[Spell] = frozenset(
+    _CAST_CHARACTER_TARGET_SPELLS_RAW - {Spell.RESURRECTION, Spell.CHARM, Spell.KILL_ENEMY}
+)
 CAST_NO_TARGET_SPELLS: frozenset[Spell] = frozenset(_CAST_NO_TARGET_SPELLS_RAW - {Spell.GATE_ANGEL})
 CAST_ACTION_SPELLS: frozenset[Spell] = (
-    frozenset({Spell.RESURRECTION, Spell.CHARM})
+    frozenset({Spell.RESURRECTION, Spell.CHARM, Spell.KILL_ENEMY})
     | CAST_CHARACTER_TARGET_SPELLS
     | CAST_PROVINCE_TARGET_SPELLS
     | CAST_NO_TARGET_SPELLS
@@ -1847,16 +1878,16 @@ def cast_spell_options() -> list[tuple[int, str]]:
 def cast_character_target_options(state: GameState) -> list[tuple[str, str]]:
     """Every leader in the game as a ``(value, label)`` pair for the
     generic character-target Cast spells (``CAST_CHARACTER_TARGET_
-    SPELLS`` -- Kill Enemy, Oratory, Clairvoyance, Phantasmal Armies,
-    Mystic Winds). Deliberately NOT scoped to each spell's own further
+    SPELLS`` -- Oratory, Clairvoyance, Phantasmal Armies, Mystic
+    Winds). Deliberately NOT scoped to each spell's own further
     eligibility rules -- that per-spell research hasn't been done yet
-    for any of these five, so this round offers every leader
+    for any of these four, so this round offers every leader
     generically, same "any leader in the world" shape Trail's own
     target dropdown already uses, and leaves turn-processing time as
-    the real arbiter. Resurrection and Charm each get their own,
-    considerably more elaborate target handling instead
-    (``resurrection_target_options()``/``charm_target_options()``
-    below).
+    the real arbiter. Resurrection, Charm, and Kill Enemy each get
+    their own, considerably more elaborate target handling instead
+    (``resurrection_target_options()``/``charm_target_options()``/
+    ``kill_enemy_target_options()`` below).
     """
 
     options: list[tuple[str, str]] = []
@@ -1968,6 +1999,51 @@ def charm_target_options(state: GameState, leader_id: int) -> list[tuple[str, st
         kingdom = state.kingdoms.get(other.kingdom_id)
         kingdom_part = kingdom.name if kingdom is not None else "independent"
         options.append((str(other.leader_id), f"{other.name} (Hero, {kingdom_part})"))
+    return options
+
+
+def kill_enemy_target_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every legal Kill Enemy target as a ``(value, label)`` pair --
+    rulebook [4.25.2]'s own co-location requirement, King immunity, and
+    (2026-11-01, sourced directly from the user) Undead immunity --
+    confirmed real, enforced checks in ``turn/cast_execution.py
+    _execute_kill_enemy()``, not prose. Also excludes the active
+    Valhalla visitor (``execute_cast()``'s own generic cross-spell
+    immunity for every character-targeted spell but Resurrection) and
+    the acting leader's own self (nothing in Kill Enemy's own rule text
+    or execution models self-targeting, same reasoning as Charm's own
+    dropdown).
+
+    Deliberately NOT excluded, unlike Charm's own "commands no military
+    unit" precondition: an army-leading Hero is a *legal* target here,
+    only penalized (the roll is halved, never blocked outright) -- the
+    halving condition (army-leading, or a Special-Place Feature in this
+    province) is annotated in the label instead of filtering the
+    target out, since it's a global modifier on the roll, not a
+    per-target legality gate. Also deliberately NOT excluded: a target
+    holding the True Cross/Anti-Necromancy Amulet, or whose Kingdom
+    owns Hidden Tattoos -- both are post-roll wards (the cast can still
+    succeed, be rolled for, and fail normally against them), not a
+    "never offer this target at all" precondition, same convention as
+    every other composer dropdown on this page never pre-filtering a
+    merely-likely-to-fail target.
+    """
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return []
+    options: list[tuple[str, str]] = []
+    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+        if other.leader_id == leader_id:
+            continue
+        if other.location != leader.location or other.is_king or other.alignment is Alignment.UNDEAD:
+            continue
+        if other.leader_id == VALHALLA_VISITOR_LEADER_ID and other.valhalla_active_turn is not None:
+            continue
+        kingdom = state.kingdoms.get(other.kingdom_id)
+        kingdom_part = kingdom.name if kingdom is not None else "independent"
+        army_leading_note = ", leads an army -- halved chance" if state.armies_commanded_by(other.leader_id) else ""
+        options.append((str(other.leader_id), f"{other.name} (Hero, {kingdom_part}{army_leading_note})"))
     return options
 
 
@@ -2659,6 +2735,43 @@ def _parse_charm_target(form: dict[str, str], leader_id: int, n: int, *, phase_l
     return target_id
 
 
+def _parse_kill_enemy_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
+    """Reads a Kill Enemy Cast phase's own ``cast_kill_enemy_target_
+    <leader_id>_<n>`` field into the real target id -- the wire
+    encoding is already a bare character id (``kill_enemy_target_
+    options()``'s own dropdown value). Also enforces, at compose time
+    rather than only at turn-processing time, ``_execute_kill_enemy()``'s
+    own co-location/King-immunity/Undead-immunity preconditions, plus
+    the active-Valhalla-visitor exclusion every character-targeted
+    spell but Resurrection shares. Deliberately does NOT reject an
+    army-leading target -- that only halves the roll, it never blocks
+    the cast outright (see ``kill_enemy_target_options()``'s own
+    docstring).
+    """
+
+    raw = form.get(f"cast_kill_enemy_target_{leader_id}_{n}", "")
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Kill Enemy target.")
+    target_id = _parse_int(raw, field_label=f"{phase_label} Kill Enemy target")
+    leader = state.leaders.get(leader_id)
+    target = state.leaders.get(target_id)
+    if (
+        leader is None
+        or target is None
+        or target.leader_id == leader_id
+        or target.location != leader.location
+        or target.is_king
+        or target.alignment is Alignment.UNDEAD
+        or (target.leader_id == VALHALLA_VISITOR_LEADER_ID and target.valhalla_active_turn is not None)
+    ):
+        # Defense in depth: every dropdown-offered id is a real,
+        # co-located, non-King, non-Undead, non-active-Valhalla-visitor
+        # leader, but a direct, tampered POST could still name anything
+        # else.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Kill Enemy target.")
+    return target_id
+
+
 def _parse_cast_character_target(raw: str, *, phase_label: str, state: GameState) -> int:
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Cast target character.")
@@ -2740,6 +2853,10 @@ def _parse_cast_phase(
     if spell is Spell.CHARM:
         target = _parse_charm_target(form, leader_id, n, phase_label=phase_label, state=state)
         return int(spell), [target], target
+
+    if spell is Spell.KILL_ENEMY:
+        target = _parse_kill_enemy_target(form, leader_id, n, phase_label=phase_label, state=state)
+        return int(spell), [target], None
 
     if spell in CAST_CHARACTER_TARGET_SPELLS:
         raw_target = form.get(f"cast_character_target_{leader_id}_{n}", "")

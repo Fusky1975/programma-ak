@@ -2055,10 +2055,13 @@ def test_combatant_phase_209_fields_default_to_no_op():
     assert c.bonus_unanswered_attacks == 0
 
 
-def test_personal_combat_spell_ability_covers_all_ten_base_spells():
+def test_personal_combat_spell_ability_covers_all_eleven_base_spells():
     # Sourced from turn/cast_execution.py's own [4.2X.4]-[4.2X.5] citation
     # grouping (module docstring's Phase 209 addendum) -- five Ability
-    # blocks, two spells each.
+    # blocks, two spells each. Kill Enemy (2026-10-31, user-requested
+    # Personal-Combat build) is an 11th entry, added alongside the same
+    # [4.25] NECROMANCY block as Hand of Death/Control Undead -- see
+    # this dict's own inline comment for the full citation.
     assert PERSONAL_COMBAT_SPELL_ABILITY == {
         Spell.HOLY_SYMBOL: Ability.WHITE,
         Spell.SPIRITWRACK: Ability.WHITE,
@@ -2070,6 +2073,7 @@ def test_personal_combat_spell_ability_covers_all_ten_base_spells():
         Spell.ICE_SUSPEND: Ability.ELEMENTAL,
         Spell.HAND_OF_DEATH: Ability.NECROMANCY,
         Spell.CONTROL_UNDEAD: Ability.NECROMANCY,
+        Spell.KILL_ENEMY: Ability.NECROMANCY,
     }
 
 

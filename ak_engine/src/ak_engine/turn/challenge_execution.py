@@ -775,6 +775,7 @@ def _resolve_personal_combat_cast(
     cast_slots_used: dict[Ability, int],
     cast_spells_attempted: set[Spell],
     fizzled_spells: list[tuple[str, Spell]] | None = None,
+    is_defensive: bool = False,
 ) -> str | None:
     """Leader-vs-leader Personal-Combat spell dispatch -- see module
     docstring's own Phase 290 addendum for how this was re-derived
@@ -796,6 +797,16 @@ def _resolve_personal_combat_cast(
     unset ``alignment`` as "not eligible/not immune," the same
     permissive-missing-data convention used everywhere else in this
     project.
+
+    **``is_defensive`` (2026-10-31)**: ``True`` only when this call is
+    the encounter's own *target* casting back in defense of itself --
+    i.e. ``_resolve_target_cast()``'s own call below, where the overall
+    target plays this function's ``caster`` role. ``False`` (default)
+    for every other call site, including the overall caster's own
+    ordinary offensive ``CAST`` tactic. The only consumer today is Kill
+    Enemy's own [4.25.2] "un negromante non può usarlo per difendere sé
+    stesso in un piano incontro" restriction -- every other spell is
+    unaffected either way.
     """
 
     if caster.blocked_from_cast:
@@ -843,6 +854,23 @@ def _resolve_personal_combat_cast(
         )
         if not (target_is_undead or control_undead_target_is_anti_holy_only):
             return None
+
+    if spell is Spell.KILL_ENEMY:
+        # Kill Enemy's own eligibility preconditions, same "ineligible
+        # means no roll at all" pattern as Control Undead above:
+        # [4.25.2]'s "un negromante non può usarlo per difendere sé
+        # stesso in un piano incontro" (checked first -- a defensive
+        # cast never even reaches the King/Undead checks below), "I Re
+        # sono immuni a questo incantesimo", and "inefficace contro
+        # Non-Morti...". This module has no Monster-target concept
+        # (leader-vs-leader only, per this function's own docstring),
+        # so only the character-alignment half of the Undead clause
+        # applies here.
+        if is_defensive:
+            return None
+        if target_leader is not None and (target_leader.is_king or target_leader.alignment is Alignment.UNDEAD):
+            return None
+
     if spell is Spell.ILLUS_HERO:
         level = effective_skill_level(state, caster_leader, ability)
         if level < ILLUS_HERO_KNOWN_ABILITY_LEVEL:
@@ -893,7 +921,23 @@ def _resolve_personal_combat_cast(
     if not try_consume_combat_cast_slot(ability, spell, level, cast_slots_used, cast_spells_attempted):
         return None
 
-    succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan)
+    # Kill Enemy [4.25.2]: "la possibilità di riuscita è ridotta alla
+    # metà in un incontro in un Luogo Speciale o contro un Eroe che
+    # comanda unità militari" -- same two OR'd triggers as the Action-
+    # Cast form (`cast_execution.py _execute_kill_enemy()`), reusing
+    # its own "any Feature at the caster's own province" reading of
+    # "Luogo Speciale" (this module has no Search-style guaranteed-at-
+    # a-Feature context to make that half unconditionally true, unlike
+    # `turn/search_execution.py`'s own Kill Enemy branch).
+    kill_enemy_multiplier = 1.0
+    if spell is Spell.KILL_ENEMY:
+        halving_applies = bool(state.features_at(caster_leader.location)) or (
+            target_leader is not None and bool(state.armies_commanded_by(target_leader.leader_id))
+        )
+        kill_enemy_multiplier = 0.5 if halving_applies else 1.0
+    succeeded = resolve_personal_combat_spell_cast(
+        level, rng, caster_is_pagan=caster_is_pagan, success_chance_multiplier=kill_enemy_multiplier
+    )
 
     # Phase 531: AKGEN_reverse_engineering_report (4).md SS8 -- a target
     # holding the Anti-Magic Amulet that personally blocks this exact
@@ -922,6 +966,44 @@ def _resolve_personal_combat_cast(
             return "a"
         target.hit_points = control_undead_failure_new_hit_points(target.hit_points, rng)
         return None
+
+    if spell is Spell.KILL_ENEMY:
+        if succeeded:
+            # Hidden Tattoos (Discovery.txt, Phase 270): "neutralize the
+            # Kill Enemy spell of Necromancers... All characters of the
+            # Kingdom are protected." Checked after the generic Anti-
+            # Necromancy-Amulet immunity above (lines 910-914), same
+            # order as `cast_execution.py _execute_kill_enemy()`'s own
+            # True-Cross-then-Hidden-Tattoos sequence.
+            target_has_hidden_tattoos = (
+                target_leader is not None
+                and target_leader.kingdom_id is not None
+                and Discovery.HIDDEN_TATTOOS in state.kingdoms[target_leader.kingdom_id].discoveries
+            )
+            if target_has_hidden_tattoos:
+                return None
+            # "Se l'incantesimo riesce, la vittima viene uccisa" --
+            # unlike the Action-Cast form's documented coma substitute,
+            # a Personal-Combat success is the real kill.
+            return "a"
+        # "Se fallisce, la vittima designata attaccherà l'autore
+        # dell'incantesimo assumendo per l'occasione un temperamento
+        # Berserk, se necessario anche aggredendolo in quella stessa
+        # fase" -- an immediate `resolve_melee_duel()` between the
+        # designated victim (temper forced to Berserk "for the
+        # occasion", mirroring `cast_execution.py
+        # _kill_enemy_combatant()`'s own Action-Cast precedent) and the
+        # caster, resolved inline. The retaliator (`target`) is passed
+        # first (this sub-duel's own local "a"=retaliator/"b"=caster
+        # convention), then translated back into this function's outer
+        # "a"=caster/"b"=target convention.
+        retaliator = replace(target, temper=Temper.BERSERK)
+        duel_result = resolve_melee_duel(retaliator, caster, rng)
+        if duel_result.winner == "a":  # the designated victim's Berserk retaliation kills the caster
+            return "b"
+        if duel_result.winner == "b":  # the caster survives and wins the retaliation
+            return "a"
+        return None  # the vanishingly rare max-rounds-exhausted draw -- the encounter continues
 
     if not succeeded:
         # Phase 858: SBUNGLE.X's own real "personal-combat Cast that just
@@ -1937,6 +2019,7 @@ def resolve_challenge_combat(
             cast_slots_used=target_cast_slots_used,
             cast_spells_attempted=target_cast_spells_attempted,
             fizzled_spells=fizzled_spells,
+            is_defensive=True,
         )
         if outcome == "fled":
             return "fled"

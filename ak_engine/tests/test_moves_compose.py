@@ -60,13 +60,14 @@ from ak_engine.webapp.moves_compose import (
     cast_character_target_options,
     cast_item_target_options,
     cast_spell_options,
-    charm_target_options,
     challenge_target_options,
+    charm_target_options,
     disband_target_options,
     feature_options,
     fire_target_options,
     hire_target_options,
     item_options,
+    kill_enemy_target_options,
     leave_army_target_options,
     leave_target_options,
     parse_phase_inputs,
@@ -390,11 +391,12 @@ def test_search_phase_rejects_beg_even_via_a_direct_tampered_value():
         assert "Beg isn't a real Encounter Plan tactic" in str(exc)
 
 
-def test_spell_options_lists_exactly_the_17_encounter_plan_castable_spells():
+def test_spell_options_lists_exactly_the_18_encounter_plan_castable_spells():
     values = {value for value, _ in spell_options()}
     assert values == {int(spell) for spell in ENCOUNTER_PLAN_CASTABLE_SPELLS}
-    assert len(ENCOUNTER_PLAN_CASTABLE_SPELLS) == 17
+    assert len(ENCOUNTER_PLAN_CASTABLE_SPELLS) == 18
     assert Spell.GATE_ANGEL in ENCOUNTER_PLAN_CASTABLE_SPELLS
+    assert Spell.KILL_ENEMY in ENCOUNTER_PLAN_CASTABLE_SPELLS
 
 
 def test_search_phase_cast_an_encounter_plan_spell_is_included():
@@ -411,6 +413,17 @@ def test_search_phase_cast_gate_angel_is_included():
     phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
     assert phases[0].extra == [0, int(Maneuver.CAST), int(Spell.GATE_ANGEL), -1]
+
+
+def test_search_phase_cast_kill_enemy_is_included():
+    # Kill Enemy's own Personal-Combat dispatch branch (2026-10-31,
+    # user-requested): no separate target field -- same implicit-
+    # opponent shape every other Encounter Plan Cast tactic already has.
+    form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: int(Spell.KILL_ENEMY)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+
+    assert phases[0].extra == [0, int(Maneuver.CAST), int(Spell.KILL_ENEMY), -1]
 
 
 def test_search_phase_cast_an_action_only_spell_is_rejected():
@@ -2899,6 +2912,88 @@ def test_cast_phase_charm_rejects_a_noncolocated_target_even_via_a_direct_tamper
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "choose a Charm target" in str(exc)
+
+
+def test_kill_enemy_target_options_lists_colocated_non_king_non_undead_any_kingdom():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Own Hero", location=HOME))
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=3, kingdom_id=2, name="Foreign Hero", location=HOME))
+    state.add_leader(LeaderState(leader_id=4, kingdom_id=1, name="Army Commander", location=HOME))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=4))
+    state.add_leader(LeaderState(leader_id=5, kingdom_id=1, name="A King", location=HOME, is_king=True))
+    state.add_leader(LeaderState(leader_id=6, kingdom_id=1, name="Undead Hero", location=HOME, alignment=Alignment.UNDEAD))
+    state.add_leader(LeaderState(leader_id=7, kingdom_id=1, name="Faraway Hero", location=HexCoord(9, 9)))
+
+    options = kill_enemy_target_options(state, KING_ID)
+
+    values = {value for value, _label in options}
+    assert values == {"2", "3", "4"}  # not 5 (King), 6 (Undead), 7 (not co-located), never self
+    assert "halved chance" in dict(options)["4"]
+
+
+def test_cast_phase_reads_a_kill_enemy_target():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    form = _cast_form(cast_spell=str(int(Spell.KILL_ENEMY)), cast_kill_enemy_target="2")
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    cast_phase = phases[0]
+    assert cast_phase.action is ActionCode.CAST
+    assert cast_phase.obj == int(Spell.KILL_ENEMY)
+    assert cast_phase.extra == [2]
+    assert cast_phase.nested_plan is None
+
+
+def test_cast_phase_kill_enemy_allows_an_army_leading_target():
+    # Legal but penalized (halved roll), not blocked outright -- unlike
+    # Charm's own army-count precondition failure.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Army Commander", location=HOME))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=2))
+    form = _cast_form(cast_spell=str(int(Spell.KILL_ENEMY)), cast_kill_enemy_target="2")
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [2]
+
+
+def test_cast_phase_kill_enemy_rejects_a_king_target_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HOME))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="A King", location=HOME, is_king=True))
+    form = _cast_form(cast_spell=str(int(Spell.KILL_ENEMY)), cast_kill_enemy_target="2")
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Kill Enemy target" in str(exc)
+
+
+def test_cast_phase_kill_enemy_rejects_an_undead_target_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Undead Hero", location=HOME, alignment=Alignment.UNDEAD))
+    form = _cast_form(cast_spell=str(int(Spell.KILL_ENEMY)), cast_kill_enemy_target="2")
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Kill Enemy target" in str(exc)
+
+
+def test_cast_phase_kill_enemy_rejects_a_noncolocated_target_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Faraway Hero", location=HexCoord(9, 9)))
+    form = _cast_form(cast_spell=str(int(Spell.KILL_ENEMY)), cast_kill_enemy_target="2")
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Kill Enemy target" in str(exc)
 
 
 def test_cast_phase_resurrection_embeds_a_nested_plan():

@@ -915,6 +915,24 @@ def test_kill_enemy_fails_outright_against_a_king_no_roll_consumed():
     assert state.leaders[CASTER_ID].merit_tally.successful_assassinations == 0
 
 
+def test_kill_enemy_fails_outright_against_an_undead_target_no_roll_consumed():
+    # Bug fix, sourced directly from the user (2026-11-01): "è
+    # inefficace contro Non-Morti... perché queste creature esistono
+    # solo parzialmente nel mondo materiale."
+    state = build_state()
+    state.add_leader(LeaderState(78, 2, "Undead Hero", LOCATION, alignment=Alignment.UNDEAD))
+    request = CastRequest(spell=Spell.KILL_ENEMY, target=78)
+    rng = ScriptedRandom([])  # no roll, no melee -- Undead immunity short-circuits first
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is False
+    assert result.reason == "target is Undead, immune to Kill Enemy"
+    assert 78 in state.leaders
+    assert state.leaders[78].is_comatose is False
+    assert state.leaders[CASTER_ID].merit_tally.successful_assassinations == 0
+
+
 def test_kill_enemy_halves_the_chance_against_an_army_leading_hero():
     # Real, seeded RNG, not ScriptedRandom -- a failed cast here falls
     # through into the real Berserk-counterattack melee (see the two

@@ -912,6 +912,199 @@ def test_resolve_personal_combat_cast_charm_unprotected_target_still_flees():
     assert outcome == "fled"
 
 
+# -- Kill Enemy [4.25.2] (2026-10-31, user-requested Personal-Combat build) --
+
+
+def test_resolve_personal_combat_cast_kill_enemy_defensive_use_is_blocked():
+    # [4.25.2]: "un negromante non può usarlo per difendere sé stesso in
+    # un piano incontro" -- `is_defensive=True` is `_resolve_target_cast()`'s
+    # own signal that the designated target is casting back in self-
+    # defense, which Kill Enemy can never do.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.0])
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
+        outcome = _resolve_personal_combat_cast(
+            caster,
+            caster_leader,
+            target,
+            target_leader,
+            tactic,
+            state,
+            rng,
+            is_first_tactic=True,
+            cast_slots_used={},
+            cast_spells_attempted=set(),
+            is_defensive=True,
+        )
+
+    assert outcome is None
+    assert not mock_roll.called
+
+
+def test_resolve_personal_combat_cast_kill_enemy_king_target_is_immune():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD, is_king=True)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.0])
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
+        outcome = _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+        )
+
+    assert outcome is None
+    assert not mock_roll.called
+
+
+def test_resolve_personal_combat_cast_kill_enemy_undead_target_is_immune():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.UNDEAD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.0])
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
+        outcome = _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+        )
+
+    assert outcome is None
+    assert not mock_roll.called
+
+
+def test_resolve_personal_combat_cast_kill_enemy_halved_against_an_army_leading_target():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.9])
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
+        mock_roll.return_value = True
+        _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+        )
+
+    assert mock_roll.call_args.kwargs["success_chance_multiplier"] == 0.5
+
+
+def test_resolve_personal_combat_cast_kill_enemy_success_kills_the_target():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.0])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+    )
+
+    assert outcome == "a"
+
+
+def test_resolve_personal_combat_cast_kill_enemy_hidden_tattoos_wards_the_target():
+    state = _base_state()
+    state.kingdoms[2].discoveries.add(Discovery.HIDDEN_TATTOOS)
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.0])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+    )
+
+    assert outcome is None  # warded -- survives, combat continues
+
+
+def test_resolve_personal_combat_cast_kill_enemy_failed_roll_berserk_retaliation_kills_the_caster():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 0, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.99])
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        outcome = _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+        )
+
+    # the retaliator (the designated target) is passed first -- "a" means it won.
+    assert mock_melee.call_args[0][0].temper is Temper.BERSERK
+    assert outcome == "b"
+
+
+def test_resolve_personal_combat_cast_kill_enemy_failed_roll_berserk_retaliation_the_caster_survives():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 0, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.99])
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="b", rounds=1)
+    ):
+        outcome = _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+        )
+
+    assert outcome == "a"
+
+
+def test_execute_challenge_cast_kill_enemy_kills_via_a_successful_roll():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+    request = _cast_request(2, Spell.KILL_ENEMY)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True):
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.0]))
+
+    assert result.winner_leader_id == 1
+    assert result.loser_killed is True
+    assert 2 not in state.leaders
+
+
 def test_resolve_personal_combat_cast_records_a_fizzle_on_a_failed_roll():
     # Phase 858: SBUNGLE.X's own real "personal-combat Cast that just
     # fizzles" trigger -- `resolve_personal_combat_spell_cast()` (real,
