@@ -23,7 +23,7 @@ from ak_engine.models.advanced_ability import ADVANCED_ABILITY_NAME, AdvancedAbi
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_NAME, ArmyType
 from ak_engine.models.discovery import DISCOVERY_NAME, Discovery, sorted_kingdom_discoveries
-from ak_engine.models.enums import ABILITY_NAME, Ability, ActionCode, Maneuver
+from ak_engine.models.enums import ABILITY_NAME, Ability, ActionCode, Maneuver, Spell
 from ak_engine.models.feature import FEATURE_TYPE_NAMES, Feature, FeatureType
 from ak_engine.models.game_state import ArmyState, BlackmailClaim, LeaderState, ProvinceState, RaceTitleTally
 from ak_engine.models.game_type import GameType
@@ -78,6 +78,11 @@ from ak_engine.turn.exploration import FIND_MINES_TAX_CAP
 from ak_engine.parser.k1_moves_writer import K1WriteError, write_k1_moves_file
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
 from ak_engine.webapp.moves_compose import (
+    CAST_CHARACTER_TARGET_SPELLS,
+    CAST_ITEM_TARGET_SPELLS,
+    CAST_NESTED_PLAN_SPELLS,
+    CAST_PROVINCE_TARGET_SPELLS,
+    CAST_TERRAIN_CHOICES,
     DISBAND_ALL_VALUE,
     DISBAND_SLOT_COUNT,
     HIRE_GOLD_OFFER_RANGE,
@@ -92,6 +97,9 @@ from ak_engine.webapp.moves_compose import (
     TRADE_GOLD_VALUE,
     InvalidComposedMovesError,
     build_composed_kingdom,
+    cast_character_target_options,
+    cast_item_target_options,
+    cast_spell_options,
     challenge_target_options,
     disband_target_options,
     feature_options,
@@ -106,6 +114,7 @@ from ak_engine.webapp.moves_compose import (
     province_options,
     recruit_target_options,
     recruit_type_options,
+    resurrection_target_options,
     spell_options,
     tactic_options,
     trade_gift_options,
@@ -3111,6 +3120,20 @@ def create_app(games_root: Path | None = None) -> Flask:
             fire_target_choices_by_leader={
                 leader.leader_id: fire_target_options(state, leader.leader_id) for leader in roster
             },
+            cast_action_value=int(ActionCode.CAST),
+            cast_spell_choices=cast_spell_options(),
+            cast_character_target_choices=cast_character_target_options(state),
+            cast_item_target_choices=cast_item_target_options(state),
+            cast_terrain_choices=[(t.value, TERRAIN_NAME.get(t, t.name.title())) for t in CAST_TERRAIN_CHOICES],
+            resurrection_target_choices_by_leader={
+                leader.leader_id: resurrection_target_options(state, leader.leader_id) for leader in roster
+            },
+            cast_resurrection_value=int(Spell.RESURRECTION),
+            cast_character_target_spell_values=[int(s) for s in CAST_CHARACTER_TARGET_SPELLS],
+            cast_province_target_spell_values=[int(s) for s in CAST_PROVINCE_TARGET_SPELLS],
+            cast_item_target_spell_values=[int(s) for s in CAST_ITEM_TARGET_SPELLS],
+            cast_illus_terrain_value=int(Spell.ILLUS_TERRAIN),
+            cast_nested_plan_spell_values=[int(s) for s in CAST_NESTED_PLAN_SPELLS],
             province_choices=province_options(state),
             feature_choices_by_leader={
                 leader.leader_id: feature_options(state, leader_id=leader.leader_id) for leader in roster

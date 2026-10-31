@@ -30,7 +30,10 @@
     for the hired Hero's own orders for the rest of this turn (starting the phase right after the Hire, up to
     P4 -- plain generic Action/Object/Extra fields for now, not yet the full per-Action composer), Fire has
     its own target dropdown (own-Kingdom Heroes only, co-located unless this leader is a King, "Self" always
-    included); every other Action still takes the same plain Object + Extra numbers a real move file's own
+    included), Cast has its own spell dropdown (19 Action spells, Gate Angel excluded -- combat-tactic use
+    only) plus whichever target field matches that spell's own shape (character/province/item/none, or
+    Resurrection's own more elaborate target list), with the same nested-plan editor Hire uses for a
+    successful Charm or Resurrection; every other Action still takes the same plain Object + Extra numbers a real move file's own
     "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a real move
     file from these and stores it exactly like an uploaded one.
   </p>
@@ -62,6 +65,7 @@
             <th>Challenge</th>
             <th>Hire</th>
             <th>Fire</th>
+            <th>Cast</th>
             <th>Object</th>
             <th>Extra (space or comma separated)</th>
           </tr>
@@ -342,6 +346,81 @@
                   {% endfor %}
                 </select>
               </td>
+              <td class="compose-special-cell" data-action="{{ cast_action_value }}">
+                <select class="compose-cast-spell" name="cast_spell_{{ leader.leader_id }}_{{ n }}">
+                  <option value="">-- choose a spell to Cast --</option>
+                  {% for value, label in cast_spell_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <span class="compose-cast-character-cell">
+                  <br><select name="cast_character_target_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- choose a target --</option>
+                    {% for value, label in cast_character_target_choices %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+                <span class="compose-cast-resurrection-cell">
+                  <br><select name="cast_resurrection_target_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- choose a target --</option>
+                    {% for value, label in resurrection_target_choices_by_leader[leader.leader_id] %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+                <span class="compose-cast-province-cell">
+                  <br><select name="cast_province_target_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- choose a province --</option>
+                    {% for value, label in province_choices %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+                <span class="compose-cast-terrain-cell">
+                  <br><select name="cast_terrain_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- fake terrain --</option>
+                    {% for value, label in cast_terrain_choices %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+                <span class="compose-cast-item-cell">
+                  <br><select name="cast_item_target_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- choose an item --</option>
+                    {% for value, label in cast_item_target_choices %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+                <span class="compose-cast-nested-cell">
+                  {% if n < 4 %}
+                    <br><span class="hex-map-legend-note">The (re)joined character's own orders, starting next phase:</span>
+                    <table class="data-table compose-hire-nested-plan">
+                      <thead><tr><th>Phase</th><th>Action</th><th>Object</th><th>Extra</th></tr></thead>
+                      <tbody>
+                        {% for nested_n in range(n + 1, 5) %}
+                          <tr>
+                            <td>P{{ nested_n }}</td>
+                            <td>
+                              <select name="cast_nested_action_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}">
+                                <option value="">-- no order --</option>
+                                {% for action in actions %}
+                                  <option value="{{ action.value }}">{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
+                                {% endfor %}
+                              </select>
+                            </td>
+                            <td><input type="text" name="cast_nested_obj_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}" value="0" size="6"></td>
+                            <td><input type="text" name="cast_nested_extra_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}" value="" size="20"></td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  {% else %}
+                    <br><span class="hex-map-legend-note">No further orders possible -- Cast at the last phase.</span>
+                  {% endif %}
+                </span>
+              </td>
               <td class="compose-generic-cell"><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
               <td class="compose-generic-cell"><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>
             </tr>
@@ -445,6 +524,43 @@
       updateTacticSubCell(event.target);
       var plan = event.target.closest(".compose-encounter-plan");
       if (plan) updateEncounterPlan(plan);
+    }
+  });
+
+  // Cast's own spell dropdown picks which one of 5 target shapes (plus
+  // the Charm/Resurrection nested-plan editor) this row needs -- see
+  // webapp/moves_compose.py's own docstring's Cast section for why
+  // each of the 19 composable spells falls into exactly one shape.
+  // Progressive enhancement only, same as every other hidden cell on
+  // this page: build_composed_kingdom()'s own server-side validation
+  // is what actually enforces which fields a given spell reads.
+  var CAST_CHARACTER_TARGET_SPELLS = {{ cast_character_target_spell_values | tojson }};
+  var CAST_PROVINCE_TARGET_SPELLS = {{ cast_province_target_spell_values | tojson }};
+  var CAST_ITEM_TARGET_SPELLS = {{ cast_item_target_spell_values | tojson }};
+  var CAST_NESTED_PLAN_SPELLS = {{ cast_nested_plan_spell_values | tojson }};
+  var CAST_RESURRECTION_VALUE = {{ cast_resurrection_value }};
+  var CAST_ILLUS_TERRAIN_VALUE = {{ cast_illus_terrain_value }};
+
+  function updateCastCell(select) {
+    var cell = select.closest(".compose-special-cell");
+    if (!cell) return;
+    var value = parseInt(select.value, 10);
+    var show = function (className, visible) {
+      var el = cell.querySelector(className);
+      if (el) el.style.display = visible ? "" : "none";
+    };
+    show(".compose-cast-character-cell", CAST_CHARACTER_TARGET_SPELLS.indexOf(value) !== -1);
+    show(".compose-cast-resurrection-cell", value === CAST_RESURRECTION_VALUE);
+    show(".compose-cast-province-cell", CAST_PROVINCE_TARGET_SPELLS.indexOf(value) !== -1);
+    show(".compose-cast-terrain-cell", value === CAST_ILLUS_TERRAIN_VALUE);
+    show(".compose-cast-item-cell", CAST_ITEM_TARGET_SPELLS.indexOf(value) !== -1);
+    show(".compose-cast-nested-cell", CAST_NESTED_PLAN_SPELLS.indexOf(value) !== -1);
+  }
+
+  document.querySelectorAll(".compose-cast-spell").forEach(updateCastCell);
+  document.addEventListener("change", function (event) {
+    if (event.target.classList && event.target.classList.contains("compose-cast-spell")) {
+      updateCastCell(event.target);
     }
   });
 

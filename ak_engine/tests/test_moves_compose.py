@@ -43,6 +43,11 @@ from ak_engine.turn.army_list_decode import ALL_ARMIES_SENTINEL
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.webapp.moves_compose import (
+    CAST_ACTION_SPELLS,
+    CAST_CHARACTER_TARGET_SPELLS,
+    CAST_ITEM_TARGET_SPELLS,
+    CAST_NO_TARGET_SPELLS,
+    CAST_PROVINCE_TARGET_SPELLS,
     DISBAND_ALL_VALUE,
     EMPTY_SEARCH_EXTRA,
     ENCOUNTER_PLAN_CASTABLE_SPELLS,
@@ -52,6 +57,9 @@ from ak_engine.webapp.moves_compose import (
     PICK_UP_ALL_VALUE,
     InvalidComposedMovesError,
     build_composed_kingdom,
+    cast_character_target_options,
+    cast_item_target_options,
+    cast_spell_options,
     challenge_target_options,
     disband_target_options,
     feature_options,
@@ -66,6 +74,7 @@ from ak_engine.webapp.moves_compose import (
     province_options,
     recruit_target_options,
     recruit_type_options,
+    resurrection_target_options,
     spell_options,
     tactic_options,
     trade_gift_options,
@@ -2677,3 +2686,225 @@ def test_build_composed_kingdom_round_trips_a_fire_order():
     assert phase0.action is ActionCode.FIRE
     assert phase0.obj == 2
     assert phase0.extra == []
+
+
+def test_cast_action_spells_is_19_spells_excluding_gate_angel():
+    assert len(CAST_ACTION_SPELLS) == 19
+    assert Spell.GATE_ANGEL not in CAST_ACTION_SPELLS
+    assert Spell.RESURRECTION in CAST_ACTION_SPELLS
+    assert Spell.SKELETAL_ARMY in CAST_ACTION_SPELLS  # the one spell left in CAST_NO_TARGET_SPELLS
+    assert CAST_NO_TARGET_SPELLS == {Spell.SKELETAL_ARMY}
+    assert Spell.RESURRECTION not in CAST_CHARACTER_TARGET_SPELLS  # gets its own dedicated field instead
+
+
+def test_cast_spell_options_lists_every_action_spell_by_display_name():
+    options = cast_spell_options()
+
+    values = {value for value, _label in options}
+    assert values == {int(spell) for spell in CAST_ACTION_SPELLS}
+    assert int(Spell.GATE_ANGEL) not in values
+    assert len(options) == 19
+
+
+def test_cast_character_target_options_lists_every_leader_any_kingdom():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="Foreign Hero", location=HexCoord(9, 9)))
+
+    options = cast_character_target_options(state)
+
+    values = {value for value, _label in options}
+    assert values == {str(KING_ID), "2"}
+
+
+def test_cast_item_target_options_lists_every_item_including_unowned():
+    state = _state()
+    unowned_item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=None, charges=1)
+
+    options = cast_item_target_options(state)
+
+    values = {value for value, _label in options}
+    assert str(unowned_item.item_id) in values
+    assert len(options) == 2  # the King's own starting item (see _state()) plus this unowned one
+
+
+def test_resurrection_target_options_lists_comatose_heir_and_dead_colocated():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Comatose Hero", location=HOME, is_comatose=True))
+    state.add_leader(LeaderState(leader_id=3, kingdom_id=1, name="The Heir", location=HOME, is_royal_heir=True))
+    state.dead_leaders[3] = LeaderState(leader_id=3, kingdom_id=1, name="Old King", location=HOME, is_king=True)
+    state.dead_leaders[4] = LeaderState(leader_id=4, kingdom_id=1, name="Dead Hero", location=HOME)
+    state.add_leader(LeaderState(leader_id=5, kingdom_id=1, name="Faraway Hero", location=HexCoord(9, 9), is_comatose=True))
+    state.dead_leaders[6] = LeaderState(leader_id=6, kingdom_id=1, name="Faraway Dead Hero", location=HexCoord(9, 9))
+
+    options = resurrection_target_options(state, KING_ID)
+
+    values = {value for value, _label in options}
+    assert values == {"2", "3", "4"}  # not 5/6 -- not co-located
+
+
+def _cast_form(leader_id: int = KING_ID, **fields: str) -> dict[str, str]:
+    form = _all_defend_form(leader_id)
+    form[f"action_{leader_id}_0"] = str(int(ActionCode.CAST))
+    for key, value in fields.items():
+        form[f"{key}_{leader_id}_0"] = value
+    return form
+
+
+def test_cast_phase_reads_a_province_target_spell():
+    state = _state()
+    form = _cast_form(cast_spell=str(int(Spell.BLESS)), cast_province_target=f"{HOME.x},{HOME.y}")
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    cast_phase = phases[0]
+    assert cast_phase.action is ActionCode.CAST
+    assert cast_phase.obj == int(Spell.BLESS)
+    assert len(cast_phase.extra) == 1
+    assert decode_hex_number(cast_phase.extra[0], BOARD_WIDTH) == HOME
+    assert cast_phase.nested_plan is None
+
+
+def test_cast_phase_illus_terrain_reads_target_and_terrain():
+    state = _state()
+    form = _cast_form(
+        cast_spell=str(int(Spell.ILLUS_TERRAIN)),
+        cast_province_target=f"{HOME.x},{HOME.y}",
+        cast_terrain=str(int(Terrain.FOREST.value)),
+    )
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    cast_phase = phases[0]
+    assert cast_phase.obj == int(Spell.ILLUS_TERRAIN)
+    assert decode_hex_number(cast_phase.extra[0], BOARD_WIDTH) == HOME
+    assert cast_phase.extra[1] == Terrain.FOREST.value
+
+
+def test_cast_phase_reads_a_no_target_spell():
+    state = _state()
+    form = _cast_form(cast_spell=str(int(Spell.SKELETAL_ARMY)))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].obj == int(Spell.SKELETAL_ARMY)
+    assert phases[0].extra == [0]
+
+
+def test_cast_phase_reads_an_item_target_spell():
+    state = _state()
+    item_id = state.items_held_by(KING_ID)[0].item_id
+    form = _cast_form(cast_spell=str(int(Spell.LOCATE_OBJECT)), cast_item_target=str(item_id))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].obj == int(Spell.LOCATE_OBJECT)
+    assert phases[0].extra == [item_id]
+
+
+def test_cast_phase_reads_a_generic_character_target_spell():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    form = _cast_form(cast_spell=str(int(Spell.ORATORY)), cast_character_target="2")
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].obj == int(Spell.ORATORY)
+    assert phases[0].extra == [2]
+    assert phases[0].nested_plan is None
+
+
+def test_cast_phase_charm_embeds_a_nested_plan():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_character_target="2")
+    form[f"cast_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.WAIT))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    cast_phase = phases[0]
+    assert cast_phase.obj == int(Spell.CHARM)
+    assert cast_phase.extra == [2]
+    assert cast_phase.nested_plan is not None
+    assert cast_phase.nested_plan.leader_id == 2
+    assert cast_phase.nested_plan.segments[0].phases["P1"].action is ActionCode.WAIT
+
+
+def test_cast_phase_resurrection_embeds_a_nested_plan():
+    state = _state()
+    state.dead_leaders[2] = LeaderState(leader_id=2, kingdom_id=1, name="Dead Hero", location=HOME)
+    form = _cast_form(cast_spell=str(int(Spell.RESURRECTION)), cast_resurrection_target="2")
+    form[f"cast_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.WAIT))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    cast_phase = phases[0]
+    assert cast_phase.obj == int(Spell.RESURRECTION)
+    assert cast_phase.extra == [2]
+    assert cast_phase.nested_plan is not None
+    assert cast_phase.nested_plan.leader_id == 2
+    assert cast_phase.nested_plan.segments[0].phases["P1"].action is ActionCode.WAIT
+
+
+def test_cast_phase_resurrection_target_must_be_eligible():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Healthy Hero", location=HOME))
+    form = _cast_form(cast_spell=str(int(Spell.RESURRECTION)), cast_resurrection_target="2")
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Resurrection target" in str(exc)
+
+
+def test_cast_phase_without_choosing_a_spell_is_rejected():
+    state = _state()
+    form = _cast_form()
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a spell to Cast" in str(exc)
+
+
+def test_cast_phase_rejects_gate_angel_even_via_a_direct_tampered_value():
+    state = _state()
+    form = _cast_form(cast_spell=str(int(Spell.GATE_ANGEL)))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a spell to Cast" in str(exc)
+
+
+def test_cast_phase_rejects_a_combat_only_spell_even_via_a_direct_tampered_value():
+    state = _state()
+    form = _cast_form(cast_spell=str(int(Spell.FIREBALL)))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a spell to Cast" in str(exc)
+
+
+def test_build_composed_kingdom_round_trips_a_cast_order():
+    state = _state()
+    form = _cast_form(cast_spell=str(int(Spell.SKELETAL_ARMY)))
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.CAST
+    assert phase0.obj == int(Spell.SKELETAL_ARMY)
+    assert phase0.extra == [0]

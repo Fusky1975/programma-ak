@@ -908,6 +908,76 @@ Phase 614) -- the same "don't surface the rare Advanced-Ability/Office
 carve-out" choice already made for Trail's and Hire's own Spy Double-
 Agent cases.
 
+**Cast [CA] (``ActionCode.CAST``), the eleventh Action designed**
+(2026-11-01) -- confirmed against the user's own full Italian [3.10]
+text and ``turn/cast_decode.py``/``turn/cast_execution.py``'s own
+docstrings. Not to be confused with the Encounter Plan's own
+``Maneuver.CAST`` tactic (Search/Challenge/Pursue's own Personal-Combat
+Cast, already composed via ``tactic_spell_*``/``challenge_tactic_
+spell_*`` and ``ENCOUNTER_PLAN_CASTABLE_SPELLS``) -- this is the
+top-level Action, one leader's own whole ``P<n>`` phase, for an Action
+Spell (never a Personal-Combat spell). No engine bug found this round:
+the "must have skill ≥1 in the spell's own Magical ability," "Action
+Spell, never Personal-Combat," and "don't confuse with Use Item" rules
+are all exactly as described. One real refinement beyond the pasted
+"15% + 15% per level," already correctly implemented, not a bug: the
+real formula stacks a 95% cap, a Pagan-Kingdom +10% (non-White schools),
+a Pagan-King-title +10% (White only), a +20% "Places of Power" bonus,
+and per-spell multipliers on top of that base term -- the same category
+of refinement Practice's "10%/5%" and Challenge's "50%" turned out to
+need. The rulebook text also doesn't mention the separate per-(leader,
+Ability)-per-turn cast-count limit ([4.2]: 1 slot at skill 1-2, 2 at
+skill 3, 3 at skill 4+) -- real, enforced, but out of this composer's
+own scope to preview (the engine remains the real arbiter of how many
+slots are left).
+
+``CAST_ACTION_SPELLS`` is 19 spells, not the engine's own full 20 --
+**Gate Angel is deliberately excluded**, the user's own explicit choice
+(2026-11-01) made with full information: Gate Angel's only *sourced*
+rulebook effect (the user's own earlier-supplied text) is the Valhalla-
+visitor-lottery Action-Cast effect; its Personal-Combat use in an
+Encounter Plan is the project's own, explicitly-flagged-unsourced
+addition from an earlier round. The user chose to keep Gate Angel
+exposed only through the Encounter Plan's own Cast tactic, not here,
+despite that being the less-sourced of the two uses -- a deliberate,
+informed choice, not an oversight, so don't "fix" this by adding it
+back without asking again.
+
+The remaining 19 spells split into 4 target shapes (``turn/cast_
+decode.py``'s own frozensets), each composed differently: a generic
+character-target dropdown (``cast_character_target_options()``, every
+leader in the game, no further per-spell eligibility filtering this
+round -- Kill Enemy/Charm/Oratory/Clairvoyance/Phantasmal Armies/Mystic
+Winds); a province-target dropdown (reusing Move's own ``province_
+options()``/``_parse_move_target()`` directly -- Part Sea/Bless/Plague/
+Flood/Tornado/Earthquake/Illusory Terrain/Hide Feature/Scar Terrain/
+Illusory Fog, the first of these additionally getting a ``Terrain``
+dropdown for its own fake terrain); no field at all (Skeletal Army, the
+one no-target spell left after excluding Gate Angel); and an item
+dropdown listing every item in the game, not just this leader's own
+(``cast_item_target_options()`` -- Locate Object, since the spell's own
+point is finding an item whose location isn't already known). Resurrection
+gets its own, deliberately more elaborate target handling
+(``resurrection_target_options()``/``_parse_resurrection_target()``),
+merging all three of ``_execute_resurrection()``'s own eligibility
+branches (comatose cure, Royal Heir restoration, ordinary dead-Hero
+revival from ``GameState.dead_leaders``) into one dropdown, each
+labelled by which branch it resolves to.
+
+Charm and Resurrection (``CAST_NESTED_PLAN_SPELLS``) are the two spells
+whose successful cast embeds a ``PlanPhase.nested_plan`` for the newly-
+(re)joined character, the exact same mechanism Hire uses -- generalized
+here into a shared ``_parse_nested_plan()`` (``field_prefix`` parameter:
+``"hire_nested"`` for Hire, ``"cast_nested"`` for Cast), reusing the
+same "only offer/read phases strictly after this one, up to P4" design
+and the same plain generic Action/Object/Extra fallback fields for the
+newly-(re)joined character's own orders. Every other spell's own
+``ComposedPhaseInput`` always carries ``nested_plan=None`` -- confirmed
+necessary, not just unneeded: ``turn/plan_dispatch.py
+_resolve_nested_plan_leader_id()`` doesn't itself check which spell was
+cast, so a ``nested_plan`` wrongly attached to, say, a Plague cast would
+still be dispatched if that cast happened to succeed.
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
 isn't exposed here yet either, for the same reason -- every composed
@@ -935,13 +1005,21 @@ from ak_engine.models.feature import FEATURE_TYPE_NAMES
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
 from ak_engine.models.kingdom import Kingdom, KingdomMoveHeader
 from ak_engine.models.leader import Leader
-from ak_engine.models.map import HexCoord
+from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES
 from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_NAME, TREASURE_WAND_SPELL, TreasureCategory
 from ak_engine.report.turn_report import real_province_number
 from ak_engine.turn.army_list_decode import ALL_ARMIES_SENTINEL
+from ak_engine.turn.cast_decode import (
+    CHARACTER_TARGET_SPELLS as _CAST_CHARACTER_TARGET_SPELLS_RAW,
+    ITEM_TARGET_SPELLS as CAST_ITEM_TARGET_SPELLS,
+    NESTED_PLAN_SPELLS as CAST_NESTED_PLAN_SPELLS,
+    NO_TARGET_SPELLS as _CAST_NO_TARGET_SPELLS_RAW,
+    PROVINCE_TARGET_SPELLS as CAST_PROVINCE_TARGET_SPELLS,
+)
+from ak_engine.turn.cast_execution import is_unfinalized_royal_heir
 from ak_engine.turn.combat import QUALITY_NAME, Quality
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.office_holder import resolve_office_holder
@@ -1051,6 +1129,30 @@ ENCOUNTER_PLAN_CASTABLE_SPELLS: frozenset[Spell] = frozenset(
         Spell.ILLUS_HERO,
     }
 )
+
+# Top-level Cast (``ActionCode.CAST``)'s own 19 Action-Cast spells --
+# ``turn/cast_decode.py``'s own 4 target-shape frozensets, minus
+# ``Spell.GATE_ANGEL`` (2026-11-01, the user's own deliberate choice:
+# its only *sourced* rulebook effect is the Valhalla-visitor lottery,
+# modeled by ``turn/cast_execution.py``'s own Action-Cast branch, but
+# the user chose to keep it exposed only as the Encounter Plan's own
+# Personal-Combat tactic -- see this module's own docstring's Cast
+# section for the full history), and minus ``Spell.RESURRECTION`` from
+# the generic character-target set (it gets its own dedicated,
+# considerably more elaborate target handling below, not the generic
+# "any leader in the game" dropdown every other character-target spell
+# gets this round).
+CAST_CHARACTER_TARGET_SPELLS: frozenset[Spell] = frozenset(_CAST_CHARACTER_TARGET_SPELLS_RAW - {Spell.RESURRECTION})
+CAST_NO_TARGET_SPELLS: frozenset[Spell] = frozenset(_CAST_NO_TARGET_SPELLS_RAW - {Spell.GATE_ANGEL})
+CAST_ACTION_SPELLS: frozenset[Spell] = (
+    frozenset({Spell.RESURRECTION}) | CAST_CHARACTER_TARGET_SPELLS | CAST_PROVINCE_TARGET_SPELLS | CAST_NO_TARGET_SPELLS | CAST_ITEM_TARGET_SPELLS
+)
+# Every real Terrain a GM could plausibly pick for Illusory Terrain's
+# own fake-terrain field -- ``Terrain.NO_TERRAIN`` is a placeholder
+# sentinel that "never actually appears on a generated map"
+# (``webapp/hex_map.py``'s own comment), not a real terrain a GM would
+# ever want an illusion to mimic.
+CAST_TERRAIN_CHOICES: tuple[Terrain, ...] = tuple(terrain for terrain in Terrain if terrain is not Terrain.NO_TERRAIN)
 
 PHASE_COUNT = 5  # P0..P4 -- every real AK3__T*.K1 sample's own leader block shape.
 
@@ -1701,6 +1803,105 @@ def fire_target_options(state: GameState, leader_id: int) -> list[tuple[str, str
     return options
 
 
+def cast_spell_options() -> list[tuple[int, str]]:
+    """Every top-level Action-Cast spell (``CAST_ACTION_SPELLS``, 19
+    members this round), as ``(value, display_name)`` pairs for Cast's
+    own spell dropdown -- rulebook [3.10]: "Deve trattarsi di un
+    Incantesimo d'Azione e non di un Incantesimo di Combattimento
+    Individuale," confirmed structurally: ``turn/cast_execution.py
+    execute_cast()``'s own exhaustive dispatch only ever has a real
+    branch for these spells, any other falling to a generic "spell
+    effect not modeled" result. Sorted by the spell's own real ordinal.
+    """
+
+    return [(int(spell), SPELL_NAME.get(spell, spell.name.replace("_", " ").title())) for spell in sorted(CAST_ACTION_SPELLS, key=int)]
+
+
+def cast_character_target_options(state: GameState) -> list[tuple[str, str]]:
+    """Every leader in the game as a ``(value, label)`` pair for the
+    generic character-target Cast spells (``CAST_CHARACTER_TARGET_
+    SPELLS`` -- Kill Enemy, Charm, Oratory, Clairvoyance, Phantasmal
+    Armies, Mystic Winds). Deliberately NOT scoped to each spell's own
+    further eligibility rules (e.g. Charm's own co-located/army-less/
+    non-King requirements, already partially sourced while designing
+    Hire) -- that per-spell research hasn't been done yet for any of
+    these six, so this round offers every leader generically, same
+    "any leader in the world" shape Trail's own target dropdown
+    already uses, and leaves turn-processing time as the real arbiter.
+    Resurrection gets its own, considerably more elaborate target
+    handling instead (``resurrection_target_options()`` below).
+    """
+
+    options: list[tuple[str, str]] = []
+    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+        kingdom = state.kingdoms.get(other.kingdom_id)
+        kingdom_part = kingdom.name if kingdom is not None else "independent"
+        title_part = "King" if other.is_king else "Hero"
+        options.append((str(other.leader_id), f"{other.name} ({title_part}, {kingdom_part})"))
+    return options
+
+
+def cast_item_target_options(state: GameState) -> list[tuple[str, str]]:
+    """Every item in the game as a ``(value, label)`` pair for Locate
+    Object's own target dropdown -- the one real item-target Action-
+    Cast spell (``CAST_ITEM_TARGET_SPELLS``). Unlike an owned-item
+    dropdown (Give's/Use Item's own), this lists every item regardless
+    of owner -- Locate Object's whole point is finding an item whose
+    location isn't already known, so restricting it to this leader's
+    own owned items would make the spell pointless to compose.
+    """
+
+    options: list[tuple[str, str]] = []
+    for item in sorted(state.items.values(), key=lambda item: item.item_id):
+        item_name = TREASURE_NAME.get(item.treasure, item.treasure.name.replace("_", " ").title())
+        owner = state.leaders.get(item.owner_leader_id) if item.owner_leader_id is not None else None
+        owner_part = owner.name if owner is not None else "unowned"
+        options.append((str(item.item_id), f"#{item.item_id} {item_name} ({owner_part})"))
+    return options
+
+
+def resurrection_target_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every co-located, legal Resurrection target as a ``(value,
+    label)`` pair -- rulebook [4.21.1] plus two further, already-
+    implemented real cases this composer surfaces rather than leaving
+    the GM to discover by trial and error (``turn/cast_execution.py
+    _execute_resurrection()``'s own three branches, checked in this
+    same order there):
+
+    1. A living, comatose leader ("cure" -- [4.25.2]).
+    2. A living Royal Heir not yet trained past the restoration
+       threshold (``is_unfinalized_royal_heir()``) -- "get your old
+       King back."
+    3. A dead character (``GameState.dead_leaders``) -- ordinary
+       revival into this Kingdom's own service.
+
+    All three require co-location with the caster (confirmed: every
+    branch's own "not co-located" check uses the exact same comparison).
+    A dead leader's own id is never offered twice: if it's also
+    currently occupied by a living Royal Heir (the historical King/Heir
+    bridge), only the Royal-Heir option is listed -- the one that
+    actually resolves at execution time, since ``_execute_resurrection``
+    checks ``state.leaders`` before ``state.dead_leaders``.
+    """
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return []
+    options: list[tuple[str, str]] = []
+    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+        if other.location != leader.location:
+            continue
+        if other.is_comatose:
+            options.append((str(other.leader_id), f"{other.name} (comatose -- cure)"))
+        elif other.is_royal_heir and is_unfinalized_royal_heir(other):
+            options.append((str(other.leader_id), f"{other.name} (Royal Heir -- restore the old King)"))
+    for dead in sorted(state.dead_leaders.values(), key=lambda dead: dead.leader_id):
+        if dead.location != leader.location or dead.leader_id in state.leaders:
+            continue
+        options.append((str(dead.leader_id), f"{dead.name} (dead -- revive)"))
+    return options
+
+
 def tactic_options(slot: int, *, allow_give: bool = False) -> list[tuple[int, str]]:
     """Every composable ``Maneuver`` for one Encounter Plan tactic slot,
     as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only ever
@@ -2238,47 +2439,50 @@ def _parse_hire_gold_offer(raw: str, *, phase_label: str) -> int:
     return amount
 
 
-def _parse_hire_nested_plan(
-    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, hero_id: int
+def _parse_nested_plan(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, field_prefix: str, hero_id: int
 ) -> "ActionPlan | None":
-    """Reads this Hire phase's own repeated ``hire_nested_action_
-    <leader_id>_<n>_<m>``/``hire_nested_obj_<leader_id>_<n>_<m>``/
-    ``hire_nested_extra_<leader_id>_<n>_<m>`` fields (``m`` in
-    ``n+1..PHASE_COUNT-1``) into the hired Hero's own ``ActionPlan`` --
-    rulebook [3.5]'s own "può ricevere ordini a partire dalla fase
-    successiva" (orders starting the *next* phase, not this one). The
-    engine itself enforces none of this ordering (confirmed: ``parser/
-    k1_moves.py`` happily round-trips a nested plan starting at or
-    before its own triggering phase) -- by only ever offering/reading
-    slots strictly after ``n``, this composer is what actually
-    guarantees it. A row left with no Action chosen is simply omitted
-    (``PlanSegment.phases`` is a sparse label->phase mapping, not a
-    list -- no "no gaps" requirement, unlike a Search Encounter Plan's
-    own tactic slots); leaving every row empty returns ``None``,
-    matching a failed Hire's own "nothing embedded" outcome and
-    ``parser/k1_moves_writer.py``'s own "a nested plan never attaches
-    to P4" rule for a Hire composed at ``P4`` itself (``range(n+1,
+    """Reads this phase's own repeated ``<field_prefix>_action_
+    <leader_id>_<n>_<m>``/``<field_prefix>_obj_<leader_id>_<n>_<m>``/
+    ``<field_prefix>_extra_<leader_id>_<n>_<m>`` fields (``m`` in
+    ``n+1..PHASE_COUNT-1``) into the newly-(re)joined character's own
+    ``ActionPlan`` -- shared, unchanged, by every Action that can embed
+    a ``PlanPhase.nested_plan`` (Hire, rulebook [3.5]; a Cast of Charm
+    or Resurrection, rulebook [3.10]/[4.21.1]) -- all three sources name
+    the same "orders start the phase *after* this one" rule, and
+    ``parser/k1_moves.py`` parses/round-trips all three identically
+    (``models/plan.py``'s own "Nested plans" docstring). The engine
+    itself enforces none of this ordering (confirmed: ``parser/k1_
+    moves.py`` happily round-trips a nested plan starting at or before
+    its own triggering phase) -- by only ever offering/reading slots
+    strictly after ``n``, this composer is what actually guarantees it.
+    A row left with no Action chosen is simply omitted (``PlanSegment.
+    phases`` is a sparse label->phase mapping, not a list -- no "no
+    gaps" requirement, unlike a Search Encounter Plan's own tactic
+    slots); leaving every row empty returns ``None``, matching a failed
+    attempt's own "nothing embedded" outcome and ``parser/k1_moves_
+    writer.py``'s own "a nested plan never attaches to P4" rule for a
+    triggering phase composed at ``P4`` itself (``range(n+1,
     PHASE_COUNT)`` is then empty, so no row is ever offered there).
     Only the plain generic Action/Object/Extra fields every other not-
     yet-dedicated Action already falls back to are used here -- not yet
     the full per-Action friendly composer recursively applied to the
-    hired Hero's own orders (see this module's own docstring's Hire
-    section for why that's a further refinement, not attempted this
-    round).
+    newly-(re)joined character's own orders (a further refinement, not
+    attempted this round).
     """
 
     phases: dict[str, PlanPhase] = {}
     for nested_n in range(n + 1, PHASE_COUNT):
-        raw_action = form.get(f"hire_nested_action_{leader_id}_{n}_{nested_n}", "")
+        raw_action = form.get(f"{field_prefix}_action_{leader_id}_{n}_{nested_n}", "")
         if not raw_action:
             continue
         label = f"P{nested_n}"
         action = _parse_action(raw_action)
         obj = _parse_int(
-            form.get(f"hire_nested_obj_{leader_id}_{n}_{nested_n}", "0") or "0",
+            form.get(f"{field_prefix}_obj_{leader_id}_{n}_{nested_n}", "0") or "0",
             field_label=f"{phase_label} nested {label} Object",
         )
-        extra = _parse_extra(form.get(f"hire_nested_extra_{leader_id}_{n}_{nested_n}", ""))
+        extra = _parse_extra(form.get(f"{field_prefix}_extra_{leader_id}_{n}_{nested_n}", ""))
         phases[label] = PlanPhase(label=label, action=action, obj=obj, extra=extra)
     if not phases:
         return None
@@ -2317,6 +2521,143 @@ def _parse_fire_target(form: dict[str, str], leader_id: int, n: int, *, phase_la
         # anything else.
         raise InvalidComposedMovesError(f"{phase_label}: choose a Hero to Fire.")
     return target_id
+
+
+def _parse_resurrection_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
+    """Reads a Resurrection Cast phase's own ``cast_resurrection_target_
+    <leader_id>_<n>`` field into the real target id -- the wire encoding
+    is already a bare character id (``resurrection_target_options()``'s
+    own dropdown value), so no sentinel decoding is needed. Also
+    enforces, at compose time rather than only at turn-processing time,
+    all three of ``_execute_resurrection()``'s own eligibility branches
+    (comatose cure / Royal Heir restoration / ordinary dead-Hero
+    revival) plus their shared co-location requirement.
+    """
+
+    raw = form.get(f"cast_resurrection_target_{leader_id}_{n}", "")
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Resurrection target.")
+    target_id = _parse_int(raw, field_label=f"{phase_label} Resurrection target")
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Resurrection target.")
+    living = state.leaders.get(target_id)
+    eligible = False
+    if living is not None and living.location == leader.location:
+        if living.is_comatose or (living.is_royal_heir and is_unfinalized_royal_heir(living)):
+            eligible = True
+    elif living is None:
+        dead = state.dead_leaders.get(target_id)
+        if dead is not None and dead.location == leader.location:
+            eligible = True
+    if not eligible:
+        # Defense in depth: every dropdown-offered id is a real,
+        # co-located, eligible target, but a direct, tampered POST
+        # could still name anything else.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Resurrection target.")
+    return target_id
+
+
+def _parse_cast_character_target(raw: str, *, phase_label: str, state: GameState) -> int:
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Cast target character.")
+    target_id = _parse_int(raw, field_label=f"{phase_label} Cast target")
+    if state.leaders.get(target_id) is None:
+        # Defense in depth: every dropdown-offered id is a real leader,
+        # but a direct, tampered POST could still name one that doesn't
+        # exist.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Cast target character.")
+    return target_id
+
+
+def _parse_cast_item_target(raw: str, *, phase_label: str, state: GameState) -> int:
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose an item for Locate Object.")
+    item_id = _parse_int(raw, field_label=f"{phase_label} Locate Object target")
+    if state.items.get(item_id) is None:
+        # Defense in depth: every dropdown-offered id is a real item,
+        # but a direct, tampered POST could still name one that doesn't
+        # exist.
+        raise InvalidComposedMovesError(f"{phase_label}: choose an item for Locate Object.")
+    return item_id
+
+
+def _parse_cast_terrain(raw: str, *, phase_label: str) -> int:
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose Illusory Terrain's own fake terrain.")
+    terrain_ordinal = _parse_int(raw, field_label=f"{phase_label} Illusory Terrain")
+    try:
+        Terrain(terrain_ordinal)
+    except ValueError:
+        # Defense in depth: every dropdown-offered value is a real
+        # Terrain ordinal, but a direct, tampered POST could still name
+        # one outside the enum's own range.
+        raise InvalidComposedMovesError(f"{phase_label}: choose Illusory Terrain's own fake terrain.") from None
+    return terrain_ordinal
+
+
+def _parse_cast_phase(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
+) -> tuple[int, list[int | str], int | None]:
+    """Reads a Cast phase's own ``cast_spell_<leader_id>_<n>`` dropdown
+    plus whichever target sub-field matches that spell's own target
+    shape (``cast_character_target_``/``cast_resurrection_target_``/
+    ``cast_province_target_``/``cast_item_target_<leader_id>_<n>``, plus
+    ``cast_terrain_<leader_id>_<n>`` for Illusory Terrain specifically)
+    into the real ``obj``/``extra`` encoding -- see this module's own
+    docstring's Cast section for the full per-shape rationale. Returns
+    ``(obj, extra, nested_hero_id)``: ``nested_hero_id`` is the target
+    id to build a ``nested_plan`` for for Charm/Resurrection
+    (``CAST_NESTED_PLAN_SPELLS``), ``None`` for every other spell --
+    telling ``parse_phase_inputs()`` not to even look for ``cast_
+    nested_*`` fields, so a tampered POST can never smuggle a
+    ``nested_plan`` onto a spell the engine's own ``_resolve_nested_
+    plan_leader_id()`` would otherwise blindly splice in for (see that
+    function's own docstring: it doesn't itself check which spell was
+    cast).
+    """
+
+    raw_spell = form.get(f"cast_spell_{leader_id}_{n}", "")
+    if not raw_spell:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a spell to Cast.")
+    spell_ordinal = _parse_int(raw_spell, field_label=f"{phase_label} Cast spell")
+    try:
+        spell = Spell(spell_ordinal)
+    except ValueError:
+        spell = None
+    if spell not in CAST_ACTION_SPELLS:
+        # Defense in depth: every dropdown-offered value is one of the
+        # 19 real Action-Cast spells, but a direct, tampered POST could
+        # still name a Personal-Combat-only spell, Gate Angel, or
+        # anything outside the Spell enum's own range.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a spell to Cast.")
+
+    if spell is Spell.RESURRECTION:
+        target = _parse_resurrection_target(form, leader_id, n, phase_label=phase_label, state=state)
+        return int(spell), [target], target
+
+    if spell in CAST_CHARACTER_TARGET_SPELLS:
+        raw_target = form.get(f"cast_character_target_{leader_id}_{n}", "")
+        target = _parse_cast_character_target(raw_target, phase_label=phase_label, state=state)
+        nested_hero_id = target if spell in CAST_NESTED_PLAN_SPELLS else None
+        return int(spell), [target], nested_hero_id
+
+    if spell in CAST_PROVINCE_TARGET_SPELLS:
+        raw_target = form.get(f"cast_province_target_{leader_id}_{n}", "")
+        target = _parse_move_target(raw_target, board_width=state.board_width, phase_label=phase_label)
+        extra: list[int | str] = [target]
+        if spell is Spell.ILLUS_TERRAIN:
+            extra.append(_parse_cast_terrain(form.get(f"cast_terrain_{leader_id}_{n}", ""), phase_label=phase_label))
+        return int(spell), extra, None
+
+    if spell in CAST_ITEM_TARGET_SPELLS:
+        raw_target = form.get(f"cast_item_target_{leader_id}_{n}", "")
+        target = _parse_cast_item_target(raw_target, phase_label=phase_label, state=state)
+        return int(spell), [target], None
+
+    # CAST_NO_TARGET_SPELLS -- Skeletal Army, the one spell left after
+    # excluding Gate Angel (2026-11-01, the user's own choice).
+    return int(spell), [0], None
 
 
 def _parse_search_tactics(
@@ -2561,13 +2902,22 @@ def parse_phase_inputs(
     <leader_id>_<n>_<m>``/``hire_nested_extra_<leader_id>_<n>_<m>``
     fields for the hired Hero's own embedded ``nested_plan``
     (``_parse_hire_nested_plan()``, same module docstring's own Hire
-    section) -- the one Action in this composer whose own
-    ``ComposedPhaseInput`` can carry a non-``None`` ``nested_plan``. A
-    Fire (``ActionCode.FIRE``) phase reads its own single ``fire_
-    target_<leader_id>_<n>`` dropdown for ``obj`` (``_parse_fire_
-    target()``, same module docstring's own Fire section) and always
-    encodes ``extra`` as ``[]`` -- the one Action decoded with no
-    payload at all.
+    section) -- one of the two Actions in this composer whose own
+    ``ComposedPhaseInput`` can carry a non-``None`` ``nested_plan``, the
+    other being Cast of Charm/Resurrection below. A Fire (``ActionCode.
+    FIRE``) phase reads its own single ``fire_target_<leader_id>_<n>``
+    dropdown for ``obj`` (``_parse_fire_target()``, same module
+    docstring's own Fire section) and always encodes ``extra`` as
+    ``[]`` -- the one Action decoded with no payload at all. A Cast
+    (``ActionCode.CAST``) phase reads its own ``cast_spell_<leader_id>_
+    <n>`` dropdown plus whichever target sub-field matches that spell's
+    own target shape into ``obj``/``extra`` (``_parse_cast_phase()``,
+    same module docstring's own Cast section), and, for a successful-
+    looking Charm/Resurrection composition, its own repeated ``cast_
+    nested_action_<leader_id>_<n>_<m>``/``cast_nested_obj_<leader_id>_
+    <n>_<m>``/``cast_nested_extra_<leader_id>_<n>_<m>`` fields for the
+    newly-(re)joined character's own embedded ``nested_plan``
+    (``_parse_nested_plan()`` with ``field_prefix="cast_nested"``).
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -2624,10 +2974,18 @@ def parse_phase_inputs(
             hero_id = _parse_hire_target(form, leader_id, n, phase_label=f"P{n}", state=state)
             obj = hero_id
             extra = [_parse_hire_gold_offer(form.get(f"hire_gold_{leader_id}_{n}", ""), phase_label=f"P{n}")]
-            nested_plan = _parse_hire_nested_plan(form, leader_id, n, phase_label=f"P{n}", hero_id=hero_id)
+            nested_plan = _parse_nested_plan(
+                form, leader_id, n, phase_label=f"P{n}", field_prefix="hire_nested", hero_id=hero_id
+            )
         elif action is ActionCode.FIRE:
             obj = _parse_fire_target(form, leader_id, n, phase_label=f"P{n}", state=state)
             extra = []
+        elif action is ActionCode.CAST:
+            obj, extra, cast_nested_hero_id = _parse_cast_phase(form, leader_id, n, phase_label=f"P{n}", state=state)
+            if cast_nested_hero_id is not None:
+                nested_plan = _parse_nested_plan(
+                    form, leader_id, n, phase_label=f"P{n}", field_prefix="cast_nested", hero_id=cast_nested_hero_id
+                )
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))
