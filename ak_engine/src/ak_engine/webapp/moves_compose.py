@@ -814,12 +814,65 @@ Pursue tactic, still reads the plain generic numeric field for now (no
 dedicated item dropdown yet -- a further refinement, not attempted this
 round).
 
+**Hire Hero [HI] (``ActionCode.HIRE``), the ninth Action designed**
+(2026-10-31) -- confirmed against the user's own full Italian [3.5]
+text and ``turn/hire_fire_decode.py``/``turn/hire_pay.py``/``turn/
+plan_dispatch.py _dispatch_hire()``'s own docstrings. No engine bug
+found this round -- co-location, the "free Hero" requirement, the
+King-can-never-be-hired exclusion, paying the Hero's own asking price
+(never the raw offer, even when the offer is higher), Talent-
+independence, and the >2-Alignment-positions "generally can't" gate
+(a hard refusal, with a genuine, separately-sourced 15% rare-exception
+roll forcing the price down to the legal 4-gold ceiling) are all
+implemented exactly as the rulebook describes. Two real wage-formula
+refinements exist beyond the pasted prose, already correctly
+implemented in earlier rounds of this project, not bugs: an Undead-
+aligned Hero always costs a flat 1 gold, and a +1 "conquest surcharge"
+applies when a non-Divine King hires a differently-aligned Hero born in
+a province the King's own Kingdom now owns. ``obj`` is the target
+Hero's own real ``leader_id``; ``extra`` is simply ``[gold_offer]`` (no
+terminator, no further payload) -- the 1-4 range is a real rulebook
+syntax rule with **zero hard engine gate** (confirmed: neither decode
+nor execution ever checks it, only the resulting required-pay
+comparison), so this composer is what actually enforces it.
+
+The structurally unusual part is ``PlanPhase.nested_plan``: per [3.5]'s
+own "può ricevere ordini a partire dalla fase successiva," a
+*successful* Hire immediately embeds the newly-hired Hero's own
+``ActionPlan`` for the rest of this same turn (confirmed real,
+byte-for-byte, in ``AK3__T2.K1``'s own leader 18 -- a Hire at ``P1``
+immediately followed by the hired Hero's own ``AP: 2 4`` segment). The
+engine itself enforces none of "must start strictly after the
+triggering phase" -- that's a real-data convention ``parser/k1_moves.py``
+happily round-trips either way, confirmed by this project's own writer
+tests -- so **this composer is what enforces it**: ``_parse_hire_
+nested_plan()`` only ever offers/reads phase slots strictly after the
+Hire phase's own label, up to ``P4``. Per the user's own explicit
+choice, this round builds a basic nested-plan editor now rather than
+deferring it: for a Hire composed at phase ``P<n>``, the GM additionally
+gets one row per remaining phase ``P<n+1>..P4`` (none at all if ``n``
+is ``P4`` itself, matching ``parser/k1_moves_writer.py``'s own "a nested
+plan can never attach to P4" rule), each with the same plain generic
+Action + Object + Extra fields every not-yet-dedicated Action already
+falls back to below -- not yet the full per-Action friendly composer
+recursively applied to the hired Hero's own orders, a further
+refinement for later. A row left with no Action chosen is simply
+omitted from the nested plan (no "no gaps" requirement, since
+``PlanSegment.phases`` is a sparse label->phase mapping, not a list);
+leaving every row empty is equivalent to the Hero receiving no orders
+at all this turn (idle, same as any leader with no composed order for
+a given phase), and produces no ``nested_plan`` at all, matching a
+failed Hire's own "nothing embedded" outcome. The composer never
+exposes the Spy Double-Agent carve-out (hiring an already-employed Spy
+without actually changing its real employer) -- ``hire_target_
+options()`` only ever lists genuinely free Heroes, matching the
+pasted rulebook text's own plain "Eroe libero" requirement.
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
-and a nested Hire/Charm/Resurrection plan (``PlanPhase.nested_plan``)
-aren't exposed here yet either, for the same reason -- every composed
+isn't exposed here yet either, for the same reason -- every composed
 leader gets the plain ``(10, -1)`` "nothing special configured" ``SP:``
-value every real sample already shows by default, and no nested plan.
+value every real sample already shows by default.
 
 **Why this goes through a real ``Kingdom`` + ``parser/k1_moves_writer.py``
 rather than writing straight to ``GameState``**: the exact same shape a
@@ -1535,6 +1588,39 @@ def challenge_target_options(state: GameState, leader_id: int) -> list[tuple[str
     return options
 
 
+HIRE_GOLD_OFFER_RANGE: tuple[int, ...] = (1, 2, 3, 4)
+
+
+def hire_target_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every co-located, genuinely free Hero as a ``(value, label)`` pair
+    for Hire's own target dropdown -- rulebook [3.5]: "un Eroe libero e
+    nella stessa provincia," confirmed as real, enforced checks at
+    execution time (``turn/plan_dispatch.py _dispatch_hire()``'s own
+    "hero already in service"/"not co-located" refusals, not prose).
+    A King can never be hired either (that same function's own explicit
+    "cannot hire a King" check). Deliberately excludes the separately-
+    sourced ``AdvancedAbility.SPY_DOUBLE_AGENT`` carve-out (hiring an
+    already-employed Spy without changing its real employer) -- not
+    part of the pasted rulebook text, and surfacing it here would make
+    an ordinary Hire dropdown look like it offers to steal another
+    Kingdom's own Heroes. Pre-filtered to this composer's own start-of-
+    turn snapshot, same convention already used for every other
+    co-location-dependent dropdown.
+    """
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return []
+    options: list[tuple[str, str]] = []
+    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+        if other.leader_id == leader_id or other.location != leader.location:
+            continue
+        if other.kingdom_id is not None or other.is_king:
+            continue
+        options.append((str(other.leader_id), other.name))
+    return options
+
+
 def tactic_options(slot: int, *, allow_give: bool = False) -> list[tuple[int, str]]:
     """Every composable ``Maneuver`` for one Encounter Plan tactic slot,
     as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only ever
@@ -1580,6 +1666,10 @@ class ComposedPhaseInput:
     action: ActionCode
     obj: int
     extra: list[int | str]
+    # Only ever set for a composed Hire phase (``PlanPhase.nested_plan``,
+    # see this module's own docstring's Hire section) -- ``None`` for
+    # every other Action.
+    nested_plan: "ActionPlan | None" = None
 
 
 def _parse_action(raw: str) -> ActionCode:
@@ -2018,6 +2108,105 @@ def _parse_challenge_target(form: dict[str, str], leader_id: int, n: int, *, pha
     return target_id
 
 
+def _parse_hire_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
+    """Reads a Hire phase's own ``hire_target_<leader_id>_<n>`` field
+    into the real target Hero's ``leader_id`` -- the wire encoding is
+    already a bare leader id (``hire_target_options()``'s own dropdown
+    value), so no sentinel decoding is needed. Also enforces, at
+    compose time rather than only at turn-processing time, rulebook
+    [3.5]'s own co-location + "free Hero" + "never a King" requirements
+    -- the same checks ``turn/plan_dispatch.py _dispatch_hire()`` itself
+    makes.
+    """
+
+    raw = form.get(f"hire_target_{leader_id}_{n}", "")
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Hero to Hire.")
+    target_id = _parse_int(raw, field_label=f"{phase_label} Hire target")
+    leader = state.leaders.get(leader_id)
+    target = state.leaders.get(target_id)
+    if (
+        target_id == leader_id
+        or target is None
+        or leader is None
+        or target.location != leader.location
+        or target.kingdom_id is not None
+        or target.is_king
+    ):
+        # Defense in depth: every dropdown-offered id is a real,
+        # co-located, genuinely free non-King Hero, but a direct,
+        # tampered POST could still name anything else.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Hero to Hire.")
+    return target_id
+
+
+def _parse_hire_gold_offer(raw: str, *, phase_label: str) -> int:
+    """Reads a Hire phase's own ``hire_gold_<leader_id>_<n>`` dropdown
+    into the real gold-offer amount -- rulebook [3.5]'s own 1-4 range,
+    which (confirmed directly in ``turn/hire_fire_decode.py``/``turn/
+    plan_dispatch.py``) has zero hard engine gate anywhere: only this
+    composer actually enforces it.
+    """
+
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a gold offer (1-4) for Hire.")
+    amount = _parse_int(raw, field_label=f"{phase_label} Hire gold offer")
+    if amount not in HIRE_GOLD_OFFER_RANGE:
+        # Defense in depth: every dropdown-offered value is 1-4, but a
+        # direct, tampered POST could still name anything else.
+        raise InvalidComposedMovesError(f"{phase_label}: Hire's own gold offer must be 1-4, got {amount}.")
+    return amount
+
+
+def _parse_hire_nested_plan(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, hero_id: int
+) -> "ActionPlan | None":
+    """Reads this Hire phase's own repeated ``hire_nested_action_
+    <leader_id>_<n>_<m>``/``hire_nested_obj_<leader_id>_<n>_<m>``/
+    ``hire_nested_extra_<leader_id>_<n>_<m>`` fields (``m`` in
+    ``n+1..PHASE_COUNT-1``) into the hired Hero's own ``ActionPlan`` --
+    rulebook [3.5]'s own "può ricevere ordini a partire dalla fase
+    successiva" (orders starting the *next* phase, not this one). The
+    engine itself enforces none of this ordering (confirmed: ``parser/
+    k1_moves.py`` happily round-trips a nested plan starting at or
+    before its own triggering phase) -- by only ever offering/reading
+    slots strictly after ``n``, this composer is what actually
+    guarantees it. A row left with no Action chosen is simply omitted
+    (``PlanSegment.phases`` is a sparse label->phase mapping, not a
+    list -- no "no gaps" requirement, unlike a Search Encounter Plan's
+    own tactic slots); leaving every row empty returns ``None``,
+    matching a failed Hire's own "nothing embedded" outcome and
+    ``parser/k1_moves_writer.py``'s own "a nested plan never attaches
+    to P4" rule for a Hire composed at ``P4`` itself (``range(n+1,
+    PHASE_COUNT)`` is then empty, so no row is ever offered there).
+    Only the plain generic Action/Object/Extra fields every other not-
+    yet-dedicated Action already falls back to are used here -- not yet
+    the full per-Action friendly composer recursively applied to the
+    hired Hero's own orders (see this module's own docstring's Hire
+    section for why that's a further refinement, not attempted this
+    round).
+    """
+
+    phases: dict[str, PlanPhase] = {}
+    for nested_n in range(n + 1, PHASE_COUNT):
+        raw_action = form.get(f"hire_nested_action_{leader_id}_{n}_{nested_n}", "")
+        if not raw_action:
+            continue
+        label = f"P{nested_n}"
+        action = _parse_action(raw_action)
+        obj = _parse_int(
+            form.get(f"hire_nested_obj_{leader_id}_{n}_{nested_n}", "0") or "0",
+            field_label=f"{phase_label} nested {label} Object",
+        )
+        extra = _parse_extra(form.get(f"hire_nested_extra_{leader_id}_{n}_{nested_n}", ""))
+        phases[label] = PlanPhase(label=label, action=action, obj=obj, extra=extra)
+    if not phases:
+        return None
+    nested_labels = sorted(int(label[1:]) for label in phases)
+    segment = PlanSegment(plan_start=nested_labels[0], plan_end=nested_labels[-1], sp=DEFAULT_SP, phases=phases)
+    return ActionPlan(leader_id=hero_id, segments=[segment])
+
+
 def _parse_search_tactics(
     form: dict[str, str],
     leader_id: int,
@@ -2252,12 +2441,22 @@ def parse_phase_inputs(
     tactic_<leader_id>_<n>_<slot>`` Encounter Plan tactic slots for
     ``extra`` (``_parse_search_tactics()`` with ``field_prefix=
     "challenge_tactic", allow_give=True``, same module docstring's own
-    Challenge section).
+    Challenge section). A Hire (``ActionCode.HIRE``) phase reads its own
+    single ``hire_target_<leader_id>_<n>`` dropdown for ``obj``, its own
+    ``hire_gold_<leader_id>_<n>`` dropdown for ``extra`` (``_parse_hire_
+    target()``/``_parse_hire_gold_offer()``), and its own repeated
+    ``hire_nested_action_<leader_id>_<n>_<m>``/``hire_nested_obj_
+    <leader_id>_<n>_<m>``/``hire_nested_extra_<leader_id>_<n>_<m>``
+    fields for the hired Hero's own embedded ``nested_plan``
+    (``_parse_hire_nested_plan()``, same module docstring's own Hire
+    section) -- the one Action in this composer whose own
+    ``ComposedPhaseInput`` can carry a non-``None`` ``nested_plan``.
     """
 
     phases: list[ComposedPhaseInput] = []
     for n in range(PHASE_COUNT):
         action = _parse_action(form.get(f"action_{leader_id}_{n}", ""))
+        nested_plan: "ActionPlan | None" = None
         if action is ActionCode.LMOVE:
             obj = _parse_move_target(
                 form.get(f"move_target_{leader_id}_{n}", ""), board_width=board_width, phase_label=f"P{n}"
@@ -2304,10 +2503,15 @@ def parse_phase_inputs(
                     form, leader_id, n, phase_label=f"P{n}", state=state, field_prefix="challenge_tactic", allow_give=True
                 ),
             ]
+        elif action is ActionCode.HIRE:
+            hero_id = _parse_hire_target(form, leader_id, n, phase_label=f"P{n}", state=state)
+            obj = hero_id
+            extra = [_parse_hire_gold_offer(form.get(f"hire_gold_{leader_id}_{n}", ""), phase_label=f"P{n}")]
+            nested_plan = _parse_hire_nested_plan(form, leader_id, n, phase_label=f"P{n}", hero_id=hero_id)
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))
-        phases.append(ComposedPhaseInput(action=action, obj=obj, extra=extra))
+        phases.append(ComposedPhaseInput(action=action, obj=obj, extra=extra, nested_plan=nested_plan))
     return phases
 
 
@@ -2336,7 +2540,13 @@ def build_composed_kingdom(
     for leader_state in roster:
         phase_inputs = parse_phase_inputs(form, leader_state.leader_id, board_width=state.board_width, state=state)
         phases = {
-            f"P{n}": PlanPhase(label=f"P{n}", action=phase_input.action, obj=phase_input.obj, extra=phase_input.extra)
+            f"P{n}": PlanPhase(
+                label=f"P{n}",
+                action=phase_input.action,
+                obj=phase_input.obj,
+                extra=phase_input.extra,
+                nested_plan=phase_input.nested_plan,
+            )
             for n, phase_input in enumerate(phase_inputs)
         }
         segment = PlanSegment(plan_start=0, plan_end=PHASE_COUNT - 1, sp=DEFAULT_SP, phases=phases)

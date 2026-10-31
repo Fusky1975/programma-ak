@@ -46,28 +46,30 @@ from ak_engine.webapp.moves_compose import (
     DISBAND_ALL_VALUE,
     EMPTY_SEARCH_EXTRA,
     ENCOUNTER_PLAN_CASTABLE_SPELLS,
+    HIRE_GOLD_OFFER_RANGE,
     LEAVE_ALL_VALUE,
     LEAVE_GARRISON_VALUE,
     PICK_UP_ALL_VALUE,
     InvalidComposedMovesError,
     build_composed_kingdom,
+    challenge_target_options,
     disband_target_options,
     feature_options,
+    hire_target_options,
     item_options,
     leave_army_target_options,
     leave_target_options,
-    challenge_target_options,
     parse_phase_inputs,
     pick_up_army_target_options,
     practice_ability_options,
     province_options,
-    trail_target_options,
     recruit_target_options,
     recruit_type_options,
     spell_options,
     tactic_options,
     trade_gift_options,
     trade_recipient_options,
+    trail_target_options,
 )
 
 _ORDINAL_BY_ARMY_TYPE = {army_type: ordinal for ordinal, army_type in ARMY_TYPE_BY_ORDINAL.items()}
@@ -2348,3 +2350,196 @@ def test_build_composed_kingdom_round_trips_a_challenge_order():
     assert phase0.action is ActionCode.CHALLENGE
     assert phase0.obj == 2
     assert phase0.extra == [0, int(Maneuver.MELEE), -1]
+
+
+def test_hire_target_options_lists_only_colocated_free_non_king_heroes():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    state.add_leader(LeaderState(leader_id=3, kingdom_id=1, name="Employed Hero", location=HOME))
+    state.add_leader(LeaderState(leader_id=4, kingdom_id=None, name="Faraway Hero", location=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=5, kingdom_id=2, name="A King", location=HOME, is_king=True))
+
+    options = hire_target_options(state, KING_ID)
+
+    values = {value for value, _label in options}
+    assert values == {"2"}
+
+
+def test_hire_phase_reads_its_own_target_and_gold_offer():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_0"] = "2"
+    form[f"hire_gold_{KING_ID}_0"] = "3"
+    form[f"obj_{KING_ID}_0"] = "999"  # must be ignored for a Hire phase
+    form[f"extra_{KING_ID}_0"] = "5"  # must be ignored too
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    hire_phase = phases[0]
+    assert hire_phase.action is ActionCode.HIRE
+    assert hire_phase.obj == 2
+    assert hire_phase.extra == [3]
+    assert hire_phase.nested_plan is None
+
+
+def test_hire_phase_without_choosing_a_target_is_rejected():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_gold_{KING_ID}_0"] = "3"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Hero to Hire" in str(exc)
+
+
+def test_hire_phase_rejects_a_king_target_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HOME))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="A King", location=HOME, is_king=True))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_0"] = "2"
+    form[f"hire_gold_{KING_ID}_0"] = "3"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Hero to Hire" in str(exc)
+
+
+def test_hire_phase_rejects_an_already_employed_hero_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Employed Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_0"] = "2"
+    form[f"hire_gold_{KING_ID}_0"] = "3"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Hero to Hire" in str(exc)
+
+
+def test_hire_phase_without_choosing_a_gold_offer_is_rejected():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_0"] = "2"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a gold offer" in str(exc)
+
+
+def test_hire_phase_rejects_an_out_of_range_gold_offer_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_0"] = "2"
+    form[f"hire_gold_{KING_ID}_0"] = "7"  # never offered in the dropdown
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "must be 1-4" in str(exc)
+    assert set(HIRE_GOLD_OFFER_RANGE) == {1, 2, 3, 4}
+
+
+def test_hire_phase_nested_plan_only_offers_phases_strictly_after_the_hire():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_1"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_1"] = "2"
+    form[f"hire_gold_{KING_ID}_1"] = "2"
+    # A row at or before the Hire's own phase (P1) is never read at all --
+    # only hire_nested_*_{leader}_1_{m} for m in 2..4 is consulted.
+    form[f"hire_nested_action_{KING_ID}_1_0"] = str(int(ActionCode.LMOVE))
+    form[f"hire_nested_obj_{KING_ID}_1_0"] = "999"
+    form[f"hire_nested_action_{KING_ID}_1_2"] = str(int(ActionCode.WAIT))
+    form[f"hire_nested_obj_{KING_ID}_1_2"] = "0"
+    form[f"hire_nested_action_{KING_ID}_1_4"] = str(int(ActionCode.EXPLORE))
+    form[f"hire_nested_obj_{KING_ID}_1_4"] = "0"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    hire_phase = phases[1]
+    assert hire_phase.nested_plan is not None
+    assert hire_phase.nested_plan.leader_id == 2
+    nested_segment = hire_phase.nested_plan.segments[0]
+    assert nested_segment.plan_start == 2
+    assert nested_segment.plan_end == 4
+    assert set(nested_segment.phases) == {"P2", "P4"}
+    assert nested_segment.phases["P2"].action is ActionCode.WAIT
+    assert nested_segment.phases["P4"].action is ActionCode.EXPLORE
+
+
+def test_hire_phase_with_every_nested_row_empty_has_no_nested_plan():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_0"] = "2"
+    form[f"hire_gold_{KING_ID}_0"] = "2"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].nested_plan is None
+
+
+def test_hire_phase_at_the_last_phase_has_no_nested_plan_slots():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_4"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_4"] = "2"
+    form[f"hire_gold_{KING_ID}_4"] = "2"
+    # Even if a tampered POST tried to set a nested row at or beyond P4,
+    # there's no field name a real GM UI at P4 would ever emit for it,
+    # and _parse_hire_nested_plan()'s own range(n+1, PHASE_COUNT) is empty.
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[4].action is ActionCode.HIRE
+    assert phases[4].nested_plan is None
+
+
+def test_build_composed_kingdom_round_trips_a_hire_order_with_a_nested_plan():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_0"] = "2"
+    form[f"hire_gold_{KING_ID}_0"] = "4"
+    form[f"hire_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.WAIT))
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.HIRE
+    assert phase0.obj == 2
+    assert phase0.extra == [4]
+    assert phase0.nested_plan is not None
+    assert phase0.nested_plan.leader_id == 2
+    assert phase0.nested_plan.segments[0].phases["P1"].action is ActionCode.WAIT

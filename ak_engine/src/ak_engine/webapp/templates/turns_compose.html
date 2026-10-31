@@ -26,7 +26,10 @@
     other leader in the game, no co-location needed), Challenge (the engine's own internal name for
     "Encounter Character," wire code "EN") has its own target dropdown (co-located leaders only) plus the
     same Encounter Plan tactic slots Search uses, Give included (valid only here and after Pursue, never in
-    Search); every other Action still takes the same plain Object + Extra numbers a real move file's own
+    Search), Hire has its own free-Hero target dropdown plus a 1-4 gold-offer dropdown, plus a basic editor
+    for the hired Hero's own orders for the rest of this turn (starting the phase right after the Hire, up to
+    P4 -- plain generic Action/Object/Extra fields for now, not yet the full per-Action composer); every
+    other Action still takes the same plain Object + Extra numbers a real move file's own
     "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a real move
     file from these and stores it exactly like an uploaded one.
   </p>
@@ -56,6 +59,7 @@
             <th>Practice</th>
             <th>Trail</th>
             <th>Challenge</th>
+            <th>Hire</th>
             <th>Object</th>
             <th>Extra (space or comma separated)</th>
           </tr>
@@ -288,6 +292,45 @@
                     {% endfor %}
                   </tbody>
                 </table>
+              </td>
+              <td class="compose-special-cell" data-action="{{ hire_action_value }}">
+                <select name="hire_target_{{ leader.leader_id }}_{{ n }}">
+                  <option value="">-- choose a Hero to Hire --</option>
+                  {% for value, label in hire_target_choices_by_leader[leader.leader_id] %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <select name="hire_gold_{{ leader.leader_id }}_{{ n }}">
+                  <option value="">-- gold offer --</option>
+                  {% for amount in hire_gold_offer_choices %}
+                    <option value="{{ amount }}">{{ amount }} gold</option>
+                  {% endfor %}
+                </select>
+                {% if n < 4 %}
+                  <br><span class="hex-map-legend-note">Hired Hero's own orders, starting next phase (empty rows mean no order that phase):</span>
+                  <table class="data-table compose-hire-nested-plan">
+                    <thead><tr><th>Phase</th><th>Action</th><th>Object</th><th>Extra</th></tr></thead>
+                    <tbody>
+                      {% for nested_n in range(n + 1, 5) %}
+                        <tr>
+                          <td>P{{ nested_n }}</td>
+                          <td>
+                            <select name="hire_nested_action_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}">
+                              <option value="">-- no order --</option>
+                              {% for action in actions %}
+                                <option value="{{ action.value }}">{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
+                              {% endfor %}
+                            </select>
+                          </td>
+                          <td><input type="text" name="hire_nested_obj_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}" value="0" size="6"></td>
+                          <td><input type="text" name="hire_nested_extra_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}" value="" size="20"></td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                {% else %}
+                  <br><span class="hex-map-legend-note">No further orders possible -- Hire at the last phase.</span>
+                {% endif %}
               </td>
               <td class="compose-generic-cell"><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
               <td class="compose-generic-cell"><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>
