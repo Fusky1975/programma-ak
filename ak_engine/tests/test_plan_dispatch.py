@@ -2169,6 +2169,59 @@ def test_dispatch_fire_by_a_king_bypasses_colocation():
     assert state.leaders[32].kingdom_id is None
 
 
+def test_dispatch_fire_cannot_fire_a_king_even_a_colocated_one_of_the_same_kingdom():
+    # Bug fix, sourced directly from the user (2026-11-01): symmetric
+    # with Hire's own explicit "can't Hire a King" guard. Same Kingdom
+    # and co-located, so this isolates the King check from the
+    # Kingdom-ownership/co-location ones.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(32, 1, "Another King", location, is_king=True))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.fired is False
+    assert result.reason == "cannot fire a King"
+    assert state.leaders[32].kingdom_id == 1
+
+
+def test_dispatch_fire_by_a_king_skips_a_different_kingdoms_hero_even_though_colocation_is_bypassed():
+    # Bug fix, sourced directly from the user (2026-11-01), same shape
+    # as Disband's own King-co-location-bypass-isn't-a-Kingdom-bypass
+    # correction, applied here after the user reconsidered an initial
+    # too-hasty analogy and asked for it explicitly anyway, despite the
+    # pasted [3.7] text itself not naming a Kingdom restriction.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(32, 2, "A Different Kingdom's Hero", HexCoord(9, 9)))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
+
+    # LEADER_ID (from _state_with_army) is a King, not co-located with 32.
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.fired is False
+    assert result.reason == "not this Kingdom's Hero"
+    assert state.leaders[32].kingdom_id == 2  # untouched
+
+
+def test_dispatch_fire_self_fire_always_succeeds():
+    # Rulebook [3.7]: "Un Eroe può sempre congedare sé stesso" -- a
+    # Hero's own kingdom_id trivially matches itself, and he's always
+    # co-located with himself, so no explicit self-fire branch is
+    # needed; confirmed here as its own dedicated test (previously
+    # untested in this suite).
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(50, 1, "A Hero", location, is_king=False))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=50, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=50, board_width=BOARD_WIDTH)
+
+    assert result.fired is True
+    assert state.leaders[50].kingdom_id is None
+
+
 # --- Grandfather of Assassins FI interception (Phase 614) -------------------
 
 
@@ -2205,12 +2258,12 @@ def test_dispatch_fire_by_the_titleholder_against_own_kingdom_stays_an_ordinary_
     assert state.leaders[32].kingdom_id is None
 
 
-def test_dispatch_fire_by_the_titleholder_against_a_foreign_king_stays_an_ordinary_fire():
-    # A King is never a valid Guild target -- falls through to ordinary
-    # Fire's own co-location check, which fails here (not co-located,
-    # and the target isn't a King so LEADER_ID's own King status doesn't
-    # bypass it either -- wait, LEADER_ID is a King, so co-location is
-    # bypassed and the ordinary Fire still succeeds).
+def test_dispatch_fire_by_the_titleholder_against_a_foreign_king_is_refused():
+    # A King is never a valid Guild target (the interception's own
+    # "not hero.is_king" precondition), and -- bug fix, sourced directly
+    # from the user (2026-11-01) -- is never a valid ordinary Fire
+    # target either, falling through to the explicit "cannot fire a
+    # King" guard before co-location/Kingdom-ownership is even checked.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     state.leaders[LEADER_ID].merit_tally.successful_assassinations = 2
     state.add_kingdom(KingdomState(2, "Targetia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
@@ -2221,9 +2274,18 @@ def test_dispatch_fire_by_the_titleholder_against_a_foreign_king_stays_an_ordina
 
     assert result.guild_assassination_queued is False
     assert state.pending_guild_target is None
+    assert result.fired is False
+    assert result.reason == "cannot fire a King"
+    assert state.leaders[32].kingdom_id == 2  # untouched
 
 
-def test_dispatch_fire_by_a_non_titleholder_against_a_foreign_hero_stays_an_ordinary_fire():
+def test_dispatch_fire_by_a_non_titleholder_against_a_foreign_hero_is_refused():
+    # Bug fix, sourced directly from the user (2026-11-01): an ordinary
+    # Fire (no Assassin title held) now requires the target to belong
+    # to the firer's own Kingdom, even though LEADER_ID is a King and
+    # so bypasses the co-location requirement -- the King's own bypass
+    # is for co-location only, same correction already applied to
+    # Disband's own King-co-location bypass.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     # LEADER_ID never earned the title (successful_assassinations stays 0).
     state.add_kingdom(KingdomState(2, "Targetia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
@@ -2234,8 +2296,9 @@ def test_dispatch_fire_by_a_non_titleholder_against_a_foreign_hero_stays_an_ordi
 
     assert result.guild_assassination_queued is False
     assert state.pending_guild_target is None
-    assert result.fired is True  # LEADER_ID is a King, bypasses co-location
-    assert state.leaders[32].kingdom_id is None
+    assert result.fired is False
+    assert result.reason == "not this Kingdom's Hero"
+    assert state.leaders[32].kingdom_id == 2  # untouched
 
 
 def test_dispatch_hire_cannot_hire_a_king():

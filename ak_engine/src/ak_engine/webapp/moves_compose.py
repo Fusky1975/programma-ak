@@ -868,6 +868,46 @@ without actually changing its real employer) -- ``hire_target_
 options()`` only ever lists genuinely free Heroes, matching the
 pasted rulebook text's own plain "Eroe libero" requirement.
 
+**Fire Hero [FI] (``ActionCode.FIRE``), the tenth Action designed**
+(2026-11-01) -- confirmed against the user's own full Italian [3.7]
+text and ``turn/hire_fire_decode.py``/``turn/plan_dispatch.py
+_dispatch_fire()``'s own docstrings. Much simpler to decode than Hire:
+``obj`` is just the target Hero's own real ``leader_id``, and ``extra``
+is always empty (confirmed: the real Pascal reader has no ``CASE``
+branch for Fire at all, unlike every other action). This round's own
+investigation found two real engine gaps beyond the pasted text,
+**both fixed this round per the user's own explicit choice, found
+after an initial too-hasty analogy to Disband was itself reconsidered
+and the user asked again directly**: (1) ``_dispatch_fire()`` had no
+"can't Fire a King" guard at all, asymmetric with Hire's own explicit
+"can't Hire a King" check -- a King (or a co-located Hero) could set
+another Kingdom's own ruling King's ``kingdom_id`` to ``None``, with
+nothing elsewhere in this project modeling what a Kingdom with no King
+even means; (2) an ordinary Fire had no Kingdom-ownership check on the
+target at all -- a King's own co-location bypass (rulebook [3.7]: "may
+Fire a Hero at any time") was, exactly like Disband's own earlier,
+separately-fixed bug, letting that bypass also cross the Kingdom
+boundary, so *any* Kingdom's King (or co-located Hero) could Fire *any*
+other Kingdom's Hero. Both are now hard-gated in ``_dispatch_fire()``
+itself (see that function's own 2026-11-01 docstring addendum for the
+full reasoning, including why the Disband analogy needed a second,
+more careful look before confirming it -- a Hero is an independent
+character, not a Kingdom-owned asset like an army, so the fix was a
+genuine judgment call, not a mechanical copy). The composer's own
+``fire_target_options()`` reflects both fixes directly: it only ever
+offers a Hero of the *acting leader's own* Kingdom, never a King (which
+also correctly excludes a King "firing himself," never a meaningful
+order), with co-location additionally required unless the acting
+leader is a King. A Hero's own entry in that same list doubles as the
+rulebook's own "can always Fire himself" case, labelled "Self (<name>)"
+-- no separate self-fire sentinel value is needed, since Fire's wire
+encoding is just the real target id either way. Deliberately NOT
+surfaced here: the separately-sourced Grandfather of Assassins
+reinterpretation of a cross-Kingdom FI order (``turn/assassin_guild.py``,
+Phase 614) -- the same "don't surface the rare Advanced-Ability/Office
+carve-out" choice already made for Trail's and Hire's own Spy Double-
+Agent cases.
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
 isn't exposed here yet either, for the same reason -- every composed
@@ -1621,6 +1661,46 @@ def hire_target_options(state: GameState, leader_id: int) -> list[tuple[str, str
     return options
 
 
+def fire_target_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every Hero this leader could actually Fire, as a ``(value,
+    label)`` pair for Fire's own target dropdown -- rulebook [3.7]: a
+    King may Fire a Hero of his own Kingdom at any time, anywhere; an
+    ordinary Hero needs co-location too (confirmed as real, enforced
+    checks in ``turn/plan_dispatch.py _dispatch_fire()``, not prose),
+    and can always Fire himself (included here for free -- a Hero's own
+    entry always matches his own Kingdom and his own location). A King
+    is never offered, as both a target (confirmed: ``_dispatch_fire()``
+    now explicitly refuses "cannot fire a King," a 2026-11-01 fix
+    sourced directly from the user, symmetric with Hire's own "can't
+    Hire a King") and implicitly as a "self" option (a King Firing
+    himself is meaningless and already excluded by that same refusal).
+    Also excludes a different Kingdom's Hero entirely -- a second
+    2026-11-01 fix, the user's own deliberate choice after being asked
+    directly, even though the pasted [3.7] text itself names no such
+    restriction (see ``_dispatch_fire()``'s own docstring addendum for
+    the full reasoning) -- deliberately NOT surfacing the separately-
+    sourced Grandfather of Assassins reinterpretation of a cross-
+    Kingdom FI order (``turn/assassin_guild.py``), the same choice
+    already made for Trail's own Spy Double-Agent carve-out and Hire's
+    own Spy Double-Agent carve-out. Pre-filtered to this composer's own
+    start-of-turn snapshot, same convention already used for every
+    other co-location-dependent dropdown.
+    """
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return []
+    options: list[tuple[str, str]] = []
+    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+        if other.is_king or other.kingdom_id != leader.kingdom_id:
+            continue
+        if not leader.is_king and other.location != leader.location:
+            continue
+        label = f"Self ({other.name})" if other.leader_id == leader_id else other.name
+        options.append((str(other.leader_id), label))
+    return options
+
+
 def tactic_options(slot: int, *, allow_give: bool = False) -> list[tuple[int, str]]:
     """Every composable ``Maneuver`` for one Encounter Plan tactic slot,
     as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only ever
@@ -2207,6 +2287,38 @@ def _parse_hire_nested_plan(
     return ActionPlan(leader_id=hero_id, segments=[segment])
 
 
+def _parse_fire_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
+    """Reads a Fire phase's own ``fire_target_<leader_id>_<n>`` field
+    into the real target Hero's ``leader_id`` -- the wire encoding is
+    already a bare leader id (``fire_target_options()``'s own dropdown
+    value, real even for the "Self" option), so no sentinel decoding is
+    needed. Also enforces, at compose time rather than only at turn-
+    processing time, rulebook [3.7]'s own King-any-province/Hero-needs-
+    co-location rules plus the 2026-11-01 "can't Fire a King"/"must be
+    this leader's own Kingdom" fixes -- the same checks ``turn/plan_
+    dispatch.py _dispatch_fire()`` itself makes.
+    """
+
+    raw = form.get(f"fire_target_{leader_id}_{n}", "")
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Hero to Fire.")
+    target_id = _parse_int(raw, field_label=f"{phase_label} Fire target")
+    leader = state.leaders.get(leader_id)
+    target = state.leaders.get(target_id)
+    if (
+        leader is None
+        or target is None
+        or target.is_king
+        or target.kingdom_id != leader.kingdom_id
+        or (not leader.is_king and target.location != leader.location)
+    ):
+        # Defense in depth: every dropdown-offered id is a real,
+        # eligible Hero, but a direct, tampered POST could still name
+        # anything else.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Hero to Fire.")
+    return target_id
+
+
 def _parse_search_tactics(
     form: dict[str, str],
     leader_id: int,
@@ -2450,7 +2562,12 @@ def parse_phase_inputs(
     fields for the hired Hero's own embedded ``nested_plan``
     (``_parse_hire_nested_plan()``, same module docstring's own Hire
     section) -- the one Action in this composer whose own
-    ``ComposedPhaseInput`` can carry a non-``None`` ``nested_plan``.
+    ``ComposedPhaseInput`` can carry a non-``None`` ``nested_plan``. A
+    Fire (``ActionCode.FIRE``) phase reads its own single ``fire_
+    target_<leader_id>_<n>`` dropdown for ``obj`` (``_parse_fire_
+    target()``, same module docstring's own Fire section) and always
+    encodes ``extra`` as ``[]`` -- the one Action decoded with no
+    payload at all.
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -2508,6 +2625,9 @@ def parse_phase_inputs(
             obj = hero_id
             extra = [_parse_hire_gold_offer(form.get(f"hire_gold_{leader_id}_{n}", ""), phase_label=f"P{n}")]
             nested_plan = _parse_hire_nested_plan(form, leader_id, n, phase_label=f"P{n}", hero_id=hero_id)
+        elif action is ActionCode.FIRE:
+            obj = _parse_fire_target(form, leader_id, n, phase_label=f"P{n}", state=state)
+            extra = []
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))

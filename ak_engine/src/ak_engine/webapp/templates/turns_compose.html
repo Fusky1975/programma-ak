@@ -28,8 +28,9 @@
     same Encounter Plan tactic slots Search uses, Give included (valid only here and after Pursue, never in
     Search), Hire has its own free-Hero target dropdown plus a 1-4 gold-offer dropdown, plus a basic editor
     for the hired Hero's own orders for the rest of this turn (starting the phase right after the Hire, up to
-    P4 -- plain generic Action/Object/Extra fields for now, not yet the full per-Action composer); every
-    other Action still takes the same plain Object + Extra numbers a real move file's own
+    P4 -- plain generic Action/Object/Extra fields for now, not yet the full per-Action composer), Fire has
+    its own target dropdown (own-Kingdom Heroes only, co-located unless this leader is a King, "Self" always
+    included); every other Action still takes the same plain Object + Extra numbers a real move file's own
     "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a real move
     file from these and stores it exactly like an uploaded one.
   </p>
@@ -60,6 +61,7 @@
             <th>Trail</th>
             <th>Challenge</th>
             <th>Hire</th>
+            <th>Fire</th>
             <th>Object</th>
             <th>Extra (space or comma separated)</th>
           </tr>
@@ -331,6 +333,14 @@
                 {% else %}
                   <br><span class="hex-map-legend-note">No further orders possible -- Hire at the last phase.</span>
                 {% endif %}
+              </td>
+              <td class="compose-special-cell" data-action="{{ fire_action_value }}">
+                <select name="fire_target_{{ leader.leader_id }}_{{ n }}">
+                  <option value="">-- choose a Hero to Fire --</option>
+                  {% for value, label in fire_target_choices_by_leader[leader.leader_id] %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
               </td>
               <td class="compose-generic-cell"><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
               <td class="compose-generic-cell"><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>

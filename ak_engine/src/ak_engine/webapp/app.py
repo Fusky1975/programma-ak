@@ -95,6 +95,7 @@ from ak_engine.webapp.moves_compose import (
     challenge_target_options,
     disband_target_options,
     feature_options,
+    fire_target_options,
     hire_target_options,
     item_options,
     kingdom_leaders_for_compose,
@@ -3106,6 +3107,10 @@ def create_app(games_root: Path | None = None) -> Flask:
                 leader.leader_id: hire_target_options(state, leader.leader_id) for leader in roster
             },
             hire_gold_offer_choices=HIRE_GOLD_OFFER_RANGE,
+            fire_action_value=int(ActionCode.FIRE),
+            fire_target_choices_by_leader={
+                leader.leader_id: fire_target_options(state, leader.leader_id) for leader in roster
+            },
             province_choices=province_options(state),
             feature_choices_by_leader={
                 leader.leader_id: feature_options(state, leader_id=leader.leader_id) for leader in roster

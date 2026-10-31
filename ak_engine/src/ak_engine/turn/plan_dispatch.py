@@ -1481,27 +1481,61 @@ def _dispatch_fire(phase: PlanPhase, state: GameState, leader_id: int) -> FireEx
     per the manual's own note). See ``turn/assassin_guild.py``'s own
     module docstring for the full mechanic this queues into ``state.
     pending_guild_target`` for.
+
+    **2026-11-01, two bug fixes sourced directly from the user, found
+    while designing this Action's own GM composer** -- neither is in
+    the pasted [3.7] rulebook text itself, both confirmed as the user's
+    own deliberate choice via an explicit follow-up question rather
+    than assumed from phrasing:
+
+    - **Can't Fire a King.** Symmetric with Hire's own explicit "can't
+      Hire a King" guard (``_dispatch_hire()``, rulebook [3.5]) --
+      nothing in [3.7] suggests Fire should be able to "dekingdom" a
+      ruling King, and nothing elsewhere in this project models what a
+      Kingdom with no King at all would even mean. Checked immediately
+      after the "hero not found" guard, before anything else.
+    - **Same-Kingdom requirement for an ordinary Fire.** The pasted
+      [3.7] text, read literally ("un personaggio può congedare un
+      Eroe... se si trova nella stessa provincia"), doesn't restrict
+      *whose* Hero can be Fired -- unlike Disband, which operates on a
+      Kingdom's own owned property (an army) and was given this exact
+      same fix earlier (``_dispatch_disband()``'s own King-co-location-
+      bypass-isn't-a-Kingdom-bypass correction), a Hero is an
+      independent character whose service relationship a plain reading
+      of [3.7] arguably lets *any* co-located character interrupt, not
+      just their own Kingdom's. The user was asked this exact question
+      directly and chose to apply the same Kingdom-ownership
+      requirement anyway -- a King's or a co-located Hero's own Fire
+      order now only ever succeeds against a Hero of their *own*
+      Kingdom (or themself, trivially always same-Kingdom). This still
+      correctly leaves room for the Phase 614 Grandfather-of-Assassins
+      interception immediately below, which specifically exists for the
+      cross-Kingdom case.
     """
 
     request = decode_fire_phase(phase)
     hero = state.leaders.get(request.hero_id)
     if hero is None:
         return FireExecutionResult(request, fired=False, reason="hero not found")
+    if hero.is_king:
+        return FireExecutionResult(request, fired=False, reason="cannot fire a King")
 
     acting_leader = state.leaders.get(leader_id)
 
-    if not hero.is_king and acting_leader is not None and acting_leader.kingdom_id != hero.kingdom_id:
+    if acting_leader is not None and acting_leader.kingdom_id != hero.kingdom_id:
         titleholder = resolve_office_holder(state, Office.ASSASSIN)
         if titleholder is not None and titleholder.leader_id == leader_id:
             state.pending_guild_target = request.hero_id
             return FireExecutionResult(request, fired=False, guild_assassination_queued=True)
+        return FireExecutionResult(request, fired=False, reason="not this Kingdom's Hero")
 
     # "Releases the Hero into private life... will wander around until
     # hired by another King." (rulebook [3.7]: "A King may Fire a Hero
     # at any time. A character can Fire a Hero only if he is in the
     # same province.") A Hero must be co-located with the target (this
     # also naturally covers "firing himself" -- he's always in his own
-    # province); a King (Phase 40) bypasses that, same as Disband.
+    # province, and his own kingdom_id trivially matches itself above);
+    # a King (Phase 40) bypasses that, same as Disband.
     is_king = acting_leader is not None and acting_leader.is_king
     co_located = acting_leader is not None and acting_leader.location == hero.location
     if not (is_king or co_located):

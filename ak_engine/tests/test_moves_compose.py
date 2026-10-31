@@ -55,6 +55,7 @@ from ak_engine.webapp.moves_compose import (
     challenge_target_options,
     disband_target_options,
     feature_options,
+    fire_target_options,
     hire_target_options,
     item_options,
     leave_army_target_options,
@@ -2543,3 +2544,136 @@ def test_build_composed_kingdom_round_trips_a_hire_order_with_a_nested_plan():
     assert phase0.nested_plan is not None
     assert phase0.nested_plan.leader_id == 2
     assert phase0.nested_plan.segments[0].phases["P1"].action is ActionCode.WAIT
+
+
+def test_fire_target_options_a_king_offers_any_own_kingdom_hero_regardless_of_location():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Colocated Hero", location=HOME))
+    state.add_leader(LeaderState(leader_id=3, kingdom_id=1, name="Faraway Hero", location=HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=4, kingdom_id=2, name="Foreign Hero", location=HOME))
+    state.add_leader(LeaderState(leader_id=5, kingdom_id=2, name="Foreign King", location=HOME, is_king=True))
+
+    options = fire_target_options(state, KING_ID)
+
+    values = {value for value, _label in options}
+    assert values == {"2", "3"}
+
+
+def test_fire_target_options_a_non_king_requires_colocation_and_own_kingdom():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=50, kingdom_id=1, name="Acting Hero", location=HOME))
+    state.add_leader(LeaderState(leader_id=3, kingdom_id=1, name="Faraway Hero", location=HexCoord(9, 9)))
+
+    options = fire_target_options(state, 50)
+
+    values = {value for value, _label in options}
+    assert values == {"50"}  # only himself -- Faraway Hero isn't co-located
+
+
+def test_fire_phase_reads_its_own_target():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.FIRE))
+    form[f"fire_target_{KING_ID}_0"] = "2"
+    form[f"obj_{KING_ID}_0"] = "999"  # must be ignored for a Fire phase
+    form[f"extra_{KING_ID}_0"] = "5"  # must be ignored too -- always []
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    fire_phase = phases[0]
+    assert fire_phase.action is ActionCode.FIRE
+    assert fire_phase.obj == 2
+    assert fire_phase.extra == []
+
+
+def test_fire_phase_without_choosing_a_target_is_rejected():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.FIRE))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Hero to Fire" in str(exc)
+
+
+def test_fire_phase_rejects_a_king_target_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Another King", location=HOME, is_king=True))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.FIRE))
+    form[f"fire_target_{KING_ID}_0"] = "2"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Hero to Fire" in str(exc)
+
+
+def test_fire_phase_rejects_a_different_kingdoms_hero_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HOME))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="Foreign Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.FIRE))
+    form[f"fire_target_{KING_ID}_0"] = "2"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Hero to Fire" in str(exc)
+
+
+def test_fire_phase_rejects_a_noncolocated_hero_for_a_non_king_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=50, kingdom_id=1, name="Acting Hero", location=HOME))
+    state.add_leader(LeaderState(leader_id=3, kingdom_id=1, name="Faraway Hero", location=HexCoord(9, 9)))
+    form = _all_defend_form(50)
+    form["action_50_0"] = str(int(ActionCode.FIRE))
+    form["fire_target_50_0"] = "3"
+
+    try:
+        parse_phase_inputs(form, 50, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Hero to Fire" in str(exc)
+
+
+def test_fire_phase_allows_a_hero_to_fire_himself():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=50, kingdom_id=1, name="Acting Hero", location=HOME))
+    form = _all_defend_form(50)
+    form["action_50_0"] = str(int(ActionCode.FIRE))
+    form["fire_target_50_0"] = "50"
+
+    phases = parse_phase_inputs(form, 50, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].action is ActionCode.FIRE
+    assert phases[0].obj == 50
+
+
+def test_build_composed_kingdom_round_trips_a_fire_order():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    form = {**_all_defend_form(KING_ID), **_all_defend_form(2)}
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.FIRE))
+    form[f"fire_target_{KING_ID}_0"] = "2"
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.FIRE
+    assert phase0.obj == 2
+    assert phase0.extra == []
