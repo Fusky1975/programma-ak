@@ -23,7 +23,10 @@
     always acts for the ordering leader himself), Give (the Action internally still named "Trade" -- see
     below) has its own recipient dropdown plus a gift dropdown (an owned item, or Gold with a free-text
     amount), Practice has its own single Talent dropdown, Trail has its own single target dropdown (any
-    other leader in the game, no co-location needed); every other Action still takes the same plain Object + Extra numbers a real move file's own
+    other leader in the game, no co-location needed), Challenge (the engine's own internal name for
+    "Encounter Character," wire code "EN") has its own target dropdown (co-located leaders only) plus the
+    same Encounter Plan tactic slots Search uses, Give included (valid only here and after Pursue, never in
+    Search); every other Action still takes the same plain Object + Extra numbers a real move file's own
     "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a real move
     file from these and stores it exactly like an uploaded one.
   </p>
@@ -52,6 +55,7 @@
             <th>Give</th>
             <th>Practice</th>
             <th>Trail</th>
+            <th>Challenge</th>
             <th>Object</th>
             <th>Extra (space or comma separated)</th>
           </tr>
@@ -239,6 +243,51 @@
                     <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
+              </td>
+              <td class="compose-special-cell" data-action="{{ challenge_action_value }}">
+                <select name="challenge_target_{{ leader.leader_id }}_{{ n }}">
+                  <option value="">-- choose a Challenge target --</option>
+                  {% for value, label in challenge_target_choices_by_leader[leader.leader_id] %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <br><span class="hex-map-legend-note">Encounter Plan (empty slots stop the list there):</span>
+                <table class="data-table compose-encounter-plan">
+                  <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th></tr></thead>
+                  <tbody>
+                    {% for slot in tactic_slot_numbers %}
+                      <tr>
+                        <td>
+                          <select class="compose-tactic-slot" name="challenge_tactic_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- no tactic --</option>
+                            {% for value, label in challenge_tactic_choices_by_slot[slot] %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </td>
+                        <td class="compose-tactic-say-cell">
+                          <input type="text" name="challenge_tactic_say_{{ leader.leader_id }}_{{ n }}_{{ slot }}" value="" size="24" maxlength="{{ say_text_max_length }}">
+                        </td>
+                        <td class="compose-tactic-cast-cell">
+                          <select name="challenge_tactic_spell_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- choose a spell --</option>
+                            {% for value, label in spell_choices %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </td>
+                        <td class="compose-tactic-use-mi-cell">
+                          <select name="challenge_tactic_item_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- choose an item --</option>
+                            {% for value, label in item_choices_by_leader[leader.leader_id] %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
               </td>
               <td class="compose-generic-cell"><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
               <td class="compose-generic-cell"><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>

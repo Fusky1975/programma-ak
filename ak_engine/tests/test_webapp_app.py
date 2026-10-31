@@ -6978,6 +6978,66 @@ def test_turns_compose_save_trail_order_with_no_target_chosen_shows_an_error(tmp
     assert b"choose a Trail target" in response.data
 
 
+def test_turns_compose_shows_a_challenge_target_dropdown_and_tactic_slots(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"challenge_target_" in response.data
+    assert b"-- choose a Challenge target --" in response.data
+    assert b"challenge_tactic_" in response.data
+
+
+def test_turns_compose_save_challenge_order_encodes_the_target_and_tactics(tmp_path):
+    from ak_engine.models.enums import Maneuver
+    from ak_engine.models.game_state import LeaderState
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    other_id = max(state.leaders) + 1
+    state.add_leader(LeaderState(other_id, 1, "Other Hero", king.location))
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.CHALLENGE))
+    form[f"challenge_target_{king.leader_id}_0"] = str(other_id)
+    form[f"challenge_tactic_{king.leader_id}_0_0"] = str(int(Maneuver.MELEE))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    challenge_phase = king_block.plan.segments[0].phases["P0"]
+    assert challenge_phase.action is ActionCode.CHALLENGE
+    assert challenge_phase.obj == other_id
+    assert challenge_phase.extra == [0, int(Maneuver.MELEE), -1]
+
+
+def test_turns_compose_save_challenge_order_with_no_target_chosen_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.CHALLENGE))
+    # challenge_target_<king>_0 deliberately left unset.
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"choose a Challenge target" in response.data
+
+
 def test_turns_compose_shows_encounter_plan_tactic_slots(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -7153,19 +7213,43 @@ def test_turns_compose_save_say_then_another_tactic_then_full_turn_processes_cle
     assert saved.exists()
 
 
-def test_turns_compose_does_not_offer_give_in_the_tactic_dropdown(tmp_path):
+def test_turns_compose_does_not_offer_give_in_the_search_tactic_dropdown(tmp_path):
+    # Give (Maneuver.GIVE) is now a real tactic for Challenge/Pursue's
+    # own Encounter Plan (2026-10-31), so it legitimately appears in
+    # *that* cell's own tactic dropdown -- this test is scoped to
+    # Search's own cell specifically (sliced out by its own, and the
+    # next column's own, `data-action` marker) to keep pinning down
+    # the one real restriction: Give still isn't a Search tactic.
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
 
     response = client.get(f"/games/{meta.slug}/turns/1/compose")
 
     assert response.status_code == 200
+    html = response.data.decode()
+    search_cell_start = html.index(f'data-action="{int(ActionCode.SEARCH)}"')
+    recruit_cell_start = html.index(f'data-action="{int(ActionCode.RECRUIT)}"', search_cell_start)
+    search_cell_html = html[search_cell_start:recruit_cell_start]
     # Maneuver.GIVE (5) happens to share its raw ordinal with
     # ActionCode.HIRE, which *does* legitimately appear in the Action
     # dropdown's own `value="5"` option -- matching the value *and*
-    # label together is what actually pins this down to the tactic
-    # dropdown's own (now-absent) Give option.
-    assert f'value="{int(Maneuver.GIVE)}">Give<'.encode() not in response.data
+    # label together is what actually pins this down to a tactic
+    # dropdown's own Give option.
+    assert f'value="{int(Maneuver.GIVE)}">Give<' not in search_cell_html
+
+
+def test_turns_compose_offers_give_in_the_challenge_tactic_dropdown(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    html = response.data.decode()
+    challenge_cell_start = html.index(f'data-action="{int(ActionCode.CHALLENGE)}"')
+    object_cell_start = html.index('name="obj_', challenge_cell_start)
+    challenge_cell_html = html[challenge_cell_start:object_cell_start]
+    assert f'value="{int(Maneuver.GIVE)}">Give<' in challenge_cell_html
 
 
 def test_turns_compose_save_give_tactic_shows_an_error(tmp_path):

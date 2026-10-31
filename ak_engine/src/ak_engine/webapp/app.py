@@ -91,6 +91,7 @@ from ak_engine.webapp.moves_compose import (
     TRADE_GOLD_VALUE,
     InvalidComposedMovesError,
     build_composed_kingdom,
+    challenge_target_options,
     disband_target_options,
     feature_options,
     item_options,
@@ -3091,6 +3092,13 @@ def create_app(games_root: Path | None = None) -> Flask:
             trail_target_choices_by_leader={
                 leader.leader_id: trail_target_options(state, leader.leader_id) for leader in roster
             },
+            challenge_action_value=int(ActionCode.CHALLENGE),
+            challenge_target_choices_by_leader={
+                leader.leader_id: challenge_target_options(state, leader.leader_id) for leader in roster
+            },
+            challenge_tactic_choices_by_slot=[
+                tactic_options(slot, allow_give=True) for slot in range(TACTIC_SLOT_COUNT)
+            ],
             province_choices=province_options(state),
             feature_choices_by_leader={
                 leader.leader_id: feature_options(state, leader_id=leader.leader_id) for leader in roster

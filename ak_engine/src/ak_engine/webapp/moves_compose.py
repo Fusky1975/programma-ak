@@ -764,6 +764,56 @@ rulebook names: a leader who already commands an army can't be given a
 Trail order at all (``GameState.armies_commanded_by()``, the same check
 ``execute_trail()`` itself makes).
 
+**Challenge [EN] (``ActionCode.CHALLENGE``, real two-letter code
+"Encounter Character"), the eighth Action designed** (2026-10-31) --
+confirmed against the user's own full Italian [3.12] text and
+``turn/challenge_execution.py``/``turn/challenge_pursue_decode.py``'s
+own docstrings. No engine bug found this round -- every clause of the
+pasted text has a direct, cited code path: same-province co-location
+required at execution time (``execute_challenge()``'s own ``co_located``
+check); an armyless Hero can't avoid another Hero's Challenge but
+refuses a King's own 50%-ish; an army-leading Hero never accepts; a
+King only accepts a non-peaceful encounter when both sides target each
+other the same phase ("mutual encounter," detected entirely by ``turn/
+turn_processor.py``'s own same-phase cross-leader pairing -- nothing
+for this composer to expose, since issuing a Challenge back at the
+same target in the same phase from the other side is itself already a
+second, ordinary composed Challenge order); these restrictions are
+waived entirely by a peaceful plan (no combat tactic/spell, Charm
+included); a restricted encounter halves a Steal tactic's own success
+chance. One real refinement beyond the pasted prose, not a bug: the
+King's own "50%" isn't a coin flip at all once an explicit Melee
+tactic drives the plan's own intent -- it's the disassembly-sourced
+deterministic parity formula (turn/aptitude/turn-number based,
+confirmed Phase 793), already correctly implemented; only a non-Melee-
+driven combat plan (Cast- or Steal-only) falls back to a real 50/50
+roll. ``obj`` is the target's own real ``leader_id`` (same convention
+as every other targeted Action so far); ``extra`` is ``[0, ...]``
+followed by the exact same ``-1``-terminated Encounter Plan tactic list
+Search already uses (``turn/challenge_pursue_decode.py`` delegates
+straight to ``turn/search_decode.py decode_tactic_tokens()`` -- no
+Challenge-specific decode shape exists at all). So the composer gets a
+target dropdown (``challenge_target_options()``, pre-filtered to
+currently co-located leaders, same convention as ``trade_recipient_
+options()``/``leave_target_options()``) plus the **exact same**
+Encounter Plan tactic-slot editor Search's own composer already built
+(``tactic_options()``/``_parse_search_tactics()``, now both carrying a
+new ``allow_give``/``field_prefix`` parameter respectively) -- the one
+real difference being that ``Maneuver.GIVE`` is a real tactic here
+(rulebook [3.12]/[3.16]: valid only after Challenge/Pursue, never
+Search -- confirmed by ``_parse_search_tactics()``'s own pre-existing
+Give-rejection message, which already named Challenge/Pursue as Give's
+real home before this round ever touched it) while ``Maneuver.BEG``
+stays excluded everywhere, Challenge included (never a real Encounter
+Plan tactic at all, confirmed in ``turn/challenge_execution.py``'s own
+docstring). ``field_prefix="challenge_tactic"`` keeps Challenge's own
+tactic-slot form fields from colliding with Search's own identically-
+shaped ``tactic_*`` fields when both cells exist in the same composed
+phase row. ``Maneuver.GIVE``'s own sub-object, when used as a Challenge/
+Pursue tactic, still reads the plain generic numeric field for now (no
+dedicated item dropdown yet -- a further refinement, not attempted this
+round).
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
 and a nested Hire/Charm/Resurrection plan (``PlanPhase.nested_plan``)
@@ -1455,21 +1505,59 @@ def trail_target_options(state: GameState, leader_id: int) -> list[tuple[str, st
     return options
 
 
-def tactic_options(slot: int) -> list[tuple[int, str]]:
-    """Every composable ``Maneuver`` for one Search Encounter Plan tactic
-    slot, as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only
-    ever included for ``slot == 0`` (see this module's own docstring for
-    the user-sourced "Talk can only be the first tactic" rule); every
-    other slot gets the same ``_COMPOSABLE_MANEUVERS`` list minus Talk.
-    ``Maneuver.GIVE`` and ``Maneuver.BEG`` are excluded for every slot
-    here -- neither is a real Search Encounter Plan tactic (see this
-    module's own docstring for the user-sourced rationale for each).
+def challenge_target_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every co-located leader as a ``(value, label)`` pair for
+    Challenge's own target dropdown -- rulebook [3.12]: "nella stessa
+    provincia," confirmed as a real, enforced requirement at execution
+    time (``turn/challenge_execution.py execute_challenge()``'s own
+    ``co_located`` check, not just prose) -- unlike Trail/Pursue, which
+    chase from a distance, Challenge needs the two already together
+    right now. No Kingdom restriction, same as Give -- any co-located
+    leader is a valid target, any Kingdom. Pre-filtered to this
+    composer's own start-of-turn snapshot, same convention already used
+    for ``trade_recipient_options()``/``leave_target_options()``: a
+    later phase this same turn could move either leader before this
+    phase actually runs, so turn-processing time remains the real
+    arbiter either way.
+    """
+
+    leader = state.leaders.get(leader_id)
+    if leader is None:
+        return []
+    options: list[tuple[str, str]] = []
+    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+        if other.leader_id == leader_id or other.location != leader.location:
+            continue
+        kingdom = state.kingdoms.get(other.kingdom_id)
+        kingdom_part = kingdom.name if kingdom is not None else "independent"
+        title_part = "King" if other.is_king else "Hero"
+        options.append((str(other.leader_id), f"{other.name} ({title_part}, {kingdom_part})"))
+    return options
+
+
+def tactic_options(slot: int, *, allow_give: bool = False) -> list[tuple[int, str]]:
+    """Every composable ``Maneuver`` for one Encounter Plan tactic slot,
+    as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only ever
+    included for ``slot == 0`` (see this module's own docstring for the
+    user-sourced "Talk can only be the first tactic" rule); every other
+    slot gets the same ``_COMPOSABLE_MANEUVERS`` list minus Talk.
+    ``Maneuver.BEG`` is excluded for every slot and every caller -- it
+    is never a real Encounter Plan tactic anywhere, Search or Challenge/
+    Pursue alike (see this module's own docstring for the user-sourced
+    rationale). ``Maneuver.GIVE`` is excluded too unless ``allow_give``
+    is set -- real only after Challenge (EN) or Pursue (PU), rulebook
+    [3.12]/[3.16], never inside a Search Encounter Plan (2026-10-31,
+    confirmed directly in ``turn/challenge_execution.py``'s own
+    docstring; Search's own caller leaves ``allow_give`` at its default
+    ``False``, Challenge's own sets it ``True``).
     """
 
     return [
         (int(maneuver), "Fire Arrow" if maneuver is Maneuver.SHOOT else maneuver.name.replace("_", " ").title())
         for maneuver in _COMPOSABLE_MANEUVERS
-        if maneuver not in (Maneuver.GIVE, Maneuver.BEG) and (maneuver is not Maneuver.TALK or slot == 0)
+        if maneuver is not Maneuver.BEG
+        and (maneuver is not Maneuver.GIVE or allow_give)
+        and (maneuver is not Maneuver.TALK or slot == 0)
     ]
 
 
@@ -1904,18 +1992,58 @@ def _parse_trail_target(form: dict[str, str], leader_id: int, n: int, *, phase_l
     return target_id
 
 
+def _parse_challenge_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
+    """Reads a Challenge phase's own ``challenge_target_<leader_id>_<n>``
+    field into the real target ``leader_id`` -- the wire encoding is
+    already a bare leader id (``challenge_target_options()``'s own
+    dropdown value), so no sentinel decoding is needed. Also enforces,
+    at compose time rather than only at turn-processing time, rulebook
+    [3.12]'s own "nella stessa provincia" co-location requirement -- the
+    same check ``turn/challenge_execution.py execute_challenge()``
+    itself makes.
+    """
+
+    raw = form.get(f"challenge_target_{leader_id}_{n}", "")
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Challenge target.")
+    target_id = _parse_int(raw, field_label=f"{phase_label} Challenge target")
+    leader = state.leaders.get(leader_id)
+    target = state.leaders.get(target_id)
+    if target_id == leader_id or target is None or leader is None or target.location != leader.location:
+        # Defense in depth: every dropdown-offered id is a real, other,
+        # co-located leader, but a direct, tampered POST could still
+        # name the acting leader himself, one that doesn't exist, or
+        # one no longer co-located.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Challenge target.")
+    return target_id
+
+
 def _parse_search_tactics(
-    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
+    form: dict[str, str],
+    leader_id: int,
+    n: int,
+    *,
+    phase_label: str,
+    state: GameState,
+    field_prefix: str = "tactic",
+    allow_give: bool = False,
 ) -> list[int | str]:
-    """Reads this Search phase's own ``tactic_<leader_id>_<n>_<slot>``/
-    ``tactic_sub_<leader_id>_<n>_<slot>``/``tactic_say_<leader_id>_<n>_
-    <slot>``/``tactic_spell_<leader_id>_<n>_<slot>``/``tactic_item_
-    <leader_id>_<n>_<slot>`` fields (``slot`` in
-    ``0..TACTIC_SLOT_COUNT-1``) into a real, ``-1``-terminated
-    Encounter Plan tactic list -- see this module's own docstring for
-    the Talk-position, Steal-position, Steal/Talk/Fulfill-exclusion,
-    Flee-at-most-once, Say free-text, Cast-spell-allowlist, and
-    Use-Item-ownership rules enforced here. ``state`` is only needed
+    """Reads this phase's own ``<field_prefix>_<leader_id>_<n>_<slot>``/
+    ``<field_prefix>_sub_<leader_id>_<n>_<slot>``/``<field_prefix>_say_
+    <leader_id>_<n>_<slot>``/``<field_prefix>_spell_<leader_id>_<n>_
+    <slot>``/``<field_prefix>_item_<leader_id>_<n>_<slot>`` fields
+    (``slot`` in ``0..TACTIC_SLOT_COUNT-1``) into a real, ``-1``-
+    terminated Encounter Plan tactic list -- see this module's own
+    docstring for the Talk-position, Steal-position, Steal/Talk/
+    Fulfill-exclusion, Flee-at-most-once, Say free-text, Cast-spell-
+    allowlist, and Use-Item-ownership rules enforced here, shared
+    unchanged between every Encounter-Plan-bearing Action. ``field_
+    prefix`` lets Challenge's own tactic slots (``"challenge_tactic"``)
+    live in the same composed phase row as Search's own (``"tactic"``,
+    the default) without colliding on the same POST field names --
+    ``tactic_options()``'s own dropdown ``value``s are the same
+    ``Maneuver`` ordinals either way, so no other change is needed per
+    caller besides this and ``allow_give`` (2026-10-31). ``state`` is only needed
     for Use Item's own ownership/category/charge lookup -- every
     other tactic's own validation is state-independent.
     """
@@ -1930,7 +2058,7 @@ def _parse_search_tactics(
     previous_maneuver: Maneuver | None = None
     previous_sub_object: int | None = None
     for slot in range(TACTIC_SLOT_COUNT):
-        raw = form.get(f"tactic_{leader_id}_{n}_{slot}", "")
+        raw = form.get(f"{field_prefix}_{leader_id}_{n}_{slot}", "")
         if not raw:
             if stopped_at is None:
                 stopped_at = slot
@@ -1949,7 +2077,7 @@ def _parse_search_tactics(
             # dropdown, but a direct, tampered POST could still name
             # its real ordinal.
             raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1} isn't composable here yet.")
-        if maneuver is Maneuver.GIVE:
+        if maneuver is Maneuver.GIVE and not allow_give:
             # Defense in depth: Give is never offered in a Search tactic
             # slot's own dropdown (see tactic_options()), but a direct,
             # tampered POST could still name its real ordinal.
@@ -1997,7 +2125,7 @@ def _parse_search_tactics(
         tokens.append(int(maneuver))
         sub_object: int | None = None
         if maneuver is Maneuver.SAY:
-            say_text = form.get(f"tactic_say_{leader_id}_{n}_{slot}", "").strip()
+            say_text = form.get(f"{field_prefix}_say_{leader_id}_{n}_{slot}", "").strip()
             if not say_text:
                 raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1} needs Say's own text.")
             if len(say_text) > SAY_TEXT_MAX_LENGTH:
@@ -2007,7 +2135,7 @@ def _parse_search_tactics(
                 )
             tokens.append(say_text)
         elif maneuver is Maneuver.CAST:
-            spell_raw = form.get(f"tactic_spell_{leader_id}_{n}_{slot}", "")
+            spell_raw = form.get(f"{field_prefix}_spell_{leader_id}_{n}_{slot}", "")
             try:
                 spell = Spell(int(spell_raw))
             except (TypeError, ValueError) as exc:
@@ -2020,7 +2148,7 @@ def _parse_search_tactics(
             sub_object = int(spell)
             tokens.append(sub_object)
         elif maneuver is Maneuver.USE_MI:
-            item_raw = form.get(f"tactic_item_{leader_id}_{n}_{slot}", "")
+            item_raw = form.get(f"{field_prefix}_item_{leader_id}_{n}_{slot}", "")
             item_id = _parse_int(item_raw, field_label=f"{phase_label} tactic {slot + 1} item") if item_raw else None
             item = state.items.get(item_id) if item_id is not None else None
             if item is None or item.owner_leader_id != leader_id:
@@ -2043,7 +2171,7 @@ def _parse_search_tactics(
             sub_object = item_id
             tokens.append(sub_object)
         elif maneuver in TACTICS_WITH_SUB_OBJECT:
-            sub_raw = form.get(f"tactic_sub_{leader_id}_{n}_{slot}", "0")
+            sub_raw = form.get(f"{field_prefix}_sub_{leader_id}_{n}_{slot}", "0")
             sub_object = _parse_int(sub_raw or "0", field_label=f"{phase_label} tactic {slot + 1} sub-object")
             tokens.append(sub_object)
         previous_maneuver = maneuver
@@ -2118,7 +2246,13 @@ def parse_phase_inputs(
     TRAIL``) phase reads its own single ``trail_target_<leader_id>_<n>``
     dropdown for ``obj`` (``_parse_trail_target()``, same module
     docstring's own Trail section) and always encodes ``extra`` as
-    ``[0]``.
+    ``[0]``. A Challenge (``ActionCode.CHALLENGE``) phase reads its own
+    single ``challenge_target_<leader_id>_<n>`` dropdown for ``obj``
+    (``_parse_challenge_target()``) and its own repeated ``challenge_
+    tactic_<leader_id>_<n>_<slot>`` Encounter Plan tactic slots for
+    ``extra`` (``_parse_search_tactics()`` with ``field_prefix=
+    "challenge_tactic", allow_give=True``, same module docstring's own
+    Challenge section).
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -2162,6 +2296,14 @@ def parse_phase_inputs(
         elif action is ActionCode.TRAIL:
             obj = _parse_trail_target(form, leader_id, n, phase_label=f"P{n}", state=state)
             extra = [0]
+        elif action is ActionCode.CHALLENGE:
+            obj = _parse_challenge_target(form, leader_id, n, phase_label=f"P{n}", state=state)
+            extra = [
+                0,
+                *_parse_search_tactics(
+                    form, leader_id, n, phase_label=f"P{n}", state=state, field_prefix="challenge_tactic", allow_give=True
+                ),
+            ]
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))
