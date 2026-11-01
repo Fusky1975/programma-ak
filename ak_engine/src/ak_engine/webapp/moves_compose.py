@@ -1020,6 +1020,19 @@ _resolve_nested_plan_leader_id()`` doesn't itself check which spell was
 cast, so a ``nested_plan`` wrongly attached to, say, a Plague cast would
 still be dispatched if that cast happened to succeed.
 
+**Defend [DE] (``ActionCode.DEFEND``)** (2026-11-01) -- confirmed
+against the user's own full Italian [3.15] text and ``turn/defend_
+execution.py``/``turn/turn_processor.py``'s own docstrings. ``obj`` is
+the named province (``_parse_defend_target()``, same ``province_
+options()`` dropdown and ``"x,y"`` wire shape as Move's own -- see that
+function's own docstring for the still-open, but today harmless,
+numbering-scheme caveat); ``extra`` is always ``[0]`` (``turn/aspy_
+defend_decode.py``'s own confirmed, never-populated ``extra0``). No
+Encounter Plan or further sub-fields -- Defend's own reactive battle-
+joining is a background mechanism in ``turn/turn_processor.py``
+(``active_defends``), not something this one composed phase itself
+carries any further payload for.
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
 isn't exposed here yet either, for the same reason -- every composed
@@ -2163,6 +2176,42 @@ def _parse_move_target(raw: str, *, board_width: int, phase_label: str) -> int:
     return encode_hex_number(HexCoord(x, y), board_width)
 
 
+def _parse_defend_target(raw: str, *, board_width: int, phase_label: str) -> int:
+    """Reads a Defend phase's own ``defend_target_<leader_id>_<n>``
+    field (``province_options()``'s own ``"x,y"`` dropdown value, same
+    field shape as Move's) into Defend's real wire ``obj``.
+
+    **Open question, not resolved by this round** (``turn/aspy_defend_
+    decode.py``'s own docstring): the real Pascal ``Set_Defend`` writes
+    this field via its own ``x*XMULT+y`` arithmetic, and nothing in the
+    available source confirms whether that's the same numbering space
+    as ``hex_numbering.py``'s own ``encode_hex_number()`` (Move's own,
+    itself only an inferred guess, never confirmed against real Pascal
+    source either) or something else entirely -- there is no sample
+    ``.K1`` file with a real Defend phase to cross-check against. This
+    composer still encodes via ``encode_hex_number()``, the same
+    scheme Move's own dropdown already uses, for two reasons: (1) it's
+    the only numbering scheme already built and tested in this project
+    (reusing it is strictly less new-guessing than inventing a second,
+    unverified one), and (2) it is, today, **harmless either way**:
+    ``turn/defend_execution.py defend_coverage_area()``'s own
+    documented reinterpretation never actually reads the decoded
+    ``target_province`` int at all -- coverage is computed purely from
+    the general's own *current* location, so no real behavior depends
+    on which numbering this field round-trips through yet. If a future
+    round ever implements the rulebook's own narrower "adjacent to both
+    the named province and the current one" rule, this encoding choice
+    will need to be revisited together with that work, not before.
+    """
+
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a province to Defend.")
+    x_str, _, y_str = raw.partition(",")
+    x = _parse_int(x_str, field_label=f"{phase_label} Defend target")
+    y = _parse_int(y_str, field_label=f"{phase_label} Defend target")
+    return encode_hex_number(HexCoord(x, y), board_width)
+
+
 def _parse_search_feature(raw: str, *, phase_label: str) -> int:
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Feature to Search.")
@@ -3124,7 +3173,12 @@ def parse_phase_inputs(
     ``move_target_<leader_id>_<n>`` dropdown field instead of the
     generic Object field (see this module's own docstring for why) --
     ``extra`` is always empty for Move, matching ``turn/plan_dispatch.py``'s
-    own confirmed "Move's extra is never read" finding. An Explore
+    own confirmed "Move's extra is never read" finding. A Defend
+    (``ActionCode.DEFEND``) phase reads its own dedicated ``defend_
+    target_<leader_id>_<n>`` dropdown field, same ``province_options()``
+    choices and ``"x,y"`` wire shape as Move's own (``_parse_defend_
+    target()``'s own docstring explains the still-unconfirmed, but
+    today harmless, numbering-scheme choice this reuses). An Explore
     (``ActionCode.EXPLORE``) phase needs no field at all -- ``obj``/
     ``extra`` are forced to ``0``/``[]`` regardless of whatever the
     generic form fields happen to hold, since Explore always targets
@@ -3210,6 +3264,11 @@ def parse_phase_inputs(
                 form.get(f"move_target_{leader_id}_{n}", ""), board_width=board_width, phase_label=f"P{n}"
             )
             extra: list[int | str] = []
+        elif action is ActionCode.DEFEND:
+            obj = _parse_defend_target(
+                form.get(f"defend_target_{leader_id}_{n}", ""), board_width=board_width, phase_label=f"P{n}"
+            )
+            extra = [0]
         elif action is ActionCode.EXPLORE:
             obj = 0
             extra = []

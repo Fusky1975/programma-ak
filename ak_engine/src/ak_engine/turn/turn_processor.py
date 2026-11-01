@@ -263,7 +263,7 @@ import random
 from dataclasses import dataclass
 
 from ak_engine.models.advanced_ability import AdvancedAbility
-from ak_engine.models.army_type import ARMY_TABLE, ArmyType
+from ak_engine.models.army_type import ARMY_TABLE, BASE_STRENGTH, GARRISON_DEFENSE_STRENGTH, ArmyType
 from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
@@ -283,7 +283,8 @@ from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.aspy_execution import execute_aspy
 from ak_engine.turn.cast_execution import maybe_dissolve_illusory_terrain
 from ak_engine.turn.challenge_execution import execute_challenge
-from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
+from ak_engine.turn.battle_line import estimate_win_probability
+from ak_engine.turn.challenge_pursue_decode import PursueRequest, decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.defend_execution import DefendCoverage, DefendReinforcement, defend_coverage_area, defend_radius_for_leader
 from ak_engine.turn.diplomatic_merit import apply_diplomatic_merit
@@ -667,6 +668,7 @@ def run_turn(
             group_results = _dispatch_multi_attacker_lmove(movers, target, state, board_width, explorer_skill, rng)
             results.extend(group_results)
             _apply_defend_battle_loss(defeated_while_defending, reinforced_by_target, target, group_results)
+            _apply_defend_battle_win(active_pursuits, reinforced_by_target, target, group_results)
 
         for ability, indices in multi_practice_groups:
             movers = [entries[i] for i in indices]
@@ -691,6 +693,7 @@ def run_turn(
                 target = move_targets.get(index)
                 if target is not None:
                     _apply_defend_battle_loss(defeated_while_defending, reinforced_by_target, target, dispatch_results)
+                    _apply_defend_battle_win(active_pursuits, reinforced_by_target, target, dispatch_results)
                     _register_move_chase_continuation(
                         active_move_chases, tl.leader.leader_id, tl.kingdom_id, target, dispatch_results
                     )
@@ -1139,6 +1142,33 @@ def _apply_defend_cancellations(
             active_defends.pop(tl.leader.leader_id, None)
 
 
+def _army_strength(army) -> float:
+    """A cheap, real-data-backed combat-strength estimate for one army --
+    ``BASE_STRENGTH[army_type] * int(quality)``, the same "base x
+    quality" starting point ``turn/strength.py compute_effective_
+    strength()`` itself multiplies onward from, before any terrain/
+    defender/tactical bonus is layered on (2026-11-01, no dedicated
+    "is force A strong enough vs force B" function exists anywhere in
+    this project -- this is the cheapest honest reuse of real existing
+    numbers rather than an invented one). Garrison isn't in
+    ``BASE_STRENGTH`` at all (``models/army_type.py``'s own module
+    docstring: handled as two named constants instead, one per combat
+    role) -- a Defend reinforcement always fights on the defending side
+    of whatever battle it joins (rulebook: "le sue truppe
+    combatteranno a fianco dei difensori"), so ``GARRISON_DEFENSE_
+    STRENGTH`` is the one of the two that applies here. Used only by
+    ``_apply_defend_reinforcements()``'s own "intelligent reinforcement"
+    heuristic below -- not a new canonical strength formula.
+    """
+
+    if army.army_type is ArmyType.GARRISON:
+        return GARRISON_DEFENSE_STRENGTH * int(army.quality)
+    return BASE_STRENGTH.get(army.army_type, 0) * int(army.quality)
+
+
+_DEFEND_REINFORCEMENT_WIN_PROBABILITY_FLOOR = 0.5
+
+
 def _apply_defend_reinforcements(
     active_defends: dict[int, DefendCoverage],
     move_targets: dict[int, HexCoord],
@@ -1162,23 +1192,93 @@ def _apply_defend_reinforcements(
     province's owner is the defender's own Kingdom or an ally) against a
     **non-allied invader who actually brings an army** -- the same
     "attacking" criterion used throughout this module. Each defender's
-    coverage is **consumed after its first reinforcement this
-    ``run_turn()`` call**: once committed to one battle, they're no
+    coverage is **consumed only once a reinforcement actually happens**
+    this ``run_turn()`` call: once committed to one battle, they're no
     longer standing by to cover their original area for a second,
     unrelated invasion later in the turn (a documented simplification,
     not sourced -- the rulebook doesn't address a general reinforcing
-    twice in the same turn).
+    twice in the same turn). A phase where this defender's force can't
+    react at all, or deliberately stays home (see below), leaves the
+    coverage untouched for a later phase to still draw on.
+
+    **2026-11-01 additions, sourced directly from the user's own full
+    Italian [3.15] text, closing four previously-undocumented gaps**:
+
+    1. **Terrain/transport legality**: each of the defender's own armies
+       is checked individually via ``find_transport_illegality()`` (the
+       same pure legality gate ordinary Move already uses) against the
+       hop from this leader's own current province to the chosen
+       target -- "un generale non reagirà all'invasione se la sua
+       unità militare non può muovere nella zona invasa." An army that
+       fails this check (e.g. a land unit a Fleet can't carry, or a
+       Fleet trying a land-to-land hop) is simply excluded from the
+       pool of armies that can react, exactly like a wrong-terrain Move
+       would refuse that army. If no army passes, this defender can't
+       react to this invasion at all this phase.
+    2. **Movement Point cost**: "questi movimenti costano Punti
+       Movimento, e quindi un'unità che ha speso tutti i suoi Punti
+       Movimento non può più reagire." Each candidate army must have
+       ``movement_points >= movement_cost_for_move(battle_occurred=True)``
+       (the real per-hex-entered cost, always the "+1, a battle
+       happened" variant here since joining a defended province's own
+       fight is the entire premise) and is charged that same cost on
+       departure -- the same formula and field ordinary LMOVE already
+       uses, replenished only once per turn by ``_replenish_turn_
+       scoped_state()``, same semantics. **Deliberately not modeled**:
+       the rulebook's own "3 moves for a full defend-then-return trip"
+       (speed >= 3, or a good March Talent) -- this project's Defend
+       reinforcement has no "return home" leg at all (the general
+       simply relocates, permanently, same as before this round, modulo
+       the new pursuit-on-win addendum below), so there is no return
+       trip to charge a second/third move for; only the one real,
+       modeled leg (arriving to fight) is charged. March Talent's own
+       movement-point bonuses (``march_movement_point_bonus()``/
+       ``march_table_extra_movement()``) are also not threaded in here
+       -- a further, orthogonal refinement on top of the base cost
+       charged above, left for later rather than this round.
+    3. **"Intelligent" splitting**: only reachable when the defender's
+       own *current* province is **also** invaded this same phase (the
+       rulebook's own example: "invia unità militari in una provincia
+       difesa E in due province adiacenti" -- a genuine competing claim
+       on this general's forces). With no such competing claim (every
+       pre-existing test fixture, and surely the overwhelmingly common
+       case), the general still takes his *whole* eligible force to the
+       one covered province under attack, exactly as before this round.
+       When home *is* also under threat, the minimal prefix of the
+       defender's own armies (strongest first) whose summed strength
+       clears a 50% ``estimate_win_probability()`` against the chosen
+       invader is sent, **provided** the armies left behind still clear
+       that same 50% floor against the home invader; if no such split
+       exists (even the full force doesn't clear 50% at the target, or
+       any split that does leaves home with nothing or an indefensible
+       remainder), the general sends nobody -- "rimanere a difendere la
+       provincia." The 50% floor and the "strongest-first, minimal
+       sufficient prefix" selection are both documented interpretations,
+       not sourced formulas -- the rulebook names no numbers here, only
+       this project's own existing win_probability curve (anchored at
+       the rulebook's own real "1:1 -> 50%" Battle Odds data point) as
+       the least-invented building block to reuse. Strength per army is
+       ``_army_strength()``, above.
+    4. **Among 2+ simultaneously-invaded *covered* provinces** (as
+       distinct from (3)'s home-vs-neighbor split): "andrà in aiuto di
+       una provincia adiacente" (singular) is read as the single
+       biggest threat by summed invading strength, not the first one
+       encountered in iteration order -- also a documented judgment
+       call, the rulebook names no tiebreak. Ties keep the first-
+       encountered order, matching this function's own pre-existing,
+       untouched behavior when strength doesn't distinguish the choice.
 
     Returns ``{defender_leader_id: DefendReinforcement(origin, target)}``
     for every reinforcement performed this call -- ``run_turn()`` uses
     ``.target`` to look up that same battle's outcome once this phase's
-    LMOVE dispatch resolves it, for rule [3.15]'s other cancellation
-    trigger (see ``_apply_defend_cancellations``'s own docstring and
-    ``_extract_battle_winner``). ``.origin`` (the defender's own province
-    before relocating) exists solely for ``describe_defend_reinforcement()``
-    (Phase 422, ``SAY.PAS _LHearInv``'s own ``@`` marker) -- captured here
-    because ``defender_state.location`` is overwritten to ``target``
-    a few lines below, before this function returns.
+    LMOVE dispatch resolves it, for rule [3.15]'s own two reactive
+    cancellation/pursuit triggers (see ``_apply_defend_cancellations``'s
+    own docstring, ``_apply_defend_battle_loss``, and ``_apply_defend_
+    battle_win``). ``.origin`` (the defender's own province before
+    relocating) exists solely for ``describe_defend_reinforcement()``
+    (Phase 422, ``SAY.PAS _LHearInv``'s own ``@`` marker) -- captured
+    here because ``defender_state.location`` is overwritten to
+    ``target`` a few lines below, before this function returns.
     """
 
     reinforced: dict[int, DefendReinforcement] = {}
@@ -1189,11 +1289,24 @@ def _apply_defend_reinforcements(
     for index, target in move_targets.items():
         invaded_provinces.setdefault(target, []).append(index)
 
+    def _invading_strength(defender_kingdom_id: int, indices: list[int]) -> float | None:
+        total = 0.0
+        saw_invader = False
+        for i in indices:
+            mover_tl = entries[i][0]
+            mover_armies = state.armies_commanded_by(mover_tl.leader.leader_id)
+            if not mover_armies or state.is_allied(mover_tl.kingdom_id, defender_kingdom_id):
+                continue
+            saw_invader = True
+            total += sum(_army_strength(army) for army in mover_armies)
+        return total if saw_invader else None
+
     for defender_leader_id, coverage in list(active_defends.items()):
         defender_state = state.leaders.get(defender_leader_id)
         if defender_state is None or defender_state.kingdom_id is None:
             continue
 
+        candidates: list[tuple[HexCoord, float]] = []
         for target, indices in invaded_provinces.items():
             if target not in coverage.area:
                 continue
@@ -1203,24 +1316,89 @@ def _apply_defend_reinforcements(
             owner = target_province.owner_kingdom_id
             if owner != defender_state.kingdom_id and not state.is_allied(owner, defender_state.kingdom_id):
                 continue  # not friendly ground -- nothing to defend here
+            strength = _invading_strength(defender_state.kingdom_id, indices)
+            if strength is None:
+                continue  # no real invader among this phase's movers into target
+            candidates.append((target, strength))
 
-            invading = any(
-                state.armies_commanded_by(entries[i][0].leader.leader_id)
-                and not state.is_allied(entries[i][0].kingdom_id, defender_state.kingdom_id)
-                for i in indices
-            )
-            if not invading:
+        if not candidates:
+            continue
+
+        target, invading_strength = max(candidates, key=lambda pair: pair[1])
+        target_province = state.provinces[target]
+
+        home_location = defender_state.location
+        home_invading_strength: float | None = None
+        home_province = state.provinces.get(home_location)
+        if home_province is not None and home_province.owner_kingdom_id == defender_state.kingdom_id:
+            home_indices = invaded_provinces.get(home_location)
+            if home_indices is not None:
+                home_invading_strength = _invading_strength(defender_state.kingdom_id, home_indices)
+
+        origin_province = state.provinces.get(home_location)
+        eligible_armies = []
+        for army in state.armies_commanded_by(defender_leader_id):
+            if army.movement_points < movement_cost_for_move(battle_occurred=True):
                 continue
+            if find_transport_illegality([army], [army.army_id], origin_province, target_province) is not None:
+                continue
+            eligible_armies.append(army)
 
-            for army in state.armies_commanded_by(defender_leader_id):
-                army.location = target
-            origin = coverage.origin
-            defender_state.location = target
-            del active_defends[defender_leader_id]
-            reinforced[defender_leader_id] = DefendReinforcement(origin=origin, target=target)
-            break
+        if not eligible_armies:
+            continue  # can't physically/logistically react at all this phase
+
+        eligible_armies.sort(key=_army_strength, reverse=True)
+
+        if home_invading_strength is None:
+            armies_to_send = eligible_armies
+        else:
+            armies_to_send = None
+            running_strength = 0.0
+            for count, army in enumerate(eligible_armies, start=1):
+                running_strength += _army_strength(army)
+                if (
+                    estimate_win_probability(running_strength, invading_strength)
+                    < _DEFEND_REINFORCEMENT_WIN_PROBABILITY_FLOOR
+                ):
+                    continue
+                remaining = eligible_armies[count:]
+                if not remaining:
+                    continue  # would leave home with nothing while home is itself under threat
+                remaining_strength = sum(_army_strength(army) for army in remaining)
+                if (
+                    estimate_win_probability(remaining_strength, home_invading_strength)
+                    < _DEFEND_REINFORCEMENT_WIN_PROBABILITY_FLOOR
+                ):
+                    continue  # this split leaves home too exposed -- keep looking
+                armies_to_send = eligible_armies[:count]
+                break
+            if armies_to_send is None:
+                continue  # not strong enough to split safely -- stays to defend the home province
+
+        for army in armies_to_send:
+            army.location = target
+        origin = coverage.origin
+        defender_state.location = target
+        del active_defends[defender_leader_id]
+        reinforced[defender_leader_id] = DefendReinforcement(origin=origin, target=target)
 
     return reinforced
+
+
+def _extract_battle_report(result: object):
+    """Reads whichever ``BattleReport`` a dispatch result actually carries (``Move
+    ExecutionResult``/``MultiAttackerMoveResult`` are the only two battle-
+    bearing shapes this module's own Defend machinery ever dispatches
+    into), or ``None`` if ``result`` carries no battle at all. Shared by
+    ``_extract_battle_winner``/``_apply_defend_battle_win`` so both read
+    the exact same report.
+    """
+
+    if isinstance(result, MoveExecutionResult):
+        return result.battle_report
+    if isinstance(result, MultiAttackerMoveResult):
+        return result.battle.report
+    return None
 
 
 def _extract_battle_winner(result: object) -> str | None:
@@ -1231,12 +1409,7 @@ def _extract_battle_winner(result: object) -> str | None:
     Defend-reinforcement-triggered battle) is checked.
     """
 
-    if isinstance(result, MoveExecutionResult):
-        battle_report = result.battle_report
-    elif isinstance(result, MultiAttackerMoveResult):
-        battle_report = result.battle.report
-    else:
-        battle_report = None
+    battle_report = _extract_battle_report(result)
     return battle_report.battle_result.winner if battle_report is not None else None
 
 
@@ -1275,6 +1448,66 @@ def _apply_defend_battle_loss(
     )
     if winner == "attacker":
         defeated_while_defending.update(defender_leader_ids)
+
+
+def _apply_defend_battle_win(
+    active_pursuits: dict[int, _ActivePursuit],
+    reinforced_by_target: dict[HexCoord, list[int]],
+    target: HexCoord,
+    dispatch_results: list[PhaseDispatchResult],
+) -> None:
+    """Rulebook [3.15] (2026-11-01, previously unmodeled): "Se vince la
+    battaglia, inseguirà il generale che ha invaso la provincia
+    adiacente." Mirrors ``_apply_defend_battle_loss``'s own single-
+    battle-per-``target`` scan, but registers a brand-new chase instead
+    of cancelling one, the moment this phase's own LMOVE dispatch
+    resolves the exact battle a Defend reinforcement just drew
+    ``target``'s defender(s) into.
+
+    Constructs a synthetic ``_ActivePursuit`` directly rather than via
+    ``_register_pursuit_continuation()`` -- that function only ever re-
+    registers a *real*, already-decoded PURSUE phase this same leader
+    themselves issued and dispatched; a Defend-reinforcement win was
+    never such a phase, so there's no ``PlanPhase`` to re-decode.
+    ``PursueRequest.unconfirmed_extra0``/``.tactics`` carry no real wire
+    data for this synthetic case either way (``tactics=[]`` is also
+    functionally identical to any real combat tactic here, since the
+    one real consumer -- an army-leading loser next phase -- dispatches
+    through ``advance_pursuit()``'s own pure army-vs-army rebattle
+    branch, which never reads ``tactics`` at all). If the loser's own
+    armies were destroyed outright in this same battle (not merely
+    defeated), ``advance_pursuit()``'s own [3.16] army-leading-mismatch
+    check will find nothing left to chase and silently end the pursuit
+    next phase -- a real, pre-existing rule this registration simply
+    inherits, not a bug.
+
+    Reads the winning battle's own attacker commander off ``BattleReport.
+    attacker_commander_leader_id`` (falling back to the first entry of
+    ``.attacker_commanding_leader_ids`` for a Multiple-Contingents group
+    with no single elected duel commander) -- see ``turn/battle_
+    orchestrator.py BattleReport``'s own fields.
+    """
+
+    defender_leader_ids = reinforced_by_target.get(target)
+    if not defender_leader_ids or not dispatch_results:
+        return
+    for result in dispatch_results:
+        battle_report = _extract_battle_report(result.result)
+        if battle_report is None:
+            continue
+        if battle_report.battle_result.winner != "defender":
+            return
+        attacker_leader_id = battle_report.attacker_commander_leader_id
+        if attacker_leader_id is None and battle_report.attacker_commanding_leader_ids:
+            attacker_leader_id = battle_report.attacker_commanding_leader_ids[0]
+        if attacker_leader_id is None:
+            return
+        for defender_leader_id in defender_leader_ids:
+            active_pursuits[defender_leader_id] = _ActivePursuit(
+                kind="pursue",
+                request=PursueRequest(target_character_id=attacker_leader_id, unconfirmed_extra0=0, tactics=[]),
+            )
+        return
 
 
 _PURSUE_STILL_CHASING_REASON = "did not catch up this phase"

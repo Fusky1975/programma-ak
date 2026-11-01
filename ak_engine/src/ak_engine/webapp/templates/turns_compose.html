@@ -88,6 +88,14 @@
                   {% endfor %}
                 </select>
               </td>
+              <td class="compose-special-cell" data-action="{{ defend_action_value }}">
+                <select name="defend_target_{{ leader.leader_id }}_{{ n }}">
+                  <option value="">-- choose a province to Defend --</option>
+                  {% for value, label in province_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </td>
               <td class="compose-special-cell" data-action="{{ move_action_value }}">
                 <select name="move_target_{{ leader.leader_id }}_{{ n }}">
                   <option value="">-- choose a province --</option>

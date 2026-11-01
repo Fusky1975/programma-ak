@@ -121,6 +121,12 @@ def _all_defend_form(leader_id: int) -> dict[str, str]:
         form[f"action_{leader_id}_{n}"] = str(int(ActionCode.DEFEND))
         form[f"obj_{leader_id}_{n}"] = "0"
         form[f"extra_{leader_id}_{n}"] = ""
+        # Defend now has its own dedicated, validated target dropdown
+        # (_parse_defend_target()) -- HOME parses fine regardless of
+        # whether this particular test's own state actually registered
+        # that exact province (no existence check, same as Move's own
+        # _parse_move_target()).
+        form[f"defend_target_{leader_id}_{n}"] = f"{HOME.x},{HOME.y}"
     return form
 
 
@@ -169,13 +175,17 @@ def test_move_phase_without_a_chosen_destination_is_rejected():
 
 
 def test_non_move_phase_is_unaffected_by_the_move_destination_field():
+    # WAIT, not Defend -- Defend now has its own dedicated, validated
+    # target field (_parse_defend_target()), no longer a generic
+    # fallback action.
     form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_1"] = str(int(ActionCode.WAIT))
     form[f"obj_{KING_ID}_1"] = "42"
     form[f"extra_{KING_ID}_1"] = "1, 2 3"
 
     phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
 
-    assert phases[1].action is ActionCode.DEFEND
+    assert phases[1].action is ActionCode.WAIT
     assert phases[1].obj == 42
     assert phases[1].extra == [1, 2, 3]
 
@@ -190,6 +200,44 @@ def test_build_composed_kingdom_round_trips_a_move_order_to_the_real_target_coor
 
     phase0 = kingdom.leaders[0].plan.segments[0].phases["P0"]
     assert decode_hex_number(phase0.obj, state.board_width) == HexCoord(3, 2)
+
+
+def test_defend_phase_reads_its_own_dropdown_not_the_generic_object_field():
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_2"] = str(int(ActionCode.DEFEND))
+    form[f"defend_target_{KING_ID}_2"] = "3,2"
+    form[f"obj_{KING_ID}_2"] = "999"  # must be ignored for a Defend phase
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+
+    defend_phase = phases[2]
+    assert defend_phase.action is ActionCode.DEFEND
+    assert decode_hex_number(defend_phase.obj, BOARD_WIDTH) == HexCoord(3, 2)
+    assert defend_phase.extra == [0]
+
+
+def test_defend_phase_without_a_chosen_target_is_rejected():
+    form = _all_defend_form(KING_ID)
+    form[f"defend_target_{KING_ID}_0"] = ""
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "province to Defend" in str(exc)
+
+
+def test_build_composed_kingdom_round_trips_a_defend_order_to_the_real_target_coord():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"defend_target_{KING_ID}_0"] = "3,2"
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+
+    phase0 = kingdom.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.DEFEND
+    assert decode_hex_number(phase0.obj, state.board_width) == HexCoord(3, 2)
+    assert phase0.extra == [0]
 
 
 def test_explore_phase_ignores_any_generic_object_or_extra_input():

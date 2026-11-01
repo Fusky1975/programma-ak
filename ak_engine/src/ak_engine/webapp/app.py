@@ -3121,6 +3121,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             pursue_tactic_choices_by_slot=[
                 tactic_options(slot, allow_give=True) for slot in range(TACTIC_SLOT_COUNT)
             ],
+            defend_action_value=int(ActionCode.DEFEND),
             hire_action_value=int(ActionCode.HIRE),
             hire_target_choices_by_leader={
                 leader.leader_id: hire_target_options(state, leader.leader_id) for leader in roster

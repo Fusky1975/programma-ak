@@ -6232,6 +6232,13 @@ def _compose_form(leader_ids, *, action=ActionCode.DEFEND, obj=0, extra=""):
             form[f"action_{leader_id}_{n}"] = str(int(action))
             form[f"obj_{leader_id}_{n}"] = str(obj)
             form[f"extra_{leader_id}_{n}"] = extra
+            # Defend now has its own dedicated, validated target
+            # dropdown (_parse_defend_target()) -- any numeric "x,y"
+            # parses fine regardless of whether this particular test's
+            # own state registered that exact province (no existence
+            # check, same as Move's own _parse_move_target()).
+            if action is ActionCode.DEFEND:
+                form[f"defend_target_{leader_id}_{n}"] = "1,1"
     return form
 
 
@@ -6336,6 +6343,59 @@ def test_turns_compose_save_move_order_without_a_destination_shows_an_error(tmp_
 
     assert response.status_code == 200
     assert b"choose a Move destination" in response.data
+
+
+def test_turns_compose_shows_a_defend_target_dropdown(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"defend_target_" in response.data
+    assert b"-- choose a province to Defend --" in response.data
+
+
+def test_turns_compose_save_defend_order_encodes_the_real_target(tmp_path):
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+    from ak_engine.turn.hex_numbering import decode_hex_number
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    target = next(coord for coord in state.provinces if coord != king.location)
+
+    form = _compose_form(roster_ids)
+    form[f"defend_target_{king.leader_id}_0"] = f"{target.x},{target.y}"
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    defend_phase = king_block.plan.segments[0].phases["P0"]
+    assert defend_phase.action is ActionCode.DEFEND
+    assert decode_hex_number(defend_phase.obj, state.board_width) == target
+    assert defend_phase.extra == [0]
+
+
+def test_turns_compose_save_defend_order_without_a_target_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"defend_target_{king.leader_id}_0"] = ""  # "-- choose a province to Defend --"
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"choose a province to Defend" in response.data
 
 
 def test_turns_compose_shows_an_explore_no_input_note(tmp_path):
@@ -8062,12 +8122,15 @@ def test_turns_compose_save_rejects_an_invalid_action(tmp_path):
 
 
 def test_turns_compose_save_rejects_a_non_numeric_object(tmp_path):
+    # WAIT, not Defend -- Defend now has its own dedicated, validated
+    # target field (_parse_defend_target()), no longer a generic
+    # fallback reading the plain obj_<leader>_<n> field.
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
     _, state = open_game(tmp_path, meta.slug)
     king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
     roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
-    form = _compose_form(roster_ids)
+    form = _compose_form(roster_ids, action=ActionCode.WAIT)
     form[f"obj_{king.leader_id}_0"] = "not-a-number"
 
     response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)

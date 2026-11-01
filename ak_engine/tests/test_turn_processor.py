@@ -29,10 +29,12 @@ from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.plan_dispatch import NoOpResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.search_decode import SearchTactic
+from ak_engine.turn.defend_execution import DefendCoverage, defend_coverage_area
 from ak_engine.turn.turn_processor import (
     MultiAttackerMoveResult,
     TurnLeader,
     _ActiveMoveChase,
+    _apply_defend_reinforcements,
     _apply_werebeast_transformations,
     _continue_active_move_chases,
     _replenish_turn_scoped_state,
@@ -1127,7 +1129,12 @@ def _defend_state() -> GameState:
     state.add_province(ProvinceState(ATTACKER_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     state.add_province(ProvinceState(SECOND_ATTACKER_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     state.add_leader(LeaderState(100, kingdom_id=2, name="Defender", location=DEFEND_HOME))
-    state.add_army(ArmyState(901, 2, ArmyType.GARRISON, Quality.GREEN, DEFEND_HOME, commanded_by=100))
+    # movement_points=2 -- the real cost of one reinforcement hop
+    # (movement_cost_for_move(battle_occurred=True)); run_turn()'s own
+    # replenishment only happens at the very end of the turn, so a
+    # fixture-constructed army keeps exactly what it's given here for
+    # this whole call.
+    state.add_army(ArmyState(901, 2, ArmyType.GARRISON, Quality.GREEN, DEFEND_HOME, commanded_by=100, movement_points=2))
     return state
 
 
@@ -1209,6 +1216,169 @@ def test_run_turn_defend_is_consumed_after_its_first_reinforcement():
     by_leader = {r.leader_id: r for r in results}
     assert by_leader[200].result.battle_report is not None
     assert by_leader[300].result.battle_report is None
+
+
+# -- Defend reinforcement: terrain/transport + Movement Points (2026-11-01) --
+
+
+def test_run_turn_defend_does_not_reinforce_with_insufficient_movement_points():
+    # [3.15]: "un'unità che ha speso tutti i suoi Punti Movimento non
+    # può più reagire" -- movement_points=1 is one short of the real
+    # cost (movement_cost_for_move(battle_occurred=True) == 2).
+    state = _defend_state()
+    state.armies[901].movement_points = 1
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=ATTACKER_ORIGIN))
+    state.add_army(ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ATTACKER_ORIGIN, commanded_by=200, movement_points=3))
+    defender = _leader_with_phase(100, "Defender", "P0", _defend_phase("P0"))
+    attacker = _attacker(200, 902, ATTACKER_ORIGIN, COVERED, "P1")
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(7)
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[200].result.battle_report is None  # never reinforced -- walks in uncontested
+    assert state.armies[901].location == DEFEND_HOME
+
+
+def test_run_turn_defend_does_not_reinforce_a_fleet_across_a_land_to_land_hop():
+    # [3.15]'s own Fleet/Archers example: a Fleet can't hop directly
+    # between two land provinces (find_transport_illegality()'s own
+    # "naval_land_hop"). DEFEND_HOME and COVERED are both Terrain.PLAINS
+    # in _defend_state()'s own fixture.
+    state = _defend_state()
+    state.armies[901] = ArmyState(901, 2, ArmyType.FLEET, Quality.GREEN, DEFEND_HOME, commanded_by=100, movement_points=2)
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=ATTACKER_ORIGIN))
+    state.add_army(ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ATTACKER_ORIGIN, commanded_by=200, movement_points=3))
+    defender = _leader_with_phase(100, "Defender", "P0", _defend_phase("P0"))
+    attacker = _attacker(200, 902, ATTACKER_ORIGIN, COVERED, "P1")
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(7)
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[200].result.battle_report is None  # never reinforced -- walks in uncontested
+    assert state.armies[901].location == DEFEND_HOME
+
+
+# -- Defend reinforcement: "intelligent" splitting (2026-11-01) -------------
+
+HOME_ATTACKER_ORIGIN = next(n for n in _neighbors(DEFEND_HOME, _BOUNDS) if n not in (COVERED, ANOTHER_COVERED))
+
+
+def _defend_split_state() -> GameState:
+    state = _defend_state()
+    state.add_province(ProvinceState(HOME_ATTACKER_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    # Two equally-strong HVY_CAVALRY/ELITE armies (strength 20 apiece,
+    # BASE_STRENGTH[HVY_CAVALRY]=4 * int(Quality.ELITE)=5) replace the
+    # single starting Garrison.
+    del state.armies[901]
+    state.add_army(ArmyState(911, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, DEFEND_HOME, commanded_by=100, movement_points=2))
+    state.add_army(ArmyState(912, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, DEFEND_HOME, commanded_by=100, movement_points=2))
+    return state
+
+
+def test_apply_defend_reinforcements_sends_only_part_of_its_force_when_home_is_also_invaded():
+    # [3.15]'s own example: invaded at home AND at an adjacent covered
+    # province. A single BOWMEN/AVERAGE invader (strength 4) at each
+    # location is weak enough that either one of the defender's two
+    # HVY_CAVALRY/ELITE armies (strength 20 apiece) alone clears the 50%
+    # win_probability floor -- so only one is sent, the other stays home.
+    # Calls _apply_defend_reinforcements() directly (not via run_turn())
+    # so this test only exercises the splitting decision itself, not the
+    # real battle's own random outcome or any follow-on pursuit a win
+    # might separately register.
+    state = _defend_split_state()
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=ATTACKER_ORIGIN))
+    state.add_army(ArmyState(902, 1, ArmyType.BOWMEN, Quality.AVERAGE, ATTACKER_ORIGIN, commanded_by=200, movement_points=3))
+    state.add_leader(LeaderState(400, kingdom_id=1, name="HomeAttacker", location=HOME_ATTACKER_ORIGIN))
+    state.add_army(
+        ArmyState(904, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME_ATTACKER_ORIGIN, commanded_by=400, movement_points=3)
+    )
+    attacker_leader = _attacker(200, 902, ATTACKER_ORIGIN, COVERED, "P1")
+    home_attacker_leader = _attacker(400, 904, HOME_ATTACKER_ORIGIN, DEFEND_HOME, "P1")
+    entries = [
+        (TurnLeader(attacker_leader, 1), 0, _lmove_phase("P1", COVERED)),
+        (TurnLeader(home_attacker_leader, 1), 0, _lmove_phase("P1", DEFEND_HOME)),
+    ]
+    move_targets = {0: COVERED, 1: DEFEND_HOME}
+    active_defends = {100: DefendCoverage(origin=DEFEND_HOME, area=defend_coverage_area(DEFEND_HOME, _BOUNDS, radius=1))}
+
+    reinforced = _apply_defend_reinforcements(active_defends, move_targets, entries, state)
+
+    assert reinforced[100].target == COVERED
+    locations = {state.armies[911].location, state.armies[912].location}
+    assert locations == {COVERED, DEFEND_HOME}  # exactly one army went, one stayed
+
+
+def test_run_turn_defend_stays_home_when_splitting_would_leave_it_undefended():
+    # Same home-also-invaded shape, but the covered province's own
+    # invader is now overwhelming (5x DRAGON_WING/ELITE, strength 150)
+    # -- no subset of the defender's own force ever clears 50% against
+    # it, so [3.15]'s "in caso contrario rimarrà a difendere la
+    # provincia" applies: nobody is sent, both armies stay home.
+    state = _defend_split_state()
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=ATTACKER_ORIGIN))
+    for i in range(5):
+        state.add_army(
+            ArmyState(920 + i, 1, ArmyType.DRAGON_WING, Quality.ELITE, ATTACKER_ORIGIN, commanded_by=200, movement_points=3)
+        )
+    state.add_leader(LeaderState(400, kingdom_id=1, name="HomeAttacker", location=HOME_ATTACKER_ORIGIN))
+    state.add_army(
+        ArmyState(904, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME_ATTACKER_ORIGIN, commanded_by=400, movement_points=3)
+    )
+    defender = _leader_with_phase(100, "Defender", "P0", _defend_phase("P0"))
+    attacker = _attacker(200, 920, ATTACKER_ORIGIN, COVERED, "P1")
+    home_attacker = _attacker(400, 904, HOME_ATTACKER_ORIGIN, DEFEND_HOME, "P1")
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1), TurnLeader(home_attacker, 1)],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=random.Random(7),
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[200].result.battle_report is None  # never reinforced -- walks in uncontested
+    assert state.armies[911].location == DEFEND_HOME
+    assert state.armies[912].location == DEFEND_HOME
+
+
+def test_apply_defend_reinforcements_helps_the_single_biggest_simultaneous_threat():
+    # Two covered provinces invaded in the *same* phase, no competing
+    # threat at home -- [3.15]'s own "andrà in aiuto di una provincia
+    # adiacente" (singular) picks the stronger of the two invading
+    # forces (5x DRAGON_WING/ELITE at COVERED vs. 1x BOWMEN/AVERAGE at
+    # ANOTHER_COVERED), not whichever was merely encountered first.
+    # Called directly, same reasoning as the split tests above.
+    state = _defend_state()
+    state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=ATTACKER_ORIGIN))
+    for i in range(5):
+        state.add_army(
+            ArmyState(920 + i, 1, ArmyType.DRAGON_WING, Quality.ELITE, ATTACKER_ORIGIN, commanded_by=200, movement_points=3)
+        )
+    state.add_leader(LeaderState(300, kingdom_id=1, name="SecondAttacker", location=SECOND_ATTACKER_ORIGIN))
+    state.add_army(
+        ArmyState(903, 1, ArmyType.BOWMEN, Quality.AVERAGE, SECOND_ATTACKER_ORIGIN, commanded_by=300, movement_points=3)
+    )
+    attacker_leader = _attacker(200, 920, ATTACKER_ORIGIN, COVERED, "P1")
+    second_attacker_leader = _attacker(300, 903, SECOND_ATTACKER_ORIGIN, ANOTHER_COVERED, "P1")
+    # The weaker invasion (ANOTHER_COVERED) is declared/indexed *first* on
+    # purpose -- a naive "whichever is encountered first" selection would
+    # pick the wrong, weaker one; only a real strength comparison lands
+    # on COVERED here.
+    entries = [
+        (TurnLeader(second_attacker_leader, 1), 0, _lmove_phase("P1", ANOTHER_COVERED)),
+        (TurnLeader(attacker_leader, 1), 0, _lmove_phase("P1", COVERED)),
+    ]
+    move_targets = {0: ANOTHER_COVERED, 1: COVERED}
+    active_defends = {100: DefendCoverage(origin=DEFEND_HOME, area=defend_coverage_area(DEFEND_HOME, _BOUNDS, radius=1))}
+
+    reinforced = _apply_defend_reinforcements(active_defends, move_targets, entries, state)
+
+    assert reinforced[100].target == COVERED
+    assert state.armies[901].location == COVERED
 
 
 # -- Defend cancellation (Phase 67) -----------------------------------------
@@ -1310,8 +1480,14 @@ def test_run_turn_defend_reinforces_two_hexes_away_with_long_naval_defend():
     # test_run_turn_defend_does_not_reinforce_a_province_it_does_not_own
     # and friends) would never reach.
     state = _defend_state()
+    # A Fleet can't hop land-to-land (find_transport_illegality()'s own
+    # "naval_land_hop" check) -- DEFEND_HOME needs a Sea coast of its own
+    # for this Fleet-commanding defender's reinforcement to be legal at
+    # all, independent of the NAVAL_LONG_DEFEND radius this test is
+    # actually about.
+    state.provinces[DEFEND_HOME].terrain = Terrain.SEA
     state.leaders[100].advanced_abilities.add(AdvancedAbility.NAVAL_LONG_DEFEND)
-    state.armies[901] = ArmyState(901, 2, ArmyType.FLEET, Quality.GREEN, DEFEND_HOME, commanded_by=100)
+    state.armies[901] = ArmyState(901, 2, ArmyType.FLEET, Quality.GREEN, DEFEND_HOME, commanded_by=100, movement_points=2)
     state.add_province(ProvinceState(TWO_HEXES_AWAY, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     state.add_province(ProvinceState(TWO_AWAY_ATTACKER_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=TWO_AWAY_ATTACKER_ORIGIN))
@@ -1866,7 +2042,7 @@ def _defend_loss_state() -> GameState:
     state.add_province(ProvinceState(DL_FIRST_ATTACKER_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     state.add_province(ProvinceState(DL_SECOND_ATTACKER_ORIGIN, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     state.add_leader(LeaderState(100, kingdom_id=2, name="Defender", location=DL_HOME))
-    state.add_army(ArmyState(901, 2, ArmyType.GARRISON, Quality.GREEN, DL_HOME, commanded_by=100))
+    state.add_army(ArmyState(901, 2, ArmyType.GARRISON, Quality.GREEN, DL_HOME, commanded_by=100, movement_points=2))
     return state
 
 
@@ -1908,7 +2084,7 @@ def test_run_turn_defend_battle_loss_blocks_a_later_redeclaration():
     assert state.leaders[100].location == DL_FIRST_COVERED
 
 
-def test_run_turn_defend_battle_win_does_not_block_a_later_redeclaration():
+def test_run_turn_defend_battle_win_registers_a_pursuit_of_the_defeated_attacker_instead_of_redeclaring():
     # seed 1: the defender wins this exact matchup -- verified
     # deterministic for this fixture. (Phase 370: the shared
     # _defend_loss_state()'s own GARRISON/GREEN defender is categorically
@@ -1923,9 +2099,21 @@ def test_run_turn_defend_battle_win_does_not_block_a_later_redeclaration():
     # turning on real per-army Fanaticism rolls (apply_fanaticism=True at
     # every real production battle call site) makes this a genuinely live
     # coin-flip, not just an RNG-position shift -- seed 0 no longer lands
-    # a defender win, reselected to seed 1.)
+    # a defender win, reselected to seed 1.
+    #
+    # 2026-11-01: this test used to be named "...does_not_block_a_later_
+    # redeclaration" and asserted the P2 Defend order re-armed coverage
+    # for the P3 invasion -- stale now that a win registers a real
+    # pursuit of the defeated attacker (_apply_defend_battle_win()).
+    # That pursuit preempts the P2 phase exactly like any other active
+    # chase, so the P2 Defend order is never even dispatched. The
+    # attacker's own army is captured (commanded_by=None) by the loss
+    # itself, so the very next phase's pursuit continuation immediately
+    # finds an army-leading mismatch and ends there, never re-arming
+    # Defend -- the P3 invasion walks in uncontested as a result, the
+    # opposite of this test's old name.
     state = _defend_loss_state()
-    state.add_army(ArmyState(901, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_HOME, commanded_by=100))
+    state.add_army(ArmyState(901, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_HOME, commanded_by=100, movement_points=2))
     state.add_leader(LeaderState(200, kingdom_id=1, name="Attacker", location=DL_FIRST_ATTACKER_ORIGIN))
     state.add_army(
         ArmyState(902, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, DL_FIRST_ATTACKER_ORIGIN, commanded_by=200, movement_points=3)
@@ -1948,9 +2136,18 @@ def test_run_turn_defend_battle_win_does_not_block_a_later_redeclaration():
     by_label = {(r.leader_id, r.phase_label): r for r in results}
     assert by_label[(200, "P1")].result.battle_report.battle_result.winner == "defender"  # defender won
 
-    # P2's Defend re-declaration re-arms coverage -- the P3 invasion
-    # relocates the leader again.
-    assert state.leaders[100].location == DL_SECOND_COVERED
+    # P2's own real Defend re-declaration is preempted -- the pursuit
+    # registered by the win dispatches instead (segment_index=-1, same
+    # sentinel every other active-chase continuation uses), immediately
+    # ending in an army-leading mismatch since the loser's army was
+    # captured by the battle itself.
+    p2_entry = by_label[(100, "P2")]
+    assert p2_entry.segment_index == -1
+    assert p2_entry.action is ActionCode.PURSUE
+    assert p2_entry.result.reason == "army-leading mismatch, order ignored"
+
+    # Defend never re-armed -- the P3 invasion walks in uncontested.
+    assert by_label[(300, "P3")].result.battle_report is None
 
 
 DL_ILLEGAL_ORIGIN = HexCoord(4, 3)  # adjacent to DL_FIRST_COVERED, distinct from the other DL_* origins
