@@ -26,7 +26,10 @@
     other leader in the game, no co-location needed), Challenge (the engine's own internal name for
     "Encounter Character," wire code "EN") has its own target dropdown (co-located leaders only) plus the
     same Encounter Plan tactic slots Search uses, Give included (valid only here and after Pursue, never in
-    Search), Pursue has its own target dropdown (any other leader, no co-location needed -- same shape as
+    Search) -- Give's own tactic slot now has a dedicated, ownership-filtered item dropdown too (any owned
+    item, no wand/spell restriction, unlike Use Item's own dropdown; give several items in the same plan by
+    picking Give in more than one slot, since the wire format carries only one item per slot), Pursue has
+    its own target dropdown (any other leader, no co-location needed -- same shape as
     Trail's -- plus a "Patrol (self)" option, since targeting oneself composes a standing "Characters On
     Patrol" order instead of a directed chase; selecting it is rejected here if this leader currently leads
     an army, Patrol's own unconditional precondition) plus the same Encounter Plan tactic slots as Challenge,
@@ -280,7 +283,7 @@
                 </select>
                 <br><span class="hex-map-legend-note">Encounter Plan (empty slots stop the list there):</span>
                 <table class="data-table compose-encounter-plan">
-                  <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th></tr></thead>
+                  <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th><th>Give Item</th></tr></thead>
                   <tbody>
                     {% for slot in tactic_slot_numbers %}
                       <tr>
@@ -311,6 +314,14 @@
                             {% endfor %}
                           </select>
                         </td>
+                        <td class="compose-tactic-give-cell">
+                          <select name="challenge_tactic_give_item_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- choose an item to Give --</option>
+                            {% for value, label in give_item_choices_by_leader[leader.leader_id] %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </td>
                       </tr>
                     {% endfor %}
                   </tbody>
@@ -325,7 +336,7 @@
                 </select>
                 <br><span class="hex-map-legend-note">Encounter Plan, used if/when the chase catches up (empty slots stop the list there):</span>
                 <table class="data-table compose-encounter-plan">
-                  <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th></tr></thead>
+                  <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th><th>Give Item</th></tr></thead>
                   <tbody>
                     {% for slot in tactic_slot_numbers %}
                       <tr>
@@ -352,6 +363,14 @@
                           <select name="pursue_tactic_item_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
                             <option value="">-- choose an item --</option>
                             {% for value, label in item_choices_by_leader[leader.leader_id] %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </td>
+                        <td class="compose-tactic-give-cell">
+                          <select name="pursue_tactic_give_item_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- choose an item to Give --</option>
+                            {% for value, label in give_item_choices_by_leader[leader.leader_id] %}
                               <option value="{{ value }}">{{ label }}</option>
                             {% endfor %}
                           </select>
@@ -559,6 +578,7 @@
   var SAY_VALUE = "{{ say_value }}";
   var CAST_VALUE = "{{ cast_value }}";
   var USE_MI_VALUE = "{{ use_mi_value }}";
+  var GIVE_VALUE = "{{ give_value }}";
 
   function updateTacticSubCell(select) {
     var row = select.closest("tr");
@@ -574,6 +594,10 @@
     var useMiCell = row.querySelector(".compose-tactic-use-mi-cell");
     if (useMiCell) {
       useMiCell.style.display = select.value === USE_MI_VALUE ? "" : "none";
+    }
+    var giveCell = row.querySelector(".compose-tactic-give-cell");
+    if (giveCell) {
+      giveCell.style.display = select.value === GIVE_VALUE ? "" : "none";
     }
   }
 

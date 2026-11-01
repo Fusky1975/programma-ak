@@ -4677,3 +4677,70 @@ def test_execute_challenge_steal_only_plan_against_a_king_still_refused_without_
 
     assert result.accepted is False
     assert result.reason == "encounter refused"
+
+
+def _give_request(target_id: int, item_id: int, *following: Maneuver) -> ChallengeRequest:
+    tactics = [SearchTactic(Maneuver.GIVE, item_id)]
+    tactics += [SearchTactic(m) for m in following]
+    return ChallengeRequest(target_character_id=target_id, unconfirmed_extra0=0, tactics=tactics)
+
+
+def test_execute_challenge_give_only_plan_transfers_an_owned_item_to_the_target():
+    # Rulebook (2026-11-01): "si può dare qualsiasi numero di oggetti a
+    # chiunque si incontra" -- needed the same has_combat_intent gate
+    # widening Steal already got above, or this never reaches resolve_
+    # challenge_combat() at all.
+    state = _base_state()
+    giver = LeaderState(1, kingdom_id=1, name="Giver", location=FIELD)
+    recipient = LeaderState(2, kingdom_id=2, name="Recipient", location=FIELD)
+    state.add_leader(giver)
+    state.add_leader(recipient)
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=1)
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        result = execute_challenge(state, 1, _give_request(2, item.item_id), rng=ScriptedRandom([]))
+
+    assert result.accepted is True
+    assert result.combat_occurred is True
+    assert state.items[item.item_id].owner_leader_id == 2
+
+
+def test_execute_challenge_give_tactic_is_a_noop_without_real_ownership():
+    # Defense in depth: a tampered/stale item id the giver doesn't
+    # actually own is silently skipped, same as search_execution.py's
+    # own unrelated Druidic-Trades GIVE handler.
+    state = _base_state()
+    giver = LeaderState(1, kingdom_id=1, name="Giver", location=FIELD)
+    recipient = LeaderState(2, kingdom_id=2, name="Recipient", location=FIELD)
+    state.add_leader(giver)
+    state.add_leader(recipient)
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=2)  # already the recipient's own item
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        execute_challenge(state, 1, _give_request(2, item.item_id), rng=ScriptedRandom([]))
+
+    assert state.items[item.item_id].owner_leader_id == 2  # unchanged
+
+
+def test_execute_challenge_give_tactic_never_transfers_gold():
+    # Rulebook's own explicit exclusion: "Non è però possibile scambiare
+    # oggetti per denaro" -- there's no gold-sub-object reading in the
+    # new branch at all, confirmed by a sub_object that doesn't resolve
+    # to any real item leaving the giver's own treasury untouched.
+    state = _base_state()
+    giver = LeaderState(1, kingdom_id=1, name="Giver", location=FIELD)
+    recipient = LeaderState(2, kingdom_id=2, name="Recipient", location=FIELD)
+    state.add_leader(giver)
+    state.add_leader(recipient)
+    state.kingdoms[1].treasury = 50
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        execute_challenge(state, 1, _give_request(2, 999), rng=ScriptedRandom([]))
+
+    assert state.kingdoms[1].treasury == 50

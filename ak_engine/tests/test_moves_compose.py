@@ -2325,6 +2325,7 @@ def _challenge_form(
     says: dict[int, str] | None = None,
     spells: dict[int, int] | None = None,
     items: dict[int, int] | None = None,
+    give_items: dict[int, int] | None = None,
 ):
     form = _all_defend_form(KING_ID)
     form[f"action_{KING_ID}_0"] = str(int(ActionCode.CHALLENGE))
@@ -2339,6 +2340,8 @@ def _challenge_form(
         form[f"challenge_tactic_spell_{KING_ID}_0_{slot}"] = str(spell_value)
     for slot, item_value in (items or {}).items():
         form[f"challenge_tactic_item_{KING_ID}_0_{slot}"] = str(item_value)
+    for slot, item_value in (give_items or {}).items():
+        form[f"challenge_tactic_give_item_{KING_ID}_0_{slot}"] = str(item_value)
     return form
 
 
@@ -2356,14 +2359,60 @@ def test_challenge_phase_reads_its_own_target_and_tactics():
 
 
 def test_challenge_phase_allows_give_as_a_tactic():
-    # Unlike Search, Give is a real tactic for Challenge/Pursue.
+    # Unlike Search, Give is a real tactic for Challenge/Pursue -- its
+    # own dedicated item dropdown, ownership-filtered like Use Item's.
     state = _state()
     state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
-    form = _challenge_form(tactics={0: int(Maneuver.GIVE)}, subs={0: 7})
+    item = state.add_item(Treasure.ABILITY_MELEE, KING_ID)
+    form = _challenge_form(tactics={0: int(Maneuver.GIVE)}, give_items={0: item.item_id})
 
     phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
 
-    assert phases[0].extra == [0, int(Maneuver.GIVE), 7, -1]
+    assert phases[0].extra == [0, int(Maneuver.GIVE), item.item_id, -1]
+
+
+def test_challenge_phase_allows_giving_several_items_in_one_plan():
+    # Rulebook: "si può dare qualsiasi numero di oggetti... Si estende
+    # cioè l'azione Dare permettendo di cedere più di un oggetto nella
+    # stessa fase" -- composed as several separate GIVE slots, one item
+    # each (the wire format carries only one item per slot).
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    first_item = state.add_item(Treasure.ABILITY_MELEE, KING_ID)
+    second_item = state.add_item(Treasure.WAND_FIREBALL, KING_ID, charges=1)
+    form = _challenge_form(
+        tactics={0: int(Maneuver.GIVE), 1: int(Maneuver.GIVE)},
+        give_items={0: first_item.item_id, 1: second_item.item_id},
+    )
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [0, int(Maneuver.GIVE), first_item.item_id, int(Maneuver.GIVE), second_item.item_id, -1]
+
+
+def test_challenge_phase_give_tactic_without_a_chosen_item_is_rejected():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    form = _challenge_form(tactics={0: int(Maneuver.GIVE)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose an item to Give" in str(exc)
+
+
+def test_challenge_phase_give_tactic_rejects_an_unowned_item_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=2)  # not the acting leader's own item
+    form = _challenge_form(tactics={0: int(Maneuver.GIVE)}, give_items={0: item.item_id})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose an item to Give" in str(exc)
 
 
 def test_challenge_phase_rejects_beg_even_via_a_direct_tampered_value():
@@ -2425,6 +2474,40 @@ def test_build_composed_kingdom_round_trips_a_challenge_order():
     assert phase0.extra == [0, int(Maneuver.MELEE), -1]
 
 
+def test_build_composed_kingdom_round_trips_a_challenge_order_giving_two_items():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    first_item = state.add_item(Treasure.ABILITY_MELEE, KING_ID)
+    second_item = state.add_item(Treasure.WAND_FIREBALL, KING_ID, charges=1)
+    form = {**_all_defend_form(KING_ID), **_all_defend_form(2)}
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.CHALLENGE))
+    form[f"challenge_target_{KING_ID}_0"] = "2"
+    form[f"challenge_tactic_{KING_ID}_0_0"] = str(int(Maneuver.GIVE))
+    form[f"challenge_tactic_give_item_{KING_ID}_0_0"] = str(first_item.item_id)
+    form[f"challenge_tactic_{KING_ID}_0_1"] = str(int(Maneuver.GIVE))
+    form[f"challenge_tactic_give_item_{KING_ID}_0_1"] = str(second_item.item_id)
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.CHALLENGE
+    assert phase0.extra == [
+        0,
+        int(Maneuver.GIVE),
+        first_item.item_id,
+        int(Maneuver.GIVE),
+        second_item.item_id,
+        -1,
+    ]
+
+
 def test_pursue_target_options_lists_every_other_leader_no_co_location_needed():
     state = _state()
     state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
@@ -2442,6 +2525,7 @@ def _pursue_form(
     target_id: int = 2,
     tactics: dict[int, int] | None = None,
     subs: dict[int, int] | None = None,
+    give_items: dict[int, int] | None = None,
 ):
     form = _all_defend_form(KING_ID)
     form[f"action_{KING_ID}_0"] = str(int(ActionCode.PURSUE))
@@ -2450,6 +2534,8 @@ def _pursue_form(
         form[f"pursue_tactic_{KING_ID}_0_{slot}"] = str(maneuver_value)
     for slot, sub_value in (subs or {}).items():
         form[f"pursue_tactic_sub_{KING_ID}_0_{slot}"] = str(sub_value)
+    for slot, item_value in (give_items or {}).items():
+        form[f"pursue_tactic_give_item_{KING_ID}_0_{slot}"] = str(item_value)
     return form
 
 
@@ -2469,11 +2555,12 @@ def test_pursue_phase_reads_its_own_target_and_tactics():
 def test_pursue_phase_allows_give_as_a_tactic():
     state = _state()
     state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
-    form = _pursue_form(tactics={0: int(Maneuver.GIVE)}, subs={0: 7})
+    item = state.add_item(Treasure.ABILITY_MELEE, KING_ID)
+    form = _pursue_form(tactics={0: int(Maneuver.GIVE)}, give_items={0: item.item_id})
 
     phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
 
-    assert phases[0].extra == [0, int(Maneuver.GIVE), 7, -1]
+    assert phases[0].extra == [0, int(Maneuver.GIVE), item.item_id, -1]
 
 
 def test_pursue_phase_without_choosing_a_target_is_rejected():

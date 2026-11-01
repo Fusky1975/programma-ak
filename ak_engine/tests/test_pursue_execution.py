@@ -427,6 +427,31 @@ def test_execute_pursue_peaceful_plan_bypasses_acceptance_and_combat():
     assert 1 in state.leaders and 2 in state.leaders
 
 
+def _give_request(target_id: int, item_id: int) -> PursueRequest:
+    return PursueRequest(target_character_id=target_id, unconfirmed_extra0=0, tactics=[SearchTactic(Maneuver.GIVE, item_id)])
+
+
+def test_execute_pursue_give_only_plan_now_reaches_combat_dispatch_and_transfers_the_item():
+    # 2026-11-01: a Give-only plan used to bypass resolve_challenge_
+    # combat() entirely via this module's own has_combat_intent gate --
+    # the same pre-existing gap Steal had too here, found and fixed
+    # alongside Give's own new dispatch. Confirmed by the item actually
+    # moving from the pursuer to the (armyless, caught-up) target.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=1)
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        result = execute_pursue(state, 1, _give_request(2, item.item_id), rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert result.caught_up is True
+    assert result.combat_occurred is True
+    assert state.items[item.item_id].owner_leader_id == 2
+
+
 def test_execute_pursue_king_target_refused_when_not_mutual():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD))

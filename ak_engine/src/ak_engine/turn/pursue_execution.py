@@ -177,7 +177,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.enums import Ability, Spell
+from ak_engine.models.enums import Ability, Maneuver, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
@@ -501,7 +501,17 @@ def execute_pursue(
     # bring along.
     pursuer.location = target.location
 
-    if not has_combat_intent(request):
+    # 2026-11-01: a Steal- or Give-only plan needs the same has_combat_
+    # intent gate widening turn/challenge_execution.py execute_challenge()
+    # already has for Steal (Phase 702) -- otherwise it hits this early
+    # peaceful-bypass return and never reaches resolve_challenge_combat()
+    # at all, the one place either tactic's own real dispatch lives.
+    # Steal's own gap here was a pre-existing one, found and fixed
+    # alongside Give's -- same function, same line, same bug shape.
+    has_steal_or_give_tactic = any(
+        tactic.maneuver in (Maneuver.STEAL, Maneuver.GIVE) for tactic in request.tactics
+    )
+    if not has_combat_intent(request) and not has_steal_or_give_tactic:
         return PursueExecutionResult(caught_up=True, combat_occurred=False, guessed_distance=guessed_distance)
 
     accepted = is_encounter_accepted(

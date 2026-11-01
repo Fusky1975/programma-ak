@@ -105,6 +105,7 @@ from ak_engine.webapp.moves_compose import (
     disband_target_options,
     feature_options,
     fire_target_options,
+    give_item_options,
     hire_target_options,
     item_options,
     kill_enemy_target_options,
@@ -3175,6 +3176,10 @@ def create_app(games_root: Path | None = None) -> Flask:
             use_mi_value=int(Maneuver.USE_MI),
             item_choices_by_leader={
                 leader.leader_id: item_options(state, leader.leader_id) for leader in roster
+            },
+            give_value=int(Maneuver.GIVE),
+            give_item_choices_by_leader={
+                leader.leader_id: give_item_options(state, leader.leader_id) for leader in roster
             },
             error=request.args.get("error"),
         )

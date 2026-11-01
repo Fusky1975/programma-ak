@@ -7785,6 +7785,87 @@ def test_turns_compose_save_give_tactic_shows_an_error(tmp_path):
     assert b"isn&#39;t usable in a Search Encounter Plan" in response.data
 
 
+def test_turns_compose_shows_a_give_item_dropdown_in_the_challenge_and_pursue_tables(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    item = state.add_item(Treasure.ABILITY_MELEE, king.leader_id)
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"compose-tactic-give-cell" in response.data
+    assert f'name="challenge_tactic_give_item_{king.leader_id}_0_0"'.encode() in response.data
+    assert f'name="pursue_tactic_give_item_{king.leader_id}_0_0"'.encode() in response.data
+    assert f'value="{item.item_id}"'.encode() in response.data
+
+
+def test_turns_compose_save_challenge_order_giving_two_items_in_one_plan(tmp_path):
+    from ak_engine.models.game_state import LeaderState
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    other_id = max(state.leaders) + 1
+    state.add_leader(LeaderState(other_id, 1, "Other Hero", king.location))
+    first_item = state.add_item(Treasure.ABILITY_MELEE, king.leader_id)
+    second_item = state.add_item(Treasure.WAND_FIREBALL, king.leader_id, charges=1)
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.CHALLENGE))
+    form[f"challenge_target_{king.leader_id}_0"] = str(other_id)
+    form[f"challenge_tactic_{king.leader_id}_0_0"] = str(int(Maneuver.GIVE))
+    form[f"challenge_tactic_give_item_{king.leader_id}_0_0"] = str(first_item.item_id)
+    form[f"challenge_tactic_{king.leader_id}_0_1"] = str(int(Maneuver.GIVE))
+    form[f"challenge_tactic_give_item_{king.leader_id}_0_1"] = str(second_item.item_id)
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    challenge_phase = king_block.plan.segments[0].phases["P0"]
+    assert challenge_phase.extra == [
+        0,
+        int(Maneuver.GIVE),
+        first_item.item_id,
+        int(Maneuver.GIVE),
+        second_item.item_id,
+        -1,
+    ]
+
+
+def test_turns_compose_save_give_tactic_without_a_chosen_item_shows_an_error(tmp_path):
+    from ak_engine.models.game_state import LeaderState
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    other_id = max(state.leaders) + 1
+    state.add_leader(LeaderState(other_id, 1, "Other Hero", king.location))
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.CHALLENGE))
+    form[f"challenge_target_{king.leader_id}_0"] = str(other_id)
+    form[f"challenge_tactic_{king.leader_id}_0_0"] = str(int(Maneuver.GIVE))
+    # challenge_tactic_give_item_<king>_0_0 deliberately left unset.
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"choose an item to Give" in response.data
+
+
 def test_turns_compose_does_not_offer_beg_in_the_tactic_dropdown(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

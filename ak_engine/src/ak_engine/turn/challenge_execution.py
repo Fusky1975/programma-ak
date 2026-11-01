@@ -2294,6 +2294,41 @@ def resolve_challenge_combat(
                 )
                 continue
             continue  # success / evaded / ransom / unresolved -- plan continues
+        if tactic.maneuver is Maneuver.GIVE:
+            # Rulebook (2026-11-01): "Nel Piano d'Incontro, si può dare
+            # qualsiasi numero di oggetti a chiunque si incontra... Non
+            # è però possibile scambiare oggetti per denaro" -- extends
+            # the top-level Give [GI] Action's own single-item-per-
+            # phase limit by letting the same Encounter Plan carry
+            # several separate GIVE tactic tokens, one item each
+            # (``turn/search_decode.py``'s own wire format has no
+            # list-valued sub-object -- confirmed by research, "more
+            # than one item" is composed as more than one GIVE slot,
+            # not one slot carrying several). ``state.transfer_item()``
+            # itself enforces nothing at all (a bare reassignment,
+            # ``turn/trade_execution.py``'s own real caller is what
+            # checks ownership) -- mirrored here explicitly, the same
+            # "item.owner_leader_id != leader_id -> no-op" guard
+            # ``turn/search_execution.py _resolve_give_tactic()``'s own
+            # unrelated Druidic-Trades mechanic already uses (confirmed
+            # unrelated: that one only ever trades with a Search
+            # feature's own monster guardian, never a character). Never
+            # gold (the rulebook's own explicit exclusion) -- there is
+            # no gold-sub-object reading anywhere in this branch.
+            # Co-location is already guaranteed by the encounter itself
+            # (both sides are already resolving it together); no
+            # Kingdom-crossing restriction, matching the top-level
+            # Give's own item path ("crosses kingdoms freely"). Caster-
+            # side only -- the target's own queued Special Encounter
+            # Plan has no GIVE agency, matching this module's own Phase
+            # 674 "Flee" scope decision (``_peek_target_cast()``'s own
+            # docstring) rather than Cast's dedicated target-side path;
+            # a Give tactic never ends the encounter either way, so it
+            # simply continues the plan regardless.
+            item = state.items.get(tactic.sub_object) if tactic.sub_object is not None else None
+            if item is not None and item.owner_leader_id == caster_leader.leader_id and target_leader is not None:
+                state.transfer_item(item.item_id, target_leader.leader_id)
+            continue
         # every other tactic is unwired -- skip it and keep walking
     if not _target_has_more_casts_pending():
         result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
@@ -2614,8 +2649,14 @@ def execute_challenge(
         return ChallengeExecutionResult(accepted=False, reason="not co-located")
 
     has_talk_tactic = any(tactic.maneuver is Maneuver.TALK for tactic in request.tactics)
+    # 2026-11-01: a GIVE-only plan needs the same has_combat_intent gate
+    # widening STEAL already got (Phase 702's own addendum above) --
+    # otherwise it would hit the early peaceful-bypass return just
+    # below and never reach resolve_challenge_combat() at all, the one
+    # place the new Maneuver.GIVE branch actually lives.
+    has_give_tactic = any(tactic.maneuver is Maneuver.GIVE for tactic in request.tactics)
 
-    if not has_combat_intent(request) and not has_steal_tactic:
+    if not has_combat_intent(request) and not has_steal_tactic and not has_give_tactic:
         if has_talk_tactic:
             _apply_bravest_talk_inspiration(state, challenger, target)
             _apply_spy_brainwash_alignment_shift(challenger, target)

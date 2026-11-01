@@ -1370,6 +1370,24 @@ def item_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
     return options
 
 
+def give_item_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every item this leader currently owns, as ``(value, display_name)``
+    pairs for the GIVE tactic's own dedicated item dropdown inside a
+    Challenge/Pursue/Patrol Encounter Plan -- rulebook (2026-11-01):
+    "si può dare qualsiasi numero di oggetti a chiunque si incontra,"
+    no wand/spell-eligibility restriction at all (unlike ``item_
+    options()``'s own Use-Item-specific filtering above) -- any owned
+    item is a legal gift. Sorted by the item's own real id, same
+    convention as ``item_options()``.
+    """
+
+    options = []
+    for item in sorted(state.items_held_by(leader_id), key=lambda item: item.item_id):
+        item_name = TREASURE_NAME.get(item.treasure, item.treasure.name.replace("_", " ").title())
+        options.append((str(item.item_id), f"#{item.item_id} {item_name}"))
+    return options
+
+
 def recruit_target_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
     """Every valid commander choice for a Recruit phase's own target
     dropdown, as ``(value, label)`` pairs -- rulebook [3.4]: "Any
@@ -3162,6 +3180,23 @@ def _parse_search_tactics(
                 raise InvalidComposedMovesError(
                     f"{phase_label}: tactic slot {slot + 1}: {item_name} has no charges left."
                 )
+            sub_object = item_id
+            tokens.append(sub_object)
+        elif maneuver is Maneuver.GIVE:
+            # Rulebook (2026-11-01): "si può dare qualsiasi numero di
+            # oggetti a chiunque si incontra" -- a dedicated, ownership-
+            # filtered item dropdown (``give_item_options()``), same
+            # "must actually hold this exact item" gate as Use Item's
+            # own branch just above, but with no wand/spell-eligibility
+            # restriction at all (any owned item is a legal gift) --
+            # its own field name (``..._give_item_...``) so it never
+            # collides with Use Item's own ``..._item_...`` field when
+            # both are offered in the same Encounter Plan.
+            item_raw = form.get(f"{field_prefix}_give_item_{leader_id}_{n}_{slot}", "")
+            item_id = _parse_int(item_raw, field_label=f"{phase_label} tactic {slot + 1} item") if item_raw else None
+            item = state.items.get(item_id) if item_id is not None else None
+            if item is None or item.owner_leader_id != leader_id:
+                raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1}: choose an item to Give.")
             sub_object = item_id
             tokens.append(sub_object)
         elif maneuver in TACTICS_WITH_SUB_OBJECT:
