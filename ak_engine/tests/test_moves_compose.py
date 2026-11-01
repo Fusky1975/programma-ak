@@ -74,6 +74,7 @@ from ak_engine.webapp.moves_compose import (
     pick_up_army_target_options,
     practice_ability_options,
     province_options,
+    pursue_target_options,
     recruit_target_options,
     recruit_type_options,
     resurrection_target_options,
@@ -2372,6 +2373,146 @@ def test_build_composed_kingdom_round_trips_a_challenge_order():
 
     phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
     assert phase0.action is ActionCode.CHALLENGE
+    assert phase0.obj == 2
+    assert phase0.extra == [0, int(Maneuver.MELEE), -1]
+
+
+def test_pursue_target_options_lists_every_other_leader_no_co_location_needed():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=3, kingdom_id=2, name="Faraway", location=HexCoord(9, 9)))
+
+    options = pursue_target_options(state, KING_ID)
+
+    values = {value for value, _label in options}
+    assert values == {"2", "3"}  # any Kingdom, no co-location needed -- never self
+
+
+def _pursue_form(
+    target_id: int = 2,
+    tactics: dict[int, int] | None = None,
+    subs: dict[int, int] | None = None,
+):
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PURSUE))
+    form[f"pursue_target_{KING_ID}_0"] = str(target_id)
+    for slot, maneuver_value in (tactics or {}).items():
+        form[f"pursue_tactic_{KING_ID}_0_{slot}"] = str(maneuver_value)
+    for slot, sub_value in (subs or {}).items():
+        form[f"pursue_tactic_sub_{KING_ID}_0_{slot}"] = str(sub_value)
+    return form
+
+
+def test_pursue_phase_reads_its_own_target_and_tactics():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    form = _pursue_form(tactics={0: int(Maneuver.TALK), 1: int(Maneuver.MELEE)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    pursue_phase = phases[0]
+    assert pursue_phase.action is ActionCode.PURSUE
+    assert pursue_phase.obj == 2
+    assert pursue_phase.extra == [0, int(Maneuver.TALK), int(Maneuver.MELEE), -1]
+
+
+def test_pursue_phase_allows_give_as_a_tactic():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    form = _pursue_form(tactics={0: int(Maneuver.GIVE)}, subs={0: 7})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [0, int(Maneuver.GIVE), 7, -1]
+
+
+def test_pursue_phase_without_choosing_a_target_is_rejected():
+    state = _state()
+    # Armyless King leads no army -- gets caught by the "choose a
+    # target" check first regardless, since the target field is read
+    # before the Encounter-Plan-required check.
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PURSUE))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Pursue target" in str(exc)
+
+
+def test_pursue_phase_rejects_self_as_target_even_via_a_direct_tampered_value():
+    # Self-targeting composes a Patrol declaration instead -- not an
+    # ordinary Pursue, and not offered in pursue_target_options().
+    state = _state()
+    form = _pursue_form(target_id=KING_ID, tactics={0: int(Maneuver.MELEE)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Pursue target" in str(exc)
+
+
+def test_pursue_phase_rejects_a_nonexistent_target_even_via_a_direct_tampered_value():
+    state = _state()
+    form = _pursue_form(target_id=999, tactics={0: int(Maneuver.MELEE)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Pursue target" in str(exc)
+
+
+def test_pursue_phase_armyless_with_no_encounter_plan_is_rejected():
+    # [3.16]: "Se l'inseguitore non comanda alcuna unità militare allora
+    # bisogna indicare un Piano d'Incontro" -- enforced here at compose
+    # time; the engine itself stays permissive (see moves_compose.py's
+    # own inline comment on this check for why it's not retrofitted
+    # there this round).
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    form = _pursue_form()  # no tactics at all
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "an armyless Pursue needs an Encounter Plan" in str(exc)
+
+
+def test_pursue_phase_army_leading_pursuer_needs_no_encounter_plan():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _pursue_form()  # no tactics at all -- legal, this pursuer leads an army
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [0, -1]
+
+
+def test_build_composed_kingdom_round_trips_a_pursue_order():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    form = {**_all_defend_form(KING_ID), **_all_defend_form(2)}
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PURSUE))
+    form[f"pursue_target_{KING_ID}_0"] = "2"
+    form[f"pursue_tactic_{KING_ID}_0_0"] = str(int(Maneuver.MELEE))
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.PURSUE
     assert phase0.obj == 2
     assert phase0.extra == [0, int(Maneuver.MELEE), -1]
 

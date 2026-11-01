@@ -1758,6 +1758,38 @@ def trail_target_options(state: GameState, leader_id: int) -> list[tuple[str, st
     return options
 
 
+def pursue_target_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every other leader in the game as a ``(value, label)`` pair for
+    Pursue's own target dropdown -- same "chase from a distance, no
+    co-location needed" shape as ``trail_target_options()`` (rulebook
+    [3.16]'s own "PU #(numero dell'eroe o del re da inseguire)";
+    ``turn/pursue_execution.py execute_pursue()`` computes a distance-
+    based Spy Table catch-up chance rather than requiring the two
+    already be together) -- any Kingdom, independent Heroes included.
+
+    Deliberately excludes the acting leader themself: ``turn/
+    challenge_pursue_decode.py``'s own docstring confirms targeting
+    one's own character id turns a Pursue order into a standing
+    "Patrol" declaration instead ([3.16]'s "Characters on Patrol"), a
+    structurally different mechanic this composer doesn't build an
+    editor for this round -- same "don't offer a target that would
+    silently trigger an unrelated mechanic" convention already used for
+    Give's own earlier exclusion.
+    """
+
+    if leader_id not in state.leaders:
+        return []
+    options: list[tuple[str, str]] = []
+    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+        if other.leader_id == leader_id:
+            continue
+        kingdom = state.kingdoms.get(other.kingdom_id)
+        kingdom_part = kingdom.name if kingdom is not None else "independent"
+        title_part = "King" if other.is_king else "Hero"
+        options.append((str(other.leader_id), f"{other.name} ({title_part}, {kingdom_part})"))
+    return options
+
+
 def challenge_target_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
     """Every co-located leader as a ``(value, label)`` pair for
     Challenge's own target dropdown -- rulebook [3.12]: "nella stessa
@@ -2508,6 +2540,33 @@ def _parse_trail_target(form: dict[str, str], leader_id: int, n: int, *, phase_l
     return target_id
 
 
+def _parse_pursue_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
+    """Reads a Pursue phase's own ``pursue_target_<leader_id>_<n>`` field
+    into the real target ``leader_id`` -- the wire encoding is already a
+    bare leader id (``pursue_target_options()``'s own dropdown value),
+    so no sentinel decoding is needed. Unlike Trail, Pursue has no
+    unconditional "an army-leading character may never be ordered to
+    X" ban on the pursuer -- [3.16]'s own army-leading-mismatch rule is
+    a soft, execution-time "order ignored" outcome (``execute_pursue()``
+    itself), not an invalid-order precondition, and can depend on either
+    side's army status at the moment this phase actually runs (which
+    could change by then) -- so this composer doesn't pre-reject on it.
+    Self-targeting is rejected (would compose a Patrol declaration
+    instead, see ``pursue_target_options()``'s own docstring).
+    """
+
+    raw = form.get(f"pursue_target_{leader_id}_{n}", "")
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Pursue target.")
+    target_id = _parse_int(raw, field_label=f"{phase_label} Pursue target")
+    if target_id == leader_id or state.leaders.get(target_id) is None:
+        # Defense in depth: every dropdown-offered id is a real, other
+        # leader, but a direct, tampered POST could still name the
+        # acting leader himself or one that doesn't exist.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Pursue target.")
+    return target_id
+
+
 def _parse_challenge_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
     """Reads a Challenge phase's own ``challenge_target_<leader_id>_<n>``
     field into the real target ``leader_id`` -- the wire encoding is
@@ -3192,6 +3251,32 @@ def parse_phase_inputs(
                     form, leader_id, n, phase_label=f"P{n}", state=state, field_prefix="challenge_tactic", allow_give=True
                 ),
             ]
+        elif action is ActionCode.PURSUE:
+            obj = _parse_pursue_target(form, leader_id, n, phase_label=f"P{n}", state=state)
+            pursue_tactics = _parse_search_tactics(
+                form, leader_id, n, phase_label=f"P{n}", state=state, field_prefix="pursue_tactic", allow_give=True
+            )
+            # [3.16]: "Se l'inseguitore non comanda alcuna unità militare
+            # allora bisogna indicare un Piano d'Incontro" -- enforced
+            # here, at compose time, on this leader's own current army
+            # status (same compose-time-snapshot convention as every
+            # other Action's own precondition check in this module;
+            # turn-processing time remains the real arbiter if that
+            # status changes before this phase actually runs). No
+            # matching engine-side gate exists today (`turn/pursue_
+            # execution.py execute_pursue()` happily resolves an
+            # armyless, tactics-less Pursue as a silent peaceful catch-
+            # up) -- deliberately not retrofitted there this round, the
+            # same "this composer is what actually enforces it" choice
+            # already made for Hire's own 1-4 gold-offer range, so as
+            # not to retroactively reject the many already-existing,
+            # already-tested persistent-chase scenarios that rely on
+            # that permissive behavior.
+            if pursue_tactics == [-1] and not state.armies_commanded_by(leader_id):
+                raise InvalidComposedMovesError(
+                    f"P{n}: an armyless Pursue needs an Encounter Plan -- add at least one tactic."
+                )
+            extra = [0, *pursue_tactics]
         elif action is ActionCode.HIRE:
             hero_id = _parse_hire_target(form, leader_id, n, phase_label=f"P{n}", state=state)
             obj = hero_id

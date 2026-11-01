@@ -514,6 +514,17 @@ def run_turn(
             for entry in entries
             if entry[0].leader.leader_id not in active_pursuits and entry[0].leader.leader_id not in active_move_chases
         ]
+        # [3.16]'s own same-Realm/same-starting-province Pursue ordering
+        # rule (see "SAME-KINGDOM PURSUE ORDERING" below) needs each
+        # leader's own location at the very start of this phase, before
+        # any of this phase's own dispatches (including the ones below
+        # this point, like active-chase continuations/Patrol/multi-
+        # attacker groups) can mutate it.
+        phase_start_location_by_leader_id: dict[int, HexCoord] = {}
+        for tl, _segment_index, _phase in entries:
+            leader_state = state.leaders.get(tl.leader.leader_id)
+            if leader_state is not None:
+                phase_start_location_by_leader_id[tl.leader.leader_id] = leader_state.location
         # Phase 252, [3.17] Trail's own "Actions" field: every leader's own
         # decoded action for this phase label, computed AFTER the mid-chase
         # filter above (Phase 817 fix -- this used to be built from the
@@ -664,9 +675,12 @@ def run_turn(
         for index_a, index_b in mutual_encounter_pairs:
             results.extend(_dispatch_mutual_encounter(entries[index_a], entries[index_b], state, rng))
 
-        for index, (tl, segment_index, phase) in enumerate(entries):
-            if index in consumed:
-                continue
+        eligible_indices = [index for index in range(len(entries)) if index not in consumed]
+        dispatch_order = _order_same_kingdom_pursuits_after_their_target(
+            entries, eligible_indices, phase_start_location_by_leader_id
+        )
+        for index in dispatch_order:
+            tl, segment_index, phase = entries[index]
             dispatch_results = _dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng)
             results.extend(dispatch_results)
             if phase.action is ActionCode.TRAIL:
@@ -1722,6 +1736,71 @@ def _collect_phase_entries(
             if phase is not None:
                 entries.append((tl, segment_index, phase))
     return entries
+
+
+def _order_same_kingdom_pursuits_after_their_target(
+    entries: list[tuple[TurnLeader, int, PlanPhase]],
+    eligible_indices: list[int],
+    phase_start_location_by_leader_id: dict[int, HexCoord],
+) -> list[int]:
+    """[3.16]: "Se il personaggio ne insegue o pedina un altro che
+    appartiene al proprio Reame ed entrambi partono dalla stessa
+    provincia, l'inseguitore eseguirà l'azione dopo l'inseguito." --
+    confirmed never cross-checked anywhere in this project before
+    (2026-11-01, user-pasted rulebook text); the two existing "[3.16]
+    quoted in full" docstrings in ``turn/pursue_execution.py``/``turn/
+    challenge_pursue_decode.py`` both silently omit this sentence.
+
+    Only reorders among ``eligible_indices`` (the entries reaching the
+    ordinary, single-leader ``_dispatch_single`` path this phase, i.e.
+    not already consumed by a multi-attacker/multi-practice group or a
+    mutual Challenge/Pursue pair) -- a one-directional Pursue whose own
+    target isn't dispatched here too (idle this phase, pre-empted by
+    its own active chase/Patrol, or already consumed by one of those
+    other group dispatches, all of which run *before* this function is
+    even called) has nothing to reorder against, since that target's
+    own state is already settled by the time this phase's ordinary
+    dispatch loop runs anyway.
+
+    ``phase_start_location_by_leader_id`` must be captured once, at the
+    very start of the phase, before any of this phase's own dispatches
+    -- "partono dalla stessa provincia" ("they start from the same
+    province") is a precondition on the phase's own beginning, not a
+    live value this function could safely recompute mid-loop.
+
+    Implementation: for each one-directional Pursue entry (not already
+    part of a mutual pair, which is excluded by never appearing in
+    ``eligible_indices`` to begin with -- mutual pairs are consumed and
+    resolved separately, before this function runs) whose caster and
+    target share both ``TurnLeader.kingdom_id`` and their phase-start
+    location, the pursuer is moved to immediately after its target in
+    the returned order. A simple move-after, not a general topological
+    sort -- the rulebook never specifies a resolution order for a
+    layered chain of such pairs (A pursuing B, B pursuing C, all same
+    Realm/province) beyond "each pursuer follows its own target," which
+    this already guarantees one pair at a time.
+    """
+
+    order = list(eligible_indices)
+    index_by_leader_id = {entries[i][0].leader.leader_id: i for i in eligible_indices}
+    for index in eligible_indices:
+        tl, _segment_index, phase = entries[index]
+        if phase.action is not ActionCode.PURSUE:
+            continue
+        target_index = index_by_leader_id.get(phase.obj)
+        if target_index is None or target_index == index:
+            continue
+        target_tl = entries[target_index][0]
+        if tl.kingdom_id != target_tl.kingdom_id:
+            continue
+        pursuer_start = phase_start_location_by_leader_id.get(tl.leader.leader_id)
+        target_start = phase_start_location_by_leader_id.get(target_tl.leader.leader_id)
+        if pursuer_start is None or pursuer_start != target_start:
+            continue
+        if order.index(index) < order.index(target_index):
+            order.remove(index)
+            order.insert(order.index(target_index) + 1, index)
+    return order
 
 
 def _sees_nonallied_defender(

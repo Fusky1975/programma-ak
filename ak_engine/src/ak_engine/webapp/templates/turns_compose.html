@@ -26,7 +26,11 @@
     other leader in the game, no co-location needed), Challenge (the engine's own internal name for
     "Encounter Character," wire code "EN") has its own target dropdown (co-located leaders only) plus the
     same Encounter Plan tactic slots Search uses, Give included (valid only here and after Pursue, never in
-    Search), Hire has its own free-Hero target dropdown plus a 1-4 gold-offer dropdown, plus a basic editor
+    Search), Pursue has its own target dropdown (any other leader, no co-location needed -- same shape as
+    Trail's) plus the same Encounter Plan tactic slots as Challenge, used if/when the chase actually catches
+    up; an armyless Pursue is rejected here unless at least one tactic is filled in, since the rulebook
+    requires an Encounter Plan in that case (the engine itself stays permissive about an already-saved empty
+    one), Hire has its own free-Hero target dropdown plus a 1-4 gold-offer dropdown, plus a basic editor
     for the hired Hero's own orders for the rest of this turn (starting the phase right after the Hire, up to
     P4 -- plain generic Action/Object/Extra fields for now, not yet the full per-Action composer), Fire has
     its own target dropdown (own-Kingdom Heroes only, co-located unless this leader is a King, "Self" always
@@ -291,6 +295,51 @@
                         </td>
                         <td class="compose-tactic-use-mi-cell">
                           <select name="challenge_tactic_item_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- choose an item --</option>
+                            {% for value, label in item_choices_by_leader[leader.leader_id] %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </td>
+              <td class="compose-special-cell" data-action="{{ pursue_action_value }}">
+                <select name="pursue_target_{{ leader.leader_id }}_{{ n }}">
+                  <option value="">-- choose a Pursue target --</option>
+                  {% for value, label in pursue_target_choices_by_leader[leader.leader_id] %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <br><span class="hex-map-legend-note">Encounter Plan, used if/when the chase catches up (empty slots stop the list there):</span>
+                <table class="data-table compose-encounter-plan">
+                  <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th></tr></thead>
+                  <tbody>
+                    {% for slot in tactic_slot_numbers %}
+                      <tr>
+                        <td>
+                          <select class="compose-tactic-slot" name="pursue_tactic_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- no tactic --</option>
+                            {% for value, label in pursue_tactic_choices_by_slot[slot] %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </td>
+                        <td class="compose-tactic-say-cell">
+                          <input type="text" name="pursue_tactic_say_{{ leader.leader_id }}_{{ n }}_{{ slot }}" value="" size="24" maxlength="{{ say_text_max_length }}">
+                        </td>
+                        <td class="compose-tactic-cast-cell">
+                          <select name="pursue_tactic_spell_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
+                            <option value="">-- choose a spell --</option>
+                            {% for value, label in spell_choices %}
+                              <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                        </td>
+                        <td class="compose-tactic-use-mi-cell">
+                          <select name="pursue_tactic_item_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
                             <option value="">-- choose an item --</option>
                             {% for value, label in item_choices_by_leader[leader.leader_id] %}
                               <option value="{{ value }}">{{ label }}</option>

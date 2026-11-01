@@ -7038,6 +7038,89 @@ def test_turns_compose_save_challenge_order_with_no_target_chosen_shows_an_error
     assert b"choose a Challenge target" in response.data
 
 
+def test_turns_compose_shows_a_pursue_target_dropdown_and_tactic_slots(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"pursue_target_" in response.data
+    assert b"-- choose a Pursue target --" in response.data
+    assert b"pursue_tactic_" in response.data
+
+
+def test_turns_compose_save_pursue_order_encodes_the_target_and_tactics(tmp_path):
+    from ak_engine.models.enums import Maneuver
+    from ak_engine.models.game_state import LeaderState
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    other_id = max(state.leaders) + 1
+    state.add_leader(LeaderState(other_id, 1, "Faraway Hero", HexCoord(9, 9)))
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.PURSUE))
+    form[f"pursue_target_{king.leader_id}_0"] = str(other_id)
+    form[f"pursue_tactic_{king.leader_id}_0_0"] = str(int(Maneuver.MELEE))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    pursue_phase = king_block.plan.segments[0].phases["P0"]
+    assert pursue_phase.action is ActionCode.PURSUE
+    assert pursue_phase.obj == other_id
+    assert pursue_phase.extra == [0, int(Maneuver.MELEE), -1]
+
+
+def test_turns_compose_save_pursue_order_with_no_target_chosen_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.PURSUE))
+    # pursue_target_<king>_0 deliberately left unset.
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"choose a Pursue target" in response.data
+
+
+def test_turns_compose_save_pursue_order_armyless_with_no_encounter_plan_shows_an_error(tmp_path):
+    from ak_engine.models.game_state import LeaderState
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    other_id = max(state.leaders) + 1
+    state.add_leader(LeaderState(other_id, 1, "Faraway Hero", HexCoord(9, 9)))
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.PURSUE))
+    form[f"pursue_target_{king.leader_id}_0"] = str(other_id)
+    # No pursue_tactic_* fields at all -- the King here leads no army.
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"an armyless Pursue needs an Encounter Plan" in response.data
+
+
 def test_turns_compose_shows_a_hire_target_dropdown_and_nested_plan_editor(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

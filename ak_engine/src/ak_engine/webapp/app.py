@@ -114,6 +114,7 @@ from ak_engine.webapp.moves_compose import (
     pick_up_army_target_options,
     practice_ability_options,
     province_options,
+    pursue_target_options,
     recruit_target_options,
     recruit_type_options,
     resurrection_target_options,
@@ -3111,6 +3112,13 @@ def create_app(games_root: Path | None = None) -> Flask:
                 leader.leader_id: challenge_target_options(state, leader.leader_id) for leader in roster
             },
             challenge_tactic_choices_by_slot=[
+                tactic_options(slot, allow_give=True) for slot in range(TACTIC_SLOT_COUNT)
+            ],
+            pursue_action_value=int(ActionCode.PURSUE),
+            pursue_target_choices_by_leader={
+                leader.leader_id: pursue_target_options(state, leader.leader_id) for leader in roster
+            },
+            pursue_tactic_choices_by_slot=[
                 tactic_options(slot, allow_give=True) for slot in range(TACTIC_SLOT_COUNT)
             ],
             hire_action_value=int(ActionCode.HIRE),

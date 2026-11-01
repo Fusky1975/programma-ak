@@ -1065,6 +1065,43 @@ def test_run_turn_self_targeting_pursue_is_not_misdetected_as_mutual():
     assert results == []
 
 
+def test_run_turn_same_kingdom_pursue_from_the_same_province_acts_after_its_target():
+    # [3.16] (2026-11-01, never cross-checked before this round): "Se il
+    # personaggio ne insegue o pedina un altro che appartiene al proprio
+    # Reame ed entrambi partono dalla stessa provincia, l'inseguitore
+    # eseguirà l'azione dopo l'inseguito." Both leaders are Kingdom 1,
+    # both start at ORIGIN; the Pursued's own P0 moves it to TARGET
+    # (adjacent). Dispatched in the "wrong" order (Pursuer first, as the
+    # TurnLeader list below deliberately lists it), the pre-fix behavior
+    # would have the Pursuer catch up while the Pursued is still at
+    # ORIGIN (a same-Kingdom catch-up chance is always 1.0, so this
+    # always resolves this same phase) and relocate there -- a no-op,
+    # since ORIGIN is where the Pursuer already is -- only for the
+    # Pursued to then move away to TARGET, leaving them *not* co-located
+    # despite a reported "caught up." The fix reorders dispatch so the
+    # Pursuer only ever sees the Pursued's own already-resolved P0
+    # location.
+    state = _base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Pursuer", location=ORIGIN))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="Pursued", location=ORIGIN))
+    pursuer = _leader_with_phase(10, "Pursuer", "P0", PlanPhase(label="P0", action=ActionCode.PURSUE, obj=20, extra=[0, -1]))
+    pursued = _leader_with_phase(20, "Pursued", "P0", _lmove_phase("P0", TARGET))
+
+    results = run_turn(
+        [TurnLeader(pursuer, 1), TurnLeader(pursued, 1)],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=ScriptedRandom([0.0] * 10),
+    )
+
+    by_label = {(r.leader_id, r.phase_label): r for r in results}
+    pursue_result = by_label[(10, "P0")].result
+    assert pursue_result.caught_up is True
+    assert state.leaders[10].location == TARGET
+    assert state.leaders[20].location == TARGET
+    assert state.leaders[10].location == state.leaders[20].location
+
+
 # -- Defend reactive reinforcement (Phase 57) -------------------------------
 
 
