@@ -2434,7 +2434,8 @@ def test_pursue_target_options_lists_every_other_leader_no_co_location_needed():
     options = pursue_target_options(state, KING_ID)
 
     values = {value for value, _label in options}
-    assert values == {"2", "3"}  # any Kingdom, no co-location needed -- never self
+    assert values == {str(KING_ID), "2", "3"}  # any Kingdom, no co-location needed, self included
+    assert "Patrol (self)" in dict(options)[str(KING_ID)]
 
 
 def _pursue_form(
@@ -2490,17 +2491,33 @@ def test_pursue_phase_without_choosing_a_target_is_rejected():
         assert "choose a Pursue target" in str(exc)
 
 
-def test_pursue_phase_rejects_self_as_target_even_via_a_direct_tampered_value():
-    # Self-targeting composes a Patrol declaration instead -- not an
-    # ordinary Pursue, and not offered in pursue_target_options().
+def test_pursue_phase_self_target_composes_a_patrol_declaration_when_armyless():
+    # [3.16] "Characters On Patrol": self-targeting Pursue is a real,
+    # sourced mechanic, not an invalid order -- legal here since this
+    # King (the _state() fixture's own default) commands no army.
     state = _state()
+    form = _pursue_form(target_id=KING_ID, tactics={0: int(Maneuver.MELEE)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].action is ActionCode.PURSUE
+    assert phases[0].obj == KING_ID
+
+
+def test_pursue_phase_rejects_a_self_target_when_leading_an_army_even_via_a_direct_tampered_value():
+    # [3.16]'s own Patrol text states its army precondition
+    # unconditionally on the acting leader ("viene fatto da un Eroe
+    # senza armate") -- unlike directed Pursue's own soft mismatch,
+    # this one is enforced at compose time.
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
     form = _pursue_form(target_id=KING_ID, tactics={0: int(Maneuver.MELEE)})
 
     try:
         parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
-        assert "choose a Pursue target" in str(exc)
+        assert "may not be ordered to Patrol" in str(exc)
 
 
 def test_pursue_phase_rejects_a_nonexistent_target_even_via_a_direct_tampered_value():

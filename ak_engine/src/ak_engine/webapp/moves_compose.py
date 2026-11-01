@@ -1780,19 +1780,29 @@ def pursue_target_options(state: GameState, leader_id: int) -> list[tuple[str, s
     based Spy Table catch-up chance rather than requiring the two
     already be together) -- any Kingdom, independent Heroes included.
 
-    Deliberately excludes the acting leader themself: ``turn/
-    challenge_pursue_decode.py``'s own docstring confirms targeting
-    one's own character id turns a Pursue order into a standing
-    "Patrol" declaration instead ([3.16]'s "Characters on Patrol"), a
-    structurally different mechanic this composer doesn't build an
-    editor for this round -- same "don't offer a target that would
-    silently trigger an unrelated mechanic" convention already used for
-    Give's own earlier exclusion.
+    **2026-11-01, no longer excludes the acting leader themself**:
+    ``turn/challenge_pursue_decode.py``'s own docstring confirms
+    targeting one's own character id turns a Pursue order into a
+    standing "Patrol" declaration instead -- a real, sourced rulebook
+    mechanic ([3.16] "Characters On Patrol": "è come un ordine Difendere,
+    solo che viene fatto da un Eroe senza armate... Per farlo dare
+    all'Eroe un ordine Inseguire su se stesso"), already fully modeled
+    engine-side in ``turn/patrol_execution.py`` -- unlike a prior round's
+    assessment, this is not an unrelated mechanic to avoid exposing, it
+    is this exact field's own documented second meaning. Offered as the
+    first option, labelled "Patrol (self)" rather than the ordinary
+    name/title/Kingdom label, since selecting it composes a
+    structurally different, self-targeting order -- the same "customize
+    the one self-referential option's own label" convention ``fire_
+    target_options()``'s own "Self (<name>)" entry already uses.
+    ``_parse_pursue_target()`` enforces Patrol's own "senza armate"
+    precondition on the acting leader at compose time (point (a) below).
     """
 
     if leader_id not in state.leaders:
         return []
-    options: list[tuple[str, str]] = []
+    leader = state.leaders[leader_id]
+    options: list[tuple[str, str]] = [(str(leader_id), f"Patrol (self) -- {leader.name}")]
     for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
         if other.leader_id == leader_id:
             continue
@@ -2593,26 +2603,38 @@ def _parse_pursue_target(form: dict[str, str], leader_id: int, n: int, *, phase_
     """Reads a Pursue phase's own ``pursue_target_<leader_id>_<n>`` field
     into the real target ``leader_id`` -- the wire encoding is already a
     bare leader id (``pursue_target_options()``'s own dropdown value),
-    so no sentinel decoding is needed. Unlike Trail, Pursue has no
-    unconditional "an army-leading character may never be ordered to
-    X" ban on the pursuer -- [3.16]'s own army-leading-mismatch rule is
+    so no sentinel decoding is needed.
+
+    Directed Pursue (any *other* leader as target) has no unconditional
+    "an army-leading character may never be ordered to X" ban on the
+    pursuer, unlike Trail -- [3.16]'s own army-leading-mismatch rule is
     a soft, execution-time "order ignored" outcome (``execute_pursue()``
     itself), not an invalid-order precondition, and can depend on either
     side's army status at the moment this phase actually runs (which
     could change by then) -- so this composer doesn't pre-reject on it.
-    Self-targeting is rejected (would compose a Patrol declaration
-    instead, see ``pursue_target_options()``'s own docstring).
+
+    **Self-targeting (2026-11-01) composes a "Characters On Patrol"
+    declaration instead** -- unlike directed Pursue, [3.16]'s own
+    Patrol text states its army precondition unconditionally on the
+    acting leader alone ("viene fatto da un Eroe senza armate"), the
+    same shape as Trail's own unconditional ban, not Pursue's own soft
+    mismatch -- so this one *is* enforced here, at compose time, same
+    as ``_parse_trail_target()``'s own precedent.
     """
 
     raw = form.get(f"pursue_target_{leader_id}_{n}", "")
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Pursue target.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Pursue target")
-    if target_id == leader_id or state.leaders.get(target_id) is None:
-        # Defense in depth: every dropdown-offered id is a real, other
-        # leader, but a direct, tampered POST could still name the
-        # acting leader himself or one that doesn't exist.
+    if state.leaders.get(target_id) is None:
+        # Defense in depth: every dropdown-offered id is a real leader,
+        # but a direct, tampered POST could still name one that doesn't
+        # exist.
         raise InvalidComposedMovesError(f"{phase_label}: choose a Pursue target.")
+    if target_id == leader_id and state.armies_commanded_by(leader_id):
+        raise InvalidComposedMovesError(
+            f"{phase_label}: a character leading an army may not be ordered to Patrol."
+        )
     return target_id
 
 

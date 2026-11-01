@@ -7181,6 +7181,65 @@ def test_turns_compose_save_pursue_order_armyless_with_no_encounter_plan_shows_a
     assert b"an armyless Pursue needs an Encounter Plan" in response.data
 
 
+def test_turns_compose_shows_a_patrol_self_option_in_the_pursue_target_dropdown(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"Patrol (self)" in response.data
+
+
+def test_turns_compose_save_patrol_order_encodes_a_self_targeting_pursue(tmp_path):
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.PURSUE))
+    form[f"pursue_target_{king.leader_id}_0"] = str(king.leader_id)
+    form[f"pursue_tactic_{king.leader_id}_0_0"] = str(int(Maneuver.MELEE))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    patrol_phase = king_block.plan.segments[0].phases["P0"]
+    assert patrol_phase.action is ActionCode.PURSUE
+    assert patrol_phase.obj == king.leader_id
+
+
+def test_turns_compose_save_patrol_order_is_rejected_when_leading_an_army(tmp_path):
+    from ak_engine.models.army_type import ArmyType
+    from ak_engine.models.game_state import ArmyState
+    from ak_engine.turn.combat import Quality
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    state.add_army(ArmyState(max(state.armies, default=0) + 1, 1, ArmyType.BOWMEN, Quality.AVERAGE, king.location, commanded_by=king.leader_id))
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.PURSUE))
+    form[f"pursue_target_{king.leader_id}_0"] = str(king.leader_id)
+    form[f"pursue_tactic_{king.leader_id}_0_0"] = str(int(Maneuver.MELEE))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"may not be ordered to Patrol" in response.data
+
+
 def test_turns_compose_shows_a_hire_target_dropdown_and_nested_plan_editor(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
