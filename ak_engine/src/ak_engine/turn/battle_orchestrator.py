@@ -3156,13 +3156,25 @@ def fight_multi_attacker_battle(
     previously had no way to opt into real duel combat at all, only
     ``apply_fanaticism``.
 
-    **Which kingdom claims a jointly-won province** isn't specified by
-    the rulebook for a united coalition of allied attackers -- resolved
-    here as a documented heuristic: whichever kingdom contributed the
-    largest combined contingent to that battle, the same "largest
-    contingent" principle already used for [7.1]'s Supreme Commander
-    selection. That kingdom's own party also supplies ``attacker_origin``
-    for ``fight_battle()``'s forced-retreat-destination rule -- a
+    **Which kingdom claims a jointly-won province**: [8.1] itself answers
+    this directly -- "una provincia conquistata da una forza mista viene
+    data al Re che controlla il maggior numero di unità dopo la
+    battaglia" (2026-11-02 correction: previously documented here as
+    unspecified by the rulebook, which was stale -- it is specified,
+    just not for [7.8]'s own coalition case by name). ``contingent_
+    sizes`` below is computed from each kingdom's own pre-battle
+    ``army_ids``, not a post-battle recount, but this is not a gap in
+    practice: ``claiming_kingdom_id`` is only ever read for a group that
+    goes on to win outright (``defender_clean_swept``, i.e.
+    ``battle_result.winner == "attacker"``), and the attacker-loop below
+    never destroys a winning side's own armies (only a quality change) --
+    so every kingdom's own unit count in the group is identical before
+    and after such a battle, and "largest pre-battle contingent" and
+    "largest post-battle contingent" always agree for exactly the cases
+    this value is used for. [7.1]'s own "largest contingent" Supreme
+    Commander-selection principle independently matches the same reading.
+    That kingdom's own party also supplies ``attacker_origin`` for
+    ``fight_battle()``'s forced-retreat-destination rule -- a
     simplification for a coalition that may not share one origin.
 
     **Also simplified**: ``fight_battle()`` itself only takes one

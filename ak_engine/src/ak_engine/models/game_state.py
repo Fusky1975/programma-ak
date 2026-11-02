@@ -1678,8 +1678,10 @@ class GameState:
     # Neutral/Allied), one shared value per unordered Kingdom pair -- see
     # ``diplomatic_relation()``'s own docstring for why a missing pair
     # reads Neutral and why this stays in sync with ``allied_kingdoms``
-    # rather than replacing it. Written only by ``turn/diplomacy.py
-    # apply_treat_orders()``.
+    # rather than replacing it. Written by ``turn/diplomacy.py
+    # apply_treat_orders()`` for every in-game transition, and (2026-11-02)
+    # by ``parser/gw_world_bridge.py bridge_new_game_state()`` for a real,
+    # mutually-recorded Enemy pair loaded from a mid-game save file.
     diplomatic_relations: dict[frozenset[int], DiplomaticRelation] = field(default_factory=dict)
     # Phase 1026 -- a turn-stamped companion to ``diplomatic_relations``
     # above, same pattern as ``kingdoms_met_since`` (Phase 491): the turn
