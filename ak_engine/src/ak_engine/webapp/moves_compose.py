@@ -1033,6 +1033,22 @@ joining is a background mechanism in ``turn/turn_processor.py``
 (``active_defends``), not something this one composed phase itself
 carries any further payload for.
 
+**Spy [SP] (``ActionCode.ASPY``)** (2026-11-02) -- confirmed against
+the user's own full Italian [3.14] text and the "Tabella dello
+Spionaggio"/"Tabella dello Spiare" ([4.33]): a background research
+round found ``turn/aspy_execution.py``/``turn/spy_table.py`` already
+more complete than the rulebook's own base text (province/adjacency/
+tax/recruitable-unit/capital reporting, the margin-of-error table,
+Discovery-stealing, Pursue/Trail's own shared use of the same table --
+all already wired), so this round is composer-only, no engine changes.
+``obj`` is always this leader's own *current* province, auto-derived
+via ``encode_hex_number()`` (same scheme Move/Defend's own dropdowns
+already use) -- never a player choice, matching the rulebook's own
+syntax ("SP #(numero della provincia in cui si trova eroe o re)")
+literally: a character can only Spy on the province he's already in.
+``extra`` is always ``[0]`` (``turn/aspy_defend_decode.py``'s own
+confirmed, never-populated ``extra0``, same convention as Defend's).
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
 isn't exposed here yet either, for the same reason -- every composed
@@ -3309,7 +3325,12 @@ def parse_phase_inputs(
     nested_action_<leader_id>_<n>_<m>``/``cast_nested_obj_<leader_id>_
     <n>_<m>``/``cast_nested_extra_<leader_id>_<n>_<m>`` fields for the
     newly-(re)joined character's own embedded ``nested_plan``
-    (``_parse_nested_plan()`` with ``field_prefix="cast_nested"``).
+    (``_parse_nested_plan()`` with ``field_prefix="cast_nested"``). A
+    Spy (``ActionCode.ASPY``) phase reads no field at all -- ``obj`` is
+    always this leader's own current province, auto-derived via
+    ``encode_hex_number(leader.location, board_width)`` (never a
+    player choice, same module docstring's own Spy section), and
+    ``extra`` is always ``[0]``.
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -3409,6 +3430,9 @@ def parse_phase_inputs(
                 nested_plan = _parse_nested_plan(
                     form, leader_id, n, phase_label=f"P{n}", field_prefix="cast_nested", hero_id=cast_nested_hero_id
                 )
+        elif action is ActionCode.ASPY:
+            obj = encode_hex_number(state.leaders[leader_id].location, board_width)
+            extra = [0]
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))

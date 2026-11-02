@@ -276,6 +276,40 @@ def test_build_composed_kingdom_explore_phase_carries_no_object_or_extra():
     assert phase0.extra == []
 
 
+def test_aspy_phase_ignores_any_generic_object_or_extra_input_and_always_targets_the_leaders_own_location():
+    # Sourced directly from the user (2026-11-02): "Sintassi: SP
+    # #(numero della provincia in cui si trova eroe o re)" -- a
+    # character can only Spy on the province he's already in, so (like
+    # Explore) there is no target to choose; stray generic-field values
+    # must be silently ignored and the real wire obj must still encode
+    # this leader's own current province (HOME = HexCoord(1, 1)), not 0.
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_3"] = str(int(ActionCode.ASPY))
+    form[f"obj_{KING_ID}_3"] = "999"
+    form[f"extra_{KING_ID}_3"] = "1 2 3"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+
+    aspy_phase = phases[3]
+    assert aspy_phase.action is ActionCode.ASPY
+    assert decode_hex_number(aspy_phase.obj, BOARD_WIDTH) == HOME
+    assert aspy_phase.extra == [0]
+
+
+def test_build_composed_kingdom_round_trips_an_aspy_order_to_the_leaders_own_province():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.ASPY))
+    form[f"obj_{KING_ID}_0"] = "999"
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+
+    phase0 = kingdom.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.ASPY
+    assert decode_hex_number(phase0.obj, state.board_width) == HOME
+    assert phase0.extra == [0]
+
+
 def test_feature_options_names_the_kind_province_and_guardian():
     state = _state()
     options = feature_options(state)
