@@ -71,6 +71,7 @@ from ak_engine.webapp.moves_compose import (
     kill_enemy_target_options,
     leave_army_target_options,
     leave_target_options,
+    nested_hero_option_bundle,
     parse_phase_inputs,
     pick_up_army_target_options,
     practice_ability_options,
@@ -2897,6 +2898,186 @@ def test_build_composed_kingdom_round_trips_a_hire_order_with_a_nested_plan():
     assert phase0.nested_plan is not None
     assert phase0.nested_plan.leader_id == 2
     assert phase0.nested_plan.segments[0].phases["P1"].action is ActionCode.WAIT
+
+
+def test_hire_nested_plan_supports_a_full_move_order():
+    # 2026-11-02: the nested-plan editor now reuses the *same* full
+    # per-Action composer every top-level phase gets, not just the
+    # plain generic Object/Extra fields -- confirmed here with a real
+    # Move order for the newly-hired Hero's own P1.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_0"] = "2"
+    form[f"hire_gold_{KING_ID}_0"] = "2"
+    form[f"hire_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.LMOVE))
+    form[f"hire_nested_move_target_{KING_ID}_0_1"] = "3,2"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    nested_move_phase = phases[0].nested_plan.segments[0].phases["P1"]
+    assert nested_move_phase.action is ActionCode.LMOVE
+    assert decode_hex_number(nested_move_phase.obj, BOARD_WIDTH) == HexCoord(3, 2)
+    assert nested_move_phase.extra == []
+
+
+def test_hire_nested_plan_rejects_an_invalid_move_destination_the_same_way_a_top_level_phase_does():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_0"] = "2"
+    form[f"hire_gold_{KING_ID}_0"] = "2"
+    form[f"hire_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.LMOVE))
+    # hire_nested_move_target_<king>_0_1 deliberately left unset.
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Move destination" in str(exc)
+
+
+def test_hire_nested_plan_supports_a_full_search_order_with_tactics():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_0"] = "2"
+    form[f"hire_gold_{KING_ID}_0"] = "2"
+    form[f"hire_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.SEARCH))
+    form[f"hire_nested_search_feature_{KING_ID}_0_1"] = "3"
+    form[f"hire_nested_tactic_{KING_ID}_0_1_0"] = str(int(Maneuver.FLEE))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    nested_search_phase = phases[0].nested_plan.segments[0].phases["P1"]
+    assert nested_search_phase.action is ActionCode.SEARCH
+    assert nested_search_phase.obj == 3
+    assert nested_search_phase.extra == [0, int(Maneuver.FLEE), -1]
+
+
+def test_hire_nested_plan_supports_a_full_recruit_order_with_army_type_slots():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_0"] = "2"
+    form[f"hire_gold_{KING_ID}_0"] = "2"
+    form[f"hire_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.RECRUIT))
+    form[f"hire_nested_recruit_target_{KING_ID}_0_1"] = "self"
+    ordinal = _ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN]
+    form[f"hire_nested_recruit_type_{KING_ID}_0_1_0"] = str(ordinal)
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    nested_recruit_phase = phases[0].nested_plan.segments[0].phases["P1"]
+    assert nested_recruit_phase.action is ActionCode.RECRUIT
+    assert nested_recruit_phase.extra == [0, ordinal, -1]
+
+
+def test_cast_charm_nested_plan_supports_a_full_move_order():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_charm_target="2")
+    form[f"cast_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.LMOVE))
+    form[f"cast_nested_move_target_{KING_ID}_0_1"] = "3,2"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    nested_move_phase = phases[0].nested_plan.segments[0].phases["P1"]
+    assert nested_move_phase.action is ActionCode.LMOVE
+    assert decode_hex_number(nested_move_phase.obj, BOARD_WIDTH) == HexCoord(3, 2)
+
+
+def test_use_mi_charm_wand_nested_plan_supports_a_full_move_order():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    wand = state.add_item(Treasure.WAND_CHARM, KING_ID, charges=1)
+    form = _use_mi_form(use_mi_item=str(wand.item_id), use_mi_charm_target="2")
+    form[f"use_mi_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.LMOVE))
+    form[f"use_mi_nested_move_target_{KING_ID}_0_1"] = "3,2"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    nested_move_phase = phases[0].nested_plan.segments[0].phases["P1"]
+    assert nested_move_phase.action is ActionCode.LMOVE
+    assert decode_hex_number(nested_move_phase.obj, BOARD_WIDTH) == HexCoord(3, 2)
+
+
+def test_nested_plan_rich_fields_from_a_different_outer_phase_or_leader_are_never_cross_read():
+    # Defense in depth: _remap_nested_fields() must key strictly off its
+    # own (outer_leader_id, outer_n) pair -- a field posted for a
+    # different leader or a different triggering phase must never leak
+    # into this one's own remapped form.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_1"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_1"] = "2"
+    form[f"hire_gold_{KING_ID}_1"] = "2"
+    form[f"hire_nested_action_{KING_ID}_1_2"] = str(int(ActionCode.LMOVE))
+    form[f"hire_nested_move_target_{KING_ID}_1_2"] = "3,2"
+    # A decoy for a different outer phase (0, not 1) -- must be ignored.
+    form[f"hire_nested_move_target_{KING_ID}_0_2"] = "9,9"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    nested_move_phase = phases[1].nested_plan.segments[0].phases["P2"]
+    assert decode_hex_number(nested_move_phase.obj, BOARD_WIDTH) == HexCoord(3, 2)
+
+
+def test_build_composed_kingdom_round_trips_a_hire_nested_move_order():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{KING_ID}_0"] = "2"
+    form[f"hire_gold_{KING_ID}_0"] = "2"
+    form[f"hire_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.LMOVE))
+    form[f"hire_nested_move_target_{KING_ID}_0_1"] = "3,2"
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    nested_move_phase = reparsed.leaders[0].plan.segments[0].phases["P0"].nested_plan.segments[0].phases["P1"]
+    assert nested_move_phase.action is ActionCode.LMOVE
+    assert decode_hex_number(nested_move_phase.obj, BOARD_WIDTH) == HexCoord(3, 2)
+
+
+def test_nested_hero_option_bundle_includes_every_leader_scoped_dropdown():
+    state = _state()
+    item = state.add_item(Treasure.WAND_BLESS, KING_ID, charges=1)
+    bundle = nested_hero_option_bundle(state, KING_ID)
+
+    assert str(item.item_id) in {value for value, _label in bundle["use_mi_item"]}
+    assert "search_feature" in bundle
+    assert "recruit_target" in bundle
+    assert "is_undead_king" in bundle
+
+
+def test_nested_hero_option_bundle_resolves_a_dead_resurrection_candidate_by_its_own_last_location():
+    # The candidate isn't in state.leaders at all -- nested_hero_option_
+    # bundle() must temporarily reinsert the dead_leaders snapshot to
+    # resolve leader-scoped choices (here: items the dead Hero still
+    # owns, per GameState.remove_leader()'s own confirmed behavior) and
+    # must leave state.leaders exactly as it found it afterwards.
+    state = _state()
+    dead_id = 99
+    state.dead_leaders[dead_id] = LeaderState(leader_id=dead_id, kingdom_id=1, name="Dead Hero", location=HOME)
+    item = state.add_item(Treasure.WAND_BLESS, dead_id, charges=1)
+
+    bundle = nested_hero_option_bundle(state, dead_id)
+
+    assert str(item.item_id) in {value for value, _label in bundle["use_mi_item"]}
+    assert dead_id not in state.leaders
 
 
 def test_fire_target_options_a_king_offers_any_own_kingdom_hero_regardless_of_location():

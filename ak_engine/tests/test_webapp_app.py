@@ -7450,6 +7450,89 @@ def test_turns_compose_save_cast_resurrection_order_encodes_the_target_and_neste
     assert cast_phase.nested_plan.segments[0].phases["P1"].action is ActionCode.WAIT
 
 
+def test_turns_compose_shows_a_rich_nested_plan_table_with_hero_scoped_fields_empty(tmp_path):
+    # 2026-11-02: the nested-plan editor now reuses the same per-Action
+    # special cells every top-level phase gets, not just the plain
+    # generic Object/Extra fields -- leader-scoped dropdowns start
+    # empty (populated client-side; see the compose/hero_options route)
+    # while the Action dropdown and triggering target field are real.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    html = response.data.decode()
+    assert f'class="compose-nested-trigger" name="hire_target_{king.leader_id}_0"' in html
+    assert f'name="hire_nested_move_target_{king.leader_id}_0_1"' in html
+    assert f'class="compose-nested-hero-field" data-hero-field="search_feature" name="hire_nested_search_feature_{king.leader_id}_0_1"' in html
+    # The leader-scoped select itself must start with no real options
+    # (only its own placeholder) -- the hero isn't known at render time.
+    recruit_target_start = html.index(f'data-hero-field="recruit_target" name="hire_nested_recruit_target_{king.leader_id}_0_1"')
+    recruit_target_html = html[recruit_target_start : html.index("</select>", recruit_target_start)]
+    assert recruit_target_html.count("<option") == 1
+
+
+def test_turns_compose_hero_options_route_feeds_the_nested_plans_own_dropdowns(tmp_path):
+    from ak_engine.models.game_state import LeaderState
+    from ak_engine.models.treasure import Treasure
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    other_id = max(state.leaders) + 1
+    state.add_leader(LeaderState(other_id, 1, "Other Hero", king.location))
+    item = state.add_item(Treasure.WAND_BLESS, other_id, charges=1)
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose/hero_options?hero_id={other_id}")
+
+    assert response.status_code == 200
+    bundle = response.get_json()
+    assert str(item.item_id) in {value for value, _label in bundle["use_mi_item"]}
+
+
+def test_turns_compose_save_hire_nested_plan_with_a_full_move_order(tmp_path):
+    # End-to-end: the GM picks a Hero to Hire, then (as the real page's
+    # own JS would have populated after a fetch to compose/hero_options)
+    # fills in that newly-hired Hero's own P1 as a real Move order,
+    # through the rich nested field names the macro now emits.
+    from ak_engine.models.game_state import LeaderState
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+    from ak_engine.turn.hex_numbering import decode_hex_number
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    free_hero_id = max(state.leaders) + 1
+    state.add_leader(LeaderState(free_hero_id, None, "Free Hero", king.location))
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+    target = next(coord for coord in state.provinces if coord != king.location)
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_{king.leader_id}_0"] = str(free_hero_id)
+    form[f"hire_gold_{king.leader_id}_0"] = "2"
+    form[f"hire_nested_action_{king.leader_id}_0_1"] = str(int(ActionCode.LMOVE))
+    form[f"hire_nested_move_target_{king.leader_id}_0_1"] = f"{target.x},{target.y}"
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    hire_phase = king_block.plan.segments[0].phases["P0"]
+    nested_move_phase = hire_phase.nested_plan.segments[0].phases["P1"]
+    assert nested_move_phase.action is ActionCode.LMOVE
+    assert decode_hex_number(nested_move_phase.obj, state.board_width) == target
+
+
 def test_turns_compose_save_cast_order_with_no_spell_chosen_shows_an_error(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -7591,6 +7674,34 @@ def test_turns_compose_save_cast_kill_enemy_order_with_no_target_chosen_shows_an
 
     assert response.status_code == 200
     assert b"choose a Kill Enemy target" in response.data
+
+
+def test_turns_compose_hero_options_returns_a_hero_scoped_bundle(tmp_path):
+    from ak_engine.models.treasure import Treasure
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    item = state.add_item(Treasure.WAND_BLESS, king.leader_id, charges=2)
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose/hero_options?hero_id={king.leader_id}")
+
+    assert response.status_code == 200
+    bundle = response.get_json()
+    assert str(item.item_id) in {value for value, _label in bundle["use_mi_item"]}
+    assert "search_feature" in bundle
+    assert "is_undead_king" in bundle
+
+
+def test_turns_compose_hero_options_requires_a_hero_id(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose/hero_options")
+
+    assert response.status_code == 400
 
 
 def test_turns_compose_shows_a_use_mi_item_dropdown(tmp_path):

@@ -63,6 +63,403 @@
     not-yet-designed Action).
   </p>
 
+  {# One level of nested-plan richness (2026-11-02): the newly-(re)joined
+     character's own orders (after Hire/Cast-Charm/Cast-Resurrection/Use_MI-
+     wand-Charm/Resurrection) now get the exact same per-Action special
+     cells the main P0-P4 table uses, not just plain generic Object/Extra
+     fields. The one real difference: *which* hero triggers this nesting
+     is only known once the GM picks one in this same form, so every
+     leader-scoped dropdown here (search_feature, recruit/disband/leave/
+     pick_up/trade/trail/pursue/challenge/hire/fire targets, item/give_item,
+     resurrection/charm/kill_enemy targets) starts empty (class
+     "compose-nested-hero-field", "data-hero-field" naming which bundle key
+     feeds it) and is populated client-side via a fetch to
+     /games/<slug>/turns/<kingdom_id>/compose/hero_options the moment a
+     real target is chosen in this cell's own triggering dropdown (class
+     "compose-nested-trigger") -- see updateNestedTrigger() below and
+     webapp/moves_compose.py's own nested_hero_option_bundle() docstring.
+     Every globally-scoped dropdown (Move's province_choices, Cast's
+     generic character/item targets, Illusory Terrain's fake terrain,
+     Practice's Talent, Hire's gold offer) needs no fetch at all -- same
+     real list every other row already uses. Deliberately caps at this
+     one level: a Hire/Cast/Use_MI chosen *inside* this nested row gets
+     its own target dropdown but no further nested table of its own (see
+     webapp/moves_compose.py _parse_nested_plan()'s own docstring for why
+     that loses no real expressiveness). #}
+  {% macro nested_row(field_prefix, leader, outer_n, nested_n) %}
+    <tr>
+      <td>P{{ nested_n }}</td>
+      <td>
+        <select class="compose-action" name="{{ field_prefix }}_action_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- no order --</option>
+          {% for action in actions %}
+            <option value="{{ action.value }}">{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td class="compose-special-cell" data-action="{{ defend_action_value }}">
+        <select name="{{ field_prefix }}_defend_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a province to Defend --</option>
+          {% for value, label in province_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td class="compose-special-cell" data-action="{{ move_action_value }}">
+        <select name="{{ field_prefix }}_move_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a province --</option>
+          {% for value, label in province_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td class="compose-special-cell hex-map-legend-note" data-action="{{ explore_action_value }}">No input needed -- explores wherever this character ends up.</td>
+      <td class="compose-special-cell" data-action="{{ search_action_value }}">
+        <select class="compose-nested-hero-field" data-hero-field="search_feature" name="{{ field_prefix }}_search_feature_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a feature --</option>
+        </select>
+        <br><span class="hex-map-legend-note">Encounter Plan (empty slots stop the list there):</span>
+        <table class="data-table compose-encounter-plan">
+          <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th></tr></thead>
+          <tbody>
+            {% for slot in tactic_slot_numbers %}
+              <tr>
+                <td>
+                  <select class="compose-tactic-slot" name="{{ field_prefix }}_tactic_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- no tactic --</option>
+                    {% for value, label in tactic_choices_by_slot[slot] %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td class="compose-tactic-say-cell">
+                  <input type="text" name="{{ field_prefix }}_tactic_say_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}" value="" size="24" maxlength="{{ say_text_max_length }}">
+                </td>
+                <td class="compose-tactic-cast-cell">
+                  <select name="{{ field_prefix }}_tactic_spell_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- choose a spell --</option>
+                    {% for value, label in spell_choices %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td class="compose-tactic-use-mi-cell">
+                  <select class="compose-nested-hero-field" data-hero-field="item" name="{{ field_prefix }}_tactic_item_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- choose an item --</option>
+                  </select>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </td>
+      <td class="compose-special-cell" data-action="{{ recruit_action_value }}">
+        <select class="compose-nested-hero-field" data-hero-field="recruit_target" name="{{ field_prefix }}_recruit_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a commander --</option>
+        </select>
+        <br><span class="hex-map-legend-note">Army types to recruit (empty slots stop the list there):</span>
+        <table class="data-table compose-recruit-plan">
+          <tbody>
+            {% for slot in recruit_slot_numbers %}
+              <tr>
+                <td>
+                  <select class="compose-nested-hero-field" data-hero-field="recruit_type" name="{{ field_prefix }}_recruit_type_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- no type --</option>
+                  </select>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </td>
+      <td class="compose-special-cell" data-action="{{ disband_action_value }}">
+        <span class="hex-map-legend-note">Armies to disband (empty slots stop the list there; "Disband ALL I command" must be alone):</span>
+        <table class="data-table compose-army-all-plan" data-all-value="{{ disband_all_value }}">
+          <tbody>
+            {% for slot in disband_slot_numbers %}
+              <tr>
+                <td>
+                  <select class="compose-army-all-slot compose-nested-hero-field" data-hero-field="disband_target" data-slot="{{ slot }}" name="{{ field_prefix }}_disband_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- no army --</option>
+                  </select>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </td>
+      <td class="compose-special-cell" data-action="{{ leave_action_value }}">
+        <select class="compose-nested-hero-field" data-hero-field="leave_target" name="{{ field_prefix }}_leave_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a target --</option>
+        </select>
+        <br><span class="hex-map-legend-note">Armies to leave (empty slots stop the list there; "Leave ALL I command" must be alone):</span>
+        <table class="data-table compose-army-all-plan" data-all-value="{{ leave_all_value }}">
+          <tbody>
+            {% for slot in leave_slot_numbers %}
+              <tr>
+                <td>
+                  <select class="compose-army-all-slot compose-nested-hero-field" data-hero-field="leave_army" data-slot="{{ slot }}" name="{{ field_prefix }}_leave_army_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- no army --</option>
+                  </select>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </td>
+      <td class="compose-special-cell" data-action="{{ pick_up_action_value }}">
+        <span class="hex-map-legend-note">Armies to pick up (empty slots stop the list there; "Pick Up ALL unled armies here" must be alone):</span>
+        <table class="data-table compose-army-all-plan" data-all-value="{{ pick_up_all_value }}">
+          <tbody>
+            {% for slot in pick_up_slot_numbers %}
+              <tr>
+                <td>
+                  <select class="compose-army-all-slot compose-nested-hero-field" data-hero-field="pick_up_target" data-slot="{{ slot }}" name="{{ field_prefix }}_pick_up_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- no army --</option>
+                  </select>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </td>
+      <td class="compose-special-cell" data-action="{{ trade_action_value }}">
+        <select class="compose-nested-hero-field" data-hero-field="trade_recipient" name="{{ field_prefix }}_trade_recipient_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a recipient --</option>
+        </select>
+        <br>
+        <select class="compose-trade-gift compose-nested-hero-field" data-hero-field="trade_gift" name="{{ field_prefix }}_trade_gift_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+        </select>
+        <span class="compose-trade-gold-cell">
+          <input type="text" name="{{ field_prefix }}_trade_gold_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}" value="" size="6" placeholder="gold amount">
+        </span>
+      </td>
+      <td class="compose-special-cell" data-action="{{ practice_action_value }}">
+        <select name="{{ field_prefix }}_practice_ability_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a Talent --</option>
+          {% for value, label in practice_ability_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td class="compose-special-cell" data-action="{{ trail_action_value }}">
+        <select class="compose-nested-hero-field" data-hero-field="trail_target" name="{{ field_prefix }}_trail_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a Trail target --</option>
+        </select>
+      </td>
+      <td class="compose-special-cell" data-action="{{ challenge_action_value }}">
+        <select class="compose-nested-hero-field" data-hero-field="challenge_target" name="{{ field_prefix }}_challenge_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a Challenge target --</option>
+        </select>
+        <br><span class="hex-map-legend-note">Encounter Plan (empty slots stop the list there):</span>
+        <table class="data-table compose-encounter-plan">
+          <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th><th>Give Item</th></tr></thead>
+          <tbody>
+            {% for slot in tactic_slot_numbers %}
+              <tr>
+                <td>
+                  <select class="compose-tactic-slot" name="{{ field_prefix }}_challenge_tactic_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- no tactic --</option>
+                    {% for value, label in challenge_tactic_choices_by_slot[slot] %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td class="compose-tactic-say-cell">
+                  <input type="text" name="{{ field_prefix }}_challenge_tactic_say_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}" value="" size="24" maxlength="{{ say_text_max_length }}">
+                </td>
+                <td class="compose-tactic-cast-cell">
+                  <select name="{{ field_prefix }}_challenge_tactic_spell_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- choose a spell --</option>
+                    {% for value, label in spell_choices %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td class="compose-tactic-use-mi-cell">
+                  <select class="compose-nested-hero-field" data-hero-field="item" name="{{ field_prefix }}_challenge_tactic_item_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- choose an item --</option>
+                  </select>
+                </td>
+                <td class="compose-tactic-give-cell">
+                  <select class="compose-nested-hero-field" data-hero-field="give_item" name="{{ field_prefix }}_challenge_tactic_give_item_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- choose an item to Give --</option>
+                  </select>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </td>
+      <td class="compose-special-cell" data-action="{{ pursue_action_value }}">
+        <select class="compose-nested-hero-field" data-hero-field="pursue_target" name="{{ field_prefix }}_pursue_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a Pursue target --</option>
+        </select>
+        <br><span class="hex-map-legend-note">Encounter Plan, used if/when the chase catches up (empty slots stop the list there):</span>
+        <table class="data-table compose-encounter-plan">
+          <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th><th>Give Item</th></tr></thead>
+          <tbody>
+            {% for slot in tactic_slot_numbers %}
+              <tr>
+                <td>
+                  <select class="compose-tactic-slot" name="{{ field_prefix }}_pursue_tactic_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- no tactic --</option>
+                    {% for value, label in pursue_tactic_choices_by_slot[slot] %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td class="compose-tactic-say-cell">
+                  <input type="text" name="{{ field_prefix }}_pursue_tactic_say_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}" value="" size="24" maxlength="{{ say_text_max_length }}">
+                </td>
+                <td class="compose-tactic-cast-cell">
+                  <select name="{{ field_prefix }}_pursue_tactic_spell_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- choose a spell --</option>
+                    {% for value, label in spell_choices %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td class="compose-tactic-use-mi-cell">
+                  <select class="compose-nested-hero-field" data-hero-field="item" name="{{ field_prefix }}_pursue_tactic_item_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- choose an item --</option>
+                  </select>
+                </td>
+                <td class="compose-tactic-give-cell">
+                  <select class="compose-nested-hero-field" data-hero-field="give_item" name="{{ field_prefix }}_pursue_tactic_give_item_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
+                    <option value="">-- choose an item to Give --</option>
+                  </select>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </td>
+      <td class="compose-special-cell" data-action="{{ hire_action_value }}">
+        <select class="compose-nested-hero-field" data-hero-field="hire_target" name="{{ field_prefix }}_hire_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a Hero to Hire --</option>
+        </select>
+        <select name="{{ field_prefix }}_hire_gold_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- gold offer --</option>
+          {% for amount in hire_gold_offer_choices %}
+            <option value="{{ amount }}">{{ amount }} gold</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">No further nested editor at this depth.</span>
+      </td>
+      <td class="compose-special-cell" data-action="{{ fire_action_value }}">
+        <select class="compose-nested-hero-field" data-hero-field="fire_target" name="{{ field_prefix }}_fire_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a Hero to Fire --</option>
+        </select>
+      </td>
+      <td class="compose-special-cell" data-action="{{ cast_action_value }}">
+        <select class="compose-cast-spell" name="{{ field_prefix }}_cast_spell_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a spell to Cast --</option>
+          {% for value, label in cast_spell_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+        <span class="compose-cast-character-cell">
+          <br><select name="{{ field_prefix }}_cast_character_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose a target --</option>
+            {% for value, label in cast_character_target_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </span>
+        <span class="compose-cast-resurrection-cell">
+          <br><select class="compose-nested-hero-field" data-hero-field="resurrection_target" name="{{ field_prefix }}_cast_resurrection_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose a target --</option>
+          </select>
+        </span>
+        <span class="compose-cast-charm-cell">
+          <br><select class="compose-nested-hero-field" data-hero-field="charm_target" name="{{ field_prefix }}_cast_charm_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose a target --</option>
+          </select>
+          <span class="compose-nested-undead-king-note hex-map-legend-note" style="display: none;">As an Undead King, a successful Charm here may also attempt to convert the target toward Undead.</span>
+        </span>
+        <span class="compose-cast-kill-enemy-cell">
+          <br><select class="compose-nested-hero-field" data-hero-field="kill_enemy_target" name="{{ field_prefix }}_cast_kill_enemy_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose a target --</option>
+          </select>
+        </span>
+        <span class="compose-cast-province-cell">
+          <br><select name="{{ field_prefix }}_cast_province_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose a province --</option>
+            {% for value, label in province_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </span>
+        <span class="compose-cast-terrain-cell">
+          <br><select name="{{ field_prefix }}_cast_terrain_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- fake terrain --</option>
+            {% for value, label in cast_terrain_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </span>
+        <span class="compose-cast-item-cell">
+          <br><select name="{{ field_prefix }}_cast_item_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose an item --</option>
+            {% for value, label in cast_item_target_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </span>
+        <span class="compose-cast-nested-cell"><br><span class="hex-map-legend-note">No further nested editor at this depth.</span></span>
+      </td>
+      <td class="compose-special-cell hex-map-legend-note" data-action="{{ aspy_action_value }}">No input needed -- spies on whatever province this character currently occupies.</td>
+      <td class="compose-special-cell" data-action="{{ use_mi_action_value }}">
+        <select class="compose-use-mi-item compose-nested-hero-field" data-hero-field="use_mi_item" name="{{ field_prefix }}_use_mi_item_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+          <option value="">-- choose a Magic Item to Use --</option>
+        </select>
+        <span class="compose-use-mi-character-cell">
+          <br><select name="{{ field_prefix }}_use_mi_character_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose a target --</option>
+            {% for value, label in cast_character_target_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </span>
+        <span class="compose-use-mi-resurrection-cell">
+          <br><select class="compose-nested-hero-field" data-hero-field="resurrection_target" name="{{ field_prefix }}_use_mi_resurrection_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose a target --</option>
+          </select>
+        </span>
+        <span class="compose-use-mi-charm-cell">
+          <br><select class="compose-nested-hero-field" data-hero-field="charm_target" name="{{ field_prefix }}_use_mi_charm_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose a target --</option>
+          </select>
+        </span>
+        <span class="compose-use-mi-kill-enemy-cell">
+          <br><select class="compose-nested-hero-field" data-hero-field="kill_enemy_target" name="{{ field_prefix }}_use_mi_kill_enemy_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose a target --</option>
+          </select>
+        </span>
+        <span class="compose-use-mi-province-cell">
+          <br><select name="{{ field_prefix }}_use_mi_province_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose a province --</option>
+            {% for value, label in province_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </span>
+        <span class="compose-use-mi-terrain-cell">
+          <br><select name="{{ field_prefix }}_use_mi_terrain_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- fake terrain --</option>
+            {% for value, label in cast_terrain_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </span>
+        <span class="compose-use-mi-nested-cell"><br><span class="hex-map-legend-note">No further nested editor at this depth.</span></span>
+      </td>
+      <td class="compose-generic-cell"><input type="text" name="{{ field_prefix }}_obj_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}" value="0" size="6"></td>
+      <td class="compose-generic-cell"><input type="text" name="{{ field_prefix }}_extra_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}" value="" size="24"></td>
+    </tr>
+  {% endmacro %}
+
   <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
     {% for leader in roster %}
       <h3>{{ leader.name }}{% if leader.is_king %} (King){% endif %}</h3>
@@ -441,7 +838,7 @@
                 </table>
               </td>
               <td class="compose-special-cell" data-action="{{ hire_action_value }}">
-                <select name="hire_target_{{ leader.leader_id }}_{{ n }}">
+                <select class="compose-nested-trigger" name="hire_target_{{ leader.leader_id }}_{{ n }}">
                   <option value="">-- choose a Hero to Hire --</option>
                   {% for value, label in hire_target_choices_by_leader[leader.leader_id] %}
                     <option value="{{ value }}">{{ label }}</option>
@@ -455,23 +852,18 @@
                 </select>
                 {% if n < 4 %}
                   <br><span class="hex-map-legend-note">Hired Hero's own orders, starting next phase (empty rows mean no order that phase):</span>
-                  <table class="data-table compose-hire-nested-plan">
-                    <thead><tr><th>Phase</th><th>Action</th><th>Object</th><th>Extra</th></tr></thead>
+                  <table class="data-table compose-nested-plan">
+                    <thead>
+                      <tr>
+                        <th>Phase</th><th>Action</th><th>Move Destination</th><th>Explore</th><th>Search Feature</th>
+                        <th>Recruit</th><th>Disband</th><th>Leave</th><th>Pick Up</th><th>Give</th><th>Practice</th>
+                        <th>Trail</th><th>Challenge</th><th>Hire</th><th>Fire</th><th>Cast</th><th>Spy</th>
+                        <th>Use Magic Item</th><th>Object</th><th>Extra</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {% for nested_n in range(n + 1, 5) %}
-                        <tr>
-                          <td>P{{ nested_n }}</td>
-                          <td>
-                            <select name="hire_nested_action_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}">
-                              <option value="">-- no order --</option>
-                              {% for action in actions %}
-                                <option value="{{ action.value }}">{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
-                              {% endfor %}
-                            </select>
-                          </td>
-                          <td><input type="text" name="hire_nested_obj_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}" value="0" size="6"></td>
-                          <td><input type="text" name="hire_nested_extra_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}" value="" size="20"></td>
-                        </tr>
+                        {{ nested_row("hire_nested", leader, n, nested_n) }}
                       {% endfor %}
                     </tbody>
                   </table>
@@ -503,7 +895,7 @@
                   </select>
                 </span>
                 <span class="compose-cast-resurrection-cell">
-                  <br><select name="cast_resurrection_target_{{ leader.leader_id }}_{{ n }}">
+                  <br><select class="compose-nested-trigger" name="cast_resurrection_target_{{ leader.leader_id }}_{{ n }}">
                     <option value="">-- choose a target --</option>
                     {% for value, label in resurrection_target_choices_by_leader[leader.leader_id] %}
                       <option value="{{ value }}">{{ label }}</option>
@@ -511,7 +903,7 @@
                   </select>
                 </span>
                 <span class="compose-cast-charm-cell">
-                  <br><select name="cast_charm_target_{{ leader.leader_id }}_{{ n }}">
+                  <br><select class="compose-nested-trigger" name="cast_charm_target_{{ leader.leader_id }}_{{ n }}">
                     <option value="">-- choose a target --</option>
                     {% for value, label in charm_target_choices_by_leader[leader.leader_id] %}
                       <option value="{{ value }}">{{ label }}</option>
@@ -556,23 +948,18 @@
                 <span class="compose-cast-nested-cell">
                   {% if n < 4 %}
                     <br><span class="hex-map-legend-note">The (re)joined character's own orders, starting next phase:</span>
-                    <table class="data-table compose-hire-nested-plan">
-                      <thead><tr><th>Phase</th><th>Action</th><th>Object</th><th>Extra</th></tr></thead>
+                    <table class="data-table compose-nested-plan">
+                      <thead>
+                        <tr>
+                          <th>Phase</th><th>Action</th><th>Move Destination</th><th>Explore</th><th>Search Feature</th>
+                          <th>Recruit</th><th>Disband</th><th>Leave</th><th>Pick Up</th><th>Give</th><th>Practice</th>
+                          <th>Trail</th><th>Challenge</th><th>Hire</th><th>Fire</th><th>Cast</th><th>Spy</th>
+                          <th>Use Magic Item</th><th>Object</th><th>Extra</th>
+                        </tr>
+                      </thead>
                       <tbody>
                         {% for nested_n in range(n + 1, 5) %}
-                          <tr>
-                            <td>P{{ nested_n }}</td>
-                            <td>
-                              <select name="cast_nested_action_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}">
-                                <option value="">-- no order --</option>
-                                {% for action in actions %}
-                                  <option value="{{ action.value }}">{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
-                                {% endfor %}
-                              </select>
-                            </td>
-                            <td><input type="text" name="cast_nested_obj_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}" value="0" size="6"></td>
-                            <td><input type="text" name="cast_nested_extra_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}" value="" size="20"></td>
-                          </tr>
+                          {{ nested_row("cast_nested", leader, n, nested_n) }}
                         {% endfor %}
                       </tbody>
                     </table>
@@ -598,7 +985,7 @@
                   </select>
                 </span>
                 <span class="compose-use-mi-resurrection-cell">
-                  <br><select name="use_mi_resurrection_target_{{ leader.leader_id }}_{{ n }}">
+                  <br><select class="compose-nested-trigger" name="use_mi_resurrection_target_{{ leader.leader_id }}_{{ n }}">
                     <option value="">-- choose a target --</option>
                     {% for value, label in resurrection_target_choices_by_leader[leader.leader_id] %}
                       <option value="{{ value }}">{{ label }}</option>
@@ -606,7 +993,7 @@
                   </select>
                 </span>
                 <span class="compose-use-mi-charm-cell">
-                  <br><select name="use_mi_charm_target_{{ leader.leader_id }}_{{ n }}">
+                  <br><select class="compose-nested-trigger" name="use_mi_charm_target_{{ leader.leader_id }}_{{ n }}">
                     <option value="">-- choose a target --</option>
                     {% for value, label in charm_target_choices_by_leader[leader.leader_id] %}
                       <option value="{{ value }}">{{ label }}</option>
@@ -640,23 +1027,18 @@
                 <span class="compose-use-mi-nested-cell">
                   {% if n < 4 %}
                     <br><span class="hex-map-legend-note">The (re)joined character's own orders, starting next phase:</span>
-                    <table class="data-table compose-hire-nested-plan">
-                      <thead><tr><th>Phase</th><th>Action</th><th>Object</th><th>Extra</th></tr></thead>
+                    <table class="data-table compose-nested-plan">
+                      <thead>
+                        <tr>
+                          <th>Phase</th><th>Action</th><th>Move Destination</th><th>Explore</th><th>Search Feature</th>
+                          <th>Recruit</th><th>Disband</th><th>Leave</th><th>Pick Up</th><th>Give</th><th>Practice</th>
+                          <th>Trail</th><th>Challenge</th><th>Hire</th><th>Fire</th><th>Cast</th><th>Spy</th>
+                          <th>Use Magic Item</th><th>Object</th><th>Extra</th>
+                        </tr>
+                      </thead>
                       <tbody>
                         {% for nested_n in range(n + 1, 5) %}
-                          <tr>
-                            <td>P{{ nested_n }}</td>
-                            <td>
-                              <select name="use_mi_nested_action_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}">
-                                <option value="">-- no order --</option>
-                                {% for action in actions %}
-                                  <option value="{{ action.value }}">{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
-                                {% endfor %}
-                              </select>
-                            </td>
-                            <td><input type="text" name="use_mi_nested_obj_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}" value="0" size="6"></td>
-                            <td><input type="text" name="use_mi_nested_extra_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}" value="" size="20"></td>
-                          </tr>
+                          {{ nested_row("use_mi_nested", leader, n, nested_n) }}
                         {% endfor %}
                       </tbody>
                     </table>
@@ -899,6 +1281,84 @@
   document.addEventListener("change", function (event) {
     if (event.target.classList && event.target.classList.contains("compose-trade-gift")) {
       updateTradeGiftCell(event.target);
+    }
+  });
+
+  // One level of nested-plan richness (2026-11-02): the newly-(re)joined
+  // character's own leader-scoped dropdowns (webapp/moves_compose.py's
+  // own nested_hero_option_bundle()) start empty and are populated here,
+  // client-side, the moment a real target is chosen in this cell's own
+  // triggering dropdown ("compose-nested-trigger" -- Hire's target,
+  // Cast's/Use_MI's Charm or Resurrection target). See this template's
+  // own nested_row() macro docstring for the full rationale.
+  var HERO_OPTIONS_URL = "{{ url_for('turns_compose_hero_options', slug=meta.slug, kingdom_id=kingdom_id) }}";
+
+  function populateNestedPlan(nestedPlanEl, bundle) {
+    nestedPlanEl.querySelectorAll(".compose-nested-hero-field").forEach(function (select) {
+      var key = select.getAttribute("data-hero-field");
+      var slotRaw = select.getAttribute("data-slot");
+      var options = bundle[key] || [];
+      if (slotRaw !== null) {
+        options = options[parseInt(slotRaw, 10)] || [];
+      }
+      while (select.options.length > 1) {
+        select.remove(1);
+      }
+      options.forEach(function (pair) {
+        var opt = document.createElement("option");
+        opt.value = pair[0];
+        opt.textContent = pair[1];
+        if (key === "use_mi_item" && bundle.use_mi_item_spell_by_id) {
+          opt.setAttribute("data-spell", bundle.use_mi_item_spell_by_id[pair[0]] || "");
+        }
+        select.appendChild(opt);
+      });
+      // The select's own previously-selected option no longer exists --
+      // every dependent cell this select itself drives (an Encounter
+      // Plan tactic sub-cell, Use_MI's own target shape, Give's own
+      // gold field) needs re-evaluating against its new, reset value.
+      if (select.classList.contains("compose-tactic-slot")) {
+        updateTacticSubCell(select);
+      } else if (select.classList.contains("compose-use-mi-item")) {
+        updateUseMICell(select);
+      } else if (select.classList.contains("compose-trade-gift")) {
+        updateTradeGiftCell(select);
+      } else if (select.classList.contains("compose-army-all-slot")) {
+        var armyAllPlan = select.closest(".compose-army-all-plan");
+        if (armyAllPlan) updateArmyAllPlan(armyAllPlan);
+      }
+    });
+    nestedPlanEl.querySelectorAll(".compose-encounter-plan").forEach(updateEncounterPlan);
+    nestedPlanEl.querySelectorAll(".compose-nested-undead-king-note").forEach(function (el) {
+      el.style.display = bundle.is_undead_king ? "" : "none";
+    });
+  }
+
+  function updateNestedTrigger(select) {
+    var cell = select.closest(".compose-special-cell");
+    if (!cell) return;
+    var nestedPlans = cell.querySelectorAll(".compose-nested-plan");
+    if (!nestedPlans.length) return;
+    if (!select.value) {
+      nestedPlans.forEach(function (el) {
+        populateNestedPlan(el, {});
+      });
+      return;
+    }
+    fetch(HERO_OPTIONS_URL + "?hero_id=" + encodeURIComponent(select.value))
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (bundle) {
+        nestedPlans.forEach(function (el) {
+          populateNestedPlan(el, bundle);
+        });
+      });
+  }
+
+  document.addEventListener("change", function (event) {
+    if (event.target.classList && event.target.classList.contains("compose-nested-trigger")) {
+      updateNestedTrigger(event.target);
     }
   });
 </script>

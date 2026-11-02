@@ -2874,23 +2874,218 @@ def _parse_hire_gold_offer(raw: str, *, phase_label: str) -> int:
     return amount
 
 
+def nested_hero_option_bundle(state: GameState, hero_id: int) -> dict:
+    """Every leader-scoped dropdown's own full set of ``(value, label)``
+    choices for ``hero_id``, bundled as one JSON-ready ``dict`` for the
+    ``/games/<slug>/turns/<n>/compose/hero_options`` endpoint.
+
+    **Why this exists at all**: a newly-(re)joined character's own
+    identity (who got Hired, Charmed, or Resurrected) is only known
+    once the GM actually picks a target in that *same* form -- so the
+    normal, server-rendered-at-page-load dropdowns this module gives
+    every real roster leader (``feature_choices_by_leader``, etc.)
+    can't be precomputed for "whoever ends up triggering this nesting"
+    the same way. Instead, the nested-plan editor's own leader-scoped
+    cells start empty and are populated client-side, via a fetch to
+    this bundle, the moment the GM picks a real target in the
+    triggering Hire/Charm/Resurrection dropdown (``updateNestedPlan()``
+    in the template). Every *globally*-scoped dropdown (Move's
+    ``province_choices``, Cast's generic character/item targets) needs
+    no such fetch at all -- those render directly, identically, inside
+    the nested editor too, the same real list every other row already
+    uses.
+
+    **A Resurrection candidate may not be in ``state.leaders`` at all**
+    (a dead Hero, or one merely comatose stays in ``state.leaders`` and
+    needs no special handling). For a genuinely dead one, every
+    leader-scoped ``*_options()`` function below already guards with
+    its own ``if leader_id not in state.leaders: return []`` (confirmed
+    directly, e.g. ``trail_target_options()``'s own docstring) -- so,
+    rather than accept that silent, misleadingly-empty degradation,
+    this function temporarily reinserts the dead leader's own stored
+    ``dead_leaders[hero_id]`` snapshot (location, kingdom, skills --
+    exactly what a real resurrection restores) into ``state.leaders``
+    for the duration of this one call, then removes it again
+    (``try``/``finally``) -- never a lasting mutation, and never
+    disturbs an id that was already alive (``is_temp_insert`` guards
+    that).
+    """
+
+    is_temp_insert = hero_id not in state.leaders and hero_id in state.dead_leaders
+    if is_temp_insert:
+        state.leaders[hero_id] = state.dead_leaders[hero_id]
+    try:
+        leader = state.leaders.get(hero_id)
+        return {
+            "search_feature": feature_options(state, leader_id=hero_id),
+            "recruit_target": recruit_target_options(state, hero_id),
+            "recruit_type": recruit_type_options(state, hero_id),
+            "disband_target": [disband_target_options(state, hero_id, slot=slot) for slot in range(DISBAND_SLOT_COUNT)],
+            "leave_target": leave_target_options(state, hero_id),
+            "leave_army": [leave_army_target_options(state, hero_id, slot=slot) for slot in range(LEAVE_SLOT_COUNT)],
+            "pick_up_target": [
+                pick_up_army_target_options(state, hero_id, slot=slot) for slot in range(PICK_UP_SLOT_COUNT)
+            ],
+            "trade_recipient": trade_recipient_options(state, hero_id),
+            "trade_gift": trade_gift_options(state, hero_id),
+            "trail_target": trail_target_options(state, hero_id),
+            "pursue_target": pursue_target_options(state, hero_id),
+            "challenge_target": challenge_target_options(state, hero_id),
+            "hire_target": hire_target_options(state, hero_id),
+            "fire_target": fire_target_options(state, hero_id),
+            "resurrection_target": resurrection_target_options(state, hero_id),
+            "charm_target": charm_target_options(state, hero_id),
+            "kill_enemy_target": kill_enemy_target_options(state, hero_id),
+            "item": item_options(state, hero_id),
+            "use_mi_item": use_mi_item_options(state, hero_id),
+            "use_mi_item_spell_by_id": {str(k): v for k, v in use_mi_item_spell_by_id(state).items()},
+            "give_item": give_item_options(state, hero_id),
+            "is_undead_king": bool(leader is not None and leader.is_king and leader.alignment is Alignment.UNDEAD),
+        }
+    finally:
+        if is_temp_insert:
+            del state.leaders[hero_id]
+
+
+# Every plain (per leader+phase, no slot) top-level field template this
+# module's own parse_phase_inputs() reads, used by _remap_nested_fields()
+# below to rebuild the same field names, under the plain (non-nested)
+# scheme, from whichever <field_prefix>-prefixed ones the nested-plan
+# editor posted. "action"/"obj"/"extra" are the three every Action
+# falls back to; the rest are each one specific Action's own dedicated
+# field (see this module's own docstring for which Action reads which).
+_NESTED_PLAIN_FIELD_TEMPLATES: tuple[str, ...] = (
+    "action",
+    "obj",
+    "extra",
+    "move_target",
+    "defend_target",
+    "search_feature",
+    "recruit_target",
+    "leave_target",
+    "trade_recipient",
+    "trade_gift",
+    "trade_gold",
+    "practice_ability",
+    "trail_target",
+    "challenge_target",
+    "pursue_target",
+    "hire_target",
+    "hire_gold",
+    "fire_target",
+    "cast_spell",
+    "cast_character_target",
+    "cast_province_target",
+    "cast_terrain",
+    "cast_item_target",
+    "cast_resurrection_target",
+    "cast_charm_target",
+    "cast_kill_enemy_target",
+    "use_mi_item",
+    "use_mi_character_target",
+    "use_mi_province_target",
+    "use_mi_terrain",
+    "use_mi_resurrection_target",
+    "use_mi_charm_target",
+    "use_mi_kill_enemy_target",
+)
+
+# Every slotted (per leader+phase+slot) top-level field template, paired
+# with its own real slot count.
+_NESTED_SLOTTED_FIELD_TEMPLATES: tuple[tuple[str, int], ...] = (
+    ("recruit_type", RECRUIT_TYPE_SLOT_COUNT),
+    ("disband_target", DISBAND_SLOT_COUNT),
+    ("leave_army", LEAVE_SLOT_COUNT),
+    ("pick_up_target", PICK_UP_SLOT_COUNT),
+)
+
+# Every Encounter Plan tactic-slot field's own field_prefix (Search's
+# own "tactic", Challenge's/Pursue's own "challenge_tactic"/
+# "pursue_tactic") and the sub-field suffixes _parse_search_tactics()
+# itself reads for each slot ("" is the slot's own base maneuver value).
+_NESTED_TACTIC_FIELD_PREFIXES: tuple[str, ...] = ("tactic", "challenge_tactic", "pursue_tactic")
+_NESTED_TACTIC_SUB_SUFFIXES: tuple[str, ...] = ("", "_say", "_spell", "_item", "_give_item", "_sub")
+
+
+def _remap_nested_fields(
+    form: dict[str, str], *, field_prefix: str, outer_leader_id: int, outer_n: int, hero_id: int
+) -> dict[str, str]:
+    """Rewrites every nested-plan field the template posts under its own
+    ``<field_prefix>_<base>_<outer_leader_id>_<outer_n>_<m>[_<slot>]``
+    naming into the plain ``<base>_<hero_id>_<m>[_<slot>]`` key
+    ``parse_phase_inputs()`` (and every helper it calls) already
+    expects for an ordinary top-level phase -- letting the newly-
+    (re)joined character's own nested phases ``P<n+1>..P4`` be parsed
+    by calling ``parse_phase_inputs()`` completely unchanged, rather
+    than threading a ``field_prefix`` through every one of its ~20
+    existing, already-tested helper functions.
+
+    Every phase *outside* ``n+1..PHASE_COUNT-1``, **and** every phase
+    inside it whose own ``<field_prefix>_action_..._<m>`` was posted
+    empty ("-- no order --", the template's own default -- a real,
+    GM-chosen "nothing this phase" rather than a missing field) gets a
+    plain ``action_<hero_id>_<m> = WAIT`` filler instead -- ``parse_
+    phase_inputs()`` always validates all 5 phases eagerly, and an
+    entirely empty ``action`` field raises (``_parse_action("")``), so
+    every phase it will ever look at needs *some* real, harmless
+    value. ``_parse_nested_plan()`` below tells a real order apart from
+    this filler by checking the original posted key directly, not by
+    the remapped action's own value (both read back as ``ActionCode.
+    WAIT`` otherwise).
+    """
+
+    remapped: dict[str, str] = {}
+    for m in range(PHASE_COUNT):
+        real_action_key = f"{field_prefix}_action_{outer_leader_id}_{outer_n}_{m}"
+        if m <= outer_n or not form.get(real_action_key):
+            remapped[f"action_{hero_id}_{m}"] = str(int(ActionCode.WAIT))
+            continue
+        for base in _NESTED_PLAIN_FIELD_TEMPLATES:
+            posted_key = f"{field_prefix}_{base}_{outer_leader_id}_{outer_n}_{m}"
+            if posted_key in form:
+                remapped[f"{base}_{hero_id}_{m}"] = form[posted_key]
+        for base, slot_count in _NESTED_SLOTTED_FIELD_TEMPLATES:
+            for slot in range(slot_count):
+                posted_key = f"{field_prefix}_{base}_{outer_leader_id}_{outer_n}_{m}_{slot}"
+                if posted_key in form:
+                    remapped[f"{base}_{hero_id}_{m}_{slot}"] = form[posted_key]
+        for tactic_prefix in _NESTED_TACTIC_FIELD_PREFIXES:
+            for slot in range(TACTIC_SLOT_COUNT):
+                for suffix in _NESTED_TACTIC_SUB_SUFFIXES:
+                    posted_key = f"{field_prefix}_{tactic_prefix}{suffix}_{outer_leader_id}_{outer_n}_{m}_{slot}"
+                    if posted_key in form:
+                        remapped[f"{tactic_prefix}{suffix}_{hero_id}_{m}_{slot}"] = form[posted_key]
+    return remapped
+
+
 def _parse_nested_plan(
-    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, field_prefix: str, hero_id: int
+    form: dict[str, str],
+    leader_id: int,
+    n: int,
+    *,
+    phase_label: str,
+    field_prefix: str,
+    hero_id: int,
+    board_width: int,
+    state: GameState,
 ) -> "ActionPlan | None":
-    """Reads this phase's own repeated ``<field_prefix>_action_
-    <leader_id>_<n>_<m>``/``<field_prefix>_obj_<leader_id>_<n>_<m>``/
-    ``<field_prefix>_extra_<leader_id>_<n>_<m>`` fields (``m`` in
-    ``n+1..PHASE_COUNT-1``) into the newly-(re)joined character's own
-    ``ActionPlan`` -- shared, unchanged, by every Action that can embed
-    a ``PlanPhase.nested_plan`` (Hire, rulebook [3.5]; a Cast of Charm
-    or Resurrection, rulebook [3.10]/[4.21.1]) -- all three sources name
-    the same "orders start the phase *after* this one" rule, and
+    """Reads the newly-(re)joined character's own nested phases
+    ``P<n+1>..P4`` with the exact same full, per-Action composer every
+    ordinary top-level phase gets (``parse_phase_inputs()``, called
+    recursively against ``hero_id`` once ``_remap_nested_fields()`` has
+    rebuilt its own plain field names from this phase's own
+    ``<field_prefix>``-prefixed ones -- see that function's own
+    docstring). Shared, unchanged, by every Action that can embed a
+    ``PlanPhase.nested_plan`` (Hire, rulebook [3.5]; a Cast or Use_MI-
+    wand of Charm or Resurrection, rulebook [3.10]/[4.21.1]) -- all
+    name the same "orders start the phase *after* this one" rule, and
     ``parser/k1_moves.py`` parses/round-trips all three identically
     (``models/plan.py``'s own "Nested plans" docstring). The engine
     itself enforces none of this ordering (confirmed: ``parser/k1_
     moves.py`` happily round-trips a nested plan starting at or before
-    its own triggering phase) -- by only ever offering/reading slots
+    its own triggering phase) -- by only ever offering/reading phases
     strictly after ``n``, this composer is what actually guarantees it.
+
     A row left with no Action chosen is simply omitted (``PlanSegment.
     phases`` is a sparse label->phase mapping, not a list -- no "no
     gaps" requirement, unlike a Search Encounter Plan's own tactic
@@ -2898,27 +3093,39 @@ def _parse_nested_plan(
     attempt's own "nothing embedded" outcome and ``parser/k1_moves_
     writer.py``'s own "a nested plan never attaches to P4" rule for a
     triggering phase composed at ``P4`` itself (``range(n+1,
-    PHASE_COUNT)`` is then empty, so no row is ever offered there).
-    Only the plain generic Action/Object/Extra fields every other not-
-    yet-dedicated Action already falls back to are used here -- not yet
-    the full per-Action friendly composer recursively applied to the
-    newly-(re)joined character's own orders (a further refinement, not
-    attempted this round).
+    PHASE_COUNT)`` is then empty, so this function is never even
+    called there). **Deliberately caps at one level of nesting** -- a
+    further Hire/Charm/Resurrection *within* this hero's own composed
+    phases still gets no rich nested editor of its own (the template
+    renders no third-level markup, so ``parse_phase_inputs()``'s own
+    recursive ``_parse_nested_plan()`` call for *that* simply finds no
+    matching fields and returns ``None``, the same safe "nothing
+    embedded" degradation as an empty row) -- turn phases are too
+    scarce for this to lose any real expressiveness in practice (a
+    plan starting at P3 leaves only P4 for a further nesting trigger,
+    which itself would then have zero phases left to nest into).
     """
 
+    remapped_form = _remap_nested_fields(form, field_prefix=field_prefix, outer_leader_id=leader_id, outer_n=n, hero_id=hero_id)
+    phase_inputs = parse_phase_inputs(remapped_form, hero_id, board_width=board_width, state=state)
     phases: dict[str, PlanPhase] = {}
     for nested_n in range(n + 1, PHASE_COUNT):
-        raw_action = form.get(f"{field_prefix}_action_{leader_id}_{n}_{nested_n}", "")
-        if not raw_action:
+        phase_input = phase_inputs[nested_n]
+        if phase_input.action is ActionCode.WAIT and not form.get(f"{field_prefix}_action_{leader_id}_{n}_{nested_n}"):
+            # Missing entirely, or posted empty ("-- no order --", the
+            # template's own default) -- _remap_nested_fields()'s own
+            # WAIT filler, not a real, GM-chosen WAIT order.
+            # Distinguishing the two needs the raw posted key, since
+            # both decode to the exact same ComposedPhaseInput.
             continue
         label = f"P{nested_n}"
-        action = _parse_action(raw_action)
-        obj = _parse_int(
-            form.get(f"{field_prefix}_obj_{leader_id}_{n}_{nested_n}", "0") or "0",
-            field_label=f"{phase_label} nested {label} Object",
+        phases[label] = PlanPhase(
+            label=label,
+            action=phase_input.action,
+            obj=phase_input.obj,
+            extra=phase_input.extra,
+            nested_plan=phase_input.nested_plan,
         )
-        extra = _parse_extra(form.get(f"{field_prefix}_extra_{leader_id}_{n}_{nested_n}", ""))
-        phases[label] = PlanPhase(label=label, action=action, obj=obj, extra=extra)
     if not phases:
         return None
     nested_labels = sorted(int(label[1:]) for label in phases)
@@ -3709,7 +3916,8 @@ def parse_phase_inputs(
             obj = hero_id
             extra = [_parse_hire_gold_offer(form.get(f"hire_gold_{leader_id}_{n}", ""), phase_label=f"P{n}")]
             nested_plan = _parse_nested_plan(
-                form, leader_id, n, phase_label=f"P{n}", field_prefix="hire_nested", hero_id=hero_id
+                form, leader_id, n, phase_label=f"P{n}", field_prefix="hire_nested", hero_id=hero_id,
+                board_width=board_width, state=state,
             )
         elif action is ActionCode.FIRE:
             obj = _parse_fire_target(form, leader_id, n, phase_label=f"P{n}", state=state)
@@ -3718,7 +3926,8 @@ def parse_phase_inputs(
             obj, extra, cast_nested_hero_id = _parse_cast_phase(form, leader_id, n, phase_label=f"P{n}", state=state)
             if cast_nested_hero_id is not None:
                 nested_plan = _parse_nested_plan(
-                    form, leader_id, n, phase_label=f"P{n}", field_prefix="cast_nested", hero_id=cast_nested_hero_id
+                    form, leader_id, n, phase_label=f"P{n}", field_prefix="cast_nested", hero_id=cast_nested_hero_id,
+                    board_width=board_width, state=state,
                 )
         elif action is ActionCode.ASPY:
             obj = encode_hex_number(state.leaders[leader_id].location, board_width)
@@ -3727,7 +3936,8 @@ def parse_phase_inputs(
             obj, extra, use_mi_nested_hero_id = _parse_use_mi_phase(form, leader_id, n, phase_label=f"P{n}", state=state)
             if use_mi_nested_hero_id is not None:
                 nested_plan = _parse_nested_plan(
-                    form, leader_id, n, phase_label=f"P{n}", field_prefix="use_mi_nested", hero_id=use_mi_nested_hero_id
+                    form, leader_id, n, phase_label=f"P{n}", field_prefix="use_mi_nested", hero_id=use_mi_nested_hero_id,
+                    board_width=board_width, state=state,
                 )
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")

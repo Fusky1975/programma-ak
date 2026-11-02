@@ -17,7 +17,7 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
-from flask import Flask, Response, redirect, render_template, request, url_for
+from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
 
 from ak_engine.models.advanced_ability import ADVANCED_ABILITY_NAME, AdvancedAbility
 from ak_engine.models.alignment import Alignment
@@ -112,6 +112,7 @@ from ak_engine.webapp.moves_compose import (
     kingdom_leaders_for_compose,
     leave_army_target_options,
     leave_target_options,
+    nested_hero_option_bundle,
     pick_up_army_target_options,
     practice_ability_options,
     province_options,
@@ -3194,6 +3195,30 @@ def create_app(games_root: Path | None = None) -> Flask:
             },
             error=request.args.get("error"),
         )
+
+    @app.get("/games/<slug>/turns/<int:kingdom_id>/compose/hero_options")
+    def turns_compose_hero_options(slug: str, kingdom_id: int):
+        """JSON bundle of every leader-scoped dropdown's own choices for
+        one hero (``?hero_id=<id>``) -- see ``moves_compose.py``'s own
+        ``nested_hero_option_bundle()`` docstring for why this exists:
+        a nested-plan editor's own target character isn't known until
+        the GM picks one in the *same* form, so those cells are
+        populated client-side from this endpoint (``updateNestedPlan()``
+        in ``turns_compose.html``) instead of at page-render time.
+        ``kingdom_id`` is only part of this URL for consistency with
+        the compose page's own -- a Hire/Charm/Resurrection target can
+        be any hero in the whole game, never restricted to one Kingdom.
+        """
+
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return jsonify({"error": "Game not found."}), 404
+        hero_id = request.args.get("hero_id", type=int)
+        if hero_id is None:
+            return jsonify({"error": "hero_id is required."}), 400
+        return jsonify(nested_hero_option_bundle(state, hero_id))
 
     @app.post("/games/<slug>/turns/<int:kingdom_id>/compose")
     def turns_compose_save(slug: str, kingdom_id: int):
