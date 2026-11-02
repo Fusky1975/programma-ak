@@ -810,9 +810,10 @@ docstring). ``field_prefix="challenge_tactic"`` keeps Challenge's own
 tactic-slot form fields from colliding with Search's own identically-
 shaped ``tactic_*`` fields when both cells exist in the same composed
 phase row. ``Maneuver.GIVE``'s own sub-object, when used as a Challenge/
-Pursue tactic, still reads the plain generic numeric field for now (no
-dedicated item dropdown yet -- a further refinement, not attempted this
-round).
+Pursue tactic, now gets its own dedicated, ownership-filtered item
+dropdown too (``give_item_options()``, 2026-11-01 -- see this module's
+own docstring's Give section for the full "multiple items via multiple
+slots" rationale).
 
 **Hire Hero [HI] (``ActionCode.HIRE``), the ninth Action designed**
 (2026-10-31) -- confirmed against the user's own full Italian [3.5]
@@ -852,11 +853,12 @@ choice, this round builds a basic nested-plan editor now rather than
 deferring it: for a Hire composed at phase ``P<n>``, the GM additionally
 gets one row per remaining phase ``P<n+1>..P4`` (none at all if ``n``
 is ``P4`` itself, matching ``parser/k1_moves_writer.py``'s own "a nested
-plan can never attach to P4" rule), each with the same plain generic
-Action + Object + Extra fields every not-yet-dedicated Action already
-falls back to below -- not yet the full per-Action friendly composer
-recursively applied to the hired Hero's own orders, a further
-refinement for later. A row left with no Action chosen is simply
+plan can never attach to P4" rule). **2026-11-02**: each row now gets
+the exact same full per-Action special-cell composer every ordinary
+P0-P4 phase gets, not just the plain generic Action/Object/Extra
+fields (see this module's own docstring's Special Encounter Plan
+section's sibling, the Nested Plan Richness paragraph further below,
+and ``_parse_nested_plan()``'s own docstring). A row left with no Action chosen is simply
 omitted from the nested plan (no "no gaps" requirement, since
 ``PlanSegment.phases`` is a sparse label->phase mapping, not a list);
 leaving every row empty is equivalent to the Hero receiving no orders
@@ -1103,6 +1105,36 @@ new table at all, same "the UI's own idle state already matches the
 engine's own real default" property every other dropdown on this page
 already has.
 
+**Nested Plan Richness** (2026-11-02) -- a newly-(re)joined character's
+own orders (after Hire, a Charm/Resurrection Cast, or a wand-cast
+Charm/Resurrection via Use Magic Item) now get the exact same full
+per-Action special-cell composer every ordinary P0-P4 phase gets
+(``_parse_nested_plan()``), not the plain generic Action/Object/Extra
+fields the very first Hire round shipped. The one real wrinkle: which
+hero triggers a given nesting is only known once the GM actually picks
+one in this *same* form, so this round's leader-scoped dropdowns
+(``feature_options()``, ``recruit_target_options()``, and every other
+``*_options()`` function that isn't globally scoped) can't be
+precomputed the way the real roster's own choices already are. Solved
+with a new JSON endpoint, ``/games/<slug>/turns/<kingdom_id>/compose/
+hero_options`` (``nested_hero_option_bundle()``), called client-side
+the moment a real target is chosen in the triggering dropdown -- a
+dead Resurrection candidate (not in ``state.leaders`` at all) is
+temporarily, safely reinserted from its own ``dead_leaders`` snapshot
+for that one call, then removed again. ``_parse_nested_plan()`` itself
+reuses every one of ``parse_phase_inputs()``'s own ~20 existing,
+already-tested helper functions completely unchanged -- a remapping
+pass (``_remap_nested_fields()``) rewrites this phase's own
+``<field_prefix>``-namespaced posted fields into the plain names those
+helpers already expect, then calls ``parse_phase_inputs()`` recursively
+against the hero's own id, rather than threading a ``field_prefix``
+through each of them. Deliberately caps at one level of nesting -- a
+Hire/Charm/Resurrection chosen *inside* this nested row gets its own
+target dropdown but no further nested editor of its own (see that
+function's own docstring for why this loses no real expressiveness:
+turn phases are too scarce for a third level to ever have room to
+compose anything in).
+
 **Why this goes through a real ``Kingdom`` + ``parser/k1_moves_writer.py``
 rather than writing straight to ``GameState``**: the exact same shape a
 future player-facing "create your own moves" UI will need to produce
@@ -1299,8 +1331,12 @@ PHASE_COUNT = 5  # P0..P4 -- every real AK3__T*.K1 sample's own leader block sha
 
 # "Nothing special configured" -- the one Special Encounter Plan value
 # every leader in this project's own real sample files shows (sourced
-# directly: no sample has ever shown a different SP: value). Composing
-# a real Special Encounter Plan is deferred to a later round.
+# directly: no sample has ever shown a different SP: value). Every
+# real roster leader's own SP: is now composable (see this module's
+# own docstring's Special Encounter Plan section) -- this default
+# stays in use for a hero's own *nested* plan, where composing a real
+# SP: is deliberately out of scope (see the Nested Plan Richness
+# section's own closing paragraph).
 DEFAULT_SP: tuple[int, ...] = (10, -1)
 
 # A safe, real-sample-matched default for the move file's own header
