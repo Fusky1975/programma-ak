@@ -1079,10 +1079,29 @@ options()``'s own, narrower ``ENCOUNTER_PLAN_CASTABLE_SPELLS`` filter)
 by direct enumeration, not assumed.
 
 Every other not-yet-designed action still falls back to the plain
-Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
-isn't exposed here yet either, for the same reason -- every composed
-leader gets the plain ``(10, -1)`` "nothing special configured" ``SP:``
-value every real sample already shows by default.
+Object/Extra integers.
+
+**Special Encounter Plan [5.10] (``PlanSegment.sp``)** (2026-11-02) --
+every leader now gets his own standing-posture tactic-slot table
+(``_parse_special_encounter_plan()``), shown once per leader rather
+than once per phase: this is the plan a commander falls back to
+whenever he's drawn into an Encounter he didn't himself order this
+turn (an enemy's Challenge/Pursue finding him, or -- per ``turn/sep_
+decode.py target_uses_special_encounter_plan()`` -- *any* Encounter at
+all, friendly or wandering-monster, if he commands no army). Reuses
+the exact same tactic-slot UI and ``_parse_search_tactics()`` call
+every phase's own Encounter Plan already uses (``field_prefix=
+"sep_tactic"``, ``allow_give=True`` -- confirmed a real, Pascal-sourced
+SEP tactic, see that function's own docstring), minus the leading
+``tl``/``extra0`` slot every phase's own ``extra`` carries (``turn/
+sep_decode.py``'s own confirmed wire format: SP: is a pure tactic
+list, nothing else). Leaving every slot empty still composes the real
+``DEFAULT_SP`` (``(10, -1)``, decoding to a lone Flee tactic) -- not a
+placeholder kept around for this round, but the one real value every
+sample file already showed, now reachable by simply not touching the
+new table at all, same "the UI's own idle state already matches the
+engine's own real default" property every other dropdown on this page
+already has.
 
 **Why this goes through a real ``Kingdom`` + ``parser/k1_moves_writer.py``
 rather than writing straight to ``GameState``**: the exact same shape a
@@ -3441,6 +3460,57 @@ def _parse_search_tactics(
     return tokens
 
 
+def _parse_special_encounter_plan(form: dict[str, str], leader_id: int, *, state: GameState) -> tuple[int | str, ...]:
+    """Reads this leader's own standing Special Encounter Plan [5.10]
+    (``sep_tactic_<leader_id>_0_<slot>``'s own repeated tactic slots,
+    ``slot`` in ``0..TACTIC_SLOT_COUNT-1``) into ``PlanSegment.sp``'s
+    real wire shape.
+
+    Reuses ``_parse_search_tactics()`` directly (``field_prefix=
+    "sep_tactic"``, ``allow_give=True`` -- ``turn/sep_decode.py``'s own
+    docstring confirms ``Plan_Intent()``'s real Pascal source treats
+    ``CGive`` as a legitimate SEP tactic, unlike Search's own rulebook-
+    barred exclusion), with a fixed ``n=0`` -- there is exactly one SEP
+    per leader per turn, not one per phase, so ``n`` here is only ever
+    used to keep this plan's own field names distinct from every real
+    phase's (``_parse_search_tactics()`` never reads ``n`` for anything
+    else, confirmed by that function's own docstring).
+
+    **Unlike every phase's own Encounter Plan**, SP: has no leading
+    ``tl``/``extra0`` slot at all (``turn/sep_decode.py``'s own
+    docstring, confirmed against every real sample) -- so, unlike
+    ``extra = [0, *_parse_search_tactics(...)]`` everywhere else in this
+    module, this function's return value is used as ``PlanSegment.sp``
+    completely unprefixed.
+
+    A hired/charmed/resurrected character's own *nested* plan still
+    gets the plain ``DEFAULT_SP`` placeholder (``_parse_nested_plan()``)
+    -- composing a newly-joined character's own standing SEP is
+    deliberately out of this round's scope, deferred alongside that
+    function's own still-generic Object/Extra nested-order fields.
+
+    **Leaving every slot untouched must still compose ``DEFAULT_SP``,
+    not a genuinely empty plan** -- ``_parse_search_tactics()``'s own
+    real "nothing filled in" result is the bare terminator ``[-1]``,
+    which ``turn/sep_decode.py plan_intent()`` reads as *aggressive*
+    Melee intent (`Plan_Intent`'s own "IF int = CNone THEN int:=
+    CMelee" fallback), not Flee -- silently flipping every already-
+    composed Kingdom's own leaders from the safe default every real
+    sample shows to an aggressive one the moment this table first
+    renders, with nobody having touched it. Special-cased back to
+    ``DEFAULT_SP`` below so the new table's own idle state keeps
+    matching the engine's real pre-existing default, the same property
+    this function's own docstring above claims.
+    """
+
+    tactics = _parse_search_tactics(
+        form, leader_id, 0, phase_label="Special Encounter Plan", state=state, field_prefix="sep_tactic", allow_give=True
+    )
+    if tactics == [-1]:
+        return DEFAULT_SP
+    return tuple(tactics)
+
+
 def parse_phase_inputs(
     form: dict[str, str], leader_id: int, *, board_width: int, state: GameState
 ) -> list[ComposedPhaseInput]:
@@ -3676,7 +3746,10 @@ def build_composed_kingdom(
 ) -> Kingdom:
     """Builds the real ``Kingdom`` this Kingdom's composed-moves form
     describes -- one ``Leader``/``ActionPlan`` per ``kingdom_leaders_
-    for_compose()`` entry, each read via ``parse_phase_inputs()``.
+    for_compose()`` entry, each read via ``parse_phase_inputs()`` for
+    its own P0-P4 phases plus ``_parse_special_encounter_plan()`` for
+    its own standing ``PlanSegment.sp`` (see this module's own
+    docstring's Special Encounter Plan section).
 
     Raises ``InvalidComposedMovesError`` if the King can't be identified
     or any phase's own input doesn't parse.
@@ -3700,7 +3773,8 @@ def build_composed_kingdom(
             )
             for n, phase_input in enumerate(phase_inputs)
         }
-        segment = PlanSegment(plan_start=0, plan_end=PHASE_COUNT - 1, sp=DEFAULT_SP, phases=phases)
+        sp = _parse_special_encounter_plan(form, leader_state.leader_id, state=state)
+        segment = PlanSegment(plan_start=0, plan_end=PHASE_COUNT - 1, sp=sp, phases=phases)
         plan = ActionPlan(leader_id=leader_state.leader_id, segments=[segment])
         leaders.append(Leader(leader_id=leader_state.leader_id, name=leader_state.name, plan=plan))
 

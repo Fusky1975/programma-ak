@@ -66,6 +66,57 @@
   <form method="post" action="{{ url_for('turns_compose_save', slug=meta.slug, kingdom_id=kingdom_id) }}">
     {% for leader in roster %}
       <h3>{{ leader.name }}{% if leader.is_king %} (King){% endif %}</h3>
+      <p class="hex-map-legend-note">
+        Special Encounter Plan [5.10] -- this leader's own standing posture, used whenever he's drawn into an
+        Encounter he didn't himself order this turn (an enemy's Challenge/Pursue, or -- if he leads no army at
+        all -- any Encounter at all, friendly or wandering-monster). Empty slots stop the list there; an
+        entirely empty plan reads as an aggressive stance, the same real default every leader's own move file
+        already carries.
+      </p>
+      <table class="data-table compose-encounter-plan">
+        <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th><th>Give Item</th></tr></thead>
+        <tbody>
+          {% for slot in tactic_slot_numbers %}
+            <tr>
+              <td>
+                <select class="compose-tactic-slot" name="sep_tactic_{{ leader.leader_id }}_0_{{ slot }}">
+                  <option value="">-- no tactic --</option>
+                  {% for value, label in sep_tactic_choices_by_slot[slot] %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="compose-tactic-say-cell">
+                <input type="text" name="sep_tactic_say_{{ leader.leader_id }}_0_{{ slot }}" value="" size="24" maxlength="{{ say_text_max_length }}">
+              </td>
+              <td class="compose-tactic-cast-cell">
+                <select name="sep_tactic_spell_{{ leader.leader_id }}_0_{{ slot }}">
+                  <option value="">-- choose a spell --</option>
+                  {% for value, label in spell_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="compose-tactic-use-mi-cell">
+                <select name="sep_tactic_item_{{ leader.leader_id }}_0_{{ slot }}">
+                  <option value="">-- choose an item --</option>
+                  {% for value, label in item_choices_by_leader[leader.leader_id] %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="compose-tactic-give-cell">
+                <select name="sep_tactic_give_item_{{ leader.leader_id }}_0_{{ slot }}">
+                  <option value="">-- choose an item to Give --</option>
+                  {% for value, label in give_item_choices_by_leader[leader.leader_id] %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
       <table class="data-table">
         <thead>
           <tr>

@@ -48,6 +48,7 @@ from ak_engine.webapp.moves_compose import (
     CAST_ITEM_TARGET_SPELLS,
     CAST_NO_TARGET_SPELLS,
     CAST_PROVINCE_TARGET_SPELLS,
+    DEFAULT_SP,
     DISBAND_ALL_VALUE,
     EMPTY_SEARCH_EXTRA,
     ENCOUNTER_PLAN_CASTABLE_SPELLS,
@@ -3656,3 +3657,93 @@ def test_build_composed_kingdom_round_trips_a_use_mi_book_order():
     assert phase0.action is ActionCode.USE_MI
     assert phase0.obj == book.item_id
     assert phase0.extra == []
+
+
+def test_special_encounter_plan_defaults_to_flee_when_left_untouched():
+    # Sourced directly from the user (2026-11-02): the Special Encounter
+    # Plan table's own idle state (no sep_tactic_* fields posted at all)
+    # must still compose the real DEFAULT_SP every sample file already
+    # shows, not a genuinely empty plan -- an empty plan reads as
+    # aggressive Melee intent per turn/sep_decode.py's own Plan_Intent()
+    # port, which would silently flip every leader's own default posture
+    # the moment this table first renders.
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    # No sep_tactic_* fields posted at all -- the same "field simply
+    # never submitted" shape a real browser gives for an untouched table.
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+
+    assert kingdom.leaders[0].plan.segments[0].sp == DEFAULT_SP
+
+
+def test_special_encounter_plan_reads_a_composed_tactic():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"sep_tactic_{KING_ID}_0_0"] = str(int(Maneuver.MELEE))
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+
+    assert kingdom.leaders[0].plan.segments[0].sp == (int(Maneuver.MELEE), -1)
+
+
+def test_special_encounter_plan_allows_give():
+    # turn/sep_decode.py's own Plan_Intent() port lists CGive as a real,
+    # Pascal-sourced SEP tactic (unlike Search's own rulebook-barred
+    # exclusion) -- confirmed composable here via the same dedicated,
+    # ownership-filtered item dropdown Challenge/Pursue/Patrol already use.
+    state = _state()
+    item = state.add_item(Treasure.WAND_FIREBALL, KING_ID, charges=1)
+    form = _all_defend_form(KING_ID)
+    form[f"sep_tactic_{KING_ID}_0_0"] = str(int(Maneuver.GIVE))
+    form[f"sep_tactic_give_item_{KING_ID}_0_0"] = str(item.item_id)
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+
+    assert kingdom.leaders[0].plan.segments[0].sp == (int(Maneuver.GIVE), item.item_id, -1)
+
+
+def test_special_encounter_plan_rejects_beg_even_via_a_direct_tampered_value():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"sep_tactic_{KING_ID}_0_0"] = str(int(Maneuver.BEG))
+
+    try:
+        build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Special Encounter Plan" in str(exc)
+
+
+def test_special_encounter_plan_is_independent_per_leader():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form.update(_all_defend_form(2))
+    form[f"sep_tactic_{KING_ID}_0_0"] = str(int(Maneuver.MELEE))
+    # sep_tactic_2_0_0 deliberately left unset -- Bram's own plan stays DEFAULT_SP.
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == KING_ID)
+    bram_block = next(leader for leader in kingdom.leaders if leader.leader_id == 2)
+    assert king_block.plan.segments[0].sp == (int(Maneuver.MELEE), -1)
+    assert bram_block.plan.segments[0].sp == DEFAULT_SP
+
+
+def test_build_composed_kingdom_round_trips_a_special_encounter_plan():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"sep_tactic_{KING_ID}_0_0"] = str(int(Maneuver.FLEE))
+    form[f"sep_tactic_{KING_ID}_0_1"] = str(int(Maneuver.MELEE))
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    assert reparsed.leaders[0].plan.segments[0].sp == (int(Maneuver.FLEE), int(Maneuver.MELEE), -1)

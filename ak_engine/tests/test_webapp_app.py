@@ -8384,6 +8384,64 @@ def test_turns_compose_save_use_item_not_owned_by_this_leader_shows_an_error(tmp
     assert b"choose an item to Use" in response.data
 
 
+def test_turns_compose_shows_a_special_encounter_plan_table_for_each_leader(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"Special Encounter Plan" in response.data
+    assert f'name="sep_tactic_{king.leader_id}_0_0"'.encode() in response.data
+    assert b"sep_tactic_give_item_" in response.data
+
+
+def test_turns_compose_save_without_touching_special_encounter_plan_defaults_to_flee(tmp_path):
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+    from ak_engine.webapp.moves_compose import DEFAULT_SP
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    # No sep_tactic_* fields touched at all -- same shape a real browser
+    # submits for a table nobody interacted with.
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    assert king_block.plan.segments[0].sp == DEFAULT_SP
+
+
+def test_turns_compose_save_a_composed_special_encounter_plan(tmp_path):
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"sep_tactic_{king.leader_id}_0_0"] = str(int(Maneuver.FLEE))
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    assert king_block.plan.segments[0].sp == (int(Maneuver.FLEE), -1)
+
+
 def test_turns_compose_save_rejects_an_invalid_action(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
