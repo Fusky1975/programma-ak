@@ -177,7 +177,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.enums import Ability, Maneuver, Spell
+from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
@@ -185,8 +185,8 @@ from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.challenge_execution import (
-    has_combat_intent,
     is_encounter_accepted,
+    plan_needs_combat_dispatch,
     resolve_challenge_combat,
     target_evades_via_sense_danger,
 )
@@ -501,17 +501,7 @@ def execute_pursue(
     # bring along.
     pursuer.location = target.location
 
-    # 2026-11-01: a Steal- or Give-only plan needs the same has_combat_
-    # intent gate widening turn/challenge_execution.py execute_challenge()
-    # already has for Steal (Phase 702) -- otherwise it hits this early
-    # peaceful-bypass return and never reaches resolve_challenge_combat()
-    # at all, the one place either tactic's own real dispatch lives.
-    # Steal's own gap here was a pre-existing one, found and fixed
-    # alongside Give's -- same function, same line, same bug shape.
-    has_steal_or_give_tactic = any(
-        tactic.maneuver in (Maneuver.STEAL, Maneuver.GIVE) for tactic in request.tactics
-    )
-    if not has_combat_intent(request) and not has_steal_or_give_tactic:
+    if not plan_needs_combat_dispatch(request):
         return PursueExecutionResult(caught_up=True, combat_occurred=False, guessed_distance=guessed_distance)
 
     accepted = is_encounter_accepted(

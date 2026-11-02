@@ -8495,6 +8495,29 @@ def test_turns_compose_save_use_item_not_owned_by_this_leader_shows_an_error(tmp
     assert b"choose an item to Use" in response.data
 
 
+def test_turns_compose_table_headers_include_defend_and_pursue_columns(tmp_path):
+    # Bug fix: Defend's and Pursue's own <td> cells were added to all 4
+    # per-phase tables (the main one plus the three nested-plan ones)
+    # without ever adding matching <th> headers, so every column from
+    # Move Destination onward rendered shifted left of its real header.
+    import re
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    html = response.data.decode()
+    header_rows = [row for row in re.findall(r"<thead>.*?</thead>", html, re.DOTALL) if "Phase</th>" in row]
+    assert len(header_rows) >= 4  # the main per-action table plus Hire's/Cast's/Use_MI's own nested ones, per leader
+    for header_row in header_rows:
+        assert "<th>Defend</th>" in header_row
+        assert "<th>Pursue</th>" in header_row
+        assert header_row.index("<th>Defend</th>") < header_row.index("<th>Move Destination</th>")
+        assert header_row.index("<th>Challenge</th>") < header_row.index("<th>Pursue</th>") < header_row.index("<th>Hire</th>")
+
+
 def test_turns_compose_shows_a_special_encounter_plan_table_for_each_leader(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

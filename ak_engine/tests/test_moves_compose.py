@@ -66,6 +66,7 @@ from ak_engine.webapp.moves_compose import (
     disband_target_options,
     feature_options,
     fire_target_options,
+    give_item_options,
     hire_target_options,
     item_options,
     kill_enemy_target_options,
@@ -2453,6 +2454,35 @@ def test_challenge_phase_give_tactic_rejects_an_unowned_item_even_via_a_direct_t
         assert "choose an item to Give" in str(exc)
 
 
+def test_give_item_options_excludes_the_valhalla_visitors_own_fixed_item():
+    # Bug fix: unlike trade_gift_options() (the top-level Give Action's
+    # own dropdown), give_item_options() (the Encounter Plan GIVE
+    # tactic's own dropdown) used to offer the Valhalla visitor's own
+    # fixed item -- rulebook VALHALLA.txt says it can never be given
+    # away at all.
+    state = _state()
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=KING_ID)
+    state.leaders[KING_ID].valhalla_fixed_item_id = item.item_id
+
+    options = give_item_options(state, KING_ID)
+
+    assert str(item.item_id) not in {value for value, _label in options}
+
+
+def test_challenge_phase_give_tactic_rejects_the_valhalla_visitors_own_fixed_item():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=KING_ID)
+    state.leaders[KING_ID].valhalla_fixed_item_id = item.item_id
+    form = _challenge_form(tactics={0: int(Maneuver.GIVE)}, give_items={0: item.item_id})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Valhalla" in str(exc)
+
+
 def test_challenge_phase_rejects_beg_even_via_a_direct_tampered_value():
     state = _state()
     state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
@@ -3425,6 +3455,40 @@ def test_cast_phase_charm_rejects_a_noncolocated_target_even_via_a_direct_tamper
         assert "choose a Charm target" in str(exc)
 
 
+def test_charm_target_options_excludes_the_active_valhalla_visitor():
+    # Bug fix: unlike kill_enemy_target_options() (its structural twin),
+    # charm_target_options() used to offer the active Valhalla visitor
+    # -- a target execute_cast()'s own generic cross-spell immunity
+    # silently no-ops for every character-targeted spell but
+    # Resurrection.
+    from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
+
+    state = _state()
+    state.add_leader(
+        LeaderState(leader_id=VALHALLA_VISITOR_LEADER_ID, kingdom_id=None, name="Valhalla Visitor", location=HOME, valhalla_active_turn=1)
+    )
+
+    options = charm_target_options(state, KING_ID)
+
+    assert str(VALHALLA_VISITOR_LEADER_ID) not in {value for value, _label in options}
+
+
+def test_cast_phase_charm_rejects_the_active_valhalla_visitor_even_via_a_direct_tampered_value():
+    from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
+
+    state = _state()
+    state.add_leader(
+        LeaderState(leader_id=VALHALLA_VISITOR_LEADER_ID, kingdom_id=None, name="Valhalla Visitor", location=HOME, valhalla_active_turn=1)
+    )
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_charm_target=str(VALHALLA_VISITOR_LEADER_ID))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Charm target" in str(exc)
+
+
 def test_kill_enemy_target_options_lists_colocated_non_king_non_undead_any_kingdom():
     state = _state()
     state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Own Hero", location=HOME))
@@ -3521,6 +3585,23 @@ def test_cast_phase_resurrection_embeds_a_nested_plan():
     assert cast_phase.nested_plan is not None
     assert cast_phase.nested_plan.leader_id == 2
     assert cast_phase.nested_plan.segments[0].phases["P1"].action is ActionCode.WAIT
+
+
+def test_cast_phase_resurrection_nested_spy_order_is_rejected_cleanly_not_a_crash():
+    # Bug fix: the resurrected hero isn't in state.leaders yet at
+    # compose time (still a dead_leaders entry) -- picking Spy for
+    # their own nested P1 used to raise an unhandled KeyError instead
+    # of a clean InvalidComposedMovesError.
+    state = _state()
+    state.dead_leaders[2] = LeaderState(leader_id=2, kingdom_id=1, name="Dead Hero", location=HOME)
+    form = _cast_form(cast_spell=str(int(Spell.RESURRECTION)), cast_resurrection_target="2")
+    form[f"cast_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.ASPY))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Spy" in str(exc)
 
 
 def test_cast_phase_resurrection_target_must_be_eligible():

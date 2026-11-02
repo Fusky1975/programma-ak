@@ -1148,6 +1148,7 @@ processing can't tell the difference.
 
 from __future__ import annotations
 
+from collections import ChainMap
 from dataclasses import dataclass
 
 from ak_engine.models.alignment import Alignment
@@ -1555,12 +1556,20 @@ def give_item_options(state: GameState, leader_id: int) -> list[tuple[str, str]]
     "si può dare qualsiasi numero di oggetti a chiunque si incontra,"
     no wand/spell-eligibility restriction at all (unlike ``item_
     options()``'s own Use-Item-specific filtering above) -- any owned
-    item is a legal gift. Sorted by the item's own real id, same
-    convention as ``item_options()``.
+    item is a legal gift, excluding a Valhalla visitor's own fixed item
+    (``LeaderState.valhalla_fixed_item_id``), which rulebook VALHALLA.txt
+    says can never be given away at all (same exclusion ``trade_gift_
+    options()`` already applies to the top-level Give Action's own
+    dropdown). Sorted by the item's own real id, same convention as
+    ``item_options()``.
     """
 
     options = []
+    leader = state.leaders.get(leader_id)
+    fixed_item_id = leader.valhalla_fixed_item_id if leader is not None else None
     for item in sorted(state.items_held_by(leader_id), key=lambda item: item.item_id):
+        if item.item_id == fixed_item_id:
+            continue
         item_name = TREASURE_NAME.get(item.treasure, item.treasure.name.replace("_", " ").title())
         options.append((str(item.item_id), f"#{item.item_id} {item_name}"))
     return options
@@ -1841,6 +1850,25 @@ def pick_up_army_target_options(state: GameState, leader_id: int, *, slot: int) 
     return options
 
 
+def _sorted_leaders(state: GameState) -> list[LeaderState]:
+    """``sorted(state.leaders.values(), key=lambda other: other.leader_id)``
+    -- every leader-target dropdown function below independently
+    re-derived this exact same expression (2026-11-02 review finding).
+    One shared place to read it from, rather than ten copies that could
+    silently drift (e.g. a future one sorting by name instead of id).
+
+    **Not memoized across calls**: ``GameState`` is an unhashable,
+    ``slots=True`` dataclass (no ``__hash__``, no ad-hoc attributes),
+    so neither a ``WeakKeyDictionary`` keyed by the ``state`` object
+    nor caching the result directly on it is possible without a
+    larger, separate change to that model -- this still re-sorts once
+    per call, same real cost as before, just no longer ten different
+    inline copies of the same expression to keep in sync.
+    """
+
+    return sorted(state.leaders.values(), key=lambda other: other.leader_id)
+
+
 def trade_recipient_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
     """Every valid Give recipient for this leader, as ``(value, label)``
     pairs -- rulebook [3.18]: the recipient must be co-located ("che si
@@ -1867,7 +1895,7 @@ def trade_recipient_options(state: GameState, leader_id: int) -> list[tuple[str,
         return []
     options: list[tuple[str, str]] = []
     offered_ids: set[int] = set()
-    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+    for other in _sorted_leaders(state):
         if other.leader_id == leader_id or other.location != leader.location:
             continue
         kingdom = state.kingdoms.get(other.kingdom_id)
@@ -1957,7 +1985,7 @@ def trail_target_options(state: GameState, leader_id: int) -> list[tuple[str, st
     if leader_id not in state.leaders:
         return []
     options: list[tuple[str, str]] = []
-    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+    for other in _sorted_leaders(state):
         if other.leader_id == leader_id:
             continue
         kingdom = state.kingdoms.get(other.kingdom_id)
@@ -1999,7 +2027,7 @@ def pursue_target_options(state: GameState, leader_id: int) -> list[tuple[str, s
         return []
     leader = state.leaders[leader_id]
     options: list[tuple[str, str]] = [(str(leader_id), f"Patrol (self) -- {leader.name}")]
-    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+    for other in _sorted_leaders(state):
         if other.leader_id == leader_id:
             continue
         kingdom = state.kingdoms.get(other.kingdom_id)
@@ -2029,7 +2057,7 @@ def challenge_target_options(state: GameState, leader_id: int) -> list[tuple[str
     if leader is None:
         return []
     options: list[tuple[str, str]] = []
-    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+    for other in _sorted_leaders(state):
         if other.leader_id == leader_id or other.location != leader.location:
             continue
         kingdom = state.kingdoms.get(other.kingdom_id)
@@ -2063,7 +2091,7 @@ def hire_target_options(state: GameState, leader_id: int) -> list[tuple[str, str
     if leader is None:
         return []
     options: list[tuple[str, str]] = []
-    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+    for other in _sorted_leaders(state):
         if other.leader_id == leader_id or other.location != leader.location:
             continue
         if other.kingdom_id is not None or other.is_king:
@@ -2102,7 +2130,7 @@ def fire_target_options(state: GameState, leader_id: int) -> list[tuple[str, str
     if leader is None:
         return []
     options: list[tuple[str, str]] = []
-    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+    for other in _sorted_leaders(state):
         if other.is_king or other.kingdom_id != leader.kingdom_id:
             continue
         if not leader.is_king and other.location != leader.location:
@@ -2142,7 +2170,7 @@ def cast_character_target_options(state: GameState) -> list[tuple[str, str]]:
     """
 
     options: list[tuple[str, str]] = []
-    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+    for other in _sorted_leaders(state):
         kingdom = state.kingdoms.get(other.kingdom_id)
         kingdom_part = kingdom.name if kingdom is not None else "independent"
         title_part = "King" if other.is_king else "Hero"
@@ -2197,7 +2225,7 @@ def resurrection_target_options(state: GameState, leader_id: int) -> list[tuple[
     if leader is None:
         return []
     options: list[tuple[str, str]] = []
-    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+    for other in _sorted_leaders(state):
         if other.location != leader.location:
             continue
         if other.is_comatose:
@@ -2224,6 +2252,10 @@ def charm_target_options(state: GameState, leader_id: int) -> list[tuple[str, st
     suite: Charm can poach an already-employed Hero of a different
     Kingdom outright). The acting leader's own self is never offered --
     nothing in Charm's own rule text or execution models self-targeting.
+    Also excludes the active Valhalla visitor (``execute_cast()``'s own
+    generic cross-spell immunity for every character-targeted spell but
+    Resurrection, same exclusion ``kill_enemy_target_options()`` already
+    makes).
 
     When the acting leader is themself an Undead King
     (``LeaderState.alignment is Alignment.UNDEAD`` and ``is_king``), a
@@ -2240,12 +2272,14 @@ def charm_target_options(state: GameState, leader_id: int) -> list[tuple[str, st
     if leader is None:
         return []
     options: list[tuple[str, str]] = []
-    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+    for other in _sorted_leaders(state):
         if other.leader_id == leader_id:
             continue
         if other.location != leader.location or other.is_king:
             continue
         if state.armies_commanded_by(other.leader_id):
+            continue
+        if other.leader_id == VALHALLA_VISITOR_LEADER_ID and other.valhalla_active_turn is not None:
             continue
         kingdom = state.kingdoms.get(other.kingdom_id)
         kingdom_part = kingdom.name if kingdom is not None else "independent"
@@ -2284,7 +2318,7 @@ def kill_enemy_target_options(state: GameState, leader_id: int) -> list[tuple[st
     if leader is None:
         return []
     options: list[tuple[str, str]] = []
-    for other in sorted(state.leaders.values(), key=lambda other: other.leader_id):
+    for other in _sorted_leaders(state):
         if other.leader_id == leader_id:
             continue
         if other.location != leader.location or other.is_king or other.alignment is Alignment.UNDEAD:
@@ -2938,18 +2972,21 @@ def nested_hero_option_bundle(state: GameState, hero_id: int) -> dict:
     its own ``if leader_id not in state.leaders: return []`` (confirmed
     directly, e.g. ``trail_target_options()``'s own docstring) -- so,
     rather than accept that silent, misleadingly-empty degradation,
-    this function temporarily reinserts the dead leader's own stored
+    this function temporarily swaps ``state.leaders`` itself for a
+    read-only ``ChainMap`` overlaying the dead leader's own stored
     ``dead_leaders[hero_id]`` snapshot (location, kingdom, skills --
-    exactly what a real resurrection restores) into ``state.leaders``
-    for the duration of this one call, then removes it again
-    (``try``/``finally``) -- never a lasting mutation, and never
-    disturbs an id that was already alive (``is_temp_insert`` guards
-    that).
+    exactly what a real resurrection restores) on top of the real dict,
+    restoring the original dict reference again in a ``finally`` --
+    the real ``state.leaders`` dict object is never written to at all
+    (no window where any other reader of that same dict could observe
+    the dead leader as a live entry), and an id that was already alive
+    is never disturbed (``is_temp_insert`` guards that).
     """
 
     is_temp_insert = hero_id not in state.leaders and hero_id in state.dead_leaders
+    real_leaders = state.leaders
     if is_temp_insert:
-        state.leaders[hero_id] = state.dead_leaders[hero_id]
+        state.leaders = ChainMap({hero_id: state.dead_leaders[hero_id]}, real_leaders)
     try:
         leader = state.leaders.get(hero_id)
         return {
@@ -2980,7 +3017,7 @@ def nested_hero_option_bundle(state: GameState, hero_id: int) -> dict:
         }
     finally:
         if is_temp_insert:
-            del state.leaders[hero_id]
+            state.leaders = real_leaders
 
 
 # Every plain (per leader+phase, no slot) top-level field template this
@@ -3037,9 +3074,14 @@ _NESTED_SLOTTED_FIELD_TEMPLATES: tuple[tuple[str, int], ...] = (
 
 # Every Encounter Plan tactic-slot field's own field_prefix (Search's
 # own "tactic", Challenge's/Pursue's own "challenge_tactic"/
-# "pursue_tactic") and the sub-field suffixes _parse_search_tactics()
-# itself reads for each slot ("" is the slot's own base maneuver value).
-_NESTED_TACTIC_FIELD_PREFIXES: tuple[str, ...] = ("tactic", "challenge_tactic", "pursue_tactic")
+# "pursue_tactic", the Special Encounter Plan's own "sep_tactic") and
+# the sub-field suffixes _parse_search_tactics() itself reads for each
+# slot ("" is the slot's own base maneuver value). Kept in sync with
+# parse_phase_inputs()/_parse_special_encounter_plan() by hand -- a new
+# tactic-slot-bearing field_prefix added there needs a matching entry
+# added here too, or that field is silently dropped for a nested hero
+# specifically (see this function's own docstring).
+_NESTED_TACTIC_FIELD_PREFIXES: tuple[str, ...] = ("tactic", "challenge_tactic", "pursue_tactic", "sep_tactic")
 _NESTED_TACTIC_SUB_SUFFIXES: tuple[str, ...] = ("", "_say", "_spell", "_item", "_give_item", "_sub")
 
 
@@ -3253,9 +3295,11 @@ def _parse_charm_target(
     dropdown value), so no sentinel decoding is needed. Also enforces,
     at compose time rather than only at turn-processing time,
     ``_execute_charm()``'s own three preconditions (co-located,
-    army-less, never a King) -- deliberately NOT a same-Kingdom
-    requirement, matching the engine's own confirmed "Charm can poach a
-    foreign Hero" behavior.
+    army-less, never a King), plus the active-Valhalla-visitor
+    exclusion every character-targeted spell but Resurrection shares
+    (same check ``_parse_kill_enemy_target()`` already makes) --
+    deliberately NOT a same-Kingdom requirement, matching the engine's
+    own confirmed "Charm can poach a foreign Hero" behavior.
 
     ``field_prefix`` defaults to ``"cast"``; Use_MI's standalone
     Charm-wand phase passes ``"use_mi"``, same reasoning as
@@ -3275,6 +3319,7 @@ def _parse_charm_target(
         or target.location != leader.location
         or target.is_king
         or state.armies_commanded_by(target.leader_id)
+        or (target.leader_id == VALHALLA_VISITOR_LEADER_ID and target.valhalla_active_turn is not None)
     ):
         # Defense in depth: every dropdown-offered id is a real,
         # co-located, army-less, non-King leader, but a direct,
@@ -3681,6 +3726,11 @@ def _parse_search_tactics(
             item = state.items.get(item_id) if item_id is not None else None
             if item is None or item.owner_leader_id != leader_id:
                 raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1}: choose an item to Give.")
+            give_leader = state.leaders.get(leader_id)
+            if give_leader is not None and give_leader.valhalla_fixed_item_id == item_id:
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: tactic slot {slot + 1}: the Valhalla visitor's own fixed item can't be given away."
+                )
             sub_object = item_id
             tokens.append(sub_object)
         elif maneuver in TACTICS_WITH_SUB_OBJECT:
@@ -3966,7 +4016,10 @@ def parse_phase_inputs(
                     board_width=board_width, state=state,
                 )
         elif action is ActionCode.ASPY:
-            obj = encode_hex_number(state.leaders[leader_id].location, board_width)
+            aspy_leader = state.leaders.get(leader_id)
+            if aspy_leader is None:
+                raise InvalidComposedMovesError(f"P{n}: Spy needs a leader who already exists this turn.")
+            obj = encode_hex_number(aspy_leader.location, board_width)
             extra = [0]
         elif action is ActionCode.USE_MI:
             obj, extra, use_mi_nested_hero_id = _parse_use_mi_phase(form, leader_id, n, phase_label=f"P{n}", state=state)

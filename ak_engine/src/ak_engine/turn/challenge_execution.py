@@ -381,6 +381,11 @@ from ak_engine.turn.sep_decode import plan_intent, sep_accepts_challenge, target
 
 _COMBAT_MANEUVERS = frozenset({Maneuver.MELEE, Maneuver.SHOOT})
 
+# plan_needs_combat_dispatch()'s own widening set -- neither Maneuver
+# counts as "combat intent" under has_combat_intent()'s [3.12]-scoped
+# definition, but both still need real dispatch to fire at all.
+_COMBAT_DISPATCH_MANEUVERS = frozenset({Maneuver.STEAL, Maneuver.GIVE})
+
 # Phase 290: same secret-spell skill-5+ gate `turn/search_execution.py`
 # uses for Illusory Hero/Words of Healing, duplicated per this project's
 # own "same shared fact, independent citation per consumer" convention.
@@ -544,6 +549,41 @@ def has_combat_intent(request: ChallengeRequest) -> bool:
                 continue
             return True
     return False
+
+
+def plan_needs_combat_dispatch(request: ChallengeRequest) -> bool:
+    """``has_combat_intent(request)`` widened for Steal and Give --
+    neither counts as "combat intent" by that function's own [3.12]-
+    scoped definition, but both still need to reach ``resolve_
+    challenge_combat()`` to fire at all (Steal's own dispatch, Give's
+    own item transfer). Without this widening, a Steal- or Give-only
+    plan hits the early peaceful-bypass return both real callers
+    (``execute_challenge()``, ``execute_pursue()``) make around that
+    early return, and never reaches real dispatch.
+
+    One shared function for both callers, rather than each
+    independently re-deriving this same OR -- Steal's own gap here was
+    found and fixed at both call sites independently on the same day
+    (2026-11-01); a single shared check means a third Maneuver needing
+    the same treatment only has to be added to
+    ``_COMBAT_DISPATCH_MANEUVERS`` below, not to every caller.
+
+    **Not reused by ``turn/patrol_execution.py execute_patrol()``**,
+    despite that function importing ``has_combat_intent`` for the same
+    kind of early-return gate: unlike Challenge/Pursue, Patrol never
+    dispatches into ``resolve_challenge_combat()``'s own tactic walk at
+    all (its own post-gate path is a single, unconditional
+    ``resolve_melee_duel()`` call, no Steal/Give handling of any kind)
+    -- widening its gate the same way would silently force a melee
+    fight onto a GM's own deliberately peaceful Steal- or Give-only
+    Patrol plan instead of actually making either tactic fire, a worse
+    behavior change than the gap it would "fix." Giving Patrol real
+    Steal/Give dispatch needs ``execute_patrol()`` to gain the same
+    tactic-walk reuse Pursue's own armyless case already has, a
+    separate, larger change, not attempted here.
+    """
+
+    return has_combat_intent(request) or any(tactic.maneuver in _COMBAT_DISPATCH_MANEUVERS for tactic in request.tactics)
 
 
 def target_evades_via_sense_danger(state: GameState, target: LeaderState, challenger: LeaderState) -> bool:
@@ -2326,7 +2366,13 @@ def resolve_challenge_combat(
             # a Give tactic never ends the encounter either way, so it
             # simply continues the plan regardless.
             item = state.items.get(tactic.sub_object) if tactic.sub_object is not None else None
-            if item is not None and item.owner_leader_id == caster_leader.leader_id and target_leader is not None:
+            if (
+                item is not None
+                and caster_leader is not None
+                and item.owner_leader_id == caster_leader.leader_id
+                and item.item_id != caster_leader.valhalla_fixed_item_id
+                and target_leader is not None
+            ):
                 state.transfer_item(item.item_id, target_leader.leader_id)
             continue
         # every other tactic is unwired -- skip it and keep walking
@@ -2649,14 +2695,8 @@ def execute_challenge(
         return ChallengeExecutionResult(accepted=False, reason="not co-located")
 
     has_talk_tactic = any(tactic.maneuver is Maneuver.TALK for tactic in request.tactics)
-    # 2026-11-01: a GIVE-only plan needs the same has_combat_intent gate
-    # widening STEAL already got (Phase 702's own addendum above) --
-    # otherwise it would hit the early peaceful-bypass return just
-    # below and never reach resolve_challenge_combat() at all, the one
-    # place the new Maneuver.GIVE branch actually lives.
-    has_give_tactic = any(tactic.maneuver is Maneuver.GIVE for tactic in request.tactics)
 
-    if not has_combat_intent(request) and not has_steal_tactic and not has_give_tactic:
+    if not plan_needs_combat_dispatch(request):
         if has_talk_tactic:
             _apply_bravest_talk_inspiration(state, challenger, target)
             _apply_spy_brainwash_alignment_shift(challenger, target)

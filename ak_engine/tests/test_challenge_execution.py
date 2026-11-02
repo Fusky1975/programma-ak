@@ -4744,3 +4744,30 @@ def test_execute_challenge_give_tactic_never_transfers_gold():
         execute_challenge(state, 1, _give_request(2, 999), rng=ScriptedRandom([]))
 
     assert state.kingdoms[1].treasury == 50
+
+
+def test_resolve_challenge_combat_give_tactic_is_a_safe_noop_with_no_caster_leaderstate():
+    # Bug fix: a garrison-commander side (Phase 291's own Duel reuse,
+    # caster_leader=None) used to crash with AttributeError evaluating
+    # item.owner_leader_id == caster_leader.leader_id -- every other
+    # tactic branch in this function already tolerates a None caster.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=caster_leader.leader_id)
+    tactics = [SearchTactic(Maneuver.GIVE, item.item_id)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)):
+        resolve_challenge_combat(tactics, None, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert state.items[item.item_id].owner_leader_id == caster_leader.leader_id  # unchanged, no crash
+
+
+def test_resolve_challenge_combat_give_tactic_never_transfers_the_valhalla_visitors_own_fixed_item():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=caster_leader.leader_id)
+    caster_leader.valhalla_fixed_item_id = item.item_id
+    tactics = [SearchTactic(Maneuver.GIVE, item.item_id)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)):
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert state.items[item.item_id].owner_leader_id == caster_leader.leader_id  # never transferred
