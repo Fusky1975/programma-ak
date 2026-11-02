@@ -124,6 +124,8 @@ from ak_engine.webapp.moves_compose import (
     trade_gift_options,
     trade_recipient_options,
     trail_target_options,
+    use_mi_item_options,
+    use_mi_item_spell_by_id,
 )
 from ak_engine.webapp.kingdom_create import (
     NoProvinceAtCoordError,
@@ -3158,6 +3160,11 @@ def create_app(games_root: Path | None = None) -> Flask:
             cast_illus_terrain_value=int(Spell.ILLUS_TERRAIN),
             cast_nested_plan_spell_values=[int(s) for s in CAST_NESTED_PLAN_SPELLS],
             aspy_action_value=int(ActionCode.ASPY),
+            use_mi_action_value=int(ActionCode.USE_MI),
+            use_mi_item_choices_by_leader={
+                leader.leader_id: use_mi_item_options(state, leader.leader_id) for leader in roster
+            },
+            use_mi_item_spell_by_id=use_mi_item_spell_by_id(state),
             province_choices=province_options(state),
             feature_choices_by_leader={
                 leader.leader_id: feature_options(state, leader_id=leader.leader_id) for leader in roster

@@ -47,7 +47,12 @@
     halved-chance note, since that only penalizes the roll rather than blocking it outright), with the same
     nested-plan editor Hire uses for a successful Charm or Resurrection, Spy needs no input at all either (same
     reason as Explore -- it always targets the leader's own current province, confirmed by the rulebook's own
-    "SP #(numero della provincia in cui si trova eroe o re)" syntax); every other Action still takes the same plain Object + Extra numbers a real move file's own
+    "SP #(numero della provincia in cui si trova eroe o re)" syntax), Use Magic Item (not to be confused with
+    the Encounter Plan's own Use Item tactic) has its own item dropdown (every owned, still-charged wand whose
+    spell is one Cast's own dropdown could also cast, plus every owned skill book) and reuses Cast's own target
+    fields under their own names once a wand is picked, same nested-plan editor included for a wand-cast Charm
+    or Resurrection -- a skill book needs no target at all, just a bare +1 to its own fixed Talent; every other
+    Action still takes the same plain Object + Extra numbers a real move file's own
     "P&lt;n&gt; : &lt;action&gt; &lt;object&gt; &lt;extra...&gt;" line carries. Saving builds a real move
     file from these and stores it exactly like an uploaded one.
   </p>
@@ -81,6 +86,7 @@
             <th>Fire</th>
             <th>Cast</th>
             <th>Spy</th>
+            <th>Use Magic Item</th>
             <th>Object</th>
             <th>Extra (space or comma separated)</th>
           </tr>
@@ -525,6 +531,89 @@
                 </span>
               </td>
               <td class="compose-special-cell hex-map-legend-note" data-action="{{ aspy_action_value }}">No input needed -- spies on whatever province this leader currently occupies.</td>
+              <td class="compose-special-cell" data-action="{{ use_mi_action_value }}">
+                <select class="compose-use-mi-item" name="use_mi_item_{{ leader.leader_id }}_{{ n }}">
+                  <option value="">-- choose a Magic Item to Use --</option>
+                  {% for value, label in use_mi_item_choices_by_leader[leader.leader_id] %}
+                    <option value="{{ value }}" data-spell="{{ use_mi_item_spell_by_id.get(value|int, '') }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <span class="compose-use-mi-character-cell">
+                  <br><select name="use_mi_character_target_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- choose a target --</option>
+                    {% for value, label in cast_character_target_choices %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+                <span class="compose-use-mi-resurrection-cell">
+                  <br><select name="use_mi_resurrection_target_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- choose a target --</option>
+                    {% for value, label in resurrection_target_choices_by_leader[leader.leader_id] %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+                <span class="compose-use-mi-charm-cell">
+                  <br><select name="use_mi_charm_target_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- choose a target --</option>
+                    {% for value, label in charm_target_choices_by_leader[leader.leader_id] %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+                <span class="compose-use-mi-kill-enemy-cell">
+                  <br><select name="use_mi_kill_enemy_target_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- choose a target --</option>
+                    {% for value, label in kill_enemy_target_choices_by_leader[leader.leader_id] %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+                <span class="compose-use-mi-province-cell">
+                  <br><select name="use_mi_province_target_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- choose a province --</option>
+                    {% for value, label in province_choices %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+                <span class="compose-use-mi-terrain-cell">
+                  <br><select name="use_mi_terrain_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- fake terrain --</option>
+                    {% for value, label in cast_terrain_choices %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
+                <span class="compose-use-mi-nested-cell">
+                  {% if n < 4 %}
+                    <br><span class="hex-map-legend-note">The (re)joined character's own orders, starting next phase:</span>
+                    <table class="data-table compose-hire-nested-plan">
+                      <thead><tr><th>Phase</th><th>Action</th><th>Object</th><th>Extra</th></tr></thead>
+                      <tbody>
+                        {% for nested_n in range(n + 1, 5) %}
+                          <tr>
+                            <td>P{{ nested_n }}</td>
+                            <td>
+                              <select name="use_mi_nested_action_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}">
+                                <option value="">-- no order --</option>
+                                {% for action in actions %}
+                                  <option value="{{ action.value }}">{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
+                                {% endfor %}
+                              </select>
+                            </td>
+                            <td><input type="text" name="use_mi_nested_obj_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}" value="0" size="6"></td>
+                            <td><input type="text" name="use_mi_nested_extra_{{ leader.leader_id }}_{{ n }}_{{ nested_n }}" value="" size="20"></td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  {% else %}
+                    <br><span class="hex-map-legend-note">No further orders possible -- Use Magic Item at the last phase.</span>
+                  {% endif %}
+                </span>
+              </td>
               <td class="compose-generic-cell"><input type="text" name="obj_{{ leader.leader_id }}_{{ n }}" value="0" size="6"></td>
               <td class="compose-generic-cell"><input type="text" name="extra_{{ leader.leader_id }}_{{ n }}" value="" size="24"></td>
             </tr>
@@ -674,6 +763,42 @@
   document.addEventListener("change", function (event) {
     if (event.target.classList && event.target.classList.contains("compose-cast-spell")) {
       updateCastCell(event.target);
+    }
+  });
+
+  // Use Magic Item's own item dropdown picks which of the same target
+  // shapes Cast uses this row needs -- but, unlike Cast, the select's
+  // own value is an item-instance id, not a Spell ordinal, so each
+  // <option>'s own `data-spell` attribute (use_mi_item_spell_by_id(),
+  // empty for a skill book) stands in for Cast's own `select.value`
+  // read above. No item-target-spell cell exists here at all (unlike
+  // Cast's own) -- Locate Object is a secret spell outside the wand-
+  // mappable ordinal range, so it can never be a Use_MI wand's own
+  // fixed spell (see webapp/moves_compose.py's own docstring's Use
+  // Magic Item section).
+  function updateUseMICell(select) {
+    var cell = select.closest(".compose-special-cell");
+    if (!cell) return;
+    var option = select.options[select.selectedIndex];
+    var spellRaw = option ? option.getAttribute("data-spell") : "";
+    var value = spellRaw ? parseInt(spellRaw, 10) : NaN;
+    var show = function (className, visible) {
+      var el = cell.querySelector(className);
+      if (el) el.style.display = visible ? "" : "none";
+    };
+    show(".compose-use-mi-character-cell", CAST_CHARACTER_TARGET_SPELLS.indexOf(value) !== -1);
+    show(".compose-use-mi-resurrection-cell", value === CAST_RESURRECTION_VALUE);
+    show(".compose-use-mi-charm-cell", value === CAST_CHARM_VALUE);
+    show(".compose-use-mi-kill-enemy-cell", value === CAST_KILL_ENEMY_VALUE);
+    show(".compose-use-mi-province-cell", CAST_PROVINCE_TARGET_SPELLS.indexOf(value) !== -1);
+    show(".compose-use-mi-terrain-cell", value === CAST_ILLUS_TERRAIN_VALUE);
+    show(".compose-use-mi-nested-cell", CAST_NESTED_PLAN_SPELLS.indexOf(value) !== -1);
+  }
+
+  document.querySelectorAll(".compose-use-mi-item").forEach(updateUseMICell);
+  document.addEventListener("change", function (event) {
+    if (event.target.classList && event.target.classList.contains("compose-use-mi-item")) {
+      updateUseMICell(event.target);
     }
   });
 

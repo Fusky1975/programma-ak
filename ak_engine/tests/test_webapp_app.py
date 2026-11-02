@@ -7593,6 +7593,102 @@ def test_turns_compose_save_cast_kill_enemy_order_with_no_target_chosen_shows_an
     assert b"choose a Kill Enemy target" in response.data
 
 
+def test_turns_compose_shows_a_use_mi_item_dropdown(tmp_path):
+    from ak_engine.models.treasure import Treasure
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    wand = state.add_item(Treasure.WAND_BLESS, king.leader_id, charges=2)
+    book = state.add_item(Treasure.BOOK_MELEE, king.leader_id)
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert f'name="use_mi_item_{king.leader_id}_0"'.encode() in response.data
+    assert f'value="{wand.item_id}" data-spell="{int(Spell.BLESS)}"'.encode() in response.data
+    assert f'value="{book.item_id}" data-spell=""'.encode() in response.data
+    assert b"use_mi_province_target_" in response.data
+    assert b"use_mi_nested_action_" in response.data
+
+
+def test_turns_compose_save_use_mi_wand_order_encodes_the_province_target(tmp_path):
+    from ak_engine.models.treasure import Treasure
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+    from ak_engine.turn.hex_numbering import decode_hex_number
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    wand = state.add_item(Treasure.WAND_BLESS, king.leader_id, charges=2)
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.USE_MI))
+    form[f"use_mi_item_{king.leader_id}_0"] = str(wand.item_id)
+    form[f"use_mi_province_target_{king.leader_id}_0"] = f"{king.location.x},{king.location.y}"
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    use_mi_phase = king_block.plan.segments[0].phases["P0"]
+    assert use_mi_phase.action is ActionCode.USE_MI
+    assert use_mi_phase.obj == wand.item_id
+    assert decode_hex_number(use_mi_phase.extra[0], state.board_width) == king.location
+
+
+def test_turns_compose_save_use_mi_book_order_carries_no_target(tmp_path):
+    from ak_engine.models.treasure import Treasure
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    book = state.add_item(Treasure.BOOK_MELEE, king.leader_id)
+    save_game(tmp_path, meta.slug, state)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.USE_MI))
+    form[f"use_mi_item_{king.leader_id}_0"] = str(book.item_id)
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    use_mi_phase = king_block.plan.segments[0].phases["P0"]
+    assert use_mi_phase.action is ActionCode.USE_MI
+    assert use_mi_phase.obj == book.item_id
+    assert use_mi_phase.extra == []
+
+
+def test_turns_compose_save_use_mi_order_with_no_item_chosen_shows_an_error(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
+
+    form = _compose_form(roster_ids)
+    form[f"action_{king.leader_id}_0"] = str(int(ActionCode.USE_MI))
+    # use_mi_item_<king>_0 deliberately left unset.
+
+    response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"choose a Magic Item to Use" in response.data
+
+
 def test_turns_compose_shows_encounter_plan_tactic_slots(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)

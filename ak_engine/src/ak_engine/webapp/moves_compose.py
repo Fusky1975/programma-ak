@@ -1049,6 +1049,35 @@ literally: a character can only Spy on the province he's already in.
 ``extra`` is always ``[0]`` (``turn/aspy_defend_decode.py``'s own
 confirmed, never-populated ``extra0``, same convention as Defend's).
 
+**Use Magic Item [UM] (``ActionCode.USE_MI``)** (2026-11-02) -- the
+top-level Action [3.11], not to be confused with ``Maneuver.USE_MI``,
+the *Encounter Plan tactic* of the same raw ordinal already composed
+via ``item_options()``/``tactic_item_*`` (a different Pascal reading
+path with no top-level ``ActionCode`` of its own -- see ``turn/use_mi_
+decode.py``'s own docstring). ``obj`` is a global item-instance id
+(``use_mi_item_<leader_id>_<n>``'s own dropdown, ``use_mi_item_
+options()`` -- every owned, still-charged wand whose fixed spell is
+Action-Cast-eligible, plus every owned skill book), never a Spell
+ordinal -- the one structural way this Action's wire shape differs
+from Cast's own. A chosen wand then reads whichever target sub-field
+matches its own fixed spell's shape into ``extra`` (``_parse_use_mi_
+phase()``, reusing every one of Cast's own per-shape helpers --
+``use_mi_character_target_``/``use_mi_province_target_``/``use_mi_
+terrain_<leader_id>_<n>``, plus Resurrection's/Charm's/Kill Enemy's own
+dedicated, eligibility-checked dropdowns, all under their own
+``field_prefix="use_mi"`` fields so a Cast phase and a Use_MI phase
+sharing the same row's underlying fields never collide), with the same
+nested-plan editor Hire/Cast use for a successful wand-cast Charm or
+Resurrection. A chosen skill book needs no target field at all --
+``extra`` is always ``[]``. Five of the 20 wand-mappable spells (Holy
+Symbol, Hand of Death, Fireball, Psychic Blast, Invisibility -- one per
+Magical ``Ability``) are Personal-Combat-only and have no Action-Cast
+target shape at all, so a wand carrying one of those is never offered
+here, only via the Encounter Plan's own Use Item tactic (``item_
+options()``'s own, narrower ``ENCOUNTER_PLAN_CASTABLE_SPELLS`` filter)
+-- the two dropdowns' own wand sets are mutually exclusive, confirmed
+by direct enumeration, not assumed.
+
 Every other not-yet-designed action still falls back to the plain
 Object/Extra integers. A Special Encounter Plan (``PlanSegment.sp``)
 isn't exposed here yet either, for the same reason -- every composed
@@ -1081,7 +1110,13 @@ from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES
 from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
-from ak_engine.models.treasure import TREASURE_CATEGORY, TREASURE_NAME, TREASURE_WAND_SPELL, TreasureCategory
+from ak_engine.models.treasure import (
+    TREASURE_BOOK_ABILITY,
+    TREASURE_CATEGORY,
+    TREASURE_NAME,
+    TREASURE_WAND_SPELL,
+    TreasureCategory,
+)
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.report.turn_report import real_province_number
 from ak_engine.turn.army_list_decode import ALL_ARMIES_SENTINEL
@@ -1384,6 +1419,78 @@ def item_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
         label = f"#{item.item_id} {item_name} -- casts {spell_name} ({item.charges} {charge_word} left)"
         options.append((str(item.item_id), label))
     return options
+
+
+def use_mi_item_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
+    """Every magic item this leader could actually Use via the
+    top-level Use Magic Item Action [3.11] -- ``(value, display_name)``
+    pairs for ``use_mi_item_<leader_id>_<n>``'s own dropdown.
+
+    Not ``item_options()`` above (that one is the Search/Challenge/
+    Pursue Encounter Plan's own Use Item *tactic*, restricted to
+    ``ENCOUNTER_PLAN_CASTABLE_SPELLS`` -- the five Personal-Combat-only
+    wand spells, one per Magical ``Ability``: Holy Symbol, Hand of
+    Death, Fireball, Psychic Blast, Invisibility). This Action, by
+    contrast, dispatches into ``turn/cast_execution.py execute_cast()``
+    exactly like the top-level Cast Action does (``turn/use_mi_
+    execution.py execute_use_mi()``'s own ``SPELL_WAND`` branch), so a
+    wand is only offered here if its own fixed spell is one of
+    ``CAST_ACTION_SPELLS`` -- the same 19-spell, Action-Cast-only
+    restriction Cast's own dropdown already uses, which (since none of
+    those five Personal-Combat spells has an Action-Cast target shape
+    at all) happens to be this function's and ``item_options()``'s own
+    mutually exclusive wand set: a given wand is offered by exactly one
+    of the two dropdowns, never both.
+
+    Also offers every owned skill book (``TreasureCategory.SKILL_BOOK``)
+    -- rulebook [5.9]: "a one-shot, self-consuming +1 to one Ability
+    when read," no charge concept and no target at all, so a book is
+    listed regardless of any ``charges`` value. Sorted by the item's
+    own real id, same convention as ``item_options()``.
+    """
+
+    options = []
+    for item in sorted(state.items_held_by(leader_id), key=lambda item: item.item_id):
+        category = TREASURE_CATEGORY.get(item.treasure)
+        item_name = TREASURE_NAME.get(item.treasure, item.treasure.name.replace("_", " ").title())
+        if category is TreasureCategory.SPELL_WAND:
+            spell = TREASURE_WAND_SPELL.get(item.treasure)
+            if spell is None or spell not in CAST_ACTION_SPELLS or item.charges <= 0:
+                continue
+            spell_name = SPELL_NAME.get(spell, spell.name.replace("_", " ").title())
+            charge_word = "charge" if item.charges == 1 else "charges"
+            label = f"#{item.item_id} {item_name} -- casts {spell_name} ({item.charges} {charge_word} left)"
+        elif category is TreasureCategory.SKILL_BOOK:
+            ability = TREASURE_BOOK_ABILITY.get(item.treasure)
+            ability_name = ABILITY_NAME.get(ability, ability.name.title()) if ability is not None else "?"
+            label = f"#{item.item_id} {item_name} -- +1 {ability_name} (self-consuming)"
+        else:
+            continue
+        options.append((str(item.item_id), label))
+    return options
+
+
+def use_mi_item_spell_by_id(state: GameState) -> dict[int, int]:
+    """Every wand in the whole game, as ``item_instance_id -> its own
+    fixed Spell ordinal`` -- used only by the template's own Use Magic
+    Item ``<option data-spell="...">`` attribute, so its client-side
+    target-sub-field toggle (``updateUseMICell()``) can tell which of
+    Cast's own 5 target shapes a *selected item* needs without a round
+    trip, the same way Cast's own dropdown lets the browser read the
+    shape straight off ``select.value`` (a Spell ordinal there already).
+    Not filtered to any one leader, or to Action-Cast eligibility --
+    ``use_mi_item_options()`` already did that filtering, so only ids
+    that dropdown actually offers ever reach this lookup from the
+    template; a skill book has no entry at all (the template's own
+    ``.get(..., "")`` default renders an empty ``data-spell``, correctly
+    showing no target cell).
+    """
+
+    return {
+        item.item_id: int(TREASURE_WAND_SPELL[item.treasure])
+        for item in state.items.values()
+        if TREASURE_CATEGORY.get(item.treasure) is TreasureCategory.SPELL_WAND and item.treasure in TREASURE_WAND_SPELL
+    }
 
 
 def give_item_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
@@ -2832,18 +2939,26 @@ def _parse_fire_target(form: dict[str, str], leader_id: int, n: int, *, phase_la
     return target_id
 
 
-def _parse_resurrection_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
-    """Reads a Resurrection Cast phase's own ``cast_resurrection_target_
-    <leader_id>_<n>`` field into the real target id -- the wire encoding
-    is already a bare character id (``resurrection_target_options()``'s
+def _parse_resurrection_target(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState, field_prefix: str = "cast"
+) -> int:
+    """Reads a Resurrection Cast phase's own ``<field_prefix>_resurrection_
+    target_<leader_id>_<n>`` field into the real target id -- the wire
+    encoding is already a bare character id (``resurrection_target_options()``'s
     own dropdown value), so no sentinel decoding is needed. Also
     enforces, at compose time rather than only at turn-processing time,
     all three of ``_execute_resurrection()``'s own eligibility branches
     (comatose cure / Royal Heir restoration / ordinary dead-Hero
     revival) plus their shared co-location requirement.
+
+    ``field_prefix`` defaults to ``"cast"`` (the top-level Cast Action's
+    own field); Use_MI's standalone Resurrection-wand phase passes
+    ``"use_mi"`` so its own target dropdown gets a distinct field name,
+    never colliding with Cast's own same-row field were both offered
+    (see this module's own docstring's Use Magic Item section).
     """
 
-    raw = form.get(f"cast_resurrection_target_{leader_id}_{n}", "")
+    raw = form.get(f"{field_prefix}_resurrection_target_{leader_id}_{n}", "")
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Resurrection target.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Resurrection target")
@@ -2867,18 +2982,25 @@ def _parse_resurrection_target(form: dict[str, str], leader_id: int, n: int, *, 
     return target_id
 
 
-def _parse_charm_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
-    """Reads a Charm Cast phase's own ``cast_charm_target_<leader_id>_<n>``
-    field into the real target id -- the wire encoding is already a bare
-    character id (``charm_target_options()``'s own dropdown value), so
-    no sentinel decoding is needed. Also enforces, at compose time
-    rather than only at turn-processing time, ``_execute_charm()``'s own
-    three preconditions (co-located, army-less, never a King) --
-    deliberately NOT a same-Kingdom requirement, matching the engine's
-    own confirmed "Charm can poach a foreign Hero" behavior.
+def _parse_charm_target(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState, field_prefix: str = "cast"
+) -> int:
+    """Reads a Charm Cast phase's own ``<field_prefix>_charm_target_
+    <leader_id>_<n>`` field into the real target id -- the wire encoding
+    is already a bare character id (``charm_target_options()``'s own
+    dropdown value), so no sentinel decoding is needed. Also enforces,
+    at compose time rather than only at turn-processing time,
+    ``_execute_charm()``'s own three preconditions (co-located,
+    army-less, never a King) -- deliberately NOT a same-Kingdom
+    requirement, matching the engine's own confirmed "Charm can poach a
+    foreign Hero" behavior.
+
+    ``field_prefix`` defaults to ``"cast"``; Use_MI's standalone
+    Charm-wand phase passes ``"use_mi"``, same reasoning as
+    ``_parse_resurrection_target()``'s own docstring.
     """
 
-    raw = form.get(f"cast_charm_target_{leader_id}_{n}", "")
+    raw = form.get(f"{field_prefix}_charm_target_{leader_id}_{n}", "")
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Charm target.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Charm target")
@@ -2899,9 +3021,11 @@ def _parse_charm_target(form: dict[str, str], leader_id: int, n: int, *, phase_l
     return target_id
 
 
-def _parse_kill_enemy_target(form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState) -> int:
-    """Reads a Kill Enemy Cast phase's own ``cast_kill_enemy_target_
-    <leader_id>_<n>`` field into the real target id -- the wire
+def _parse_kill_enemy_target(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState, field_prefix: str = "cast"
+) -> int:
+    """Reads a Kill Enemy Cast phase's own ``<field_prefix>_kill_enemy_
+    target_<leader_id>_<n>`` field into the real target id -- the wire
     encoding is already a bare character id (``kill_enemy_target_
     options()``'s own dropdown value). Also enforces, at compose time
     rather than only at turn-processing time, ``_execute_kill_enemy()``'s
@@ -2911,9 +3035,13 @@ def _parse_kill_enemy_target(form: dict[str, str], leader_id: int, n: int, *, ph
     army-leading target -- that only halves the roll, it never blocks
     the cast outright (see ``kill_enemy_target_options()``'s own
     docstring).
+
+    ``field_prefix`` defaults to ``"cast"``; Use_MI's standalone
+    Kill-Enemy-wand phase passes ``"use_mi"``, same reasoning as
+    ``_parse_resurrection_target()``'s own docstring.
     """
 
-    raw = form.get(f"cast_kill_enemy_target_{leader_id}_{n}", "")
+    raw = form.get(f"{field_prefix}_kill_enemy_target_{leader_id}_{n}", "")
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Kill Enemy target.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Kill Enemy target")
@@ -3044,6 +3172,84 @@ def _parse_cast_phase(
     # CAST_NO_TARGET_SPELLS -- Skeletal Army, the one spell left after
     # excluding Gate Angel (2026-11-01, the user's own choice).
     return int(spell), [0], None
+
+
+def _parse_use_mi_phase(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
+) -> tuple[int, list[int | str], int | None]:
+    """Reads a Use Magic Item phase's own ``use_mi_item_<leader_id>_<n>``
+    dropdown (``use_mi_item_options()``), plus -- for a wand -- whichever
+    target sub-field matches its own fixed spell's target shape, reusing
+    the exact same per-shape helpers ``_parse_cast_phase()`` uses, just
+    under their own ``field_prefix="use_mi"`` fields so the two Actions'
+    same-row cells never collide. Returns ``(obj, extra, nested_hero_id)``
+    like ``_parse_cast_phase()`` -- but, per this module's own docstring's
+    Use Magic Item section, ``obj`` here is the item-instance id
+    (``UseMIRequest.item_instance_id``), never a Spell ordinal.
+
+    A skill book needs no target field at all (rulebook [5.9]: a bare
+    +1 to one Ability, self-consuming) -- ``extra`` is always ``[]``.
+    """
+
+    raw_item = form.get(f"use_mi_item_{leader_id}_{n}", "")
+    if not raw_item:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Magic Item to Use.")
+    item_id = _parse_int(raw_item, field_label=f"{phase_label} Use Magic Item")
+    item = state.items.get(item_id)
+    if item is None or item.owner_leader_id != leader_id:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Magic Item to Use.")
+
+    category = TREASURE_CATEGORY.get(item.treasure)
+    if category is TreasureCategory.SKILL_BOOK:
+        return item_id, [], None
+
+    if category is not TreasureCategory.SPELL_WAND:
+        # Defense in depth: every dropdown-offered id is a real wand or
+        # book, but a direct, tampered POST could still name an owned
+        # item of any other category (combat weapon, passive ability
+        # item, gold hoard, ...) -- all of which "operate automatically"
+        # per [5.9] and are never a legitimate Use_MI target.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Magic Item to Use.")
+    spell = TREASURE_WAND_SPELL.get(item.treasure)
+    if spell is None or spell not in CAST_ACTION_SPELLS or item.charges <= 0:
+        # Defense in depth: use_mi_item_options() only ever offers a
+        # charged wand whose spell is Action-Cast-eligible -- a direct,
+        # tampered POST could still name an uncharged one, or (purely
+        # defensively; no real wand maps to a non-Action-Cast-eligible
+        # spell at all, since the five Personal-Combat-only wand spells
+        # are filtered out above) one whose spell isn't.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Magic Item to Use.")
+
+    if spell is Spell.RESURRECTION:
+        target = _parse_resurrection_target(form, leader_id, n, phase_label=phase_label, state=state, field_prefix="use_mi")
+        return item_id, [target], target
+
+    if spell is Spell.CHARM:
+        target = _parse_charm_target(form, leader_id, n, phase_label=phase_label, state=state, field_prefix="use_mi")
+        return item_id, [target], target
+
+    if spell is Spell.KILL_ENEMY:
+        target = _parse_kill_enemy_target(form, leader_id, n, phase_label=phase_label, state=state, field_prefix="use_mi")
+        return item_id, [target], None
+
+    if spell in CAST_CHARACTER_TARGET_SPELLS:
+        raw_target = form.get(f"use_mi_character_target_{leader_id}_{n}", "")
+        target = _parse_cast_character_target(raw_target, phase_label=phase_label, state=state)
+        return item_id, [target], None
+
+    if spell in CAST_PROVINCE_TARGET_SPELLS:
+        raw_target = form.get(f"use_mi_province_target_{leader_id}_{n}", "")
+        target = _parse_move_target(raw_target, board_width=state.board_width, phase_label=phase_label)
+        extra: list[int | str] = [target]
+        if spell is Spell.ILLUS_TERRAIN:
+            extra.append(_parse_cast_terrain(form.get(f"use_mi_terrain_{leader_id}_{n}", ""), phase_label=phase_label))
+        return item_id, extra, None
+
+    # CAST_NO_TARGET_SPELLS -- Skeletal Army, the only wand-mappable
+    # member left (Gate Angel's own ordinal is outside the wand range
+    # entirely, see this module's own docstring's Use Magic Item
+    # section).
+    return item_id, [0], None
 
 
 def _parse_search_tactics(
@@ -3330,7 +3536,21 @@ def parse_phase_inputs(
     always this leader's own current province, auto-derived via
     ``encode_hex_number(leader.location, board_width)`` (never a
     player choice, same module docstring's own Spy section), and
-    ``extra`` is always ``[0]``.
+    ``extra`` is always ``[0]``. A Use Magic Item (``ActionCode.
+    USE_MI``) phase reads its own ``use_mi_item_<leader_id>_<n>``
+    dropdown for ``obj`` (an item-instance id, not a Spell ordinal --
+    see this module's own docstring's Use Magic Item section) plus,
+    for a wand, whichever target sub-field matches its own fixed
+    spell's shape into ``extra`` (``_parse_use_mi_phase()``, reusing
+    ``_parse_cast_phase()``'s own per-shape helpers under their own
+    ``field_prefix="use_mi"`` fields) -- and, for a successful-looking
+    Charm/Resurrection wand, its own repeated ``use_mi_nested_action_
+    <leader_id>_<n>_<m>``/``use_mi_nested_obj_<leader_id>_<n>_<m>``/
+    ``use_mi_nested_extra_<leader_id>_<n>_<m>`` fields for the
+    newly-(re)joined character's own embedded ``nested_plan``
+    (``_parse_nested_plan()`` with ``field_prefix="use_mi_nested"``),
+    the third Action in this composer (after Hire and Cast) whose own
+    ``ComposedPhaseInput`` can carry one.
     """
 
     phases: list[ComposedPhaseInput] = []
@@ -3433,6 +3653,12 @@ def parse_phase_inputs(
         elif action is ActionCode.ASPY:
             obj = encode_hex_number(state.leaders[leader_id].location, board_width)
             extra = [0]
+        elif action is ActionCode.USE_MI:
+            obj, extra, use_mi_nested_hero_id = _parse_use_mi_phase(form, leader_id, n, phase_label=f"P{n}", state=state)
+            if use_mi_nested_hero_id is not None:
+                nested_plan = _parse_nested_plan(
+                    form, leader_id, n, phase_label=f"P{n}", field_prefix="use_mi_nested", hero_id=use_mi_nested_hero_id
+                )
         else:
             obj = _parse_int(form.get(f"obj_{leader_id}_{n}", "0") or "0", field_label=f"P{n} Object")
             extra = _parse_extra(form.get(f"extra_{leader_id}_{n}", ""))

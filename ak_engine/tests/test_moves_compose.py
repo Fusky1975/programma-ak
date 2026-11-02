@@ -83,6 +83,8 @@ from ak_engine.webapp.moves_compose import (
     trade_gift_options,
     trade_recipient_options,
     trail_target_options,
+    use_mi_item_options,
+    use_mi_item_spell_by_id,
 )
 
 _ORDINAL_BY_ARMY_TYPE = {army_type: ordinal for ordinal, army_type in ARMY_TYPE_BY_ORDINAL.items()}
@@ -3401,3 +3403,256 @@ def test_build_composed_kingdom_round_trips_a_cast_order():
     assert phase0.action is ActionCode.CAST
     assert phase0.obj == int(Spell.SKELETAL_ARMY)
     assert phase0.extra == [0]
+
+
+def _use_mi_form(leader_id: int = KING_ID, **fields: str) -> dict[str, str]:
+    form = _all_defend_form(leader_id)
+    form[f"action_{leader_id}_0"] = str(int(ActionCode.USE_MI))
+    for key, value in fields.items():
+        form[f"{key}_{leader_id}_0"] = value
+    return form
+
+
+def test_use_mi_item_options_lists_an_action_eligible_wand_and_a_book_but_not_a_combat_only_wand():
+    # _state() already gives KING_ID a Wand of Fireball (Treasure.WAND_FIREBALL,
+    # Spell.FIREBALL -- one of the 5 Personal-Combat-only wand spells) --
+    # confirmed excluded here, unlike item_options()'s own Encounter Plan
+    # dropdown where it's the one legitimate entry.
+    state = _state()
+    bless_wand = state.add_item(Treasure.WAND_BLESS, KING_ID, charges=2)
+    book = state.add_item(Treasure.BOOK_MELEE, KING_ID)
+
+    options = use_mi_item_options(state, KING_ID)
+
+    values = {value for value, _label in options}
+    assert values == {str(bless_wand.item_id), str(book.item_id)}
+    labels = dict(options)
+    assert "Bless" in labels[str(bless_wand.item_id)]
+    assert "+1 Melee" in labels[str(book.item_id)]
+
+
+def test_use_mi_item_options_excludes_an_uncharged_wand():
+    state = _state()
+    item = state.add_item(Treasure.WAND_BLESS, KING_ID, charges=0)
+
+    options = use_mi_item_options(state, KING_ID)
+
+    assert str(item.item_id) not in {value for value, _label in options}
+
+
+def test_use_mi_item_spell_by_id_maps_a_wand_to_its_own_fixed_spell():
+    state = _state()
+    wand = state.add_item(Treasure.WAND_BLESS, KING_ID, charges=2)
+    book = state.add_item(Treasure.BOOK_MELEE, KING_ID)
+
+    mapping = use_mi_item_spell_by_id(state)
+
+    assert mapping[wand.item_id] == int(Spell.BLESS)
+    assert book.item_id not in mapping
+
+
+def test_use_mi_phase_reads_a_province_target_wand():
+    state = _state()
+    wand = state.add_item(Treasure.WAND_BLESS, KING_ID, charges=2)
+    form = _use_mi_form(use_mi_item=str(wand.item_id), use_mi_province_target=f"{HOME.x},{HOME.y}")
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    use_mi_phase = phases[0]
+    assert use_mi_phase.action is ActionCode.USE_MI
+    assert use_mi_phase.obj == wand.item_id
+    assert decode_hex_number(use_mi_phase.extra[0], BOARD_WIDTH) == HOME
+    assert use_mi_phase.nested_plan is None
+
+
+def test_use_mi_phase_illus_terrain_wand_reads_target_and_terrain():
+    state = _state()
+    wand = state.add_item(Treasure.WAND_ILLUS_TERRAIN, KING_ID, charges=2)
+    form = _use_mi_form(
+        use_mi_item=str(wand.item_id),
+        use_mi_province_target=f"{HOME.x},{HOME.y}",
+        use_mi_terrain=str(int(Terrain.FOREST.value)),
+    )
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    use_mi_phase = phases[0]
+    assert use_mi_phase.obj == wand.item_id
+    assert decode_hex_number(use_mi_phase.extra[0], BOARD_WIDTH) == HOME
+    assert use_mi_phase.extra[1] == Terrain.FOREST.value
+
+
+def test_use_mi_phase_reads_a_no_target_wand():
+    state = _state()
+    wand = state.add_item(Treasure.WAND_SKELETAL_ARMY, KING_ID, charges=1)
+    form = _use_mi_form(use_mi_item=str(wand.item_id))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].obj == wand.item_id
+    assert phases[0].extra == [0]
+
+
+def test_use_mi_phase_reads_a_generic_character_target_wand():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    wand = state.add_item(Treasure.WAND_ORATORY, KING_ID, charges=1)
+    form = _use_mi_form(use_mi_item=str(wand.item_id), use_mi_character_target="2")
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].obj == wand.item_id
+    assert phases[0].extra == [2]
+    assert phases[0].nested_plan is None
+
+
+def test_use_mi_phase_charm_wand_embeds_a_nested_plan():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    wand = state.add_item(Treasure.WAND_CHARM, KING_ID, charges=1)
+    form = _use_mi_form(use_mi_item=str(wand.item_id), use_mi_charm_target="2")
+    form[f"use_mi_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.WAIT))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    use_mi_phase = phases[0]
+    assert use_mi_phase.obj == wand.item_id
+    assert use_mi_phase.extra == [2]
+    assert use_mi_phase.nested_plan is not None
+    assert use_mi_phase.nested_plan.leader_id == 2
+    assert use_mi_phase.nested_plan.segments[0].phases["P1"].action is ActionCode.WAIT
+
+
+def test_use_mi_phase_resurrection_wand_embeds_a_nested_plan():
+    state = _state()
+    state.dead_leaders[2] = LeaderState(leader_id=2, kingdom_id=1, name="Dead Hero", location=HOME)
+    wand = state.add_item(Treasure.WAND_RESURRECTION, KING_ID, charges=1)
+    form = _use_mi_form(use_mi_item=str(wand.item_id), use_mi_resurrection_target="2")
+    form[f"use_mi_nested_action_{KING_ID}_0_1"] = str(int(ActionCode.WAIT))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    use_mi_phase = phases[0]
+    assert use_mi_phase.obj == wand.item_id
+    assert use_mi_phase.extra == [2]
+    assert use_mi_phase.nested_plan is not None
+    assert use_mi_phase.nested_plan.leader_id == 2
+
+
+def test_use_mi_phase_reads_a_kill_enemy_wand():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    wand = state.add_item(Treasure.WAND_KILL_ENEMY, KING_ID, charges=1)
+    form = _use_mi_form(use_mi_item=str(wand.item_id), use_mi_kill_enemy_target="2")
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    use_mi_phase = phases[0]
+    assert use_mi_phase.obj == wand.item_id
+    assert use_mi_phase.extra == [2]
+    assert use_mi_phase.nested_plan is None
+
+
+def test_use_mi_phase_reads_a_skill_book_with_no_target_at_all():
+    state = _state()
+    book = state.add_item(Treasure.BOOK_MELEE, KING_ID)
+    form = _use_mi_form(use_mi_item=str(book.item_id))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    use_mi_phase = phases[0]
+    assert use_mi_phase.action is ActionCode.USE_MI
+    assert use_mi_phase.obj == book.item_id
+    assert use_mi_phase.extra == []
+    assert use_mi_phase.nested_plan is None
+
+
+def test_use_mi_phase_without_a_chosen_item_is_rejected():
+    form = _use_mi_form()
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Magic Item to Use" in str(exc)
+
+
+def test_use_mi_phase_rejects_an_item_not_owned_by_this_leader_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    wand = state.add_item(Treasure.WAND_BLESS, 2, charges=2)
+    form = _use_mi_form(use_mi_item=str(wand.item_id), use_mi_province_target=f"{HOME.x},{HOME.y}")
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Magic Item to Use" in str(exc)
+
+
+def test_use_mi_phase_rejects_a_combat_only_wand_even_via_a_direct_tampered_value():
+    # Treasure.WAND_FIREBALL (Spell.FIREBALL) is Personal-Combat-only --
+    # never offered by use_mi_item_options(), but _parse_use_mi_phase()
+    # itself must also reject a direct, tampered POST naming it.
+    state = _state()
+    wand = state.items_held_by(KING_ID)[0]
+    assert wand.treasure is Treasure.WAND_FIREBALL
+    form = _use_mi_form(use_mi_item=str(wand.item_id))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Magic Item to Use" in str(exc)
+
+
+def test_use_mi_phase_rejects_an_uncharged_wand_even_via_a_direct_tampered_value():
+    state = _state()
+    wand = state.add_item(Treasure.WAND_BLESS, KING_ID, charges=0)
+    form = _use_mi_form(use_mi_item=str(wand.item_id), use_mi_province_target=f"{HOME.x},{HOME.y}")
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Magic Item to Use" in str(exc)
+
+
+def test_build_composed_kingdom_round_trips_a_use_mi_wand_order():
+    state = _state()
+    wand = state.add_item(Treasure.WAND_BLESS, KING_ID, charges=2)
+    form = _use_mi_form(use_mi_item=str(wand.item_id), use_mi_province_target=f"{HOME.x},{HOME.y}")
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.USE_MI
+    assert phase0.obj == wand.item_id
+    assert decode_hex_number(phase0.extra[0], state.board_width) == HOME
+
+
+def test_build_composed_kingdom_round_trips_a_use_mi_book_order():
+    state = _state()
+    book = state.add_item(Treasure.BOOK_MELEE, KING_ID)
+    form = _use_mi_form(use_mi_item=str(book.item_id))
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+    text = write_k1_moves_file(kingdom)
+    tmp = Path(tempfile.mktemp())
+    tmp.write_text(text, encoding="utf-8")
+    try:
+        reparsed = parse_k1_moves_file(tmp)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    phase0 = reparsed.leaders[0].plan.segments[0].phases["P0"]
+    assert phase0.action is ActionCode.USE_MI
+    assert phase0.obj == book.item_id
+    assert phase0.extra == []
