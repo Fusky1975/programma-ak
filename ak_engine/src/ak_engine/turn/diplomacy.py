@@ -72,7 +72,9 @@ exception is [8.2]'s own *mutual* Treat involving a Druidic party**
 own one-sided Treat toward a Neutral partner (the OTHER [8.2] carve-out,
 forming an alliance without reciprocation) has no such timing text at
 all, and -- confirmed directly with the user -- follows the same "alla
-fine del turno" schedule as an ordinary, non-Druidic mutual Treat. So:
+fine del turno" schedule as an ordinary, non-Druidic mutual Treat (the
+user-supplied rulebook quote for both carve-outs is in ``apply_treat_
+orders()``'s own docstring below). So:
 
 - **Ordinary mutual Treat, and the Druidic one-sided-toward-Neutral
   case**: deferred into ``GameState.pending_treat_transitions``, the
@@ -216,26 +218,32 @@ def apply_treat_orders(state: GameState) -> None:
       sides issuing it the same turn on a currently-Allied pair jumps
       straight to Enemy instead (skipping Neutral). A Break Treat order
       always takes precedence over any Treat order between the same pair
-      this turn (this is also exactly how [8.2]'s own Druidic veto reads:
-      "[l'alleanza forma] a meno che [l'altro Re] non impartisca un
-      ordine Break Treat nello stesso turno").
+      this turn (this is also exactly how [8.2]'s own Druidic veto reads
+      -- quoted in full right below).
     - **Treat requires mutuality**: "[un ordine Treat] trasforma i
       rapporti di ostilità in neutralità e quelli di neutralità in
       alleanza, ma solo se entrambi i Re danno lo stesso ordine Treat
       nello stesso turno" -- one step up (Enemy -> Neutral -> Allied),
       only when *both* sides issue Treat toward each other this turn.
-    - **Druidic exceptions** ([8.2]): a Druidic Kingdom's own one-sided
-      Treat toward a currently-*Neutral* partner forms an alliance even
-      without a matching Treat from that partner ("i diplomatici di
-      questo secondo Reame si faranno influenzare... un'alleanza verrà
-      quindi sottoscritta anche senza un ordine Treat da parte
-      dell'altro Re") -- scoped to Neutral starting points only, per the
-      quoted text's own "con il quale ha rapporti di neutralità." A
-      *mutual* Treat with at least one Druidic party jumps straight from
-      Enemy to Allied in one turn instead of the ordinary one-step-at-a-
-      time schedule ("se un Re Druidico e un altro Re stringono un
-      trattato di alleanza reciproco, diventano alleati... anche se in
-      precedenza erano nemici").
+    - **Druidic exceptions** ([8.2], quoted in full -- user-supplied,
+      2026-11-06): "Quando un Reame Druidico stringe un trattato con un
+      altro Reame con il quale ha rapporti di neutralità, i diplomatici
+      di questo secondo Reame si faranno influenzare dalla persuasività
+      e dalla dottrina dell'armonia druidica. Un'alleanza verrà quindi
+      sottoscritta anche senza un ordine Treat da parte dell'altro Re, a
+      meno che questo non impartisca un ordine Break Treat nello stesso
+      turno. I personaggi Druidici inoltre stringono alleanze più
+      velocemente. Se un Re Druidico e un altro Re stringono un trattato
+      di alleanza reciproco, diventano alleati prima dell'inizio del
+      turno, anche se in precedenza erano nemici." -- so: a Druidic
+      Kingdom's own one-sided Treat toward a currently-*Neutral* partner
+      forms an alliance even without a matching Treat from that partner,
+      unless that partner issues a Break Treat of its own this same turn
+      (already guaranteed above -- Break Treat is checked, and wins,
+      before this one-sided case is ever reached). A *mutual* Treat with
+      at least one Druidic party jumps straight from Enemy to Allied in
+      one turn instead of the ordinary one-step-at-a-time schedule, and
+      resolves "prima dell'inizio del turno" (see Timing below).
     - **Timing** (see module docstring's own 2026-11-05 addendum for the
       full citations): a *mutual* Treat with at least one Druidic party
       is immediate, same turn -- the one-sided Druidic case above is
