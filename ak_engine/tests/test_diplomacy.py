@@ -10,7 +10,7 @@ from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.parser.gw_world import DiplomaticRelation
-from ak_engine.turn.diplomacy import apply_treat_orders, is_attackable_at
+from ak_engine.turn.diplomacy import advance_pending_diplomacy, apply_treat_orders, is_attackable_at
 
 HOME_A = HexCoord(0, 0)
 HOME_B = HexCoord(1, 0)
@@ -58,7 +58,12 @@ def test_one_sided_treat_does_nothing_for_non_druidic_kingdoms():
 
 
 def test_unilateral_break_treat_downgrades_one_step():
-    state = _state()
+    # Breaker (kingdom 1) is Evil -- [8.3]'s own same-turn exception --
+    # so the downgrade math below is exercised immediately, same as
+    # before this module modeled the timing split at all. See
+    # test_ordinary_unilateral_break_treat_is_deferred_to_next_turn
+    # below for the now-different, non-Evil/Undead case.
+    state = _state(alignment_a=Alignment.EVIL)
     state.allied_kingdoms.add(frozenset({1, 2}))
     state.break_treat_orders.add((1, 2))
     apply_treat_orders(state)
@@ -67,14 +72,18 @@ def test_unilateral_break_treat_downgrades_one_step():
 
 
 def test_unilateral_break_treat_from_neutral_reaches_enemy():
-    state = _state()
+    state = _state(alignment_a=Alignment.EVIL)
     state.break_treat_orders.add((1, 2))
     apply_treat_orders(state)
     assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ENEMY
 
 
 def test_mutual_break_treat_on_allies_jumps_straight_to_enemy():
-    state = _state()
+    # Only one of the two breakers needs to be Evil/Undead for [8.3]'s
+    # own same-turn exception to apply to the whole pair's transition --
+    # see test_mutual_break_treat_is_deferred_when_neither_side_is_evil_
+    # or_undead below for the all-ordinary case.
+    state = _state(alignment_a=Alignment.EVIL)
     state.allied_kingdoms.add(frozenset({1, 2}))
     state.break_treat_orders.update({(1, 2), (2, 1)})
     apply_treat_orders(state)
@@ -82,7 +91,7 @@ def test_mutual_break_treat_on_allies_jumps_straight_to_enemy():
 
 
 def test_break_treat_takes_precedence_over_a_simultaneous_treat_order():
-    state = _state()
+    state = _state(alignment_b=Alignment.EVIL)
     state.allied_kingdoms.add(frozenset({1, 2}))
     state.treat_permissions.add((1, 2))
     state.break_treat_orders.add((2, 1))
@@ -102,8 +111,10 @@ def test_druidic_one_sided_alliance_is_vetoed_by_a_same_turn_break_treat():
     # Treat nello stesso turno") only blocks the alliance from forming --
     # it doesn't cancel Break Treat's own ordinary [8.3] downgrade effect,
     # which fires independently and takes the pair to Enemy here (one
-    # step down from Neutral), not back to a no-op Neutral.
-    state = _state(alignment_a=Alignment.DRUID)
+    # step down from Neutral), not back to a no-op Neutral. Breaker
+    # (kingdom 2) is Evil so this same-turn effect is exercised directly,
+    # same as every other break-treat-math test in this file.
+    state = _state(alignment_a=Alignment.DRUID, alignment_b=Alignment.EVIL)
     state.treat_permissions.add((1, 2))
     state.break_treat_orders.add((2, 1))
     apply_treat_orders(state)
@@ -132,6 +143,99 @@ def test_non_druidic_mutual_treat_does_not_jump_straight_from_enemy():
     state.treat_permissions.update({(1, 2), (2, 1)})
     apply_treat_orders(state)
     assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL
+
+
+# -- [8.3]'s own timing exception: Evil/Undead Break Treat alone is
+# immediate; an ordinary King's own Break Treat is deferred to the
+# start of next turn -- 2026-11-03 ------------------------------------
+
+
+def test_ordinary_unilateral_break_treat_is_deferred_to_next_turn():
+    state = _state()  # both kingdoms default to Alignment.GOOD
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.break_treat_orders.add((1, 2))
+    apply_treat_orders(state)
+
+    # Not yet visible to this turn's own combat...
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ALLIED
+    assert state.is_allied(1, 2)
+    # ...but queued for the start of next turn.
+    assert state.pending_break_treat_transitions[frozenset({1, 2})] == (
+        DiplomaticRelation.ALLIED,
+        DiplomaticRelation.NEUTRAL,
+    )
+    assert state.diplomacy_relation_change_notices == []
+
+
+def test_mutual_break_treat_is_deferred_when_neither_side_is_evil_or_undead():
+    state = _state()
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.break_treat_orders.update({(1, 2), (2, 1)})
+    apply_treat_orders(state)
+
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ALLIED
+    assert state.pending_break_treat_transitions[frozenset({1, 2})] == (
+        DiplomaticRelation.ALLIED,
+        DiplomaticRelation.ENEMY,
+    )
+
+
+def test_undead_breaker_is_also_immediate_not_just_evil():
+    state = _state(alignment_a=Alignment.UNDEAD)
+    state.break_treat_orders.add((1, 2))
+    apply_treat_orders(state)
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ENEMY
+    assert frozenset({1, 2}) not in state.pending_break_treat_transitions
+
+
+def test_advance_pending_diplomacy_promotes_a_deferred_break_at_the_start_of_next_turn():
+    state = _state()
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.break_treat_orders.add((1, 2))
+    apply_treat_orders(state)
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ALLIED  # still, this turn
+
+    # Next turn's own orders are gone (turn-scoped reset, simulated
+    # here directly) by the time advance_pending_diplomacy() runs.
+    state.break_treat_orders = set()
+    advance_pending_diplomacy(state)
+
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL
+    assert not state.is_allied(1, 2)
+    assert frozenset({1, 2}) not in state.pending_break_treat_transitions
+    assert state.diplomacy_relation_change_notices == [
+        (1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL)
+    ]
+
+
+def test_advance_pending_diplomacy_is_a_noop_with_nothing_pending():
+    state = _state()
+    advance_pending_diplomacy(state)
+    assert state.pending_break_treat_transitions == {}
+    assert state.diplomacy_relation_change_notices == []
+
+
+def test_immediate_evil_break_treat_records_a_relation_change_notice():
+    state = _state(alignment_a=Alignment.EVIL)
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.break_treat_orders.add((1, 2))
+    apply_treat_orders(state)
+    assert state.diplomacy_relation_change_notices == [
+        (1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL)
+    ]
+
+
+def test_treat_driven_transitions_never_record_a_relation_change_notice():
+    # [8.3]'s own timing exception is about Break Treat specifically --
+    # an ordinary mutual Treat alliance (or the Druidic one-sided/jump
+    # cases) stays immediate as before, and was never in scope for the
+    # notice mechanism (see describe_diplomacy_change_notices()'s own
+    # docstring for why).
+    state = _state(alignment_a=Alignment.DRUID)
+    state.treat_permissions.add((1, 2))
+    apply_treat_orders(state)
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ALLIED
+    assert state.diplomacy_relation_change_notices == []
 
 
 def test_no_orders_leaves_relation_and_timestamp_untouched():

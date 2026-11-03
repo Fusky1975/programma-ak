@@ -12428,6 +12428,66 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
     return lines
 
 
+# 2026-11-03 -- not from any available source text: the user's own
+# direct-play confirmation that a diplomatic relation change is always
+# announced this way, at the very top of the affected King's own
+# report, whichever side of it they're on. See `GameState.diplomacy_
+# relation_change_notices`'s own docstring for what populates this and
+# why only Break-Treat-driven changes are in scope (an ordinary Treat-
+# formed alliance -- the "good news" case -- was never part of what was
+# reported from play, so it's deliberately left out here rather than
+# guessed into a fourth template). Keyed by ``(old_relation,
+# new_relation)``; a pair with no template (nothing else is reachable
+# through a Break-Treat-driven transition, see `turn/diplomacy.py
+# apply_treat_orders()`) is silently skipped rather than guessed at.
+_DIPLOMACY_CHANGE_TEMPLATES: dict[tuple[DiplomaticRelation, DiplomaticRelation], str] = {
+    (DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL): (
+        "My lord, grave tidings: {name} has broken his treaty with us; "
+        "relations between our two Kingdoms have cooled to Neutral."
+    ),
+    (DiplomaticRelation.NEUTRAL, DiplomaticRelation.ENEMY): (
+        "My lord, dire tidings: {name} has declared war upon us! We are now at war."
+    ),
+    (DiplomaticRelation.ALLIED, DiplomaticRelation.ENEMY): (
+        "My lord, dire tidings: our alliance with {name} has been shattered; we are now at war."
+    ),
+}
+
+
+def describe_diplomacy_change_notices(state: GameState, kingdom_id: int) -> list[str]:
+    """Every ``state.diplomacy_relation_change_notices`` entry touching
+    ``kingdom_id`` this turn, rendered as one royal-letter-style
+    sentence each -- meant to be read first, ahead of the ordinary
+    ACTION REPORT narrative (``compose_letter_report()``'s own call
+    site), since the entire reason [8.3] grants an ordinary King's own
+    Break Treat a one-turn delay (and an Evil/Undead King's own none at
+    all) is so the affected King finds out before, not after, that
+    turn's own combat. Rendered for *both* Kings in the pair, regardless
+    of which one issued the order, or whether it was a mutual break --
+    a deliberate, documented choice (no real sample confirms this either
+    way): the issuing King already knows what they ordered, and seeing
+    it confirmed here does no harm, while keeping one unconditional rule
+    is simpler than adding a second one to suppress it for the issuer.
+
+    No header of its own -- same "folds into the existing ACTION REPORT
+    section" placement `describe_valhalla_visit_announcement()` and the
+    battle-narrative/blackmail-demand notices right next to it in
+    `compose_letter_report()` already use, except prepended rather than
+    appended, so it reads first.
+    """
+
+    lines: list[str] = []
+    for kingdom_a, kingdom_b, old_relation, new_relation in state.diplomacy_relation_change_notices:
+        if kingdom_id not in (kingdom_a, kingdom_b):
+            continue
+        other_kingdom_id = kingdom_b if kingdom_id == kingdom_a else kingdom_a
+        template = _DIPLOMACY_CHANGE_TEMPLATES.get((old_relation, new_relation))
+        if template is None:
+            continue
+        lines.append(template.format(name=_kingdom_display_name(state, other_kingdom_id)))
+    return lines
+
+
 # HostAK/TP/REPORTS.PAS Rep_Econ (~line 272-403) -- the real
 # "FINANCES" section's own sourced, verbatim opening and Discoveries
 # intro (each rejoined across its own raw WRITELN lines, same
@@ -17162,10 +17222,19 @@ def compose_letter_report(
     King's own turn; every *other* leader's turn belongs in their own
     LETTER REPORTS entry instead (see that composer's own docstring).
     Kingdoms with no `is_king`-flagged leader recorded get no ACTION
-    REPORT at all, rather than falling back to the old kingdom-wide
-    scope -- the real section is always about one specific King. Its
-    own header is added here, since `describe_turn_results()` returns
-    bare narrative lines with none.
+    REPORT at all (unless a diplomacy change notice alone is enough to
+    populate it -- see right below), rather than falling back to the
+    old kingdom-wide scope -- the real section is always about one
+    specific King. Its own header is added here, since `describe_turn_
+    results()` returns bare narrative lines with none.
+
+    **2026-11-03**: `describe_diplomacy_change_notices()`'s own lines
+    are prepended, not appended -- ahead of even `describe_turn_
+    results()`'s own narrative, so a Break Treat relation change is the
+    first thing this King reads, matching the whole reason [8.3] gives
+    an ordinary King's own Break Treat a one-turn delay in the first
+    place (see that composer's own docstring, and `turn/diplomacy.py`'s
+    module docstring, for the full timing mechanics).
 
     **Phase 678**: a real Valhalla visit this turn (`describe_valhalla_
     visit_announcement()`) is folded into this same ACTION REPORT
@@ -17273,7 +17342,13 @@ def compose_letter_report(
 
     king_leader_id = _king_leader_id(state, kingdom_id)
     king_results = [entry for entry in kingdom_results if entry.leader_id == king_leader_id]
-    action_lines = describe_turn_results(king_results, state, rng, ability_names=ability_names, board_width=board_width)
+    # 2026-11-03 -- prepended, not appended like every other ACTION
+    # REPORT addition below: a Break Treat relation change must read
+    # first, ahead of the ordinary turn narrative -- see `describe_
+    # diplomacy_change_notices()`'s own docstring for why.
+    action_lines = describe_diplomacy_change_notices(state, kingdom_id) + describe_turn_results(
+        king_results, state, rng, ability_names=ability_names, board_width=board_width
+    )
     # Phase 678: the "gate-angel-visit" sentinel's own leader_id is the
     # visitor's, not the King's -- it would otherwise route into the
     # visitor's own LETTER REPORTS entry (backwards from the rulebook's

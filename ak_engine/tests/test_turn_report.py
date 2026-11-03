@@ -89,6 +89,7 @@ from ak_engine.report.turn_report import (
     describe_imperial_office_report,
     describe_armies_report,
     describe_characters_report,
+    describe_diplomacy_change_notices,
     describe_diplomacy_report,
     describe_feature_discovery,
     describe_finances_report,
@@ -5894,6 +5895,25 @@ def test_compose_letter_report_includes_valhalla_visit_announcement_in_action_re
     assert not any("Valhalla" in line for line in lines_for_kingdom_2)
 
 
+def test_compose_letter_report_puts_a_diplomacy_change_notice_first_in_action_report():
+    # 2026-11-03: describe_diplomacy_change_notices()'s own line must
+    # read before describe_turn_results()'s own ordinary narrative --
+    # see that composer's own docstring for why.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.HUMAN, Alignment.EVIL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True))
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.NEUTRAL, DiplomaticRelation.ENEMY))
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    header_index = lines.index("ACTION REPORT")
+    assert lines[header_index + 2] == (
+        "My lord, dire tidings: Borin (#2) has declared war upon us! We are now at war."
+    )
+
+
 def test_compose_letter_report_includes_battle_narrative_for_both_involved_kingdoms():
     # Phase 711: state.battle_narratives_by_kingdom is set up directly
     # here (bypassing record_battle_narratives()'s own rendering, tested
@@ -11033,6 +11053,71 @@ def test_describe_diplomacy_report_lists_multiple_kingdoms_sorted_by_id():
 
     neutral_index = lines.index(_DIPLOMACY_NEUTRAL_INTRO)
     assert lines[neutral_index + 1 :] == ["Bertha (#2)", "Cyrus (#3)"]
+
+
+# -- 2026-11-03: describe_diplomacy_change_notices() -- a Break Treat
+# relation change, rendered at the top of ACTION REPORT -- see that
+# composer's own docstring for why this isn't sourced from a real
+# sample.
+
+
+def _notice_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.EVIL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1), is_king=True))
+    return state
+
+
+def test_describe_diplomacy_change_notices_allied_to_neutral():
+    state = _notice_state()
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL))
+
+    assert describe_diplomacy_change_notices(state, 1) == [
+        "My lord, grave tidings: Kwoth (#2) has broken his treaty with us; "
+        "relations between our two Kingdoms have cooled to Neutral."
+    ]
+
+
+def test_describe_diplomacy_change_notices_neutral_to_enemy():
+    state = _notice_state()
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.NEUTRAL, DiplomaticRelation.ENEMY))
+
+    assert describe_diplomacy_change_notices(state, 1) == [
+        "My lord, dire tidings: Kwoth (#2) has declared war upon us! We are now at war."
+    ]
+
+
+def test_describe_diplomacy_change_notices_allied_to_enemy():
+    state = _notice_state()
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.ENEMY))
+
+    assert describe_diplomacy_change_notices(state, 1) == [
+        "My lord, dire tidings: our alliance with Kwoth (#2) has been shattered; we are now at war."
+    ]
+
+
+def test_describe_diplomacy_change_notices_renders_for_both_sides_of_the_pair():
+    state = _notice_state()
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL))
+
+    assert describe_diplomacy_change_notices(state, 2) == [
+        "My lord, grave tidings: Testland (#1) has broken his treaty with us; "
+        "relations between our two Kingdoms have cooled to Neutral."
+    ]
+
+
+def test_describe_diplomacy_change_notices_ignores_a_pair_not_involving_this_kingdom():
+    state = _notice_state()
+    state.add_kingdom(KingdomState(3, "Thirdland", Race.DWARVEN, Alignment.GOOD, HexCoord(2, 2)))
+    state.diplomacy_relation_change_notices.append((2, 3, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL))
+
+    assert describe_diplomacy_change_notices(state, 1) == []
+
+
+def test_describe_diplomacy_change_notices_empty_with_no_notices():
+    state = _notice_state()
+    assert describe_diplomacy_change_notices(state, 1) == []
 
 
 # -- Phase 640: DIPLOMACY's real Write_List/Desc_Align enrichment --

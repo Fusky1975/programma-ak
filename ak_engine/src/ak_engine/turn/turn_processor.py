@@ -277,7 +277,7 @@ from ak_engine.turn.battle_orchestrator import (
 )
 from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.blackmail import advance_blackmail_claims
-from ak_engine.turn.diplomacy import apply_treat_orders
+from ak_engine.turn.diplomacy import advance_pending_diplomacy, apply_treat_orders
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.aspy_execution import execute_aspy
@@ -462,11 +462,30 @@ def run_turn(
     # pair exactly. See `turn/blackmail.py`'s own module docstring.
     advance_blackmail_claims(state)
 
+    # 2026-11-03 -- freshly populated this call, read only after this
+    # same `run_turn()` call returns (`orchestrator.py process_turn()`'s
+    # own `compose_letter_report()` pass, strictly later) -- cleared here
+    # rather than by `_replenish_turn_scoped_state()` at this call's own
+    # end, which would wipe it before that later read ever happens. See
+    # `GameState.diplomacy_relation_change_notices`'s own docstring.
+    state.diplomacy_relation_change_notices = []
+
+    # 2026-11-03 -- promotes any ordinary King's own Break Treat order
+    # deferred last turn (RULES.AK [8.3]'s "alla fine del turno" timing,
+    # as opposed to Evil/Undead's own same-turn exception) into a real
+    # relation change, visible to *this* turn's own combat -- must run
+    # before this same turn's own fresh `apply_treat_orders()` call
+    # below, mirroring `advance_blackmail_claims()`'s own placement one
+    # call up. See `turn/diplomacy.py`'s own module docstring.
+    advance_pending_diplomacy(state)
+
     # Phase 1026 -- RULES.AK [8.2]/[8.3]'s own Treat/Break Treat orders,
     # resolved into real `diplomatic_relations` transitions before any
     # phase dispatches -- see `turn/diplomacy.py`'s own module docstring
     # for why this single early call (rather than a separate end-of-turn
-    # pass) is this project's own documented timing simplification.
+    # pass) is this project's own documented timing simplification for
+    # Treat; Break Treat's own timing is modeled for real as of
+    # 2026-11-03 (see `advance_pending_diplomacy()` right above).
     apply_treat_orders(state)
 
     # Phase 669 -- rulebook [5.10]: each leader's own real, standing

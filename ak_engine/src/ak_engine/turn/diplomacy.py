@@ -35,27 +35,46 @@ Treat order toward ``recruiter_kingdom_id`` this turn." Break Treat has
 no existing field to reuse -- ``GameState.break_treat_orders`` (Phase
 1026, same shape and same turn-scoped-reset convention) is new.
 
-**Timing -- a documented simplification.** [8] frames ordinary Treat/
-Break Treat as resolved "alla fine di ciascun turno" (at the end of each
-turn), except two explicit exceptions that take effect *before* the
-turn's own combat: [8.3]'s Evil/Undead Break Treat ("danno l'ordine...
-all'inizio del turno e non alla fine... possono incominciare
-immediatamente un'invasione nello stesso turno"), and [8.2]'s Druidic
-mutual-Treat alliance ("diventano alleati prima dell'inizio del turno").
-This project's own turn engine has no existing "orders submitted this
-turn take effect starting next turn" mechanism for *any* other order
-type (every Move/Explore/etc. order is read and applied within the same
-``run_turn()`` call it's submitted for) -- inventing one here, just for
-this one rule, to support a maximally literal reading of "alla fine"
-would be new machinery nothing else in this project needs or exercises.
-``apply_treat_orders()`` is therefore called once, early in ``run_turn()``
-(mirroring ``advance_blackmail_claims()``'s own "before any phase
-dispatches" placement) -- every transition it computes, not only the two
-timed exceptions, becomes visible to that same turn's own combat. This
-exactly reproduces the two exceptions' own real effect (same-turn
-visibility) and is a conservative, explicitly documented simplification
-for the ordinary case (one phase earlier than a maximally literal "end
-of turn" reading), never a silent guess.
+**Timing.** [8] frames ordinary Treat/Break Treat as resolved "alla fine
+di ciascun turno" (at the end of each turn), except two explicit
+exceptions that take effect *before* the turn's own combat: [8.3]'s
+Evil/Undead Break Treat ("danno l'ordine... all'inizio del turno e non
+alla fine... possono incominciare immediatamente un'invasione nello
+stesso turno"), and [8.2]'s Druidic mutual-Treat alliance ("diventano
+alleati prima dell'inizio del turno").
+
+**2026-11-03 -- the Break Treat half of this is now modeled for real,
+not simplified away.** This paragraph used to apply every transition
+uniformly, early in the same turn it was ordered, as "a conservative
+simplification" for the ordinary (non-exception) case -- true for Treat
+(see below), but for Break Treat this silently handed *every* King the
+same same-turn-invasion advantage [8.3] reserves for Evil/Undead alone.
+``apply_treat_orders()`` now splits on this directly: a pair's own
+Break-Treat-driven transition is written to ``diplomatic_relations``
+immediately only when at least one of the Kings who issued the break
+this turn is Evil or Undead (``_is_evil_or_undead()`` below); otherwise
+it's deferred into ``GameState.pending_break_treat_transitions`` and
+only promoted into a real transition -- visible to *that* turn's own
+combat -- by ``advance_pending_diplomacy()``, called at the very start
+of the *next* ``run_turn()``, before that turn's own fresh orders are
+read. This reproduces [8.3]'s own "un turno per rischiarare le proprie
+forze" grace period exactly: an ordinary Break Treat changes nothing
+until the turn after it's issued.
+
+**Treat keeps its own, narrower, still-simplified timing.** [8] gives
+no Evil/Undead-style exception for ordinary Treat formation (only
+[8.2]'s already-immediate Druidic case) -- this project's own turn
+engine still has no generic "orders submitted this turn take effect
+starting next turn" mechanism for *any* other order type (every
+Move/Explore/etc. order is read and applied within the same
+``run_turn()`` call it's submitted for), so inventing one just for
+ordinary Treat, to support a maximally literal "alla fine" reading,
+remains out of scope here -- a conservative, explicitly documented
+simplification (one phase earlier than a maximally literal "end of
+turn" reading), never a silent guess, same as the rest of this project's
+own "no source, no guess" discipline. Unlike Break Treat above, this
+doesn't hand either side a mechanical advantage the rulebook reserves
+for a specific Alignment, which is why it was left alone here.
 
 **[8.1]'s own "triangle" case -- a Kingdom X allied to both Y and Z, who
 are themselves enemies of each other.** Closed via ``is_attackable_at()``
@@ -109,6 +128,16 @@ def _upgrade(relation: DiplomaticRelation) -> DiplomaticRelation:
 def _is_druid(state: GameState, kingdom_id: int) -> bool:
     kingdom = state.kingdoms.get(kingdom_id)
     return kingdom is not None and kingdom.alignment is Alignment.DRUID
+
+
+def _is_evil_or_undead(state: GameState, kingdom_id: int) -> bool:
+    """[8.3]'s own Break Treat timing exception ("I Re Malvagi e
+    Non-Morti...") -- mirrors ``_is_druid()`` right above, same
+    Kingdom-level (not leader-level) alignment reading.
+    """
+
+    kingdom = state.kingdoms.get(kingdom_id)
+    return kingdom is not None and kingdom.alignment in (Alignment.EVIL, Alignment.UNDEAD)
 
 
 def is_attackable_at(
@@ -208,6 +237,7 @@ def apply_treat_orders(state: GameState) -> None:
         b_break = (kingdom_b, kingdom_a) in state.break_treat_orders
         a_treat = (kingdom_a, kingdom_b) in state.treat_permissions
         b_treat = (kingdom_b, kingdom_a) in state.treat_permissions
+        break_driven = a_break or b_break
 
         new_relation = current
         if a_break and b_break and current is DiplomaticRelation.ALLIED:
@@ -224,5 +254,53 @@ def apply_treat_orders(state: GameState) -> None:
         ):
             new_relation = DiplomaticRelation.ALLIED
 
-        if new_relation is not current:
+        if new_relation is current:
+            continue
+
+        if not break_driven:
+            # A Treat-driven transition (including the Druidic
+            # exceptions, [8.2]'s own separate, already-immediate
+            # carve-out) is always immediate and never generates a
+            # ``diplomacy_relation_change_notices`` entry -- that
+            # mechanism is scoped to Break Treat's own [8.3] timing
+            # exception below, not a general "relation changed" feed.
             set_relation(state, kingdom_a, kingdom_b, new_relation)
+            continue
+
+        # [8.3]'s own timing exception: a Break Treat order from an Evil
+        # or Undead King resolves "all'inizio del turno," same turn's
+        # combat included -- every other King's own Break Treat still
+        # resolves "alla fine del turno," so it's deferred to the start
+        # of next turn instead (``advance_pending_diplomacy()`` below),
+        # rather than applied here.
+        immediate = (a_break and _is_evil_or_undead(state, kingdom_a)) or (
+            b_break and _is_evil_or_undead(state, kingdom_b)
+        )
+        if immediate:
+            set_relation(state, kingdom_a, kingdom_b, new_relation)
+            state.diplomacy_relation_change_notices.append((kingdom_a, kingdom_b, current, new_relation))
+        else:
+            state.pending_break_treat_transitions[pair] = (current, new_relation)
+
+
+def advance_pending_diplomacy(state: GameState) -> None:
+    """Promotes every still-``pending_break_treat_transitions`` entry
+    (an ordinary King's own Break Treat order, deferred by
+    ``apply_treat_orders()`` above per [8.3]'s own "alla fine del turno"
+    timing) into a real ``diplomatic_relations`` transition, visible to
+    *this* turn's own combat -- called once, at the very start of
+    ``run_turn()``, before that same turn's own fresh
+    ``apply_treat_orders()`` call. Mirrors ``turn/blackmail.py
+    advance_blackmail_claims()``'s own pending -> active promotion,
+    called at the exact same point in the turn for the same reason.
+
+    A pair promoted here also gets a fresh ``diplomacy_relation_change_
+    notices`` entry -- the whole reason for the one-turn delay is so the
+    affected King finds out *before* this turn's own combat, not after.
+    """
+
+    for pair, (old_relation, new_relation) in state.pending_break_treat_transitions.items():
+        kingdom_a, kingdom_b = sorted(pair)
+        set_relation(state, kingdom_a, kingdom_b, new_relation)
+        state.diplomacy_relation_change_notices.append((kingdom_a, kingdom_b, old_relation, new_relation))
+    state.pending_break_treat_transitions = {}

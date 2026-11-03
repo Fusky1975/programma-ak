@@ -16,6 +16,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster, MonsterEngagementState
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
 from ak_engine.models.race import Race
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.models.valhalla import VALHALLA_ROSTER, VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.battle_orchestrator import BattleReport, MultiAttackerBattle
 from ak_engine.turn.battle_resolution import BattleResult
@@ -2690,6 +2691,54 @@ def test_run_turn_clears_action_casts_used_at_the_end():
     run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
 
     assert state.action_casts_used == {}
+
+
+# -- 2026-11-03: RULES.AK [8.3]'s own Evil/Undead Break Treat timing
+# exception, end-to-end through two real run_turn() calls -- see
+# turn/diplomacy.py's own module docstring for the full mechanics.
+
+
+def test_run_turn_ordinary_kings_break_treat_relation_change_waits_for_next_turn():
+    state = _base_state()  # kingdom 1 Good, kingdom 2 Neutral -- neither Evil nor Undead
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.break_treat_orders.add((1, 2))
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    # Not yet visible to this turn's own combat, and no report notice
+    # for it yet either.
+    assert state.is_allied(1, 2)
+    assert state.diplomacy_relation_change_notices == []
+    assert frozenset({1, 2}) in state.pending_break_treat_transitions
+
+    # Next turn's own orders carry nothing further for this pair --
+    # break_treat_orders was already cleared by the first run_turn()
+    # call's own end-of-turn _replenish_turn_scoped_state().
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(2))
+
+    assert not state.is_allied(1, 2)
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL
+    assert frozenset({1, 2}) not in state.pending_break_treat_transitions
+    assert state.diplomacy_relation_change_notices == [
+        (1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL)
+    ]
+
+
+def test_run_turn_evil_kings_break_treat_relation_change_is_immediate():
+    state = _base_state()
+    state.kingdoms[1].alignment = Alignment.EVIL
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.break_treat_orders.add((1, 2))
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    # Visible to this same turn's own combat, per [8.3]'s own exception.
+    assert not state.is_allied(1, 2)
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL
+    assert frozenset({1, 2}) not in state.pending_break_treat_transitions
+    assert state.diplomacy_relation_change_notices == [
+        (1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL)
+    ]
 
 
 # -- Phase 576: illusory_fog_active, found the same way action_casts_used

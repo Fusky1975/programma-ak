@@ -1721,6 +1721,48 @@ class GameState:
     # grant permanent without this reset, the identical bug class Phase
     # 573/670/702 already found and fixed for other turn-scoped fields.
     treat_permissions: set[tuple[int, int]] = field(default_factory=set)
+    # 2026-11-03 -- RULES.AK [8.3]'s own timing exception: "I Re Malvagi
+    # e Non-Morti danno l'ordine Break Treat all'inizio del turno e non
+    # alla fine. Di conseguenza possono incominciare immediatamente
+    # un'invasione nello stesso turno in cui dichiarano guerra" -- every
+    # *other* King's own Break Treat order still resolves "alla fine del
+    # turno," so its relation change must stay invisible to this same
+    # turn's own combat. ``turn/diplomacy.py apply_treat_orders()`` now
+    # computes a pair's own new relation immediately only when at least
+    # one of the Kings who issued the break this turn is Evil or Undead;
+    # otherwise the ``(old, new)`` relation pair lands here instead of
+    # being written to ``diplomatic_relations`` right away. **Not
+    # turn-scoped** -- deliberately survives past ``run_turn()``'s own
+    # end-of-call ``_replenish_turn_scoped_state()`` (which clears
+    # ``break_treat_orders`` right above), since this is exactly the
+    # data that must still exist when the *next* ``run_turn()`` begins.
+    # ``turn/diplomacy.py advance_pending_diplomacy()`` (mirroring
+    # ``turn/blackmail.py advance_blackmail_claims()``'s own pending ->
+    # active promotion) applies every entry here and clears it, called
+    # once at the very start of ``run_turn()``, before that same turn's
+    # own fresh ``apply_treat_orders()`` call.
+    pending_break_treat_transitions: dict[frozenset[int], tuple[DiplomaticRelation, DiplomaticRelation]] = field(
+        default_factory=dict
+    )
+    # 2026-11-03 -- every diplomatic relation change actually made
+    # visible *this* turn by a Break Treat order (whether resolved
+    # immediately above, or promoted out of ``pending_break_treat_
+    # transitions`` this same turn) -- ``(kingdom_a_id, kingdom_b_id,
+    # old_relation, new_relation)``, one entry per changed pair, order
+    # arbitrary. Feeds ``report/turn_report.py describe_diplomacy_
+    # change_notices()``, rendered at the very top of both Kings' own
+    # ACTION REPORT section (``compose_letter_report()``), ahead of the
+    # ordinary turn narrative -- the user's own direct-play confirmation
+    # (2026-11-02) that a relation change is always announced this way,
+    # not something either available source text documents. Turn-scoped,
+    # but *not* by ``_replenish_turn_scoped_state()`` (which runs at the
+    # *end* of ``run_turn()``, before ``compose_letter_report()`` ever
+    # gets to read this) -- cleared instead at the very *start* of
+    # ``run_turn()``, the same spot that populates it, so a stale list
+    # never leaks into a later turn's own report.
+    diplomacy_relation_change_notices: list[tuple[int, int, DiplomaticRelation, DiplomaticRelation]] = field(
+        default_factory=list
+    )
     # Feature instances (Phase 75) -- see models/feature.py's own docstring
     # for why this is a flat dict-by-id, mirroring `armies`/`provinces`,
     # not a per-province list (Pascal's own `fx`/`fy` arrays are keyed by
