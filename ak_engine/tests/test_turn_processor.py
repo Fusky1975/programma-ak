@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ARMY_TABLE, ArmyType
+from ak_engine.models.army_type import ARMY_TABLE, NO_LEADER_SENTINEL, ArmyType
 from ak_engine.models.discovery import Discovery
 from ak_engine.models.enums import Ability, ActionCode, Maneuver, Spell
 from ak_engine.models.feature import Feature, FeatureType
@@ -26,6 +26,7 @@ from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalM
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.movement import neighbors as _neighbors
+from ak_engine.turn.army_list_decode import ALL_ARMIES_SENTINEL
 from ak_engine.turn.aspy_execution import SpyReport
 from ak_engine.turn.plan_dispatch import NoOpResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
@@ -828,6 +829,13 @@ def _leave_phase(label: str, target_leader_id: int, army_ids: tuple[int, ...] = 
     return PlanPhase(label=label, action=ActionCode.LEAVE, obj=0, extra=[target_leader_id, *army_ids, -1])
 
 
+def _pick_up_phase(label: str, *, army_ids: tuple[int, ...] = (), all_armies: bool = False) -> PlanPhase:
+    # target_leader_id is meaningless for Pick_Up (army_list_decode.py's
+    # own docstring) -- NO_LEADER_SENTINEL in extra[0] regardless.
+    ids = [ALL_ARMIES_SENTINEL] if all_armies else [*army_ids, -1]
+    return PlanPhase(label=label, action=ActionCode.PICK_UP, obj=0, extra=[NO_LEADER_SENTINEL, *ids])
+
+
 def _recruit_phase(label: str, target_leader_id: int) -> PlanPhase:
     return PlanPhase(label=label, action=ActionCode.RECRUIT, obj=target_leader_id, extra=[0, -1])
 
@@ -913,6 +921,63 @@ def test_collect_phase_entries_leave_target_waits_despite_higher_initiative():
     entries = _collect_phase_entries(turn_leaders, "P2", state)
 
     assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [13, 14]
+
+
+def test_collect_phase_entries_pick_up_all_armies_waits_for_an_untargeted_leave_at_its_location():
+    # Backlog #7 / RULES.AK [3]'s own "Prendere Unità Militari" case:
+    # Hero #13 (lower Initiative) Leaves an army to the Garrison
+    # Commander (no named target) right where Hero #14 (higher
+    # Initiative) has queued a "Pick Up all unled armies" order -- #14's
+    # own Pick_Up waits for #13's Leave, the same reversal the ordinary
+    # named-target case already gets.
+    state = _ordering_state({13: 1, 14: 3})  # #13: Initiative 3, #14: Initiative 9
+    state.add_army(ArmyState(301, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, commanded_by=13))
+    turn_leaders = _turn_leaders(
+        (13, 1, "P2", _leave_phase("P2", target_leader_id=NO_LEADER_SENTINEL, army_ids=(301,))),
+        (14, 1, "P2", _pick_up_phase("P2", all_armies=True)),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P2", state)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [13, 14]
+
+
+def test_collect_phase_entries_pick_up_specific_army_id_creates_no_dependency():
+    # Only the all_armies Pick_Up form is timing-sensitive -- naming a
+    # specific army id never checks commanded_by in plan_dispatch.py
+    # _dispatch_pick_up(), so ordinary Initiative order applies
+    # unchanged, same as any other unrelated same-phase pair.
+    state = _ordering_state({13: 1, 14: 3})
+    state.add_army(ArmyState(301, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, commanded_by=13))
+    turn_leaders = _turn_leaders(
+        (13, 1, "P2", _leave_phase("P2", target_leader_id=NO_LEADER_SENTINEL, army_ids=(301,))),
+        (14, 1, "P2", _pick_up_phase("P2", army_ids=(301,))),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P2", state)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [14, 13]
+
+
+def test_collect_phase_entries_pick_up_all_armies_ignores_an_untargeted_leave_of_a_foreign_kingdom():
+    # _dispatch_pick_up()'s own per-army check is an exact Kingdom
+    # match, not _same_side()'s looser ally-inclusive reading -- a
+    # Pick_Up(all_armies) order never actually claims an allied-but-
+    # foreign Kingdom's dropped army, so no dependency should form
+    # for one either.
+    state = _ordering_state({13: 1}, kingdom_id=1)
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.NEUTRAL, ORIGIN))
+    state.add_leader(LeaderState(14, 2, "L14", ORIGIN, skills=_skills_with(Ability.MARCH, 3, 3)))
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ALLIED
+    state.add_army(ArmyState(301, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, commanded_by=13))
+    turn_leaders = _turn_leaders(
+        (13, 1, "P2", _leave_phase("P2", target_leader_id=NO_LEADER_SENTINEL, army_ids=(301,))),
+        (14, 2, "P2", _pick_up_phase("P2", all_armies=True)),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P2", state)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [14, 13]
 
 
 def test_collect_phase_entries_recruit_for_another_waits_despite_higher_initiative():
@@ -1013,6 +1078,32 @@ def test_run_turn_leave_target_waits_for_the_leave_despite_higher_initiative():
     # army moved under Hero #14's own command, not left behind.
     assert state.armies[301].commanded_by == 14
     assert state.armies[301].location == ORIGIN2
+
+
+def test_run_turn_pick_up_all_armies_claims_an_untargeted_leaves_army_in_the_same_phase():
+    # Backlog #7, end-to-end: Hero #14 (higher Initiative)'s own "Pick
+    # Up all unled armies" must not dispatch before Hero #13's own P2
+    # Leave (no named target -- dropped to the Garrison Commander) has
+    # actually made army 301 unled, or it never gets the chance to
+    # claim it this phase at all.
+    state = _base_state()
+    state.add_leader(LeaderState(13, 1, "Benefactor", ORIGIN, skills=_skills_with(Ability.MARCH, 1, 1)))
+    state.add_leader(LeaderState(14, 1, "Beneficiary", ORIGIN, skills=_skills_with(Ability.MARCH, 3, 3)))
+    state.add_army(ArmyState(301, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, commanded_by=13))
+
+    leader_13 = Leader(
+        13,
+        "Benefactor",
+        ActionPlan(13, [PlanSegment(0, 0, (), {"P2": _leave_phase("P2", NO_LEADER_SENTINEL, (301,))})]),
+    )
+    leader_14 = Leader(
+        14, "Beneficiary", ActionPlan(14, [PlanSegment(0, 0, (), {"P2": _pick_up_phase("P2", all_armies=True)})])
+    )
+    turn_leaders = [TurnLeader(leader_13, 1), TurnLeader(leader_14, 1)]
+
+    run_turn(turn_leaders, state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert state.armies[301].commanded_by == 14
 
 
 # -- Contested-province forced rebattle (Phase 55) -------------------------

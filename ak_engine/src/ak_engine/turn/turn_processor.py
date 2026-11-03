@@ -275,7 +275,7 @@ from ak_engine.turn.battle_orchestrator import (
     fight_battle,
     fight_multi_attacker_battle,
 )
-from ak_engine.turn.army_list_decode import decode_army_list_phase
+from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
 from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.blackmail import advance_blackmail_claims
 from ak_engine.turn.cast_decode import CHARACTER_TARGET_SPELLS, decode_cast_phase
@@ -2007,8 +2007,102 @@ def _same_side(state: GameState, kingdom_a: int, kingdom_b: int) -> bool:
     return kingdom_a == kingdom_b or state.is_allied(kingdom_a, kingdom_b)
 
 
+def _dropped_unled_army_locations(
+    request: ArmyListRequest, acting_leader_id: int, state: GameState
+) -> list[tuple[HexCoord, int]]:
+    """For a Leave order with no named target (``target_leader_id is
+    None`` -- dropped to the Garrison Commander), the ``(location,
+    kingdom_id)`` of every army it will actually set ``commanded_by =
+    None`` on. Mirrors ``plan_dispatch.py _dispatch_leave()``'s own
+    per-army eligibility check (``owns_or_may_pass_along``) exactly, so
+    this never invents a same-phase dependency for an army the real
+    dispatch would skip anyway (not already commanded by the acting
+    leader, not unled-and-co-located, or not that Kingdom's own) --
+    see ``_pick_up_beneficiary_for_untargeted_leave()``'s own docstring
+    for why this helper exists. Pure (no mutation), like every other
+    helper in this ordering pass -- it runs before any real dispatch.
+    """
+
+    acting_leader = state.leaders.get(acting_leader_id)
+    if acting_leader is None:
+        return []
+    army_ids = (
+        [army.army_id for army in state.armies_commanded_by(acting_leader_id)]
+        if request.all_armies
+        else request.army_ids
+    )
+    dropped: list[tuple[HexCoord, int]] = []
+    for army_id in army_ids:
+        army = state.armies.get(army_id)
+        if army is None or army.kingdom_id != acting_leader.kingdom_id:
+            continue
+        owns_or_may_pass_along = army.commanded_by == acting_leader_id or (
+            army.commanded_by is None and army.location == acting_leader.location
+        )
+        if owns_or_may_pass_along:
+            dropped.append((army.location, army.kingdom_id))
+    return dropped
+
+
+def _pick_up_beneficiary_for_untargeted_leave(
+    request: ArmyListRequest,
+    tl: TurnLeader,
+    state: GameState,
+    pick_up_all_armies_leaders: dict[int, tuple[HexCoord, int]],
+) -> int | None:
+    """RULES.AK [3]'s own "Prendere Unità Militari" case, left out of
+    `_same_phase_beneficiary_leader_id()`'s own ordinary named-target
+    handling by `_order_phase_entries_by_initiative()`'s own pre-
+    existing docstring addendum ("needs resolving which *army*, not
+    which *leader*, the dependency is keyed on"). An ordinary Leave with
+    a named target already has a leader to key the wait on; one with no
+    named target (dropped to the Garrison Commander) has none -- the
+    dependency here is instead on whichever *other* same-phase leader
+    has queued a "Pick Up all unled armies in the province" order
+    (``ArmyListRequest.all_armies``, ``plan_dispatch.py _dispatch_
+    pick_up()``'s own rulebook-quoted branch) and is standing exactly
+    where one of this Leave's own dropped armies will land, of the
+    exact same Kingdom (not merely allied -- `_dispatch_pick_up()`'s own
+    per-army check is ``army.kingdom_id == acting_leader.kingdom_id``,
+    not `_same_side()`'s looser ally-inclusive reading, so a same-
+    Kingdom match here is what actually determines whether that Pick_Up
+    would even succeed in claiming the army).
+
+    **Deliberately single-match, not a list**: two different same-
+    Kingdom Pick_Up(all_armies) leaders both standing at the same
+    dropped-army location in the same phase is a real but unsourced
+    corner case this project's own `ArmyListRequest`/rulebook text has
+    nothing to say about how to arbitrate between -- the first match in
+    ``pick_up_all_armies_leaders``' own (``base_order``-derived,
+    therefore deterministic) iteration order wins, the same "no source,
+    no guess, pick a deterministic tiebreak" stance `turn/patrol_
+    execution.py find_patrol_target()`'s own rule (h) already takes for
+    an analogous multi-candidate ambiguity.
+
+    **Only the ``all_armies`` Pick_Up form is timing-sensitive at all**:
+    a Pick_Up naming a specific army id never checks ``commanded_by`` in
+    ``_dispatch_pick_up()``, so it already succeeds regardless of
+    dispatch order -- no dependency needed for that form, and none is
+    computed here.
+    """
+
+    dropped = _dropped_unled_army_locations(request, tl.leader.leader_id, state)
+    if not dropped:
+        return None
+    for pick_up_leader_id, (location, kingdom_id) in pick_up_all_armies_leaders.items():
+        if pick_up_leader_id == tl.leader.leader_id:
+            continue
+        if any(location == d_location and kingdom_id == d_kingdom_id for d_location, d_kingdom_id in dropped):
+            return pick_up_leader_id
+    return None
+
+
 def _same_phase_beneficiary_leader_id(
-    tl: TurnLeader, phase: PlanPhase, state: GameState, acting_leader_ids_this_phase: set[int]
+    tl: TurnLeader,
+    phase: PlanPhase,
+    state: GameState,
+    acting_leader_ids_this_phase: set[int],
+    pick_up_all_armies_leaders: dict[int, tuple[HexCoord, int]],
 ) -> int | None:
     """RULES.AK [3]'s own "un personaggio può attendere se un altro deve
     fare qualcosa per lui" -- the leader_id of another, same-phase-
@@ -2023,7 +2117,13 @@ def _same_phase_beneficiary_leader_id(
 
     target_leader_id: int | None = None
     if phase.action is ActionCode.LEAVE:
-        target_leader_id = decode_army_list_phase(phase).target_leader_id
+        request = decode_army_list_phase(phase)
+        target_leader_id = request.target_leader_id
+        if target_leader_id is None:
+            # 2026-11-06: the "Prendere Unità Militari" case this
+            # function's own docstring used to leave entirely out --
+            # see `_pick_up_beneficiary_for_untargeted_leave()`.
+            return _pick_up_beneficiary_for_untargeted_leave(request, tl, state, pick_up_all_armies_leaders)
     elif phase.action is ActionCode.RECRUIT:
         target_leader_id = decode_recruit_phase(phase).leader_id
     elif phase.action is ActionCode.TRADE:
@@ -2129,18 +2229,32 @@ def _order_phase_entries_by_initiative(
     than loop forever or raise, it's broken by falling back to the base
     order for whichever entries remain.
 
-    **Deliberately out of scope here** (confirmed, not silently
-    guessed): `PICK_UP`'s own more complex case -- waiting for a
-    same-phase `LEAVE` that drops an army to *no* named leader, which
-    this `PICK_UP` then separately claims -- needs resolving which
-    *army*, not which *leader*, the dependency is keyed on, a
-    materially larger follow-up left for its own round. "...e per gli
-    Incontri" (Encounters) is also left out -- Challenge/Pursue already
-    has its own dedicated same-phase pairing/sequencing machinery
-    (mutual-encounter resolution, and [3.16]'s own separate "inseguitore
-    dopo l'inseguito" rule, `_order_same_kingdom_pursuits_after_their_
-    target()` right below), and no further, distinct gap was found
-    there beyond what those already cover.
+    **2026-11-06 -- `PICK_UP`'s own more complex case closed too.**
+    Until now this paragraph flagged it as deliberately out of scope:
+    waiting for a same-phase `LEAVE` that drops an army to *no* named
+    leader, which this `PICK_UP` then separately claims, needs
+    resolving which *army*, not which *leader*, the dependency is keyed
+    on -- a structurally different lookup from the four named-target
+    cases above. `_pick_up_beneficiary_for_untargeted_leave()` (called
+    from `_same_phase_beneficiary_leader_id()`'s own `LEAVE` branch when
+    its target is `None`) closes this: it resolves which armies that
+    untargeted Leave actually drops (mirroring `plan_dispatch.py
+    _dispatch_leave()`'s own eligibility checks) and matches their
+    `(location, kingdom_id)` against every other same-phase leader who
+    has queued a same-Kingdom "Pick Up all unled armies in the
+    province" order -- the only Pick_Up form that's timing-sensitive at
+    all (a Pick_Up naming a specific army id never checks `commanded_by`
+    in `_dispatch_pick_up()`, so dispatch order never affects it). See
+    that function's own docstring for the deliberate single-match
+    tiebreak this still leaves for the (unsourced, real but rare) case
+    of two same-spot Pick_Up(all_armies) leaders.
+
+    "...e per gli Incontri" (Encounters) is still left out -- Challenge/
+    Pursue already has its own dedicated same-phase pairing/sequencing
+    machinery (mutual-encounter resolution, and [3.16]'s own separate
+    "inseguitore dopo l'inseguito" rule, `_order_same_kingdom_pursuits_
+    after_their_target()` right below), and no further, distinct gap
+    was found there beyond what those already cover.
     """
 
     def _initiative_sort_key(indexed_entry: tuple[int, tuple[TurnLeader, int, PlanPhase]]) -> tuple[bool, int, int]:
@@ -2153,9 +2267,27 @@ def _order_phase_entries_by_initiative(
 
     acting_leader_ids_this_phase = {tl.leader.leader_id for tl, _segment_index, _phase in entries}
     position_by_leader_id = {tl.leader.leader_id: i for i, (tl, _segment_index, _phase) in enumerate(base_order)}
+
+    # 2026-11-06: every acting leader with a Pick_Up(all_armies) order
+    # this phase, by (location, kingdom_id) -- see
+    # _pick_up_beneficiary_for_untargeted_leave()'s own docstring. Built
+    # once, in base_order's own deterministic iteration order (that
+    # function's own documented single-match tiebreak relies on this).
+    pick_up_all_armies_leaders: dict[int, tuple[HexCoord, int]] = {}
+    for tl, _segment_index, phase in base_order:
+        if phase.action is not ActionCode.PICK_UP:
+            continue
+        if not decode_army_list_phase(phase).all_armies:
+            continue
+        pick_up_leader = state.leaders.get(tl.leader.leader_id)
+        if pick_up_leader is not None:
+            pick_up_all_armies_leaders[tl.leader.leader_id] = (pick_up_leader.location, pick_up_leader.kingdom_id)
+
     must_precede: dict[int, set[int]] = {}
     for i, (tl, _segment_index, phase) in enumerate(base_order):
-        beneficiary_id = _same_phase_beneficiary_leader_id(tl, phase, state, acting_leader_ids_this_phase)
+        beneficiary_id = _same_phase_beneficiary_leader_id(
+            tl, phase, state, acting_leader_ids_this_phase, pick_up_all_armies_leaders
+        )
         if beneficiary_id is None:
             continue
         j = position_by_leader_id[beneficiary_id]
