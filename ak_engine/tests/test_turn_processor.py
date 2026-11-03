@@ -37,6 +37,7 @@ from ak_engine.turn.turn_processor import (
     _ActiveMoveChase,
     _apply_defend_reinforcements,
     _apply_werebeast_transformations,
+    _collect_phase_entries,
     _continue_active_move_chases,
     _replenish_turn_scoped_state,
     build_missed_deadline_turn_leaders,
@@ -808,6 +809,210 @@ def test_run_turn_practice_rise_takes_effect_only_from_the_next_turn_when_earned
 
     assert state.leaders[10].pending_skill_advancement is None
     assert state.leaders[10].skills.pair_for_ability(Ability.NECROMANCY) == (2, 9)
+
+
+# -- Initiative-based phase ordering (RULES.AK [3], 2026-11-03) -----------
+# See turn_processor.py _order_phase_entries_by_initiative()'s own
+# docstring for the full rulebook quotes this section exercises.
+
+
+def _wait_phase(label: str) -> PlanPhase:
+    return PlanPhase(label=label, action=ActionCode.WAIT, obj=0, extra=[0])
+
+
+def _defend_phase(label: str) -> PlanPhase:
+    return PlanPhase(label=label, action=ActionCode.DEFEND, obj=0, extra=[0])
+
+
+def _leave_phase(label: str, target_leader_id: int, army_ids: tuple[int, ...] = (101,)) -> PlanPhase:
+    return PlanPhase(label=label, action=ActionCode.LEAVE, obj=0, extra=[target_leader_id, *army_ids, -1])
+
+
+def _recruit_phase(label: str, target_leader_id: int) -> PlanPhase:
+    return PlanPhase(label=label, action=ActionCode.RECRUIT, obj=target_leader_id, extra=[0, -1])
+
+
+def _trade_phase(label: str, target_leader_id: int) -> PlanPhase:
+    return PlanPhase(label=label, action=ActionCode.TRADE, obj=1, extra=[0, target_leader_id])
+
+
+def _cast_phase(label: str, spell: Spell, target: int) -> PlanPhase:
+    return PlanPhase(label=label, action=ActionCode.CAST, obj=spell.value, extra=[target])
+
+
+def _ordering_state(initiative_by_leader_id: dict[int, int], *, kingdom_id: int = 1) -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(kingdom_id, "Testia", Race.HUMAN, Alignment.NEUTRAL, ORIGIN))
+    for leader_id, march_skill in initiative_by_leader_id.items():
+        # MARCH's own 3x weight (turn/initiative.py) makes the resulting
+        # Initiative score (3 * march_skill) easy to reason about here.
+        skills = _skills_with(Ability.MARCH, march_skill, march_skill) if march_skill else None
+        state.add_leader(LeaderState(leader_id, kingdom_id, f"L{leader_id}", ORIGIN, skills=skills))
+    return state
+
+
+def _turn_leaders(*entries: tuple[int, int, str, PlanPhase]) -> list[TurnLeader]:
+    """Each entry is ``(leader_id, kingdom_id, label, phase)``, in the
+    exact order they should appear in ``turn_leaders`` (this project's
+    own K1-file-arrival "numero d'ordine").
+    """
+
+    return [
+        TurnLeader(_leader_with_phase(leader_id, f"L{leader_id}", label, phase), kingdom_id)
+        for leader_id, kingdom_id, label, phase in entries
+    ]
+
+
+def test_collect_phase_entries_orders_by_initiative_descending():
+    state = _ordering_state({10: 1, 11: 3})  # leader 10: Initiative 3, leader 11: Initiative 9
+    turn_leaders = _turn_leaders(
+        (10, 1, "P0", _wait_phase("P0")),
+        (11, 1, "P0", _wait_phase("P0")),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P0", state)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [11, 10]
+
+
+def test_collect_phase_entries_ties_broken_by_k1_arrival_order():
+    state = _ordering_state({10: 0, 11: 0})  # both Initiative 0 -- a real tie
+    turn_leaders = _turn_leaders(
+        (10, 1, "P0", _wait_phase("P0")),
+        (11, 1, "P0", _wait_phase("P0")),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P0", state)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [10, 11]
+
+
+def test_collect_phase_entries_defend_always_sorts_last_despite_higher_initiative():
+    state = _ordering_state({10: 5, 11: 0})  # leader 10: Initiative 15, leader 11: Initiative 0
+    turn_leaders = _turn_leaders(
+        (10, 1, "P0", _defend_phase("P0")),
+        (11, 1, "P0", _wait_phase("P0")),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P0", state)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [11, 10]
+
+
+def test_collect_phase_entries_leave_target_waits_despite_higher_initiative():
+    # The rulebook's own worked example: Hero #13 (lower Initiative)
+    # Leaves to Hero #14 (higher Initiative) -- #14's own same-phase
+    # action waits for #13's Leave, reversing the ordinary Initiative
+    # order.
+    state = _ordering_state({13: 1, 14: 3})  # #13: Initiative 3, #14: Initiative 9
+    turn_leaders = _turn_leaders(
+        (13, 1, "P2", _leave_phase("P2", target_leader_id=14)),
+        (14, 1, "P2", _wait_phase("P2")),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P2", state)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [13, 14]
+
+
+def test_collect_phase_entries_recruit_for_another_waits_despite_higher_initiative():
+    state = _ordering_state({20: 0, 21: 3})
+    turn_leaders = _turn_leaders(
+        (20, 1, "P1", _recruit_phase("P1", target_leader_id=21)),
+        (21, 1, "P1", _wait_phase("P1")),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P1", state)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [20, 21]
+
+
+def test_collect_phase_entries_give_waits_despite_higher_initiative():
+    state = _ordering_state({30: 0, 31: 3})
+    turn_leaders = _turn_leaders(
+        (30, 1, "P3", _trade_phase("P3", target_leader_id=31)),
+        (31, 1, "P3", _wait_phase("P3")),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P3", state)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [30, 31]
+
+
+def test_collect_phase_entries_favorable_cast_waits_despite_higher_initiative():
+    state = _ordering_state({40: 0, 41: 3})
+    turn_leaders = _turn_leaders(
+        (40, 1, "P0", _cast_phase("P0", Spell.ORATORY, target=41)),
+        (41, 1, "P0", _wait_phase("P0")),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P0", state)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [40, 41]
+
+
+def test_collect_phase_entries_hostile_cast_on_an_enemy_kingdom_creates_no_dependency():
+    state = _ordering_state({40: 0}, kingdom_id=1)
+    state.add_kingdom(KingdomState(2, "Enemia", Race.HUMAN, Alignment.EVIL, HexCoord(5, 5)))
+    state.add_leader(LeaderState(50, 2, "L50", HexCoord(5, 5), skills=_skills_with(Ability.MARCH, 3, 3)))
+    turn_leaders = _turn_leaders(
+        (40, 1, "P0", _cast_phase("P0", Spell.KILL_ENEMY, target=50)),
+        (50, 2, "P0", _wait_phase("P0")),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P0", state)
+
+    # No same-side relationship -- ordinary Initiative order applies, the
+    # higher-Initiative leader 50 goes first, unaffected by leader 40's
+    # own Cast naming them as a target.
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [50, 40]
+
+
+def test_collect_phase_entries_dependency_target_idle_this_phase_creates_no_dependency():
+    state = _ordering_state({13: 1, 14: 3})
+    # Leader 14 has no entry at all this phase (idle) -- nothing to wait for.
+    turn_leaders = _turn_leaders((13, 1, "P2", _leave_phase("P2", target_leader_id=14)))
+
+    entries = _collect_phase_entries(turn_leaders, "P2", state)
+
+    assert [tl.leader.leader_id for tl, _segment_index, _phase in entries] == [13]
+
+
+def test_collect_phase_entries_mutual_give_cycle_does_not_crash():
+    # Never sourced, never seen in real play -- must degrade gracefully
+    # (some deterministic order), not crash or loop forever.
+    state = _ordering_state({60: 0, 61: 0})
+    turn_leaders = _turn_leaders(
+        (60, 1, "P0", _trade_phase("P0", target_leader_id=61)),
+        (61, 1, "P0", _trade_phase("P0", target_leader_id=60)),
+    )
+
+    entries = _collect_phase_entries(turn_leaders, "P0", state)
+
+    assert {tl.leader.leader_id for tl, _segment_index, _phase in entries} == {60, 61}
+
+
+def test_run_turn_leave_target_waits_for_the_leave_despite_higher_initiative():
+    # End-to-end through a real run_turn() call, not just the ordering
+    # helper directly: Hero #14's own P2 Move must not dispatch before
+    # Hero #13's own P2 Leave has actually transferred the army.
+    state = _base_state()
+    state.add_leader(LeaderState(13, 1, "Benefactor", ORIGIN, skills=_skills_with(Ability.MARCH, 1, 1)))
+    state.add_leader(LeaderState(14, 1, "Beneficiary", ORIGIN, skills=_skills_with(Ability.MARCH, 3, 3)))
+    state.add_army(ArmyState(301, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=3))
+
+    leader_13 = Leader(13, "Benefactor", ActionPlan(13, [PlanSegment(0, 0, (), {"P2": _leave_phase("P2", 14, (301,))})]))
+    leader_14 = Leader(
+        14, "Beneficiary", ActionPlan(14, [PlanSegment(0, 0, (), {"P2": _lmove_phase("P2", ORIGIN2)})])
+    )
+    turn_leaders = [TurnLeader(leader_13, 1), TurnLeader(leader_14, 1)]
+
+    run_turn(turn_leaders, state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    # The Move dispatched after command had already transferred, so the
+    # army moved under Hero #14's own command, not left behind.
+    assert state.armies[301].commanded_by == 14
+    assert state.armies[301].location == ORIGIN2
 
 
 # -- Contested-province forced rebattle (Phase 55) -------------------------

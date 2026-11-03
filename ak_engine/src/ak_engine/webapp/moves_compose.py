@@ -554,22 +554,16 @@ diventa di proprietà di quest'ultimo" is a second, independent
 Kingdom-transfer trigger from the pre-existing province-ownership one,
 now also implemented.
 
-**Deliberately NOT implemented here either, same as Disband's own
-Kingdom-boundary fix had nothing to do with the composer UI**: the
-user's own further text describes a genuinely new, currently entirely
-unimplemented engine mechanic -- when an order targets another leader
-of the same or an allied Kingdom, the higher-``character_initiative()``
-leader's own same-phase action waits for the lower-Initiative leader's
-targeting order to resolve first, even out of ordinary Initiative
-order. Confirmed absent from ``turn/turn_processor.py``'s own per-phase
-dispatch loop (no Initiative-based reordering or cross-leader
-dependency mechanism exists at all today), and -- per the user's own
-explicit choice -- deliberately deferred rather than fixed in this
-round: it's a structural change to the *general* phase-dispatch loop
-(every same-phase order targeting another leader, Recruit's own
-commander dropdown included, not just Leave), well beyond what this
-one Action's own composer round should take on. See ``_dispatch_
-leave()``'s own docstring for the full citation.
+**2026-11-03 -- the engine mechanic this paragraph used to flag as
+entirely unimplemented now exists.** When an order targets another
+leader of the same or an allied Kingdom, the higher-
+``character_initiative()`` leader's own same-phase action waits for the
+lower-Initiative leader's targeting order to resolve first, even out of
+ordinary Initiative order -- not just for Leave, but for Recruit's own
+commander target, a character-targeted Cast, and Give alike. See
+``turn/turn_processor.py _order_phase_entries_by_initiative()``'s own
+docstring for the full mechanism; `_dispatch_leave()`'s own docstring
+has the original citation this paragraph was sourced from.
 
 The composer gets a dedicated, repeated army-target dropdown
 (``leave_army_target_options()``, ``LEAVE_SLOT_COUNT`` slots, reusing

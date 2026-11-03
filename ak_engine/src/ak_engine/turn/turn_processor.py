@@ -275,14 +275,19 @@ from ak_engine.turn.battle_orchestrator import (
     fight_battle,
     fight_multi_attacker_battle,
 )
+from ak_engine.turn.army_list_decode import decode_army_list_phase
 from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.blackmail import advance_blackmail_claims
+from ak_engine.turn.cast_decode import CHARACTER_TARGET_SPELLS, decode_cast_phase
 from ak_engine.turn.diplomacy import advance_pending_diplomacy, apply_treat_orders
+from ak_engine.turn.initiative import character_initiative
+from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.aspy_execution import execute_aspy
 from ak_engine.turn.cast_execution import maybe_dissolve_illusory_terrain
 from ak_engine.turn.challenge_execution import execute_challenge
+from ak_engine.turn.trade_decode import decode_trade_phase
 from ak_engine.turn.battle_line import estimate_win_probability
 from ak_engine.turn.challenge_pursue_decode import PursueRequest, decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
@@ -523,7 +528,7 @@ def run_turn(
                 for coord in newly_infected
             )
 
-        entries = _collect_phase_entries(turn_leaders, label)
+        entries = _collect_phase_entries(turn_leaders, label, state)
         # A leader still mid-chase (Pursue/Trail, or a Move chase toward
         # a non-adjacent target) has this phase's own order preempted
         # entirely -- see "PERSISTENT PURSUE/TRAIL CHASE"/"PERSISTENT
@@ -1979,7 +1984,7 @@ def _dispatch_multi_practice(
 
 
 def _collect_phase_entries(
-    turn_leaders: list[TurnLeader], label: str
+    turn_leaders: list[TurnLeader], label: str, state: GameState
 ) -> list[tuple[TurnLeader, int, PlanPhase]]:
     entries = []
     for tl in turn_leaders:
@@ -1987,7 +1992,189 @@ def _collect_phase_entries(
             phase = segment.phases.get(label)
             if phase is not None:
                 entries.append((tl, segment_index, phase))
-    return entries
+    return _order_phase_entries_by_initiative(entries, state)
+
+
+def _same_side(state: GameState, kingdom_a: int, kingdom_b: int) -> bool:
+    return kingdom_a == kingdom_b or state.is_allied(kingdom_a, kingdom_b)
+
+
+def _same_phase_beneficiary_leader_id(
+    tl: TurnLeader, phase: PlanPhase, state: GameState, acting_leader_ids_this_phase: set[int]
+) -> int | None:
+    """RULES.AK [3]'s own "un personaggio può attendere se un altro deve
+    fare qualcosa per lui" -- the leader_id of another, same-phase-
+    acting leader of ``tl``'s own or an allied Kingdom that this
+    entry's own order benefits, if any. See `_order_phase_entries_by_
+    initiative()`'s own docstring for the full rule, scope, and the
+    cases deliberately left out.
+
+    Each decode call here is pure (no mutation, no execution) -- this
+    runs *before* any real dispatch, purely to compute ordering.
+    """
+
+    target_leader_id: int | None = None
+    if phase.action is ActionCode.LEAVE:
+        target_leader_id = decode_army_list_phase(phase).target_leader_id
+    elif phase.action is ActionCode.RECRUIT:
+        target_leader_id = decode_recruit_phase(phase).leader_id
+    elif phase.action is ActionCode.TRADE:
+        target_leader_id = decode_trade_phase(phase).target_leader_id
+    elif phase.action is ActionCode.CAST:
+        request = decode_cast_phase(phase)
+        if request.spell in CHARACTER_TARGET_SPELLS:
+            target_leader_id = request.target
+
+    if target_leader_id is None or target_leader_id == tl.leader.leader_id:
+        return None
+    if target_leader_id not in acting_leader_ids_this_phase:
+        # The target has no order of their own this phase -- idle, or
+        # (e.g. Resurrection's own target) dead -- so there is nothing
+        # to reorder against.
+        return None
+    target_leader = state.leaders.get(target_leader_id)
+    if target_leader is None or not _same_side(state, tl.kingdom_id, target_leader.kingdom_id):
+        return None
+    return target_leader_id
+
+
+def _order_phase_entries_by_initiative(
+    entries: list[tuple[TurnLeader, int, PlanPhase]], state: GameState
+) -> list[tuple[TurnLeader, int, PlanPhase]]:
+    """RULES.AK [3] AZIONI E INIZIATIVA, quoted in full (2026-11-03;
+    `turn/initiative.py`'s own module docstring already covers the
+    Initiative *score* formula -- this is its first real consumer for
+    *general* cross-leader sequencing, Phase 311's own narrower
+    neutral-province-invasion-priority use being the only prior one):
+
+        "Nell'elaborare le mosse, il computer esegue innanzitutto la
+        prima azione di ciascun personaggio, poi la seconda di
+        ciascuno e così via. Se due personaggi hanno la stessa
+        Iniziativa, è quello con il numero d'ordine più basso ad avere
+        la precedenza."
+
+        "Un personaggio può attendere se un altro deve fare qualcosa
+        per lui. Esempio: due personaggi sono nella stessa provincia e
+        il personaggio A vuole uscirne mentre quello B dello stesso
+        reame vuole, poniamo, reclutare delle unità militari per lui.
+        In una situazione del genere il personaggio A aspetterà che il
+        personaggio B abbia agito, anche se A ha un coefficiente
+        d'iniziativa superiore. Questa regola vale non soltanto per
+        Reclutare, ma anche per Abbandonare e Prendere Unità Militari,
+        Lanciare Incantesimi favorevoli, Dare oggetti magici e per gli
+        Incontri."
+
+        "Il personaggio che riceve l'ordine Defend è sempre l'ultimo
+        ad agire (perché deve reagire a tutti gli attacchi)."
+
+    Confirmed absent until now (`plan_dispatch.py _dispatch_leave()`'s
+    own 2026-10-29 addendum, `webapp/moves_compose.py`'s own matching
+    note): `_collect_phase_entries()` used to return ``entries`` in
+    bare ``turn_leaders`` order (this project's own K1-file-arrival
+    order) with no Initiative-based reordering or cross-leader
+    dependency mechanism at all.
+
+    **Base order**: every entry sorts by ``-character_initiative()``
+    (higher first), tie-broken by its original ``turn_leaders`` index
+    -- the user's own confirmed reading of "numero d'ordine" as K1-file
+    arrival order, since no other per-character ordinal exists anywhere
+    in this project's own data model. A leader not found in
+    ``state.leaders`` reads Initiative 0, the same permissive-missing-
+    data fallback every other Initiative-adjacent consumer already uses
+    (``multiple_contingents.py``'s own march_level=0, etc.). A `DEFEND`
+    entry sorts after every non-`DEFEND` entry regardless of Initiative
+    (the quoted "sempre l'ultimo" line), tied among themselves the same
+    Initiative/arrival-order way.
+
+    **Same-phase "waits for" override**: `_same_phase_beneficiary_
+    leader_id()` detects, per entry, whether this order benefits
+    another same-phase-acting leader of the same or an allied Kingdom
+    -- `LEAVE`'s own named target, `RECRUIT`'s own named leader,
+    `TRADE`'s own recipient (this project's only top-level "Dare"
+    action -- Steal is never decoded as `ActionCode.TRADE`, only as an
+    Encounter-tactic `Maneuver`, so every `TRADE` entry reaching here is
+    a real Give, gold or item alike -- the quoted text's own "oggetti
+    magici" example doesn't call out gold specifically, and there's no
+    principled reason a received gift of gold wouldn't enable the same
+    same-phase follow-on action an item would), and `CAST`'s own target
+    when the spell is one of `cast_decode.CHARACTER_TARGET_SPELLS` --
+    the same-or-allied-Kingdom filter alone is what separates a
+    "favorevole" cast (Oratory/Clairvoyance/Illus_Armies/Mystic_Winds on
+    one's own side) from a hostile one (Kill_Enemy/Charm on a real
+    enemy) without needing a second, separate "which spells count as
+    beneficial" table -- this project has no mechanism for a same-side
+    *hostile* cast anyway. Resurrection's own target is a dead leader
+    with no entry of their own this phase, so it never creates a
+    dependency edge either, with no special-casing needed.
+
+    Every detected edge becomes a "benefactor before beneficiary"
+    constraint, resolved via a stable topological sort seeded by the
+    base order above (Kahn's algorithm, always picking the earliest-
+    base-order entry whose constraints are already satisfied) -- this
+    is what makes a beneficiary wait exactly until its benefactor has
+    gone, not further, and never disturbs `DEFEND`'s own "always last"
+    position (a `DEFEND` entry's own action never matches any trigger
+    above, so it can only ever be a beneficiary, never a benefactor,
+    and the scan order keeps every non-`DEFEND` entry ahead of it
+    regardless of degree). A same-phase dependency cycle (e.g. a mutual
+    Give) has no source backing it and has never been seen -- rather
+    than loop forever or raise, it's broken by falling back to the base
+    order for whichever entries remain.
+
+    **Deliberately out of scope here** (confirmed, not silently
+    guessed): `PICK_UP`'s own more complex case -- waiting for a
+    same-phase `LEAVE` that drops an army to *no* named leader, which
+    this `PICK_UP` then separately claims -- needs resolving which
+    *army*, not which *leader*, the dependency is keyed on, a
+    materially larger follow-up left for its own round. "...e per gli
+    Incontri" (Encounters) is also left out -- Challenge/Pursue already
+    has its own dedicated same-phase pairing/sequencing machinery
+    (mutual-encounter resolution, and [3.16]'s own separate "inseguitore
+    dopo l'inseguito" rule, `_order_same_kingdom_pursuits_after_their_
+    target()` right below), and no further, distinct gap was found
+    there beyond what those already cover.
+    """
+
+    def _initiative_sort_key(indexed_entry: tuple[int, tuple[TurnLeader, int, PlanPhase]]) -> tuple[bool, int, int]:
+        original_index, (tl, _segment_index, phase) = indexed_entry
+        leader_state = state.leaders.get(tl.leader.leader_id)
+        initiative = character_initiative(state, leader_state) if leader_state is not None else 0
+        return (phase.action is ActionCode.DEFEND, -initiative, original_index)
+
+    base_order = [entry for _original_index, entry in sorted(enumerate(entries), key=_initiative_sort_key)]
+
+    acting_leader_ids_this_phase = {tl.leader.leader_id for tl, _segment_index, _phase in entries}
+    position_by_leader_id = {tl.leader.leader_id: i for i, (tl, _segment_index, _phase) in enumerate(base_order)}
+    must_precede: dict[int, set[int]] = {}
+    for i, (tl, _segment_index, phase) in enumerate(base_order):
+        beneficiary_id = _same_phase_beneficiary_leader_id(tl, phase, state, acting_leader_ids_this_phase)
+        if beneficiary_id is None:
+            continue
+        j = position_by_leader_id[beneficiary_id]
+        if j != i:
+            must_precede.setdefault(i, set()).add(j)
+
+    if not must_precede:
+        return base_order
+
+    n = len(base_order)
+    remaining_in_degree = [0] * n
+    for successors in must_precede.values():
+        for j in successors:
+            remaining_in_degree[j] += 1
+
+    placed = [False] * n
+    ordered_positions: list[int] = []
+    while len(ordered_positions) < n:
+        picked = next((i for i in range(n) if not placed[i] and remaining_in_degree[i] == 0), None)
+        if picked is None:
+            picked = next(i for i in range(n) if not placed[i])
+        placed[picked] = True
+        ordered_positions.append(picked)
+        for j in must_precede.get(picked, ()):
+            remaining_in_degree[j] -= 1
+
+    return [base_order[i] for i in ordered_positions]
 
 
 def _order_same_kingdom_pursuits_after_their_target(

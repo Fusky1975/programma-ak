@@ -1129,25 +1129,21 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
     ownership rule), avoiding an unsourced tie-break between the two
     for the case where they'd otherwise disagree.
 
-    **Deliberately NOT implemented in this round -- confirmed with the
-    user as a real, separate engine gap, deferred rather than fixed
-    here**: "quello che ha iniziativa più alta aspetta quello che ha
-    iniziativa più bassa" -- when an order targets another leader of the
-    same (or an allied) Kingdom, the rulebook's own fuller text says the
-    higher-``character_initiative()`` leader's own same-phase action
-    waits for the lower-Initiative leader's targeting order to actually
-    resolve first, even out of the ordinary Initiative order (worked
-    example: Hero #13, Initiative 20, Leaves all his armies to Hero #14,
+    **2026-11-03 -- the gap this paragraph used to flag here is closed.**
+    "quello che ha iniziativa più alta aspetta quello che ha iniziativa
+    più bassa" -- when an order targets another leader of the same (or
+    an allied) Kingdom, the rulebook's own fuller text says the higher-
+    ``character_initiative()`` leader's own same-phase action waits for
+    the lower-Initiative leader's targeting order to actually resolve
+    first, even out of the ordinary Initiative order (worked example:
+    Hero #13, Initiative 20, Leaves all his armies to Hero #14,
     Initiative 40, in P2; Hero #14's own P2 Move waits for that Leave to
     land first, despite his higher Initiative). `turn/turn_processor.py
-    run_turn()`'s own per-phase dispatch loop (`_collect_phase_entries()`)
-    has no Initiative-based reordering or cross-leader dependency
-    mechanism at all today -- confirmed absent, not just unconfirmed --
-    and would need one for this to work correctly, not just for Leave
-    but for *any* same-phase order targeting another leader (Recruit's
-    own commander dropdown included). That's a structural change to the
-    general phase-dispatch loop, well beyond this one function -- out of
-    scope for this round.
+    run_turn()`'s own per-phase dispatch loop now does exactly this --
+    see `_order_phase_entries_by_initiative()`'s own docstring there for
+    the full mechanism (Initiative-based base ordering plus this same
+    "waits for" override, covering Leave/Recruit/Give/a character-
+    targeted Cast alike, not just Leave).
     """
 
     request = decode_army_list_phase(phase)
