@@ -2974,6 +2974,45 @@ def test_run_turn_evil_kings_break_treat_relation_change_is_immediate():
     ]
 
 
+# -- 2026-11-05: RULES.AK [8.2]'s own Treat timing -- a mutual Treat
+# with at least one Druidic party is immediate; an ordinary mutual
+# Treat waits for next turn, same shape as Break Treat's own split.
+
+
+def test_run_turn_ordinary_mutual_treat_relation_change_waits_for_next_turn():
+    state = _base_state()  # neither kingdom 1 nor 2 is Druidic
+    state.treat_permissions.update({(1, 2), (2, 1)})
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL  # still, this turn
+    assert state.diplomacy_relation_change_notices == []
+    assert frozenset({1, 2}) in state.pending_treat_transitions
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(2))
+
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ALLIED
+    assert state.is_allied(1, 2)
+    assert frozenset({1, 2}) not in state.pending_treat_transitions
+    assert state.diplomacy_relation_change_notices == []  # never announced, confirmed with the user
+
+
+def test_run_turn_druidic_mutual_treat_relation_change_is_immediate():
+    state = _base_state()
+    state.kingdoms[1].alignment = Alignment.DRUID
+    state.treat_permissions.update({(1, 2), (2, 1)})
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    # Visible to this same turn's own combat, per [8.2]'s own exception.
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ALLIED
+    assert state.is_allied(1, 2)
+    assert frozenset({1, 2}) not in state.pending_treat_transitions
+    assert state.diplomacy_relation_change_notices == [
+        (1, 2, DiplomaticRelation.NEUTRAL, DiplomaticRelation.ALLIED)
+    ]
+
+
 # -- Phase 576: illusory_fog_active, found the same way action_casts_used
 # was (re-auditing every remaining "not auto-cleared" field comment) --
 # the rulebook's own text says Illusory Fog "dissipates at the end of the

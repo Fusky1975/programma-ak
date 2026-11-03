@@ -11113,6 +11113,24 @@ def test_describe_diplomacy_change_notices_allied_to_enemy():
     ]
 
 
+def test_describe_diplomacy_change_notices_neutral_to_allied():
+    state = _notice_state()
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.NEUTRAL, DiplomaticRelation.ALLIED))
+
+    assert describe_diplomacy_change_notices(state, 1) == [
+        "My lord, glad tidings: swayed by Druidic wisdom, Kwoth (#2) has allied with us."
+    ]
+
+
+def test_describe_diplomacy_change_notices_enemy_to_allied():
+    state = _notice_state()
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.ENEMY, DiplomaticRelation.ALLIED))
+
+    assert describe_diplomacy_change_notices(state, 1) == [
+        "My lord, glad tidings: swayed by Druidic wisdom, our war with Kwoth (#2) has ended in alliance."
+    ]
+
+
 def test_describe_diplomacy_change_notices_renders_for_both_sides_of_the_pair():
     state = _notice_state()
     state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL))

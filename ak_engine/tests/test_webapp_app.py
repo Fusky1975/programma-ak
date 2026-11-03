@@ -8771,8 +8771,12 @@ def test_turns_diplomacy_mutual_treat_upgrades_relation_once_the_turn_is_process
     # orders() was real but entirely unreachable from a real game. This
     # is the end-to-end proof the gap is actually closed: both Kings
     # (1=Aldric, 2=Elara, Neutral to each other by default) issue a
-    # mutual Treat here, then processing the turn should upgrade them
-    # straight to Allied (Neutral -> Allied, rulebook [8.2]).
+    # mutual Treat here (Neutral -> Allied, rulebook [8.2]).
+    #
+    # 2026-11-05: an ordinary (non-Druidic) mutual Treat now resolves
+    # "alla fine del turno," confirmed with the user -- not visible
+    # until the *next* turn is processed, the same one-turn delay an
+    # ordinary Break Treat already has.
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
 
@@ -8786,10 +8790,15 @@ def test_turns_diplomacy_mutual_treat_upgrades_relation_once_the_turn_is_process
     client.post(f"/games/{meta.slug}/turns/process")
 
     _, state = open_game(tmp_path, meta.slug)
-    assert state.is_allied(1, 2)
+    assert not state.is_allied(1, 2)  # not yet, this turn
     # Turn-scoped fields are cleared again once the turn that consumed
     # them has been processed.
     assert state.treat_permissions == set()
+
+    client.post(f"/games/{meta.slug}/turns/process")
+
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.is_allied(1, 2)
 
 
 def test_turns_diplomacy_set_relation_overrides_it_directly(tmp_path):

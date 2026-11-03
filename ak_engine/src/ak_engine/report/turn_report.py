@@ -12457,14 +12457,21 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
 # direct-play confirmation that a diplomatic relation change is always
 # announced this way, at the very top of the affected King's own
 # report, whichever side of it they're on. See `GameState.diplomacy_
-# relation_change_notices`'s own docstring for what populates this and
-# why only Break-Treat-driven changes are in scope (an ordinary Treat-
-# formed alliance -- the "good news" case -- was never part of what was
-# reported from play, so it's deliberately left out here rather than
-# guessed into a fourth template). Keyed by ``(old_relation,
-# new_relation)``; a pair with no template (nothing else is reachable
-# through a Break-Treat-driven transition, see `turn/diplomacy.py
-# apply_treat_orders()`) is silently skipped rather than guessed at.
+# relation_change_notices`'s own docstring for what populates this.
+# Keyed by ``(old_relation, new_relation)``; a pair with no template
+# (nothing else is reachable through either the Break Treat or the
+# Treat-driven immediate paths that populate this list, see
+# `turn/diplomacy.py apply_treat_orders()`) is silently skipped rather
+# than guessed at.
+#
+# 2026-11-05 -- the two ALLIED entries below close what this comment
+# used to call a deliberate gap ("an ordinary Treat-formed alliance...
+# was never part of what was reported from play"): that's still true
+# for an *ordinary* (non-Druidic) Treat, which stays unannounced here
+# (see `GameState.pending_treat_transitions`'s own docstring for why),
+# but a *mutual* Treat with at least one Druidic party turned out to be
+# announced the same way after all -- confirmed with the user directly,
+# not a guess.
 _DIPLOMACY_CHANGE_TEMPLATES: dict[tuple[DiplomaticRelation, DiplomaticRelation], str] = {
     (DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL): (
         "My lord, grave tidings: {name} has broken his treaty with us; "
@@ -12475,6 +12482,12 @@ _DIPLOMACY_CHANGE_TEMPLATES: dict[tuple[DiplomaticRelation, DiplomaticRelation],
     ),
     (DiplomaticRelation.ALLIED, DiplomaticRelation.ENEMY): (
         "My lord, dire tidings: our alliance with {name} has been shattered; we are now at war."
+    ),
+    (DiplomaticRelation.NEUTRAL, DiplomaticRelation.ALLIED): (
+        "My lord, glad tidings: swayed by Druidic wisdom, {name} has allied with us."
+    ),
+    (DiplomaticRelation.ENEMY, DiplomaticRelation.ALLIED): (
+        "My lord, glad tidings: swayed by Druidic wisdom, our war with {name} has ended in alliance."
     ),
 }
 
@@ -12499,6 +12512,12 @@ def describe_diplomacy_change_notices(state: GameState, kingdom_id: int) -> list
     battle-narrative/blackmail-demand notices right next to it in
     `compose_letter_report()` already use, except prepended rather than
     appended, so it reads first.
+
+    **2026-11-05**: also renders an immediate Druidic *mutual* Treat's
+    own new alliance -- a different kind of news (no "finds out before
+    combat" urgency behind it, just confirmed directly with the user
+    that it's announced the same prominent way) alongside the Break
+    Treat case this function was originally built for.
     """
 
     lines: list[str] = []

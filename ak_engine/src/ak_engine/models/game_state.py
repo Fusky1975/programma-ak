@@ -1766,6 +1766,25 @@ class GameState:
     pending_break_treat_transitions: dict[frozenset[int], tuple[DiplomaticRelation, DiplomaticRelation]] = field(
         default_factory=dict
     )
+    # 2026-11-05 -- the same deferred-promotion shape as ``pending_
+    # break_treat_transitions`` right above, but for a Treat-driven
+    # transition RULES.AK [8] itself resolves "alla fine del turno" with
+    # no same-turn exception: an ordinary (non-Druidic) mutual Treat, or
+    # a Druidic Kingdom's own one-sided Treat toward a Neutral partner
+    # (confirmed with the user: that one-sided case has no "prima
+    # dell'inizio del turno" text covering it, unlike the *mutual*
+    # Druidic case, which stays immediate -- see ``turn/diplomacy.py``'s
+    # own module docstring for the full citations). Promoted by the same
+    # ``advance_pending_diplomacy()``, at the same point in the turn, but
+    # -- confirmed with the user -- generates no ``diplomacy_relation_
+    # change_notices`` entry: a formed alliance or a truce is shown only
+    # in that later turn's own DIPLOMACY report section, never announced
+    # at the top of ACTION REPORT the way a Break Treat promotion is.
+    # Not turn-scoped, for the exact same reason its Break Treat sibling
+    # isn't.
+    pending_treat_transitions: dict[frozenset[int], tuple[DiplomaticRelation, DiplomaticRelation]] = field(
+        default_factory=dict
+    )
     # 2026-11-03 -- every diplomatic relation change actually made
     # visible *this* turn by a Break Treat order (whether resolved
     # immediately above, or promoted out of ``pending_break_treat_
@@ -1776,12 +1795,17 @@ class GameState:
     # ACTION REPORT section (``compose_letter_report()``), ahead of the
     # ordinary turn narrative -- the user's own direct-play confirmation
     # (2026-11-02) that a relation change is always announced this way,
-    # not something either available source text documents. Turn-scoped,
-    # but *not* by ``_replenish_turn_scoped_state()`` (which runs at the
-    # *end* of ``run_turn()``, before ``compose_letter_report()`` ever
-    # gets to read this) -- cleared instead at the very *start* of
-    # ``run_turn()``, the same spot that populates it, so a stale list
-    # never leaks into a later turn's own report.
+    # not something either available source text documents. **2026-11-05
+    # -- also fed by an immediate Druidic *mutual* Treat** (``turn/
+    # diplomacy.py apply_treat_orders()``'s own Treat-driven immediate
+    # branch) -- confirmed with the user that forming an alliance this
+    # way is announced the same way a Break Treat is, not scoped to war
+    # declarations specifically after all. Turn-scoped, but *not* by
+    # ``_replenish_turn_scoped_state()`` (which runs at the *end* of
+    # ``run_turn()``, before ``compose_letter_report()`` ever gets to
+    # read this) -- cleared instead at the very *start* of ``run_turn()``,
+    # the same spot that populates it, so a stale list never leaks into
+    # a later turn's own report.
     diplomacy_relation_change_notices: list[tuple[int, int, DiplomaticRelation, DiplomaticRelation]] = field(
         default_factory=list
     )

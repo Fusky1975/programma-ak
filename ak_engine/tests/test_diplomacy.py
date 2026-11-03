@@ -33,20 +33,38 @@ def test_self_relation_is_always_allied():
     assert state.diplomatic_relation(1, 1) is DiplomaticRelation.ALLIED
 
 
-def test_mutual_treat_upgrades_neutral_to_allied():
+def test_mutual_treat_upgrades_neutral_to_allied_only_once_promoted_next_turn():
+    # 2026-11-05: an ordinary (non-Druidic) mutual Treat resolves "alla
+    # fine del turno" -- not yet visible to this turn's own combat.
     state = _state()
     state.treat_permissions.update({(1, 2), (2, 1)})
     apply_treat_orders(state)
+
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL
+    assert state.pending_treat_transitions[frozenset({1, 2})] == (
+        DiplomaticRelation.NEUTRAL,
+        DiplomaticRelation.ALLIED,
+    )
+    assert state.diplomacy_relation_change_notices == []
+
+    advance_pending_diplomacy(state)
+
     assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ALLIED
     assert state.is_allied(1, 2)
     assert state.diplomatic_relations_since[frozenset({1, 2})] == state.turn_number
+    assert state.diplomacy_relation_change_notices == []  # no top-of-report notice for Treat
 
 
-def test_mutual_treat_upgrades_enemy_to_neutral_one_step_at_a_time():
+def test_mutual_treat_upgrades_enemy_to_neutral_one_step_at_a_time_only_once_promoted():
     state = _state()
     state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ENEMY
     state.treat_permissions.update({(1, 2), (2, 1)})
     apply_treat_orders(state)
+
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ENEMY  # still, this turn
+
+    advance_pending_diplomacy(state)
+
     assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL
 
 
@@ -99,11 +117,21 @@ def test_break_treat_takes_precedence_over_a_simultaneous_treat_order():
     assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL
 
 
-def test_druidic_kingdom_one_sided_treat_forms_alliance_from_neutral():
+def test_druidic_kingdom_one_sided_treat_forms_alliance_from_neutral_only_once_promoted():
+    # 2026-11-05: confirmed with the user -- unlike the *mutual* Druidic
+    # case below, this one-sided carve-out has no "prima dell'inizio del
+    # turno" text of its own, so it stays deferred like an ordinary
+    # Treat, not immediate.
     state = _state(alignment_a=Alignment.DRUID)
     state.treat_permissions.add((1, 2))
     apply_treat_orders(state)
+
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL
+
+    advance_pending_diplomacy(state)
+
     assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ALLIED
+    assert state.diplomacy_relation_change_notices == []
 
 
 def test_druidic_one_sided_alliance_is_vetoed_by_a_same_turn_break_treat():
@@ -142,6 +170,14 @@ def test_non_druidic_mutual_treat_does_not_jump_straight_from_enemy():
     state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ENEMY
     state.treat_permissions.update({(1, 2), (2, 1)})
     apply_treat_orders(state)
+
+    assert state.pending_treat_transitions[frozenset({1, 2})] == (
+        DiplomaticRelation.ENEMY,
+        DiplomaticRelation.NEUTRAL,
+    )
+
+    advance_pending_diplomacy(state)
+
     assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL
 
 
@@ -225,17 +261,34 @@ def test_immediate_evil_break_treat_records_a_relation_change_notice():
     ]
 
 
-def test_treat_driven_transitions_never_record_a_relation_change_notice():
-    # [8.3]'s own timing exception is about Break Treat specifically --
-    # an ordinary mutual Treat alliance (or the Druidic one-sided/jump
-    # cases) stays immediate as before, and was never in scope for the
-    # notice mechanism (see describe_diplomacy_change_notices()'s own
-    # docstring for why).
-    state = _state(alignment_a=Alignment.DRUID)
-    state.treat_permissions.add((1, 2))
+def test_deferred_treat_transitions_never_record_a_relation_change_notice():
+    # 2026-11-05: confirmed with the user -- unlike a Break Treat
+    # promotion, a deferred Treat (ordinary mutual, or the Druidic
+    # one-sided case) is shown only in the later turn's own DIPLOMACY
+    # section, never announced at the top of that report.
+    state = _state()
+    state.treat_permissions.update({(1, 2), (2, 1)})
     apply_treat_orders(state)
+    advance_pending_diplomacy(state)
+
     assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ALLIED
     assert state.diplomacy_relation_change_notices == []
+
+
+def test_mutual_druidic_treat_is_immediate_and_records_a_relation_change_notice():
+    # 2026-11-05: confirmed with the user -- unlike an ordinary mutual
+    # Treat, a *mutual* Treat with at least one Druidic party resolves
+    # "prima dell'inizio del turno" and is announced the same prominent
+    # way a Break Treat is.
+    state = _state(alignment_a=Alignment.DRUID)
+    state.treat_permissions.update({(1, 2), (2, 1)})
+    apply_treat_orders(state)
+
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.ALLIED  # already, this turn
+    assert frozenset({1, 2}) not in state.pending_treat_transitions
+    assert state.diplomacy_relation_change_notices == [
+        (1, 2, DiplomaticRelation.NEUTRAL, DiplomaticRelation.ALLIED)
+    ]
 
 
 def test_no_orders_leaves_relation_and_timestamp_untouched():
