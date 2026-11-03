@@ -75,13 +75,25 @@ check in ``execute_give()`` now allows a Hero, not just a King --
 "giving it to another player's character (King or Hero)" -- the
 previous reading's "recipient must be a King" over-read the shorter
 English excerpt; still requires a genuinely different Kingdom
-(confirmed with the user), not King status. **Deliberately NOT fixed
-this round, per the user's own explicit choice**: the 10% cap still
-uses the giver's *live* treasury at the moment of this specific Give,
-not a "treasury at the start of the gameturn" snapshot RULES.AK/
-ADDEND.AK both also specify -- no such snapshot exists anywhere in
-``GameState``/``KingdomState`` today, and adding one was explicitly
-deferred. **2026-11-04 -- the conditional/barter Give mechanic ("the gift will be
+(confirmed with the user), not King status.
+
+**2026-11-04 -- the "live treasury" gap above is closed.** The 10% cap
+now reads ``KingdomState.treasury_at_turn_start`` (a real snapshot,
+taken once at the very start of every ``run_turn()`` call -- see that
+field's own docstring), not the live treasury at the moment of each
+specific Give. Confirmed directly with the user that [3.18]'s own "in
+a gameturn" phrasing makes this a single cumulative *budget* for the
+whole turn, not a limit re-applied fresh to each individual Give
+order: ``KingdomState.gold_given_this_turn`` tracks how much of that
+budget a King has already spent, and a new explicit "enough gold on
+hand right now" check was added alongside it -- needed only now, since
+the cap's own basis no longer tracks the live treasury, so a King who
+already spent gold elsewhere this turn can have less on hand than his
+own remaining budget allows (the old live-treasury-based cap could
+never exceed the live treasury, by construction, so this check was
+never reachable before this fix).
+
+**2026-11-04 -- the conditional/barter Give mechanic ("the gift will be
 made only if the recipient Gives you a specified magic item in the
 same phase") needs no further code here, per the user's own explicit
 decision.** There is no wire field anywhere (``turn/trade_decode.py``'s
@@ -175,21 +187,39 @@ def execute_gold_give(
     if gold_amount <= 0:
         return TradeExecutionResult(applied=False, reason="gold amount must be positive")
 
-    cap = giver_kingdom.treasury * GOLD_GIVE_MAX_PERCENT // 100
+    # 2026-11-04: the cap's own basis is now the turn-start snapshot
+    # (GameState.KingdomState.treasury_at_turn_start, see that field's
+    # own docstring), not the live treasury -- and, per the user's own
+    # confirmed reading of "in a gameturn," it's a single cumulative
+    # budget for the whole turn, tracked by gold_given_this_turn, not a
+    # fresh allowance re-applied to each individual Give.
+    cap = giver_kingdom.treasury_at_turn_start * GOLD_GIVE_MAX_PERCENT // 100
     # Bug fix, sourced directly from the user (2026-10-29): "può
     # tuttavia sempre dare per lo meno 10 pezzi d'oro purché disponga
     # effettivamente di questa somma" -- the 10% cap has a real floor
     # of GOLD_GIVE_MINIMUM_FLOOR, but only ever raised up to what the
-    # King actually has (never invented above his real treasury).
-    if cap < GOLD_GIVE_MINIMUM_FLOOR and giver_kingdom.treasury >= GOLD_GIVE_MINIMUM_FLOOR:
+    # King actually had at the start of this turn (never invented above
+    # that real snapshot).
+    if cap < GOLD_GIVE_MINIMUM_FLOOR and giver_kingdom.treasury_at_turn_start >= GOLD_GIVE_MINIMUM_FLOOR:
         cap = GOLD_GIVE_MINIMUM_FLOOR
-    if gold_amount > cap:
+    remaining_budget = cap - giver_kingdom.gold_given_this_turn
+    if gold_amount > remaining_budget:
         # Matches SAY.PAS's own _LNHave narrative: "< didn't have on
         # hand the full # gold requested" -- see module/turn_report.py
         # docstrings.
-        return TradeExecutionResult(applied=False, reason=f"exceeds 10% treasury cap ({cap})")
+        return TradeExecutionResult(applied=False, reason=f"exceeds 10% treasury cap ({remaining_budget} left this turn)")
+    # The cap's own basis no longer tracks the live treasury (it's fixed
+    # for the whole turn), so a King who already spent gold elsewhere
+    # this turn (Recruit, an earlier Give, ...) can now have *less*
+    # live gold on hand than his own remaining budget allows -- this
+    # check, never needed before this fix (the old live-treasury-based
+    # cap was always <= the live treasury by construction), catches
+    # that case with the same narrative as the cap check above.
+    if gold_amount > giver_kingdom.treasury:
+        return TradeExecutionResult(applied=False, reason=f"exceeds 10% treasury cap (only {giver_kingdom.treasury} on hand)")
 
     giver_kingdom.treasury -= gold_amount
+    giver_kingdom.gold_given_this_turn += gold_amount
     recipient_kingdom.treasury += gold_amount
     return TradeExecutionResult(applied=True, gold_transferred=gold_amount)
 

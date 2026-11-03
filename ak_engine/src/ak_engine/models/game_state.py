@@ -419,6 +419,28 @@ class KingdomState:
     # other "not auto-reset -- the caller's job" field in this project
     # uses.
     treasury_raid_attempts_this_turn: int = 0
+    # 2026-11-04 -- RULES.AK [3.18]: "a King may give out in a gameturn
+    # no more than 10% of the size of his treasury" -- "in a gameturn"
+    # (per the user's own confirmed reading) makes this a single,
+    # cumulative per-turn budget, not a limit re-applied fresh to each
+    # individual Give order. ``treasury_at_turn_start`` is a snapshot of
+    # ``treasury`` taken once, at the very start of every ``run_turn()``
+    # call (``turn/turn_processor.py _snapshot_treasury_at_turn_start()``),
+    # before any phase (including this same turn's own Give orders) can
+    # change it -- the 10%-cap basis `turn/trade_execution.py
+    # execute_gold_give()` now reads, replacing the previous, stale
+    # "live treasury at the moment of this specific Give" reading.
+    # ``gold_given_this_turn`` tracks how much of that budget has
+    # already been spent this turn, incremented by every successful
+    # Gold Give; reset to 0 at the same snapshot point. Both default to
+    # ``0``, matching a fresh ``KingdomState`` that has never gone
+    # through a real ``run_turn()`` call (the same "missing snapshot
+    # reads as if this King has given nothing and started this turn
+    # with 0 gold" permissive default this project uses elsewhere --
+    # never reached in practice since the snapshot always runs before
+    # any Give can be dispatched).
+    treasury_at_turn_start: int = 0
+    gold_given_this_turn: int = 0
     # Phase 713 (AdvancedAbility.SPY_BLACKMAIL): mirrors the real parsed
     # `GWKingExtension.pending_blackmailer_king_id`/`active_blackmailer_
     # king_id` field PAIR exactly (`parser/gw_world.py`) -- a demand

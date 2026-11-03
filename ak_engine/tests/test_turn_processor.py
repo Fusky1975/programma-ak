@@ -2898,6 +2898,34 @@ def test_run_turn_clears_action_casts_used_at_the_end():
     assert state.action_casts_used == {}
 
 
+# -- 2026-11-04: RULES.AK [3.18]'s own "treasury at the start of the
+# gameturn" snapshot for the Give Gold 10% cap -- taken once, at the
+# very start of every run_turn() call. See turn/turn_processor.py's own
+# call site and GameState.KingdomState.treasury_at_turn_start's own
+# docstring.
+
+
+def test_run_turn_snapshots_treasury_at_the_very_start_of_the_turn():
+    state = _base_state()
+    state.kingdoms[1].treasury = 1000
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    # apply_turn_revenue()/apply_turn_maintenance() (end-of-turn financial
+    # steps) may have since changed the live treasury, but the snapshot
+    # itself must still read this turn's own starting value, 1000.
+    assert state.kingdoms[1].treasury_at_turn_start == 1000
+
+
+def test_run_turn_resets_gold_given_this_turn_for_the_next_turn():
+    state = _base_state()
+    state.kingdoms[1].gold_given_this_turn = 60  # left over from a Give last turn
+
+    run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(1))
+
+    assert state.kingdoms[1].gold_given_this_turn == 0
+
+
 # -- 2026-11-03: RULES.AK [8.3]'s own Evil/Undead Break Treat timing
 # exception, end-to-end through two real run_turn() calls -- see
 # turn/diplomacy.py's own module docstring for the full mechanics.

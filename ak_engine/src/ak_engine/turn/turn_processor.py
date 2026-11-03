@@ -460,6 +460,14 @@ def run_turn(
     # across phases, unlike active_defends itself.
     defeated_while_defending: set[int] = set()
 
+    # 2026-11-04 -- RULES.AK [3.18]'s own "treasury at the start of the
+    # gameturn" basis for the Give Gold 10% cap -- taken before anything
+    # else in this call can touch any Kingdom's own treasury. See
+    # `KingdomState.treasury_at_turn_start`'s own docstring.
+    for kingdom in state.kingdoms.values():
+        kingdom.treasury_at_turn_start = kingdom.treasury
+        kingdom.gold_given_this_turn = 0
+
     # Phase 713 -- AdvancedAbility.SPY_BLACKMAIL: promote every Kingdom's
     # own still-pending demand (delivered last turn) into "active" (due
     # this turn), before any phase dispatches -- mirrors the real parsed

@@ -64,6 +64,11 @@ def _state_with_army(
 ) -> tuple[GameState, int]:
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, location, treasury=treasury))
+    # The Give Gold 10% cap's own basis (2026-11-04) -- a real run_turn()
+    # call snapshots this at the very start of the turn; direct
+    # dispatch_phase() callers like this helper simulate "this call is
+    # the first Give of a fresh turn" by matching it to treasury.
+    state.kingdoms[1].treasury_at_turn_start = treasury
     state.add_province(ProvinceState(location, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     for coord, terrain in target_terrains.items():
         state.add_province(ProvinceState(coord, terrain, Race.HUMAN))

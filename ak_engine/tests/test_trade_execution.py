@@ -28,6 +28,12 @@ def _state(*, giver_treasury: int = 1000, giver_is_king: bool = True) -> GameSta
     state.add_kingdom(KingdomState(GIVER_KINGDOM, "Giver", Race.HUMAN, Alignment.GOOD, HOME, treasury=giver_treasury))
     state.add_kingdom(KingdomState(RECIPIENT_KINGDOM, "Recipient", Race.HUMAN, Alignment.GOOD, HOME, treasury=0))
     state.add_leader(LeaderState(GIVER_LEADER, GIVER_KINGDOM, "King", HOME, is_king=giver_is_king))
+    # The 10% cap's own basis (2026-11-04) -- real play takes this
+    # snapshot once at the start of every run_turn() call; these tests
+    # call execute_gold_give()/execute_give() directly, so it's set here
+    # to match giver_treasury exactly, simulating "this call is the
+    # first Give of a fresh turn."
+    state.kingdoms[GIVER_KINGDOM].treasury_at_turn_start = giver_treasury
     return state
 
 
@@ -114,6 +120,66 @@ def test_execute_gold_give_rejects_non_king_giver():
 
     assert result.applied is False
     assert result.reason == "only a King may Give Gold"
+
+
+# -- 2026-11-04: the 10% cap is a cumulative per-gameturn budget, based
+# on a start-of-turn snapshot, not a fresh live-treasury allowance
+# re-applied to each individual Give. --------------------------------
+
+
+def test_execute_gold_give_a_second_give_this_turn_draws_from_the_same_budget():
+    state = _state(giver_treasury=1000)  # budget for the turn: 100
+    first = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 60)
+    assert first.applied is True
+
+    second = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 41)  # 60 + 41 > 100
+
+    assert second.applied is False
+    assert "exceeds 10% treasury cap" in second.reason
+    # The first Give already went through -- only the second was rejected.
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 940
+    assert state.kingdoms[GIVER_KINGDOM].gold_given_this_turn == 60
+
+
+def test_execute_gold_give_a_second_give_within_the_remaining_budget_succeeds():
+    state = _state(giver_treasury=1000)  # budget for the turn: 100
+    execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 60)
+
+    second = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 40)  # exactly the remaining 40
+
+    assert second.applied is True
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 900
+    assert state.kingdoms[GIVER_KINGDOM].gold_given_this_turn == 100
+
+
+def test_execute_gold_give_cap_basis_is_the_turn_start_snapshot_not_live_treasury():
+    # The King's live treasury has already dropped below what it was at
+    # the start of the turn (e.g. spent on Recruit earlier this same
+    # turn) -- the 10% cap still reads the real snapshot (1000), not the
+    # smaller live value, so his remaining budget is still 100.
+    state = _state(giver_treasury=1000)
+    state.kingdoms[GIVER_KINGDOM].treasury = 150  # spent 850 elsewhere this turn
+
+    result = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 100)
+
+    assert result.applied is True
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 50
+
+
+def test_execute_gold_give_rejects_when_live_treasury_cannot_cover_it_despite_remaining_budget():
+    # Same setup as above, but requesting more than what's physically
+    # left on hand, even though it's still within the turn's own 10%
+    # budget -- a check that was never reachable before this fix (the
+    # old live-treasury-based cap could never exceed the live treasury).
+    state = _state(giver_treasury=1000)
+    state.kingdoms[GIVER_KINGDOM].treasury = 80  # spent 920 elsewhere this turn
+
+    result = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 100)
+
+    assert result.applied is False
+    assert "exceeds 10% treasury cap" in result.reason
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 80
+    assert state.kingdoms[GIVER_KINGDOM].gold_given_this_turn == 0
 
 
 def test_execute_gold_give_rejects_non_positive_amount():
