@@ -548,7 +548,16 @@
               <td>
                 <select class="compose-action" name="action_{{ leader.leader_id }}_{{ n }}">
                   {% for action in actions %}
-                    <option value="{{ action.value }}" {% if action.name == "DEFEND" %}selected{% endif %}>{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
+                    {# 2026-11-06 bug fix: this used to hard-code DEFEND as the pre-selected
+                       default for every phase of every leader, unconditionally -- unlike the
+                       nested Hire/Cast/Use_MI rows, which correctly default to an empty
+                       "-- no order --" placeholder. A GM who saved without touching every row
+                       either hit Defend's own required-target validation, or picked something
+                       just to get the form through, issuing real unintended Defend orders.
+                       WAIT is this engine's own established neutral no-op (already used as the
+                       default for an unfilled nested-plan phase, see moves_compose.py's own
+                       ActionCode.WAIT remap) and needs no extra field filled in to save cleanly. #}
+                    <option value="{{ action.value }}" {% if action.name == "WAIT" %}selected{% endif %}>{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
                   {% endfor %}
                 </select>
               </td>
@@ -1076,13 +1085,26 @@
   function updateComposeRow(select) {
     var row = select.closest("tr");
     if (!row) return;
+    // 2026-11-06 bug fix: a Hire/Cast/Use_MI nested-plan sub-row (the
+    // nested_row macro) renders its own <tr>, with its own
+    // .compose-special-cell/.compose-generic-cell cells, INSIDE one of
+    // this outer row's own cells -- querySelectorAll from the outer
+    // <tr> recursed into those nested cells too, so changing the OUTER
+    // Action select re-applied visibility to the nested row's own,
+    // separately-configured cells based on the outer value alone. The
+    // nested row's own "change" listener already scopes correctly to
+    // its own <tr> (select.closest("tr") resolves to the inner one);
+    // this cell.closest("tr") !== row check just keeps the outer pass
+    // from reaching back into it.
     var matched = false;
     row.querySelectorAll(".compose-special-cell").forEach(function (cell) {
+      if (cell.closest("tr") !== row) return;
       var isMatch = cell.getAttribute("data-action") === select.value;
       cell.style.display = isMatch ? "" : "none";
       matched = matched || isMatch;
     });
     row.querySelectorAll(".compose-generic-cell").forEach(function (cell) {
+      if (cell.closest("tr") !== row) return;
       cell.style.display = matched ? "none" : "";
     });
   }
@@ -1096,13 +1118,21 @@
 
   // Encounter Plan tactic slots -- see webapp/moves_compose.py's own
   // docstring for the user-sourced "Talk only as the first tactic" /
-  // "Talk and Fulfill can't coexist" / Say free-text rules this hides
-  // or disables here. Progressive enhancement only: build_composed_
-  // kingdom()'s own server-side validation is authoritative either
-  // way, so a disabled <option> or hidden cell here is just a hint,
-  // not the real enforcement.
+  // "Talk, Fulfill and Steal are mutually exclusive" / Say free-text
+  // rules this hides or disables here. Progressive enhancement only:
+  // build_composed_kingdom()'s own server-side validation is
+  // authoritative either way, so a disabled <option> or hidden cell
+  // here is just a hint, not the real enforcement.
   var TALK_VALUE = "{{ talk_value }}";
   var FULFILL_VALUE = "{{ fulfill_value }}";
+  // 2026-11-06 bug fix: the backend's own mutual exclusion (moves_
+  // compose.py's `mutually_exclusive` check) was widened from a 2-way
+  // Talk/Fulfill pair to a 3-way Talk/Fulfill/Steal one, but this JS
+  // mirror was never updated to match -- Steal had no disabling effect
+  // here at all, so a GM picking Fulfill then Steal (or vice versa)
+  // only discovered the rejection after a full-page POST, unlike the
+  // Talk/Fulfill case which was already disabled client-side.
+  var STEAL_VALUE = "{{ steal_value }}";
   var SAY_VALUE = "{{ say_value }}";
   var CAST_VALUE = "{{ cast_value }}";
   var USE_MI_VALUE = "{{ use_mi_value }}";
@@ -1129,22 +1159,30 @@
     }
   }
 
+  // Talk, Fulfill and Steal are mutually exclusive anywhere in the
+  // same plan (moves_compose.py's own `mutually_exclusive` check) --
+  // generalized here instead of one hand-written pair check per
+  // value, so a future fourth exclusive Maneuver only needs adding to
+  // this one array, not a new copy-pasted block.
+  var MUTUALLY_EXCLUSIVE_TACTIC_VALUES = [TALK_VALUE, FULFILL_VALUE, STEAL_VALUE];
+
   function updateEncounterPlan(plan) {
     var slots = plan.querySelectorAll(".compose-tactic-slot");
     if (!slots.length) return;
-    var talkChosen = slots[0].value === TALK_VALUE;
-    var fulfillChosen = Array.prototype.some.call(slots, function (select) {
-      return select.value === FULFILL_VALUE;
+    var chosen = MUTUALLY_EXCLUSIVE_TACTIC_VALUES.filter(function (value) {
+      return Array.prototype.some.call(slots, function (select) {
+        return select.value === value;
+      });
     });
     slots.forEach(function (select) {
-      var talkOption = select.querySelector('option[value="' + TALK_VALUE + '"]');
-      if (talkOption) {
-        talkOption.disabled = fulfillChosen && select.value !== TALK_VALUE;
-      }
-      var fulfillOption = select.querySelector('option[value="' + FULFILL_VALUE + '"]');
-      if (fulfillOption) {
-        fulfillOption.disabled = talkChosen && select.value !== FULFILL_VALUE;
-      }
+      MUTUALLY_EXCLUSIVE_TACTIC_VALUES.forEach(function (value) {
+        var option = select.querySelector('option[value="' + value + '"]');
+        if (!option) return;
+        var otherValueAlreadyChosen = chosen.some(function (c) {
+          return c !== value;
+        });
+        option.disabled = otherValueAlreadyChosen && select.value !== value;
+      });
     });
   }
 

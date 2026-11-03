@@ -383,6 +383,21 @@ def test_search_phase_without_a_chosen_feature_is_rejected():
         assert "Feature to Search" in str(exc)
 
 
+def test_search_phase_with_a_nonexistent_feature_is_rejected():
+    # 2026-11-06 bug fix: _parse_search_feature() used to take no state
+    # argument at all and therefore never checked the posted id against
+    # state.features, unlike every sibling target field in this module.
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.SEARCH))
+    form[f"search_feature_{KING_ID}_0"] = "999999"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "real Feature" in str(exc)
+
+
 def test_build_composed_kingdom_round_trips_a_search_order_to_the_real_feature_id():
     state = _state()
     form = _all_defend_form(KING_ID)
@@ -1271,14 +1286,69 @@ def test_recruit_phase_target_garrison_resolves_to_sentinel():
 
 
 def test_recruit_phase_target_another_leader_resolves_to_that_leader_id():
+    # 2026-11-06: _parse_recruit_target() now validates the posted id
+    # against state (see that function's own docstring) -- leader 2
+    # must be real and co-located with the King for this to pass.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Borin", location=HOME))
     form = _all_defend_form(KING_ID)
     form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
     form[f"recruit_target_{KING_ID}_0"] = "2"
     form[f"recruit_type_{KING_ID}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
 
     assert phases[0].obj == 2
+
+
+def test_recruit_phase_target_nonexistent_leader_is_rejected():
+    # 2026-11-06 bug fix: _parse_recruit_target() used to take no state
+    # argument at all and therefore never checked the posted id against
+    # real, co-located leaders.
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "999"
+    form[f"recruit_type_{KING_ID}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "co-located" in str(exc)
+
+
+def test_recruit_phase_target_noncolocated_leader_is_rejected():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Borin", location=HexCoord(3, 2)))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "2"
+    form[f"recruit_type_{KING_ID}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "co-located" in str(exc)
+
+
+def test_recruit_phase_target_leader_255_is_rejected_even_when_real_and_colocated():
+    # 2026-11-06 bug fix: NO_LEADER_SENTINEL (255) is wire-
+    # indistinguishable from "garrison" once encoded -- a real,
+    # co-located leader whose own id happens to be 255 can't be named
+    # as a Recruit target at all.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=NO_LEADER_SENTINEL, kingdom_id=1, name="Unlucky", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = str(NO_LEADER_SENTINEL)
+    form[f"recruit_type_{KING_ID}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "indistinguishable" in str(exc)
 
 
 def test_recruit_phase_can_list_several_types_in_one_order():
@@ -1510,6 +1580,24 @@ def test_disband_phase_without_choosing_any_target_is_rejected():
         assert "choose at least one army to Disband" in str(exc)
 
 
+def test_disband_phase_rejects_a_lone_army_255_as_a_wire_ambiguous_collision():
+    # 2026-11-06 bug fix: a specific-list order of exactly [255] is
+    # wire-indistinguishable from DISBAND_ALL_VALUE once encoded --
+    # GameState.new_army_id() is an uncapped counter, so a real army
+    # can genuinely reach id 255 in a long-running game.
+    state = _state()
+    state.add_army(ArmyState(ALL_ARMIES_SENTINEL, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.DISBAND))
+    form[f"disband_target_{KING_ID}_0_0"] = str(ALL_ARMIES_SENTINEL)
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "indistinguishable" in str(exc)
+
+
 def test_build_composed_kingdom_round_trips_a_disband_order():
     state = _state()
     state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
@@ -1678,6 +1766,63 @@ def test_leave_phase_rejects_a_hostile_target_even_via_a_direct_tampered_value()
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "own Kingdom or an ally's" in str(exc)
+
+
+def test_leave_phase_rejects_self_as_the_target():
+    # 2026-11-06 bug fix: a Kingdom is trivially "allied" with itself,
+    # so this used to pass straight through, even though leave_target_
+    # options() already excludes the acting leader's own id from the
+    # dropdown and every structurally analogous target parser
+    # (Trail/Challenge/Hire/Charm/Kill Enemy) rejects self-targeting.
+    state = _state()
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LEAVE))
+    form[f"leave_target_{KING_ID}_0"] = str(KING_ID)
+    form[f"leave_army_{KING_ID}_0_0"] = "50"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Leave an army to himself" in str(exc)
+
+
+def test_leave_phase_rejects_target_leader_255_even_when_real_and_allied():
+    # 2026-11-06 bug fix: NO_LEADER_SENTINEL (255) is wire-
+    # indistinguishable from LEAVE_GARRISON_VALUE once encoded -- a
+    # real, allied leader whose own id happens to be 255 can't be
+    # named as a Leave target at all.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=NO_LEADER_SENTINEL, kingdom_id=1, name="Unlucky", location=HOME))
+    state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LEAVE))
+    form[f"leave_target_{KING_ID}_0"] = str(NO_LEADER_SENTINEL)
+    form[f"leave_army_{KING_ID}_0_0"] = "50"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "indistinguishable" in str(exc)
+
+
+def test_leave_phase_rejects_a_lone_army_255_as_a_wire_ambiguous_collision():
+    # 2026-11-06 bug fix: a specific-list order of exactly [255] is
+    # wire-indistinguishable from LEAVE_ALL_VALUE once encoded.
+    state = _state()
+    state.add_army(ArmyState(ALL_ARMIES_SENTINEL, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=KING_ID))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LEAVE))
+    form[f"leave_target_{KING_ID}_0"] = LEAVE_GARRISON_VALUE
+    form[f"leave_army_{KING_ID}_0_0"] = str(ALL_ARMIES_SENTINEL)
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "indistinguishable" in str(exc)
 
 
 def test_leave_phase_leave_all_collapses_to_the_sentinel():
@@ -1935,6 +2080,22 @@ def test_pick_up_phase_without_choosing_any_target_is_rejected():
         assert "choose at least one army to Pick Up" in str(exc)
 
 
+def test_pick_up_phase_rejects_a_lone_army_255_as_a_wire_ambiguous_collision():
+    # 2026-11-06 bug fix: a specific-list order of exactly [255] is
+    # wire-indistinguishable from PICK_UP_ALL_VALUE once encoded.
+    state = _state()
+    state.add_army(ArmyState(ALL_ARMIES_SENTINEL, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.PICK_UP))
+    form[f"pick_up_target_{KING_ID}_0_0"] = str(ALL_ARMIES_SENTINEL)
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "indistinguishable" in str(exc)
+
+
 def test_build_composed_kingdom_round_trips_a_pick_up_order():
     state = _state()
     state.add_army(ArmyState(50, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME, commanded_by=None))
@@ -2063,6 +2224,32 @@ def test_trade_phase_gold_gift_reads_the_free_text_amount():
 
     assert phases[0].obj == 5
     assert phases[0].extra == [0, 2]
+
+
+def test_trade_phase_from_leader_zero_avoids_the_secret_spell_collision():
+    # 2026-11-06 bug fix: extra[0] used to be hardcoded 0 unconditionally
+    # -- turn/trade_decode.py rewrite_trade_as_secret_spell_cast() reads
+    # extra[0] == leader_id as "this Give is really a self-targeted
+    # secret-spell Cast in disguise," which a hardcoded 0 silently
+    # satisfies for a King whose own leader_id is 0 (real in this
+    # project's own 0-indexed original-format game imports). extra[0]
+    # must differ from the acting leader's own id instead.
+    state = GameState()
+    state.board_width = BOARD_WIDTH
+    state.board_height = BOARD_HEIGHT
+    state.add_kingdom(KingdomState(0, "Zeroia", Race.HUMAN, Alignment.GOOD, HOME))
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=0, kingdom_id=0, name="King Zero", location=HOME, is_king=True))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="Bram", location=HOME, is_king=True))
+    form = _all_defend_form(0)
+    form["action_0_0"] = str(int(ActionCode.TRADE))
+    form["trade_recipient_0_0"] = "2"
+    form["trade_gift_0_0"] = "gold"
+    form["trade_gold_0_0"] = "5"
+
+    phases = parse_phase_inputs(form, 0, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [1, 2]
 
 
 def test_trade_phase_without_choosing_a_recipient_is_rejected():

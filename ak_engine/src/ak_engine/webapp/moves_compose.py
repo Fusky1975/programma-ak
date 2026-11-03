@@ -2454,26 +2454,83 @@ def _parse_defend_target(raw: str, *, board_width: int, phase_label: str) -> int
     return encode_hex_number(HexCoord(x, y), board_width)
 
 
-def _parse_search_feature(raw: str, *, phase_label: str) -> int:
+def _parse_search_feature(raw: str, *, phase_label: str, state: GameState) -> int:
+    """Reads a Search phase's own ``search_feature_<leader_id>_<n>``
+    field into the real ``obj`` encoding (a ``Feature.feature_id``).
+
+    **2026-11-06 bug fix**: this used to be the one target-dropdown
+    field in this module with no ``state`` argument at all and
+    therefore no existence check against ``state.features`` --
+    every structurally analogous target parser (``_parse_recruit_
+    target()`` below, ``_parse_trail_target()``, ``_parse_pursue_
+    target()``, etc.) already validates the posted id against real
+    game state with the same "Defense in depth" reasoning: ``feature_
+    options()`` already filters its own dropdown to real feature ids,
+    but a direct, tampered POST could still name any other integer.
+    Previously this reached ``turn/search_execution.py`` unchecked and
+    only failed there, late, as a silently-rejected "feature not
+    found" order -- caught here instead, at compose time, with a real
+    error message.
+    """
+
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Feature to Search.")
-    return _parse_int(raw, field_label=f"{phase_label} Search feature")
+    feature_id = _parse_int(raw, field_label=f"{phase_label} Search feature")
+    if state.features.get(feature_id) is None:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a real Feature to Search.")
+    return feature_id
 
 
-def _parse_recruit_target(raw: str, *, leader_id: int, phase_label: str) -> int:
+def _parse_recruit_target(raw: str, *, leader_id: int, phase_label: str, state: GameState) -> int:
     """Reads a Recruit phase's own ``recruit_target_<leader>_<n>`` field
     into the real ``obj`` encoding -- ``"self"``/empty resolves to the
     acting leader's own id, ``"garrison"`` to ``NO_LEADER_SENTINEL``,
     anything else to another co-located leader's own id (``recruit_
     target_options()``'s own dropdown value), matching ``turn/recruit_
     decode.py``'s own leader-id-or-255 encoding.
+
+    **2026-11-06, two bug fixes**:
+
+    (1) This used to be the one target-dropdown field in this module
+    with no ``state`` argument at all and therefore no existence/
+    co-location check -- every other such parser validates the posted
+    id, with the same "Defense in depth" reasoning: ``recruit_target_
+    options()`` already filters its own dropdown to leaders co-located
+    with the acting leader, but a direct, tampered POST could still
+    name any other, non-co-located, or nonexistent leader id.
+    ``turn/recruit_execution.py execute_recruit()`` already degrades
+    this gracefully to an unled/garrison-commanded unit rather than
+    granting unauthorized command, but the GM deserves the same clean
+    compose-time rejection every sibling target field already gives.
+
+    (2) A real, co-located leader whose own id happens to equal
+    ``NO_LEADER_SENTINEL`` (255) is wire-indistinguishable from
+    ``"garrison"`` once encoded -- ``decode_recruit_phase()`` reads raw
+    ``255`` as "no leader" unconditionally. Rejected outright with a
+    dedicated message, the same real wire-format limit ``_parse_leave_
+    target()`` now guards against too.
     """
 
     if not raw or raw == "self":
         return leader_id
     if raw == "garrison":
         return NO_LEADER_SENTINEL
-    return _parse_int(raw, field_label=f"{phase_label} Recruit target")
+    target_id = _parse_int(raw, field_label=f"{phase_label} Recruit target")
+    if target_id == NO_LEADER_SENTINEL:
+        raise InvalidComposedMovesError(
+            f"{phase_label}: leader #{NO_LEADER_SENTINEL} can't be named as a Recruit target -- "
+            "it's indistinguishable on the wire from the Garrison Commander."
+        )
+    leader = state.leaders.get(leader_id)
+    target_leader = state.leaders.get(target_id)
+    if leader is None or target_leader is None or target_leader.location != leader.location:
+        # Defense in depth: every dropdown-offered value is already
+        # filtered to a co-located leader by recruit_target_options(),
+        # but a direct, tampered POST could still name any other id.
+        raise InvalidComposedMovesError(
+            f"{phase_label}: choose a Recruit target that's co-located with this leader (or Self/Garrison)."
+        )
+    return target_id
 
 
 def _parse_recruit_types(form: dict[str, str], leader_id: int, n: int, *, phase_label: str) -> list[int]:
@@ -2512,6 +2569,30 @@ def _parse_recruit_types(form: dict[str, str], leader_id: int, n: int, *, phase_
     return ordinals
 
 
+def _reject_single_army_sentinel_collision(army_ids: list[int], phase_label: str, order_label: str) -> None:
+    """**2026-11-06 bug fix.** A single real army whose own ``army_id``
+    happens to equal ``ALL_ARMIES_SENTINEL`` (255) is wire-
+    indistinguishable from the dedicated "ALL" pseudo-option once
+    encoded: ``decode_army_list_phase()`` strips the trailing ``-1``
+    and compares what's left against ``[ALL_ARMIES_SENTINEL]`` to mean
+    "every army this leader commands," with no way to tell that apart
+    from a GM who really meant just that one army. ``GameState.new_
+    army_id()`` is an uncapped running counter, so army id 255 is a
+    perfectly real, reachable id in a long-running game -- not merely
+    theoretical. Shared by ``_parse_disband_targets()``/``_parse_leave_
+    army_targets()``/``_parse_pick_up_targets()`` below, called right
+    after each one's own specific-list loop, before its own "at least
+    one target" check (an empty list can't collide).
+    """
+
+    if army_ids == [ALL_ARMIES_SENTINEL]:
+        raise InvalidComposedMovesError(
+            f"{phase_label}: army #{ALL_ARMIES_SENTINEL} can't be the only {order_label} target in this order -- "
+            "it's indistinguishable on the wire from the 'ALL' option. Add a second army to this order, or use "
+            "'ALL' if that's really the intent."
+        )
+
+
 def _parse_disband_targets(
     form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
 ) -> list[int]:
@@ -2523,6 +2604,10 @@ def _parse_disband_targets(
     must be the only thing filled in (see this module's own docstring
     for why a real order is either a specific list or the ALL
     sentinel, never both). At least one target must be chosen.
+
+    **2026-11-06 bug fix**: see ``_reject_single_army_sentinel_
+    collision()`` -- a lone army #255 in the specific-list branch used
+    to silently compose identically to "Disband ALL I command."
     """
 
     leader = state.leaders.get(leader_id)
@@ -2563,6 +2648,7 @@ def _parse_disband_targets(
                 f"{phase_label}: disband target slot {slot + 1} isn't an army this leader can Disband."
             )
         army_ids.append(army_id)
+    _reject_single_army_sentinel_collision(army_ids, phase_label, "Disband")
     if not army_ids:
         raise InvalidComposedMovesError(
             f"{phase_label}: choose at least one army to Disband (or 'Disband ALL I command')."
@@ -2580,12 +2666,42 @@ def _parse_leave_target(form: dict[str, str], leader_id: int, n: int, *, phase_l
     or an allied Kingdom -- defense in depth: every dropdown-offered
     value is already filtered this way, but a direct, tampered POST
     could still name a hostile/unrelated leader.
+
+    **2026-11-06, two bug fixes**:
+
+    (1) Never rejected the acting leader targeting himself --
+    ``state.is_allied(leader.kingdom_id, leader.kingdom_id)`` is
+    trivially ``True``, so a self-target silently passed this check,
+    even though ``leave_target_options()`` itself already excludes the
+    acting leader's own id from the dropdown (``other.leader_id !=
+    leader_id``) and every structurally analogous target parser in
+    this module (Trail/Challenge/Hire/Charm/Kill Enemy) explicitly
+    rejects self-targeting. At runtime this used to resolve to a
+    harmless no-op (the army stays commanded by the same leader), but
+    it's the one target parser that was missing the guard its own
+    siblings all enforce.
+
+    (2) A real, allied leader whose own id happens to equal ``NO_
+    LEADER_SENTINEL`` (255) is wire-indistinguishable from
+    ``LEAVE_GARRISON_VALUE`` once encoded -- ``decode_army_list_
+    phase()`` reads raw ``255`` as "no leader" (Garrison Commander)
+    unconditionally, silently dropping both the named Hero and the
+    Kingdom-transfer-to-an-ally effect the GM may have been relying on.
+    Rejected outright with a dedicated message, the same real wire-
+    format limit ``_parse_recruit_target()`` now guards against too.
     """
 
     raw = form.get(f"leave_target_{leader_id}_{n}", "")
     if not raw or raw == LEAVE_GARRISON_VALUE:
         return NO_LEADER_SENTINEL
     target_id = _parse_int(raw, field_label=f"{phase_label} Leave target")
+    if target_id == leader_id:
+        raise InvalidComposedMovesError(f"{phase_label}: a leader can't Leave an army to himself.")
+    if target_id == NO_LEADER_SENTINEL:
+        raise InvalidComposedMovesError(
+            f"{phase_label}: leader #{NO_LEADER_SENTINEL} can't be named as a Leave target -- "
+            "it's indistinguishable on the wire from the Garrison Commander."
+        )
     leader = state.leaders.get(leader_id)
     target_leader = state.leaders.get(target_id)
     if leader is None or target_leader is None or not state.is_allied(leader.kingdom_id, target_leader.kingdom_id):
@@ -2603,6 +2719,10 @@ def _parse_leave_army_targets(
     army-id list -- the same no-gaps convention and ``LEAVE_ALL_VALUE``
     mutual-exclusivity shape ``_parse_disband_targets()`` already uses
     for ``DISBAND_ALL_VALUE``. At least one target must be chosen.
+
+    **2026-11-06 bug fix**: see ``_reject_single_army_sentinel_
+    collision()`` -- a lone army #255 in the specific-list branch used
+    to silently compose identically to "Leave ALL I command."
     """
 
     leader = state.leaders.get(leader_id)
@@ -2646,6 +2766,7 @@ def _parse_leave_army_targets(
                 f"{phase_label}: leave army slot {slot + 1} isn't an army this leader can Leave."
             )
         army_ids.append(army_id)
+    _reject_single_army_sentinel_collision(army_ids, phase_label, "Leave")
     if not army_ids:
         raise InvalidComposedMovesError(
             f"{phase_label}: choose at least one army to Leave (or 'Leave ALL I command')."
@@ -2662,6 +2783,10 @@ def _parse_pick_up_targets(
     ``PICK_UP_ALL_VALUE`` mutual-exclusivity shape ``_parse_disband_
     targets()``/``_parse_leave_army_targets()`` already use. At least
     one target must be chosen.
+
+    **2026-11-06 bug fix**: see ``_reject_single_army_sentinel_
+    collision()`` -- a lone army #255 in the specific-list branch used
+    to silently compose identically to "Pick Up ALL unled armies here."
     """
 
     leader = state.leaders.get(leader_id)
@@ -2704,6 +2829,7 @@ def _parse_pick_up_targets(
                 f"{phase_label}: pick up target slot {slot + 1} isn't an army this leader can Pick Up."
             )
         army_ids.append(army_id)
+    _reject_single_army_sentinel_collision(army_ids, phase_label, "Pick Up")
     if not army_ids:
         raise InvalidComposedMovesError(
             f"{phase_label}: choose at least one army to Pick Up (or 'Pick Up ALL unled armies here')."
@@ -3936,11 +4062,13 @@ def parse_phase_inputs(
             obj = 0
             extra = []
         elif action is ActionCode.SEARCH:
-            obj = _parse_search_feature(form.get(f"search_feature_{leader_id}_{n}", ""), phase_label=f"P{n}")
+            obj = _parse_search_feature(
+                form.get(f"search_feature_{leader_id}_{n}", ""), phase_label=f"P{n}", state=state
+            )
             extra = [0, *_parse_search_tactics(form, leader_id, n, phase_label=f"P{n}", state=state)]
         elif action is ActionCode.RECRUIT:
             obj = _parse_recruit_target(
-                form.get(f"recruit_target_{leader_id}_{n}", ""), leader_id=leader_id, phase_label=f"P{n}"
+                form.get(f"recruit_target_{leader_id}_{n}", ""), leader_id=leader_id, phase_label=f"P{n}", state=state
             )
             extra = [0, *_parse_recruit_types(form, leader_id, n, phase_label=f"P{n}"), -1]
         elif action is ActionCode.DISBAND:
@@ -3958,7 +4086,24 @@ def parse_phase_inputs(
             obj = _parse_trade_gift(
                 form, leader_id, n, phase_label=f"P{n}", state=state, recipient_id=trade_recipient_id
             )
-            extra = [0, trade_recipient_id]
+            # 2026-11-06 bug fix: extra[0] ("tl", the generic per-action
+            # triple -- turn/trade_decode.py's own module docstring)
+            # has no real meaning for an ordinary Give, so this has
+            # always hardcoded a placeholder 0 -- the same convention
+            # Disband/Leave/Pick_Up/Explore use for their own unused
+            # obj/extra[0]. But turn/trade_decode.py rewrite_trade_as_
+            # secret_spell_cast() reads extra[0] == leader_id as "this
+            # Give is actually a self-targeted secret-spell Cast in
+            # disguise" -- a hardcoded 0 silently satisfies that for a
+            # King whose own leader_id is 0 (real: Kings import with
+            # leader_id == kingdom_id, and kingdoms are 0-indexed in
+            # this project's own original-format game data), turning
+            # an ordinary gift of an item in the 25-34 secret-spell
+            # ordinal range into a dropped gift and a bogus Cast. Any
+            # placeholder guaranteed to differ from this leader_id
+            # avoids the collision -- 1 only in that one exact case,
+            # 0 (unchanged) otherwise.
+            extra = [1 if leader_id == 0 else 0, trade_recipient_id]
         elif action is ActionCode.PRACTICE:
             obj = _parse_practice_ability(form.get(f"practice_ability_{leader_id}_{n}", ""), phase_label=f"P{n}")
             extra = [0]

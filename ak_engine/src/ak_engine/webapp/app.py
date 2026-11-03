@@ -3177,6 +3177,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             tactic_choices_by_slot=[tactic_options(slot) for slot in range(TACTIC_SLOT_COUNT)],
             talk_value=int(Maneuver.TALK),
             fulfill_value=int(Maneuver.FULFILL),
+            steal_value=int(Maneuver.STEAL),
             say_value=int(Maneuver.SAY),
             say_text_max_length=SAY_TEXT_MAX_LENGTH,
             cast_value=int(Maneuver.CAST),
