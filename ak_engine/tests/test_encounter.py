@@ -688,6 +688,62 @@ def test_resolve_fire_arrow_duel_short_range_archer_does_not_halve_the_hit_chanc
     assert result.shots[0].hit is True
 
 
+# -- 2026-11-04: RULES.AK [5.2] -- closing from Spell Range to Bow Range
+# costs the closing side round 1 entirely; the other side fires
+# completely normally from round 1 onward.
+
+
+def test_resolve_fire_arrow_duel_closing_side_skips_round_1_only():
+    a = Combatant("A", archery_skill=2, hit_points=10)  # 2 shots, closing
+    b = Combatant("B", archery_skill=1, hit_points=10)  # 1 shot, not closing
+    # Round 1: only B fires (A is closing). Round 2: only A fires (B is
+    # already out of shots). Round 3: only A fires its second shot.
+    rng = ScriptedRandom([0.99, 0.99, 0.99])
+
+    result = resolve_fire_arrow_duel(a, b, rng, closing_side="a")
+
+    assert result.rounds == 3  # one round longer than without closing (max(2,1)=2)
+    assert [shot.shooter for shot in result.shots] == ["b", "a", "a"]
+
+
+def test_resolve_fire_arrow_duel_closing_side_b_variant():
+    a = Combatant("A", archery_skill=1, hit_points=10)  # not closing
+    b = Combatant("B", archery_skill=2, hit_points=10)  # closing
+    rng = ScriptedRandom([0.99, 0.99, 0.99])
+
+    result = resolve_fire_arrow_duel(a, b, rng, closing_side="b")
+
+    assert result.rounds == 3
+    assert [shot.shooter for shot in result.shots] == ["a", "b", "b"]
+
+
+def test_resolve_fire_arrow_duel_closing_side_never_reduces_the_closers_own_total_shots():
+    # The closing side's own total shot count is unaffected by closing
+    # -- only delayed by one round, never fewer shots overall.
+    a = Combatant("A", archery_skill=2, hit_points=10)
+    b = Combatant("B", archery_skill=0, hit_points=10)
+    rng = ScriptedRandom([0.99, 0.99])
+
+    result = resolve_fire_arrow_duel(a, b, rng, closing_side="a")
+
+    assert sum(1 for shot in result.shots if shot.shooter == "a") == 2
+
+
+def test_resolve_fire_arrow_duel_closing_side_can_still_be_killed_in_round_1_by_the_other_side():
+    # The closing side gets no shot of its own in round 1, but is not
+    # otherwise protected -- the other side's own round-1 shot can still
+    # land and win outright.
+    a = Combatant("A", archery_skill=2, hit_points=1)  # closing, starts at 1 HP
+    b = Combatant("B", archery_skill=1, hit_points=10)
+    rng = ScriptedRandom([0.1, 0.5])  # B's round-1 shot: hit-chance roll, then damage roll
+
+    result = resolve_fire_arrow_duel(a, b, rng, closing_side="a")
+
+    assert result.winner == "b"
+    assert len(result.shots) == 1
+    assert result.shots[0].shooter == "b"
+
+
 # -- Phase 175: per-shot Fire Arrow log --
 
 

@@ -365,16 +365,21 @@ own module docstring) but, like Flee's own cap before this round,
 left completely unenforced in both the engine's tactic walk and this
 composer -- fixed the same way, mirroring Flee's exact shape.
 
-Not touched here, out of scope for this round: ``turn/challenge_
-execution.py``'s own range-closing helper, ``_close_to()``, is a
-zero-cost, instant move bundled into the same tactic-resolution step
-that then immediately fires -- unlike the rulebook text's own "closing
-to archery range consumes a round, then shoots the following round"
-reading, which this module's own earlier docstring aspired to but
-never actually built this way. This is a real discrepancy, but it
-lives in Challenge's own encounter resolution, which has no composer
-of its own yet (same situation as Give/Beg's Challenge/Pursue
-carve-outs above) -- nothing to compose differently here either way.
+**2026-11-04 -- the ``_close_to()`` discrepancy this paragraph used to
+flag is fixed.** It used to be a zero-cost, instant move bundled into
+the same tactic-resolution step that then immediately fired, contrary
+to the rulebook's own "closing to archery/melee range consumes a
+round, then attacks the following round" text ([5.2]/[5.3]). Now
+``_close_to()`` genuinely advances one tier per round, and both the
+SHOOT and MELEE branches in ``turn/challenge_execution.py`` spend a
+real round closing (no attack from the one closing that round) before
+the real Fire Arrow duel/Melee round begins -- see that module's own
+current docstrings on the SHOOT/MELEE branches for the full mechanics
+and the confirmed "the other side still acts normally meanwhile" rule.
+Still lives entirely in Challenge's own encounter resolution, which
+has no composer of its own (same situation as Give/Beg's Challenge/
+Pursue carve-outs above) -- nothing to compose differently here either
+way.
 
 **Melee, the eleventh and last Encounter Plan tactic designed** --
 needed an engine fix, not a composer change (2026-10-28, sourced

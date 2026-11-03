@@ -2196,8 +2196,14 @@ def _combatants(**overrides):
 
 
 def test_close_to_advances_one_tier_at_a_time_and_never_widens():
+    # Bug fix (2026-11-04): this test's own name always claimed "one
+    # tier at a time," but its second assertion below used to encode
+    # the actual (buggy) behavior instead -- a single call jumping
+    # straight from Spell Range to Melee Range, two tiers at once. See
+    # _close_to()'s own current docstring for the real RULES.AK [5.2]/
+    # [5.3] sourcing ("closing the distance consumes a whole round").
     assert _close_to(CombatRange.BOW_RANGE, CombatRange.SPELL_RANGE) is CombatRange.BOW_RANGE
-    assert _close_to(CombatRange.MELEE_RANGE, CombatRange.SPELL_RANGE) is CombatRange.MELEE_RANGE
+    assert _close_to(CombatRange.MELEE_RANGE, CombatRange.SPELL_RANGE) is CombatRange.BOW_RANGE
     assert _close_to(CombatRange.MELEE_RANGE, CombatRange.BOW_RANGE) is CombatRange.MELEE_RANGE
     assert _close_to(CombatRange.MELEE_RANGE, CombatRange.MELEE_RANGE) is CombatRange.MELEE_RANGE
     assert _close_to(CombatRange.SPELL_RANGE, CombatRange.MELEE_RANGE) is CombatRange.MELEE_RANGE  # never widens
@@ -3999,7 +4005,7 @@ def test_resolve_challenge_combat_without_the_ability_closes_to_bow_range():
             [SearchTactic(Maneuver.SHOOT)], caster_leader, caster, target_leader, target, state, ScriptedRandom([])
         )
 
-    mock_resolve.assert_called_once_with(caster, target, ANY)
+    mock_resolve.assert_called_once_with(caster, target, ANY, closing_side="a")
 
 
 def test_resolve_challenge_combat_no_caster_leader_closes_to_bow_range():
@@ -4019,7 +4025,77 @@ def test_resolve_challenge_combat_no_caster_leader_closes_to_bow_range():
             [SearchTactic(Maneuver.SHOOT)], None, caster, target_leader, target, state, ScriptedRandom([])
         )
 
-    mock_resolve.assert_called_once_with(caster, target, ANY)
+    mock_resolve.assert_called_once_with(caster, target, ANY, closing_side="a")
+
+
+# -- 2026-11-04: RULES.AK [5.2]/[5.3] -- closing from Spell Range costs
+# the closer the round he closes in, with no attack of his own; the
+# other side still acts completely normally that same round.
+
+
+def test_resolve_challenge_combat_shoot_closing_round_the_target_still_fires_back():
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": _skills_with(Ability.ARCHERY, 2, 9)},
+        target_kwargs={"skills": _skills_with(Ability.ARCHERY, 1, 9)},
+    )
+    tactics = [SearchTactic(Maneuver.SHOOT)]
+    # Round 1: only the target fires (the caster is closing). Round 2:
+    # only the caster fires (the target is already out of shots). Round
+    # 3: the caster's own second shot.
+    rng = ScriptedRandom([0.99, 0.99, 0.99])
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, rng)
+
+    assert [shot.shooter for shot in outcome.fire_arrow_shots] == ["b", "a", "a"]
+
+
+def test_resolve_challenge_combat_melee_closing_from_spell_range_advances_one_tier_per_round():
+    # Spell Range -> Bow Range -> Melee Range is two separate closing
+    # rounds, each advancing exactly one tier -- never a single call
+    # jumping straight from Spell Range to Melee Range (the bug this
+    # round fixes). NB: a target_tactics plan whose own leading Cast(s)
+    # would otherwise be reachable here gets them drained by _resolve_
+    # target_casts()'s own pre-loop before this tactic (or any closing
+    # round) is ever reached -- see the MELEE branch's own current
+    # comment for why that makes a target-side assertion here always
+    # vacuously true regardless of this fix, and so not a meaningful
+    # test of it.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution._close_to", wraps=_close_to) as mock_close, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ) as mock_duel:
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert [call.args for call in mock_close.call_args_list] == [
+        (CombatRange.MELEE_RANGE, CombatRange.SPELL_RANGE),
+        (CombatRange.MELEE_RANGE, CombatRange.BOW_RANGE),
+    ]
+    assert mock_duel.called  # melee itself still happens, once Melee Range is actually reached
+
+
+def test_resolve_challenge_combat_melee_after_fire_arrow_only_needs_one_more_closing_round():
+    # Fire Arrow's own closing already brought current_range to Bow
+    # Range -- the following Melee tactic only needs one more step from
+    # there, not a fresh two-step climb from Spell Range.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.SHOOT), SearchTactic(Maneuver.MELEE)]
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_fire_arrow_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ), patch("ak_engine.turn.challenge_execution._close_to", wraps=_close_to) as mock_close, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ) as mock_duel:
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert [call.args for call in mock_close.call_args_list] == [
+        (CombatRange.BOW_RANGE, CombatRange.SPELL_RANGE),  # Fire Arrow's own closing
+        (CombatRange.MELEE_RANGE, CombatRange.BOW_RANGE),  # Melee's own, one step from there
+    ]
+    assert mock_duel.called
 
 
 # -- Phase 701: AdvancedAbility.SHORT_RANGE_ARCHERY ----------------------

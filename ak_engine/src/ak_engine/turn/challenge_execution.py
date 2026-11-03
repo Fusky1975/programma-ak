@@ -1625,17 +1625,25 @@ class ChallengeCombatOutcome:
 
 
 def _close_to(target_range: CombatRange, current_range: CombatRange) -> CombatRange:
-    """Phase 292: advance ``current_range`` one tier per (implicit,
-    RNG-free) round until it reaches ``target_range`` -- closing the
-    distance is pure movement, not a combat action, so it consumes no
-    roll (the same "movement itself consumes no RNG" convention this
-    project's own Move/Pursue/Trail chase-step primitives already
-    established). Never widens the range back out -- there is no
-    rulebook mechanic for retreating to a farther range mid-Encounter.
+    """Phase 292, one-tier-per-call fixed 2026-11-04 (RULES.AK [5.2]/
+    [5.3], quoted in full at this function's own call sites below):
+    advances ``current_range`` by exactly **one** tier toward
+    ``target_range`` -- closing the distance is pure movement, consumes
+    no roll of its own (the same "movement itself consumes no RNG"
+    convention this project's own Move/Pursue/Trail chase-step
+    primitives already established), but **does consume the whole
+    round it happens in** for whoever is closing -- no attack from them
+    that same round. A caller whose own target range is more than one
+    tier away must call this once per round and let the loop run; it no
+    longer silently jumps straight to ``target_range`` in one call (this
+    docstring's own "one tier per round" was already the intent even
+    before this fix -- the code just never matched it). Never widens
+    the range back out -- there is no rulebook mechanic for retreating
+    to a farther range mid-Encounter.
     """
 
-    while current_range.value < target_range.value:
-        current_range = CombatRange(current_range.value + 1)
+    if current_range.value < target_range.value:
+        return CombatRange(current_range.value + 1)
     return current_range
 
 
@@ -2236,14 +2244,52 @@ def resolve_challenge_combat(
             ):
                 result = resolve_fire_arrow_duel(caster, target, rng, long_range_archer="a")
             else:
+                # RULES.AK [5.2]: "Se un personaggio riceve l'ordine di
+                # attaccare con armi da lancio a portata d'incantesimo,
+                # si avvicina a portata d'arco, consumando così un round
+                # e tira quindi nel round successivo" -- closing from
+                # Spell Range costs the caster the round he closes in
+                # (no shot that round), confirmed with the user: the
+                # *target* still fires back normally that same round if
+                # they have Archery of their own -- resolve_fire_arrow_
+                # duel()'s own `closing_side` models exactly that.
+                needs_closing = current_range is not CombatRange.BOW_RANGE
                 current_range = _close_to(CombatRange.BOW_RANGE, current_range)
-                result = resolve_fire_arrow_duel(caster, target, rng)
+                result = resolve_fire_arrow_duel(caster, target, rng, closing_side="a" if needs_closing else None)
             fire_arrow_shots.extend(result.shots)
             if result.winner is not None:
                 return _outcome(winner=result.winner)
             continue
         if tactic.maneuver is Maneuver.MELEE:
-            current_range = _close_to(CombatRange.MELEE_RANGE, current_range)
+            # RULES.AK [5.3]: "Se un personaggio riceve l'ordine di
+            # sferrare un attacco di mischia a portata d'incantesimo o
+            # di arco, cercherà di ridurre la distanza, avvicinandosi,
+            # consumando così il suo round. Combatterà corpo a corpo
+            # dopo aver raggiunto la zona di mischia." -- each closing
+            # round is the caster's alone (no swing of his own that
+            # round). May take more than one round when starting from
+            # Spell Range (Spell -> Bow -> Melee), hence the loop --
+            # this is the *same* "ME" tactic's own closing-then-fighting
+            # sequence, not a separate plan entry consumed per round.
+            #
+            # Confirmed with the user: the target still acts normally
+            # meanwhile. No separate check is needed to make that real
+            # here, though: _resolve_target_casts()'s own pre-loop
+            # (above, run once before this function's main tactics loop
+            # even starts) already drains every *leading* Cast the
+            # target's own plan could expose via _peek_target_cast() --
+            # and a plan that instead leads with its own MELEE makes
+            # that same peek return `None` until an ordinary *completed*
+            # melee round specifically advances past it
+            # (_advance_target_tactic(), inside _resolve_melee_round()'s
+            # own "no cast" branch below) -- which can only happen once
+            # real melee combat has actually started, i.e. after closing
+            # is done. So during these closing rounds specifically, the
+            # target genuinely has nothing reachable to act on either --
+            # this is what "normal" already means for them here, not a
+            # gap to special-case.
+            while current_range is not CombatRange.MELEE_RANGE:
+                current_range = _close_to(CombatRange.MELEE_RANGE, current_range)
             encounter_over, round_result = _resolve_melee_round(is_last_tactic=(index == len(tactics) - 1))
             if encounter_over:
                 return _outcome(fled=True) if round_result == "fled" else _outcome(winner=round_result)

@@ -4069,6 +4069,7 @@ def resolve_fire_arrow_duel(
     *,
     long_range_archer: str | None = None,
     short_range_archer: str | None = None,
+    closing_side: str | None = None,
 ) -> EncounterCombatResult:
     """Rulebook [5.2]: each combatant fires up to ``fire_arrow_free_attacks(archery_skill)``
     shots, interleaved round-by-round by initiative (higher Archery
@@ -4115,6 +4116,25 @@ def resolve_fire_arrow_duel(
     exclusive in practice (a single Fire tactic is only ever resolved
     from one range at a time) but are independent flags here so neither
     accidentally implies the other's own multiplier.
+
+    **2026-11-04 -- RULES.AK [5.2]**: "Se un personaggio riceve l'ordine
+    di attaccare con armi da lancio a portata d'incantesimo, si avvicina
+    a portata d'arco, consumando così un round e tira quindi nel round
+    successivo." ``closing_side`` (default ``None``, every pre-existing
+    caller unaffected) names whichever side is closing from Spell Range
+    to Bow Range this call -- confirmed with the user: *that* side
+    alone skips round 1 entirely (no shot at all that round, not even a
+    reduced one -- the round is simply spent moving), while the *other*
+    side fires completely normally from round 1 onward, exactly as if
+    neither side were closing. The closing side's own total shot count
+    is unchanged; it only starts one round later, so the duel runs one
+    round longer than it otherwise would whenever that extra round is
+    actually needed (never shortened, never fewer rounds than either
+    side's own real total requires). Mutually exclusive with ``long_
+    range_archer``/``short_range_archer`` in practice (those model a
+    caster who skips closing entirely, firing from Spell Range itself,
+    the opposite situation) -- not enforced here, since no real caller
+    ever passes both.
     """
 
     skill_a, skill_b = effective_archery_skill(a), effective_archery_skill(b)
@@ -4127,7 +4147,9 @@ def resolve_fire_arrow_duel(
     long_range_multiplier_a = LONG_RANGE_ARCHERY_HIT_MULTIPLIER if long_range_archer == "a" else 1.0
     long_range_multiplier_b = LONG_RANGE_ARCHERY_HIT_MULTIPLIER if long_range_archer == "b" else 1.0
     used_a = used_b = 0
-    total_rounds = max(shots_a, shots_b)
+    rounds_needed_a = shots_a + (1 if closing_side == "a" else 0)
+    rounds_needed_b = shots_b + (1 if closing_side == "b" else 0)
+    total_rounds = max(rounds_needed_a, rounds_needed_b)
     shots: list[FireArrowShot] = []
 
     round_number = 0
@@ -4139,6 +4161,8 @@ def resolve_fire_arrow_duel(
             if a.hit_points <= 0 or b.hit_points <= 0:
                 break
             if combatant is a:
+                if closing_side == "a" and round_number == 1:
+                    continue  # spent this round closing to Bow Range, not shooting
                 if used_a >= shots_a:
                     continue
                 used_a += 1
@@ -4152,6 +4176,8 @@ def resolve_fire_arrow_duel(
                 shots.append(FireArrowShot(shooter="a", hit=raw_damage > 0, damage=damage))
                 b.hit_points -= damage
             else:
+                if closing_side == "b" and round_number == 1:
+                    continue  # spent this round closing to Bow Range, not shooting
                 if used_b >= shots_b:
                     continue
                 used_b += 1
