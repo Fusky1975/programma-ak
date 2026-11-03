@@ -8649,7 +8649,9 @@ def test_describe_trail_intelligence_no_king_lines_when_no_king_intelligence():
 def test_describe_trail_intelligence_king_lines_with_allies_and_provinces():
     state = _trail_intel_state()
     state.add_province(ProvinceState(HexCoord(0, 0), None, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
-    king = KingIntelligence(treasury=500, allied_kingdom_ids=(2,), controlled_provinces=(HexCoord(0, 0),))
+    king = KingIntelligence(
+        treasury=500, allied_kingdom_ids=(2,), enemy_kingdom_ids=(), controlled_provinces=(HexCoord(0, 0),)
+    )
     result = TrailExecutionResult(spied_on=True, king_intelligence=king)
     rng = ScriptedRandom([0.1] * 20)
 
@@ -8657,11 +8659,12 @@ def test_describe_trail_intelligence_king_lines_with_allies_and_provinces():
 
     assert "Aldric learned that Borin commands a treasury of 500 gold." in lines
     assert "Aldric learned that Borin is allied with Alliedland." in lines
+    assert "Aldric learned that Borin has no enemies." in lines
     assert "Aldric learned that Borin controls Capital City." in lines
 
 
 def test_describe_trail_intelligence_king_lines_with_no_allies_or_provinces():
-    king = KingIntelligence(treasury=0, allied_kingdom_ids=(), controlled_provinces=())
+    king = KingIntelligence(treasury=0, allied_kingdom_ids=(), enemy_kingdom_ids=(), controlled_provinces=())
     result = TrailExecutionResult(spied_on=True, king_intelligence=king)
     rng = ScriptedRandom([0.1] * 20)
 
@@ -8671,7 +8674,20 @@ def test_describe_trail_intelligence_king_lines_with_no_allies_or_provinces():
 
     assert "Aldric learned that Borin commands a treasury of 0 gold." in lines
     assert "Aldric learned that Borin has no allies." in lines
+    assert "Aldric learned that Borin has no enemies." in lines
     assert "Aldric learned that Borin controls no provinces." in lines
+
+
+def test_describe_trail_intelligence_king_lines_with_enemies():
+    state = _trail_intel_state()
+    state.add_kingdom(KingdomState(3, "Enemyland", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    king = KingIntelligence(treasury=0, allied_kingdom_ids=(), enemy_kingdom_ids=(3,), controlled_provinces=())
+    result = TrailExecutionResult(spied_on=True, king_intelligence=king)
+    rng = ScriptedRandom([0.1] * 20)
+
+    lines = describe_trail_intelligence(result, state=state, trailer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert "Aldric learned that Borin is at war with Enemyland." in lines
 
 
 # -- Phase 832: SPY_SUPER_SLEUTH's own "guessed distance" (Pursue/Trail)

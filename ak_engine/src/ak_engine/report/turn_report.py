@@ -8627,6 +8627,13 @@ TRAIL_OFFICES_HELD_TEMPLATE = "< learned that [ holds the office of ^L^V."
 TRAIL_KING_FINANCES_TEMPLATE = "< learned that [ commands a treasury of # gold."
 TRAIL_KING_ALLIES_TEMPLATE = "< learned that [ is allied with ^L^V."
 TRAIL_KING_NO_ALLIES_TEMPLATE = "< learned that [ has no allies."
+# 2026-11-04 -- "enemies" closes turn/trail_execution.py's own real
+# [3.17] "alliances, enemies and controlled provinces" triple, now that
+# GameState.diplomatic_relation() tracks a real Enemy state to read --
+# same project-original template shape as its ALLIES sibling right
+# above (no confirmed PROSE source for the exact wording either way).
+TRAIL_KING_ENEMIES_TEMPLATE = "< learned that [ is at war with ^L^V."
+TRAIL_KING_NO_ENEMIES_TEMPLATE = "< learned that [ has no enemies."
 TRAIL_KING_PROVINCES_TEMPLATE = "< learned that [ controls ^L^V."
 TRAIL_KING_NO_PROVINCES_TEMPLATE = "< learned that [ controls no provinces."
 
@@ -8699,6 +8706,16 @@ def render_trail_king_allies(trailer_name: str, king_name: str, ally_names: list
 def render_trail_king_no_allies(trailer_name: str, king_name: str, rng: random.Random) -> str:
     values = {"<": trailer_name, "[": king_name}
     return render(TRAIL_KING_NO_ALLIES_TEMPLATE, values, rng=rng)
+
+
+def render_trail_king_enemies(trailer_name: str, king_name: str, enemy_names: list[str], rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": king_name}
+    return render(TRAIL_KING_ENEMIES_TEMPLATE, values, rng=rng, lists={"^V": enemy_names})
+
+
+def render_trail_king_no_enemies(trailer_name: str, king_name: str, rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": king_name}
+    return render(TRAIL_KING_NO_ENEMIES_TEMPLATE, values, rng=rng)
 
 
 def render_trail_king_provinces(
@@ -8801,10 +8818,10 @@ def describe_trail_intelligence(
     owns nothing"), not missing data.
 
     ``result.king_intelligence`` (only set when the target is a King)
-    adds up to three further lines the same way: finances always
-    renders (a treasury of 0 gold is still a real fact); allies and
-    controlled provinces each choose between their populated/"none"
-    template pair. Kingdom names are resolved via
+    adds up to four further lines the same way: finances always
+    renders (a treasury of 0 gold is still a real fact); allies,
+    enemies (2026-11-04), and controlled provinces each choose between
+    their populated/"none" template pair. Kingdom names are resolved via
     ``GameState.kingdoms``; province names via ``ProvinceState.name``,
     falling back to a raw coordinate the same way
     ``describe_armies_report()``'s own Phase 158 precedent already
@@ -8868,6 +8885,14 @@ def describe_trail_intelligence(
             lines.append(render_trail_king_allies(trailer_name, target_name, ally_names, rng))
         else:
             lines.append(render_trail_king_no_allies(trailer_name, target_name, rng))
+
+        enemy_names = [
+            state.kingdoms[kid].name for kid in king.enemy_kingdom_ids if kid in state.kingdoms
+        ]
+        if enemy_names:
+            lines.append(render_trail_king_enemies(trailer_name, target_name, enemy_names, rng))
+        else:
+            lines.append(render_trail_king_no_enemies(trailer_name, target_name, rng))
 
         province_names = [_province_label(state, coord) for coord in king.controlled_provinces]
         if province_names:
