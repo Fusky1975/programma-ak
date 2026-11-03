@@ -662,15 +662,18 @@ reading over-read a shorter English excerpt). This composer's own
 ``_parse_trade_gift()`` now also enforces that same different-Kingdom
 requirement for a gold gift specifically (the item path has no such
 restriction), matching the engine rather than only discovering the
-mismatch at turn-processing time. Two further things that same fuller
-text confirmed as real, sourced mechanics were deliberately NOT
-touched, per the user's own explicit choice: the 10% cap still uses
-the giver's live treasury rather than a "treasury at the start of the
-gameturn" snapshot (no such snapshot exists anywhere in ``GameState``
-today), and the real conditional/barter Give ("the gift is made only
-if the recipient Gives back a specified item in the same phase") has
-no execution-layer support at all -- see ``turn/trade_execution.py``'s
-own docstring for why neither is a quick fix.
+mismatch at turn-processing time. Still deliberately NOT touched: the
+10% cap uses the giver's live treasury rather than a "treasury at the
+start of the gameturn" snapshot (no such snapshot exists anywhere in
+``GameState`` today) -- see ``turn/trade_execution.py``'s own docstring
+for why that one isn't a quick fix. The real conditional/barter Give
+("the gift is made only if the recipient Gives back a specified item
+in the same phase") turned out to need no composer or execution-layer
+support at all (2026-11-04, see that same module's own current
+docstring): per the user's own explicit choice, a one-sided cross-
+Kingdom Give always completes regardless of reciprocation, so a
+"conditional" Give and an ordinary one are behaviorally identical --
+nothing to compose differently here either way.
 
 The composer gets a dedicated recipient dropdown (``trade_recipient_
 options()``) and a dedicated gift dropdown (``trade_gift_options()``,

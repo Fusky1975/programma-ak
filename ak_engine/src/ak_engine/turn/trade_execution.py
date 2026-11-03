@@ -81,16 +81,25 @@ uses the giver's *live* treasury at the moment of this specific Give,
 not a "treasury at the start of the gameturn" snapshot RULES.AK/
 ADDEND.AK both also specify -- no such snapshot exists anywhere in
 ``GameState``/``KingdomState`` today, and adding one was explicitly
-deferred. **Also deliberately NOT implemented**: the real, sourced
-conditional/barter Give mechanic ("the gift will be made only if the
-recipient Gives you a specified magic item in the same phase") --
-confirmed structurally to need no third wire field (``turn/trade_
-decode.py``'s own ``TradeRequest`` already models both real fields),
-but real cross-leader, same-phase reciprocity-checking execution logic
-that doesn't exist anywhere in ``turn/plan_dispatch.py``/``turn/
-turn_processor.py`` today -- a structural gap in the same family as
-Leave's own deferred Initiative-ordering gap, out of scope for this
-round per the user's own explicit choice.
+deferred. **2026-11-04 -- the conditional/barter Give mechanic ("the gift will be
+made only if the recipient Gives you a specified magic item in the
+same phase") needs no further code here, per the user's own explicit
+decision.** There is no wire field anywhere (``turn/trade_decode.py``'s
+own ``TradeRequest`` has exactly two real fields, neither of them a
+"what I want back" slot) to record *which* item a giver demands in
+return, or even *whether* a given Give order was meant to be
+conditional at all -- only the two independent parties' own real Give
+orders this phase. Asked directly what a one-sided cross-Kingdom Give
+(no reciprocal Give back this same phase) should do: **the gift still
+completes, unconditionally, exactly like any other Give** -- the user's
+own explicit choice, not a guess. Under that rule, a "conditional" Give
+and an ordinary one are behaviorally identical: each side's own Give
+order already resolves entirely on its own merits (ownership/treasury
+checks), regardless of what the other party orders, which is exactly
+what ``execute_give()`` already does, unchanged. "Conditional" Give is
+therefore a real [3.18] mechanic at the table -- two players privately
+agreeing to both submit matching Give orders the same phase -- with no
+corresponding engine-side gate to build; nothing here was a bug.
 """
 
 from __future__ import annotations
