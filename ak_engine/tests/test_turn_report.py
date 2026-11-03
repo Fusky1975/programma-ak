@@ -110,7 +110,6 @@ from ak_engine.report.turn_report import (
     describe_challenge,
     describe_curator_research,
     describe_encounter_combat,
-    describe_patrol_combat,
     describe_random_encounter,
     describe_random_encounter_combat,
     describe_turn_results,
@@ -4474,24 +4473,31 @@ def test_describe_encounter_combat_returns_empty_for_a_peaceful_accepted_plan():
     assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
 
 
-# -- Phase 733: describe_patrol_combat() --
+# -- Phase 733 / 2026-11-06: describe_encounter_combat() for Patrol --
+# PatrolExecutionResult used to have its own narrower sibling composer,
+# describe_patrol_combat(), because its result shape didn't carry
+# Steal/Fire-Arrow/fizzled-spell data. Now that execute_patrol() shares
+# the exact same resolve_challenge_combat() core (and therefore the
+# exact same PatrolExecutionResult field names) Pursue's armyless case
+# already uses, describe_encounter_combat() itself is reused directly --
+# see that function's own docstring addendum.
 
 
-def test_describe_patrol_combat_returns_empty_when_no_combat_occurred():
+def test_describe_encounter_combat_for_patrol_returns_empty_when_no_combat_occurred():
     result = PatrolExecutionResult(intercepted=False, reason="wandered into a random hex")
     rng = ScriptedRandom([])
 
-    assert describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
+    assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
 
 
-def test_describe_patrol_combat_returns_empty_for_a_peaceful_accepted_encounter():
+def test_describe_encounter_combat_for_patrol_returns_empty_for_a_peaceful_accepted_encounter():
     result = PatrolExecutionResult(intercepted=True, target_leader_id=2, combat_occurred=False)
     rng = ScriptedRandom([])
 
-    assert describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
+    assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
 
 
-def test_describe_patrol_combat_narrates_melee_swings_in_order():
+def test_describe_encounter_combat_for_patrol_narrates_melee_swings_in_order():
     result = PatrolExecutionResult(
         intercepted=True,
         target_leader_id=2,
@@ -4500,7 +4506,7 @@ def test_describe_patrol_combat_narrates_melee_swings_in_order():
     )
     rng = ScriptedRandom([0.1] * 40, choice_indices=[0] * 10)
 
-    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
     assert lines == [
         "Aldric assailed Borin and inflicted 5 damage points.",
@@ -4508,7 +4514,7 @@ def test_describe_patrol_combat_narrates_melee_swings_in_order():
     ]
 
 
-def test_describe_patrol_combat_narrates_the_mortal_wound_line_for_the_loser():
+def test_describe_encounter_combat_for_patrol_narrates_the_mortal_wound_line_for_the_loser():
     result = PatrolExecutionResult(
         intercepted=True,
         target_leader_id=2,
@@ -4521,7 +4527,7 @@ def test_describe_patrol_combat_narrates_the_mortal_wound_line_for_the_loser():
     # items were looted.
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0, 0])
 
-    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
     assert lines == [
         "Borin was mortally wounded.",
@@ -4531,7 +4537,7 @@ def test_describe_patrol_combat_narrates_the_mortal_wound_line_for_the_loser():
     ]
 
 
-def test_describe_patrol_combat_narrates_the_spoils_line_with_one_looted_item():
+def test_describe_encounter_combat_for_patrol_narrates_the_spoils_line_with_one_looted_item():
     # Phase 836: PatrolExecutionResult.looted_item_ids (Phase 313) was
     # populated by execute_patrol() from day one but never read here --
     # the SPOILS line describe_encounter_combat() already renders for
@@ -4549,7 +4555,7 @@ def test_describe_patrol_combat_narrates_the_spoils_line_with_one_looted_item():
     # Phase 859: one more choice_indices entry for THATT.X.
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0])
 
-    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
 
     assert lines == [
         "Borin was mortally wounded.",
@@ -4559,7 +4565,7 @@ def test_describe_patrol_combat_narrates_the_spoils_line_with_one_looted_item():
     ]
 
 
-def test_describe_patrol_combat_narrates_the_spoils_line_when_the_patroller_is_the_loser():
+def test_describe_encounter_combat_for_patrol_narrates_the_spoils_line_when_the_patroller_is_the_loser():
     # The winner isn't always "a" -- an intruder can win the duel and
     # loot the patroller. Proves winner_name resolution, not just the
     # a_leader_id-is-always-the-winner shortcut.
@@ -4576,7 +4582,7 @@ def test_describe_patrol_combat_narrates_the_spoils_line_when_the_patroller_is_t
     # Phase 859: one more choice_indices entry for THATT.X.
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0])
 
-    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
 
     assert lines == [
         "Aldric was mortally wounded.",
@@ -4586,7 +4592,7 @@ def test_describe_patrol_combat_narrates_the_spoils_line_when_the_patroller_is_t
     ]
 
 
-def test_describe_patrol_combat_omits_the_spoils_line_without_state():
+def test_describe_encounter_combat_for_patrol_omits_the_spoils_line_without_state():
     # Same "no data, no guess" fallback _item_display_names() itself
     # already documents -- non-regression for every existing caller
     # that never threads state through. THATT.X (Phase 859) still
@@ -4604,7 +4610,7 @@ def test_describe_patrol_combat_omits_the_spoils_line_without_state():
     )
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
 
-    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
     assert lines == [
         "Borin was mortally wounded.",

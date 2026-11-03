@@ -8136,7 +8136,7 @@ def describe_pursue(
 
 
 def describe_encounter_combat(
-    result: ChallengeExecutionResult | PursueExecutionResult,
+    result: ChallengeExecutionResult | PursueExecutionResult | PatrolExecutionResult,
     *,
     a_leader_id: int,
     a_name: str,
@@ -8160,7 +8160,16 @@ def describe_encounter_combat(
     own `ActionCode.PURSUE` branch (which still opens with `describe_
     pursue()`'s own `_LCatch` sentence separately, unchanged) -- the same
     "shared field names, no isinstance check" reuse `describe_steal()`
-    already established for these same two result types (Phase 306).
+    already established for these same result types (Phase 306).
+
+    **2026-11-06**: also reused directly for `turn/patrol_execution.py
+    PatrolExecutionResult`, once that type gained the same field names
+    (see its own 2026-11-06 docstring addendum) -- Patrol used to have a
+    separate, narrower sibling composer here (`describe_patrol_combat()`,
+    removed) because its result shape genuinely didn't carry Steal/Fire-
+    Arrow/fizzled-spell data; now that it does, a third near-identical
+    composer would just be the same bug class this docstring already
+    warns about for Challenge/Pursue -- one shared function instead.
 
     Returns `[]` outright when `result.combat_occurred` is `False` --
     covers every administrative rejection (not accepted, not co-located,
@@ -8264,89 +8273,6 @@ def describe_encounter_combat(
         # (`looted_item_ids` non-empty but `state=None`, so `item_names`
         # comes back `[]`) renders neither, the same "no data, no guess"
         # fallback the SPOILS lines already use.
-        lines.append(render_thief_searches_treasure(winner_name, loser_name, rng))
-        if result.looted_item_ids:
-            item_names = _item_display_names(state, result.looted_item_ids)
-            if len(item_names) == 1:
-                lines.append(render_treasure_spoils_from_corpse(winner_name, loser_name, rng))
-            elif len(item_names) >= 2:
-                lines.append(
-                    render_group_spoils_from_corpse(winner_name, loser_name, item_names, rng, is_sea=is_sea)
-                )
-        else:
-            lines.append(render_thief_search_failed(winner_name, rng))
-
-    return lines
-
-
-def describe_patrol_combat(
-    result: PatrolExecutionResult,
-    *,
-    a_leader_id: int,
-    a_name: str,
-    b_name: str,
-    rng: random.Random,
-    is_sea: bool = False,
-    state: GameState | None = None,
-) -> list[str]:
-    """Phase 733: a smaller sibling of ``describe_encounter_combat()``
-    above, for ``turn/patrol_execution.py PatrolExecutionResult``
-    specifically -- deliberately **not** a call to `describe_encounter_
-    combat()` itself: that function also renders a Fire Arrow loop and
-    a ``describe_steal()`` sub-line, and Patrol has neither (its own
-    module docstring: "Patrol has no Fire Arrow at all", and its combat
-    resolution never walks a Steal tactic either) -- widening
-    ``PatrolExecutionResult`` with fields it doesn't otherwise need just
-    to satisfy that reuse isn't worth it, the same reasoning ``describe_
-    random_encounter_combat()`` already established for its own,
-    differently-shaped sibling case. No sourced sentence exists for a
-    non-combat Patrol outcome (a Spy Table wander, a refused encounter,
-    a peaceful accepted plan) -- only the real swings that happened are
-    narrated here, the same "no source, no guess" stance `describe_
-    encounter_combat()`'s own docstring already states for the
-    identical situation.
-
-    **Phase 836 bug fix**: ``PatrolExecutionResult.looted_item_ids``
-    (Phase 313, the exact same "loser's own items transfer to the
-    winner on a decisive kill" fact ``ChallengeExecutionResult``/
-    ``PursueExecutionResult`` already carry) was populated by
-    ``execute_patrol()`` from day one but never read here -- this
-    composer's own death branch stopped at ``render_character_death()``,
-    silently dropping the SPOILS sentence ``describe_encounter_combat()``
-    already renders for the identical situation. The same "sibling
-    field never cross-checked" class already found in this file's own
-    Kill-Enemy Berserk-retaliation composer (Phase 830).
-
-    **Phase 859**: `render_thief_searches_treasure()`/`render_thief_
-    search_failed()` (THATT.X/THFAIL.X) now bracket the SPOILS check
-    below too -- see `describe_encounter_combat()`'s own Phase 859
-    addendum for the full sourcing.
-    """
-
-    if not result.combat_occurred:
-        return []
-
-    lines: list[str] = []
-    for swing in result.melee_swings:
-        attacker_name, defender_name = (a_name, b_name) if swing.attacker == "a" else (b_name, a_name)
-        attack_line = render_melee_attack(attacker_name, defender_name, _MELEE_ATTACK_METHOD, rng)
-        attack_line += (
-            render_attack_hit(defender_name, swing.damage, rng)
-            if swing.hit
-            else render_attack_missed(attacker_name, defender_name, "blade", rng, is_sea=is_sea)
-        )
-        lines.append(attack_line)
-        proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
-        if proc_line is not None:
-            lines.append(proc_line)
-
-    if result.loser_killed:
-        loser_name = a_name if result.loser_leader_id == a_leader_id else b_name
-        winner_name = b_name if loser_name == a_name else a_name
-        lines.append(render_mortally_wounded(loser_name, rng, is_sea=is_sea))
-        lines.append(render_character_death(loser_name, rng))
-        # Phase 859: THATT.X/THFAIL.X -- see describe_encounter_combat()'s
-        # own Phase 859 addendum for the full sourcing.
         lines.append(render_thief_searches_treasure(winner_name, loser_name, rng))
         if result.looted_item_ids:
             item_names = _item_display_names(state, result.looted_item_ids)
@@ -9622,8 +9548,13 @@ def describe_turn_results(
             leader_location = _leader_location(state, entry.leader_id)
             province = state.provinces.get(leader_location)
             is_sea = province is not None and province.effective_terrain() is Terrain.SEA
+            # 2026-11-06: PatrolExecutionResult now shares the same field
+            # names as ChallengeExecutionResult/PursueExecutionResult
+            # (see that dataclass's own docstring addendum), so this
+            # reuses describe_encounter_combat() directly -- the
+            # formerly-separate describe_patrol_combat() sibling is gone.
             lines.extend(
-                describe_patrol_combat(
+                describe_encounter_combat(
                     entry.result,
                     a_leader_id=entry.leader_id,
                     a_name=caster_name,
@@ -10253,7 +10184,7 @@ def _item_display_names(state: GameState | None, item_ids: list[int]) -> list[st
 
 
 def describe_steal(
-    result: ChallengeExecutionResult | PursueExecutionResult,
+    result: ChallengeExecutionResult | PursueExecutionResult | PatrolExecutionResult,
     *,
     thief_name: str,
     victim_name: str,
@@ -10264,9 +10195,10 @@ def describe_steal(
     ``ChallengeExecutionResult`` (``turn/challenge_execution.py
     execute_challenge()``, Phase 305/306) -- the same ``describe_hire()``
     -style composer, reused by Pursue's own ``PursueExecutionResult``
-    (which shares the same ``steal_outcome``/``steal_capture_range``
-    field names -- see that module's own docstring) via a plain
-    attribute read, not an isinstance check.
+    and (2026-11-06) Patrol's own ``PatrolExecutionResult`` (both share
+    the same ``steal_outcome``/``steal_capture_range`` field names --
+    see each module's own docstring) via a plain attribute read, not an
+    isinstance check.
 
     Wires two real, previously-unconsumed renderers (both already
     sourced, tested, and dispatch-ready before this phase, per their own

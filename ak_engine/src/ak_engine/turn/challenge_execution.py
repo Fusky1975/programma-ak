@@ -568,19 +568,20 @@ def plan_needs_combat_dispatch(request: ChallengeRequest) -> bool:
     the same treatment only has to be added to
     ``_COMBAT_DISPATCH_MANEUVERS`` below, not to every caller.
 
-    **Not reused by ``turn/patrol_execution.py execute_patrol()``**,
-    despite that function importing ``has_combat_intent`` for the same
-    kind of early-return gate: unlike Challenge/Pursue, Patrol never
-    dispatches into ``resolve_challenge_combat()``'s own tactic walk at
-    all (its own post-gate path is a single, unconditional
-    ``resolve_melee_duel()`` call, no Steal/Give handling of any kind)
-    -- widening its gate the same way would silently force a melee
-    fight onto a GM's own deliberately peaceful Steal- or Give-only
-    Patrol plan instead of actually making either tactic fire, a worse
-    behavior change than the gap it would "fix." Giving Patrol real
-    Steal/Give dispatch needs ``execute_patrol()`` to gain the same
-    tactic-walk reuse Pursue's own armyless case already has, a
-    separate, larger change, not attempted here.
+    **2026-11-06 -- now reused by ``turn/patrol_execution.py
+    execute_patrol()`` too.** Until this addendum, Patrol never
+    dispatched into ``resolve_challenge_combat()``'s own tactic walk at
+    all (its own post-gate path was a single, unconditional ``resolve_
+    melee_duel()`` call, no Steal/Give handling of any kind) -- widening
+    its gate here alone, without also switching its combat resolution
+    to this same function, would have silently forced a melee fight onto
+    a GM's own deliberately peaceful Steal- or Give-only Patrol plan
+    instead of actually making either tactic fire, a worse behavior
+    change than the gap it would "fix." ``execute_patrol()`` now does
+    both together -- this gate *and* ``resolve_challenge_combat()``
+    itself, the same pairing Pursue's own armyless case already uses --
+    so Patrol genuinely gains Steal/Give dispatch, not just a wider gate
+    in front of the same narrow duel.
     """
 
     return has_combat_intent(request) or any(tactic.maneuver in _COMBAT_DISPATCH_MANEUVERS for tactic in request.tactics)
