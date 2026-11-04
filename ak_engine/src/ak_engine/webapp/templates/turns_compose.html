@@ -1133,6 +1133,14 @@
   // only discovered the rejection after a full-page POST, unlike the
   // Talk/Fulfill case which was already disabled client-side.
   var STEAL_VALUE = "{{ steal_value }}";
+  // 2026-11-07 bug fix: Flee and Fire Arrow may each appear at most
+  // once per Encounter Plan (moves_compose.py's own _parse_search_
+  // tactics() has_flee/has_shoot checks) -- the same category of
+  // client-side gap the Steal fix above closed for the mutual-
+  // exclusion rule, left unaddressed here until now. Picking either a
+  // second time previously had no client-side hint at all.
+  var FLEE_VALUE = "{{ flee_value }}";
+  var SHOOT_VALUE = "{{ shoot_value }}";
   var SAY_VALUE = "{{ say_value }}";
   var CAST_VALUE = "{{ cast_value }}";
   var USE_MI_VALUE = "{{ use_mi_value }}";
@@ -1165,11 +1173,22 @@
   // value, so a future fourth exclusive Maneuver only needs adding to
   // this one array, not a new copy-pasted block.
   var MUTUALLY_EXCLUSIVE_TACTIC_VALUES = [TALK_VALUE, FULFILL_VALUE, STEAL_VALUE];
+  // Flee and Fire Arrow may each appear at most once in the same plan
+  // -- a different rule from mutual exclusion (each value only
+  // conflicts with itself, not with the others), so it's disabled
+  // against its own already-chosen slot rather than against this
+  // whole array as a group.
+  var AT_MOST_ONCE_TACTIC_VALUES = [FLEE_VALUE, SHOOT_VALUE];
 
   function updateEncounterPlan(plan) {
     var slots = plan.querySelectorAll(".compose-tactic-slot");
     if (!slots.length) return;
     var chosen = MUTUALLY_EXCLUSIVE_TACTIC_VALUES.filter(function (value) {
+      return Array.prototype.some.call(slots, function (select) {
+        return select.value === value;
+      });
+    });
+    var alreadyPicked = AT_MOST_ONCE_TACTIC_VALUES.filter(function (value) {
       return Array.prototype.some.call(slots, function (select) {
         return select.value === value;
       });
@@ -1182,6 +1201,11 @@
           return c !== value;
         });
         option.disabled = otherValueAlreadyChosen && select.value !== value;
+      });
+      AT_MOST_ONCE_TACTIC_VALUES.forEach(function (value) {
+        var option = select.querySelector('option[value="' + value + '"]');
+        if (!option) return;
+        option.disabled = option.disabled || (alreadyPicked.indexOf(value) !== -1 && select.value !== value);
       });
     });
   }

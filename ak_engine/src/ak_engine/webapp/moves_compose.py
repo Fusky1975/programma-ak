@@ -1185,6 +1185,7 @@ from ak_engine.turn.cast_execution import is_unfinalized_royal_heir
 from ak_engine.turn.combat import QUALITY_NAME, Quality
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.plan_dispatch import SUPPORTED_ACTIONS
 from ak_engine.turn.recruit import is_army_type_compatible_with_race, recruit_limit
 
 # Search's own "tl" slot (``turn/search_decode.py SearchRequest.
@@ -1871,6 +1872,60 @@ def _sorted_leaders(state: GameState) -> list[LeaderState]:
     return sorted(state.leaders.values(), key=lambda other: other.leader_id)
 
 
+def _trade_recipient_blackmail_king(state: GameState, leader: LeaderState) -> LeaderState | None:
+    """The blackmailer's own King a Give from ``leader`` may pay off
+    even when not co-located -- the one non-co-located exception
+    ``trade_recipient_options()``/``_parse_trade_recipient()`` both
+    need, factored out so the two can never drift (see each function's
+    own docstring for the full rule).
+    """
+
+    if not leader.is_king:
+        return None
+    giver_kingdom = state.kingdoms.get(leader.kingdom_id)
+    claim = giver_kingdom.active_blackmail if giver_kingdom is not None else None
+    if claim is None:
+        return None
+    return next(
+        (other for other in state.leaders.values() if other.kingdom_id == claim.spy_kingdom_id and other.is_king),
+        None,
+    )
+
+
+def _trade_recipient_is_eligible(state: GameState, leader: LeaderState, candidate_id: int) -> bool:
+    """**2026-11-07 bug fix.** The real eligibility rule ``trade_
+    recipient_options()`` below already encodes for its own dropdown --
+    extracted here so ``_parse_trade_recipient()`` can finally re-run
+    the exact same check server-side ("defense in depth"), the one
+    thing this module's own docstring already explicitly expects of
+    every other target field. Previously ``_parse_trade_recipient()``
+    only checked that ``candidate_id`` resolved to *some* real leader,
+    with no co-location/Curator-self/blackmail-king re-check at all --
+    a tampered or stale POST naming any other real, ineligible leader
+    passed compose-time validation and was only caught much later and
+    silently (``turn/trade_execution.py execute_give()``'s own co-
+    location check returning ``applied=False``, not raising) at turn-
+    processing time.
+
+    True when ``candidate_id`` is: another leader (any Kingdom)
+    co-located with ``leader``; ``leader``'s own id, when ``leader``
+    currently holds ``Office.CURATOR`` (the "Self" research case); or
+    the blackmailer's own King, when ``leader`` carries an active
+    blackmail claim (the one non-co-located exception).
+    """
+
+    if candidate_id == leader.leader_id:
+        curator_holder = resolve_office_holder(state, Office.CURATOR)
+        return curator_holder is not None and curator_holder.leader_id == leader.leader_id
+
+    candidate = state.leaders.get(candidate_id)
+    if candidate is not None and candidate.location == leader.location:
+        return True
+
+    blackmail_king = _trade_recipient_blackmail_king(state, leader)
+    return blackmail_king is not None and blackmail_king.leader_id == candidate_id
+
+
 def trade_recipient_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
     """Every valid Give recipient for this leader, as ``(value, label)``
     pairs -- rulebook [3.18]: the recipient must be co-located ("che si
@@ -1890,6 +1945,13 @@ def trade_recipient_options(state: GameState, leader_id: int) -> list[tuple[str,
     this leader's own Kingdom currently carries an active ``KingdomState.
     active_blackmail`` claim (``turn/trade_execution.py execute_give()``'s
     own Phase 713 co-location waiver for paying it off).
+
+    **2026-11-07**: the co-location/Curator-self/blackmail-king
+    eligibility rule above is now shared with ``_parse_trade_recipient()``
+    via ``_trade_recipient_is_eligible()`` -- this function itself stays
+    a plain loop (it also needs each candidate's own display label,
+    which that boolean-only helper doesn't produce), but the two can no
+    longer silently disagree about who's eligible.
     """
 
     leader = state.leaders.get(leader_id)
@@ -1911,26 +1973,17 @@ def trade_recipient_options(state: GameState, leader_id: int) -> list[tuple[str,
     if curator_holder is not None and curator_holder.leader_id == leader_id:
         options.append((str(leader_id), "Self (research an item's magical function)"))
 
-    giver_kingdom = state.kingdoms.get(leader.kingdom_id) if leader.is_king else None
-    claim = giver_kingdom.active_blackmail if giver_kingdom is not None else None
-    if claim is not None:
-        blackmail_king = next(
+    blackmail_king = _trade_recipient_blackmail_king(state, leader)
+    if blackmail_king is not None and blackmail_king.leader_id not in offered_ids:
+        claim = state.kingdoms[leader.kingdom_id].active_blackmail
+        kingdom = state.kingdoms.get(claim.spy_kingdom_id)
+        kingdom_name = kingdom.name if kingdom is not None else f"Kingdom {claim.spy_kingdom_id}"
+        options.append(
             (
-                other
-                for other in state.leaders.values()
-                if other.kingdom_id == claim.spy_kingdom_id and other.is_king
-            ),
-            None,
-        )
-        if blackmail_king is not None and blackmail_king.leader_id not in offered_ids:
-            kingdom = state.kingdoms.get(claim.spy_kingdom_id)
-            kingdom_name = kingdom.name if kingdom is not None else f"Kingdom {claim.spy_kingdom_id}"
-            options.append(
-                (
-                    str(blackmail_king.leader_id),
-                    f"Pay blackmail: {blackmail_king.name}, {kingdom_name} ({claim.amount} gold owed)",
-                )
+                str(blackmail_king.leader_id),
+                f"Pay blackmail: {blackmail_king.name}, {kingdom_name} ({claim.amount} gold owed)",
             )
+        )
     return options
 
 
@@ -2169,10 +2222,26 @@ def cast_character_target_options(state: GameState) -> list[tuple[str, str]]:
     their own, considerably more elaborate target handling instead
     (``resurrection_target_options()``/``charm_target_options()``/
     ``kill_enemy_target_options()`` below).
+
+    **2026-11-07 bug fix**: the active Valhalla visitor is still
+    excluded, though -- unlike the rest of this docstring's own
+    "per-spell research hasn't been done yet" disclaimer, this one
+    exclusion isn't per-spell at all: ``turn/cast_execution.py``'s own
+    generic cross-spell immunity ("any ``CHARACTER_TARGET_SPELLS``
+    spell but Resurrection fizzles against the Valhalla visitor")
+    already covers these exact four spells, and ``charm_target_
+    options()``/``kill_enemy_target_options()`` already exclude the
+    visitor from their own dropdowns for the identical, already-
+    confirmed reason. Leaving it offered here let a GM compose Oratory/
+    Clairvoyance/Phantasmal Armies/Mystic Winds against the visitor
+    with no warning, only to have it silently do nothing at turn-
+    processing time.
     """
 
     options: list[tuple[str, str]] = []
     for other in _sorted_leaders(state):
+        if other.leader_id == VALHALLA_VISITOR_LEADER_ID and other.valhalla_active_turn is not None:
+            continue
         kingdom = state.kingdoms.get(other.kingdom_id)
         kingdom_part = kingdom.name if kingdom is not None else "independent"
         title_part = "King" if other.is_king else "Hero"
@@ -2386,10 +2455,23 @@ class ComposedPhaseInput:
 
 
 def _parse_action(raw: str) -> ActionCode:
+    """**2026-11-07 bug fix**: now also rejects ``ActionCode.SUCC_
+    TRAIL`` -- the one ``ActionCode`` member ``turn/plan_dispatch.py``'s
+    own ``SUPPORTED_ACTIONS`` frozenset deliberately excludes "by
+    design." The compose page's own Action dropdown (``app.py``'s
+    ``turns_compose()``) no longer offers it either, but a direct,
+    tampered POST could still name it -- previously this composed a
+    perfectly normal-looking ``PlanPhase`` that only failed, opaquely,
+    at real turn-processing time.
+    """
+
     try:
-        return ActionCode(int(raw))
+        action = ActionCode(int(raw))
     except (TypeError, ValueError) as exc:
         raise InvalidComposedMovesError(f"{raw!r} is not a valid Action.") from exc
+    if action not in SUPPORTED_ACTIONS:
+        raise InvalidComposedMovesError(f"{action.name} isn't a composable Action.")
+    return action
 
 
 def _parse_int(raw: str, *, field_label: str) -> int:
@@ -2409,13 +2491,39 @@ def _parse_extra(raw: str) -> list[int]:
     return values
 
 
-def _parse_move_target(raw: str, *, board_width: int, phase_label: str) -> int:
+def _parse_move_target(raw: str, *, board_width: int, phase_label: str, state: GameState) -> int:
+    """**2026-11-07 bug fix**: now validates the posted destination
+    against ``state.provinces`` -- this used to be one of only two
+    target-dropdown-backed fields in the whole module (the other being
+    Defend's own province field, left as-is: see ``_parse_defend_
+    target()``'s own docstring for why its decoded value is currently
+    never read anywhere and this gap is harmless there) with no
+    existence check at all. Unlike Defend, an off-map or nonexistent
+    destination here is a real crash, not a harmless no-op: ``turn/
+    move_execution.py execute_move()`` raises an unhandled ``ValueError``
+    ("no province data for ...") when ``state.provinces.get()`` comes
+    back empty, caught only by ``plan_dispatch.py run_leader_plan()``'s
+    own intentionally-broad per-phase exception handler -- so a
+    tampered or off-map destination used to surface as an opaque
+    internal exception recorded against that phase, instead of a
+    clean compose-time rejection like every other target field gives.
+    Also reused by Cast's/Use Item's own province-target spells
+    (Scar Terrain/Illusory Terrain/etc., same ``CAST_PROVINCE_TARGET_
+    SPELLS`` call sites), which inherit this fix automatically.
+    """
+
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Move destination.")
     x_str, _, y_str = raw.partition(",")
     x = _parse_int(x_str, field_label=f"{phase_label} Move destination")
     y = _parse_int(y_str, field_label=f"{phase_label} Move destination")
-    return encode_hex_number(HexCoord(x, y), board_width)
+    target = encode_hex_number(HexCoord(x, y), board_width)
+    if state.provinces.get(HexCoord(x, y)) is None:
+        # Defense in depth: every dropdown-offered coordinate is a real
+        # province, but a direct, tampered POST could still name an
+        # off-map or otherwise nonexistent one.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a real province to Move to.")
+    return target
 
 
 def _parse_defend_target(raw: str, *, board_width: int, phase_label: str) -> int:
@@ -2506,21 +2614,27 @@ def _parse_recruit_target(raw: str, *, leader_id: int, phase_label: str, state: 
     (2) A real, co-located leader whose own id happens to equal
     ``NO_LEADER_SENTINEL`` (255) is wire-indistinguishable from
     ``"garrison"`` once encoded -- ``decode_recruit_phase()`` reads raw
-    ``255`` as "no leader" unconditionally. Rejected outright with a
-    dedicated message, the same real wire-format limit ``_parse_leave_
-    target()`` now guards against too.
+    ``255`` as "no leader" unconditionally. Rejected via the shared
+    ``_reject_no_leader_sentinel_collision()`` helper, the same real
+    wire-format limit ``_parse_leave_target()`` guards against too.
+
+    **2026-11-07 bug fix (3)**: the "self"/empty branch used to return
+    ``leader_id`` straight through with no equivalent check -- a Hero
+    whose own real ``leader_id`` happens to be 255 leaving the Recruit
+    target dropdown on its default "Self" selection hit the exact same
+    collision bug (2) above closes for an explicitly-named *other*
+    leader, just never checked on this branch: the new unit silently
+    went to the Garrison Commander instead of the Hero who recruited
+    it. Both branches now go through the one shared helper.
     """
 
     if not raw or raw == "self":
+        _reject_no_leader_sentinel_collision(leader_id, phase_label, "Recruit")
         return leader_id
     if raw == "garrison":
         return NO_LEADER_SENTINEL
     target_id = _parse_int(raw, field_label=f"{phase_label} Recruit target")
-    if target_id == NO_LEADER_SENTINEL:
-        raise InvalidComposedMovesError(
-            f"{phase_label}: leader #{NO_LEADER_SENTINEL} can't be named as a Recruit target -- "
-            "it's indistinguishable on the wire from the Garrison Commander."
-        )
+    _reject_no_leader_sentinel_collision(target_id, phase_label, "Recruit")
     leader = state.leaders.get(leader_id)
     target_leader = state.leaders.get(target_id)
     if leader is None or target_leader is None or target_leader.location != leader.location:
@@ -2533,7 +2647,9 @@ def _parse_recruit_target(raw: str, *, leader_id: int, phase_label: str, state: 
     return target_id
 
 
-def _parse_recruit_types(form: dict[str, str], leader_id: int, n: int, *, phase_label: str) -> list[int]:
+def _parse_recruit_types(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState
+) -> list[int]:
     """Reads this Recruit phase's own ``recruit_type_<leader_id>_<n>_
     <slot>`` fields (``slot`` in ``0..RECRUIT_TYPE_SLOT_COUNT-1``) into
     a list of real ``ArmyType`` ordinals -- the same no-gaps convention
@@ -2541,7 +2657,22 @@ def _parse_recruit_types(form: dict[str, str], leader_id: int, n: int, *, phase_
     list there; a later non-empty slot after one is rejected). At least
     one type must be chosen -- a Recruit order with nothing to recruit
     isn't a real order.
+
+    **2026-11-07 bug fix**: the "Defense in depth" check here used to
+    only verify the posted ordinal was *some* real ``ArmyType``,
+    against the full enum -- weaker than ``recruit_type_options()``'s
+    own real offered set, which excludes the 8 ordinals with no
+    ``ARMY_TABLE`` cost entry and any type incompatible with this
+    leader's own current province's race. A tampered POST naming one
+    of those excluded-but-real ordinals (e.g. Vampires) used to pass
+    this check and only be rejected later, at turn-processing time, by
+    ``turn/recruit.py resolve_recruit()``'s own ``IncompatibleRaceError``
+    -- cleanly, not a crash, but later and less clearly than every
+    other target field's own compose-time rejection.
     """
+
+    leader = state.leaders.get(leader_id)
+    province = state.provinces.get(leader.location) if leader is not None else None
 
     ordinals: list[int] = []
     stopped_at: int | None = None
@@ -2557,11 +2688,18 @@ def _parse_recruit_types(form: dict[str, str], leader_id: int, n: int, *, phase_
                 "fill the Recruit order without gaps."
             )
         ordinal = _parse_int(raw, field_label=f"{phase_label} Recruit type {slot + 1}")
-        if ordinal not in ARMY_TYPE_BY_ORDINAL:
-            # Defense in depth: every dropdown-offered ordinal is a real
-            # key of ARMY_TYPE_BY_ORDINAL (recruit_type_options() only
-            # ever lists those), but a direct, tampered POST could still
-            # name an out-of-range value.
+        army_type = ARMY_TYPE_BY_ORDINAL.get(ordinal)
+        if (
+            army_type is None
+            or province is None
+            or army_type not in ARMY_TABLE
+            or not is_army_type_compatible_with_race(army_type, province.race)
+        ):
+            # Defense in depth: every dropdown-offered ordinal is one
+            # recruit_type_options() already filtered to a real,
+            # costed, race-compatible type at this leader's own
+            # current location, but a direct, tampered POST could
+            # still name any other real ArmyType ordinal.
             raise InvalidComposedMovesError(f"{phase_label}: recruit type slot {slot + 1} isn't a known army type.")
         ordinals.append(ordinal)
     if not ordinals:
@@ -2590,6 +2728,36 @@ def _reject_single_army_sentinel_collision(army_ids: list[int], phase_label: str
             f"{phase_label}: army #{ALL_ARMIES_SENTINEL} can't be the only {order_label} target in this order -- "
             "it's indistinguishable on the wire from the 'ALL' option. Add a second army to this order, or use "
             "'ALL' if that's really the intent."
+        )
+
+
+def _reject_no_leader_sentinel_collision(target_id: int, phase_label: str, order_label: str) -> None:
+    """**2026-11-07 bug fix.** A real leader whose own ``leader_id``
+    happens to equal ``NO_LEADER_SENTINEL`` (255) is wire-
+    indistinguishable from "no leader" (Garrison Commander, or Recruit's
+    own "self" default) once encoded: both ``decode_army_list_phase()``
+    and ``decode_recruit_phase()`` read a raw ``255`` as ``None``
+    unconditionally. ``GameState.new_leader_id()`` is an uncapped
+    running counter, so leader id 255 is a perfectly real, reachable id
+    in a long-running game -- not merely theoretical, the same reasoning
+    ``_reject_single_army_sentinel_collision()`` right above already
+    gives for the analogous army-id case.
+
+    Unified here (2026-11-07) after the two Leave/Recruit guards that
+    first closed this gap (2026-11-06) were each a separate, hand-
+    written inline check -- unlike the army case above, which already
+    had one shared helper from day one. Called for every leader id a
+    Recruit/Leave order would otherwise compose as its own real target
+    (including Recruit's own "self" default, which collides exactly
+    the same way when the acting leader's own id happens to be 255 --
+    the one case the original two inline guards didn't cover, since
+    neither ever checked its own order's self/default branch).
+    """
+
+    if target_id == NO_LEADER_SENTINEL:
+        raise InvalidComposedMovesError(
+            f"{phase_label}: leader #{NO_LEADER_SENTINEL} can't be named as a {order_label} target -- "
+            "it's indistinguishable on the wire from the Garrison Commander."
         )
 
 
@@ -2687,8 +2855,9 @@ def _parse_leave_target(form: dict[str, str], leader_id: int, n: int, *, phase_l
     phase()`` reads raw ``255`` as "no leader" (Garrison Commander)
     unconditionally, silently dropping both the named Hero and the
     Kingdom-transfer-to-an-ally effect the GM may have been relying on.
-    Rejected outright with a dedicated message, the same real wire-
-    format limit ``_parse_recruit_target()`` now guards against too.
+    Rejected via the shared ``_reject_no_leader_sentinel_collision()``
+    helper, the same real wire-format limit ``_parse_recruit_target()``
+    guards against too.
     """
 
     raw = form.get(f"leave_target_{leader_id}_{n}", "")
@@ -2697,11 +2866,7 @@ def _parse_leave_target(form: dict[str, str], leader_id: int, n: int, *, phase_l
     target_id = _parse_int(raw, field_label=f"{phase_label} Leave target")
     if target_id == leader_id:
         raise InvalidComposedMovesError(f"{phase_label}: a leader can't Leave an army to himself.")
-    if target_id == NO_LEADER_SENTINEL:
-        raise InvalidComposedMovesError(
-            f"{phase_label}: leader #{NO_LEADER_SENTINEL} can't be named as a Leave target -- "
-            "it's indistinguishable on the wire from the Garrison Commander."
-        )
+    _reject_no_leader_sentinel_collision(target_id, phase_label, "Leave")
     leader = state.leaders.get(leader_id)
     target_leader = state.leaders.get(target_id)
     if leader is None or target_leader is None or not state.is_allied(leader.kingdom_id, target_leader.kingdom_id):
@@ -2843,16 +3008,21 @@ def _parse_trade_recipient(form: dict[str, str], leader_id: int, n: int, *, phas
     already a bare leader id (``trade_recipient_options()``'s own
     dropdown value), so no sentinel decoding is needed, unlike Leave's
     own target field.
+
+    **2026-11-07 bug fix**: this used to only check that the posted id
+    resolved to *some* real leader, unlike every other target field in
+    this module -- see ``_trade_recipient_is_eligible()``'s own
+    docstring for the full gap this closes (co-location/Curator-self/
+    blackmail-king re-validation, "defense in depth" against a
+    tampered or stale POST).
     """
 
     raw = form.get(f"trade_recipient_{leader_id}_{n}", "")
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Give recipient.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Give recipient")
-    if state.leaders.get(target_id) is None:
-        # Defense in depth: every dropdown-offered id is a real,
-        # currently-live leader, but a direct, tampered POST could
-        # still name one that doesn't exist.
+    leader = state.leaders.get(leader_id)
+    if leader is None or not _trade_recipient_is_eligible(state, leader, target_id):
         raise InvalidComposedMovesError(f"{phase_label}: choose a Give recipient.")
     return target_id
 
@@ -2871,6 +3041,17 @@ def _parse_trade_gift(
     enforce the gold path's own different-Kingdom requirement
     (``turn/trade_execution.py execute_give()``'s own 2026-10-29
     addendum) -- the item path has no such restriction.
+
+    **2026-11-07 bug fix**: the gold branch now also rejects an amount
+    that collides with an item id this same giver owns. ``obj`` is one
+    shared, overloaded field for both the item and gold paths --
+    ``turn/trade_execution.py execute_give()`` disambiguates it by
+    checking item ownership *first* ("si passa l'oggetto e non
+    l'oro"), a real rulebook warning (RULES.AK [3.18]: "don't Give an
+    amount of gold that equals a magic item I.D. number carried by the
+    King"). Previously a GM composing e.g. "Give 12 gold" while owning
+    item #12 got no warning here at all -- the order would silently
+    transfer the item instead of the gold at turn-processing time.
     """
 
     raw = form.get(f"trade_gift_{leader_id}_{n}", "")
@@ -2881,6 +3062,12 @@ def _parse_trade_gift(
         amount = _parse_int(gold_raw, field_label=f"{phase_label} Give gold amount")
         if amount <= 0:
             raise InvalidComposedMovesError(f"{phase_label}: Give gold amount must be a positive number.")
+        owned_item = state.items.get(amount)
+        if owned_item is not None and owned_item.owner_leader_id == leader_id:
+            raise InvalidComposedMovesError(
+                f"{phase_label}: can't Give {amount} gold -- this leader owns item #{amount}, and the engine "
+                "would transfer the item instead of the gold (RULES.AK [3.18]). Choose a different amount."
+            )
         leader = state.leaders.get(leader_id)
         recipient = state.leaders.get(recipient_id)
         if (
@@ -3500,13 +3687,22 @@ def _parse_kill_enemy_target(
 
 
 def _parse_cast_character_target(raw: str, *, phase_label: str, state: GameState) -> int:
+    """**2026-11-07 bug fix**: now also rejects the active Valhalla
+    visitor -- see ``cast_character_target_options()``'s own docstring
+    for why this one exclusion isn't scoped to "per-spell research"
+    the way the rest of this target's own eligibility is.
+    """
+
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Cast target character.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Cast target")
-    if state.leaders.get(target_id) is None:
-        # Defense in depth: every dropdown-offered id is a real leader,
-        # but a direct, tampered POST could still name one that doesn't
-        # exist.
+    target = state.leaders.get(target_id)
+    if target is None or (
+        target.leader_id == VALHALLA_VISITOR_LEADER_ID and target.valhalla_active_turn is not None
+    ):
+        # Defense in depth: every dropdown-offered id is a real,
+        # non-Valhalla-visitor leader, but a direct, tampered POST
+        # could still name one that doesn't exist, or the visitor.
         raise InvalidComposedMovesError(f"{phase_label}: choose a Cast target character.")
     return target_id
 
@@ -3593,7 +3789,7 @@ def _parse_cast_phase(
 
     if spell in CAST_PROVINCE_TARGET_SPELLS:
         raw_target = form.get(f"cast_province_target_{leader_id}_{n}", "")
-        target = _parse_move_target(raw_target, board_width=state.board_width, phase_label=phase_label)
+        target = _parse_move_target(raw_target, board_width=state.board_width, phase_label=phase_label, state=state)
         extra: list[int | str] = [target]
         if spell is Spell.ILLUS_TERRAIN:
             extra.append(_parse_cast_terrain(form.get(f"cast_terrain_{leader_id}_{n}", ""), phase_label=phase_label))
@@ -3674,7 +3870,7 @@ def _parse_use_mi_phase(
 
     if spell in CAST_PROVINCE_TARGET_SPELLS:
         raw_target = form.get(f"use_mi_province_target_{leader_id}_{n}", "")
-        target = _parse_move_target(raw_target, board_width=state.board_width, phase_label=phase_label)
+        target = _parse_move_target(raw_target, board_width=state.board_width, phase_label=phase_label, state=state)
         extra: list[int | str] = [target]
         if spell is Spell.ILLUS_TERRAIN:
             extra.append(_parse_cast_terrain(form.get(f"use_mi_terrain_{leader_id}_{n}", ""), phase_label=phase_label))
@@ -4050,7 +4246,10 @@ def parse_phase_inputs(
         nested_plan: "ActionPlan | None" = None
         if action is ActionCode.LMOVE:
             obj = _parse_move_target(
-                form.get(f"move_target_{leader_id}_{n}", ""), board_width=board_width, phase_label=f"P{n}"
+                form.get(f"move_target_{leader_id}_{n}", ""),
+                board_width=board_width,
+                phase_label=f"P{n}",
+                state=state,
             )
             extra: list[int | str] = []
         elif action is ActionCode.DEFEND:
@@ -4070,7 +4269,7 @@ def parse_phase_inputs(
             obj = _parse_recruit_target(
                 form.get(f"recruit_target_{leader_id}_{n}", ""), leader_id=leader_id, phase_label=f"P{n}", state=state
             )
-            extra = [0, *_parse_recruit_types(form, leader_id, n, phase_label=f"P{n}"), -1]
+            extra = [0, *_parse_recruit_types(form, leader_id, n, phase_label=f"P{n}", state=state), -1]
         elif action is ActionCode.DISBAND:
             obj = 0
             extra = [0, *_parse_disband_targets(form, leader_id, n, phase_label=f"P{n}", state=state), -1]

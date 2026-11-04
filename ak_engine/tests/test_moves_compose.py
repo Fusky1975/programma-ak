@@ -179,6 +179,41 @@ def test_move_phase_without_a_chosen_destination_is_rejected():
         assert "Move destination" in str(exc)
 
 
+def test_parse_phase_inputs_rejects_succ_trail_even_via_a_direct_tampered_value():
+    # 2026-11-07 bug fix: ActionCode.SUCC_TRAIL (ordinal 20) is the one
+    # ActionCode plan_dispatch.py's own SUPPORTED_ACTIONS frozenset
+    # deliberately excludes "by design." app.py's compose page no
+    # longer offers it in the Action dropdown, but a direct, tampered
+    # POST could still name it -- this used to compose a normal-
+    # looking PlanPhase that only failed, opaquely, at real turn-
+    # processing time.
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.SUCC_TRAIL))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "isn't a composable Action" in str(exc)
+
+
+def test_move_phase_rejects_a_nonexistent_province_even_via_a_direct_tampered_value():
+    # 2026-11-07 bug fix: _parse_move_target() used to encode whatever
+    # x,y a POST carried with no existence check at all -- the real
+    # crash path this closes is turn/move_execution.py execute_move()
+    # raising an unhandled ValueError for an off-map/nonexistent
+    # province, previously only caught by a generic per-phase handler.
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.LMOVE))
+    form[f"move_target_{KING_ID}_0"] = "99,99"  # off-map, never offered in province_options()
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "real province to Move to" in str(exc)
+
+
 def test_non_move_phase_is_unaffected_by_the_move_destination_field():
     # WAIT, not Defend -- Defend now has its own dedicated, validated
     # target field (_parse_defend_target()), no longer a generic
@@ -1351,6 +1386,47 @@ def test_recruit_phase_target_leader_255_is_rejected_even_when_real_and_colocate
         assert "indistinguishable" in str(exc)
 
 
+def test_recruit_phase_self_default_is_rejected_when_the_recruiting_leader_is_255():
+    # 2026-11-07 bug fix: the "self"/empty branch used to return
+    # leader_id straight through with no NO_LEADER_SENTINEL check,
+    # unlike the explicit-other-leader branch right below it -- a Hero
+    # whose own real leader_id happens to be 255, leaving the Recruit
+    # target dropdown on its default "Self," used to silently recruit
+    # for the Garrison Commander instead of himself.
+    state = _state()
+    state.add_leader(
+        LeaderState(leader_id=NO_LEADER_SENTINEL, kingdom_id=1, name="Unlucky", location=HOME, skills=None)
+    )
+    form = _all_defend_form(NO_LEADER_SENTINEL)
+    form[f"action_{NO_LEADER_SENTINEL}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{NO_LEADER_SENTINEL}_0"] = "self"
+    form[f"recruit_type_{NO_LEADER_SENTINEL}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+
+    try:
+        parse_phase_inputs(form, NO_LEADER_SENTINEL, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "indistinguishable" in str(exc)
+
+
+def test_recruit_phase_rejects_a_type_excluded_from_its_own_dropdown():
+    # 2026-11-07 bug fix: _parse_recruit_types() used to validate a
+    # posted ordinal against the full ArmyType enum rather than
+    # recruit_type_options()'s own narrower, cost-table-and-race-
+    # filtered set -- Vampires has no ARMY_TABLE cost entry at all, so
+    # it's never offered in the dropdown, but used to pass this check.
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "self"
+    form[f"recruit_type_{KING_ID}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.VAMPIRES])
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "isn't a known army type" in str(exc)
+
+
 def test_recruit_phase_can_list_several_types_in_one_order():
     form = _all_defend_form(KING_ID)
     form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
@@ -2266,6 +2342,26 @@ def test_trade_phase_without_choosing_a_recipient_is_rejected():
         assert "choose a Give recipient" in str(exc)
 
 
+def test_trade_phase_rejects_a_noncolocated_recipient_even_via_a_direct_tampered_value():
+    # 2026-11-07 bug fix: _parse_trade_recipient() used to only check
+    # that the posted id resolved to *some* real leader, unlike every
+    # sibling target parser -- a real, non-co-located, non-Curator,
+    # non-blackmail leader anywhere else in the game used to pass.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Elsewhere", location=HexCoord(3, 2)))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_recipient_{KING_ID}_0"] = "2"
+    form[f"trade_gift_{KING_ID}_0"] = "gold"
+    form[f"trade_gold_{KING_ID}_0"] = "5"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Give recipient" in str(exc)
+
+
 def test_trade_phase_rejects_an_item_not_owned_even_via_a_direct_tampered_value():
     state = _state()
     state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
@@ -2295,6 +2391,28 @@ def test_trade_phase_rejects_a_non_positive_gold_amount():
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "must be a positive number" in str(exc)
+
+
+def test_trade_phase_rejects_a_gold_amount_that_collides_with_an_owned_item_id():
+    # 2026-11-07 bug fix: RULES.AK [3.18]'s own documented warning --
+    # turn/trade_execution.py execute_give() disambiguates obj by
+    # checking item ownership FIRST, so "Give <N> gold" while owning
+    # item #N would silently transfer the item instead of the gold.
+    state = _state()  # already owns one item (WAND_FIREBALL) -- see _state()'s own setup
+    item_id = next(iter(state.items))
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=2, name="Bram", location=HOME, is_king=True))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_recipient_{KING_ID}_0"] = "2"
+    form[f"trade_gift_{KING_ID}_0"] = "gold"
+    form[f"trade_gold_{KING_ID}_0"] = str(item_id)
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert f"owns item #{item_id}" in str(exc)
 
 
 def test_trade_phase_rejects_a_gold_gift_to_the_givers_own_kingdom():
@@ -3459,6 +3577,33 @@ def test_cast_character_target_options_lists_every_leader_any_kingdom():
     assert values == {str(KING_ID), "2"}
 
 
+def test_cast_character_target_options_excludes_the_active_valhalla_visitor():
+    # 2026-11-07 bug fix: turn/cast_execution.py's own generic immunity
+    # ("any CHARACTER_TARGET_SPELLS spell but Resurrection fizzles
+    # against the Valhalla visitor") covers Oratory/Clairvoyance/
+    # Phantasmal Armies/Mystic Winds too, not just Charm/Kill Enemy --
+    # charm_target_options()/kill_enemy_target_options() already
+    # exclude the visitor for this exact reason; this generic dropdown
+    # didn't.
+    from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
+
+    state = _state()
+    state.add_leader(
+        LeaderState(
+            leader_id=VALHALLA_VISITOR_LEADER_ID,
+            kingdom_id=None,
+            name="Valhalla Visitor",
+            location=HOME,
+            valhalla_active_turn=1,
+        )
+    )
+
+    options = cast_character_target_options(state)
+
+    values = {value for value, _label in options}
+    assert str(VALHALLA_VISITOR_LEADER_ID) not in values
+
+
 def test_cast_item_target_options_lists_every_item_including_unowned():
     state = _state()
     unowned_item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=None, charges=1)
@@ -3572,6 +3717,28 @@ def test_cast_phase_reads_a_generic_character_target_spell():
     assert phases[0].obj == int(Spell.ORATORY)
     assert phases[0].extra == [2]
     assert phases[0].nested_plan is None
+
+
+def test_cast_phase_rejects_the_active_valhalla_visitor_as_a_generic_character_target():
+    from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
+
+    state = _state()
+    state.add_leader(
+        LeaderState(
+            leader_id=VALHALLA_VISITOR_LEADER_ID,
+            kingdom_id=None,
+            name="Valhalla Visitor",
+            location=HOME,
+            valhalla_active_turn=1,
+        )
+    )
+    form = _cast_form(cast_spell=str(int(Spell.ORATORY)), cast_character_target=str(VALHALLA_VISITOR_LEADER_ID))
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a Cast target character" in str(exc)
 
 
 def test_cast_phase_charm_embeds_a_nested_plan():

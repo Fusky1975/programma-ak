@@ -75,6 +75,7 @@ from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.diplomacy import set_relation
 from ak_engine.turn.encounter import MonsterTalkReply
 from ak_engine.turn.exploration import FIND_MINES_TAX_CAP
+from ak_engine.turn.plan_dispatch import SUPPORTED_ACTIONS
 from ak_engine.parser.k1_moves_writer import K1WriteError, write_k1_moves_file
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
 from ak_engine.webapp.moves_compose import (
@@ -3054,7 +3055,16 @@ def create_app(games_root: Path | None = None) -> Flask:
             kingdom=state.kingdoms[kingdom_id],
             roster=roster,
             phase_numbers=range(PHASE_COUNT),
-            actions=list(ActionCode),
+            # 2026-11-07 bug fix: this used to offer every ActionCode
+            # member, including SUCC_TRAIL (ordinal 20) -- the one
+            # ActionCode plan_dispatch.py's own SUPPORTED_ACTIONS
+            # frozenset deliberately excludes "by design" (see that
+            # module's own docstring). A GM selecting it could compose
+            # and save a phase that then fails, opaquely, at real
+            # turn-processing time (caught only by run_leader_plan()'s
+            # own broad per-phase exception handler) instead of simply
+            # never being offered in the first place.
+            actions=[action for action in ActionCode if action in SUPPORTED_ACTIONS],
             move_action_value=int(ActionCode.LMOVE),
             explore_action_value=int(ActionCode.EXPLORE),
             search_action_value=int(ActionCode.SEARCH),
@@ -3178,6 +3188,8 @@ def create_app(games_root: Path | None = None) -> Flask:
             talk_value=int(Maneuver.TALK),
             fulfill_value=int(Maneuver.FULFILL),
             steal_value=int(Maneuver.STEAL),
+            flee_value=int(Maneuver.FLEE),
+            shoot_value=int(Maneuver.SHOOT),
             say_value=int(Maneuver.SAY),
             say_text_max_length=SAY_TEXT_MAX_LENGTH,
             cast_value=int(Maneuver.CAST),

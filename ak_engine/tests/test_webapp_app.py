@@ -6253,6 +6253,22 @@ def test_turns_compose_shows_the_kings_own_roster(tmp_path):
     assert b"King" in response.data
 
 
+def test_turns_compose_action_dropdown_excludes_succ_trail(tmp_path):
+    # 2026-11-07 bug fix: ActionCode.SUCC_TRAIL (ordinal 20) is the one
+    # ActionCode turn/plan_dispatch.py's own SUPPORTED_ACTIONS frozenset
+    # deliberately excludes "by design" -- the compose page used to
+    # offer it anyway (`actions=list(ActionCode)`, unfiltered), letting
+    # a GM compose and save an order that could then never actually
+    # execute.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/turns/1/compose")
+
+    assert response.status_code == 200
+    assert b"Succ Trail" not in response.data
+
+
 def test_turns_compose_unknown_kingdom_shows_an_error_not_a_crash(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
