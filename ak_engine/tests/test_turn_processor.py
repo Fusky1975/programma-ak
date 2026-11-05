@@ -28,6 +28,7 @@ from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.movement import neighbors as _neighbors
 from ak_engine.turn.army_list_decode import ALL_ARMIES_SENTINEL
 from ak_engine.turn.aspy_execution import SpyReport
+from ak_engine.turn.patrol_execution import PatrolExecutionResult
 from ak_engine.turn.plan_dispatch import NoOpResult, PhaseDispatchResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
 from ak_engine.turn.random_encounter_execution import RandomEncounterResult
@@ -2264,49 +2265,62 @@ def test_run_turn_trail_actions_is_none_when_the_target_is_itself_mid_chase():
     assert trail_result.actions is None
 
 
-def test_run_turn_trail_actions_is_none_when_the_target_is_itself_patrol_preempted():
-    """Phase 1041 bug fix: the same ``action_this_phase_by_leader``
-    snapshot-timing bug the "Phase 817 fix" above closed for a mid-
-    Pursue/Trail-chase target was never extended to the later-added
-    Patrol preemption path. Leader 10 is a Patroller who (from a
-    standing Patrol declared at P0) intercepts a real intruder at P1,
-    preempting its own queued P1 WAIT order -- that WAIT never actually
-    dispatches, and must not leak into leader 40's own simultaneous
-    Trail report on leader 10 either.
+def test_run_turn_trail_actions_is_none_when_the_target_is_patrol_preempted():
+    """Phase 817 follow-up regression: ``action_this_phase_by_leader`` is
+    snapshotted (see the comment above its own assignment in
+    ``run_turn()``) before Patrol cancellation/preemption runs a few
+    lines later -- only the mid-chase filter has happened by then -- so a
+    Trail target whose own queued order this same phase was preempted by
+    their own standing Patrol interception used to leak that
+    never-dispatched order into the Trail report too, the same failure
+    mode as ``test_run_turn_trail_actions_is_none_when_the_target_is_itself_mid_chase``
+    above but via Patrol instead of a mid-chase filter. Leader 20
+    declares a Patrol at P0 and has a real P1 WAIT order queued; the
+    (mocked) Patrol interception at P1 preempts that WAIT order, and it
+    must not leak into leader 10's own Trail report.
+
+    ``execute_patrol`` is mocked to a fixed "intercepted" result -- this
+    test is only about which map ``action_this_phase_by_leader`` gets
+    pruned from, not about Patrol's own already-reviewed adjacency/
+    wander-roll mechanics.
     """
 
-    state = _patrol_state()
-    state.add_kingdom(KingdomState(3, "Trailia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
-    state.allied_kingdoms.add(frozenset({1, 3}))  # the trailer is never a Patrol "enemy" candidate
-    state.add_leader(LeaderState(20, kingdom_id=2, name="Intruder", location=INTRUDER_HEX))
-    state.add_leader(LeaderState(40, kingdom_id=3, name="Trailer", location=PATROL_HOME))  # co-located -> guaranteed catch
-
-    p0 = _patrol_declare_phase("P0", 10)
-    p1 = PlanPhase(label="P1", action=ActionCode.WAIT, obj=0, extra=[0])
-    patroller = _two_phase_leader(10, "Patroller", p0, p1)
-    trailer = _leader_with_phase(40, "Trailer", "P1", _trail_phase("P1", 10))
-
-    results = run_turn(
-        [TurnLeader(patroller, 1), TurnLeader(trailer, 3)],
-        state,
-        board_width=BOARD_WIDTH,
-        # P0's own wander check, P1's own wander check (succeeds --
-        # intercepts, preempting the WAIT), leader 40's own P1 Trail
-        # catch-up roll (co-located -> succeeds), then a generous buffer
-        # for unrelated end-of-turn rng draws (e.g. revenue, one per
-        # Kingdom).
-        rng=ScriptedRandom([0.9, 0.9, 0.1] + [0.0] * 20),
+    state = _chase_state()
+    state.leaders[20].location = CHASE_START  # co-located with the trailer -> guaranteed Trail catch-up
+    trailer = _leader_with_phase(10, "Trailer", "P1", _trail_phase("P1", 20))
+    target = Leader(
+        leader_id=20,
+        name="Target",
+        plan=ActionPlan(
+            leader_id=20,
+            segments=[
+                PlanSegment(
+                    0,
+                    1,
+                    (),
+                    {
+                        "P0": _patrol_declare_phase("P0", 20),
+                        "P1": PlanPhase(label="P1", action=ActionCode.WAIT, obj=0, extra=[0]),
+                    },
+                )
+            ],
+        ),
     )
 
-    by_label = {(r.leader_id, r.phase_label): r for r in results}
-    # The WAIT never actually dispatched -- preempted by the Patrol's
-    # own P1 interception.
-    p1_patrol_entry = by_label[(10, "P1")]
-    assert p1_patrol_entry.segment_index == -1
-    assert p1_patrol_entry.action is ActionCode.PURSUE
+    intercepted = PatrolExecutionResult(intercepted=True, target_leader_id=999)
+    with patch("ak_engine.turn.turn_processor.execute_patrol", return_value=intercepted):
+        results = run_turn(
+            [TurnLeader(trailer, 1), TurnLeader(target, 2)],
+            state,
+            board_width=BOARD_WIDTH,
+            rng=ScriptedRandom([0.1, 0.5, 0.5, 0.0, 0.0]),
+        )
 
-    trail_result = by_label[(40, "P1")].result
+    trail_result = next(r for r in results if r.leader_id == 10 and r.phase_label == "P1").result
     assert trail_result.spied_on is True
+    # Leader 20's own P1 WAIT order never actually dispatched (preempted
+    # by its own standing Patrol interception) -- reported as no data,
+    # not as the discarded order.
     assert trail_result.actions is None
 
 

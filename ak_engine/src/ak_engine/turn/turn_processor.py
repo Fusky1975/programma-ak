@@ -573,7 +573,11 @@ def run_turn(
         # simply idle) has no real order this phase to report, the same
         # "no data" convention trail_execution.py's own module docstring
         # already uses for its other fields. See that docstring's Phase 252
-        # note.
+        # note. This snapshot is still taken BEFORE Patrol cancellation/
+        # preemption below, so it's pruned again once `patrol_preempted` is
+        # known (Phase 817 follow-up fix, same leaked-order failure mode but
+        # for a leader's own standing Patrol intercepting their own queued
+        # order this phase instead of a mid-chase filter).
         action_this_phase_by_leader = {tl.leader.leader_id: phase.action for tl, _segment_index, phase in entries}
         results.extend(_continue_active_pursuits(active_pursuits, label, state, rng, action_this_phase_by_leader))
         results.extend(_continue_active_move_chases(active_move_chases, label, state, board_width, explorer_skill, rng))
@@ -607,18 +611,17 @@ def run_turn(
         patrol_results, patrol_preempted = _dispatch_active_patrols(active_patrols, label, state, rng, bounds)
         results.extend(patrol_results)
         entries = [entry for entry in entries if entry[0].leader.leader_id not in patrol_preempted]
-        # Phase 1041 bug fix -- ``action_this_phase_by_leader`` (above)
-        # was snapshotted before this Patrol preemption ran, so a leader
-        # whose queued order was just preempted by their own active
-        # Patrol still had that never-dispatched order leaked into the
-        # map -- read later by ``_backfill_trail_actions()`` to stamp a
-        # Trail's own "Actions" report field, wrongly showing the
-        # preempted leader as having carried out an order that never
-        # actually dispatched. Dropped here, mirroring the "no entry"
-        # convention the module docstring already documents for an idle
-        # or mid-chase leader.
-        for leader_id in patrol_preempted:
-            action_this_phase_by_leader.pop(leader_id, None)
+        # Phase 817 follow-up fix: `action_this_phase_by_leader` was snapshotted
+        # above before this Patrol preemption was known, so a leader whose
+        # queued order this phase was just preempted by their own standing
+        # Patrol interception (`patrol_preempted`) still has that
+        # never-dispatched order in the map. Drop it here, before
+        # `_backfill_trail_actions` (and any other later consumer) reads it,
+        # so a Trail targeting that leader reports `None` instead of the
+        # preempted order's own ActionCode.
+        action_this_phase_by_leader = {
+            leader_id: action for leader_id, action in action_this_phase_by_leader.items() if leader_id not in patrol_preempted
+        }
 
         move_targets: dict[int, HexCoord] = {}
         for index, (_tl, _segment_index, phase) in enumerate(entries):
@@ -1700,9 +1703,12 @@ def _backfill_trail_actions(
     """Phase 252, [3.17] Trail's own "Actions" field: for a freshly-dispatched Trail
     order that caught its target, stamps the target's own entry in
     ``action_this_phase_by_leader`` onto ``TrailExecutionResult.actions``
-    -- ``None`` if the target has no entry (idle, or itself mid-chase and
-    excluded from this phase's own entries). See ``turn/trail_execution.py``'s
-    own module docstring for why ``execute_trail()`` itself can't do this.
+    -- ``None`` if the target has no entry (idle, itself mid-chase and
+    excluded from this phase's own entries, or had this phase's own queued
+    order preempted by their own standing Patrol interception -- see the
+    Phase 817 follow-up fix where ``action_this_phase_by_leader`` is pruned
+    by ``patrol_preempted``). See ``turn/trail_execution.py``'s own module
+    docstring for why ``execute_trail()`` itself can't do this.
     """
 
     for entry in dispatch_results:
