@@ -397,6 +397,7 @@ def _build_battle_units(
     alignment_king_office: Office | None = None,
     explorer_find_water: bool = False,
     race_fanatic_units: list[tuple[int, Race, int]] | None = None,
+    camel_corps_armies: list[ArmyState] | None = None,
 ) -> list[BattleUnit]:
     """Build BattleUnits for one side of a battle at ``province_coord``.
 
@@ -438,6 +439,16 @@ def _build_battle_units(
     rulebook names "Camels" specifically here, not the broader "Beasts"
     grouping used for the nemesis table -- a confident reading, not a
     guess). Fully deterministic, no ``rng`` involved.
+
+    ``camel_corps_armies`` (Phase 1043 bug fix, default ``None`` ->
+    falls back to ``armies`` itself, unchanged for every pre-existing
+    caller): lets a caller building units for only *part* of a side
+    (``_apply_monster_summoning_aid``'s own nested call for a single
+    player-led aiding army) still check the above rule against the
+    side's real, full committed army list instead of the narrow
+    ``armies`` list this one call happens to be building units from --
+    see that function's own Phase 1043 addendum for the real bug this
+    closes.
 
     **Find Water** (Advanced Ability, Phase 511 -- ``explorer_find_
     water``): quoted directly from ``models/advanced_ability.py
@@ -764,7 +775,10 @@ def _build_battle_units(
     desert_without_camels = (
         terrain is Terrain.DESERT
         and not explorer_find_water
-        and not any(army.army_type is ArmyType.CAMEL_CORPS for army in armies)
+        and not any(
+            army.army_type is ArmyType.CAMEL_CORPS
+            for army in (camel_corps_armies if camel_corps_armies is not None else armies)
+        )
     )
     province = state.provinces.get(province_coord)
     illusory_fog_active = province is not None and province.illusory_fog_active
@@ -1680,10 +1694,25 @@ def _maybe_fight_duel(
     agency Phase 674 already built for Challenge/Pursue (previously
     the defender was purely passive in a real-combat Duel regardless
     of its own plan). The Phase 389 Flee-first-tactic branch just above
-    can never newly fire via this default: Phase 669's own trigger
-    predicates (``sep_is_aggressive``/``sep_accepts_challenge``) already
-    exclude a Flee-first SEP from ever reaching a triggered duel in the
-    first place, verified by tracing both predicates directly.
+    can never newly fire via this default for an *ordinary* defender:
+    Phase 669's own trigger predicates (``sep_is_aggressive``/``sep_
+    accepts_challenge``) already exclude a Flee-first SEP from ever
+    reaching a triggered duel that way.
+
+    **Phase 1043 bug fix -- this claim was incomplete.**
+    ``_commander_challenges()``'s own neutral-province carve-out
+    (a non-Cowardly Hero/King governing a province nobody owns is
+    forced to accept *any* encounter unconditionally, bypassing ``sep_
+    accepts_challenge`` entirely -- see that function's own docstring)
+    *can* put a real Flee-first defender into a genuinely triggered
+    duel. Before this fix, such a defender had no guaranteed-escape
+    shortcut of its own at all -- only ``duel_maneuvers`` (the
+    attacker's own plan, by default) was ever consulted here, so this
+    defender was pulled into a real fight instead of the escape the
+    identical attacker-side scenario gets. A second, symmetric check
+    below now reads ``defender_sep`` directly (it has no caller-
+    supplied-override parameter the way the attacker's ``duel_
+    maneuvers`` does, since no real caller has ever needed one).
     ~~**Still genuinely out of scope**: ``use_real_duel_combat`` itself
     still defaults ``False`` for every production caller in this
     project (confirmed by grep) -- this is what keeps all of the above
@@ -1763,7 +1792,24 @@ def _maybe_fight_duel(
         attacker_challenges = _commander_challenges(state, attacker_commander, attacker_sep, defender_commander, defender_sep)
         defender_challenges = _commander_challenges(state, defender_commander, defender_sep, attacker_commander, attacker_sep)
         if not (attacker_challenges or defender_challenges):
-            return _DuelOutcome(None, None, None)
+            # Phase 1043 bug fix -- both commanders are real here (the
+            # `is None` early return above already excluded an unled
+            # side), so discarding their own leader_ids along with
+            # `loser_side` wrongly erased a real fact ("this battle had
+            # a real commander on each side") just because no *personal
+            # duel* was triggered this phase. `_record_battle_merit()`
+            # (Phase 254, called with these same ids further down) reads
+            # them independently of whether a duel happened, to credit/
+            # debit each side's own commander for the battle's overall
+            # outcome -- so every led battle where neither SEP is
+            # aggressive enough to trigger a challenge was silently
+            # skipping Marshal/Admiral merit crediting entirely,
+            # reopening the exact gap Phase 254 closed. `loser_side=None`
+            # already has the identical "a real commander exists but no
+            # decisive duel loser" shape a few lines below (the
+            # inconclusive-combat_result.winner branch) -- this mirrors
+            # it instead of inventing a new convention.
+            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, None)
 
     attacker_commander_units = _units_led_by(attacker_armies, attacker_units, attacker_commander.leader_id)
     defender_commander_units = _units_led_by(defender_armies, defender_units, defender_commander.leader_id)
@@ -1783,6 +1829,22 @@ def _maybe_fight_duel(
                 if unit.source_id in demoralized_by_id:
                     attacker_units[index] = demoralized_by_id[unit.source_id]
             return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, "attacker", loser_fled=True)
+
+    # Phase 1043 bug fix -- the symmetric defender-side check this
+    # function's own Phase 675 docstring addendum never had: reads
+    # `defender_sep` directly rather than `duel_maneuvers` (which only
+    # ever defaults to the attacker's own plan). See this function's
+    # own Phase 1043 docstring addendum above for why this is reachable
+    # (the neutral-province forced-acceptance carve-out) and real.
+    if defender_sep:
+        first_tactic = defender_sep[0]
+        first_maneuver = first_tactic if isinstance(first_tactic, Maneuver) else first_tactic.maneuver
+        if first_maneuver is Maneuver.FLEE:
+            demoralized_by_id = {u.source_id: u for u in apply_duel_demoralization(defender_commander_units)}
+            for index, unit in enumerate(defender_units):
+                if unit.source_id in demoralized_by_id:
+                    defender_units[index] = demoralized_by_id[unit.source_id]
+            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, "defender", loser_fled=True)
 
     if use_real_duel_combat and state is not None:
         attacker_combatant = _commander_combatant(attacker_commander, state)
@@ -2305,6 +2367,10 @@ def _apply_monster_summoning_aid(
     illusory_terrain_enhanced: bool = False,
     rng: random.Random,
     explorer_find_water: bool = False,
+    side_armies: list[ArmyState] | None = None,
+    duellist_side: bool = False,
+    alignment_king_office: Office | None = None,
+    race_fanatic_units: list[tuple[int, Race, int]] | None = None,
 ) -> None:
     """AKGEN's own confirmed `battle_engine.special_events` "Dragon/Eagle/
     Whale summoning item" row: "adjacent unled matching units aid the
@@ -2348,6 +2414,21 @@ def _apply_monster_summoning_aid(
     AKGEN's own "aid the bearer" wording, not "join the bearer's army":
     the aiding army experiences none of a real participant's post-battle
     consequences.
+
+    **Phase 1043 bug fix -- `side_armies`/`duellist_side`/
+    `alignment_king_office`/`race_fanatic_units`**: a player-led aiding
+    army's own nested `_build_battle_units()` call used to build it in
+    total isolation (`[army]` alone), unlike every other unit on the
+    side. Without `side_armies` (passed through as `camel_corps_armies`),
+    the desert-without-camels check saw only this one non-Camel-Corps
+    unit, wrongly penalizing it even when the side's own real armies
+    include a Camel Corps. Without the other three, an eligible
+    Duellist-/alignment-King-commanded side could never have this aid
+    unit selected for that bonus, and a successful title-fanaticism roll
+    for it was never recorded for `report/turn_report.py`'s own
+    `RACE_FANATICISM_TITLE` narration. All four default to the prior
+    (buggy) behavior only when omitted -- every real caller (`fight_
+    battle`) now passes its own real values.
     """
 
     if commander is None or commander.leader_id is None:
@@ -2399,6 +2480,23 @@ def _apply_monster_summoning_aid(
                 )
             else:
                 units.extend(
+                    # Phase 1043 bug fix -- this nested call used to build
+                    # the aid unit in total isolation: `armies=[army]`
+                    # alone made the desert-without-camels check (see
+                    # _build_battle_units()'s own docstring, "checked once
+                    # per side... if this side's armies include no Camel
+                    # Corps") see only this one non-Camel-Corps unit,
+                    # wrongly penalizing it even when the side's own real
+                    # armies (now passed separately as camel_corps_armies)
+                    # include a Camel Corps. Omitting duellist_side/
+                    # alignment_king_office/race_fanatic_units also meant
+                    # an eligible Duellist- or alignment-King-commanded
+                    # side could never have this aid unit selected for
+                    # that bonus, and a successful title-fanaticism roll
+                    # for it was never recorded for report/turn_report.py's
+                    # own RACE_FANATICISM_TITLE narration -- unlike every
+                    # unit the main per-side _build_battle_units() call
+                    # builds (see fight_battle()'s own call sites).
                     _build_battle_units(
                         [army], state, is_defender=is_defender, terrain=terrain, province_coord=province_coord,
                         rng=rng, combat_ability_level=combat_ability_level,
@@ -2409,6 +2507,10 @@ def _apply_monster_summoning_aid(
                         illusory_terrain=illusory_terrain,
                         illusory_terrain_enhanced=illusory_terrain_enhanced,
                         explorer_find_water=explorer_find_water,
+                        camel_corps_armies=side_armies,
+                        duellist_side=duellist_side,
+                        alignment_king_office=alignment_king_office,
+                        race_fanatic_units=race_fanatic_units,
                     )
                 )
 
@@ -2789,6 +2891,13 @@ def fight_battle(
         is_island=is_island, illusory_terrain=illusory_terrain,
         illusory_terrain_enhanced=illusory_terrain_enhanced, rng=rng,
         explorer_find_water=attacker_find_water,
+        # Phase 1043 bug fix -- see _apply_monster_summoning_aid()'s own
+        # addendum: a player-led aiding army's own nested unit-building
+        # call needs this side's real context, not just the aid army alone.
+        side_armies=attacker_armies,
+        duellist_side=attacker_is_duellist_side,
+        alignment_king_office=attacker_alignment_king_office,
+        race_fanatic_units=attacker_race_fanatic_units,
     )
     _apply_monster_summoning_aid(
         defender_units, defender_commander, state, province_coord, monster_summoning_bounds,
@@ -2799,6 +2908,10 @@ def fight_battle(
         is_island=is_island, illusory_terrain=illusory_terrain,
         illusory_terrain_enhanced=illusory_terrain_enhanced, rng=rng,
         explorer_find_water=defender_find_water,
+        side_armies=defender_armies,
+        duellist_side=defender_is_duellist_side,
+        alignment_king_office=defender_alignment_king_office,
+        race_fanatic_units=defender_race_fanatic_units,
     )
 
     duel = _maybe_fight_duel(
@@ -3346,6 +3459,30 @@ def fight_multi_attacker_battle(
         else:
             # An earlier group already cleared/claimed the province this
             # same call -- see module docstring's "Phase 73" note.
+            # Phase 1043 bug fix -- this branch reported conquered=True
+            # but never actually transferred ProvinceState.owner_kingdom_id,
+            # unlike move_execution.py execute_move()'s own identical
+            # uncontested-conquest case (its own Phase 410 addendum,
+            # "entering an enemy or unowned province, uncontested...
+            # still conquers it"), which this branch's own docstring
+            # claims to mirror. turn_processor.py's own caller
+            # (dispatch_multi_attacker_moves) relocates every mover's
+            # armies/leader into the province off this exact `conquered`
+            # flag, but nothing else here ever touched ownership --
+            # leaving the armies physically inside a province the game
+            # state still showed as unowned/owned by someone else.
+            # `needs_conquest` mirrors move_execution.py's own identical
+            # check so an already-friendly province's contest flags
+            # aren't needlessly cleared a second time.
+            if target_province is not None:
+                needs_conquest = target_province.owner_kingdom_id is None or (
+                    target_province.owner_kingdom_id != claiming_kingdom_id
+                    and not state.is_allied(target_province.owner_kingdom_id, claiming_kingdom_id)
+                )
+                if needs_conquest:
+                    target_province.owner_kingdom_id = claiming_kingdom_id
+                    target_province.contested_by_kingdom_id = None
+                    target_province.contested_from_coord = None
             report = BattleReport(battle_result=BattleResult(winner="attacker"), conquered=True)
         reports.append(MultiAttackerBattle(leader_ids=[member.leader_id for member in group], report=report))
 

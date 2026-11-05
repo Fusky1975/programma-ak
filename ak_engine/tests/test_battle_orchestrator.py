@@ -3138,6 +3138,14 @@ def test_maybe_fight_duel_flee_anywhere_in_attacker_sep_never_challenges():
     )
 
     assert outcome.loser_side is None
+    # Phase 1043 bug fix regression: both sides still have a real,
+    # led commander even though no personal duel was triggered this
+    # phase -- _record_battle_merit() reads these ids independently of
+    # whether a duel happened, to credit/debit each commander for the
+    # battle's own overall outcome. These must never be silently
+    # discarded just because no challenge fired.
+    assert outcome.attacker_commander_leader_id == 501
+    assert outcome.defender_commander_leader_id == 502
 
 
 def test_maybe_fight_duel_defender_flee_first_never_accepts_the_attackers_challenge():
@@ -3179,6 +3187,12 @@ def test_maybe_fight_duel_neutral_province_hero_never_challenges():
 
 
 def test_maybe_fight_duel_neutral_province_hero_always_accepts_when_not_cowardly():
+    # Phase 1043 bug fix regression: this forced-acceptance carve-out
+    # genuinely puts a real Flee-first defender into a triggered duel --
+    # but that defender's own Flee-first SEP must still win it a
+    # guaranteed escape (the same shortcut the identical attacker-side
+    # scenario already gets), not a real strength-based roll. No rng is
+    # consumed: the escape shortcut fires before any roll would.
     state = _duel_gate_state()
     state.leaders[502].location = DEFENDER_HOME
     state.provinces[DEFENDER_HOME].owner_kingdom_id = None  # defender's own current province is unowned
@@ -3188,7 +3202,7 @@ def test_maybe_fight_duel_neutral_province_hero_always_accepts_when_not_cowardly
     attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
         _duel_gate_armies_and_units()
     )
-    rng = ScriptedRandom([0.01])
+    rng = ScriptedRandom([])
 
     outcome = _maybe_fight_duel(
         attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
@@ -3196,6 +3210,9 @@ def test_maybe_fight_duel_neutral_province_hero_always_accepts_when_not_cowardly
     )
 
     assert outcome.loser_side == "defender"
+    assert outcome.loser_fled is True
+    assert defender_units[0].effective_strength == 10.0 * 0.75  # DUEL_DEMORALIZATION_MULTIPLIER
+    assert attacker_units[0].effective_strength == 100.0  # winner's own units untouched
 
 
 def test_maybe_fight_duel_neutral_province_hero_cowardly_exception_does_not_apply():
@@ -4459,6 +4476,56 @@ def test_fight_multi_attacker_battle_second_separate_group_claims_an_already_cle
     assert second_battle.report.battle_result.winner == "attacker"
 
 
+def test_fight_multi_attacker_battle_uncontested_claim_transfers_province_ownership():
+    # Phase 1043 bug fix: an uncontested group (no defenders present at
+    # all, not just "already cleared by an earlier group this call")
+    # used to report conquered=True without ever touching ProvinceState.
+    # owner_kingdom_id -- unlike move_execution.py execute_move()'s own
+    # identical single-attacker uncontested-conquest case, which this
+    # branch's own docstring claims to mirror. turn_processor.py's own
+    # caller relocates the attacker's armies/leader into the province
+    # off this exact `conquered` flag, so without this fix the armies
+    # would physically occupy a province the game state still showed as
+    # unowned.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5)),
+    ]
+    rng = ScriptedRandom([])  # no defenders at all -- no real battle, no roll consumed
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 1
+    assert battles[0].report.conquered is True
+    assert state.provinces[FIELD].owner_kingdom_id == 1
+    assert state.provinces[FIELD].contested_by_kingdom_id is None
+    assert state.provinces[FIELD].contested_from_coord is None
+
+
+def test_fight_multi_attacker_battle_uncontested_claim_is_a_no_op_for_an_already_friendly_province():
+    # needs_conquest's own allied-owner carve-out -- a province already
+    # owned by an ally of the claiming kingdom isn't re-"conquered" or
+    # stripped of (non-existent) contest state.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(3, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.allied_kingdoms.add(frozenset({1, 3}))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5)),
+    ]
+    rng = ScriptedRandom([])
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert battles[0].report.conquered is True
+    assert state.provinces[FIELD].owner_kingdom_id == 3  # unchanged -- already a friendly owner
+
+
 # --- Contested-province priority for a double simultaneous neutral
 # invasion (rulebook [7.6], Phase 311) --------------------------------------
 
@@ -5516,6 +5583,57 @@ def test_apply_monster_summoning_aid_uses_the_halved_player_led_rate():
         miss_units, commander, state, FIELD, bounds, rng=ScriptedRandom([just_over]), **_aid_kwargs()
     )
     assert miss_units == []
+
+
+def test_apply_monster_summoning_aid_player_led_unit_desert_penalty_uses_the_real_side_army_list():
+    # Phase 1043 bug fix: the nested _build_battle_units([army], ...)
+    # call used to scope the desert-without-camels check to just the
+    # aid unit itself (always failing it, since the aid unit is never a
+    # Camel Corps), wrongly penalizing it even when the side's own real
+    # committed armies include a Camel Corps.
+    state, commander = _bearer_state(Treasure.MONSTER_AID_DRAGON)
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    aiding_army = ArmyState(301, 2, ArmyType.DRAGON_WING, Quality.AVERAGE, location=DEFENDER_HOME)
+    state.add_army(aiding_army)
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    camel_corps_army = ArmyState(401, 1, ArmyType.CAMEL_CORPS, Quality.AVERAGE, FIELD)
+    rng_value = MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE - 0.01  # hits, deterministically
+
+    units_without_camels: list[BattleUnit] = []
+    _apply_monster_summoning_aid(
+        units_without_camels, commander, state, FIELD, bounds, rng=ScriptedRandom([rng_value]),
+        **_aid_kwargs(terrain=Terrain.DESERT),
+    )
+
+    units_with_camels: list[BattleUnit] = []
+    _apply_monster_summoning_aid(
+        units_with_camels, commander, state, FIELD, bounds, rng=ScriptedRandom([rng_value]),
+        **_aid_kwargs(terrain=Terrain.DESERT, side_armies=[camel_corps_army]),
+    )
+
+    assert len(units_without_camels) == len(units_with_camels) == 1
+    assert units_with_camels[0].effective_strength > units_without_camels[0].effective_strength
+
+
+def test_apply_monster_summoning_aid_player_led_unit_threads_duellist_side():
+    # Phase 1043 bug fix: the nested _build_battle_units([army], ...)
+    # call used to omit duellist_side/alignment_king_office/race_
+    # fanatic_units entirely, so an eligible Duellist-commanded side
+    # could never have this aid unit selected for that bonus.
+    state, commander = _bearer_state(Treasure.MONSTER_AID_DRAGON)
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    aiding_army = ArmyState(301, 2, ArmyType.DRAGON_WING, Quality.AVERAGE, location=DEFENDER_HOME)
+    state.add_army(aiding_army)
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    rng_value = MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE - 0.01
+
+    units: list[BattleUnit] = []
+    _apply_monster_summoning_aid(
+        units, commander, state, FIELD, bounds, rng=ScriptedRandom([rng_value]), **_aid_kwargs(duellist_side=True)
+    )
+
+    assert len(units) == 1
+    assert units[0].duellist_bonus_if_selected is not None
 
 
 def test_fight_battle_raises_when_the_only_present_army_is_shielded_by_an_allied_host():
