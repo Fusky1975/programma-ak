@@ -349,7 +349,19 @@ def execute_trail(
 
     add_experience(trailer, Ability.SPY, 10, rng)
 
-    race = state.kingdoms[target.kingdom_id].race if target.kingdom_id is not None else None
+    # Phase 1041 bug fix -- `.get()` instead of a bare subscript, same
+    # guarded pattern every sibling `_leader_combatant()` builder already
+    # uses for this identical "leader.kingdom_id -> KingdomState" lookup
+    # (pursue_execution.py/patrol_execution.py/random_encounter_
+    # execution.py). `turn/kingdom_bridge.py`'s own sync_leaders_from_
+    # kingdom()/sync_leaders_from_gw_world() write a leader's own
+    # `kingdom_id` from an unchecked external source (a move file's
+    # `.K<N>` filename suffix, or a world-file "Liege" field) with no
+    # check that the id actually exists in `state.kingdoms` -- the only
+    # validation for that lives one layer up, in the webapp's own
+    # upload-time filtering, not in this core engine function.
+    target_kingdom = state.kingdoms.get(target.kingdom_id) if target.kingdom_id is not None else None
+    race = target_kingdom.race if target_kingdom is not None else None
     king_intelligence = (
         _build_king_intelligence(state, target.kingdom_id) if target.is_king and target.kingdom_id is not None else None
     )
@@ -390,8 +402,11 @@ def _build_king_intelligence(state: GameState, kingdom_id: int) -> KingIntellige
     controlled_provinces = tuple(
         province.coord for province in state.provinces.values() if province.owner_kingdom_id == kingdom_id
     )
+    # Phase 1041 bug fix -- same `.get()` guard as the `race` lookup
+    # above, for the same reachable dangling-`kingdom_id` reason.
+    kingdom = state.kingdoms.get(kingdom_id)
     return KingIntelligence(
-        treasury=state.kingdoms[kingdom_id].treasury,
+        treasury=kingdom.treasury if kingdom is not None else 0,
         allied_kingdom_ids=allied_kingdom_ids,
         enemy_kingdom_ids=enemy_kingdom_ids,
         controlled_provinces=controlled_provinces,

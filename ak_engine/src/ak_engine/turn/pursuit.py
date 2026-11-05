@@ -349,7 +349,23 @@ def resolve_pursuit(
                 destroyed = _resolve_pursuit_combat(pursuer, target, rng)
                 outcomes.append(PursuitOutcome(pursuer=pursuer, target=target, target_destroyed=destroyed))
                 if destroyed:
-                    remaining_targets.remove(target)
+                    # Phase 1041 bug fix -- `BattleUnit` is a plain
+                    # dataclass with value-based equality, so two
+                    # retreating units that happen to share identical
+                    # field values (plausible when same-type/quality
+                    # armies retreat together) made `remaining_targets.
+                    # remove(target)` delete the FIRST value-equal entry
+                    # in the list, not necessarily the actual object just
+                    # drawn and destroyed -- silently keeping the truly-
+                    # destroyed unit eligible for a later draw while
+                    # dropping an untouched survivor instead. Removed by
+                    # identity instead (`is`, not `==`), not by index: the
+                    # draw itself still goes through the real `rng.choice()`
+                    # call (unchanged), so every existing seeded/scripted
+                    # test's own rng consumption is unaffected -- only the
+                    # removal target-finding changed.
+                    index = next(i for i, t in enumerate(remaining_targets) if t is target)
+                    del remaining_targets[index]
                 break
 
     return outcomes

@@ -28,18 +28,25 @@ from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.movement import neighbors as _neighbors
 from ak_engine.turn.army_list_decode import ALL_ARMIES_SENTINEL
 from ak_engine.turn.aspy_execution import SpyReport
-from ak_engine.turn.plan_dispatch import NoOpResult
+from ak_engine.turn.plan_dispatch import NoOpResult, PhaseDispatchResult
 from ak_engine.turn.pursue_execution import PursueExecutionResult
+from ak_engine.turn.random_encounter_execution import RandomEncounterResult
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.defend_execution import DefendCoverage, defend_coverage_area
+from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.turn_processor import (
     MultiAttackerMoveResult,
     TurnLeader,
     _ActiveMoveChase,
+    _ActivePursuit,
     _apply_defend_reinforcements,
     _apply_werebeast_transformations,
     _collect_phase_entries,
     _continue_active_move_chases,
+    _continue_active_pursuits,
+    _main_dispatch_result,
+    _register_move_chase_continuation,
+    _register_pursuit_continuation,
     _replenish_turn_scoped_state,
     build_missed_deadline_turn_leaders,
     run_turn as _run_turn_unfiltered,
@@ -379,6 +386,51 @@ def test_run_turn_groups_same_phase_same_target_lmoves_into_one_multi_attacker_b
     battle_ids = {id(r.result.battle) for r in results}
     assert len(battle_ids) == 1
     assert sorted(results[0].result.battle.leader_ids) == [10, 20]
+
+
+def test_run_turn_multi_attacker_lmove_rejects_a_mover_with_no_movement_points():
+    # Phase 1041 bug fix -- this function's own separate movement logic
+    # (it never calls execute_move()) never had the single-attacker
+    # path's own movement-points gate (move_execution.py execute_move():
+    # "an army with no movement points left this gameturn can't move",
+    # raised *before* the move proceeds). find_transport_illegality()
+    # is a pure terrain/transport legality check and never looks at
+    # movement points either, so an army already at 0 used to be let
+    # into the battle and then have `movement_points -= cost` applied
+    # unconditionally, driving it further negative with no recorded
+    # error. Leader 30's own army starts at 0 movement points; leaders
+    # 10/20 still unite normally (2 parties is still >= 2), proving the
+    # fix rejects only the offending mover rather than breaking the
+    # whole group.
+    state = _base_state()
+    march_4 = _skills_with(Ability.MARCH, 4, 9)
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=march_4))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=ORIGIN, skills=march_4))
+    state.add_leader(LeaderState(30, kingdom_id=1, name="C", location=ORIGIN, skills=march_4))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=10))
+    state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=20))
+    state.add_army(ArmyState(103, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=0, commanded_by=30))
+
+    leader_a = _leader_with_phase(10, "A", "P0", _lmove_phase("P0", TARGET))
+    leader_b = _leader_with_phase(20, "B", "P0", _lmove_phase("P0", TARGET))
+    leader_c = _leader_with_phase(30, "C", "P0", _lmove_phase("P0", TARGET))
+
+    results = run_turn(
+        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1), TurnLeader(leader_c, 1)],
+        state,
+        board_width=BOARD_WIDTH,
+        rng=random.Random(0),
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert isinstance(by_leader[10].result, MultiAttackerMoveResult)
+    assert isinstance(by_leader[20].result, MultiAttackerMoveResult)
+    assert by_leader[30].result is None
+    # Without the fix, leader 30 would have joined the battle instead
+    # (a MultiAttackerMoveResult, same as 10/20) and had `movement_points
+    # -= cost` applied unconditionally, driving its already-0 movement
+    # points negative with no recorded error at all.
+    assert isinstance(by_leader[30].error, ValueError)
 
 
 def test_run_turn_multi_attacker_lmove_threads_apply_fanaticism_true():
@@ -1319,6 +1371,93 @@ def test_run_turn_mutual_encounter_keeps_the_king_as_target_regardless_of_leader
     assert state.leaders[5].is_royal_heir is True
 
 
+def test_run_turn_mutual_pursue_threads_the_initiators_own_spy_super_sleuth():
+    # Phase 1041 bug fix -- the ordinary single-leader path
+    # (plan_dispatch.py's own `_dispatch_pursue()`) always computes and
+    # passes `has_spy_super_sleuth`; `_dispatch_mutual_encounter()` used
+    # to silently omit it on its own `execute_pursue(..., mutual_
+    # encounter=True)` call, defaulting to `False` regardless of
+    # whether the initiator actually holds the ability -- losing both
+    # the "catch-up roll is bypassed, success is automatic" guarantee
+    # and the resulting `guessed_distance`.
+    state = _base_state()
+    state.add_leader(
+        LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, advanced_abilities={AdvancedAbility.SPY_SUPER_SLEUTH})
+    )
+    state.add_leader(LeaderState(20, kingdom_id=2, name="B", location=ORIGIN))
+    leaders = [
+        _leader_with_phase(10, "A", "P0", _pursue_phase("P0", 20)),
+        _leader_with_phase(20, "B", "P0", _pursue_phase("P0", 10)),
+    ]
+
+    results = run_turn(
+        [TurnLeader(leaders[0], 1), TurnLeader(leaders[1], 2)],
+        state,
+        board_width=BOARD_WIDTH,
+        # A's own guessed_distance perturbation (`rng.choice((-1, 0, 1))`,
+        # index 1 -> offset 0), then add_experience()'s own two `.random()`
+        # draws, then a generous buffer for the end-of-turn revenue draws
+        # (one per Kingdom).
+        rng=ScriptedRandom([0.0] * 20, choice_indices=[1]),
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[10].result is by_leader[20].result
+    result = by_leader[10].result
+    assert result.caught_up is True
+    # Without the fix, has_spy_super_sleuth silently defaults to False
+    # here: the catch-up roll would need a real rng.random() draw this
+    # test's own script doesn't provide for it (it would raise
+    # IndexError, not just leave guessed_distance unset), and
+    # guessed_distance would stay None even if it somehow still caught up.
+    assert result.guessed_distance == 0  # co-located (distance 0) + a 0 offset
+
+
+def test_run_turn_mutual_encounter_exception_does_not_crash_the_whole_turn():
+    # Phase 1041 bug fix -- the three cross-leader group-dispatch call
+    # sites (multi-attacker LMOVE, multi-character Practice, and this
+    # one, mutual Challenge/Pursue) used to have none of the per-phase
+    # try/except isolation every ordinary single-leader phase gets via
+    # run_leader_plan()'s own broad `except Exception`. An exception
+    # here used to propagate straight out of run_turn(), discarding
+    # every already-computed PhaseDispatchResult for every other
+    # kingdom/leader processed earlier this same call -- reproduced here
+    # for the mutual-encounter call site; the identical fix covers the
+    # other two (_dispatch_multi_attacker_lmove/_dispatch_multi_practice)
+    # the same way.
+    state = _base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
+    state.add_leader(LeaderState(20, kingdom_id=2, name="B", location=ORIGIN))
+    state.add_leader(LeaderState(30, kingdom_id=1, name="Bystander", location=ORIGIN))
+    bystander_wait = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    leaders = [
+        _leader_with_phase(10, "A", "P0", _pursue_phase("P0", 20)),
+        _leader_with_phase(20, "B", "P0", _pursue_phase("P0", 10)),
+        _leader_with_phase(30, "Bystander", "P0", bystander_wait),
+    ]
+
+    with patch("ak_engine.turn.turn_processor._dispatch_mutual_encounter", side_effect=RuntimeError("boom")):
+        results = run_turn(
+            [TurnLeader(leaders[0], 1), TurnLeader(leaders[1], 2), TurnLeader(leaders[2], 1)],
+            state,
+            board_width=BOARD_WIDTH,
+            rng=random.Random(0),
+        )
+
+    by_leader = {r.leader_id: r for r in results}
+    # The bystander's own, completely unrelated dispatch still ran and
+    # is still reported -- the crash in the mutual pair's own dispatch
+    # didn't discard it.
+    assert by_leader[30].action is ActionCode.WAIT
+    assert by_leader[30].error is None
+    # Both leaders in the crashed mutual pair are recorded with the real
+    # exception instead of propagating it out of run_turn() itself.
+    assert isinstance(by_leader[10].error, RuntimeError)
+    assert isinstance(by_leader[20].error, RuntimeError)
+    assert by_leader[10].result is None
+    assert by_leader[20].result is None
+
+
 def test_run_turn_one_sided_challenge_dispatches_normally_not_as_mutual():
     state = _base_state()
     state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
@@ -1745,6 +1884,35 @@ def test_run_turn_defend_is_cancelled_by_a_later_trail_order():
     assert by_leader[200].result.battle_report is None
 
 
+def test_run_turn_defend_is_cancelled_by_the_declarers_own_patrol_declaration():
+    # Phase 1041 bug fix: a self-targeting PURSUE phase (a Patrol
+    # declaration, rulebook [3.16]) is still a PURSUE order for [3.15]'s
+    # own Defend-cancellation purposes ("If he receives a Move, Pursue
+    # or Trail order, the Defend order is cancelled"), but it used to be
+    # stripped out of this phase's own `entries` before
+    # `_apply_defend_cancellations()` ever ran, so declaring a Patrol
+    # never cancelled the declarer's own active Defend order -- unlike
+    # an ordinary (non-self-targeting) Pursue, already covered by
+    # `test_run_turn_defend_is_cancelled_by_a_later_pursue_order` above.
+    # The defender's own army (901, GARRISON) means `find_patrol_target()`
+    # never finds an interception target either way (rule (a): an armied
+    # patroller's own Patrol is ignored) -- isolating this test to the
+    # Defend-cancellation side effect alone, with no interception noise.
+    state = _defend_state()
+    attacker_state, attacker_army, attacker = _invading_attacker()
+    state.add_leader(attacker_state)
+    state.add_army(attacker_army)
+    patrol_phase = PlanPhase(label="P1", action=ActionCode.PURSUE, obj=100, extra=[0, -1])  # self-targeting: Patrol
+    defender = _two_phase_leader(100, "Defender", _defend_phase("P0"), patrol_phase)
+
+    results = run_turn(
+        [TurnLeader(defender, 2), TurnLeader(attacker, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(5)
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[200].result.battle_report is None  # cancelled -- walks in uncontested
+
+
 def test_run_turn_defend_survives_an_unrelated_action():
     # WAIT (and, by the same logic, Practice/Explore/etc.) doesn't cancel
     # Defend -- only LMOVE/PURSUE/TRAIL do. Proves the cancellation check
@@ -2096,6 +2264,52 @@ def test_run_turn_trail_actions_is_none_when_the_target_is_itself_mid_chase():
     assert trail_result.actions is None
 
 
+def test_run_turn_trail_actions_is_none_when_the_target_is_itself_patrol_preempted():
+    """Phase 1041 bug fix: the same ``action_this_phase_by_leader``
+    snapshot-timing bug the "Phase 817 fix" above closed for a mid-
+    Pursue/Trail-chase target was never extended to the later-added
+    Patrol preemption path. Leader 10 is a Patroller who (from a
+    standing Patrol declared at P0) intercepts a real intruder at P1,
+    preempting its own queued P1 WAIT order -- that WAIT never actually
+    dispatches, and must not leak into leader 40's own simultaneous
+    Trail report on leader 10 either.
+    """
+
+    state = _patrol_state()
+    state.add_kingdom(KingdomState(3, "Trailia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.allied_kingdoms.add(frozenset({1, 3}))  # the trailer is never a Patrol "enemy" candidate
+    state.add_leader(LeaderState(20, kingdom_id=2, name="Intruder", location=INTRUDER_HEX))
+    state.add_leader(LeaderState(40, kingdom_id=3, name="Trailer", location=PATROL_HOME))  # co-located -> guaranteed catch
+
+    p0 = _patrol_declare_phase("P0", 10)
+    p1 = PlanPhase(label="P1", action=ActionCode.WAIT, obj=0, extra=[0])
+    patroller = _two_phase_leader(10, "Patroller", p0, p1)
+    trailer = _leader_with_phase(40, "Trailer", "P1", _trail_phase("P1", 10))
+
+    results = run_turn(
+        [TurnLeader(patroller, 1), TurnLeader(trailer, 3)],
+        state,
+        board_width=BOARD_WIDTH,
+        # P0's own wander check, P1's own wander check (succeeds --
+        # intercepts, preempting the WAIT), leader 40's own P1 Trail
+        # catch-up roll (co-located -> succeeds), then a generous buffer
+        # for unrelated end-of-turn rng draws (e.g. revenue, one per
+        # Kingdom).
+        rng=ScriptedRandom([0.9, 0.9, 0.1] + [0.0] * 20),
+    )
+
+    by_label = {(r.leader_id, r.phase_label): r for r in results}
+    # The WAIT never actually dispatched -- preempted by the Patrol's
+    # own P1 interception.
+    p1_patrol_entry = by_label[(10, "P1")]
+    assert p1_patrol_entry.segment_index == -1
+    assert p1_patrol_entry.action is ActionCode.PURSUE
+
+    trail_result = by_label[(40, "P1")].result
+    assert trail_result.spied_on is True
+    assert trail_result.actions is None
+
+
 def test_run_turn_unresolved_move_chase_preempts_p1_and_continues_the_chase():
     # Phase 632: CHASE_TARGET is 2 hexes from CHASE_START (same geometry
     # the Pursue/Trail tests above reuse) -- P0's own LMOVE hop lands at
@@ -2221,6 +2435,92 @@ def test_run_turn_pursue_with_no_target_is_not_registered_for_continuation():
     assert state.leaders[10].location == DECOY
 
 
+# -- Chase-continuation registration skips a trailing sentinel (Phase 1041) --
+
+
+def test_main_dispatch_result_finds_the_real_entry_past_a_trailing_sentinel():
+    # Phase 1041 bug fix -- a single dispatched phase can produce more
+    # than one PhaseDispatchResult: run_leader_plan() appends a trailing
+    # random-encounter sentinel after an LMOVE/PURSUE/TRAIL phase
+    # whenever one fires, always with action=None, never the real
+    # dispatched ActionCode. Blindly indexing [-1] can grab the sentinel
+    # instead of the real result.
+    real = PursueExecutionResult(caught_up=False, reason="did not catch up this phase")
+    sentinel = RandomEncounterResult(10, ORIGIN, terrain_roll_succeeded=True)
+    dispatch_results = [
+        PhaseDispatchResult(10, 0, "P0", ActionCode.PURSUE, real, None),
+        PhaseDispatchResult(10, -1, "P0", None, sentinel, None),
+    ]
+
+    assert _main_dispatch_result(dispatch_results, ActionCode.PURSUE) is real
+    assert dispatch_results[-1].result is sentinel  # the pitfall this guards against
+
+
+def test_register_pursuit_continuation_still_registers_past_a_trailing_sentinel():
+    active_pursuits: dict[int, _ActivePursuit] = {}
+    phase = _pursue_phase("P0", 20)
+    real = PursueExecutionResult(caught_up=False, reason="did not catch up this phase")
+    sentinel = RandomEncounterResult(10, ORIGIN, terrain_roll_succeeded=True)
+    dispatch_results = [
+        PhaseDispatchResult(10, 0, "P0", ActionCode.PURSUE, real, None),
+        PhaseDispatchResult(10, -1, "P0", None, sentinel, None),
+    ]
+
+    _register_pursuit_continuation(active_pursuits, 10, phase, dispatch_results)
+
+    # Without the fix, dispatch_results[-1].result is the sentinel, the
+    # isinstance(result, PursueExecutionResult) check fails, and the
+    # chase is never registered for continuation -- even though the
+    # real result (still in dispatch_results[0]) said "still chasing."
+    assert 10 in active_pursuits
+    assert active_pursuits[10].kind == "pursue"
+    assert active_pursuits[10].request.target_character_id == 20
+
+
+def test_register_move_chase_continuation_still_registers_past_a_trailing_sentinel():
+    # Same bug, for LMOVE's own continuation registration -- here BOTH
+    # the real move and its own Naval Hug Coastline straggler sentinel
+    # are MoveExecutionResult instances, so an isinstance check alone
+    # (unlike Pursue/Trail's distinct result types) can't tell them
+    # apart from a trailing sentinel; matching on `action` can.
+    active_move_chases: dict[int, _ActiveMoveChase] = {}
+    real = MoveExecutionResult(
+        moved=True, battle_report=None, exploration=None, movement_points_spent=1, new_location=ORIGIN,
+        reached_target=False, stopped_chasing=False,
+    )
+    sentinel = RandomEncounterResult(10, ORIGIN, terrain_roll_succeeded=True)
+    dispatch_results = [
+        PhaseDispatchResult(10, 0, "P0", ActionCode.LMOVE, real, None),
+        PhaseDispatchResult(10, -1, "P0", None, sentinel, None),
+    ]
+
+    _register_move_chase_continuation(active_move_chases, 10, 1, TARGET, dispatch_results)
+
+    assert 10 in active_move_chases
+    assert active_move_chases[10].target == TARGET
+
+
+def test_continue_active_pursuits_stamps_request_onto_the_continuation_result():
+    # Phase 1041 bug fix -- the first-phase dispatch (plan_dispatch.py's
+    # own _dispatch_pursue()/_dispatch_trail()) always stamps
+    # result.request right after dispatching; this continuation path
+    # never did, so a real catch-up resolved here (a kill, loot, an
+    # intelligence report -- fully applied to state) had .request left
+    # None, and report/turn_report.py's own describe_turn_results()
+    # unconditionally skips narration whenever .request is None --
+    # silently dropping the whole event from the player's turn report.
+    state = _base_state()
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
+    request = PursueRequest(target_character_id=20, unconfirmed_extra0=0, tactics=[])
+    active_pursuits = {10: _ActivePursuit(kind="pursue", request=request)}
+
+    still_chasing = PursueExecutionResult(caught_up=False, reason="did not catch up this phase")
+    with patch("ak_engine.turn.turn_processor.advance_pursuit", return_value=still_chasing):
+        results = _continue_active_pursuits(active_pursuits, "P1", state, random.Random(0))
+
+    assert results[0].result.request is request
+
+
 # -- Patrol / "Characters On Patrol" (Phase 71) -----------------------------
 
 
@@ -2289,6 +2589,47 @@ def test_run_turn_patrol_lets_the_scheduled_order_through_when_no_threat():
     p1_entry = by_label[(10, "P1")]
     assert p1_entry.segment_index == 0  # ordinary dispatch, not preempted
     assert p1_entry.action is ActionCode.WAIT
+
+
+def test_run_turn_active_patrol_persists_across_a_turn_boundary():
+    # Phase 1041 bug fix -- ``active_patrols`` used to be a plain local
+    # dict recreated empty at the top of every ``run_turn()`` call, even
+    # though rule (d) says Patrol "stays active indefinitely until
+    # cancelled by a later Move/Pursue/Trail order" -- unlike Defend/
+    # Pursue/Trail, which the rulebook scopes only to "the rest of the
+    # turn." A Patrol order used to silently vanish at the next turn
+    # boundary even though nothing had ever cancelled it. Now backed by
+    # ``GameState.active_patrols``, so it survives a second ``run_turn()``
+    # call on the same state.
+    state = _patrol_state()  # no intruder yet -- turn 1 just declares the Patrol
+    p0 = _patrol_declare_phase("P0", 10)
+    patroller_turn1 = _leader_with_phase(10, "Patroller", "P0", p0)
+
+    run_turn([TurnLeader(patroller_turn1, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    assert 10 in state.active_patrols  # still registered once run_turn() returns
+
+    # Turn 2 -- a fresh run_turn() call on the same state. The patroller
+    # submits no new Patrol order at all (just an ordinary WAIT); an
+    # intruder has now shown up adjacent to the patrol's home. The
+    # standing Patrol from turn 1 should still intercept it.
+    state.add_leader(LeaderState(20, kingdom_id=2, name="Intruder", location=INTRUDER_HEX))
+    wait_phase = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    patroller_turn2 = _leader_with_phase(10, "Patroller", "P0", wait_phase)
+
+    # The Patrol isn't removed from ``active_patrols`` just because it
+    # intercepted once (rule (d): it stays active) -- the intruder is
+    # never moved away in this fixture, so every later phase re-checks
+    # it too, each consuming its own wander-check roll; a generous
+    # buffer also covers unrelated end-of-turn rng draws (e.g. revenue).
+    results = run_turn([TurnLeader(patroller_turn2, 1)], state, board_width=BOARD_WIDTH, rng=ScriptedRandom([0.9] * 30))
+
+    by_label = {(r.leader_id, r.phase_label): r for r in results}
+    p0_entry = by_label[(10, "P0")]
+    assert p0_entry.segment_index == -1  # standing-order dispatch, preempted the WAIT
+    assert p0_entry.action is ActionCode.PURSUE
+    assert p0_entry.result.intercepted is True
+    assert p0_entry.result.target_leader_id == 20
 
 
 def test_run_turn_patrol_is_cancelled_by_a_later_move_order():

@@ -684,7 +684,20 @@ def dispatch_phase(
         return result
 
     if action is ActionCode.EXPLORE:
-        province = state.provinces[state.leaders[leader_id].location]
+        # Phase 1041 bug fix -- `leader` is already fetched (`.get()`,
+        # None-safe) a few lines up for rumor generation, but this
+        # branch used to re-fetch it via a bare `state.leaders[leader_id]`
+        # subscript instead of reusing it, missing the "acting leader may
+        # have died earlier in the same turn" guard LEAVE/PICK_UP/
+        # DISBAND/HIRE/FIRE all already got (each via `.get()` + a clean
+        # no-op, not a raise). A leader removed from `state.leaders`
+        # earlier this turn (e.g. lost a Challenge/Search/Pursue duel)
+        # but with a stale EXPLORE still queued for a later phase used to
+        # raise an uncaught `KeyError` here instead of degrading like its
+        # sibling actions.
+        if leader is None:
+            return NoOpResult(action=action)
+        province = state.provinces[leader.location]
         result = resolve_explore(
             province.explored_percent,
             province.effective_terrain(),
@@ -719,7 +732,7 @@ def dispatch_phase(
         # attempt to close.
         for feature in exploration.discovered_features:
             if len(feature.discovered_by_kingdom) == 1:
-                state.leaders[leader_id].merit_tally.features_discovered_first += 1
+                leader.merit_tally.features_discovered_first += 1
 
         # Phase 510: Society Maps's own "If he Explores a province, 0-2
         # maps are received" trigger -- deliberately EXPLORE-only, not

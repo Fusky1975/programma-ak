@@ -1622,6 +1622,24 @@ def test_dispatch_pick_up_by_a_dead_leader_does_not_crash():
     assert state.armies[army_id].commanded_by is None
 
 
+def test_dispatch_explore_by_a_dead_leader_is_a_clean_no_op():
+    # Phase 1041 bug fix -- the EXPLORE branch used to do a bare
+    # state.leaders[leader_id] lookup instead of reusing the already-
+    # fetched, None-checked `leader` variable computed a few lines up
+    # for rumor generation -- missing the "acting leader may have died
+    # earlier in the same turn" guard LEAVE/PICK_UP/DISBAND/HIRE/FIRE
+    # all already got (each via .get() + a clean no-op). A leader who
+    # died earlier this turn but still has a stale EXPLORE queued for a
+    # later phase used to raise an uncaught KeyError here instead.
+    state, _army_id = _state_with_army(HexCoord(3, 9), {})
+    del state.leaders[LEADER_ID]  # died in an earlier phase this same turn
+    phase = PlanPhase(label="P3", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[], board_width=BOARD_WIDTH)
+
+    assert result == NoOpResult(action=ActionCode.EXPLORE)
+
+
 def test_dispatch_pick_up_attaches_colocated_army():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})

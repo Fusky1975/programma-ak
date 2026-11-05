@@ -806,6 +806,28 @@ def test_execute_patrol_spy_assassinate_accepts_a_king_intruder():
     assert result.combat_occurred is True
 
 
+def test_execute_patrol_cowardly_target_refuses_the_encounter():
+    # Phase 1041 bug fix -- same gap pursue_execution.py's own Phase
+    # 1041 fix closes (see that module's test_execute_pursue_cowardly_
+    # target_refuses_an_armyless_encounter for the full sourcing):
+    # [5.6]'s Temper-based "Refusal to Meet" gate was never inherited
+    # here either, despite this module's own docstring claiming it now
+    # genuinely inherits the shared armyless-Encounter core.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Patroller", location=HOME))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Intruder", location=HOME, temper=Temper.COWARDLY))
+
+    # Co-located -> no wander-check roll; opponent_leads_army is always
+    # False here (the patroller is structurally armyless, rule (a)) ->
+    # the range's own low end, 51%; any roll under that refuses.
+    result = execute_patrol(
+        state, 1, _melee_request(2), ScriptedRandom([0.1]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
+    )
+
+    assert result.intercepted is True
+    assert result.reason == "encounter refused"
+
+
 def test_execute_patrol_sense_danger_talent_can_refuse_the_encounter():
     state = _base_state()
     patroller = LeaderState(1, kingdom_id=1, name="Patroller", location=HOME)

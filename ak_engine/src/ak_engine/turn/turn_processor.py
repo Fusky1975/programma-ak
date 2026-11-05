@@ -312,7 +312,7 @@ from ak_engine.turn.move_execution import (
 )
 from ak_engine.turn.movement import MapBounds, resolve_move
 from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, apply_cravenest_temperament_escalation
-from ak_engine.turn.plan_dispatch import PhaseDispatchResult, dispatch_phase, run_leader_plan
+from ak_engine.turn.plan_dispatch import PhaseDispatchResult, _has_spy_super_sleuth, dispatch_phase, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
 from ak_engine.turn.practice_execution import commit_pending_skill_advancements, execute_practice_group
 from ak_engine.turn.patrol_execution import execute_patrol
@@ -449,7 +449,12 @@ def run_turn(
     active_defends: dict[int, DefendCoverage] = {}  # defender leader_id -> origin + coverage area
     active_pursuits: dict[int, _ActivePursuit] = {}  # pursuer/trailer leader_id -> ongoing chase
     active_move_chases: dict[int, _ActiveMoveChase] = {}  # mover leader_id -> ongoing non-adjacent Move chase
-    active_patrols: dict[int, object] = {}  # patroller leader_id -> its own PursueRequest (standing order)
+    # Phase 1041 bug fix -- now the real, persistent `GameState.active_
+    # patrols` (mutated in place throughout this call), not a local dict
+    # recreated empty on every `run_turn()` call -- see that field's own
+    # docstring for why Patrol, unlike Defend/Pursue/Trail, must survive
+    # the turn boundary.
+    active_patrols = state.active_patrols
     # Rulebook [3.15]'s other Defend-cancellation trigger ("cancelled if
     # he loses a battle"): once a leader loses the one battle their own
     # Defend order can ever draw them into (see
@@ -586,11 +591,34 @@ def run_turn(
             if tl.leader.leader_id in new_patrol_leader_ids:
                 active_patrols[tl.leader.leader_id] = decode_pursue_phase(phase)
         entries = [entry for entry in entries if entry[0].leader.leader_id not in new_patrol_leader_ids]
+        # Phase 1041 bug fix -- a self-targeting PURSUE is still a PURSUE
+        # order for rulebook [3.15]'s own Defend-cancellation purposes
+        # ("If he receives a Move, Pursue or Trail order, the Defend
+        # order is cancelled"), but it's already stripped out of
+        # ``entries`` above, before ``_apply_defend_cancellations()``
+        # ever runs -- so declaring a Patrol used to never cancel that
+        # same leader's own active Defend order. Cancelled directly here
+        # instead, the same ``.pop(leader_id, None)`` convention
+        # ``_apply_defend_cancellations()`` itself uses.
+        for leader_id in new_patrol_leader_ids:
+            active_defends.pop(leader_id, None)
 
         _apply_patrol_cancellations(active_patrols, entries)
         patrol_results, patrol_preempted = _dispatch_active_patrols(active_patrols, label, state, rng, bounds)
         results.extend(patrol_results)
         entries = [entry for entry in entries if entry[0].leader.leader_id not in patrol_preempted]
+        # Phase 1041 bug fix -- ``action_this_phase_by_leader`` (above)
+        # was snapshotted before this Patrol preemption ran, so a leader
+        # whose queued order was just preempted by their own active
+        # Patrol still had that never-dispatched order leaked into the
+        # map -- read later by ``_backfill_trail_actions()`` to stamp a
+        # Trail's own "Actions" report field, wrongly showing the
+        # preempted leader as having carried out an order that never
+        # actually dispatched. Dropped here, mirroring the "no entry"
+        # convention the module docstring already documents for an idle
+        # or mid-chase leader.
+        for leader_id in patrol_preempted:
+            action_this_phase_by_leader.pop(leader_id, None)
 
         move_targets: dict[int, HexCoord] = {}
         for index, (_tl, _segment_index, phase) in enumerate(entries):
@@ -697,17 +725,47 @@ def run_turn(
 
         for target, indices in multi_attacker_groups:
             movers = [entries[i] for i in indices]
-            group_results = _dispatch_multi_attacker_lmove(movers, target, state, board_width, explorer_skill, rng)
+            # Phase 1041 bug fix -- unlike every ordinary single-leader
+            # phase (dispatched through `run_leader_plan()`, whose own
+            # broad `except Exception` keeps one leader's dispatch error
+            # from crashing the whole turn), this grouped dispatch had no
+            # isolation of its own: an exception here used to propagate
+            # straight out of `run_turn()`, discarding every already-
+            # computed `PhaseDispatchResult` for every other kingdom/
+            # leader processed earlier this same call.
+            try:
+                group_results = _dispatch_multi_attacker_lmove(movers, target, state, board_width, explorer_skill, rng)
+            except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
+                group_results = [
+                    PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, None, exc)
+                    for tl, segment_index, phase in movers
+                ]
             results.extend(group_results)
             _apply_defend_battle_loss(defeated_while_defending, reinforced_by_target, target, group_results)
             _apply_defend_battle_win(active_pursuits, reinforced_by_target, target, group_results)
 
         for ability, indices in multi_practice_groups:
             movers = [entries[i] for i in indices]
-            results.extend(_dispatch_multi_practice(movers, ability, state, rng))
+            # Phase 1041 bug fix -- see the identical note above.
+            try:
+                group_results = _dispatch_multi_practice(movers, ability, state, rng)
+            except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
+                group_results = [
+                    PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, None, exc)
+                    for tl, segment_index, phase in movers
+                ]
+            results.extend(group_results)
 
         for index_a, index_b in mutual_encounter_pairs:
-            results.extend(_dispatch_mutual_encounter(entries[index_a], entries[index_b], state, rng))
+            # Phase 1041 bug fix -- see the identical note above.
+            try:
+                pair_results = _dispatch_mutual_encounter(entries[index_a], entries[index_b], state, rng)
+            except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
+                pair_results = [
+                    PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, None, exc)
+                    for tl, segment_index, phase in (entries[index_a], entries[index_b])
+                ]
+            results.extend(pair_results)
 
         eligible_indices = [index for index in range(len(entries)) if index not in consumed]
         dispatch_order = _order_same_kingdom_pursuits_after_their_target(
@@ -1609,6 +1667,17 @@ def _continue_active_pursuits(
             if result.spied_on:
                 result.actions = action_this_phase_by_leader.get(active.request.target_character_id)
 
+        # Phase 1041 bug fix -- the first-phase dispatch (plan_dispatch.py's
+        # own `_dispatch_pursue()`/`_dispatch_trail()`) always stamps
+        # `result.request` right after dispatching; this continuation path
+        # never did, so a real catch-up resolved here (a kill, loot, an
+        # intelligence report -- fully applied to `state`) had its
+        # `.request` left `None`, and `report/turn_report.py`'s own
+        # `describe_turn_results()` unconditionally skips narration
+        # whenever `.request` is `None` -- silently dropping the whole
+        # event from the player's turn report.
+        result.request = active.request
+
         if not still_chasing:
             del active_pursuits[leader_id]
 
@@ -1643,6 +1712,33 @@ def _backfill_trail_actions(
         result.actions = action_this_phase_by_leader.get(result.request.target_character_id)
 
 
+def _main_dispatch_result(dispatch_results: list[PhaseDispatchResult], action: ActionCode) -> object | None:
+    """Finds this phase's own real dispatch result among ``dispatch_results``
+    -- by matching ``action``, not by assuming it's ``dispatch_results[-1]``.
+
+    **Phase 1041 bug fix**: a single dispatched phase can produce more than
+    one ``PhaseDispatchResult`` -- ``run_leader_plan()`` appends a trailing
+    random-encounter sentinel after an LMOVE/PURSUE/TRAIL phase whenever one
+    fires (``turn/random_encounter_execution.py``'s own ``_TRIGGERING_
+    ACTIONS``), and an LMOVE can additionally append its own Naval Hug
+    Coastline "unboarded stragglers" sentinel (Phase 766) -- and *both*
+    sentinel kinds are always recorded with ``action=None``, never the real
+    dispatched ``ActionCode`` (see each one's own append site). Blindly
+    indexing ``[-1]`` can therefore grab a sentinel instead of the real
+    result -- wrongly treating a dispatch that said "still chasing" as if it
+    had ended, which is exactly what used to make a persistent chase stop
+    one phase early whenever a random encounter fired on the same phase.
+    Matching on ``action`` instead finds the one real entry every time,
+    since a sentinel's own ``action`` is never the real dispatched one and
+    there is always exactly one real entry per dispatched phase.
+    """
+
+    for entry in dispatch_results:
+        if entry.action is action:
+            return entry.result
+    return None
+
+
 def _register_pursuit_continuation(
     active_pursuits: dict[int, _ActivePursuit],
     leader_id: int,
@@ -1656,9 +1752,7 @@ def _register_pursuit_continuation(
     reason) needs no follow-up. See module docstring.
     """
 
-    if not dispatch_results:
-        return
-    result = dispatch_results[-1].result
+    result = _main_dispatch_result(dispatch_results, phase.action)
 
     if phase.action is ActionCode.PURSUE:
         if not isinstance(result, PursueExecutionResult):
@@ -1743,9 +1837,14 @@ def _register_move_chase_continuation(
     and never registers here. See module docstring.
     """
 
-    if not dispatch_results:
-        return
-    result = dispatch_results[-1].result
+    # Phase 1041 bug fix -- see ``_main_dispatch_result()``'s own
+    # docstring: ``dispatch_results[-1]`` can be a trailing sentinel (a
+    # random encounter, or this same LMOVE's own Naval Hug Coastline
+    # straggler split) instead of the real move result, and both
+    # sentinel kinds are themselves ``MoveExecutionResult`` instances
+    # too, so an ``isinstance`` check alone can't tell them apart from
+    # the real one the way it can for Pursue/Trail.
+    result = _main_dispatch_result(dispatch_results, ActionCode.LMOVE)
     if not isinstance(result, MoveExecutionResult):
         return
     if result.reached_target or result.stopped_chasing:
@@ -1871,7 +1970,23 @@ def _dispatch_mutual_encounter(
         result = execute_challenge(state, tl.leader.leader_id, request, rng, mutual_encounter=True)
     else:
         request = decode_pursue_phase(phase)
-        result = execute_pursue(state, tl.leader.leader_id, request, rng, mutual_encounter=True)
+        # Phase 1041 bug fix -- the ordinary single-leader path
+        # (plan_dispatch.py's own `_dispatch_pursue()`) always computes
+        # and passes `has_spy_super_sleuth`; this mutual-encounter path
+        # used to silently omit it, defaulting to `False` regardless of
+        # whether the initiator actually holds the ability -- losing its
+        # documented "the catch-up roll is bypassed, success is
+        # automatic" guarantee (and the resulting `guessed_distance`)
+        # whenever a Spy-Super-Sleuth leader's own Pursue happened to
+        # form a same-phase mutual-encounter pair.
+        result = execute_pursue(
+            state,
+            tl.leader.leader_id,
+            request,
+            rng,
+            mutual_encounter=True,
+            has_spy_super_sleuth=_has_spy_super_sleuth(state, tl.leader.leader_id),
+        )
 
     return [
         PhaseDispatchResult(entry[0].leader.leader_id, entry[1], entry[2].label, entry[2].action, result, None)
@@ -2472,6 +2587,19 @@ def _dispatch_multi_attacker_lmove(
             )
             if is_illegal_move_from_contested(origin_contested_by_mover, target_owner_is_enemy):
                 raise IllegalMoveFromContestedError("illegal to move from a contested province to an adjacent enemy province")
+            # Phase 1041 bug fix -- this function's own separate movement
+            # logic (see the Phase 737 note just below) never had the
+            # single-attacker path's own movement-points gate
+            # (move_execution.py execute_move(): "an army with no
+            # movement points left this gameturn can't move", raised
+            # *before* the move proceeds). find_transport_illegality()
+            # just below is a pure terrain/transport legality check and
+            # never looks at movement_points either, so an army already
+            # at (or below) 0 used to be let into the battle and then
+            # have `movement_points -= cost` applied unconditionally,
+            # driving it further negative with no recorded error.
+            if armies and any(army.movement_points < 1 for army in armies):
+                raise ValueError("an army with no movement points left this gameturn can't move")
             # Phase 737: this function has its own separate movement
             # logic (never calls execute_move()), so it needs its own
             # copy of the same real transport-legality gate -- see

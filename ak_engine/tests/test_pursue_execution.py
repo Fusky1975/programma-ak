@@ -1041,6 +1041,64 @@ def test_execute_pursue_spy_assassinate_accepts_a_king_target():
     assert result.combat_occurred is True
 
 
+# -- Phase 1041: [5.6]'s own Temper "Refusal to Meet" gate ------------------
+
+
+def test_execute_pursue_cowardly_target_refuses_an_armyless_encounter():
+    # Phase 1041 bug fix -- [5.6]'s own Temper-based "Refusal to Meet"
+    # gate (challenge_execution.py execute_challenge()'s own Phase 898
+    # addendum) was never inherited here, despite this module's own
+    # docstring claiming full Encounter-rule parity with Challenge
+    # ([3.16]: "All rules listed under the Encounter action apply to
+    # Pursuit encounters"). A Cowardly/Cautious non-King target used to
+    # have zero chance of refusing a Pursue, unlike an otherwise-
+    # identical Challenge against the same target (see test_challenge_
+    # execution.py's own test_execute_challenge_cowardly_target_refuses_
+    # a_strong_challenger).
+    state = _base_state()
+    pursuer = LeaderState(1, kingdom_id=1, name="Pursuer", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD, temper=Temper.COWARDLY)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    request = _melee_request(2)
+
+    # [0] catch-up roll (co-located, guaranteed); [1:2] add_experience's
+    # own trailing pair; is_encounter_accepted() itself needs no roll
+    # for an armyless non-King target (its own unconditional-accept
+    # fallback) -- [3] is the new Phase 1041 Temper-refusal roll:
+    # armyless pursuer -> the range's own low end, 51%; any roll under
+    # that refuses.
+    result = execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5, 0.1]))
+
+    assert result.caught_up is True
+    assert result.reason == "encounter refused"
+
+
+def test_execute_pursue_spy_assassinate_skips_the_temper_refusal_gate():
+    # Mirrors challenge_execution.py's own Phase 898 scoping: a refusal
+    # gate never applies once an unconditional-accept ability already
+    # fired -- same pattern test_execute_pursue_spy_assassinate_accepts_
+    # a_king_target above already covers for is_encounter_accepted()
+    # itself, now also for this newer gate layered on top of it.
+    state = _base_state()
+    pursuer = LeaderState(
+        1, kingdom_id=1, name="Spy", location=FIELD, advanced_abilities={AdvancedAbility.SPY_ASSASSINATE}
+    )
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD, temper=Temper.COWARDLY)
+    state.add_leader(pursuer)
+    state.add_leader(target)
+    request = _melee_request(2)
+
+    with patch("ak_engine.turn.pursue_execution.resolve_challenge_combat") as mock_resolve:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner=None)
+        # No trailing roll needed -- has_spy_assassinate short-circuits
+        # both is_encounter_accepted() and the Temper-refusal gate.
+        result = execute_pursue(state, 1, request, rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert result.caught_up is True
+    assert result.combat_occurred is True
+
+
 # -- Phase 706: AdvancedAbility.SENSE_DANGER_TALENT (via the shared function) --
 
 

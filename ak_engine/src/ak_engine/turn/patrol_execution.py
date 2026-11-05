@@ -160,6 +160,7 @@ from ak_engine.turn.encounter import (
     loot_defeated_leader,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
+    resolve_refusal_to_meet,
     weapon_defensive_hit_multiplier,
     weapon_grants_auto_invisibility,
     weapon_melee_damage_bonus,
@@ -412,15 +413,26 @@ def execute_patrol(
     if not plan_needs_combat_dispatch(request):
         return PatrolExecutionResult(intercepted=True, target_leader_id=target.leader_id, combat_occurred=False)
 
+    has_spy_assassinate = AdvancedAbility.SPY_ASSASSINATE in patroller.advanced_abilities
     accepted = is_encounter_accepted(
         target_is_king=target.is_king,
         target_leads_army=False,  # guaranteed by find_patrol_target's own rule (a) filter
         challenger_is_king=patroller.is_king,
         mutual_encounter=False,
         rng=rng,
-        has_spy_assassinate=AdvancedAbility.SPY_ASSASSINATE in patroller.advanced_abilities,
+        has_spy_assassinate=has_spy_assassinate,
         has_sense_danger_evasion=target_evades_via_sense_danger(state, target, patroller),
     )
+    # Phase 1041 bug fix -- [5.6]'s own Temper-based "Refusal to Meet"
+    # gate (challenge_execution.py execute_challenge()'s own Phase 898
+    # addendum), the same gap pursue_execution.py execute_pursue()'s own
+    # Phase 1041 fix closes -- see that fix's own note for the full
+    # sourcing. opponent_leads_army is always False here: find_patrol_
+    # target()'s own rule (a) filter already guarantees an armied
+    # patroller never reaches this point.
+    if accepted and not has_spy_assassinate:
+        if resolve_refusal_to_meet(target.temper, is_king=target.is_king, opponent_leads_army=False, rng=rng):
+            accepted = False
     if not accepted:
         return PatrolExecutionResult(intercepted=True, target_leader_id=target.leader_id, reason="encounter refused")
 

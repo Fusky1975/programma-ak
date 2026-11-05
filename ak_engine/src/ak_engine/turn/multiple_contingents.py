@@ -187,7 +187,18 @@ def group_attackers_into_battles(
     for attacker in attackers:
         joined = False
         for group in groups:
-            if eligible_to_unite(attacker, group[0], allied_kingdoms) and roll_unite_for_battle(
+            # Phase 1041 bug fix -- eligibility used to be checked only
+            # against `group[0]` (the group's founding member), not every
+            # member already in it. `allied_kingdoms` is a flat set of
+            # pairs with no guaranteed transitive closure (A-B allied and
+            # B-C allied doesn't imply A-C allied), so a chain through a
+            # common ally could silently unite two kingdoms [7.8] itself
+            # requires to be "the same King, or two Kings allied with
+            # each other" -- not merely each allied with some third
+            # party already in the group. The "unite" chance roll stays
+            # against `group[0]` unchanged (a probability mechanic, not
+            # [7.8]'s own hard eligibility requirement).
+            if all(eligible_to_unite(attacker, member, allied_kingdoms) for member in group) and roll_unite_for_battle(
                 attacker, group[0], rng
             ):
                 group.append(attacker)

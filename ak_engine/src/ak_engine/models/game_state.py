@@ -324,6 +324,7 @@ from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.parser.gw_world import DiplomaticRelation
+from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.search_decode import SearchTactic
 
@@ -1809,6 +1810,19 @@ class GameState:
     diplomacy_relation_change_notices: list[tuple[int, int, DiplomaticRelation, DiplomaticRelation]] = field(
         default_factory=list
     )
+    # Phase 1041 bug fix -- rulebook [3.16] rule (d): "The Patrol stays
+    # active until the next Move, Trail or Pursue order" -- a real
+    # standing order meant to persist across the turn boundary, unlike
+    # Defend/Pursue/Trail (rulebook-scoped to "the rest of the turn").
+    # Previously tracked only in a `run_turn()`-local dict (``turn/
+    # turn_processor.py``), which was silently recreated empty on every
+    # call -- a Patrol order vanished at the next turn boundary even
+    # when nothing had ever cancelled it. Persisted here instead, the
+    # same way every other true cross-turn standing state already is
+    # (e.g. ``LeaderState.special_encounter_plan``). Keyed by the
+    # patroller's own ``leader_id``; value is the ``turn/challenge_
+    # pursue_decode.py PursueRequest`` their Patrol order decoded to.
+    active_patrols: dict[int, PursueRequest] = field(default_factory=dict)
     # Feature instances (Phase 75) -- see models/feature.py's own docstring
     # for why this is a flat dict-by-id, mirroring `armies`/`provinces`,
     # not a per-province list (Pascal's own `fx`/`fy` arrays are keyed by

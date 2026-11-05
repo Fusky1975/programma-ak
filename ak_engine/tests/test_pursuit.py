@@ -218,6 +218,62 @@ def test_resolve_pursuit_rear_unit_gets_more_attempts_than_front_line():
     assert rear_rng.choice_calls == 1 + 3  # Bowmen's own 1 front-line attempt + LCav's 3 rear attempts
 
 
+class _AlwaysDrawsLastAndAlwaysCatchesRng(random.Random):
+    """``random()`` always 0.0 (``r01()`` always 0 -- irrelevant here,
+    the speed gap below guarantees a catch regardless); ``choice()``
+    deterministically picks the LAST element of whatever it's given.
+    CPython's real ``choice()`` is implemented via ``_randbelow()``
+    (raw bit generation), not ``self.random()``, so overriding
+    ``choice()`` directly (not just ``random()``) is what makes this a
+    meaningful, deterministic check of which object actually gets
+    drawn and removed.
+    """
+
+    def random(self) -> float:
+        return 0.0
+
+    def choice(self, seq):
+        return seq[-1]
+
+
+def test_resolve_pursuit_removes_the_actually_destroyed_unit_not_a_value_equal_twin():
+    # Phase 1041 bug fix -- BattleUnit is a plain dataclass with no
+    # eq=False/frozen=True, so Python generates value-based equality:
+    # two retreating units with identical field values compare equal
+    # even though they're different objects. `remaining_targets.remove
+    # (target)` deletes the FIRST value-equal entry in the list, not
+    # necessarily the object actually drawn and destroyed -- so
+    # destroying the second of two identical-valued units used to
+    # silently remove the first (an untouched survivor) instead,
+    # leaving the real casualty still eligible for a later draw.
+    unit_a = unit(ArmyType.GARRISON, strength=5)
+    unit_b = unit(ArmyType.GARRISON, strength=5)  # identical field values, different object
+    targets = [unit_a, unit_b]
+
+    # Two separate front-line pursuers (DRAGON_WING, speed 5) -- one
+    # catch always ends a pursuer's own search (see resolve_pursuit's
+    # own docstring), so two distinct outcomes need two pursuers, not
+    # one with several attempts. Even r01()=0 gives margin 5-1-0=4 >
+    # GARRISON's own speed 1 -- every attempt catches regardless of
+    # r01. A much higher pursuer strength (20 vs 5) guarantees the
+    # post-catch destroy roll too, since random()=0.0 gives both sides
+    # the same U[1,2) multiplier (1.0). The rng always draws the LAST
+    # element of the current list: first pursuer draws unit_b (index
+    # 1 of 2); after a correct removal, only unit_a is left (index 0
+    # of 1) for the second pursuer's own draw.
+    rng = _AlwaysDrawsLastAndAlwaysCatchesRng()
+    winner_columns = [[unit(ArmyType.DRAGON_WING, strength=20)], [unit(ArmyType.DRAGON_WING, strength=20)]]
+    outcomes = resolve_pursuit(winner_columns, targets, Terrain.PLAINS, rng)
+
+    assert len(outcomes) == 2
+    assert all(outcome.target_destroyed for outcome in outcomes)
+    # The two outcomes are for the two distinct target objects, not the
+    # same one processed twice (the bug's own observable symptom: the
+    # real casualty redrawn from a list that should have already
+    # dropped it, while the real survivor was wrongly removed instead).
+    assert {id(outcomes[0].target), id(outcomes[1].target)} == {id(unit_a), id(unit_b)}
+
+
 def test_resolve_pursuit_position_order_is_front_line_of_every_column_first():
     # Two columns, each with a front+rear unit: the front-line units of
     # both columns must be visited before either column's own rear unit
