@@ -817,6 +817,8 @@ def _resolve_personal_combat_cast(
     cast_spells_attempted: set[Spell],
     fizzled_spells: list[tuple[str, Spell]] | None = None,
     is_defensive: bool = False,
+    melee_setup_done: list[bool] | None = None,
+    melee_swings: list[MeleeSwing] | None = None,
 ) -> str | None:
     """Leader-vs-leader Personal-Combat spell dispatch -- see module
     docstring's own Phase 290 addendum for how this was re-derived
@@ -848,6 +850,32 @@ def _resolve_personal_combat_cast(
     Enemy's own [4.25.2] "un negromante non può usarlo per difendere sé
     stesso in un piano incontro" restriction -- every other spell is
     unaffected either way.
+
+    **Phase 1042 bug fix -- ``melee_setup_done``/``melee_swings``**:
+    Kill Enemy's own failed-cast retaliation duel and Gate Demon's own
+    summoned-monster duel each resolve a real ``resolve_melee_duel()``
+    call, but this function previously had no way to tell that duel
+    whether the encounter's own one-time ``apply_temper_melee_setup()``
+    had already run, nor anywhere to surface the swings it produced --
+    so those two sub-duels always re-applied the setup (silently
+    compounding a Temper/Ability bonus that should only ever apply
+    once per encounter) and their own melee swings never reached
+    ``ChallengeCombatOutcome.melee_swings``, so neither Melee XP
+    crediting nor the turn report's own narration ever saw them.
+
+    ``melee_setup_done`` is a **single-element mutable list**, not a
+    plain ``bool`` -- deliberately, so this function can report back
+    "a sub-duel just applied it" to its own two real callers below
+    without widening this function's own ``str | None`` return type
+    (far more invasive, touching every one of its ~15 return
+    statements). A plain bool read-only parameter would tempt a caller
+    into unconditionally setting its own local to ``True`` right after
+    *any* call here "to be safe" -- wrong for the large majority of
+    spells (Charm, Fireball, Invisibility, Telek Storm, ...) that never
+    touch melee at all, which would wrongly suppress the Temper/Ability
+    bonus for a genuine melee round still to come later in the same
+    plan. ``None`` (the default) means "not tracked" -- both real
+    callers always pass a real one-element box.
     """
 
     if caster.blocked_from_cast:
@@ -1038,8 +1066,27 @@ def _resolve_personal_combat_cast(
         # first (this sub-duel's own local "a"=retaliator/"b"=caster
         # convention), then translated back into this function's outer
         # "a"=caster/"b"=target convention.
-        retaliator = replace(target, temper=Temper.BERSERK)
-        duel_result = resolve_melee_duel(retaliator, caster, rng)
+        # Phase 1042 bug fix -- this used to duel a `replace(target, ...)`
+        # COPY ("retaliator") instead of the real `target` object, while
+        # `caster` was passed directly. `resolve_melee_duel()` mutates
+        # both its arguments in place, so on the "vanishingly rare"
+        # draw below, the real `target.hit_points` silently never
+        # reflected the damage exchanged (only the disposable copy
+        # did), while `caster.hit_points` was correctly reduced --
+        # giving the target an unearned HP advantage for the rest of
+        # the encounter. The real `target` object now takes part
+        # directly; its Temper is forced to Berserk "for the occasion"
+        # only for this one call, then restored (the rule's own "per
+        # l'occasione" wording -- not a permanent Temper change).
+        original_temper = target.temper
+        target.temper = Temper.BERSERK
+        skip_setup = melee_setup_done[0] if melee_setup_done is not None else True
+        duel_result = resolve_melee_duel(target, caster, rng, skip_temper_setup=skip_setup)
+        target.temper = original_temper
+        if melee_setup_done is not None:
+            melee_setup_done[0] = True
+        if melee_swings is not None:
+            melee_swings.extend(duel_result.melee_swings)
         if duel_result.winner == "a":  # the designated victim's Berserk retaliation kills the caster
             return "b"
         if duel_result.winner == "b":  # the caster survives and wins the retaliation
@@ -1135,6 +1182,13 @@ def _resolve_personal_combat_cast(
     if spell is Spell.TELEK_STORM:
         target.hit_points -= roll_telekinetic_storm_victim_damage(rng, target_is_immune=False)
         caster.hit_points -= roll_telekinetic_storm_caster_damage(CombatRange.SPELL_RANGE, rng, target_is_immune=False)
+        # Phase 1042 -- reviewed and confirmed intentional (user-decided):
+        # on a genuine double-KO (both target and caster drop to <= 0 HP
+        # from this same cast), the target's own death is checked first
+        # and the caster is credited as the winner, never the reverse --
+        # the engine has no representation for "both combatants die" in
+        # a single personal-combat-spell outcome (only "a"/"b"/None), and
+        # the defender-dies-first priority is the one this project keeps.
         if target.hit_points <= 0:
             return "a"
         if caster.hit_points <= 0:
@@ -1318,7 +1372,16 @@ def _resolve_personal_combat_cast(
             missile_damage_range=demon_stats.missile_damage if demon_stats.missile_damage is not None else FIRE_ARROW_DAMAGE_RANGE,
             is_undead_or_anti_holy=demon_species in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS),
         )
-        duel_result = resolve_melee_duel(demon, target, rng)
+        # Phase 1042 bug fix -- threads the same skip_temper_setup/
+        # melee_swings this function's own docstring addendum
+        # describes, mirroring the identical fix on Kill Enemy's own
+        # retaliation duel just above.
+        skip_setup = melee_setup_done[0] if melee_setup_done is not None else True
+        duel_result = resolve_melee_duel(demon, target, rng, skip_temper_setup=skip_setup)
+        if melee_setup_done is not None:
+            melee_setup_done[0] = True
+        if melee_swings is not None:
+            melee_swings.extend(duel_result.melee_swings)
         if duel_result.winner == "a":
             return "a"
         return None
@@ -2056,6 +2119,18 @@ def resolve_challenge_combat(
         function's own outer `"a"=caster,"b"=target` convention.
         """
 
+        nonlocal melee_setup_done
+        # Phase 1042 bug fix -- a one-element box, not the plain bool
+        # itself: only a Kill Enemy/Gate Demon sub-duel this call might
+        # resolve ever actually applies the one-time Temper/Ability
+        # setup, and only that sub-duel's own code should report "now
+        # done" back out -- most spells never touch melee at all, and
+        # blindly setting this function's own `melee_setup_done = True`
+        # after *every* call here (the previous, buggy shape) would
+        # silently skip the real bonus for a genuine melee round still
+        # to come later in the same plan. See `_resolve_personal_combat_
+        # cast()`'s own Phase 1042 docstring addendum for the full reasoning.
+        setup_box = [melee_setup_done]
         outcome = _resolve_personal_combat_cast(
             target,
             target_leader,
@@ -2069,7 +2144,10 @@ def resolve_challenge_combat(
             cast_spells_attempted=target_cast_spells_attempted,
             fizzled_spells=fizzled_spells,
             is_defensive=True,
+            melee_setup_done=setup_box,
+            melee_swings=melee_swings,
         )
+        melee_setup_done = setup_box[0]
         if outcome == "fled":
             return "fled"
         if outcome == "a":
@@ -2118,19 +2196,45 @@ def resolve_challenge_combat(
         # Phase 674: mirrors search_execution.py's own "Melee vs Cast"
         # branch -- [5.1]'s own melee-precedence rule still applies, so
         # the caster's own swing lands on the casting target first.
-        swing_result = resolve_reactive_melee_swing(caster, target, rng)
-        melee_swings.append(
-            MeleeSwing(
-                attacker="a",
-                hit=swing_result.hit,
-                damage=swing_result.damage,
-                weapon_proc=swing_result.weapon_proc,
-                weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
+        # (Reviewed at Phase 1042: unlike the sibling Melee-vs-Melee
+        # branch just above, this branch never calls apply_temper_
+        # melee_setup() itself -- but that's provably not a gap in
+        # practice, not a silent bug. The one-time setup is always
+        # already applied by the time this branch can ever run: the
+        # pre-loop above (_resolve_target_casts()) fully drains every
+        # *leading* Cast in the target's own plan before the main
+        # tactics walk -- and this function's own -- even starts, so
+        # _peek_target_cast() cannot return a real Cast on this
+        # function's first-ever call; and the sibling "no cast" branch
+        # just above, which runs on every such first call instead,
+        # always applies setup -- via this exact `apply_temper_melee_
+        # setup()` call or via `resolve_melee_duel()`'s own internal
+        # `skip_temper_setup` handling -- before it ever advances the
+        # target's own plan index onto a later Cast entry this branch
+        # could then see.)
+        # Phase 1042 bug fix -- mirrors the main loop's own symmetric
+        # fix: a target already blocked_from_cast has a guaranteed
+        # no-op CAST coming (`_resolve_target_cast()` below resolves to
+        # the same blocked_from_cast check, role-swapped), so the
+        # caster's own reactive swing against them -- which could kill
+        # them outright -- is skipped instead of landing before that
+        # guaranteed no-op is discovered.
+        if not target.blocked_from_cast:
+            swing_result = resolve_reactive_melee_swing(caster, target, rng)
+            melee_swings.append(
+                MeleeSwing(
+                    attacker="a",
+                    hit=swing_result.hit,
+                    damage=swing_result.damage,
+                    weapon_proc=swing_result.weapon_proc,
+                    weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
+                )
             )
-        )
-        if target.hit_points <= 0:
-            return True, "a"
-        disrupted = _resolve_cast_disruption(target_cast, swing_result.damage, rng)
+            if target.hit_points <= 0:
+                return True, "a"
+            disrupted = _resolve_cast_disruption(target_cast, swing_result.damage, rng)
+        else:
+            disrupted = False
         is_first_target_tactic = target_tactic_index == 0
         _advance_target_tactic()
         if disrupted:
@@ -2297,7 +2401,19 @@ def resolve_challenge_combat(
             continue
         if tactic.maneuver is Maneuver.CAST:
             target_cast_at_melee = _peek_target_cast() if current_range is CombatRange.MELEE_RANGE else None
-            if current_range is CombatRange.MELEE_RANGE and target_cast_at_melee is None:
+            # Phase 1042 bug fix -- mirrors the SHOOT-at-Melee-Range
+            # branch's own explicit `not caster.blocked_from_archery`
+            # guard just above: a caster already blocked_from_cast is
+            # guaranteed a no-op CAST (see _resolve_personal_combat_
+            # cast()'s own first line), but this branch used to give
+            # the target a full reactive melee swing anyway -- which
+            # could even kill the blocked caster outright -- before
+            # that guaranteed no-op was ever discovered.
+            if (
+                current_range is CombatRange.MELEE_RANGE
+                and target_cast_at_melee is None
+                and not caster.blocked_from_cast
+            ):
                 # Phase 417: the target's own reactive swing (attacker="b",
                 # since the caster="a" is the one attempting to cast here)
                 # is now logged into melee_swings too, reading .hit/.damage
@@ -2323,6 +2439,7 @@ def resolve_challenge_combat(
                 disrupted = _resolve_cast_disruption(tactic, damage, rng)
                 if disrupted:
                     continue
+            setup_box = [melee_setup_done]
             outcome = _resolve_personal_combat_cast(
                 caster,
                 caster_leader,
@@ -2335,7 +2452,17 @@ def resolve_challenge_combat(
                 cast_slots_used=caster_cast_slots_used,
                 cast_spells_attempted=caster_cast_spells_attempted,
                 fizzled_spells=fizzled_spells,
+                melee_setup_done=setup_box,
+                melee_swings=melee_swings,
             )
+            # Phase 1042 bug fix -- see _resolve_personal_combat_cast()'s
+            # own Phase 1042 docstring addendum and _resolve_target_cast()'s
+            # own identical fix above: only read back `setup_box[0]`, never
+            # blindly set `melee_setup_done = True` here -- most spells
+            # never touch melee at all, and doing so unconditionally would
+            # silently skip the real Temper/Ability bonus for a genuine
+            # melee round still to come later in the same plan.
+            melee_setup_done = setup_box[0]
             if outcome == "fled":
                 return _outcome(fled=True)
             if outcome in ("a", "b"):
@@ -2356,9 +2483,29 @@ def resolve_challenge_combat(
                     return _outcome(winner=target_outcome)
             continue
         if tactic.maneuver is Maneuver.STEAL:
-            steal_outcome, gold_raided, stolen_item_ids = _resolve_steal_tactic(
+            # Phase 1042 bug fix -- a plan can carry more than one STEAL
+            # tactic (the same "no single-tactic-per-maneuver limit"
+            # convention this function's own Phase 2026-11-01 GIVE
+            # addendum already documents). Plainly reassigning
+            # `gold_raided`/`stolen_item_ids` here silently discarded an
+            # earlier *successful* theft's own loot the moment a later
+            # Steal tactic in the same plan resolved to anything else
+            # (evaded/ransom/unresolved) -- the real `state.transfer_item()`
+            # / treasury debit from that earlier success had already
+            # happened, but the report layer would never hear about it.
+            # Accumulated below, mirroring `melee_swings`/`fire_arrow_
+            # shots`'s own extend/append pattern just above; `steal_
+            # outcome`/`steal_capture_range` stay single-valued (the most
+            # recent attempt's own result) -- `ChallengeCombatOutcome.
+            # steal_outcome` has no shape for "narrate every attempt",
+            # and the loot fields above already guarantee nothing actually
+            # stolen is ever lost from the report.
+            this_steal_outcome, this_gold_raided, this_stolen_item_ids = _resolve_steal_tactic(
                 caster_leader, caster, target_leader, state, rng
             )
+            steal_outcome = this_steal_outcome
+            gold_raided += this_gold_raided
+            stolen_item_ids.extend(this_stolen_item_ids)
             if steal_outcome == "executed":
                 return _outcome(winner="b")
             if steal_outcome == "combat":

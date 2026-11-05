@@ -2329,6 +2329,13 @@ def _resolve_search_encounter(
             caster.hit_points -= roll_telekinetic_storm_caster_damage(
                 CombatRange.SPELL_RANGE, rng, target_is_immune=target_is_immune
             )
+            # Phase 1042 -- reviewed and confirmed intentional (user-decided,
+            # same review as turn/challenge_execution.py's own identical
+            # TELEK_STORM branch): on a genuine double-KO (both sides drop
+            # to <= 0 HP from this same cast), the target's own death is
+            # checked first and credited as the winning side -- the engine
+            # has no "both combatants die" outcome to return here, and
+            # defender-dies-first priority is the one this project keeps.
             if target.hit_points <= 0:
                 return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
             if caster.hit_points <= 0:
