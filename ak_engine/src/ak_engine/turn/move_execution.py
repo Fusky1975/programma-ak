@@ -1498,6 +1498,15 @@ def execute_move(
     if not army_ids and leader_id is None:
         raise ValueError("no armies and no leader given -- nothing to move")
 
+    # Phase 1044 bug fix -- direct dict subscripting let a stale army_id
+    # (an army an earlier phase this same turn already destroyed in
+    # battle, or sank with its carrier) crash with an unhandled
+    # KeyError instead of the same kind of clean, caught ValueError
+    # this function already raises for every other bad-input case just
+    # below.
+    missing_army_ids = [army_id for army_id in army_ids if army_id not in state.armies]
+    if missing_army_ids:
+        raise ValueError(f"no such army/armies: {missing_army_ids}")
     armies = [state.armies[army_id] for army_id in army_ids]
     moved_without_armies = not armies
     if armies:
@@ -1624,6 +1633,14 @@ def execute_move(
                 new_location=None,
                 reached_target=False,
                 stopped_chasing=True,
+                # Phase 1044 bug fix -- this early return used to omit
+                # moved_without_armies entirely, silently defaulting it
+                # to False even for a genuinely armyless leader (the one
+                # documented consumer, report/turn_report.py's own
+                # MARCH.md section 12 narration, needs the real value
+                # here exactly like the function's own final,
+                # successful-move return already supplies it).
+                moved_without_armies=moved_without_armies,
                 wind_walking=wind_walking,
             )
         actual_target = next_hex
@@ -1669,6 +1686,13 @@ def execute_move(
             reached_target=False,
             stopped_chasing=True,
             blocked_by_neutral_relations=True,
+            # Phase 1044 bug fix -- same omission as the stopped-chasing
+            # return just above; this branch is gated on `armies` being
+            # truthy (line ~1657), so `moved_without_armies` is always
+            # False in practice here, but the explicit real value is
+            # still passed through rather than relying on the dataclass
+            # default to happen to agree.
+            moved_without_armies=moved_without_armies,
             wind_walking=wind_walking,
         )
 
@@ -1757,7 +1781,7 @@ def execute_move(
                     continue
                 further_province = state.provinces.get(further_hex)
                 if further_province is not None and further_province.effective_terrain() is Terrain.SEA:
-                    record_kingdom_exploration(
+                    further_exploration = record_kingdom_exploration(
                         further_province,
                         kingdom_id,
                         explorer_skill,
@@ -1769,6 +1793,17 @@ def execute_move(
                         has_find_mines=has_find_mines,
                         leader_id=leader_id,
                     )
+                    # Phase 1044 bug fix -- models/game_state.py's own
+                    # Phase 69 addendum names every write site that
+                    # updates explored_percent_by_kingdom as also
+                    # updating the shared ProvinceState.explored_percent
+                    # scalar (mirroring the ordinary entry branch's own
+                    # `target_province.explored_percent = ...` a few
+                    # lines above) -- this extra hex used to update only
+                    # the per-kingdom tracker, leaving the scalar stale
+                    # for the map/turn report and for the next kingdom's
+                    # own exploration baseline here.
+                    further_province.explored_percent = further_exploration.new_percent
                     reveal_adjacent_provinces(state, further_province, kingdom_id, bounds)
                     break
 
@@ -1966,7 +2001,19 @@ def execute_move(
     naval_advanced_ability_granted: AdvancedAbility | None = None
     march_advanced_ability_granted: AdvancedAbility | None = None
     if moved and leader_id is not None and armies:
-        air_count = sum(1 for army in armies if army.army_type in OVERFLIGHT_AIR)
+        # Phase 1044 bug fix -- this function's own Phase 768 addendum
+        # above states the exclusion is for "a majority-air-or-air-
+        # transportable force," but `air_count` used to count only
+        # armies whose own `army_type` is literally an air type, never
+        # a land army currently boarded as cargo on one of this same
+        # move's own air carriers (`army.transported_by` pointing at a
+        # carrier army_id also present in `armies`) -- so a Dragon/Eagle
+        # Wing carrying a majority-land cargo was wrongly credited
+        # ordinary ground March/Naval XP instead of being excluded.
+        air_carrier_ids = {army.army_id for army in armies if army.army_type in OVERFLIGHT_AIR}
+        air_count = sum(
+            1 for army in armies if army.army_type in OVERFLIGHT_AIR or army.transported_by in air_carrier_ids
+        )
         if 2 * air_count < len(armies):
             mover_leader = state.leaders.get(leader_id)
             if mover_leader is not None:

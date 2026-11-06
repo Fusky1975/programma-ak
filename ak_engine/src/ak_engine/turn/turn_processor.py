@@ -279,7 +279,7 @@ from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_ph
 from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.blackmail import advance_blackmail_claims
 from ak_engine.turn.cast_decode import CHARACTER_TARGET_SPELLS, decode_cast_phase
-from ak_engine.turn.diplomacy import advance_pending_diplomacy, apply_treat_orders
+from ak_engine.turn.diplomacy import advance_pending_diplomacy, apply_treat_orders, is_attackable_at
 from ak_engine.turn.initiative import character_initiative
 from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
@@ -2508,13 +2508,35 @@ def _sees_nonallied_defender(
 ) -> bool:
     """Same "attacking" criterion ``execute_move`` uses: a mover with no army never
     triggers combat, regardless of what's at the target (rulebook [3.1]).
+
+    Phase 1044 bug fix -- this used to apply only half of ``turn/
+    diplomacy.py is_attackable_at()``'s own [8.1] "triangle" rule (not
+    allied with the defender), never the other half (a third Kingdom's
+    own Allied-owned territory shields every army present there,
+    regardless of that army's own alliance with the mover). Every other
+    defender-gathering call site (``turn/move_execution.py``, ``turn/
+    battle_orchestrator.py``) already calls the shared primitive
+    precisely so these two project-wide "who's a legitimate target
+    here" checks never drift apart -- this LMOVE-grouping detector is
+    now a third, consistent caller of it instead of a narrower,
+    independently-reimplemented copy.
     """
 
     tl, _segment_index, _phase = entry
     if not state.armies_commanded_by(tl.leader.leader_id):
         return False
+    target_province = state.provinces.get(target)
+    if target_province is None:
+        # Every in-bounds hex gets a real ProvinceState at worldgen time
+        # (confirmed in the Batch 2b review of battle_orchestrator.py),
+        # so this is not expected to be reachable -- kept as a graceful
+        # fallback to the old, narrower check rather than a crash.
+        return any(
+            army.kingdom_id is not None and not state.is_allied(army.kingdom_id, tl.kingdom_id)
+            for army in state.armies_at(target)
+        )
     return any(
-        army.kingdom_id is not None and not state.is_allied(army.kingdom_id, tl.kingdom_id)
+        army.kingdom_id is not None and is_attackable_at(state, army.kingdom_id, tl.kingdom_id, target_province)
         for army in state.armies_at(target)
     )
 

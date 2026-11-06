@@ -117,6 +117,19 @@ def test_leader_moving_alone_does_not_conquer():
     assert result.moved_without_armies is True
 
 
+def test_execute_move_stale_army_id_raises_a_clean_value_error():
+    # Phase 1044 bug fix: direct dict subscripting used to crash with an
+    # unhandled KeyError for a stale army_id (e.g. an army an earlier
+    # phase this same turn already destroyed in battle) instead of the
+    # same kind of clean, caught ValueError this function already raises
+    # for every other bad-input case just below (all-must-move-together,
+    # no movement points left).
+    state = base_state()
+
+    with pytest.raises(ValueError, match="no such army"):
+        execute_move(state, kingdom_id=1, army_ids=[101, 999], target=TARGET)
+
+
 def test_moving_with_armies_is_not_moved_without_armies():
     state = base_state()
 
@@ -177,6 +190,13 @@ def test_execute_move_map_of_the_marauders_extends_partial_exploration_to_a_furt
 
     assert state.provinces[TARGET].explored_percent_by_kingdom.get(1, 0) > 0
     assert state.provinces[further].explored_percent_by_kingdom.get(1, 0) > 0
+    # Phase 1044 bug fix: the extra hex used to update only the
+    # per-kingdom tracker above, leaving the shared scalar stale --
+    # models/game_state.py's own module docstring names every write
+    # site that updates explored_percent_by_kingdom as also updating
+    # this scalar together, the same way the entered TARGET hex already
+    # does two lines above this block's own real call site.
+    assert state.provinces[further].explored_percent == state.provinces[further].explored_percent_by_kingdom[1]
 
 
 def test_execute_move_without_the_map_does_not_extend_vision():
@@ -1165,6 +1185,26 @@ def test_stopped_chasing_when_no_closer_neighbor_exists():
     assert state.armies[101].movement_points == 3
 
 
+def test_stopped_chasing_leader_alone_reports_moved_without_armies():
+    # Phase 1044 bug fix: this early return used to omit
+    # moved_without_armies entirely, silently defaulting it to False
+    # even for a genuinely armyless leader -- report/turn_report.py's
+    # own documented MARCH.md section 12 consumer needs the real value
+    # here too, not just on the function's final, successful-move return.
+    state = GameState()
+    origin = HexCoord(0, 0)
+    unreachable_target = HexCoord(-5, -5)
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, origin))
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, 1, "King", origin))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[], target=unreachable_target, leader_id=1)
+
+    assert result.stopped_chasing is True
+    assert result.moved is False
+    assert result.moved_without_armies is True
+
+
 def test_chase_step_breaks_ties_by_ownership_tier():
     # Mirrors turn/movement.py's own tie-break test case: from (5,5) toward
     # (5,0), (4,4) and (5,4) tie as the two strictly-closer candidates.
@@ -1398,6 +1438,31 @@ def test_execute_move_credits_experience_for_a_minority_air_mixed_force():
         )
 
     mock_add_experience.assert_called_once_with(state.leaders[1], Ability.MARCH, MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS, ANY)
+
+
+def test_execute_move_credits_nothing_for_a_majority_air_transportable_force():
+    # Phase 1044 bug fix: this function's own Phase 768 docstring
+    # addendum states the exclusion covers "a majority-air-or-air-
+    # transportable force," but air_count used to count only armies
+    # whose own army_type is literally an air type, never a land army
+    # currently boarded on one -- 1 Dragon Wing carrying 2 boarded
+    # Bowmen (a wholly airlifted force) used to compute air_count=1
+    # against len(armies)=3 (2*1 < 3 -- treated as an ordinary,
+    # XP-eligible ground march), contradicting the documented exclusion.
+    state = _state_with_leader_and_army(ArmyType.DRAGON_WING)
+    state.add_army(
+        ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3, commanded_by=1, transported_by=101)
+    )
+    state.add_army(
+        ArmyState(103, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3, commanded_by=1, transported_by=101)
+    )
+
+    with patch("ak_engine.turn.move_execution.add_experience") as mock_add_experience:
+        execute_move(
+            state, kingdom_id=1, army_ids=[101, 102, 103], target=TARGET, leader_id=1, rng=ScriptedRandom([])
+        )
+
+    mock_add_experience.assert_not_called()
 
 
 def test_execute_move_credits_nothing_when_the_leader_is_armyless():

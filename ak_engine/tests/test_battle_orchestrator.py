@@ -4472,7 +4472,11 @@ def test_fight_multi_attacker_battle_second_separate_group_claims_an_already_cle
     # The second group finds nothing left to fight -- treated as an
     # uncontested claim rather than raising.
     assert second_battle.leader_ids == [20]
-    assert second_battle.report.conquered is True
+    # Phase 1044 bug fix regression: the first group's own real battle
+    # already conquered the province for this same kingdom, so the
+    # second group's own needs_conquest is correctly False here --
+    # conquered no longer hardcoded True regardless.
+    assert second_battle.report.conquered is False
     assert second_battle.report.battle_result.winner == "attacker"
 
 
@@ -4522,7 +4526,10 @@ def test_fight_multi_attacker_battle_uncontested_claim_is_a_no_op_for_an_already
 
     battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
 
-    assert battles[0].report.conquered is True
+    # Phase 1044 bug fix regression: no real conquest happens here, so
+    # conquered must be False -- no longer hardcoded True regardless of
+    # needs_conquest.
+    assert battles[0].report.conquered is False
     assert state.provinces[FIELD].owner_kingdom_id == 3  # unchanged -- already a friendly owner
 
 
@@ -5671,9 +5678,13 @@ def test_fight_multi_attacker_battle_treats_a_shielded_guest_as_uncontested():
     battles = fight_multi_attacker_battle(state, FIELD, parties, rng=random.Random(0))
 
     assert len(battles) == 1
-    assert battles[0].report.conquered is True
+    # Phase 1044 bug fix regression: the province is already owned by an
+    # ally of the attacker (Xaria), so entering it uncontested is not a
+    # real conquest -- conquered must be False, no longer hardcoded True.
+    assert battles[0].report.conquered is False
     assert battles[0].report.battle_result.winner == "attacker"
     assert state.armies[201].location == FIELD  # Y's shielded guest army untouched
+    assert state.provinces[FIELD].owner_kingdom_id == 3  # unchanged -- already a friendly owner
 
 
 def test_fight_battle_allows_a_kingdomless_mercenary_as_an_attacker():

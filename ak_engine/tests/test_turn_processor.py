@@ -611,6 +611,44 @@ def test_run_turn_peaceful_mover_unaffected_by_a_lone_attacker_targeting_the_sam
     assert by_leader[30].result.moved is True
 
 
+def test_run_turn_shielded_allied_territory_mover_does_not_join_the_multi_attacker_group():
+    # Phase 1044 bug fix: Kingdom 3 owns TARGET and is Allied with
+    # Kingdom 1 -- turn/diplomacy.py is_attackable_at()'s own [8.1]
+    # triangle rule shields Kingdom 4's own unallied army there from
+    # Kingdom 1 entirely, even though 1 and 4 aren't allied with each
+    # other. Kingdom 2 (unallied with both 3 and 4) genuinely does see a
+    # legitimate target there. Before the fix, _sees_nonallied_defender
+    # only checked "not allied with the defender" and ignored the
+    # shield, wrongly counting Kingdom 1's own mover as "attacking" too
+    # and pulling it into Multiple Contingents machinery alongside
+    # Kingdom 2's genuine attacker.
+    state = _base_state()
+    state.add_kingdom(KingdomState(3, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(4, "Drifteria", Race.HUMAN, Alignment.EVIL, HexCoord(8, 8)))
+    state.allied_kingdoms.add(frozenset({1, 3}))
+    state.provinces[TARGET].owner_kingdom_id = 3
+    state.armies[201].kingdom_id = 4  # the defending army now belongs to the shielded-from kingdom
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN))
+    state.add_leader(LeaderState(20, kingdom_id=2, name="B", location=ORIGIN2))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=10))
+    state.add_army(ArmyState(102, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN2, movement_points=5, commanded_by=20))
+
+    leader_a = _leader_with_phase(10, "A", "P0", _lmove_phase("P0", TARGET))
+    leader_b = _leader_with_phase(20, "B", "P0", _lmove_phase("P0", TARGET))
+
+    results = run_turn(
+        [TurnLeader(leader_a, 1), TurnLeader(leader_b, 2)], state, board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
+
+    by_leader = {r.leader_id: r for r in results}
+    # Kingdom 1's own mover is fully shielded (TARGET is Allied-owned)
+    # -- only one genuine attacker (Kingdom 2) remains, below the
+    # 2-mover Multiple Contingents threshold, so both dispatch through
+    # the ordinary single-mover path instead of being united.
+    assert isinstance(by_leader[10].result, MoveExecutionResult)
+    assert isinstance(by_leader[20].result, MoveExecutionResult)
+
+
 def test_run_turn_excludes_an_illegal_contested_mover_but_still_groups_the_rest():
     state = _base_state()
     # Phase 307: guarantees B/C's own same-origin union (see the sibling

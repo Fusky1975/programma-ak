@@ -3474,6 +3474,21 @@ def fight_multi_attacker_battle(
             # `needs_conquest` mirrors move_execution.py's own identical
             # check so an already-friendly province's contest flags
             # aren't needlessly cleared a second time.
+            #
+            # Phase 1044 bug fix -- `conquered` itself used to be
+            # hardcoded True here regardless of `needs_conquest`, unlike
+            # move_execution.py's own sibling branch (`conquered = True`
+            # only inside `if armies and needs_conquest`). turn_
+            # processor.py's own caller reads this same flag straight
+            # into its movement-cost calculation
+            # (`contested_battle_movement_cost(conquered=...)`) and into
+            # world-event/report narration, so a second, friendly group
+            # arriving at a province an earlier group in this same call
+            # already conquered -- needs_conquest correctly False, no
+            # ownership change -- was still charged the conquest
+            # movement cost and could be narrated as freshly conquering
+            # a province it merely walked into peacefully.
+            needs_conquest = False
             if target_province is not None:
                 needs_conquest = target_province.owner_kingdom_id is None or (
                     target_province.owner_kingdom_id != claiming_kingdom_id
@@ -3483,7 +3498,7 @@ def fight_multi_attacker_battle(
                     target_province.owner_kingdom_id = claiming_kingdom_id
                     target_province.contested_by_kingdom_id = None
                     target_province.contested_from_coord = None
-            report = BattleReport(battle_result=BattleResult(winner="attacker"), conquered=True)
+            report = BattleReport(battle_result=BattleResult(winner="attacker"), conquered=needs_conquest)
         reports.append(MultiAttackerBattle(leader_ids=[member.leader_id for member in group], report=report))
 
     return reports
