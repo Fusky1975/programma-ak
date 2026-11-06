@@ -5476,6 +5476,38 @@ def test_describe_turn_results_narrates_a_successful_tornado_cast():
     ]
 
 
+def test_describe_turn_results_narrates_a_successful_wand_of_tornado_use_mi():
+    # Phase 1046 bug fix: a Wand of Tornado used via Use_MI really
+    # executes the spell (turn/use_mi_execution.py -> turn/cast_
+    # execution.py _execute_tornado()), but describe_turn_results()'s
+    # own ActionCode.USE_MI branch used to only narrate the 6 character-
+    # targeted spells in _AUTO_RESOLVABLE_CAST_TARGET_SPELLS and silently
+    # drop narration for every other spell, Tornado included -- even
+    # though the identical CastExecutionResult, reached via an ordinary
+    # top-level Cast (the test right above this one), was already
+    # narrated. Same fixture, wrapped in a UseMIExecutionResult and
+    # dispatched as ActionCode.USE_MI instead of ActionCode.CAST --
+    # expects the exact same narration line.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Sir Aldric", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, name="Limerick"))
+    request = CastRequest(spell=Spell.TORNADO, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    destroyed = [ArmyState(20, 2, ArmyType.LEGION, Quality.AVERAGE, HexCoord(0, 0))]
+    cast_result = CastExecutionResult(request=request, applied=True, tornado_destroyed=destroyed)
+    result = UseMIExecutionResult(applied=True, cast_result=cast_result)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.USE_MI, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == [
+        "Sir Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Limerick."
+        "Tornadoes sucked up the 20th Legion in Limerick and destroyed them."
+    ]
+
+
 def test_describe_turn_results_narrates_a_successful_charm_cast():
     # Phase 938: Spell.CHARM already flows through
     # _AUTO_RESOLVABLE_CAST_TARGET_SPELLS (leader-targeted) -- only

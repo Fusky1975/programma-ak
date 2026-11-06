@@ -3321,6 +3321,33 @@ def test_replenish_turn_scoped_state_clears_oratory_boosted_this_turn():
     assert state.leaders[10].oratory_boosted_this_turn is False
 
 
+def test_replenish_turn_scoped_state_clears_terrain_override():
+    # Phase 1046 bug fix: Part Sea/Flood's own "for the rest of the
+    # turn" terrain change (turn/cast_execution.py) had no reset call
+    # anywhere -- a Part Sea'd/Flooded province stayed permanently
+    # transformed for the rest of the game.
+    state = _base_state()
+    state.provinces[ORIGIN].terrain_override = Terrain.PLAINS
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.provinces[ORIGIN].terrain_override is None
+
+
+def test_replenish_turn_scoped_state_clears_tax_modifier_percent_and_earthquake_flat_reduction():
+    # Phase 1046 bug fix: Bless's "+60% for one turn" and Earthquake's
+    # "-100%"/Reinforced-Concrete-defended flat reduction, both
+    # documented one-turn effects, had no reset call anywhere either.
+    state = _base_state()
+    state.provinces[ORIGIN].tax_modifier_percent = 60
+    state.provinces[ORIGIN].earthquake_flat_reduction = 3
+
+    _replenish_turn_scoped_state(state)
+
+    assert state.provinces[ORIGIN].tax_modifier_percent == 0
+    assert state.provinces[ORIGIN].earthquake_flat_reduction == 0
+
+
 def test_run_turn_replenishes_movement_points_at_the_end():
     # A real moderator running turn after turn via orchestrator.
     # process_turn() needs every army's movement pool back for the next

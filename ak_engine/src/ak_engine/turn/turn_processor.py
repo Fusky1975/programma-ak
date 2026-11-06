@@ -1107,6 +1107,28 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
       already-charged one-time toll being a per-cast event -- otherwise
       an army once excused at a given coord would stay excused there
       forever, for the rest of the game.
+    - ``ProvinceState.terrain_override`` -> ``None`` (Phase 1046) --
+      Part Sea's own quoted rule ([4.21.2], "transformed into a Plain
+      for the rest of the turn") and Flood's own analogous "for the
+      rest of the turn" framing both say this is turn-scoped, but
+      `models/game_state.py`'s own module docstring had flagged this
+      field as "not auto-cleared at a turn boundary... still has no
+      reset call anywhere" ever since Phase 59 -- the exact same
+      "sourced one-turn duration, never actually cleared" bug Phase 576
+      already fixed for ``illusory_fog_active`` right above, just not
+      yet audited here. A province Part Sea'd or Flooded stayed
+      permanently transformed for the rest of the game.
+    - ``ProvinceState.tax_modifier_percent``/``earthquake_flat_
+      reduction`` -> ``0`` (Phase 1046) -- Bless ([4.21.3], "+60% for
+      one turn") and Earthquake ([4.24.3], "-100%"/a flat Reinforced-
+      Concrete-defended reduction, "for one turn") are both explicitly
+      one-turn effects, but neither field had a reset call either --
+      the same unresolved gap `tax_modifier_percent`'s own module
+      docstring entry already flagged, and `earthquake_flat_reduction`'s
+      own field comment explicitly cross-references as sharing it
+      ("the caller resets it the same 'no auto-clear yet' way"). A
+      Blessed or Earthquake-struck province kept the modified tax rate
+      forever instead of for the one documented turn.
 
     ``GameState.gate_angel_candidates_this_turn`` is deliberately NOT
     touched here despite its own name -- it's already self-resetting,
@@ -1161,6 +1183,9 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         province.recruited_this_turn = {}
         province.recruit_locked_this_turn = False
         province.illusory_fog_active = False
+        province.terrain_override = None
+        province.tax_modifier_percent = 0
+        province.earthquake_flat_reduction = 0
     for leader in state.leaders.values():
         leader.oratory_boosted_this_turn = False
     for kingdom in state.kingdoms.values():

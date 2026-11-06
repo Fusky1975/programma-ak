@@ -5134,6 +5134,7 @@ def describe_use_mi(
     terrain_name: str | None = None,
     real_terrain_name: str | None = None,
     army_names: list[str] | None = None,
+    feature_name: str | None = None,
     book_name: str | None = None,
     ability_name: str | None = None,
 ) -> str | None:
@@ -5182,6 +5183,7 @@ def describe_use_mi(
             terrain_name=terrain_name,
             real_terrain_name=real_terrain_name,
             army_names=army_names,
+            feature_name=feature_name,
         )
     if result.ability_boosted is not None and book_name is not None and ability_name is not None:
         return render_skill_book_read(caster_name, book_name, ability_name, rng)
@@ -9458,6 +9460,125 @@ def describe_turn_results(
             cast_result = entry.result.cast_result
             if cast_result is not None:
                 spell = cast_result.request.spell
+                # Phase 1046 bug fix -- a Wand-triggered cast of any of
+                # the 9 province/no-target spells below (every one of
+                # `models/treasure.py TREASURE_WAND_SPELL`'s real wands
+                # with `spell.value < 20` except Locate_Object, which has
+                # no wand) used to fall straight through to the
+                # `_AUTO_RESOLVABLE_CAST_TARGET_SPELLS` check further
+                # down -- the same 6-member, *character*-targeted set the
+                # `ActionCode.CAST` branch above also falls through to,
+                # but only after already handling these 9 in dedicated
+                # branches first (Phases 935-946). None of those 9
+                # branches has an equivalent here, so a real, state-
+                # mutating Wand cast of e.g. Tornado or Bless was never
+                # narrated at all. Mirrors the CAST branch's own per-spell
+                # resolution exactly, composing through `describe_use_mi()`
+                # (which itself already delegates to `describe_cast()`)
+                # instead of `describe_cast()` directly.
+                if spell is Spell.BLESS:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province_name = _province_label(state, coord)
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.TORNADO:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province_name = _province_label(state, coord)
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.PART_SEA:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province_name = _province_label(state, coord)
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.EARTHQUAKE:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province_name = _province_label(state, coord)
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.ILLUS_TERRAIN:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province = state.provinces.get(coord)
+                    if province is None or not isinstance(cast_result.request.terrain, Terrain):
+                        continue
+                    province_name = _province_label(state, coord)
+                    real_terrain_name = TERRAIN_NAME[province.terrain]
+                    fake_terrain_name = TERRAIN_NAME[cast_result.request.terrain]
+                    line = describe_use_mi(
+                        entry.result,
+                        caster_name=caster_name,
+                        rng=rng,
+                        province_name=province_name,
+                        terrain_name=fake_terrain_name,
+                        real_terrain_name=real_terrain_name,
+                    )
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.PLAGUE:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province_name = _province_label(state, coord)
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.FLOOD:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province_name = _province_label(state, coord)
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.HIDE_FEATURE:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    features = state.features_at(coord)
+                    if not features:
+                        continue
+                    province_name = _province_label(state, coord)
+                    if len(features) == 1:
+                        feature_name = FEATURE_TYPE_NAMES[features[0].kind]
+                        line = describe_use_mi(
+                            entry.result,
+                            caster_name=caster_name,
+                            rng=rng,
+                            province_name=province_name,
+                            feature_name=feature_name,
+                        )
+                        if line is not None:
+                            lines.append(line)
+                    else:
+                        feature_names = [FEATURE_TYPE_NAMES[feature.kind] for feature in features]
+                        lines.append(render_hide_feature_outcome(caster_name, province_name, feature_names, rng))
+                    continue
+                if spell is Spell.SKELETAL_ARMY:
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng)
+                    if line is not None:
+                        lines.append(line)
+                    continue
                 if spell not in _AUTO_RESOLVABLE_CAST_TARGET_SPELLS:
                     continue
                 target_name = _leader_name(state, cast_result.request.target)

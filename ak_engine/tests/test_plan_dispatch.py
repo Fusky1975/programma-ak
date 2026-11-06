@@ -780,6 +780,28 @@ def test_dispatch_trade_self_targeted_secret_spell_zeroes_a_normally_targeted_sp
     assert result.reason == "province not found or not in range"
 
 
+def test_dispatch_trade_self_targeted_secret_spell_rewrite_by_a_dead_leader_is_a_clean_refusal():
+    # Phase 1046 bug fix: this Trade->Cast rewrite call site is the
+    # second of the two real places that called execute_cast() with no
+    # acting-leader liveness check (the other being _dispatch_cast()
+    # itself) -- see execute_cast()'s own Phase 1046 addendum. A leader
+    # who died earlier this same turn but still has a later-phase Trade
+    # order rewritten into a secret-spell Cast used to reach a bare
+    # state.leaders[leader_id] lookup inside one of Cast's own _execute_*
+    # handlers and raise an unhandled KeyError.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    del state.leaders[LEADER_ID]  # died in an earlier phase this same turn
+    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=int(Spell.GATE_ANGEL), extra=[LEADER_ID, 3])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
+
+    assert isinstance(result, CastExecutionResult)
+    assert result.applied is False
+    assert result.reason == "acting leader not found"
+
+
 def test_dispatch_trade_ordinary_give_of_a_secret_spell_ordinal_is_not_rewritten():
     # Same obj range, but not self-targeted (extra[0] != leader_id) -- an
     # ordinary Give to leader 3 of "item/gold 25", not a Cast rewrite.

@@ -986,19 +986,6 @@ GATE_ANGEL_ELIGIBLE_ALIGNMENTS = (
 )
 
 
-def _gate_angel_clamped_alignment(alignment: Alignment) -> Alignment:
-    """AKGEN's own confirmed ``validation_alignment_mapping``: "clamp to
-    1..5, so Divine counts as Good and Undead as Evil" (Phase 386) --
-    ``Max(1, Min(5, Ord(alignment)))`` on this project's own real
-    ``ALIGNMENT_ORDINAL`` sequence. A Divine or Undead Kingdom is
-    therefore genuinely eligible for a Gate Angel visit on its clamped
-    alignment's own turn, not excluded outright as an earlier version of
-    this module assumed.
-    """
-
-    ordinal = max(1, min(5, ALIGNMENT_ORDINAL[alignment]))
-    return ALIGNMENT_BY_ORDINAL[ordinal]
-
 # Mystic Winds (Phase 204, user-supplied): "Each unit led by the affected
 # leader has its movement set at 5" -- a hard set, not a bonus. See the
 # module docstring's own Phase 204 addendum for the remaining three
@@ -1192,7 +1179,33 @@ def execute_cast(
     board_width``; every internal use of the map's own height now reads
     ``state.board_height`` directly instead of the wrong (Super-AK)
     constant it silently used before this phase.
+
+    **Phase 1046 bug fix**: the acting leader (the one issuing this Cast
+    order) was never checked for liveness at all -- a leader who died
+    earlier in the same turn can still have a later-phase Cast order
+    dispatched for them (directly via ``turn/plan_dispatch.py
+    _dispatch_cast()``, or via its Trade-of-a-secret-spell rewrite into
+    a Cast), since neither call site, nor ``dispatch_phase()``/``run_
+    leader_plan()`` further up, has any leader-liveness gate of their
+    own. This is the identical "dead leader with a stale later-phase
+    order" gap already fixed for Leave/Pick_Up (Phase 821), Practice
+    (822), Hire (823), ASpy (824), Recruit (825), and Use_MI (826) --
+    ``use_mi_execution.py``'s own Phase 826 docstring explicitly flagged
+    this exact Cast-side exposure as known and deliberately left open at
+    the time. Every one of this function's own ``_execute_*`` handlers
+    bare-indexes ``state.leaders[leader_id]`` with no guard of its own,
+    so without this check the handler raises an unhandled ``KeyError``
+    (caught upstream only by ``run_leader_plan()``'s top-level ``try``/
+    ``except``, so it never crashed the whole turn, but surfaced as an
+    opaque exception instead of a clean refusal). Resolved the same way
+    as every sibling fix: refuse outright, before dispatching to any
+    spell handler, whenever the acting leader no longer exists -- fixed
+    once here rather than at each of the two real call sites, so both
+    (and any future one) are covered by construction.
     """
+
+    if leader_id not in state.leaders:
+        return CastExecutionResult(request, applied=False, reason="acting leader not found")
 
     rng = rng if rng is not None else random.Random()
     board_width = board_width if board_width is not None else state.board_width
@@ -2705,13 +2718,32 @@ def _execute_oratory(
     docstring for why that's the more faithful reading of "becomes"
     Average/Veteran/etc.
 
-    **Propaganda Megaphones** (Phase 391): "each opposing army will have
-    only a 33% chance of being affected by their leader's Oratory" --
-    checked per army against *that army's own* ``kingdom_id``, the same
-    Giant-Fan-style per-army convention this module already uses for
-    Tornado. ``target.oratory_boosted_this_turn`` still gates the whole
-    cast to once per turn regardless of how many (if any) armies the
-    megaphones end up shielding.
+    **Propaganda Megaphones** (Phase 391, corrected Phase 1046): "used at
+    a battle to reduce the effects of any Oratory spell cast by enemy
+    Psychics on their forces... each opposing army will have only a 33%
+    chance of being affected by their leader's Oratory" (``models/
+    discovery.py``'s own flavor text, quoted in full) -- "opposing"/
+    "enemy" is relative to the Discovery's *holder*, not to the army
+    being boosted: a Kingdom with this Discovery jams an **enemy**
+    Psychic's own Oratory cast on the enemy's own co-located troops,
+    the same way Observation Balloons/Dry Ice Fog/Lead-Lined Helmet
+    elsewhere in this same table all protect their holder *against* an
+    opposing caster's spell, never against the caster's own side.
+    Checked per boosted army, against whether *any* kingdom present at
+    that army's own location and not allied with it holds the
+    Discovery -- not against the boosted army's own ``kingdom_id``
+    (**Phase 1046 bug fix**: the original Phase 391 code checked
+    exactly that -- a direct, uncritical reuse of Giant Fan/Tornado's
+    "that army's own kingdom decides" convention, which is correct
+    there only because Tornado is an indiscriminate area effect with no
+    caster/target asymmetry, rulebook [4.24.2]'s own "even your own or
+    allied ones" aren't exempt; Oratory has the opposite shape -- a
+    self/ally-only buff -- so checking the *boosted* army's own
+    Discovery meant a Kingdom could only ever sabotage its own Oratory
+    casts, never resist an enemy's, since ``armies_commanded_by()``
+    only ever returns the caster's own side). ``target.oratory_boosted_
+    this_turn`` still gates the whole cast to once per turn regardless
+    of how many (if any) armies the megaphones end up shielding.
     """
 
     caster = state.leaders[leader_id]
@@ -2728,7 +2760,14 @@ def _execute_oratory(
     defended = False
     if not target.oratory_boosted_this_turn:
         for army in state.armies_commanded_by(request.target):
-            if army.kingdom_id is not None and Discovery.PROPAGANDA_MEGAPHONES in state.kingdoms[army.kingdom_id].discoveries:
+            opposing_megaphones = any(
+                other_army.kingdom_id is not None
+                and army.kingdom_id is not None
+                and not state.is_allied(army.kingdom_id, other_army.kingdom_id)
+                and Discovery.PROPAGANDA_MEGAPHONES in state.kingdoms[other_army.kingdom_id].discoveries
+                for other_army in state.armies_at(army.location)
+            )
+            if opposing_megaphones:
                 defended = True
                 if rng.random() >= PROPAGANDA_MEGAPHONES_AFFECTED_CHANCE:
                     continue
@@ -3544,20 +3583,39 @@ def _execute_gate_angel(
     195 -- see module docstring's "Secret spells" section for the full
     quote and design rationale).
 
-    Checks whether the caster's own Kingdom alignment (clamped through
-    ``_gate_angel_clamped_alignment`` -- Phase 386: Divine counts as
-    Good, Undead as Evil, rather than being excluded outright) matches
-    this turn's due alignment *before* rolling (the same "check
-    applicability first" order every other spell here uses); a
-    successful roll enters the contention drawing for who actually gets
-    the visit (``_gate_angel_register_candidate``).
+    Checks whether the caster's own Kingdom alignment matches this
+    turn's due alignment *before* rolling (the same "check applicability
+    first" order every other spell here uses); a successful roll enters
+    the contention drawing for who actually gets the visit
+    (``_gate_angel_register_candidate``).
+
+    **Phase 1046 bug fix**: this check used to clamp ``kingdom.alignment``
+    through a since-removed ``_gate_angel_clamped_alignment()`` helper
+    (Phase 386's "Divine counts as Good, Undead as Evil" mapping) before
+    comparing it against ``due_alignment`` -- so a Divine/Undead kingdom
+    could pass this gate whenever its clamped alignment happened to be
+    due, and go on to actually receive a Valhalla visit. That directly
+    contradicted this module's own Phase 195 addendum, which quotes the
+    user's authoritative text as unconditional ("ma non ricevono visite
+    dal Vahlalla" -- Divine/Undead kingdoms *never* receive a visit) and
+    explains the intended enforcement mechanism in so many words: "since
+    GATE_ANGEL_ELIGIBLE_ALIGNMENTS never contains DIVINE or UNDEAD, a
+    Divine/Undead kingdom's cast always fails... no special-case check
+    needed" -- which only holds if the comparison uses the real,
+    unclamped alignment (never a member of that 5-alignment set), not a
+    clamped stand-in that always lands inside it. Phase 386 introduced
+    the clamping without reconciling it against Phase 195's own already-
+    documented "no special-case check needed" invariant a few hundred
+    lines above it in this same file, and `_gate_angel_clamped_alignment`
+    had no other caller anywhere in the codebase -- removed outright
+    rather than left as unreachable dead code.
     """
 
     caster = state.leaders[leader_id]
     kingdom = state.kingdoms[kingdom_id]
 
     due_alignment = gate_angel_due_alignment(state, rng)
-    if _gate_angel_clamped_alignment(kingdom.alignment) is not due_alignment:
+    if kingdom.alignment is not due_alignment:
         return CastExecutionResult(request, applied=False, reason="not this alignment's turn for a Valhalla visit")
 
     succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)

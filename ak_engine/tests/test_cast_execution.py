@@ -94,6 +94,26 @@ def build_state() -> GameState:
     return state
 
 
+def test_execute_cast_by_a_dead_leader_is_a_clean_refusal_not_a_crash():
+    # Phase 1046 bug fix: a leader who died earlier this same turn can
+    # still have a later-phase Cast order dispatched for them (neither
+    # turn/plan_dispatch.py's _dispatch_cast()/Trade-rewrite call sites,
+    # nor dispatch_phase()/run_leader_plan() further up, have any
+    # leader-liveness gate of their own) -- the same gap already fixed
+    # for Leave/Pick_Up/Practice/Hire/ASpy/Recruit/Use_MI (Phases
+    # 821-826). Every _execute_* handler bare-indexes state.leaders, so
+    # this previously raised a real, unhandled KeyError instead of a
+    # clean refusal.
+    state = build_state()
+    del state.leaders[CASTER_ID]  # died in an earlier phase this same turn
+    request = CastRequest(spell=Spell.CHARM, target=0)
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "acting leader not found"
+
+
 # -- Phase 547: Valhalla visitor spell immunity except Resurrection --
 
 
@@ -2090,8 +2110,12 @@ def test_oratory_is_not_cumulative_on_a_second_cast_the_same_turn():
 
 
 def test_oratory_propaganda_megaphones_blocks_the_boost_when_the_roll_misses():
+    # Phase 1046 bug fix: the Discovery belongs to an OPPOSING kingdom
+    # present at the battle (kingdom 2), not the boosted army's own
+    # kingdom (1) -- see _execute_oratory's own Phase 1046 addendum.
     state = build_state()
-    state.kingdoms[1].discoveries.add(Discovery.PROPAGANDA_MEGAPHONES)
+    state.kingdoms[2].discoveries.add(Discovery.PROPAGANDA_MEGAPHONES)
+    state.add_army(ArmyState(99, 2, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
     state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
     state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
     request = CastRequest(spell=Spell.ORATORY, target=78)
@@ -2106,8 +2130,10 @@ def test_oratory_propaganda_megaphones_blocks_the_boost_when_the_roll_misses():
 
 
 def test_oratory_propaganda_megaphones_still_boosts_when_the_roll_hits():
+    # Phase 1046 bug fix: same opposing-kingdom setup as the test above.
     state = build_state()
-    state.kingdoms[1].discoveries.add(Discovery.PROPAGANDA_MEGAPHONES)
+    state.kingdoms[2].discoveries.add(Discovery.PROPAGANDA_MEGAPHONES)
+    state.add_army(ArmyState(99, 2, ArmyType.LEGION, Quality.AVERAGE, LOCATION))
     state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
     state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
     request = CastRequest(spell=Spell.ORATORY, target=78)
@@ -2119,6 +2145,26 @@ def test_oratory_propaganda_megaphones_still_boosts_when_the_roll_hits():
     assert result.applied is True
     assert result.discovery_defended is Discovery.PROPAGANDA_MEGAPHONES
     assert state.armies[1].quality is Quality.AVERAGE  # the 33% roll hit -- boosted anyway
+
+
+def test_oratory_propaganda_megaphones_on_the_boosted_kingdoms_own_side_never_defends():
+    # Phase 1046 bug fix regression: before the fix, checking the
+    # boosted army's own kingdom_id meant a Kingdom with this Discovery
+    # could only ever sabotage its own Oratory -- it should have no
+    # effect at all when no OPPOSING kingdom at the location holds it,
+    # even though the boosted kingdom itself does.
+    state = build_state()
+    state.kingdoms[1].discoveries.add(Discovery.PROPAGANDA_MEGAPHONES)
+    state.add_leader(LeaderState(78, 1, "Field Commander", LOCATION))
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.GREEN, LOCATION, commanded_by=78))
+    request = CastRequest(spell=Spell.ORATORY, target=78)
+    rng = ScriptedRandom([])  # no opposing Discovery -- no per-army roll, IndexError if one is attempted
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
+
+    assert result.applied is True
+    assert result.discovery_defended is None
+    assert state.armies[1].quality is Quality.AVERAGE  # always boosted -- own Discovery never defends
 
 
 def test_oratory_without_propaganda_megaphones_never_rolls_and_always_boosts():
@@ -2883,31 +2929,41 @@ def test_gate_angel_due_alignment_is_cached_for_the_rest_of_the_turn():
     assert second.applied is True  # kingdom 2 is DRUID, matches the cached due alignment
 
 
-def test_gate_angel_divine_kingdom_receives_a_visit_when_good_is_due():
-    # Phase 386 correction: AKGEN's own confirmed validation_alignment_
-    # mapping clamps Divine to Good rather than excluding it outright.
+def test_gate_angel_divine_kingdom_never_receives_a_visit_even_when_good_is_due():
+    # Phase 1046 bug fix: the module's own Phase 195 addendum quotes the
+    # user's authoritative, unconditional rule -- "ma non ricevono
+    # visite dal Vahlalla" -- Divine/Undead kingdoms never receive a
+    # visit, full stop. The since-removed Phase 386 clamping (Divine
+    # counts as Good) let this kingdom pass the eligibility gate
+    # whenever GOOD was due; the raw, unclamped alignment is compared
+    # now, and DIVINE is never a member of GATE_ANGEL_ELIGIBLE_
+    # ALIGNMENTS, so this always refuses regardless of which alignment
+    # is due.
     state = build_state()
     state.kingdoms[1].alignment = Alignment.DIVINE
     request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
-    rng = ScriptedRandom([], choice_indices=[0])  # GOOD due -- Divine clamps to Good
+    rng = ScriptedRandom([], choice_indices=[0])  # GOOD due
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
-    assert result.applied is True
-    assert state.last_gate_angel_kingdom == 1
+    assert result.applied is False
+    assert result.reason == "not this alignment's turn for a Valhalla visit"
+    assert state.last_gate_angel_kingdom is None
 
 
-def test_gate_angel_undead_kingdom_receives_a_visit_when_evil_is_due():
-    # Phase 386 correction: Undead clamps to Evil rather than being excluded.
+def test_gate_angel_undead_kingdom_never_receives_a_visit_even_when_evil_is_due():
+    # Phase 1046 bug fix: same unconditional rule as the Divine test
+    # above, for Undead/Evil.
     state = build_state()
     state.kingdoms[1].alignment = Alignment.UNDEAD
     request = CastRequest(spell=Spell.GATE_ANGEL, target=0)
-    rng = ScriptedRandom([], choice_indices=[4])  # EVIL due -- Undead clamps to Evil
+    rng = ScriptedRandom([], choice_indices=[4])  # EVIL due
 
     result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request, rng=rng)
 
-    assert result.applied is True
-    assert state.last_gate_angel_kingdom == 1
+    assert result.applied is False
+    assert result.reason == "not this alignment's turn for a Valhalla visit"
+    assert state.last_gate_angel_kingdom is None
 
 
 def test_gate_angel_contention_second_candidate_can_win():

@@ -70,23 +70,28 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   call site exists in this project as of Phase 59, confirmed by grep,
   but a future one should call ``remove_leader`` to stay resurrectable).
 - ``ProvinceState.terrain_override`` (Part Sea, Flood): "for the rest of
-  the turn" province-terrain replacement. Not auto-cleared at a turn
-  boundary -- unlike ``recruited_this_turn``/``ArmyState.movement_
-  points`` (which Phase 573's own ``turn/turn_processor.py
-  _replenish_turn_scoped_state()`` now resets every ``run_turn()`` call),
-  this field still has no reset call anywhere. **Stale as of Phase 683 --
+  the turn" province-terrain replacement. **Stale as of Phase 683 --
   as of Phase 59 this had no consumer, but ``ProvinceState.effective_
   terrain()`` (below) has read it since Phase 225/226, over 166 phases
   later** (already correctly noted where `MeritTally`'s own analogous
   fields are discussed, further down in this file -- nobody had gone
-  back to fix the claim at its own original site until now).
+  back to fix the claim at its own original site until now). **Stale
+  as of Phase 1046** -- was left uncleared at every turn boundary for
+  166+ more phases after that (directly contradicting its own "for the
+  rest of the turn" sourced duration); ``turn/turn_processor.py
+  _replenish_turn_scoped_state()`` now resets it to ``None`` every
+  ``run_turn()`` call, the same way it already does for
+  ``illusory_fog_active`` (Phase 576).
 - ``ProvinceState.tax_modifier_percent`` (Bless, Earthquake): a signed
   percent (+60 / -100, matching each spell's exact rulebook number, and
   each spell *sets* rather than adds since both are documented "not
   cumulative"). **Stale as of Phase 683 -- as of Phase 59 no tax/
   revenue-collection system existed anywhere in this project, so this
   field had no consumer; ``turn/tax_base.py compute_tax_base()`` has
-  read it since Phase 412/222-224.**
+  read it since Phase 412/222-224.** **Stale as of Phase 1046** -- same
+  "sourced one-turn duration, never actually cleared" gap as
+  ``terrain_override`` above, now also reset to ``0`` every
+  ``run_turn()`` call, alongside ``earthquake_flat_reduction`` (below).
 - ``ProvinceState.illusory_terrain`` (Illusory Terrain): the fake
   terrain an outside observer would be told the province is. **Stale as
   of Phase 683 -- as of Phase 59 nothing read this; `report/turn_
@@ -1377,9 +1382,9 @@ class ProvinceState:
     # the Discovery. Set (not accumulated) by a defended Earthquake cast
     # (``turn/cast_execution.py _execute_earthquake``); a *for one turn*
     # figure, unlike the cumulative/permanent ``scar_terrain_gold_
-    # reduction`` above -- the caller resets it the same "no auto-clear
-    # yet" way it already leaves ``tax_modifier_percent``/
-    # ``illusory_terrain`` between turns.
+    # reduction`` above -- reset to 0 the same way ``tax_modifier_
+    # percent``/``terrain_override`` now are (Phase 1046's own
+    # ``turn/turn_processor.py _replenish_turn_scoped_state()`` fix).
     earthquake_flat_reduction: int = 0
     # Illusory Fog (Phase 207) -- see module docstring. Set by a
     # successful cast (turn/cast_execution.py _execute_illus_fog).
