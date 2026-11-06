@@ -1823,6 +1823,22 @@ def _apply_undead_king_alignment_conversion(caster: LeaderState, target: LeaderS
     target.alignment = ALIGNMENT_BY_ORDINAL[ordinal]
 
 
+def kingdom_has_discovery(state: GameState, kingdom_id: int | None, discovery: Discovery) -> bool:
+    """Phase 1048: the common "does this Kingdom hold Discovery X"
+    ward-check this module's own counter-Discovery spells (Hidden
+    Tattoos vs. Kill Enemy, Flood Dams vs. Flood, Giant Fan vs. Tornado,
+    Reinforced Concrete vs. Earthquake, Propaganda Megaphones vs.
+    Oratory, Penicillin vs. Plague) each independently re-wrote as
+    ``kingdom_id is not None and Discovery.X in state.kingdoms[kingdom_
+    id].discoveries`` -- see each call site's own Phase 1048 addendum.
+    ``kingdom_id=None`` (an unowned province, an ownerless army) safely
+    reads as "doesn't hold it," the same default every one of those
+    call sites already used.
+    """
+
+    return kingdom_id is not None and discovery in state.kingdoms[kingdom_id].discoveries
+
+
 def _kill_enemy_combatant(state: GameState, leader: LeaderState, *, temper: Temper | None) -> Combatant:
     """Same construction as ``challenge_execution.py _leader_combatant()`` (Phase 50),
     duplicated rather than shared -- see that function's own docstring for
@@ -2079,7 +2095,7 @@ def _execute_kill_enemy(
     if holder_is_immune_to_spell(state, request.target, request.spell):
         return CastExecutionResult(request, applied=False, reason="target is immune (anti-magic amulet)")
 
-    if target.kingdom_id is not None and Discovery.HIDDEN_TATTOOS in state.kingdoms[target.kingdom_id].discoveries:
+    if kingdom_has_discovery(state, target.kingdom_id, Discovery.HIDDEN_TATTOOS):  # Phase 1048
         return CastExecutionResult(request, applied=True, discovery_defended=Discovery.HIDDEN_TATTOOS)
 
     # Phase 447: Grandfather of Assassins (Office.ASSASSIN, id 43) merit
@@ -2218,6 +2234,70 @@ def _execute_resurrection(
     return CastExecutionResult(request, applied=True)
 
 
+def _resolve_province_cast(
+    state: GameState,
+    leader_id: int,
+    request: CastRequest,
+    board_width: int,
+    *,
+    require_adjacent: bool = True,
+    not_found_reason: str = "province not found or not in range",
+) -> tuple[LeaderState, HexCoord, ProvinceState] | CastExecutionResult:
+    """Phase 1047: the first half of the "resolve target -> check
+    protection -> roll success" preamble every province-targeted spell
+    handler below repeats -- see ``_province_cast_gate()`` right below
+    for the second half, and each handler's own Phase 1047 addendum for
+    why the split sits here rather than as one combined helper (a
+    handler's own spell-specific eligibility check, e.g. Part Sea's
+    "target must be Sea," has to run between the two halves, using the
+    resolved ``province``).
+
+    Returns the usual early-failure ``CastExecutionResult`` when
+    ``_resolve_province_target()`` can't resolve a province (unknown
+    coordinate, or -- when ``require_adjacent``, the default -- not the
+    caster's own province or one adjacent to it); otherwise ``(caster,
+    coord, province)`` for the handler's own further checks and effect.
+    ``not_found_reason`` lets a caller override the default message --
+    Bless's own ``require_adjacent=False`` call has no "or not in range"
+    possibility to report, so it supplies the shorter "province not
+    found" instead.
+    """
+
+    caster = state.leaders[leader_id]
+    coord, province = _resolve_province_target(
+        state, caster, request.target, board_width, require_adjacent=require_adjacent
+    )
+    if province is None:
+        return CastExecutionResult(request, applied=False, reason=not_found_reason)
+    return caster, coord, province
+
+
+def _province_cast_gate(
+    state: GameState,
+    caster: LeaderState,
+    coord: HexCoord,
+    request: CastRequest,
+    ability: Ability,
+    rng: random.Random,
+    wand_skill_level: int | None,
+) -> CastExecutionResult | None:
+    """Phase 1047: the second half of the shared province-cast preamble
+    -- see ``_resolve_province_cast()`` right above. Checks the anti-
+    magic amulet ward (``resolve_province_protection_block()``) for the
+    spell's own ``ability``, then rolls cast success. Returns the usual
+    early-failure ``CastExecutionResult`` for either check, or ``None``
+    once both have passed -- the handler's own spell-specific effect
+    runs next.
+    """
+
+    if resolve_province_protection_block(state, coord, ability, caster.kingdom_id, rng):
+        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
+    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
+    if not succeeded:
+        return CastExecutionResult(request, applied=False, reason=reason)
+    return None
+
+
 def _execute_part_sea(
     state: GameState,
     leader_id: int,
@@ -2229,20 +2309,23 @@ def _execute_part_sea(
     """Rulebook [4.21.2]: "a Sea province is transformed into a Plain for the rest of
     the turn... only the caster's own province, or one adjacent to it,
     can be targeted."
+
+    **Phase 1047**: the "resolve target -> check protection -> roll
+    success" preamble below is shared with every other province-
+    targeted spell handler in this module -- see ``_resolve_province_
+    cast()``/``_province_cast_gate()``'s own docstrings.
     """
 
-    caster = state.leaders[leader_id]
-    _coord, province = _resolve_province_target(state, caster, request.target, board_width)
-    if province is None:
-        return CastExecutionResult(request, applied=False, reason="province not found or not in range")
+    resolved = _resolve_province_cast(state, leader_id, request, board_width)
+    if isinstance(resolved, CastExecutionResult):
+        return resolved
+    caster, coord, province = resolved
     if province.effective_terrain() is not Terrain.SEA:
         return CastExecutionResult(request, applied=False, reason="target province is not Sea")
 
-    if resolve_province_protection_block(state, _coord, Ability.WHITE, caster.kingdom_id, rng):
-        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
-    if not succeeded:
-        return CastExecutionResult(request, applied=False, reason=reason)
+    early = _province_cast_gate(state, caster, coord, request, Ability.WHITE, rng, wand_skill_level)
+    if early is not None:
+        return early
 
     province.terrain_override = Terrain.PLAINS
     return CastExecutionResult(request, applied=True)
@@ -2300,28 +2383,25 @@ def _execute_flood(
     exemption.
     """
 
-    caster = state.leaders[leader_id]
-    _coord, province = _resolve_province_target(state, caster, request.target, board_width)
-    if province is None:
-        return CastExecutionResult(request, applied=False, reason="province not found or not in range")
+    resolved = _resolve_province_cast(state, leader_id, request, board_width)
+    if isinstance(resolved, CastExecutionResult):
+        return resolved
+    caster, coord, province = resolved
     if province.effective_terrain() not in _FLOOD_ELIGIBLE_TERRAIN:
         return CastExecutionResult(request, applied=False, reason="target province is not a non-mountain land province")
 
-    if resolve_province_protection_block(state, _coord, Ability.ELEMENTAL, caster.kingdom_id, rng):
-        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
-    if not succeeded:
-        return CastExecutionResult(request, applied=False, reason=reason)
+    early = _province_cast_gate(state, caster, coord, request, Ability.ELEMENTAL, rng, wand_skill_level)
+    if early is not None:
+        return early
 
     province.terrain_override = Terrain.SEA
 
-    owner_kingdom = state.kingdoms.get(province.owner_kingdom_id) if province.owner_kingdom_id is not None else None
-    defended = owner_kingdom is not None and Discovery.FLOOD_DAMS in owner_kingdom.discoveries
+    defended = kingdom_has_discovery(state, province.owner_kingdom_id, Discovery.FLOOD_DAMS)  # Phase 1048
     if defended:
-        for army in state.armies_at(_coord):
+        for army in state.armies_at(coord):
             if is_land_army(army.army_type):
                 army.movement_points -= FLOOD_DAMS_MOVEMENT_POINT_PENALTY
-                army.flood_dams_exempt_at = _coord
+                army.flood_dams_exempt_at = coord
 
     return CastExecutionResult(request, applied=True, discovery_defended=Discovery.FLOOD_DAMS if defended else None)
 
@@ -2371,23 +2451,21 @@ def _execute_tornado(
     full derivation).
     """
 
-    caster = state.leaders[leader_id]
-    coord, province = _resolve_province_target(state, caster, request.target, board_width)
-    if province is None:
-        return CastExecutionResult(request, applied=False, reason="province not found or not in range")
+    resolved = _resolve_province_cast(state, leader_id, request, board_width)
+    if isinstance(resolved, CastExecutionResult):
+        return resolved
+    caster, coord, _province = resolved
 
-    if resolve_province_protection_block(state, coord, Ability.ELEMENTAL, caster.kingdom_id, rng):
-        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
-    if not succeeded:
-        return CastExecutionResult(request, applied=False, reason=reason)
+    early = _province_cast_gate(state, caster, coord, request, Ability.ELEMENTAL, rng, wand_skill_level)
+    if early is not None:
+        return early
 
     chance = TORNADO_DESTROY_CHANCE_PER_LEVEL * _caster_level(state, caster, Ability.ELEMENTAL, wand_skill_level)
     defended = False
     destroyed: list[ArmyState] = []
     quality_downgraded: list[ArmyState] = []
     for army in list(state.armies_at(coord)):
-        if army.kingdom_id is not None and Discovery.GIANT_FAN in state.kingdoms[army.kingdom_id].discoveries:
+        if kingdom_has_discovery(state, army.kingdom_id, Discovery.GIANT_FAN):  # Phase 1048
             defended = True
             if rng.random() < GIANT_FAN_QUALITY_DOWNGRADE_CHANCE:
                 army.quality = quality_one_level_down(army.quality)
@@ -2511,30 +2589,28 @@ def _execute_earthquake(
     choice for a case the source text doesn't cover.
     """
 
-    caster = state.leaders[leader_id]
-    _coord, province = _resolve_province_target(state, caster, request.target, board_width)
-    if province is None:
-        return CastExecutionResult(request, applied=False, reason="province not found or not in range")
+    resolved = _resolve_province_cast(state, leader_id, request, board_width)
+    if isinstance(resolved, CastExecutionResult):
+        return resolved
+    caster, coord, province = resolved
     if province.effective_terrain() is Terrain.SEA and AdvancedAbility.ENHANCED_EARTHQUAKE not in caster.advanced_abilities:
         return CastExecutionResult(request, applied=False, reason="target province is not land")
 
-    if resolve_province_protection_block(state, _coord, Ability.ELEMENTAL, caster.kingdom_id, rng):
-        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
-    if not succeeded:
-        return CastExecutionResult(request, applied=False, reason=reason)
+    early = _province_cast_gate(state, caster, coord, request, Ability.ELEMENTAL, rng, wand_skill_level)
+    if early is not None:
+        return early
 
     if province.effective_terrain() is Terrain.SEA:
-        direction = direction_between(caster.location, _coord)
+        direction = direction_between(caster.location, coord)
         if direction is None:
             direction = rng.choice(list(Direction))
         level = _caster_level(state, caster, Ability.ELEMENTAL, wand_skill_level)
         bounds = MapBounds(board_width, state.board_height)
-        _propagate_tidal_wave(state, _coord, direction, TIDAL_WAVE_CHANCE_PER_LEVEL * level, bounds, rng)
+        _propagate_tidal_wave(state, coord, direction, TIDAL_WAVE_CHANCE_PER_LEVEL * level, bounds, rng)
         return CastExecutionResult(request, applied=True)
 
     owner_kingdom_id = province.owner_kingdom_id
-    if owner_kingdom_id is not None and Discovery.REINFORCED_CONCRETE in state.kingdoms[owner_kingdom_id].discoveries:
+    if kingdom_has_discovery(state, owner_kingdom_id, Discovery.REINFORCED_CONCRETE):  # Phase 1048
         province.earthquake_flat_reduction = REINFORCED_CONCRETE_TAX_REDUCTION
         return CastExecutionResult(request, applied=True, discovery_defended=Discovery.REINFORCED_CONCRETE)
 
@@ -2586,16 +2662,16 @@ def _execute_bless(
     graveyard_outcome()``'s own docstring for the full sourcing.
     """
 
-    caster = state.leaders[leader_id]
-    coord, province = _resolve_province_target(state, caster, request.target, board_width, require_adjacent=False)
-    if province is None:
-        return CastExecutionResult(request, applied=False, reason="province not found")
+    resolved = _resolve_province_cast(
+        state, leader_id, request, board_width, require_adjacent=False, not_found_reason="province not found"
+    )
+    if isinstance(resolved, CastExecutionResult):
+        return resolved
+    caster, coord, province = resolved
 
-    if resolve_province_protection_block(state, coord, Ability.WHITE, caster.kingdom_id, rng):
-        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
-    if not succeeded:
-        return CastExecutionResult(request, applied=False, reason=reason)
+    early = _province_cast_gate(state, caster, coord, request, Ability.WHITE, rng, wand_skill_level)
+    if early is not None:
+        return early
 
     province.tax_modifier_percent = BLESS_TAX_BONUS_PERCENT
 
@@ -2642,18 +2718,16 @@ def _execute_illus_terrain(
     still-project-original "who currently believes the illusion" gap.
     """
 
-    caster = state.leaders[leader_id]
-    _coord, province = _resolve_province_target(state, caster, request.target, board_width)
-    if province is None:
-        return CastExecutionResult(request, applied=False, reason="province not found or not in range")
+    resolved = _resolve_province_cast(state, leader_id, request, board_width)
+    if isinstance(resolved, CastExecutionResult):
+        return resolved
+    caster, coord, province = resolved
     if not isinstance(request.terrain, Terrain):
         return CastExecutionResult(request, applied=False, reason="fake terrain not specified")
 
-    if resolve_province_protection_block(state, _coord, Ability.ILLUSION, caster.kingdom_id, rng):
-        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
-    if not succeeded:
-        return CastExecutionResult(request, applied=False, reason=reason)
+    early = _province_cast_gate(state, caster, coord, request, Ability.ILLUSION, rng, wand_skill_level)
+    if early is not None:
+        return early
 
     province.illusory_terrain = request.terrain
     province.illusory_terrain_enhanced = AdvancedAbility.ENHANCED_ILLUSORY_TERRAIN in caster.advanced_abilities
@@ -2761,10 +2835,9 @@ def _execute_oratory(
     if not target.oratory_boosted_this_turn:
         for army in state.armies_commanded_by(request.target):
             opposing_megaphones = any(
-                other_army.kingdom_id is not None
-                and army.kingdom_id is not None
+                army.kingdom_id is not None
                 and not state.is_allied(army.kingdom_id, other_army.kingdom_id)
-                and Discovery.PROPAGANDA_MEGAPHONES in state.kingdoms[other_army.kingdom_id].discoveries
+                and kingdom_has_discovery(state, other_army.kingdom_id, Discovery.PROPAGANDA_MEGAPHONES)  # Phase 1048
                 for other_army in state.armies_at(army.location)
             )
             if opposing_megaphones:
@@ -2875,16 +2948,14 @@ def _execute_illus_fog(
     consuming pipeline from here.
     """
 
-    caster = state.leaders[leader_id]
-    _coord, province = _resolve_province_target(state, caster, request.target, board_width)
-    if province is None:
-        return CastExecutionResult(request, applied=False, reason="province not found or not in range")
+    resolved = _resolve_province_cast(state, leader_id, request, board_width)
+    if isinstance(resolved, CastExecutionResult):
+        return resolved
+    caster, coord, province = resolved
 
-    if resolve_province_protection_block(state, _coord, Ability.ILLUSION, caster.kingdom_id, rng):
-        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
-    if not succeeded:
-        return CastExecutionResult(request, applied=False, reason=reason)
+    early = _province_cast_gate(state, caster, coord, request, Ability.ILLUSION, rng, wand_skill_level)
+    if early is not None:
+        return early
 
     province.illusory_fog_active = True
     return CastExecutionResult(request, applied=True)
@@ -3004,9 +3075,7 @@ def apply_plague_exposure(
 
     province = state.provinces.get(coord)
     province_owner_id = province.owner_kingdom_id if province is not None else None
-    province_owner_has_penicillin = (
-        province_owner_id is not None and Discovery.PENICILLIN in state.kingdoms[province_owner_id].discoveries
-    )
+    province_owner_has_penicillin = kingdom_has_discovery(state, province_owner_id, Discovery.PENICILLIN)  # Phase 1048
 
     good_king_holder = resolve_office_holder(state, Office.GOOD_KING)
     good_king_kingdom_id = None
@@ -3072,16 +3141,14 @@ def _execute_plague(
     ``apply_plague_exposure()``.
     """
 
-    caster = state.leaders[leader_id]
-    coord, province = _resolve_province_target(state, caster, request.target, board_width)
-    if province is None:
-        return CastExecutionResult(request, applied=False, reason="province not found or not in range")
+    resolved = _resolve_province_cast(state, leader_id, request, board_width)
+    if isinstance(resolved, CastExecutionResult):
+        return resolved
+    caster, coord, province = resolved
 
-    if resolve_province_protection_block(state, coord, Ability.NECROMANCY, caster.kingdom_id, rng):
-        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
-    if not succeeded:
-        return CastExecutionResult(request, applied=False, reason=reason)
+    early = _province_cast_gate(state, caster, coord, request, Ability.NECROMANCY, rng, wand_skill_level)
+    if early is not None:
+        return early
 
     if province.plague_active:
         return CastExecutionResult(request, applied=True)
@@ -3112,23 +3179,21 @@ def _execute_scar_terrain(
     below), triggered immediately on a successful cast, Phase 721.
     """
 
-    caster = state.leaders[leader_id]
-    _coord, province = _resolve_province_target(state, caster, request.target, board_width)
-    if province is None:
-        return CastExecutionResult(request, applied=False, reason="province not found or not in range")
+    resolved = _resolve_province_cast(state, leader_id, request, board_width)
+    if isinstance(resolved, CastExecutionResult):
+        return resolved
+    caster, coord, province = resolved
 
-    if resolve_province_protection_block(state, _coord, Ability.NECROMANCY, caster.kingdom_id, rng):
-        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
-    if not succeeded:
-        return CastExecutionResult(request, applied=False, reason=reason)
+    early = _province_cast_gate(state, caster, coord, request, Ability.NECROMANCY, rng, wand_skill_level)
+    if early is not None:
+        return early
 
     province.scar_terrain_gold_reduction += SCAR_TERRAIN_TAX_REDUCTION
     collapsed = False
     if province.tax is not None:
         remaining = max(0, province.tax - province.scar_terrain_gold_reduction)
         if scar_terrain_is_exhausted(remaining):
-            apply_scar_terrain_collapse(state, _coord, board_width, rng)
+            apply_scar_terrain_collapse(state, coord, board_width, rng)
             collapsed = True
     return CastExecutionResult(request, applied=True, scar_terrain_collapsed=collapsed)
 
@@ -3474,19 +3539,17 @@ def _execute_hide_feature(
     here does, before any success roll.
     """
 
-    caster = state.leaders[leader_id]
-    coord, province = _resolve_province_target(state, caster, request.target, board_width)
-    if province is None:
-        return CastExecutionResult(request, applied=False, reason="province not found or not in range")
+    resolved = _resolve_province_cast(state, leader_id, request, board_width)
+    if isinstance(resolved, CastExecutionResult):
+        return resolved
+    caster, coord, _province = resolved
     features = state.features_at(coord)
     if not features:
         return CastExecutionResult(request, applied=False, reason="no feature to hide")
 
-    if resolve_province_protection_block(state, coord, Ability.ILLUSION, caster.kingdom_id, rng):
-        return CastExecutionResult(request, applied=False, reason="province is protected (anti-magic amulet)")
-    succeeded, reason = _roll_cast_success(state, caster, request.spell, rng, wand_skill_level)
-    if not succeeded:
-        return CastExecutionResult(request, applied=False, reason=reason)
+    early = _province_cast_gate(state, caster, coord, request, Ability.ILLUSION, rng, wand_skill_level)
+    if early is not None:
+        return early
 
     for feature in features:
         feature.magically_hidden = True
