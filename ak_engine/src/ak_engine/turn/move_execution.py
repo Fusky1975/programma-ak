@@ -298,7 +298,13 @@ from ak_engine.turn.diplomacy import is_attackable_at
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.exploration import ExploreResult, discover_features, resolve_explore, resolve_find_mines
 from ak_engine.turn.office_holder import resolve_office_holder
-from ak_engine.turn.sea_transport import apply_battle_carrier_destruction, board_army, cargo_aboard, disembark_army
+from ak_engine.turn.sea_transport import (
+    apply_battle_carrier_destruction,
+    board_army,
+    can_board,
+    cargo_aboard,
+    disembark_army,
+)
 from ak_engine.turn.movement import (
     HexOwnershipTier,
     MapBounds,
@@ -951,17 +957,25 @@ def _boarding_priority_tier(army_type: ArmyType) -> int:
     return 0 if stats is not None and stats.speed <= 2 else 1
 
 
-def _auto_board_transport_group(
+def _plan_auto_board_transport_group(
     state: GameState,
     armies: list[ArmyState],
     *,
     caster_has_druidic_whale_transport: bool = False,
     caster_has_druidic_transport: bool = False,
-) -> list[int]:
-    """Automatically boards as many eligible land armies as fit onto
-    whichever Fleet/Whale carriers are moving in the same group -- see
-    ``execute_move()``'s own Phase 715 addendum. Returns every army id
-    actually boarded this call.
+) -> list[tuple[int, int]]:
+    """Phase 1045: a pure, side-effect-free dry run of `_auto_board_
+    transport_group()`'s own exact selection algorithm below (identical
+    carrier/candidate sorting, identical one-candidate-per-carrier-slot
+    greedy assignment, via `sea_transport.py can_board()`'s own Phase
+    1045 `current_cargo_types` override) -- returns `(candidate_army_id,
+    carrier_army_id)` pairs instead of actually boarding anyone.
+
+    `execute_move()` calls this directly, before it knows whether the
+    move will even be allowed to proceed (a still-pending contested-
+    province or transport-legality check could still refuse it) -- see
+    that function's own Phase 1045 addendum for why committing real
+    boarding has to wait until every such check has passed.
     """
 
     carriers = sorted((army for army in armies if army.army_type in _CARRIER_ARMY_TYPES), key=lambda army: army.army_id)
@@ -973,18 +987,61 @@ def _auto_board_transport_group(
         key=lambda army: (_boarding_priority_tier(army.army_type), army.army_id),
     )
 
-    boarded_army_ids: list[int] = []
+    simulated_cargo_types: dict[int, list[ArmyType]] = {
+        carrier.army_id: [cargo.army_type for cargo in cargo_aboard(state, carrier.army_id)] for carrier in carriers
+    }
+    plan: list[tuple[int, int]] = []
     for candidate in candidates:
         for carrier in carriers:
-            if board_army(
+            if can_board(
                 state,
-                candidate.army_id,
-                carrier.army_id,
+                carrier,
+                candidate.army_type,
                 caster_has_druidic_whale_transport=caster_has_druidic_whale_transport,
                 caster_has_druidic_transport=caster_has_druidic_transport,
+                current_cargo_types=simulated_cargo_types[carrier.army_id],
             ):
-                boarded_army_ids.append(candidate.army_id)
+                simulated_cargo_types[carrier.army_id].append(candidate.army_type)
+                plan.append((candidate.army_id, carrier.army_id))
                 break
+    return plan
+
+
+def _auto_board_transport_group(
+    state: GameState,
+    armies: list[ArmyState],
+    *,
+    caster_has_druidic_whale_transport: bool = False,
+    caster_has_druidic_transport: bool = False,
+) -> list[int]:
+    """Automatically boards as many eligible land armies as fit onto
+    whichever Fleet/Whale carriers are moving in the same group -- see
+    ``execute_move()``'s own Phase 715 addendum. Returns every army id
+    actually boarded this call.
+
+    Phase 1045: now a thin, real-mutating commit step over
+    ``_plan_auto_board_transport_group()``'s own dry run just above --
+    this function's own return contract and every existing caller/test
+    are unaffected; ``execute_move()`` itself calls the planner directly
+    when it needs to know the outcome before committing to it.
+    """
+
+    plan = _plan_auto_board_transport_group(
+        state,
+        armies,
+        caster_has_druidic_whale_transport=caster_has_druidic_whale_transport,
+        caster_has_druidic_transport=caster_has_druidic_transport,
+    )
+    boarded_army_ids: list[int] = []
+    for candidate_id, carrier_id in plan:
+        if board_army(
+            state,
+            candidate_id,
+            carrier_id,
+            caster_has_druidic_whale_transport=caster_has_druidic_whale_transport,
+            caster_has_druidic_transport=caster_has_druidic_transport,
+        ):
+            boarded_army_ids.append(candidate_id)
     return boarded_army_ids
 
 
@@ -1117,6 +1174,7 @@ def find_transport_illegality(
     *,
     has_march_through_floods: bool = False,
     is_hug_coastline_hop: bool = False,
+    planned_boarded_ids: frozenset[int] = frozenset(),
 ) -> TransportIllegalMoveReason | None:
     """The real sea-transport legality check -- see the module-level
     Phase 737 addendum right above `TransportIllegalMoveReason` for the
@@ -1171,6 +1229,15 @@ def find_transport_illegality(
     units are already unaffected by a Hug Coastline hop (both endpoints
     are real land, so `_land_crossing_blocked()` never blocks them
     regardless of this flag).
+
+    `planned_boarded_ids` (Phase 1045): army ids this exact call's own
+    boarding *plan* (`_plan_auto_board_transport_group()`) would seat on
+    a same-move carrier, but hasn't boarded for real yet -- see `execute_
+    move()`'s own Phase 1045 addendum for why this check now has to run
+    before that commit, not after it. Treated identically to the real
+    `army.transported_by`-based exemption just below; the default empty
+    `frozenset` reproduces every pre-Phase-1045 caller/test exactly
+    (this function otherwise only ever reads the real field).
     """
 
     origin_terrain = origin_province.effective_terrain() if origin_province is not None else Terrain.NO_TERRAIN
@@ -1179,6 +1246,8 @@ def find_transport_illegality(
     target_is_sea = target_terrain in (Terrain.SEA, Terrain.NO_TERRAIN)
 
     for army in armies:
+        if army.army_id in planned_boarded_ids:
+            continue  # not really aboard yet, but validated to board as part of this same call's own plan
         if army.transported_by is not None and army.transported_by in army_ids:
             continue  # legally aboard a same-move carrier
         if army.army_type in OVERFLIGHT_AIR:
@@ -1492,6 +1561,32 @@ def execute_move(
     condition.** Snapshotted from this call's own (pre-straggler-split)
     `army_ids` right at the top of this function -- see that field's
     own docstring for the real consumer.
+
+    **Phase 1045 -- no real mutation before a check that can still
+    refuse the move.** Before this fix, auto-boarding (``auto_board``,
+    Phase 715) and the Hug-Coastline straggler split's own full
+    recursive ``execute_move()`` sub-move (Phase 763 -- itself capable of
+    fighting a battle and conquering a province) both ran *before* the
+    contested-province check and the ``enforce_transport_legality``
+    check below, either of which can still raise
+    (``IllegalMoveFromContestedError``, ``TransportIllegalMoveError``)
+    and abort this whole call. ``turn/plan_dispatch.py run_leader_
+    plan()`` catches both exceptions per-phase and simply continues the
+    rest of the leader's plan -- documented as never rolling anything
+    back -- so a refused LMOVE used to still leave its armies boarded
+    and its stragglers relocated (battle/conquest included) as if the
+    move had gone through, corrupting the rest of that turn's state
+    silently. Closed by planning the auto-board outcome first (a pure
+    dry run, ``_plan_auto_board_transport_group()`` below, reusing
+    ``turn/sea_transport.py can_board()``'s own Phase 1045
+    ``current_cargo_types`` override) and evaluating every check from
+    here through the transport-legality raise -- all of them already
+    pure/read-only on their own, just previously sequenced too late --
+    against that plan instead. Only once every check has passed does
+    this function commit for real (board the planned candidates, then
+    run the straggler group's own real recursive move) -- see the
+    inline Phase 1045 comments throughout this function's own body for
+    the exact restructuring.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -1527,14 +1622,35 @@ def execute_move(
         if army.transported_by is not None and army.transported_by not in army_ids:
             disembark_army(state, army.army_id)
 
-    boarded_army_ids: list[int] = []
-    if auto_board:
-        boarded_army_ids = _auto_board_transport_group(
+    # Phase 1045 bug fix -- everything from here through the transport-
+    # legality raise below used to commit real, hard-to-undo mutation
+    # (auto-boarding, and the Hug-Coastline straggler split's own full
+    # recursive execute_move() sub-move, which can itself fight a battle
+    # and conquer a province) *before* two checks that can still raise
+    # and abort this whole call (IllegalMoveFromContestedError,
+    # TransportIllegalMoveError) -- `turn/plan_dispatch.py run_leader_
+    # plan()`'s own module docstring documents that it catches both
+    # per-phase and simply continues the rest of the leader's plan, with
+    # no rollback of whatever this call already mutated before raising.
+    # Closed by planning the auto-board outcome first with `_plan_auto_
+    # board_transport_group()` (a pure dry run -- `turn/sea_transport.py
+    # can_board()`'s own Phase 1045 `current_cargo_types` override) and
+    # running every check below -- all of them already pure/read-only on
+    # their own, just previously sequenced too late -- against that plan
+    # instead of real, not-yet-committed state. Only once every check has
+    # passed does this function commit for real: board the planned
+    # candidates, then run the straggler group's own real recursive move.
+    plan = (
+        _plan_auto_board_transport_group(
             state,
             armies,
             caster_has_druidic_whale_transport=caster_has_druidic_whale_transport,
             caster_has_druidic_transport=caster_has_druidic_transport,
         )
+        if auto_board
+        else []
+    )
+    planned_boarded_ids = frozenset(candidate_id for candidate_id, _carrier_id in plan)
 
     # Phase 634: snapshotted here, before this same call's own
     # fight_battle() (below) can clear it -- see MoveExecutionResult.
@@ -1561,52 +1677,24 @@ def execute_move(
     # army at all; a pure land stack either takes the shortcut in full or
     # (if geometrically ineligible) falls through to the ordinary
     # whole-group chase below, unaffected by any of this.
-    straggler_ids: list[int] = []
+    #
+    # Phase 1045: evaluated against the boarding *plan* above
+    # (`planned_boarded_ids`), not real `transported_by`, since nothing
+    # has actually boarded yet at this point.
+    planned_straggler_ids: list[int] = []
     if hug_coastline_geometrically_eligible and any(army.army_type in SEA_ARMY_TYPES for army in armies):
-        straggler_ids = [
+        planned_straggler_ids = [
             army.army_id
             for army in armies
             if is_land_army(army.army_type)
-            and not (army.transported_by is not None and army.transported_by in army_ids)
+            and not (
+                (army.transported_by is not None and army.transported_by in army_ids)
+                or army.army_id in planned_boarded_ids
+            )
         ]
-    straggler_result: MoveExecutionResult | None = None
-    if straggler_ids:
-        # The boarded/carrier portion (below) takes the coastal shortcut
-        # directly to `target`; the stragglers get their own real,
-        # independent resolution toward the same ultimate `target` --
-        # ordinarily a one-hex chase step, exactly what this same
-        # function already gives any non-adjacent mover once
-        # `has_naval_hug_coastline` is off. No leader travels with them
-        # (the acting leader is modeled as staying with the hop group --
-        # a documented modeling choice, not a sourced fact either way),
-        # and boarding/contested-move/transport-legality were already
-        # resolved once, above, for the whole original group.
-        straggler_result = execute_move(
-            state,
-            kingdom_id,
-            straggler_ids,
-            target,
-            leader_id=None,
-            explorer_skill=explorer_skill,
-            loser_retreats=loser_retreats,
-            rng=rng,
-            has_military_maps=has_military_maps,
-            has_difficult_terrain=has_difficult_terrain,
-            has_find_mines=has_find_mines,
-            has_march_cavalry=has_march_cavalry,
-            has_march_cavalry_mastery=has_march_cavalry_mastery,
-            has_march_cavalry_true_mastery=has_march_cavalry_true_mastery,
-            has_march_infantry=has_march_infantry,
-            has_march_infantry_mastery=has_march_infantry_mastery,
-            has_march_through_floods=has_march_through_floods,
-            march_skill_level=march_skill_level,
-            naval_skill_level=naval_skill_level,
-            has_naval_hug_coastline=False,
-            auto_board=False,
-            enforce_transport_legality=enforce_transport_legality,
-        )
-        army_ids = [army_id for army_id in army_ids if army_id not in straggler_ids]
-        armies = [state.armies[army_id] for army_id in army_ids]
+    planned_straggler_id_set = set(planned_straggler_ids)
+    planned_army_ids = [army_id for army_id in army_ids if army_id not in planned_straggler_id_set]
+    planned_armies = [army for army in armies if army.army_id not in planned_straggler_id_set]
 
     # Phase 720: a mixed stack (a sea-going carrier present alongside
     # land units) still qualifies for the whole-group hop when every
@@ -1616,9 +1704,17 @@ def execute_move(
     # above has already carved the unboarded stragglers out of it. A
     # pure land stack has no army needing transported_by at all, so this
     # is vacuously satisfied, unchanged from before.
+    #
+    # Phase 1045: "ended up boarded" means either already really boarded
+    # (an earlier call) or boarded per this call's own plan above -- the
+    # real commit hasn't happened yet.
     is_hug_coastline_hop = hug_coastline_geometrically_eligible and (
-        not any(army.army_type in SEA_ARMY_TYPES for army in armies)
-        or all(army.transported_by is not None for army in armies if is_land_army(army.army_type))
+        not any(army.army_type in SEA_ARMY_TYPES for army in planned_armies)
+        or all(
+            army.transported_by is not None or army.army_id in planned_boarded_ids
+            for army in planned_armies
+            if is_land_army(army.army_type)
+        )
     )
     if current != target and not is_adjacent(current, target, bounds) and not is_hug_coastline_hop:
         next_hex = step_toward_non_adjacent_target(
@@ -1669,9 +1765,11 @@ def execute_move(
     # pre-existing behavior unchanged (attackable, the same "not Allied"
     # default every other `is_allied()` caller already uses). Checked
     # before any other state mutation below (exploration, movement-point
-    # cost, conquest, battle).
+    # cost, conquest, battle) -- Phase 1045: now also before auto-
+    # boarding/the straggler split themselves commit, not just before
+    # what follows them.
     if (
-        armies
+        planned_armies
         and target_province.owner_kingdom_id is not None
         and target_province.owner_kingdom_id != kingdom_id
         and state.diplomatic_relations.get(frozenset({target_province.owner_kingdom_id, kingdom_id}))
@@ -1710,19 +1808,87 @@ def execute_move(
         target_province.owner_kingdom_id, kingdom_id
     )
     if is_illegal_move_from_contested(origin_contested_by_mover, target_owner_is_enemy):
+        # Phase 1045 bug fix -- this raise used to fire *after* auto-
+        # boarding and the Hug-Coastline straggler split's own real
+        # recursive execute_move() had already committed (both above, in
+        # the pre-Phase-1045 code), and `turn/plan_dispatch.py run_
+        # leader_plan()` catches this exception per-phase without rolling
+        # anything back -- so a refused LMOVE used to still leave the
+        # rest of the turn boarded/relocated as if it had gone through.
+        # Now raised before either one has touched real state -- see
+        # this function's own Phase 1045 addendum above.
         raise IllegalMoveFromContestedError("illegal to move from a contested province to an adjacent enemy province")
 
-    if enforce_transport_legality and armies:
+    if enforce_transport_legality and planned_armies:
         transport_reason = find_transport_illegality(
-            armies,
-            army_ids,
+            planned_armies,
+            planned_army_ids,
             origin_province,
             target_province,
             has_march_through_floods=has_march_through_floods,
             is_hug_coastline_hop=is_hug_coastline_hop,
+            planned_boarded_ids=planned_boarded_ids,
         )
         if transport_reason is not None:
+            # Phase 1045 bug fix -- same unrolled-mutation gap as the
+            # contested-province raise just above.
             raise TransportIllegalMoveError(transport_reason, origin_coord=current, destination_coord=actual_target)
+
+    # Phase 1045: every check above has passed against the plan -- safe
+    # to commit it for real now. Board first -- the straggler group's
+    # own recursive execute_move() just below reads real `transported_by`
+    # to decide its own moving party, so it must see the non-straggler
+    # portion's boarding as already real, not just planned.
+    boarded_army_ids: list[int] = []
+    for candidate_id, carrier_id in plan:
+        if board_army(
+            state,
+            candidate_id,
+            carrier_id,
+            caster_has_druidic_whale_transport=caster_has_druidic_whale_transport,
+            caster_has_druidic_transport=caster_has_druidic_transport,
+        ):
+            boarded_army_ids.append(candidate_id)
+
+    straggler_result: MoveExecutionResult | None = None
+    if planned_straggler_ids:
+        # The boarded/carrier portion (below) takes the coastal shortcut
+        # directly to `target`; the stragglers get their own real,
+        # independent resolution toward the same ultimate `target` --
+        # ordinarily a one-hex chase step, exactly what this same
+        # function already gives any non-adjacent mover once
+        # `has_naval_hug_coastline` is off. No leader travels with them
+        # (the acting leader is modeled as staying with the hop group --
+        # a documented modeling choice, not a sourced fact either way),
+        # and boarding/contested-move/transport-legality were already
+        # resolved once, above, for the whole original group.
+        straggler_result = execute_move(
+            state,
+            kingdom_id,
+            planned_straggler_ids,
+            target,
+            leader_id=None,
+            explorer_skill=explorer_skill,
+            loser_retreats=loser_retreats,
+            rng=rng,
+            has_military_maps=has_military_maps,
+            has_difficult_terrain=has_difficult_terrain,
+            has_find_mines=has_find_mines,
+            has_march_cavalry=has_march_cavalry,
+            has_march_cavalry_mastery=has_march_cavalry_mastery,
+            has_march_cavalry_true_mastery=has_march_cavalry_true_mastery,
+            has_march_infantry=has_march_infantry,
+            has_march_infantry_mastery=has_march_infantry_mastery,
+            has_march_through_floods=has_march_through_floods,
+            march_skill_level=march_skill_level,
+            naval_skill_level=naval_skill_level,
+            has_naval_hug_coastline=False,
+            auto_board=False,
+            enforce_transport_legality=enforce_transport_legality,
+        )
+
+    army_ids = planned_army_ids
+    armies = planned_armies
 
     defenders_present = [
         army

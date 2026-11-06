@@ -2554,6 +2554,38 @@ def test_execute_move_enforced_permits_a_real_boarded_crossing():
     assert state.armies[102].transported_by == 101
 
 
+def test_execute_move_enforced_transport_illegality_leaves_no_partial_auto_boarding():
+    # Phase 1045 bug fix regression: before the fix, _auto_board_
+    # transport_group() committed real boarding for every candidate that
+    # fit *before* find_transport_illegality() ever ran, so a stack with
+    # more land armies than the Fleet had capacity for ended up with the
+    # ones that DID fit boarded for real even though the whole move was
+    # refused right after (turn/plan_dispatch.py run_leader_plan() catches
+    # TransportIllegalMoveError per-phase with no rollback). FLEET_
+    # INFANTRY_CAPACITY is 2 -- of 3 Bowmen-type candidates (102, 103,
+    # 104), the lowest two would have fit and (pre-fix) really boarded.
+    state = _sea_transport_legality_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(103, 1, ArmyType.AXEMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(104, 1, ArmyType.PHALANX, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    with pytest.raises(TransportIllegalMoveError) as excinfo:
+        execute_move(
+            state,
+            kingdom_id=1,
+            army_ids=[101, 102, 103, 104],
+            target=TARGET,
+            auto_board=True,
+            enforce_transport_legality=True,
+        )
+
+    assert excinfo.value.reason == "insufficient_water_transport"
+    for army_id in (101, 102, 103, 104):
+        assert state.armies[army_id].transported_by is None
+        assert state.armies[army_id].location == ORIGIN
+
+
 def test_execute_move_enforced_permits_a_real_naval_hug_coastline_hop():
     # Phase 819 bug fix: turn/plan_dispatch.py's own real LMOVE dispatch
     # already passes enforce_transport_legality=True unconditionally
@@ -2600,6 +2632,44 @@ def test_execute_move_enforced_permits_a_mixed_naval_hug_coastline_hop():
     assert state.armies[101].location == HUG_TARGET
     assert state.armies[102].location == HUG_TARGET
     assert state.armies[101].transported_by == 102
+
+
+def test_execute_move_contested_origin_raises_before_committing_auto_board_or_straggler_split():
+    # Phase 1045 bug fix regression -- the originally-deferred Batch 3
+    # finding: before the fix, a mixed Fleet/land-army stack ordered via
+    # Naval Hug Coastline from an origin the mover's own kingdom is
+    # contesting toward a non-adjacent, enemy-owned target still
+    # committed real mutation -- auto-boarding (101, 102) AND the
+    # unboarded straggler's (103) own real recursive execute_move()
+    # sub-move -- *before* the contested-province check ran and raised
+    # IllegalMoveFromContestedError. turn/plan_dispatch.py run_leader_
+    # plan() catches that exception per-phase with no rollback, so the
+    # refused LMOVE used to still leave the rest of the turn boarded/
+    # relocated as if it had gone through.
+    state = _hug_state()
+    state.add_kingdom(KingdomState(2, "Enemia", Race.HUMAN, Alignment.EVIL, HexCoord(5, 5)))
+    state.provinces[HUG_ORIGIN].contested_by_kingdom_id = 1  # kingdom 1 is the mover
+    state.provinces[HUG_TARGET].owner_kingdom_id = 2  # enemy-owned
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+    state.add_army(ArmyState(103, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+    state.add_army(ArmyState(104, 1, ArmyType.FLEET, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+
+    with pytest.raises(IllegalMoveFromContestedError):
+        execute_move(
+            state,
+            kingdom_id=1,
+            army_ids=[101, 102, 103, 104],
+            target=HUG_TARGET,
+            has_naval_hug_coastline=True,
+            auto_board=True,
+        )
+
+    # Zero mutation: nobody boarded (not even the two, 101/102, that
+    # would have fit the Fleet), and the would-be straggler (103) never
+    # ran its own real recursive move.
+    for army_id in (101, 102, 103, 104):
+        assert state.armies[army_id].transported_by is None
+        assert state.armies[army_id].location == HUG_ORIGIN
 
 
 def test_execute_move_enforced_checks_the_real_chase_step_not_the_ultimate_target():
