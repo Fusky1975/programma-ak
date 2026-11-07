@@ -2018,6 +2018,24 @@ def hand_of_death_cast_and_archery_block(target_is_immune: bool, target_has_arti
     return blocked, blocked and not target_has_artificial_organs
 
 
+def _round_randomly(exact: float, rng: random.Random) -> int:
+    """Phase 1051: the "random rounding when fractional" convention
+    Spiritwrack's own Melee damage reduction established (Phase 182) and
+    Hand of Death's own attack damage (``roll_hand_of_death_damage``
+    below) later reused word for word -- a whole exact value resolves
+    without a roll, a fractional part is a weighted coin flip (e.g. a
+    0.5 fractional part is a 50/50 flip) between rounding down and up.
+    Extracted once both call sites were confirmed byte-identical, to
+    stop the formula from drifting between them.
+    """
+
+    whole = int(exact)
+    fraction = exact - whole
+    if fraction <= 0.0:
+        return whole
+    return whole + 1 if rng.random() < fraction else whole
+
+
 def spiritwrack_melee_damage_reduction(
     skill_level: int,
     rng: random.Random,
@@ -2043,12 +2061,7 @@ def spiritwrack_melee_damage_reduction(
     if target_is_animal_intelligence:
         rate *= SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER
 
-    exact = rate * effective_level
-    whole = int(exact)
-    fraction = exact - whole
-    if fraction <= 0.0:
-        return whole
-    return whole + 1 if rng.random() < fraction else whole
+    return _round_randomly(rate * effective_level, rng)
 
 
 # Charm [CH], module docstring's own Phase 183 addendum -- project-
@@ -2471,8 +2484,10 @@ def roll_hand_of_death_damage(
     livello in magia nera" -- ``HAND_OF_DEATH_BASE_DAMAGE`` (1) plus
     ``HAND_OF_DEATH_DAMAGE_PER_LEVEL`` (0.5) per level, uncapped.
     Uses the same random-rounding-when-fractional convention
-    Spiritwrack's own melee damage reduction established (Phase 182):
-    a whole exact value resolves without a roll, a 0.5 fractional part
+    Spiritwrack's own melee damage reduction established (Phase 182) --
+    extracted into the shared ``_round_randomly()`` helper above at
+    Phase 1051, once both call sites were confirmed byte-identical: a
+    whole exact value resolves without a roll, a 0.5 fractional part
     is a 50/50 coin flip. Returns 0 without a roll when
     ``target_is_immune`` (mechanical, Undead, or anti-holy -- see
     ``models/monster.py HAND_OF_DEATH_IMMUNE_MONSTERS``).
@@ -2508,11 +2523,7 @@ def roll_hand_of_death_damage(
         return 0
 
     exact = HAND_OF_DEATH_BASE_DAMAGE + HAND_OF_DEATH_DAMAGE_PER_LEVEL * skill_level
-    whole = int(exact)
-    fraction = exact - whole
-    if fraction <= 0.0:
-        return whole
-    return whole + 1 if rng.random() < fraction else whole
+    return _round_randomly(exact, rng)
 
 
 def hand_of_death_victim_hit_chance(base_hit_chance: float, *, target_is_immune: bool = False) -> float:
@@ -3975,11 +3986,18 @@ def resolve_one_melee_round(
     for attacker, defender in ((first, second), (second, first)):
         if attacker.hit_points <= 0 or defender.hit_points <= 0:
             continue
+        # Phase 1051: both already computed once, above, as skill_a/
+        # skill_b -- reused here instead of calling effective_melee_
+        # skill() again for every swing (regular and bonus alike) this
+        # round, since neither side's melee_skill/neutral_duelist_bonus
+        # changes mid-round.
+        attacker_skill = skill_a if attacker is a else skill_b
+        defender_skill = skill_b if attacker is a else skill_a
         raw_damage = roll_melee_attack(
             rng,
             damage_range=attacker.melee_damage_range,
             hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
-            skill_difference_bonus=max(0, effective_melee_skill(attacker) - effective_melee_skill(defender)),
+            skill_difference_bonus=max(0, attacker_skill - defender_skill),
         )
         damage = _melee_landed_damage(raw_damage, attacker, defender)
         defender.hit_points -= damage
@@ -4009,7 +4027,7 @@ def resolve_one_melee_round(
                 rng,
                 damage_range=attacker.melee_damage_range,
                 hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
-                skill_difference_bonus=max(0, effective_melee_skill(attacker) - effective_melee_skill(defender)),
+                skill_difference_bonus=max(0, attacker_skill - defender_skill),
             )
             bonus_damage = _melee_landed_damage(bonus_raw_damage, attacker, defender)
             defender.hit_points -= bonus_damage
@@ -4150,6 +4168,26 @@ def _apply_end_of_round_regeneration(a: Combatant, b: Combatant, round_number: i
         b.hit_points += b.regenerates_hp
 
 
+@dataclass(slots=True)
+class _FireArrowSide:
+    """Phase 1051: one side's own per-call Fire Arrow bookkeeping inside
+    ``resolve_fire_arrow_duel()`` below -- introduced once the function's
+    own ``if combatant is a: ... else: ...`` blocks were confirmed to be
+    the same shot-resolution logic twice over, differing only by which
+    side is shooting/shot-at. ``used`` is the only mutable field (the
+    shot count consumed so far this duel); everything else is fixed for
+    the whole call.
+    """
+
+    label: str  # "a" / "b", matching EncounterCombatResult.winner's own convention
+    shooter: Combatant
+    target: Combatant
+    skill: int
+    shots_allowed: int
+    long_range_multiplier: float
+    used: int = 0
+
+
 def resolve_fire_arrow_duel(
     a: Combatant,
     b: Combatant,
@@ -4234,7 +4272,8 @@ def resolve_fire_arrow_duel(
         shots_a = 0
     long_range_multiplier_a = LONG_RANGE_ARCHERY_HIT_MULTIPLIER if long_range_archer == "a" else 1.0
     long_range_multiplier_b = LONG_RANGE_ARCHERY_HIT_MULTIPLIER if long_range_archer == "b" else 1.0
-    used_a = used_b = 0
+    side_a = _FireArrowSide("a", a, b, skill_a, shots_a, long_range_multiplier_a)
+    side_b = _FireArrowSide("b", b, a, skill_b, shots_b, long_range_multiplier_b)
     rounds_needed_a = shots_a + (1 if closing_side == "a" else 0)
     rounds_needed_b = shots_b + (1 if closing_side == "b" else 0)
     total_rounds = max(rounds_needed_a, rounds_needed_b)
@@ -4243,41 +4282,27 @@ def resolve_fire_arrow_duel(
     round_number = 0
     for round_number in range(1, total_rounds + 1):
         order = (
-            (a, b) if _acts_first(skill_a, skill_b, rng, a_always_first=a.always_acts_first, b_always_first=b.always_acts_first) else (b, a)
+            (side_a, side_b)
+            if _acts_first(skill_a, skill_b, rng, a_always_first=a.always_acts_first, b_always_first=b.always_acts_first)
+            else (side_b, side_a)
         )
-        for combatant in order:
+        for side in order:
             if a.hit_points <= 0 or b.hit_points <= 0:
                 break
-            if combatant is a:
-                if closing_side == "a" and round_number == 1:
-                    continue  # spent this round closing to Bow Range, not shooting
-                if used_a >= shots_a:
-                    continue
-                used_a += 1
-                raw_damage = roll_fire_arrow_attack(
-                    skill_a,
-                    rng,
-                    damage_range=a.missile_damage_range,
-                    hit_chance_multiplier=a.archery_hit_multiplier * b.defensive_hit_multiplier * long_range_multiplier_a,
-                )
-                damage = _fire_arrow_landed_damage(raw_damage, a, b)
-                shots.append(FireArrowShot(shooter="a", hit=raw_damage > 0, damage=damage))
-                b.hit_points -= damage
-            else:
-                if closing_side == "b" and round_number == 1:
-                    continue  # spent this round closing to Bow Range, not shooting
-                if used_b >= shots_b:
-                    continue
-                used_b += 1
-                raw_damage = roll_fire_arrow_attack(
-                    skill_b,
-                    rng,
-                    damage_range=b.missile_damage_range,
-                    hit_chance_multiplier=b.archery_hit_multiplier * a.defensive_hit_multiplier * long_range_multiplier_b,
-                )
-                damage = _fire_arrow_landed_damage(raw_damage, b, a)
-                shots.append(FireArrowShot(shooter="b", hit=raw_damage > 0, damage=damage))
-                a.hit_points -= damage
+            if closing_side == side.label and round_number == 1:
+                continue  # spent this round closing to Bow Range, not shooting
+            if side.used >= side.shots_allowed:
+                continue
+            side.used += 1
+            raw_damage = roll_fire_arrow_attack(
+                side.skill,
+                rng,
+                damage_range=side.shooter.missile_damage_range,
+                hit_chance_multiplier=side.shooter.archery_hit_multiplier * side.target.defensive_hit_multiplier * side.long_range_multiplier,
+            )
+            damage = _fire_arrow_landed_damage(raw_damage, side.shooter, side.target)
+            shots.append(FireArrowShot(shooter=side.label, hit=raw_damage > 0, damage=damage))
+            side.target.hit_points -= damage
         if a.hit_points <= 0 or b.hit_points <= 0:
             break
         _apply_end_of_round_regeneration(a, b, round_number)
@@ -5449,6 +5474,13 @@ MONSTER_TALK_REPLY_FREQUENCY: dict[MonsterTalkReply, int] = {
     MonsterTalkReply.R_MADVANCE: 10,
 }
 
+# Phase 1051: hoisted out of `select_monster_talk_reply()`'s own
+# rejection loop below, which otherwise rebuilt this identical list from
+# the `MonsterTalkReply` enum on every single call -- the uniform-id-
+# propose step itself (not the per-call `eligible` filter, which
+# genuinely does vary by `monster`) needs no re-deriving.
+ALL_MONSTER_TALK_REPLIES: list[MonsterTalkReply] = list(MonsterTalkReply)
+
 MONSTER_TALK_REPLY_INTELLIGENCE: dict[MonsterTalkReply, MonsterIntelligence] = {
     MonsterTalkReply.R_PUZZLED: MonsterIntelligence.SEMI,
     MonsterTalkReply.R_CHARGE: MonsterIntelligence.MEDIUM,
@@ -5777,6 +5809,16 @@ def select_monster_talk_reply(
     against the source's own stated frequencies, not a byte-exact
     reproduction of a real captured trace (none exists for this
     routine).
+
+    Phase 1051: reviewed as a possible efficiency cleanup -- rejection
+    sampling over all replies, restricted to the ones ``eligible`` for
+    this ``monster``, is indeed more rolls on average than the closed-
+    form weighted choice this docstring's own opening paragraph already
+    names as mathematically equivalent. Left as the real described loop
+    anyway, deliberately, per this project's own stated convention
+    above; only ``ALL_MONSTER_TALK_REPLIES`` (this function's own
+    previously-rebuilt-every-call ``list(MonsterTalkReply)``) was hoisted
+    to a module constant, since that part varies with nothing.
     """
 
     if monster is Monster.SPHINX and rng.random() < 0.5:
@@ -5790,9 +5832,8 @@ def select_monster_talk_reply(
     if not eligible:
         return None
 
-    all_replies = list(MonsterTalkReply)
     while True:
-        candidate = rng.choice(all_replies)
+        candidate = rng.choice(ALL_MONSTER_TALK_REPLIES)
         if candidate not in eligible:
             continue
         if rng.random() < MONSTER_TALK_REPLY_FREQUENCY[candidate] / 10:
