@@ -1765,6 +1765,28 @@ def test_execute_challenge_cast_hand_of_death_channel_win_kills_target():
     assert result.loser_leader_id == 2
 
 
+def test_execute_challenge_cast_hand_of_death_victims_lethal_counter_attack_wins():
+    # Phase 1050 bug fix: resolve_hand_of_death_channel() can now return
+    # winner="b" (the victim's own disrupting counter-attack was itself
+    # lethal to the caster) -- this dispatcher used to only ever check
+    # `is not None` and unconditionally report "a" (the caster) as the
+    # winner whenever the channel's own result wasn't None, which used
+    # to be correct only because "b" was previously unreachable.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="b", rounds=3)
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert result.winner_leader_id == 2
+    assert result.loser_leader_id == 1
+
+
 def test_execute_challenge_cast_hand_of_death_enhanced_ability_overrides_the_immune_flag():
     # Phase 500: AdvancedAbility.ENHANCED_COMBAT_NE_SPELLS -- "'Hand of
     # Death' now works against all creatures." Without the ability, an

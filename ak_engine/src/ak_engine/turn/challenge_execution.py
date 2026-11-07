@@ -1177,6 +1177,11 @@ def _resolve_personal_combat_cast(
         caster.bonus_unanswered_attacks += roll_psychic_blast_stun_rounds(
             rng, target_has_lead_lined_helmet=target_has_lead_lined_helmet
         )
+        # Phase 1050 -- records that `target` is now a real Psychic-Blast
+        # stun victim, for Psychic Flail's own "+1 additional round if
+        # already under Psychic Blast" stacking clause (`turn/encounter.py
+        # Combatant.stunned_by_psychic_blast`'s own docstring).
+        target.stunned_by_psychic_blast = True
         return None
 
     if spell is Spell.TELEK_STORM:
@@ -1284,9 +1289,16 @@ def _resolve_personal_combat_cast(
         channel_result = resolve_hand_of_death_channel(
             caster, target, level, rng, target_is_immune=target_is_immune, target_has_artificial_organs=target_has_artificial_organs
         )
-        if channel_result.winner is not None:
+        if channel_result.winner == "a":
             # "a" in resolve_hand_of_death_channel's own convention always means the caster.
             return "a"
+        if channel_result.winner == "b":
+            # Phase 1050 bug fix -- "b" means the victim's own disrupting
+            # counter-attack was itself lethal to the caster; this used to
+            # be unreachable (the channel only ever returned "a" or None),
+            # so a caster already dead by this point was previously
+            # carried forward as if the channel had merely fizzled.
+            return "b"
         return None
 
     if spell is Spell.MIRROR_IMAGE:

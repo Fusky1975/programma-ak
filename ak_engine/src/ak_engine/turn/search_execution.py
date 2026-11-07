@@ -2321,6 +2321,12 @@ def _resolve_search_encounter(
             caster.bonus_unanswered_attacks += roll_psychic_blast_stun_rounds(
                 rng, target_has_lead_lined_helmet=target_has_lead_lined_helmet
             )
+            # Phase 1050 -- records that `target` is now a real Psychic-
+            # Blast stun victim, for Psychic Flail's own "+1 additional
+            # round if already under Psychic Blast" stacking clause
+            # (`turn/encounter.py Combatant.stunned_by_psychic_blast`'s
+            # own docstring).
+            target.stunned_by_psychic_blast = True
             return None
 
         if spell is Spell.TELEK_STORM:
@@ -2480,10 +2486,19 @@ def _resolve_search_encounter(
                 caster, target, level, rng, target_is_immune=target_is_immune, target_has_artificial_organs=target_has_artificial_organs
             )
             if channel_result.winner is not None:
-                # "a" in resolve_hand_of_death_channel's own convention always
-                # means the caster -- translate to the leader/monster "a"/"b"
-                # convention _outcome_from() expects.
-                outcome = _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                # "a" in resolve_hand_of_death_channel's own convention means
+                # the caster won; "b" (Phase 1050 bug fix) means the
+                # victim's own disrupting counter-attack was itself lethal
+                # to the caster -- either way, translate to the leader/
+                # monster "a"/"b" convention _outcome_from() expects (the
+                # caster occupies the "a" slot when target_is_monster, since
+                # the target is then the monster's own "b" slot, and vice
+                # versa -- the winning side's own slot is whichever one
+                # actually won, not always the caster's).
+                caster_slot = "a" if target_is_monster else "b"
+                target_slot = "b" if target_is_monster else "a"
+                winner_slot = caster_slot if channel_result.winner == "a" else target_slot
+                outcome = _outcome_from(EncounterCombatResult(winner=winner_slot, rounds=0))
                 if outcome is not None:
                     # Phase 413: the winning channel's own per-round damage,
                     # for report/turn_report.py render_squeeze_attack() --

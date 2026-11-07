@@ -2135,6 +2135,30 @@ def test_execute_search_monster_cast_psychic_blast_leader_kingdom_holding_lead_l
     assert mock_stun.call_args.kwargs["target_has_lead_lined_helmet"] is True
 
 
+def test_execute_search_monster_cast_psychic_blast_marks_the_leader_target_stunned():
+    # Phase 1050: the leader target of a successful Psychic Blast cast
+    # must carry `stunned_by_psychic_blast=True` into any later Melee
+    # round in the same encounter, for Psychic Flail's own "+1
+    # additional round if already under Psychic Blast" stacking clause.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan") as mock_roll, patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.roll_psychic_blast_stun_rounds", return_value=0), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_roll.return_value = (
+            SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.PSYCHIC_BLAST.value),
+            SearchTactic(maneuver=Maneuver.MELEE),
+        )
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    leader_combatant = mock_melee.call_args[0][0]
+    assert leader_combatant.stunned_by_psychic_blast is True
+
+
 def test_execute_search_cast_telekinetic_storm_kills_the_target():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
@@ -2717,6 +2741,25 @@ def test_execute_search_cast_hand_of_death_caster_wins_instantly():
     # Phase 413: the winning channel's own per-round damage log, threaded
     # through for report/turn_report.py render_squeeze_attack().
     assert result.squeeze_hits == (2, 2, 3)
+
+
+def test_execute_search_cast_hand_of_death_victims_lethal_counter_attack_wins():
+    # Phase 1050 bug fix: resolve_hand_of_death_channel() can now return
+    # winner="b" (the victim's own disrupting counter-attack was itself
+    # lethal to the caster) -- confirms it correctly maps to the monster
+    # winning here, not the leader (this dispatcher's own "a"/"b" ->
+    # leader/monster translation depends on which side is the monster).
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="b", rounds=3)
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "monster"
 
 
 def test_execute_search_cast_hand_of_death_broken_channel_falls_through_to_melee():

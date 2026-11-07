@@ -2252,6 +2252,25 @@ def test_resolve_hand_of_death_channel_ends_the_instant_the_caster_is_hit():
     assert result.squeeze_hits == (2,)
 
 
+def test_resolve_hand_of_death_channel_victim_counter_attack_that_kills_the_caster_wins():
+    # Phase 1050 bug fix regression: before the fix, this returned
+    # winner=None unconditionally the instant the victim landed any hit,
+    # with no check on whether that same hit had just reduced caster.
+    # hit_points to 0 or below. Same scripted scenario as the test right
+    # above this one, just with the caster starting at 1 hp instead of
+    # 10, so the landed counter-attack is now lethal.
+    caster = Combatant("Caster", hit_points=1)
+    victim = Combatant("Victim", hit_points=10, melee_skill=0)
+    rng = ScriptedRandom([0.1, 0.5])  # victim's halved-chance attack hits, then a damage roll
+
+    result = resolve_hand_of_death_channel(caster, victim, 2, rng)
+
+    assert result.winner == "b"
+    assert result.rounds == 1
+    assert caster.hit_points <= 0
+    assert victim.hit_points == 10 - 2  # the caster's own round-1 squeeze still landed first
+
+
 def test_resolve_hand_of_death_channel_artificial_organs_zeroes_squeeze_damage_but_channel_still_runs():
     # Phase 884: Discovery.ARTIFICIAL_ORGANS -- unlike full immunity,
     # the channel is NOT skipped: the caster's own squeeze keeps
@@ -2471,6 +2490,37 @@ def test_resolve_mirror_image_duel_stage2_illusion_kills_the_caster():
     assert result.rounds == 2
 
 
+def test_resolve_mirror_image_duel_both_stages_route_through_resolve_one_melee_round():
+    # Phase 1050 bug fix regression: both stages used to hand-roll a
+    # bare-bones swing (defender.hit_points -= max(0, roll_melee_attack(
+    # rng, damage_range=attacker.melee_damage_range) - defender.
+    # damage_reduction)) instead of calling resolve_one_melee_round() --
+    # silently dropping offensive_hit_multiplier/defensive_hit_multiplier,
+    # skill_difference_bonus, melee_damage_dealt_bonus/_reduction, every
+    # weapon on-hit proc, and end-of-round regeneration. Reuses the exact
+    # scripted scenario from test_resolve_mirror_image_duel_stage2_
+    # illusion_kills_the_caster above (same outcome, same RNG), but with
+    # resolve_one_melee_round wrapped so both real calls -- one per stage
+    # -- are confirmed to happen, with the right pair of combatants.
+    caster = Combatant("Caster", hit_points=1, melee_skill=1)
+    opponent = Combatant("Opponent", hit_points=1, melee_skill=1)
+    rng = ScriptedRandom([0.1, 0.1, 0.5, 0.9, 0.9, 0.1, 0.5])
+
+    with patch("ak_engine.turn.encounter.resolve_one_melee_round", wraps=resolve_one_melee_round) as mock_round:
+        result = resolve_mirror_image_duel(caster, opponent, MirrorImageIntelligenceTier.MECHANICAL, 2, rng)
+
+    assert result.winner == "b"
+    assert result.rounds == 2
+    assert mock_round.call_count == 2
+    stage1_call, stage2_call = mock_round.call_args_list
+    assert stage1_call.args[0].name == "Opponent's Illusion"
+    assert stage1_call.args[1] is opponent
+    assert stage1_call.kwargs == {"round_number": 1}
+    assert stage2_call.args[0] is caster
+    assert stage2_call.args[1].name == "Opponent's Illusion"
+    assert stage2_call.kwargs == {"round_number": 2}
+
+
 def test_illusory_hero_hostile_alignment_pairs_table():
     assert ILLUSORY_HERO_HOSTILE_ALIGNMENT_PAIRS == {
         frozenset({Alignment.DIVINE, Alignment.PAGAN}),
@@ -2638,6 +2688,35 @@ def test_resolve_illusory_hero_duel_stage2_illusion_kills_the_caster():
 
     assert result.winner == "b"
     assert result.rounds == 2
+
+
+def test_resolve_illusory_hero_duel_both_stages_route_through_resolve_one_melee_round():
+    # Phase 1050 bug fix regression -- the same hand-rolled-swing gap as
+    # resolve_mirror_image_duel() above, and the same fix. Reuses the
+    # exact scripted scenario from test_resolve_illusory_hero_duel_
+    # stage2_illusion_kills_the_caster above (same outcome, same RNG),
+    # wrapped to confirm resolve_one_melee_round() is actually called
+    # once per stage, with the right pair of combatants.
+    caster = Combatant("Caster", hit_points=1, melee_skill=0)
+    opponent = Combatant("Opponent", hit_points=1, melee_skill=0)
+    hero = Combatant("Hero", hit_points=10, melee_skill=5, melee_damage_range=(10, 10))
+    rng = ScriptedRandom([0.1, 0.5, 0.9, 0.1, 0.5])
+
+    with patch("ak_engine.turn.encounter.resolve_one_melee_round", wraps=resolve_one_melee_round) as mock_round:
+        result = resolve_illusory_hero_duel(
+            caster, opponent, hero, MirrorImageIntelligenceTier.MECHANICAL, 2, rng, turns_on_master=True
+        )
+
+    assert result.winner == "b"
+    assert result.rounds == 2
+    assert mock_round.call_count == 2
+    stage1_call, stage2_call = mock_round.call_args_list
+    assert stage1_call.args[0].name == "Illusory Hero"
+    assert stage1_call.args[1] is opponent
+    assert stage1_call.kwargs == {"round_number": 1}
+    assert stage2_call.args[0] is caster
+    assert stage2_call.args[1].name == "Illusory Hero"
+    assert stage2_call.kwargs == {"round_number": 2}
 
 
 # -- Phase 783: full-record illusion copy (AKGEN_reverse_engineering_report (2).md SS21.2) --
@@ -3737,6 +3816,29 @@ def test_apply_temper_melee_setup_holy_sword_upgrades_hit_and_damage_vs_undead_o
     assert b.melee_damage_dealt_bonus == 0
 
 
+def test_apply_temper_melee_setup_holy_sword_doubles_defense_vs_undead_opponent():
+    # Phase 1050 bug fix: the vs-Undead swap above only ever touched the
+    # offensive side (offensive_hit_multiplier/melee_damage_dealt_bonus).
+    # models/treasure.py sources the Holy Sword's auto-protection as
+    # equal to a real Holy Symbol cast, whose own hit-chance reduction
+    # doubles (10%/level -> 20%/level) against an Undead/Anti-Holy
+    # opponent -- the defensive side never got the matching upgrade.
+    a = Combatant(
+        "Holy Knight",
+        hit_points=CHARACTER_HIT_POINTS,
+        equipped_weapon=Treasure.WEAPON_1,
+        defensive_hit_multiplier=weapon_defensive_hit_multiplier(Treasure.WEAPON_1),
+    )
+    b = Combatant("Undead Foe", hit_points=CHARACTER_HIT_POINTS, is_undead_or_anti_holy=True)
+
+    apply_temper_melee_setup(a, b, ScriptedRandom([]))
+
+    assert a.defensive_hit_multiplier == pytest.approx(
+        holy_symbol_hit_chance(1.0, HOLY_SWORD_AUTO_PROTECTION_LEVEL, target_is_undead_or_anti_holy=True)
+    )
+    assert b.defensive_hit_multiplier == 1.0
+
+
 def test_apply_temper_melee_setup_holy_sword_upgrade_survives_composition_with_melee_mastery():
     # Simulates a builder that already composed Melee Mastery's own
     # multiplier with the flat Holy Sword bonus at construction time
@@ -4032,6 +4134,25 @@ def test_resolve_hand_of_death_channel_damage_reduction_applies_to_both_the_sque
     assert caster.hit_points == 10
 
 
+def test_resolve_hand_of_death_channel_victim_counter_attack_applies_melee_damage_dealt_bonus():
+    # Phase 1050 bug fix regression: before the fix, the counter-attack's
+    # damage was computed as max(0, raw_damage - caster.damage_reduction),
+    # never consulting victim.melee_damage_dealt_bonus/_reduction (e.g.
+    # AdvancedAbility.MELEE_MASTERY) the way _melee_landed_damage() (every
+    # other real Melee swing in this module) does. A huge damage_
+    # reduction floors the raw roll to 0 on its own -- only the bonus
+    # below can push it back above 0, and a 1-hp caster makes any
+    # positive damage at all lethal regardless of the roll's own size.
+    caster = Combatant("Caster", hit_points=1, damage_reduction=999)
+    victim = Combatant("Victim", hit_points=10, melee_skill=0, melee_damage_dealt_bonus=1000)
+    rng = ScriptedRandom([0.1, 0.5])  # victim's halved-chance counter-attack hits, then a damage roll
+
+    result = resolve_hand_of_death_channel(caster, victim, 2, rng)
+
+    assert result.winner == "b"  # the bonus-driven damage was lethal despite damage_reduction=999
+    assert caster.hit_points <= 0
+
+
 # -- Phase 536: magic weapon auto-equip effects + on-hit procs -----------
 # AKGEN_reverse_engineering_report (4).md SS7.3 (Holy Sword protection /
 # Invisible Sword auto-invisibility) and SS7.4 (Shadow Sword drain /
@@ -4098,6 +4219,22 @@ def test_apply_weapon_on_hit_effects_shadow_sword_drains_half_the_landed_damage(
     assert result == "shadow_sword_drain"  # Phase 740
 
 
+def test_apply_weapon_on_hit_effects_shadow_sword_drain_rounds_to_nearest_not_truncates():
+    # Phase 1050 bug fix: this used to be int(damage_dealt * 0.5), always
+    # rounding down (3 * 0.5 = 1.5 -> 1). This project's own established
+    # default for an unsourced rounding direction is round() (see the
+    # Discovery.ASBESTOS_CLOTHING comment this fix cites) -- round(1.5)
+    # is 2 under Python's banker's rounding, not 1.
+    attacker = Combatant("A", hit_points=5, equipped_weapon=Treasure.WEAPON_2)
+    defender = Combatant("B")
+    rng = ScriptedRandom([])
+
+    result = apply_weapon_on_hit_effects(attacker, defender, 3, rng)
+
+    assert attacker.hit_points == 7  # 5 + round(3 * 0.5) == 5 + 2, not 5 + int(1.5) == 6
+    assert result == "shadow_sword_drain"
+
+
 def test_apply_weapon_on_hit_effects_shadow_sword_drain_is_capped_at_character_hit_points():
     attacker = Combatant("A", hit_points=9, equipped_weapon=Treasure.WEAPON_2)
     defender = Combatant("B")
@@ -4158,6 +4295,20 @@ def test_apply_weapon_on_hit_effects_psychic_flail_does_not_stun_above_the_chanc
 
     assert attacker.bonus_unanswered_attacks == 0
     assert result is None
+
+
+def test_apply_weapon_on_hit_effects_psychic_flail_grants_two_rounds_when_target_already_stunned():
+    # Phase 1050: a defender already under Psychic Blast
+    # (stunned_by_psychic_blast=True) gets Psychic Flail's stacking
+    # clause -- +2 bonus rounds instead of the usual +1.
+    attacker = Combatant("A", equipped_weapon=Treasure.WEAPON_4)
+    defender = Combatant("B", stunned_by_psychic_blast=True)
+    rng = ScriptedRandom([0.49])
+
+    result = apply_weapon_on_hit_effects(attacker, defender, 3, rng)
+
+    assert attacker.bonus_unanswered_attacks == 2
+    assert result == "psychic_flail_stun"
 
 
 def test_resolve_one_melee_round_flaming_scimitar_proc_wins_the_round_via_instakill():
