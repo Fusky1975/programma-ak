@@ -249,7 +249,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ak_engine.models.advanced_ability import AdvancedAbility
-from ak_engine.models.army_type import OVERFLIGHT_AIR, OVERFLIGHT_SEA, ArmyType
+from ak_engine.models.army_type import OVERFLIGHT_AIR, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.office import Office
@@ -329,6 +329,17 @@ class RecruitExecutionResult:
     total_gold_spent: int = 0
 
 
+def _leader_holds_office(state: GameState, office: Office, leader_id: int) -> bool:
+    """Phase 1055: ``resolve_office_holder()`` then "is it this leader" --
+    the exact same two-line pair repeated for 5 separate Offices
+    (WINGMAN/MARSHAL/ADMIRAL/CHIEF_OF_STAFF/NEUTRAL_KING) just below,
+    extracted once confirmed byte-identical across all five.
+    """
+
+    holder = resolve_office_holder(state, office)
+    return holder is not None and holder.leader_id == leader_id
+
+
 def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: RecruitRequest) -> RecruitExecutionResult:
     """Price, limit-check, and actually recruit every type in ``request``.
 
@@ -402,20 +413,26 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         result.treat_blocked.extend(request.army_types)
         return result
 
-    wingman_holder = resolve_office_holder(state, Office.WINGMAN)
-    leader_is_wingman = wingman_holder is not None and wingman_holder.leader_id == leader_id
-    marshal_holder = resolve_office_holder(state, Office.MARSHAL)
-    leader_is_marshal = marshal_holder is not None and marshal_holder.leader_id == leader_id
-    admiral_holder = resolve_office_holder(state, Office.ADMIRAL)
-    leader_is_admiral = admiral_holder is not None and admiral_holder.leader_id == leader_id
+    leader_is_wingman = _leader_holds_office(state, Office.WINGMAN, leader_id)
+    leader_is_marshal = _leader_holds_office(state, Office.MARSHAL, leader_id)
+    leader_is_admiral = _leader_holds_office(state, Office.ADMIRAL, leader_id)
     # Phase 663: Chief of Staff's own -1 gold discount (below), and
     # Neutral King's own separate "recruit mercenaries for 1 gold" flat
     # override (see the mercenary/fresh-levy branch below -- the real
     # text names mercenaries specifically, not fresh levies).
-    chief_of_staff_holder = resolve_office_holder(state, Office.CHIEF_OF_STAFF)
-    leader_is_chief_of_staff = chief_of_staff_holder is not None and chief_of_staff_holder.leader_id == leader_id
-    neutral_king_holder = resolve_office_holder(state, Office.NEUTRAL_KING)
-    leader_is_neutral_king = neutral_king_holder is not None and neutral_king_holder.leader_id == leader_id
+    leader_is_chief_of_staff = _leader_holds_office(state, Office.CHIEF_OF_STAFF, leader_id)
+    leader_is_neutral_king = _leader_holds_office(state, Office.NEUTRAL_KING, leader_id)
+    # Phase 1055: hoisted out of the per-army_type loop below -- location
+    # is loop-invariant, so re-scanning the whole state.armies table via
+    # state.mercenaries_at(location) on every iteration (a single real
+    # Recruit order can list several army_types at once) was wasted work.
+    # Filtered fresh per iteration below, same as before (and still
+    # checking `.is_mercenary` explicitly there, now that this list is no
+    # longer re-fetched live): an earlier iteration hiring one of these
+    # mercenaries sets its own `is_mercenary = False` in place, which a
+    # later iteration requesting the same army_type again must still see,
+    # to avoid "hiring" the same already-hired army a second time.
+    mercs_at_location = state.mercenaries_at(location)
 
     for army_type in request.army_types:
         # Phase (bug fix): re-checked on every iteration, not just once
@@ -508,8 +525,9 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         mercenary = next(
             (
                 army
-                for army in state.mercenaries_at(location)
-                if army.army_type is army_type
+                for army in mercs_at_location
+                if army.is_mercenary
+                and army.army_type is army_type
                 and army.quality >= Quality.AVERAGE
                 and not army.unhireable_this_turn
             ),
@@ -557,10 +575,15 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             result.elven_slot_required.append(army_type)
             continue
 
+        # Phase 1055: reuses models/army_type.py's own SEA_ARMY_TYPES/
+        # is_land_army() instead of reconstructing the identical naval/
+        # land classification inline -- the two previously independent
+        # encodings of "which army types are naval/land" could silently
+        # drift apart whenever that canonical classification changes
+        # (it already has once, per that module's own history).
         wingman_bonus = 1 if leader_is_wingman and army_type in OVERFLIGHT_AIR and is_native else 0
-        is_naval_type = army_type in OVERFLIGHT_SEA or army_type is ArmyType.FLEET
-        marshal_bonus = 1 if leader_is_marshal and army_type not in OVERFLIGHT_AIR and not is_naval_type and is_native else 0
-        admiral_bonus = 1 if leader_is_admiral and is_naval_type and is_native else 0
+        marshal_bonus = 1 if leader_is_marshal and is_land_army(army_type) and is_native else 0
+        admiral_bonus = 1 if leader_is_admiral and army_type in SEA_ARMY_TYPES and is_native else 0
         already_this_turn = province.recruited_this_turn.get(army_type, 0)
         if already_this_turn >= resolution.max_units + wingman_bonus + marshal_bonus + admiral_bonus:
             result.limit_blocked.append(army_type)

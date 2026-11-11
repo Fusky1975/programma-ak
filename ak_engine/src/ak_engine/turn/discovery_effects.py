@@ -140,6 +140,22 @@ def effective_skill_level(state: GameState, leader: LeaderState, ability: Abilit
     return min(MAX_SKILL_LEVEL, stored + bonus)
 
 
+def total_skill(state: GameState, leader: LeaderState) -> int:
+    """``Total_Skill(leader)``/``Total_USkill(leader)`` -- the sum of
+    ``effective_skill_level()`` across all 15 ``Ability`` members.
+
+    Phase 1055: extracted here, the shared dependency both ``turn/hire_
+    pay.py``'s own ``Total_USkill`` reading and ``report/turn_report.py
+    describe_characters_report()``'s own ``Total_Skill`` reading already
+    import ``effective_skill_level`` from, after confirming the two
+    call sites' own private copies of this exact formula were byte-
+    identical -- a change to the ``Ability`` enum or to ``effective_
+    skill_level()``'s own signature now only needs updating here.
+    """
+
+    return sum(effective_skill_level(state, leader, ability) for ability in Ability)
+
+
 def holder_is_immune_to_spell(state: GameState, target_leader_id: int, spell: Spell) -> bool:
     """Phase 531: does ``target_leader_id`` currently hold an Anti-Magic
     Amulet that personally blocks ``spell`` (``models/treasure.py

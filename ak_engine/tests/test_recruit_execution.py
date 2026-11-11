@@ -502,6 +502,30 @@ def test_recruit_hires_a_race_incompatible_mercenary_in_any_province():
     assert result.recruited[0].hired is True
 
 
+def test_recruit_does_not_rehire_the_same_mercenary_twice_in_one_request():
+    # Phase 1055 cleanup regression: state.mercenaries_at(location) is now
+    # hoisted once above the per-army_type loop instead of re-fetched live
+    # on every iteration. A single mercenary hired by an earlier iteration
+    # sets its own is_mercenary=False in place -- the hoisted list still
+    # holds that same object, so the per-iteration filter must keep
+    # checking .is_mercenary explicitly (now that the live re-filtering
+    # mercenaries_at() used to provide is gone) or a later request for the
+    # same army_type would wrongly "hire" the same already-hired army a
+    # second time instead of levying a fresh one.
+    state = build_state(is_home_province=True)  # limit 2 for Bowmen
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION, is_mercenary=True))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN, ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 2
+    hired_flags = sorted(unit.hired for unit in result.recruited)
+    assert hired_flags == [False, True]  # one hire, one fresh levy -- never the same army twice
+    army_ids = {unit.army_id for unit in result.recruited}
+    assert 999 in army_ids
+    assert len(army_ids) == 2
+
+
 def test_recruit_hires_a_non_native_mercenary_without_requiring_prior_ownership():
     # Phase 1054 bug fix: same bug, the other exception -- a race-
     # compatible-but-unlisted mercenary used to be rejected via

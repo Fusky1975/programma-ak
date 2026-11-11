@@ -95,10 +95,12 @@ A missing ``birth_x``/``birth_y`` also zeroes ``bias``'s own personal-bit
 inputs (the same "even bit -> gate off" effect a real, unset coordinate
 would have).
 
-**``Total_USkill``** reuses this project's own already-established
-``effective_skill_level()`` sum across all 15 ``Ability`` members --
-named ``Total_Skill`` at its other real call site
-(``report/turn_report.py _total_skill()``), the identical real quantity.
+**``Total_USkill``** reuses ``turn/discovery_effects.py total_skill()``
+-- the same sum-across-all-15-``Ability``-members formula named
+``Total_Skill`` at its other real call site (``report/turn_report.py
+describe_characters_report()``), the identical real quantity. Phase
+1055: both call sites used to carry their own private copy of this
+exact formula; now both import the one shared implementation.
 
 **The "rare exception" bypass (Phase 264) is unaffected** -- still a
 user-specified 15% chance to drop an otherwise-refused (``pay >= 5``)
@@ -111,11 +113,10 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
-from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
-from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.discovery_effects import total_skill
 
 _UNHIREABLE_PAY = 5
 _ALIGN_FLOOR = 1  # NormAlign's "current rules" floor -- see module docstring.
@@ -135,12 +136,6 @@ def _align_penalty(hero_alignment: Alignment | None, king_alignment: Alignment |
         return 0
     distance = abs(_norm_align(hero_alignment) - _norm_align(king_alignment))
     return 8 >> max(0, 4 - distance)
-
-
-def _total_uskill(state: GameState, leader: LeaderState) -> int:
-    """``Total_USkill(leader)`` -- see module docstring."""
-
-    return sum(effective_skill_level(state, leader, ability) for ability in Ability)
 
 
 def _leader_race(state: GameState, leader: LeaderState) -> Race | None:
@@ -179,7 +174,7 @@ def hero_liking(state: GameState, hero: LeaderState, king: LeaderState) -> int:
     hero_temper = hero.temper
     king_temper = king.temper
     temper_conflict = hero_temper is not None and king_temper is not None and hero_temper is not king_temper
-    if not temper_conflict and hero.kingdom_id is None and _total_uskill(state, king) < 7:
+    if not temper_conflict and hero.kingdom_id is None and total_skill(state, king) < 7:
         temper_conflict = True
     temper_penalty = (bornx_h & 1) * (1 if temper_conflict else 0)
 

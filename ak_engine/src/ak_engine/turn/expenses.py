@@ -141,6 +141,19 @@ from ak_engine.turn.hire_pay import hero_liking, required_pay
 _DESERTION_ROLL_VALUES = (-2, -1, 0, 1)
 
 
+def _find_king(state: GameState, kingdom_id: int) -> LeaderState | None:
+    """Phase 1055: the same "find this kingdom's King" lookup, written
+    out verbatim twice in this module (``compute_leader_maintenance()``
+    and ``apply_turn_maintenance()``), extracted once confirmed byte-
+    identical.
+    """
+
+    return next(
+        (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
+        None,
+    )
+
+
 def compute_army_maintenance(state: GameState, kingdom_id: int) -> int:
     """``ACost(kingdom_id)``: the sum of ``ARMY_TABLE[army_type].pay``
     across every Hired army this kingdom owns -- see module docstring for
@@ -192,10 +205,7 @@ def compute_leader_maintenance(state: GameState, kingdom_id: int) -> int:
     just observed, by ``turn/hire_pay.py``'s own Phase 505 real formula).
     """
 
-    king = next(
-        (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
-        None,
-    )
+    king = _find_king(state, kingdom_id)
     return sum(
         leader_pay(state, leader, king) for leader in state.leaders.values() if leader.kingdom_id == kingdom_id
     )
@@ -237,10 +247,7 @@ def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -
         debited = compute_army_maintenance(state, kingdom_id)
         kingdom.treasury -= debited
 
-        king = next(
-            (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
-            None,
-        )
+        king = _find_king(state, kingdom_id)
         heroes = sorted(
             (
                 leader

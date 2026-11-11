@@ -1424,6 +1424,7 @@ from ak_engine.turn.discovery_effects import (
     effective_skill_level,
     emperor_holds_arcanes_valor_unification,
     kingdom_sees_through_illusory_terrain,
+    total_skill,
 )
 from ak_engine.turn.expenses import (
     MaintenanceResult,
@@ -13465,9 +13466,15 @@ def _total_skill(state: GameState, leader: LeaderState) -> int:
     ForcedMarch)*2`, `Desc_Apt`, `REPORTS.PAS` ~line 525) -- the user's
     own explicit "Implementa Total_Skill per intero" choice, not a
     placeholder.
+
+    Phase 1055: delegates to `turn/discovery_effects.py total_skill()`
+    -- this function and `turn/hire_pay.py`'s own `Total_USkill`
+    reading used to each carry a private copy of this exact formula,
+    confirmed byte-identical, now extracted to the one shared
+    implementation both import.
     """
 
-    return sum(effective_skill_level(state, leader, ability) for ability in Ability)
+    return total_skill(state, leader)
 
 
 def _discovery_skill_modifier_row(kingdom: KingdomState) -> str:
