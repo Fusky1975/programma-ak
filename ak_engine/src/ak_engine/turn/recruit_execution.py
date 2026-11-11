@@ -253,6 +253,7 @@ from ak_engine.models.army_type import OVERFLIGHT_AIR, OVERFLIGHT_SEA, ArmyType
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.office import Office
+from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.office_holder import resolve_office_holder
@@ -429,7 +430,40 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         if province.recruit_locked_this_turn:
             result.province_locked.append(army_type)
             continue
-        if province.recruit_type_1 is not None:
+        # Phase 1054 bug fix: Garrison is recruitable (2/turn, recruit_
+        # limit()'s own real "any humanoid province, home or not" rule
+        # just above) in ANY humanoid province, regardless of whether it
+        # happens to be one of this specific province's two listed slot
+        # types -- it is never genuinely "native" by the slot-table
+        # sense the Phase 407 check below targets. Without this
+        # exemption, Garrison can never satisfy either `is_native` (real
+        # province data never lists GARRISON as a slot, confirmed absent
+        # from every cross-checked row) or `commander_already_has_type`
+        # (a Garrison-targeted order has no commander roster to check,
+        # per this same function's own comment below), so
+        # `resolve_recruit()` always raised `NonNativeTypeNotYetOwnedError`
+        # for it -- making `recruit_limit()`'s own `GARRISON_HUMANOID_
+        # PROVINCE_LIMIT` permanently unreachable for any real-data
+        # province.
+        # Phase 1054 bug fix: Dinosaurs' own complete cost is "Speed: 3;
+        # Pay: 3" per AdvancedAbility.DRUIDIC_DINOSAURS's own real
+        # description (models/army_type.py's own Phase 691 addendum) --
+        # no native/non-native doubling is mentioned anywhere in that
+        # sourced text, because the per-province native-type slot
+        # mechanic this `is_native` flag otherwise encodes doesn't
+        # conceptually apply to an ability-gated unit type at all (its
+        # own eligibility is already fully governed by the separate
+        # Race.ELVEN/AdvancedAbility/province-slot chain checked below).
+        # Without this exemption, `army_type in (recruit_type_1,
+        # recruit_type_2)` is always False for DINOSAURS (it is never
+        # itself a listed slot type), so `resolve_recruit()` silently
+        # doubled the price to 6 gold on every real recruit via this
+        # path, even with every real precondition satisfied.
+        if army_type is ArmyType.GARRISON and province.race in HUMANOID_RACES:
+            is_native = True
+        elif army_type is ArmyType.DINOSAURS:
+            is_native = True
+        elif province.recruit_type_1 is not None:
             is_native = army_type in (province.recruit_type_1, province.recruit_type_2)
         else:
             is_native = is_army_type_compatible_with_race(army_type, province.race)
@@ -460,6 +494,27 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             commanded_by is not None
             and any(army.commanded_by == commanded_by and army.army_type is army_type for army in state.armies.values())
         )
+        # Phase 1054 bug fix: looked up BEFORE resolve_recruit() now (it
+        # used to be found only after that call succeeded, further down)
+        # specifically so its presence can bypass resolve_recruit()'s own
+        # race-compatibility/non-native-ownership gates below -- RULES.AK
+        # [3.4]: "mercenaries can be Recruited in any province by any
+        # character," a real carve-out from the whole "is this type
+        # native/race-compatible here" story those two checks otherwise
+        # enforce for a populace levy. Previously, a race-incompatible or
+        # merely non-native-but-already-present mercenary was rejected by
+        # one of those two exceptions before this lookup (further down)
+        # ever discovered it.
+        mercenary = next(
+            (
+                army
+                for army in state.mercenaries_at(location)
+                if army.army_type is army_type
+                and army.quality >= Quality.AVERAGE
+                and not army.unhireable_this_turn
+            ),
+            None,
+        )
         try:
             resolution = resolve_recruit(
                 army_type,
@@ -470,6 +525,7 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
                 is_former_home_province_now_allied=is_former_home_province_now_allied,
                 chief_of_staff_discount=leader_is_chief_of_staff,
                 commander_already_has_type=commander_already_has_type,
+                hiring_existing_mercenary=mercenary is not None,
             )
         except IncompatibleRaceError:
             result.incompatible.append(army_type)
@@ -510,16 +566,6 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             result.limit_blocked.append(army_type)
             continue
 
-        mercenary = next(
-            (
-                army
-                for army in state.mercenaries_at(location)
-                if army.army_type is army_type
-                and army.quality >= Quality.AVERAGE
-                and not army.unhireable_this_turn
-            ),
-            None,
-        )
         can_levy = province.owner_kingdom_id == kingdom_id or in_ally_territory
         if mercenary is None and not can_levy:
             result.territory_blocked.append(army_type)

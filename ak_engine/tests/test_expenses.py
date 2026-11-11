@@ -5,7 +5,7 @@ real-sample cross-check this exercises.
 from __future__ import annotations
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ArmyType
+from ak_engine.models.army_type import ARMY_TABLE, ArmyType
 from ak_engine.models.game_state import ArmyState, GameState, KingdomState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
@@ -65,6 +65,22 @@ def test_compute_army_maintenance_ignores_other_kingdoms_armies():
 def test_compute_army_maintenance_zero_with_no_armies():
     state = make_state()
     assert compute_army_maintenance(state, 1) == 0
+
+
+def test_compute_army_maintenance_skips_army_types_with_no_army_table_entry():
+    # Phase 1054 bug fix: 8 real ArmyType ordinals (Vampires, Marauders,
+    # Shamans, Crossbow, Javelins, Artillery, Spiders, D_Turtle) have no
+    # ARMY_TABLE entry -- turn/recruit.py's own resolve_recruit() was
+    # already hardened against this exact same bare lookup with a
+    # documented bug-fix comment, but compute_army_maintenance() used to
+    # have no equivalent guard, crashing with an unhandled KeyError for
+    # any kingdom owning one (e.g. created via the GM army editor, which
+    # applies no ARMY_TABLE filtering).
+    state = make_state()
+    state.add_army(ArmyState(1, 1, ArmyType.LEGION, Quality.AVERAGE, HOME))
+    state.add_army(ArmyState(2, 1, ArmyType.VAMPIRES, Quality.AVERAGE, HOME))
+
+    assert compute_army_maintenance(state, 1) == ARMY_TABLE[ArmyType.LEGION].pay
 
 
 # -- compute_leader_maintenance ------------------------------------------

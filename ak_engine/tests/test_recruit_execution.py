@@ -387,6 +387,28 @@ def test_race_compatible_but_unlisted_type_without_an_existing_unit_is_not_recru
     assert result.non_native_type_not_owned == [ArmyType.BOWMEN]
 
 
+def test_garrison_recruitable_in_any_humanoid_province_with_real_slot_data():
+    # Phase 1054 bug fix: Garrison is recruitable (2/turn, recruit_limit()'s
+    # own real "any humanoid province, home or not" rule) in ANY humanoid
+    # province -- it is never genuinely a listed slot type in real
+    # per-province data (recruit_type_1/2 here are set to ordinary types,
+    # never GARRISON), so without the Phase 1054 exemption, Garrison could
+    # never satisfy is_native (slot-table membership) or
+    # commander_already_has_type (a Garrison-targeted order has no
+    # commander roster), making it permanently unrecruitable once real
+    # slot data exists.
+    state = build_state()
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    state.provinces[LOCATION].recruit_type_2 = ArmyType.BOWMEN
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.GARRISON])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.non_native_type_not_owned == []
+    assert len(result.recruited) == 1
+    assert result.recruited[0].army_type == ArmyType.GARRISON
+
+
 def test_non_native_type_blocked_for_a_garrison_targeted_order():
     # A Garrison-targeted order (leader_id=None) has no commander roster
     # to check ownership against, so a non-native type can never pass
@@ -458,6 +480,50 @@ def test_recruit_hires_colocated_mercenary_instead_of_levying_new_army():
     # Bug fix (2026-10-25): a hired mercenary is no longer "available to
     # Recruit" -- see `ArmyState.is_mercenary`'s own docstring.
     assert state.armies[999].is_mercenary is False
+
+
+def test_recruit_hires_a_race_incompatible_mercenary_in_any_province():
+    # Phase 1054 bug fix: RULES.AK [3.4] "mercenaries can be Recruited in
+    # any province by any character" -- resolve_recruit()'s own race-
+    # compatibility gate used to run before the mercenary lookup, so a
+    # race-incompatible mercenary (e.g. Ents, Race.ENTISH-locked) sitting
+    # in an ordinary Human province was rejected via IncompatibleRaceError
+    # before ever being discovered, even though a real, hireable
+    # mercenary of that exact type was physically present.
+    state = build_state()  # province race is Race.HUMAN
+    state.add_army(ArmyState(999, None, ArmyType.ENTS, Quality.VETERAN, LOCATION, is_mercenary=True))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.ENTS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.incompatible == []
+    assert len(result.recruited) == 1
+    assert result.recruited[0].army_id == 999
+    assert result.recruited[0].hired is True
+
+
+def test_recruit_hires_a_non_native_mercenary_without_requiring_prior_ownership():
+    # Phase 1054 bug fix: same bug, the other exception -- a race-
+    # compatible-but-unlisted mercenary used to be rejected via
+    # NonNativeTypeNotYetOwnedError before the mercenary lookup ever ran,
+    # even though the commander-ownership precondition that exception
+    # encodes is only about levying from the populace, not about hiring
+    # an army that already physically exists.
+    state = build_state()
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION, is_mercenary=True))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])  # not owned, not listed
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.non_native_type_not_owned == []
+    assert len(result.recruited) == 1
+    assert result.recruited[0].army_id == 999
+    assert result.recruited[0].hired is True
+    # Still subject to the real non-native doubling the module docstring's
+    # own "doesn't distinguish hiring from levying on price" rule
+    # (Phase 16) describes -- 2 base, doubled to 4.
+    assert result.total_gold_spent == 4
 
 
 def test_recruit_ignores_mercenary_below_average_quality():
@@ -963,6 +1029,25 @@ def test_dinosaur_recruit_allowed_when_either_slot_is_elephants_lt_cavalry_or_hv
     )
     assert len(result_second_slot.recruited) == 1
     assert result_second_slot.elven_slot_required == []
+
+
+def test_dinosaur_recruit_via_real_slot_data_is_not_charged_double():
+    # Phase 1054 bug fix: Dinosaurs' own complete cost is "Speed: 3; Pay:
+    # 3" per AdvancedAbility.DRUIDIC_DINOSAURS's own real description --
+    # no native/non-native doubling is mentioned anywhere in that sourced
+    # text. Previously, since DINOSAURS can never itself be one of a
+    # province's two real recruit_type_1/2 slots, is_native was always
+    # False via this path, silently doubling the price to 6 even with
+    # every real precondition (Elven province, ability, Druid skill 5,
+    # qualifying Elephants/Lt Cavalry/Hvy Cavalry slot) satisfied.
+    state = build_dinosaur_state_with_slots(recruit_type_1=ArmyType.ELEPHANTS, recruit_type_2=ArmyType.BOWMEN)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.recruited[0].gold_paid == 3
+    assert result.total_gold_spent == 3
 
 
 def test_dinosaur_recruit_slot_gate_is_skipped_when_province_has_no_real_slot_data():

@@ -164,10 +164,18 @@ def execute_gold_give(
     """Move gold from a King's own kingdom treasury to another kingdom's, enforcing
     rulebook [3.18]'s 10%-of-treasury cap and the giver-must-be-a-King
     rule. Low-level primitive -- prefer ``execute_give()`` for a real,
-    decoded ``TradeRequest`` (it additionally enforces co-location and
-    that the *recipient* is a King too). Kept separately since a future
-    caller may know a real recipient kingdom without going through a
-    full ``TradeRequest`` (e.g. a hand-built scenario).
+    decoded ``TradeRequest`` (it additionally enforces co-location).
+    Kept separately since a future caller may know a real recipient
+    kingdom without going through a full ``TradeRequest`` (e.g. a
+    hand-built scenario).
+
+    Phase 1054 bug fix: this docstring used to also claim ``execute_
+    give()`` "enforces... that the *recipient* is a King too" -- stale
+    since this module's own 2026-10-29 fix (see the module docstring's
+    own addendum above): the recipient only needs to be of a different
+    Kingdom (or kingdomless), never specifically a King. ``execute_
+    give()``'s actual code never checks ``recipient.is_king`` on this
+    gold-give path.
     """
 
     giver = state.leaders.get(giver_leader_id)

@@ -159,6 +159,45 @@ def test_resolve_recruit_raises_cleanly_for_an_army_type_with_no_rulebook_cost()
             )
 
 
+# -- Phase 1054 bug fix: hiring_existing_mercenary bypasses both
+# IncompatibleRaceError and NonNativeTypeNotYetOwnedError --
+
+
+def test_resolve_recruit_hiring_existing_mercenary_bypasses_incompatible_race():
+    # RULES.AK [3.4]: "mercenaries can be Recruited in any province by
+    # any character" -- a hireable mercenary of a race-incompatible type
+    # must not be rejected by the same race-compatibility gate a populace
+    # levy would hit.
+    result = resolve_recruit(
+        ArmyType.DRAGON_WING, Race.HUMAN,
+        is_home_province=False, is_native_to_province=False, hiring_existing_mercenary=True,
+    )
+    assert result is not None
+
+
+def test_resolve_recruit_hiring_existing_mercenary_bypasses_non_native_ownership():
+    result = resolve_recruit(
+        ArmyType.HVY_CAVALRY, Race.HUMAN,
+        is_home_province=False, is_native_to_province=False, hiring_existing_mercenary=True,
+    )
+    # Still subject to the real non-native doubling -- the module's own
+    # "doesn't distinguish hiring from levying on price" rule (Phase 16)
+    # -- only the two eligibility exceptions are bypassed, not the cost.
+    assert result.gold_per_unit == 6
+    assert result.is_double_cost is True
+
+
+def test_resolve_recruit_hiring_existing_mercenary_still_requires_a_rulebook_cost():
+    # The missing-ARMY_TABLE-entry guard is unrelated to race/nativity --
+    # it stays unconditional even for a mercenary hire, since there is
+    # genuinely no cost data to charge by.
+    with pytest.raises(IncompatibleRaceError):
+        resolve_recruit(
+            ArmyType.VAMPIRES, Race.HUMAN,
+            is_home_province=False, is_native_to_province=True, hiring_existing_mercenary=True,
+        )
+
+
 # -- Phase 663: Chief of Staff's own -1 gold discount --
 
 

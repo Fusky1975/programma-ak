@@ -143,6 +143,7 @@ def resolve_recruit(
     is_former_home_province_now_allied: bool = False,
     chief_of_staff_discount: bool = False,
     commander_already_has_type: bool = False,
+    hiring_existing_mercenary: bool = False,
 ) -> RecruitResolution:
     """Resolve the limit and cost for recruiting one army type in one province.
 
@@ -160,6 +161,22 @@ def resolve_recruit(
     the type isn't recruitable in this province at all -- the double
     cost below only ever applies once this precondition holds.
 
+    ``hiring_existing_mercenary`` (Phase 1054 bug fix, default ``False``,
+    every pre-existing caller unaffected): bypasses BOTH of the two
+    exceptions above -- RULES.AK [3.4]: "mercenaries can be Recruited in
+    any province by any character," a real carve-out from the whole
+    race-compatibility/native-type-slot story those two checks otherwise
+    enforce for a populace *levy*. A hireable, Average-or-better-quality
+    mercenary army of this exact type already physically exists at this
+    location regardless of what this province's own race or recruit-
+    slot table says about it, so neither "can this type exist here at
+    all" nor "is it native here" is the right question once one is
+    already present and hireable. Does NOT change ``gold_per_unit``'s
+    own native/non-native doubling below -- the module docstring's own
+    "the rulebook doesn't distinguish hiring from levying on price"
+    rule (Phase 16) still applies, using whatever ``is_native_to_
+    province`` the caller actually passed.
+
     ``chief_of_staff_discount`` (Phase 663): `models/office.py OFFICE_
     TITLE_DESCRIPTION[Office.CHIEF_OF_STAFF]`'s own real "effect_while_
     held" text -- "any unit recruited by <2 will get a discount on
@@ -176,15 +193,16 @@ def resolve_recruit(
     execute_recruit()`.
     """
 
-    if not is_army_type_compatible_with_race(army_type, province_race):
-        raise IncompatibleRaceError(
-            f"{army_type.name} can't be recruited in a {province_race.name} province"
-        )
-    if not is_native_to_province and not commander_already_has_type:
-        raise NonNativeTypeNotYetOwnedError(
-            f"{army_type.name} isn't native to this province and the commander "
-            "doesn't already have another unit of that type"
-        )
+    if not hiring_existing_mercenary:
+        if not is_army_type_compatible_with_race(army_type, province_race):
+            raise IncompatibleRaceError(
+                f"{army_type.name} can't be recruited in a {province_race.name} province"
+            )
+        if not is_native_to_province and not commander_already_has_type:
+            raise NonNativeTypeNotYetOwnedError(
+                f"{army_type.name} isn't native to this province and the commander "
+                "doesn't already have another unit of that type"
+            )
     if army_type not in ARMY_TABLE:
         # Bug fix (crash): 8 real ArmyType ordinals (Vampires, Marauders,
         # Shamans, Crossbow, Javelins, Artillery, Spiders, D_Turtle --
