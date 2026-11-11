@@ -47,6 +47,7 @@ from ak_engine.turn.search_execution import (
     TROLL_REGENERATION_PER_COMBAT_ROUND,
     WEAK_TEMPER_FLEE_CHANCE_BONUS,
     SearchExecutionResult,
+    _apply_monster_duel_merit,
     _apply_scout,
     _leader_combatant,
     _register_search_target_known,
@@ -733,6 +734,33 @@ def test_execute_search_leader_win_against_eligible_monster_awards_duel_and_brav
     assert tally.duel_merit_net == 2
     assert tally.bravery_merit == 4  # CHARACTER_HIT_POINTS - 4 hit points left
     assert tally.courage_encounter_merit == 0
+
+
+def test_execute_search_leader_win_against_eligible_monster_credits_zero_bravery_for_an_unscathed_arcane_valor_winner():
+    # Phase 1052 bug fix: a leader whose own real starting hit points
+    # exceed the bare CHARACTER_HIT_POINTS constant (GameType.ARCANES's
+    # own arcane_valor_hit_points_bonus(), personally holding the Scepter
+    # of Life) used to be credited a *negative* bravery_merit for winning
+    # cleanly, contradicting _apply_monster_duel_merit()'s own documented
+    # "wins unscathed is credited 0, not skipped" rule -- the exact bug
+    # turn/challenge_execution.py _apply_duel_encounter_merit() was
+    # already fixed for.
+    state = _state_with_leader()
+    state.game_type = GameType.ARCANES
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.BIGFOOT))
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=LEADER_ID)
+    # Unscathed at the leader's own real starting hit points (CHARACTER_
+    # HIT_POINTS + 5 under this bonus), not the bare constant.
+    unscathed_combatant = Combatant(name="Searcher", hit_points=CHARACTER_HIT_POINTS + 5, melee_skill=0, archery_skill=0)
+
+    with patch("ak_engine.turn.search_execution._leader_combatant", return_value=unscathed_combatant), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_resolve:
+        mock_resolve.return_value = EncounterCombatResult(winner="a", rounds=1)
+        result = execute_search(state, LEADER_ID, _melee_request(1), random.Random(0))
+
+    assert result.winner == "leader"
+    assert state.leaders[LEADER_ID].merit_tally.bravery_merit == 0
 
 
 def test_execute_search_leader_win_against_ineligible_monster_awards_no_duel_merit():
@@ -2762,6 +2790,28 @@ def test_execute_search_cast_hand_of_death_victims_lethal_counter_attack_wins():
     assert result.winner == "monster"
 
 
+def test_execute_search_cast_hand_of_death_victims_lethal_counter_attack_never_attaches_the_casters_squeeze_hits():
+    # Phase 1052 bug fix: squeeze_hits is always the CASTER's own hits,
+    # but when the victim's own counter-attack kills the caster
+    # (winner="b", Phase 1050), the overall encounter winner is the
+    # victim/monster -- attaching the caster's pre-death hits here would
+    # have report/turn_report.py narrate the monster as having squeezed
+    # the leader, backwards. Only the caster's own real win (winner="a")
+    # attaches squeeze_hits, so this case must stay empty.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="b", rounds=3, squeeze_hits=(2, 2))
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert result.winner == "monster"
+    assert result.squeeze_hits == ()
+
+
 def test_execute_search_cast_hand_of_death_broken_channel_falls_through_to_melee():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
@@ -3352,6 +3402,29 @@ def test_execute_search_cast_gate_demon_loss_lets_the_plan_continue():
     assert result.winner == "leader"  # decided by the second (real) duel, not the demon's loss
 
 
+def test_execute_search_cast_gate_demon_duel_threads_skip_temper_setup_and_melee_swings():
+    # Phase 1052 bug fix: the demon's duel used to call resolve_melee_duel()
+    # with no skip_temper_setup kwarg at all (risking a double-applied
+    # Temper/Ability setup once an earlier Melee round already applied it)
+    # and never merged its own melee_swings into the outer accumulator
+    # (invisible to Melee-XP crediting and report narration).
+    state = _state_with_leader(skills=_gate_demon_known_skills())
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_DEMON)
+    swing = MeleeSwing(attacker="a", hit=True, damage=5)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.roll_monster_alignment", return_value=Alignment.GOOD
+    ), patch("ak_engine.turn.search_execution.roll_gate_demon_type", return_value=Monster.ARCHER), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel",
+        return_value=EncounterCombatResult(winner="a", rounds=3, melee_swings=(swing,)),
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.call_args.kwargs["skip_temper_setup"] is False
+    assert result.melee_swings == (swing,)
+
+
 def test_execute_search_cast_gate_demon_missing_stats_has_no_effect():
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
@@ -3395,6 +3468,26 @@ def test_execute_search_cast_gate_angel_win_credits_the_caster():
 
     assert result.winner == "leader"
     assert result.feature_looted is True
+
+
+def test_execute_search_cast_gate_angel_duel_threads_skip_temper_setup_and_melee_swings():
+    # Phase 1052 bug fix: same gap as Gate Demon's own duel -- never fixed
+    # anywhere for Gate Angel, since it's project-original with no prior
+    # challenge_execution.py equivalent to mirror.
+    state = _state_with_leader(skills=_gate_angel_known_skills())
+    state.add_leader(LeaderState(VALHALLA_VISITOR_LEADER_ID, None, "Hero", LOCATION))
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.GATE_ANGEL)
+    swing = MeleeSwing(attacker="a", hit=True, damage=5)
+
+    with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel",
+        return_value=EncounterCombatResult(winner="a", rounds=3, melee_swings=(swing,)),
+    ) as mock_melee:
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_melee.call_args.kwargs["skip_temper_setup"] is False
+    assert result.melee_swings == (swing,)
 
 
 def test_execute_search_cast_gate_angel_loss_lets_the_plan_continue():
@@ -3666,16 +3759,34 @@ def test_execute_search_cast_kill_enemy_failed_roll_triggers_berserk_retaliation
     state = _state_with_leader()
     state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
     request = _cast_request(1, Spell.KILL_ENEMY)
+    observed_tempers = []
 
+    swing = MeleeSwing(attacker="a", hit=True, damage=5)
+
+    def _record_and_resolve(a, b, rng, **kwargs):
+        observed_tempers.append(a.temper)
+        return EncounterCombatResult(winner="a", rounds=1, melee_swings=(swing,))
+
+    # Phase 1052 bug fix regression: resolve_melee_duel() now mutates the
+    # real monster_combatant in place (temporarily set to Berserk, restored
+    # right after) instead of a disconnected dataclasses.replace() copy --
+    # the Berserk temper must be observed *during* the call (hence the
+    # side_effect capture below), since it's gone again by the time this
+    # test inspects call_args afterward. Also now threads skip_temper_setup
+    # and merges melee_swings, same as this module's other resolve_melee_
+    # duel() call sites.
     with patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=False), patch(
-        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+        "ak_engine.turn.search_execution.resolve_melee_duel", side_effect=_record_and_resolve
     ) as mock_melee:
         result = execute_search(state, LEADER_ID, request, random.Random(0))
 
     # retaliator (the monster target) passed first -- "a" means it won.
-    assert mock_melee.call_args[0][0].temper is Temper.BERSERK
+    assert observed_tempers == [Temper.BERSERK]
+    assert mock_melee.call_args[0][0].temper is None  # restored once the duel concludes
+    assert mock_melee.call_args.kwargs["skip_temper_setup"] is False
     assert result.winner == "monster"
     assert result.leader_killed is True
+    assert result.melee_swings == (swing,)
 
 
 def test_execute_search_cast_kill_enemy_failed_roll_berserk_retaliation_the_caster_survives():
@@ -3909,6 +4020,37 @@ def test_execute_search_cast_words_of_healing_heals_leader_to_full_after_taking_
 
     leader_combatant = mock_melee.call_args[0][0]
     assert leader_combatant.hit_points == CHARACTER_HIT_POINTS
+
+
+def test_execute_search_cast_words_of_healing_heals_an_arcane_valor_leader_to_their_own_real_max():
+    # Phase 1052 bug fix: a leader whose own real starting hit points
+    # exceed the bare CHARACTER_HIT_POINTS constant (GameType.ARCANES's
+    # own arcane_valor_hit_points_bonus(), personally holding the Scepter
+    # of Life) used to be capped at the bare constant on a "complete"
+    # heal -- up to 5 points short of their own real max, contradicting
+    # the spell's own quoted "gaining back all lost hit points" text.
+    leader = _skilled_leader(Ability.WHITE, 5)
+    state = GameState(game_type=GameType.ARCANES)
+    state.add_leader(leader)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=LEADER_ID)
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    tactics = [
+        SearchTactic(maneuver=Maneuver.SHOOT),
+        SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.HEAL.value),
+        SearchTactic(maneuver=Maneuver.MELEE),
+    ]
+    request = SearchRequest(feature_id=1, unconfirmed_extra0=0, tactics=tactics)
+
+    with patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", side_effect=_damage_leader_fire_arrow_duel
+    ), patch("ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel"
+    ) as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    leader_combatant = mock_melee.call_args[0][0]
+    assert leader_combatant.hit_points == CHARACTER_HIT_POINTS + 5
 
 
 def test_execute_search_cast_words_of_healing_level_gate_blocks_low_white_skill():
@@ -4243,6 +4385,35 @@ def test_execute_search_steal_caught_bow_range_resolves_fire_arrow_duel():
     assert mock_fire.called
     assert result.winner == "leader"
     assert result.feature_looted is True
+
+
+def test_execute_search_steal_caught_bow_range_inconclusive_duel_prevents_a_second_fire_arrow_phase():
+    # Phase 1052 bug fix: this branch used to call resolve_fire_arrow_duel()
+    # directly, bypassing _resolve_fire_arrow_phase() entirely, so it never
+    # set fire_arrow_resolved=True. For a monster_wants_shoot guardian
+    # (e.g. Titan/Red Dragon), an inconclusive duel here used to leave the
+    # later `monster_wants_shoot and not fire_arrow_resolved` guard still
+    # True, firing a second, independent Fire Arrow duel at the next MELEE
+    # tactic -- violating this module's own "at most one Fire Arrow phase
+    # per encounter" invariant.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _steal_request(1, Maneuver.MELEE)
+    monster_plan = (SearchTactic(maneuver=Maneuver.SHOOT),)  # sets monster_wants_shoot=True
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch(
+        "ak_engine.turn.search_execution.resolve_steal_attempt", return_value=False
+    ), patch("ak_engine.turn.search_execution.resolve_steal_evasion", return_value=False), patch(
+        "ak_engine.turn.search_execution.resolve_fire_arrow_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ) as mock_fire, patch(
+        "ak_engine.turn.search_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="a", rounds=1)
+    ) as mock_melee:
+        rng = ScriptedRandom([0.5] * 20, choice_indices=[1])  # BOW_RANGE
+        result = execute_search(state, LEADER_ID, request, rng)
+
+    assert mock_fire.call_count == 1
+    assert mock_melee.called
+    assert result.winner == "leader"
 
 
 # -- Phase 537: racial-command item skips the normal Talk roll ----------
@@ -4591,6 +4762,35 @@ def test_execute_search_beg_undamaged_leader_falls_through():
     assert not mock_beg.called
     assert mock_melee.called
     assert result.winner == "leader"
+
+
+def test_execute_search_beg_recognizes_damage_for_an_arcane_valor_leader_above_the_bare_constant():
+    # Phase 1052 bug fix: a leader whose own real starting hit points
+    # exceed the bare CHARACTER_HIT_POINTS constant (GameType.ARCANES's
+    # own arcane_valor_hit_points_bonus(), personally holding the Scepter
+    # of Life) who has taken some damage but is still >= the bare
+    # constant used to be wrongly treated as "undamaged," silently
+    # making Beg do nothing.
+    state = _state_with_leader()
+    state.game_type = GameType.ARCANES
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=LEADER_ID)
+    # Real starting HP under the bonus: CHARACTER_HIT_POINTS + 5. Took 3
+    # damage, so current HP (CHARACTER_HIT_POINTS + 2) is still >= the
+    # bare constant -- exactly the case the bug missed.
+    damaged_combatant = Combatant(name="Searcher", hit_points=CHARACTER_HIT_POINTS + 2)
+    request = SearchRequest(
+        feature_id=1,
+        unconfirmed_extra0=0,
+        tactics=[SearchTactic(maneuver=Maneuver.BEG), SearchTactic(maneuver=Maneuver.MELEE)],
+    )
+
+    with patch("ak_engine.turn.search_execution._leader_combatant", return_value=damaged_combatant), patch(
+        "ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=()
+    ), patch("ak_engine.turn.search_execution.resolve_beg_for_mercy", return_value=False) as mock_beg:
+        execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert mock_beg.called
 
 
 def test_execute_search_beg_animal_tier_monster_never_succeeds():
@@ -6369,6 +6569,45 @@ def test_execute_search_guardians_own_cast_disrupted_by_a_landed_swing_never_att
     # Phase 416: the leader's own reactive swing (attacker="a") is narrated
     # even though the cast it disrupted never reached _resolve_cast().
     assert result.melee_swings == (MeleeSwing(attacker="a", hit=True, damage=5),)
+
+
+def test_execute_search_melee_vs_cast_skips_the_reactive_swing_when_guardian_already_blocked_from_cast():
+    # Phase 1052 bug fix: a guardian already blocked_from_cast (e.g. by an
+    # earlier Spiritwrack landing) has a guaranteed no-op CAST coming, so
+    # the leader's own reactive swing against it -- which could kill it
+    # outright -- is skipped instead of landing before that guaranteed
+    # no-op is discovered (mirrors turn/challenge_execution.py's own
+    # identical "Phase 1042 bug fix"). Monster.ARCHER (not Spiritwrack-
+    # immune, unlike e.g. Monster.GARGOYLE's own SPIRITWRACK_MECHANICAL_
+    # MONSTERS membership) so the leader's own Spiritwrack genuinely lands
+    # and sets blocked_from_cast=True before the Melee-vs-Cast round below.
+    state = _state_with_leader()
+    state.add_feature(Feature(feature_id=1, coord=LOCATION, kind=FeatureType.DUNGEON, guardian_monster=Monster.ARCHER))
+    request = _cast_request(1, Spell.SPIRITWRACK, Maneuver.MELEE)
+    monster_plan = (
+        SearchTactic(maneuver=Maneuver.MELEE),
+        SearchTactic(maneuver=Maneuver.CAST, sub_object=Spell.FIREBALL.value),
+    )
+
+    with patch("ak_engine.turn.search_execution.roll_monster_encounter_plan", return_value=monster_plan), patch(
+        "ak_engine.turn.search_execution.resolve_personal_combat_spell_cast", return_value=True
+    ), patch("ak_engine.turn.search_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.search_execution.resolve_reactive_melee_swing"
+    ) as mock_swing, patch("ak_engine.turn.search_execution.roll_fireball_damage", return_value=999):
+        # First round: the guardian's own opening Melee entry (undecided,
+        # advancing it to its own Cast tactic). Second round: the Melee-
+        # vs-Cast round above skips the reactive swing (blocked_from_cast)
+        # and advances the guardian's own plan past its Fireball entry
+        # too, so this decisive final round is Melee-vs-Melee again --
+        # same two-call shape as the sibling (non-blocked) test above.
+        mock_round.side_effect = [
+            MeleeRoundOutcome(result=None),
+            MeleeRoundOutcome(result=EncounterCombatResult(winner="a", rounds=2)),
+        ]
+        result = execute_search(state, LEADER_ID, request, random.Random(0))
+
+    assert not mock_swing.called
+    assert result.melee_swings == ()
 
 
 def test_execute_search_guardians_own_cast_disrupted_by_a_missed_swing_uses_the_flat_30_percent():
