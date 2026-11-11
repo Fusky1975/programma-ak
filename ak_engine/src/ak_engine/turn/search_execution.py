@@ -1648,8 +1648,7 @@ def _select_guardian_riddle(monster: Monster, feature_id: int) -> Treasure:
     docstring).
     """
 
-    index = (monster.value * 7 + feature_id) % len(_GUARDIAN_RIDDLES)
-    return _GUARDIAN_RIDDLES[index]
+    return _select_guardian_item(monster, feature_id, _GUARDIAN_RIDDLES)
 
 
 _GUARDIAN_QUEST_LOCATIONS: tuple[Treasure, ...] = (
@@ -1674,8 +1673,18 @@ def _select_guardian_quest_location(monster: Monster, feature_id: int) -> Treasu
     same quest on a repeat Talk; zero effect on any real game mechanic.
     """
 
-    index = (monster.value * 5 + feature_id) % len(_GUARDIAN_QUEST_LOCATIONS)
-    return _GUARDIAN_QUEST_LOCATIONS[index]
+    return _select_guardian_item(monster, feature_id, _GUARDIAN_QUEST_LOCATIONS)
+
+
+def _select_guardian_item(monster: Monster, feature_id: int, items: tuple[Treasure, ...]) -> Treasure:
+    """Phase 1053: the deterministic ``(monster.value * len(items) +
+    feature_id) % len(items)`` selection formula shared, confirmed
+    identical, by ``_select_guardian_riddle()``/``_select_guardian_quest_
+    location()`` above -- each simply names its own catalog.
+    """
+
+    index = (monster.value * len(items) + feature_id) % len(items)
+    return items[index]
 
 
 def _grant_search_treasure(state: GameState, leader_id: int, treasure: Treasure) -> None:
@@ -1709,6 +1718,23 @@ def _grant_search_treasure(state: GameState, leader_id: int, treasure: Treasure)
             state.add_item(treasure, king.leader_id)
             return
     state.add_item(treasure, leader_id)
+
+
+def _melee_swing_from_reactive(attacker: str, result: ReactiveMeleeSwingResult) -> MeleeSwing:
+    """Phase 1053: wraps a ``resolve_reactive_melee_swing()`` result into
+    a real ``MeleeSwing`` -- confirmed byte-identical at all 3 call sites
+    inside ``_resolve_search_encounter()`` below (the Melee-vs-Cast
+    branches and the Short Range Archery pre-shot swing), differing only
+    by which side ``attacker`` ("a"/"b") names.
+    """
+
+    return MeleeSwing(
+        attacker=attacker,
+        hit=result.hit,
+        damage=result.damage,
+        weapon_proc=result.weapon_proc,
+        weapon_proc_hit_points=result.weapon_proc_hit_points,
+    )
 
 
 def _resolve_search_encounter(
@@ -1995,6 +2021,28 @@ def _resolve_search_encounter(
 
         target_is_monster = caster_is_leader
         monster_species = feature.guardian_monster
+        # Phase 1053: the "a"/"b" slot translation below -- the caster
+        # occupies "a" when target_is_monster, "b" otherwise, and the
+        # target occupies the opposite slot -- was re-derived inline via
+        # the same two-value ternary at ~18 separate return sites in this
+        # function. Computed once here and reused everywhere instead,
+        # the same "compute once, reuse the two names" pattern Hand of
+        # Death's own branch already used locally (caster_slot/target_
+        # slot) before this phase generalized it to the whole function.
+        caster_slot = "a" if target_is_monster else "b"
+        target_slot = "b" if target_is_monster else "a"
+        # Phase 1053: "does the target's own Kingdom hold Discovery X"
+        # (a monster target has no Kingdom either way) was re-derived via
+        # this same None-guarded lookup for 4 separate Discoveries below
+        # (Psychic Blast/Invisibility/Fireball/Hand of Death). The lookup
+        # itself depends on nothing those spells vary -- only on this
+        # function's own fixed target_is_monster -- so it's computed once
+        # here and reused as `target_kingdom` everywhere (replacing the
+        # Invisibility branch's own separately-named but equivalent
+        # `opponent_kingdom`, guarded on `not caster_is_leader` --
+        # identical to `not target_is_monster` since target_is_monster is
+        # just caster_is_leader under another name).
+        target_kingdom = state.kingdoms.get(leader.kingdom_id) if not target_is_monster else None
 
         # Charm's own Phase 183 addendum: an Undead caster draws on
         # Necromancy instead of Psychic. Replicated here rather than
@@ -2229,7 +2277,7 @@ def _resolve_search_encounter(
                     target.hit_points
                 ):
                     return None
-                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                return _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
             target.hit_points = control_undead_failure_new_hit_points(target.hit_points, rng)
             return None
 
@@ -2255,7 +2303,7 @@ def _resolve_search_encounter(
                 # [4.25.2]'s own documented Action-only exception), a
                 # Personal-Combat success is the real kill the rulebook
                 # describes as the spell's primary effect.
-                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                return _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
             # "Se fallisce, la vittima designata attaccherà l'autore
             # dell'incantesimo assumendo per l'occasione un
             # temperamento Berserk, se necessario anche aggredendolo in
@@ -2290,9 +2338,9 @@ def _resolve_search_encounter(
             if not melee_setup_done:
                 melee_setup_done = True
             if duel_result.winner == "a":  # the designated victim's Berserk retaliation kills the caster
-                outcome = _outcome_from(EncounterCombatResult(winner=("b" if target_is_monster else "a"), rounds=0))
+                outcome = _outcome_from(EncounterCombatResult(winner=target_slot, rounds=0))
             elif duel_result.winner == "b":  # the caster survives and wins the retaliation
-                outcome = _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                outcome = _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
             else:
                 return None  # the vanishingly rare max-rounds-exhausted draw -- the encounter continues
             if outcome is not None:
@@ -2313,10 +2361,7 @@ def _resolve_search_encounter(
         if spell is Spell.CHARM:
             # Confirmed by the user: the *caster* flees, same outcome as a
             # successful Maneuver.FLEE.
-            intimidated, undeterred = _resolve_guardian_pacification()
-            return SearchExecutionResult(
-                accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated, guardian_undeterred=undeterred
-            )
+            return _flee_outcome()
 
         if spell is Spell.HOLY_SYMBOL:
             if target_is_monster:
@@ -2343,7 +2388,7 @@ def _resolve_search_encounter(
             if target_is_undead_or_anti_holy:
                 target.hit_points -= roll_holy_symbol_undead_damage(level, rng)
                 if target.hit_points <= 0:
-                    return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                    return _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
             return None
 
         if spell is Spell.SPIRITWRACK:
@@ -2364,7 +2409,6 @@ def _resolve_search_encounter(
             # free-attack-round roll as turn/challenge_execution.py's
             # own Psychic Blast branch, for a leader target (a monster
             # target has no Kingdom either way).
-            target_kingdom = state.kingdoms.get(leader.kingdom_id) if not target_is_monster else None
             target_has_lead_lined_helmet = target_kingdom is not None and Discovery.LEAD_LINED_HELMET in target_kingdom.discoveries
             caster.bonus_unanswered_attacks += roll_psychic_blast_stun_rounds(
                 rng, target_has_lead_lined_helmet=target_has_lead_lined_helmet
@@ -2391,9 +2435,9 @@ def _resolve_search_encounter(
             # has no "both combatants die" outcome to return here, and
             # defender-dies-first priority is the one this project keeps.
             if target.hit_points <= 0:
-                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                return _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
             if caster.hit_points <= 0:
-                return _outcome_from(EncounterCombatResult(winner=("b" if target_is_monster else "a"), rounds=0))
+                return _outcome_from(EncounterCombatResult(winner=target_slot, rounds=0))
             return None
 
         if spell is Spell.INVISIBILITY:
@@ -2418,10 +2462,12 @@ def _resolve_search_encounter(
             # Invisibility branch (see that module's own Phase 881
             # comment). Only relevant when the leader plays the
             # opponent role (a monster caster has no Kingdom to hold
-            # the Discovery either way).
-            opponent_kingdom = state.kingdoms.get(leader.kingdom_id) if not caster_is_leader else None
+            # the Discovery either way) -- the same `target_kingdom`
+            # computed once at the top of this function, since `not
+            # caster_is_leader` is just `not target_is_monster` by
+            # another name.
             opponent_has_infrared_goggles = (
-                opponent_kingdom is not None and Discovery.INFRARED_GOGGLES in opponent_kingdom.discoveries
+                target_kingdom is not None and Discovery.INFRARED_GOGGLES in target_kingdom.discoveries
             )
             if not opponent_has_witchsight and not opponent_sees_through_illusion:
                 multiplier = (
@@ -2474,13 +2520,12 @@ def _resolve_search_encounter(
             # damage by 67% when the target is the leader (not a
             # monster, which has no Kingdom) and their own Kingdom
             # holds it.
-            target_kingdom = state.kingdoms.get(leader.kingdom_id) if not target_is_monster else None
             target_has_asbestos_clothing = target_kingdom is not None and Discovery.ASBESTOS_CLOTHING in target_kingdom.discoveries
             target.hit_points -= roll_fireball_damage(
                 level, rng, target_is_immune=target_is_immune, target_has_asbestos_clothing=target_has_asbestos_clothing
             )
             if target.hit_points <= 0:
-                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                return _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
             return None
 
         if spell is Spell.ICE_SUSPEND:
@@ -2494,7 +2539,7 @@ def _resolve_search_encounter(
                 return None
             if ice_suspension_is_frozen(target.hit_points, level):
                 # Confirmed by the user: the frozen branch simplifies to a win.
-                outcome = _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                outcome = _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
                 # Phase 855: flags the real _LShIce narration -- see
                 # SearchExecutionResult.ice_suspend_immobilized's own
                 # docstring for why only this one branch is captured.
@@ -2505,7 +2550,7 @@ def _resolve_search_encounter(
                 target.hit_points -= roll_ice_suspension_flying_crash_damage(rng)
                 caster.bonus_unanswered_attacks += roll_ice_suspension_flying_bonus_rounds(rng)
                 if target.hit_points <= 0:
-                    return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                    return _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
                 return None
             caster.bonus_unanswered_attacks += ice_suspension_slowed_bonus_rounds(target.hit_points, level)
             return None
@@ -2529,7 +2574,6 @@ def _resolve_search_encounter(
             # Kingdom holds it (a monster target never has one). Also
             # (Phase 889) relaxes the archery half of the baseline block
             # right below, per the Discovery's own real second clause.
-            target_kingdom = state.kingdoms.get(leader.kingdom_id) if not target_is_monster else None
             target_has_artificial_organs = target_kingdom is not None and Discovery.ARTIFICIAL_ORGANS in target_kingdom.discoveries
             # Phase 887/889: Hand of Death's own baseline "victim cannot
             # cast spells nor shoot with a bow" restriction -- confirmed
@@ -2553,12 +2597,9 @@ def _resolve_search_encounter(
                 # victim's own disrupting counter-attack was itself lethal
                 # to the caster -- either way, translate to the leader/
                 # monster "a"/"b" convention _outcome_from() expects (the
-                # caster occupies the "a" slot when target_is_monster, since
-                # the target is then the monster's own "b" slot, and vice
-                # versa -- the winning side's own slot is whichever one
-                # actually won, not always the caster's).
-                caster_slot = "a" if target_is_monster else "b"
-                target_slot = "b" if target_is_monster else "a"
+                # winning side's own slot is whichever one actually won,
+                # not always the caster's) -- caster_slot/target_slot
+                # computed once at the top of this function (Phase 1053).
                 winner_slot = caster_slot if channel_result.winner == "a" else target_slot
                 outcome = _outcome_from(EncounterCombatResult(winner=winner_slot, rounds=0))
                 if outcome is not None and channel_result.winner == "a":
@@ -2618,10 +2659,10 @@ def _resolve_search_encounter(
             if duel_result.winner == "a":
                 # The caster disbelieves/slays their own illusion and
                 # finishes off the already-mentally-slain opponent.
-                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                return _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
             if duel_result.winner == "b":
                 # The illusion kills the caster; the opponent "revives".
-                return _outcome_from(EncounterCombatResult(winner=("b" if target_is_monster else "a"), rounds=0))
+                return _outcome_from(EncounterCombatResult(winner=target_slot, rounds=0))
             return None
 
         if spell is Spell.ILLUS_HERO:
@@ -2664,9 +2705,9 @@ def _resolve_search_encounter(
                 turns_on_master=turns_on_master,
             )
             if duel_result.winner == "a":
-                return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                return _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
             if duel_result.winner == "b":
-                return _outcome_from(EncounterCombatResult(winner=("b" if target_is_monster else "a"), rounds=0))
+                return _outcome_from(EncounterCombatResult(winner=target_slot, rounds=0))
             return None
 
         if spell is Spell.GATE_DEMON:
@@ -2724,7 +2765,7 @@ def _resolve_search_encounter(
             if duel_result.winner == "a":
                 # GATE_DEMON_WINNER_RETURNS_TO_ABYSS -- the caster is
                 # credited with the win, same as every other spell above.
-                outcome = _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                outcome = _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
                 if outcome is not None:
                     outcome.melee_swings = tuple(melee_swings)
                 return outcome
@@ -2759,7 +2800,7 @@ def _resolve_search_encounter(
             if duel_result.winner == "a":
                 # The caster is credited with the win, same as Gate
                 # Demon's own win above.
-                outcome = _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+                outcome = _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
                 if outcome is not None:
                     outcome.melee_swings = tuple(melee_swings)
                 return outcome
@@ -2781,7 +2822,7 @@ def _resolve_search_encounter(
             if resolve_lava_pool_escape(target_speed, rng):
                 return None  # escaped
             # LAVA_POOL_KILLS_INSTANTLY -- a failed escape is a full kill.
-            return _outcome_from(EncounterCombatResult(winner=("a" if target_is_monster else "b"), rounds=0))
+            return _outcome_from(EncounterCombatResult(winner=caster_slot, rounds=0))
 
         if spell is Spell.AUGUR_COMBAT:
             if not caster_is_leader:
@@ -2803,14 +2844,7 @@ def _resolve_search_encounter(
                     has_air_elemental_familiar=_has_air_elemental_familiar(state, leader_id),
                 )
                 if rng.random() < flee_chance:
-                    intimidated, undeterred = _resolve_guardian_pacification()
-                    return SearchExecutionResult(
-                        accepted=True,
-                        combat_resolved=False,
-                        fled=True,
-                        guardian_intimidated=intimidated,
-                        guardian_undeterred=undeterred,
-                    )
+                    return _flee_outcome()
                 return None
             if leader.temper is None:
                 # No recorded Temper -- no basis to model the courage-
@@ -2833,10 +2867,7 @@ def _resolve_search_encounter(
             simulated_result = resolve_melee_duel(simulated_caster, simulated_target, rng)
             would_lose_simulated_combat = simulated_result.winner == "b"
             if resolve_augur_combat(would_lose_simulated_combat, leader.temper, rng):
-                intimidated, undeterred = _resolve_guardian_pacification()
-                return SearchExecutionResult(
-                    accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated, guardian_undeterred=undeterred
-                )
+                return _flee_outcome()
             return None
 
         return None
@@ -2852,13 +2883,18 @@ def _resolve_search_encounter(
         addendum.
         """
 
+        # Phase 1053: hoisted out of the loop below -- neither side's
+        # melee_skill/neutral_duelist_bonus changes across these bonus
+        # swings, so effective_melee_skill() needs computing only once
+        # per call, not once per bonus round.
+        skill_difference_bonus = max(0, effective_melee_skill(attacker) - effective_melee_skill(defender))
         while attacker.bonus_unanswered_attacks > 0:
             attacker.bonus_unanswered_attacks -= 1
             damage = roll_melee_attack(
                 rng,
                 damage_range=attacker.melee_damage_range,
                 hit_chance_multiplier=defender.defensive_hit_multiplier,
-                skill_difference_bonus=max(0, effective_melee_skill(attacker) - effective_melee_skill(defender)),
+                skill_difference_bonus=skill_difference_bonus,
             )
             damage = max(0, damage - attacker.melee_damage_dealt_reduction)
             defender.hit_points -= damage
@@ -3054,6 +3090,20 @@ def _resolve_search_encounter(
         took_damage = monster_combatant.hit_points != monster_starting_hit_points
         return False, guardian_undeterred(feature, took_damage)
 
+    def _flee_outcome() -> SearchExecutionResult:
+        """Phase 1053: the shared "character flees/withdraws, encounter
+        ends peacefully" terminal result -- Charm's forced-flee branch,
+        both Augur Combat shirk branches, Beg's success branch, and the
+        plan-level Flee tactic all reconstructed this identical
+        ``SearchExecutionResult`` by hand; extracted once confirmed
+        byte-identical across all five call sites.
+        """
+
+        intimidated, undeterred = _resolve_guardian_pacification()
+        return SearchExecutionResult(
+            accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated, guardian_undeterred=undeterred
+        )
+
     def _finish_melee_outcome(combat_result: EncounterCombatResult) -> SearchExecutionResult:
         """Wraps ``_outcome_from()`` for a genuinely concluded Melee duel
         (winner always set, in every real call site below) and attaches
@@ -3147,15 +3197,7 @@ def _resolve_search_encounter(
             if not monster_combatant.blocked_from_cast:
                 swing_result = resolve_reactive_melee_swing(leader_combatant, monster_combatant, rng)
                 damage = swing_result.damage
-                melee_swings.append(
-                    MeleeSwing(
-                        attacker="a",
-                        hit=swing_result.hit,
-                        damage=swing_result.damage,
-                        weapon_proc=swing_result.weapon_proc,
-                        weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
-                    )
-                )
+                melee_swings.append(_melee_swing_from_reactive("a", swing_result))
                 if monster_combatant.hit_points <= 0:
                     return _finish_melee_outcome(EncounterCombatResult(winner="a", rounds=0))
                 disrupted = _resolve_cast_disruption(monster_tactic, damage, rng)
@@ -3177,15 +3219,7 @@ def _resolve_search_encounter(
             if not leader_combatant.blocked_from_cast:
                 swing_result = resolve_reactive_melee_swing(monster_combatant, leader_combatant, rng)
                 damage = swing_result.damage
-                melee_swings.append(
-                    MeleeSwing(
-                        attacker="b",
-                        hit=swing_result.hit,
-                        damage=swing_result.damage,
-                        weapon_proc=swing_result.weapon_proc,
-                        weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
-                    )
-                )
+                melee_swings.append(_melee_swing_from_reactive("b", swing_result))
                 if leader_combatant.hit_points <= 0:
                     return _finish_melee_outcome(EncounterCombatResult(winner="b", rounds=0))
                 disrupted = _resolve_cast_disruption(leader_tactic, damage, rng)
@@ -3657,10 +3691,7 @@ def _resolve_search_encounter(
         if leader_combatant.hit_points >= starting_hit_points:
             return None  # undamaged -- nothing to beg about yet
         if resolve_beg_for_mercy(feature.guardian_alignment, leader.alignment, rng):
-            intimidated, undeterred = _resolve_guardian_pacification()
-            return SearchExecutionResult(
-                accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated, guardian_undeterred=undeterred
-            )
+            return _flee_outcome()
         return None
 
     for tactic_index, tactic in enumerate(request.tactics):
@@ -3671,10 +3702,7 @@ def _resolve_search_encounter(
                 has_air_elemental_familiar=_has_air_elemental_familiar(state, leader_id),
             )
             if rng.random() < flee_chance:
-                intimidated, undeterred = _resolve_guardian_pacification()
-                return SearchExecutionResult(
-                    accepted=True, combat_resolved=False, fled=True, guardian_intimidated=intimidated, guardian_undeterred=undeterred
-                )
+                return _flee_outcome()
             continue
         if tactic.maneuver is Maneuver.CAST:
             if current_range is CombatRange.MELEE_RANGE:
@@ -3704,15 +3732,7 @@ def _resolve_search_encounter(
                     and AdvancedAbility.SHORT_RANGE_ARCHERY in leader.advanced_abilities
                 ):
                     swing_result = resolve_reactive_melee_swing(monster_combatant, leader_combatant, rng)
-                    melee_swings.append(
-                        MeleeSwing(
-                            attacker="b",
-                            hit=swing_result.hit,
-                            damage=swing_result.damage,
-                            weapon_proc=swing_result.weapon_proc,
-                            weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
-                        )
-                    )
+                    melee_swings.append(_melee_swing_from_reactive("b", swing_result))
                     if leader_combatant.hit_points <= 0:
                         return _finish_melee_outcome(EncounterCombatResult(winner="b", rounds=0))
                     combat_attempted = True
