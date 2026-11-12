@@ -17,16 +17,20 @@ second, Kingdom-level effect of a "Treat" order -- Phase 261's own
 
 **Why this was previously marked blocked, and what unblocks it now**:
 earlier surveys of this gap flagged the underlying "Treat" order itself
-as unparseable -- true, and still true (same "no real order-file shape
-ever seen" category as Break Treaty/Call-For-Vote, ``turn/
-emperor_election.py``'s own docstring) -- but Phase 261 already solved
-the identical problem for [3.4]'s own half of the same order:
-``GameState.treat_permissions`` is populated directly by the caller,
-not decoded from a move file. [8.4] reuses that exact field -- a
-*mutual* Treat order is just ``(a, b)`` and ``(b, a)`` both present in
-``treat_permissions`` in the same gameturn -- rather than inventing a
-second, parallel permission model for what the rulebook itself
-describes as one order with two effects.
+as unparseable. **Stale as of Phase 1192** -- that was already false:
+``models/kingdom.py KingdomMoveHeader.allreq`` (Phase 920, earlier) is
+a confirmed-decoded, cross-validated real parser for exactly this order
+(see that property's own docstring); it's simply never wired into
+``GameState.treat_permissions`` yet (a separate, not-yet-done follow-up
+-- see that field's own docstring). What actually unblocks this gap is
+unrelated to parsing: Phase 261 already solved the identical "how is
+this order represented" problem for [3.4]'s own half of the same order
+by populating ``GameState.treat_permissions`` directly from the caller
+instead. [8.4] reuses that exact field -- a *mutual* Treat order is
+just ``(a, b)`` and ``(b, a)`` both present in ``treat_permissions`` in
+the same gameturn -- rather than inventing a second, parallel
+permission model for what the rulebook itself describes as one order
+with two effects.
 
 **"Have become Allies on a previous gameturn"** (Phase 1026 -- previously
 documented here as an open gap, now closed): ``turn/diplomacy.py
@@ -173,16 +177,20 @@ leader presence).
 **"For each explorer of this level" -- not modeled as a per-exchange
 consumable**: the rulebook's own wording could be read as capping how
 many *simultaneous* non-adjacent exchanges a Kingdom's Explorers can
-sustain at once (one "slot" per qualifying Explorer). This module has no
-existing concept of a per-turn exchange budget anywhere -- every mutual
-Treat pair already gets its own independent resolution, with no limit on
-how many pairs one Kingdom can simultaneously treaty with -- and
-inventing a consumable-slot mechanic to give that phrase teeth would be
-exactly the kind of unsourced magnitude this project's "no source, no
-guess" policy avoids. Read instead as the qualitative permission this
-project *can* build: owning at least one qualifying Explorer unlocks the
-adjacency/presence bypass for all of that Kingdom's pairs this turn, not
-a counted, exhaustible resource.
+sustain at once (one "slot" per qualifying Explorer). **Stale as of
+Phase 1192** -- this used to additionally claim no per-turn exchange-
+budget mechanism exists anywhere in this project to build that cap
+from; that's false. ``turn/cast_execution.py action_cast_slots()``/
+``GameState.action_casts_used`` (Phase 575) is exactly that: a real
+per-(leader, ability) per-turn slot budget, reset every turn by
+``turn/turn_processor.py _replenish_turn_scoped_state()``. A real
+per-qualifying-Explorer-count budget for this rule could be built the
+same way -- that part of the earlier reasoning doesn't hold up. This
+module still implements the unlimited-boolean reading for now (owning
+at least one qualifying Explorer unlocks the adjacency/presence bypass
+for all of that Kingdom's pairs this turn, not a counted, exhaustible
+resource) -- replacing it with a real slot budget is a separate,
+not-yet-done follow-up, not something blocked on a missing mechanism.
 """
 
 from __future__ import annotations

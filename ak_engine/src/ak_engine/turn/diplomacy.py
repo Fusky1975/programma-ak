@@ -15,25 +15,29 @@ other (turn 1, [8]'s own opening line) -- ``GameState.diplomatic_
 relation()``'s own missing-pair default already matches this with no
 extra setup needed.
 
-**Why the Treat order itself isn't a second, parallel input here**: this
-project has already confirmed, twice independently (``GameState.treat_
-permissions``'s own docstring, and ``turn/scientific_treaty.py``'s own
-Phase 869 addendum), that no real K1 move file has ever shown a
-recognizable Treat/Break Treat order shape -- "no real order-file shape
-ever seen," the same category as Break Treaty/Call-For-Vote
-(``turn/emperor_election.py``'s own docstring). Inventing a byte format
-for an order never observed would violate this project's own "never a
-silent guess" discipline. [8.2]/[3.4] both describe a Treat order as
-*one* order with two effects (the recruit-in-ally-territory permission,
-and the relation upgrade below) -- so this module reads the exact same
-``GameState.treat_permissions`` field [3.4]'s own Phase 261 already
-populates (directly by the caller, not decoded from a file) as its own
-Treat-order signal, rather than adding a second, redundant channel for
-the same real order. ``(owner_kingdom_id, recruiter_kingdom_id)`` in
-``treat_permissions`` is read here as "``owner_kingdom_id`` issued a
-Treat order toward ``recruiter_kingdom_id`` this turn." Break Treat has
-no existing field to reuse -- ``GameState.break_treat_orders`` (Phase
-1026, same shape and same turn-scoped-reset convention) is new.
+**Why the Treat order itself isn't a second, parallel input here**:
+this module's own earlier phases justified reading ``GameState.treat_
+permissions``/``break_treat_orders`` (GM/caller-populated, not decoded
+from a file) instead of a real K1 order field by claiming "no real K1
+move file has ever shown a recognizable Treat/Break Treat order shape."
+**Stale as of Phase 1192 -- that claim was already false when written.**
+``models/kingdom.py KingdomMoveHeader.allreq``/``.brreq`` (Phase 920,
+earlier than this module's own Phase 1026/869 claims) are exactly that
+shape: a confirmed-decoded, cross-validated Treat (``allreq``)/Break
+Treat (``brreq``) per-Kingdom-id request bitmask, matching real
+``GWKingExtension`` data turn-for-turn across all 10 real sample turns
+and reproducing the real diplomatic-relation downgrade the very next
+turn with zero exceptions -- see that property's own docstring for the
+full two-part confirmation. They're real, decoded, correct, and simply
+never read by this module (or anywhere else -- confirmed by grep). This
+module still reads ``treat_permissions``/``break_treat_orders`` as its
+Treat/Break-Treat signal for now (GM-populated, same as before) rather
+than ``allreq``/``brreq`` directly -- wiring the real decoded fields in
+is a separate, not-yet-done follow-up, not something this docstring
+should keep claiming is impossible. ``(owner_kingdom_id, recruiter_
+kingdom_id)`` in ``treat_permissions`` is read here as "``owner_
+kingdom_id`` issued a Treat order toward ``recruiter_kingdom_id`` this
+turn."
 
 **Timing.** [8] frames ordinary Treat/Break Treat as resolved "alla fine
 di ciascun turno" (at the end of each turn), except two explicit
@@ -190,7 +194,28 @@ def set_relation(state: GameState, kingdom_a: int, kingdom_b: int, relation: Dip
     turns of Treat/Break Treat orders first) build on, so the two never
     drift into writing this trio of fields differently. Public (no
     leading underscore) for exactly that second caller.
+
+    **Phase 1192 bug fix**: rejects ``DiplomaticRelation.TEAMED`` with a
+    clear ``ValueError`` instead of silently writing it. ``_RELATION_
+    RANK`` above only knows the 3 relations [8] itself describes --
+    module docstring's own "never produced by this module" note already
+    says TEAMED support is deferred pending the user's own confirmation
+    (the one real caller outside this module, ``webapp/app.py``'s GM
+    override route, already enforces the same restriction at its own
+    call site, but this function is the shared primitive both real
+    callers build on, so it shouldn't rely on every future caller
+    remembering to repeat that check). Writing TEAMED through here
+    before this fix would silently succeed, only to crash much later
+    and far less clearly -- an uncaught ``KeyError`` inside ``_downgrade``/
+    ``_upgrade`` the next time any Treat/Break Treat order touches this
+    same pair.
     """
+
+    if relation not in _RELATION_RANK:
+        raise ValueError(
+            f"{relation} isn't one of the {len(_RELATION_RANK)} relations this project currently models "
+            "(TEAMED support is deliberately deferred -- see module docstring)"
+        )
 
     pair = frozenset({kingdom_a, kingdom_b})
     state.diplomatic_relations[pair] = relation

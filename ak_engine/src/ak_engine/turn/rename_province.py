@@ -43,17 +43,26 @@ to 2 starting leaders (`LeaderState.name` is already a free-form string
 field, so no new modeling is needed for that half -- it's a plain
 assignment a caller can already do directly).
 
-**Confirmed out of scope for this phase, not guessed at**: `Read_T1Names`
-reads from `miscfile`, a *separate* input stream from the `AK3__T*.K1`
-move files this project's own `parser/k1_moves.py` already handles --
-no sample of `miscfile`'s own format exists anywhere in this project's
-data, and nothing in the available archive documents it further. This
-module therefore only implements the *mechanism* (given an
-already-known new name, apply it) -- not a parser that could trigger it
-from a real submitted file. Wiring a real trigger is blocked on finding
-or acquiring real `miscfile`-format sample data; until then, callers
-supply the new name directly, the same "caller supplies what state/
-parsing can't determine" convention `report/turn_report.py`'s own
+**Stale as of Phase 1192 -- not actually blocked on missing sample
+data.** This used to say `Read_T1Names` reads from `miscfile`, "a
+*separate* input stream from the `AK3__T*.K1` move files this project's
+own `parser/k1_moves.py` already handles -- no sample of `miscfile`'s
+own format exists anywhere." That's false: `models/kingdom.py
+KingdomMoveHeader`'s own docstring quotes the identical `miscfile`
+handle from `Write_Moves`/`Read_Moves` -- it's simply the real Pascal
+file handle for the `.K1` move file itself (the same header line
+`sex interp_vers allreq brreq kacct kpmode kprevgold ksendmeth`
+`k1_moves.py` already decodes), not an unseen second format. The real
+remaining gap is narrower: `Read_T1Names`'s own 3-entry rename block
+(`ndex=1..3`) sits somewhere in that same already-parsed `.K1` byte
+stream, at a position `k1_moves.py`'s own parser doesn't currently
+locate or decode -- finding exactly where (re-reading `DEF2.PAS`'s
+`R_HPlan`/`Read_Moves` sequencing around where this block falls) is the
+real next step, not acquiring a new file format. This module still only
+implements the *mechanism* (given an already-known new name, apply it)
+-- not a parser that triggers it from a real submitted file -- callers
+supply the new name directly for now, the same "caller supplies what
+state/parsing can't determine" convention `report/turn_report.py`'s own
 `describe_*` composers already establish.
 
 **Phase 152 addendum**: ``assign_province_name`` below covers the other

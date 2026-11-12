@@ -1727,13 +1727,14 @@ class GameState:
     # *current* ``is_allied()`` status.
     diplomatic_relations_since: dict[frozenset[int], int] = field(default_factory=dict)
     # Phase 1026 -- RULES.AK [8.3]'s own Break Treat order, directed
-    # ``(issuing_kingdom_id, target_kingdom_id)`` -- same "no real
-    # order-file shape ever seen, populated directly by the caller"
-    # category as ``treat_permissions`` right above (a mutual Treat order
-    # is already read from ``treat_permissions`` itself, see
-    # ``turn/diplomacy.py``'s own module docstring for why a second,
-    # parallel Treat-order field was not added here). Turn-scoped, same
-    # as ``treat_permissions``: cleared by ``turn/turn_processor.py
+    # ``(issuing_kingdom_id, target_kingdom_id)``, populated directly by
+    # the caller rather than decoded from a move file (same as
+    # ``treat_permissions`` right above -- see that field's own Phase
+    # 1192 note on why a real decoder exists but isn't wired in yet; a
+    # mutual Treat order is already read from ``treat_permissions``
+    # itself, see ``turn/diplomacy.py``'s own module docstring for why a
+    # second, parallel Treat-order field was not added here). Turn-scoped,
+    # same as ``treat_permissions``: cleared by ``turn/turn_processor.py
     # _replenish_turn_scoped_state()``.
     break_treat_orders: set[tuple[int, int]] = field(default_factory=set)
     # Phase 261: RULES.AK [3.4] "In order for you to Recruit in your
@@ -1742,11 +1743,14 @@ class GameState:
     # separate from the alliance relationship itself: the territory
     # *owner* grants a specific recruiter permission to recruit there
     # this gameturn. Pairs are ``(owner_kingdom_id, recruiter_kingdom_id)``.
-    # No parser/decoder exists for a Treat order anywhere in this project
-    # (same "no real order-file shape ever seen" category as Break Treaty
-    # and Call-For-Vote -- see turn/emperor_election.py's own docstring),
-    # so this is populated directly by the caller, not decoded from a
-    # move file. **Phase 874**: cleared at the end of every `run_turn()`
+    # **Stale as of Phase 1192** -- this used to say no parser/decoder
+    # for a Treat order exists anywhere in this project; that was already
+    # false when written. `models/kingdom.py KingdomMoveHeader.allreq`
+    # (Phase 920, earlier) is exactly that decoder, confirmed-decoded and
+    # cross-validated against real sample data -- see that property's own
+    # docstring. It's real and correct, just never wired into this field;
+    # this is still populated directly by the caller, not decoded from a
+    # move file, pending that follow-up. **Phase 874**: cleared at the end of every `run_turn()`
     # call by `turn/turn_processor.py _replenish_turn_scoped_state()`,
     # same as `recruited_this_turn`/`ArmyState.movement_points` -- the
     # rulebook's own quoted text above ("issue a 'Treat' order... this

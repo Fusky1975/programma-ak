@@ -68,15 +68,18 @@ province slows an army down" text never mentioning a fight as a
 precondition -- now applies correctly here too, since it reads this
 same ``conquered`` fact regardless of path.
 
-Still out of scope: ``turn/contested_province.py``'s other two functions
--- ``attacker_can_force_rebattle``/``contested_battle_movement_cost`` --
-since automatically forcing a rebattle "in the next phase" without a new
-player order needs a caller that tracks state across phases for a given
-province. ``turn/turn_processor.py run_turn()`` (Phase 45) *is* now a
-genuinely phase-by-phase, multi-leader orchestrator -- the structural
-gap this note used to point at -- but it doesn't wire this specific
-mechanic in yet either; see that module's own docstring for what it
-does wire in (Multiple Contingents) and what's still deferred.
+**Stale as of Phase 55 -- the forced-rebattle mechanic this paragraph
+used to call "still out of scope" has in fact been wired in since
+then.** Automatically forcing a rebattle "in the next phase" without a
+new player order needs a caller that tracks state across phases for a
+given province -- ``turn/turn_processor.py run_turn()``'s own
+``_dispatch_contested_rebattles()`` (that function's own docstring) is
+exactly that caller, consuming ``turn/contested_province.py``'s
+``attacker_can_force_rebattle()`` directly and reached from ``run_
+turn()``'s own phase loop at every phase boundary after the first; not
+this module's own concern at all, since a mover already past their
+first LMOVE phase here isn't re-decoding a fresh Move order for the
+rebattle.
 
 **Chasing a non-adjacent target (Phase 85, rulebook [3.1])**: when
 ``target`` isn't adjacent to the mover's own ``current`` location,

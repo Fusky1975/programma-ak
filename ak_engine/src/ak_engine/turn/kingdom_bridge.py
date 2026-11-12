@@ -80,13 +80,22 @@ matched Hero's ``kingdom_id`` is set even when it's currently ``None``
 in ``state.leaders`` -- e.g. an independent Hero later Hired, or a Hero
 who simply never appeared in a submitted move file before -- something
 the K1-based sync alone could never populate.
+
+**Phase 1193: the real call site is ``webapp/app.py turns_sync_world_
+leaders()``** -- a GM-facing world-file upload on the Turn Cycle page,
+reachable independently of turn processing itself (a GM applies a
+fresher world-file snapshot whenever one becomes available, not only
+once per turn), parsing the upload with ``parser/gw_world.py parse_gw_
+leaders()`` and showing the GM a plain-English summary of how many
+leaders were synced/unmatched. Previously this function, and the GW-
+world-file parsing subsystem generally, had zero production callers.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ak_engine.models.game_state import GameState
+from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.kingdom import Kingdom
 from ak_engine.parser.gw_world import GWLeaderRecord
 
@@ -145,13 +154,32 @@ def sync_leaders_from_gw_world(records: list[GWLeaderRecord], state: GameState) 
     ``kingdom_id`` from ``record.kingdom_id`` -- for a matched King
     record, ``kingdom_id`` is left untouched (see ``GWLeaderRecord``'s
     own docstring for why a King's own record can't supply it here).
+
+    **Phase 1192 bug fix**: matching used to build one *global*,
+    cross-Kingdom ``name -> LeaderState`` index, so two different
+    ``LeaderState``s anywhere in the game sharing the same ``.name``
+    (plausible with generic Hero names reused across Kingdoms, and a
+    ``GWLeaderRecord`` carries no ``leader_id`` of its own to disambiguate
+    with -- see that dataclass's own docstring) silently collapsed onto
+    whichever one a plain dict comprehension happened to keep last --
+    misattributing a record's own race/alignment/temper/skills/kingdom_id
+    to the wrong leader with no error reported at all (``report.not_
+    found_names`` stayed empty, since the name genuinely *was* found,
+    just ambiguously). A name matching more than one current ``LeaderState``
+    is now treated the same as matching none -- reported in ``not_found_
+    names`` rather than guessed -- the same "never a silent guess"
+    discipline this project applies everywhere else.
     """
 
     report = GWKingdomBridgeReport()
-    by_name = {leader.name: leader for leader in state.leaders.values()}
+    name_counts: dict[str, int] = {}
+    by_name: dict[str, LeaderState] = {}
+    for leader in state.leaders.values():
+        name_counts[leader.name] = name_counts.get(leader.name, 0) + 1
+        by_name[leader.name] = leader
 
     for record in records:
-        leader_state = by_name.get(record.name)
+        leader_state = by_name.get(record.name) if name_counts.get(record.name, 0) == 1 else None
         if leader_state is None:
             report.not_found_names.append(record.name)
             continue

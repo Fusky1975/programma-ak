@@ -297,7 +297,6 @@ from ak_engine.turn.expenses import apply_turn_maintenance
 from ak_engine.turn.contested_province import (
     IllegalMoveFromContestedError,
     attacker_can_force_rebattle,
-    contested_battle_movement_cost,
     is_illegal_move_from_contested,
 )
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
@@ -2063,8 +2062,19 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
         if not attacker_can_force_rebattle(movement_by_army):
             continue  # "both armies will encamp" -- no more auto-rebattles this turn
 
+        # Phase 1192 bug fix: this used to be a bare `not state.is_allied(...)`
+        # check, missing diplomacy.py is_attackable_at()'s own [8.1]
+        # "triangle" rule -- an army physically present can still be
+        # shielded from this attacker because the *province's owner* (a
+        # third Kingdom) is Allied with the attacker, not just because
+        # the army's own Kingdom is. Without this, a province could stay
+        # "contested" with no genuinely attackable defender actually
+        # present, and fight_battle()'s own correct is_attackable_at()-
+        # based defender derivation below would then find zero real
+        # defenders and raise -- uncaught here, unlike the per-leader
+        # dispatch paths (see module docstring's own Phase 1041 note).
         defenders_present = any(
-            army.kingdom_id is not None and not state.is_allied(army.kingdom_id, attacker_kingdom_id)
+            army.kingdom_id is not None and is_attackable_at(state, army.kingdom_id, attacker_kingdom_id, province)
             for army in armies_here
         )
         if not defenders_present:
@@ -2082,16 +2092,39 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
         # Phase 736: snapshot army types before fight_battle() removes
         # any of them -- see move_execution.py's own identical note.
         army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
-        report = fight_battle(
-            state,
-            attacker_kingdom_id,
-            coord,
-            army_ids,
-            attacker_origin=province.contested_from_coord,
-            apply_fanaticism=True,
-            use_real_duel_combat=True,
-            rng=rng,
-        )
+        # Phase 1192 bug fix: isolate one contested province's own
+        # fight_battle() failure from poisoning every other contested
+        # province's own already-computed result this same call -- the
+        # same "one bad entity shouldn't discard the whole batch" fix
+        # Phase 1041 already applied to the other grouped dispatch loops
+        # a few hundred lines above. The defenders_present fix just above
+        # already prevents the one known real trigger (a stale "ally
+        # shields every army here" gap), but this keeps that guarantee
+        # even if some other, not-yet-identified edge case lets
+        # fight_battle() raise.
+        try:
+            report = fight_battle(
+                state,
+                attacker_kingdom_id,
+                coord,
+                army_ids,
+                attacker_origin=province.contested_from_coord,
+                apply_fanaticism=True,
+                use_real_duel_combat=True,
+                rng=rng,
+            )
+        except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
+            results.append(
+                PhaseDispatchResult(
+                    leader_id=0,
+                    segment_index=-1,
+                    phase_label="forced-rebattle",
+                    action=None,
+                    result=None,
+                    error=exc,
+                )
+            )
+            continue
         # Phase 716: the cargo sinks with the carrier.
         apply_battle_carrier_destruction(
             state,
@@ -2102,7 +2135,13 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
             army_types_before_battle=army_types_before_battle,
         )
 
-        cost = contested_battle_movement_cost(conquered=report.conquered)
+        # Phase 1192 bug fix: a battle has unconditionally just occurred
+        # above, so the real [7.7] extra-movement-point trigger always
+        # applies here (Phase 915, turn/conquest.py's own docstring) --
+        # reuse that shared, already-corrected formula directly instead
+        # of the removed contested_battle_movement_cost()'s stale
+        # "conquered-only" reading.
+        cost = movement_cost_for_move(battle_occurred=True, conquered=report.conquered)
         for army_id in army_ids:
             army = state.armies.get(army_id)
             if army is not None:

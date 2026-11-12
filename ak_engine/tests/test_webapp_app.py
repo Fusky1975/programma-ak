@@ -4469,6 +4469,96 @@ def test_leader_edit_shows_the_status_and_guild_effects_panel(tmp_path):
     assert b"Status &amp; Guild Effects" in response.data
 
 
+def test_leader_edit_shows_the_finalize_royal_heir_panel_only_for_a_royal_heir(tmp_path):
+    # Phase 1193: the real call site turn/succession.py create_king()
+    # previously had none of.
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+    assert response.status_code == 200
+    assert b"Finalize Royal Heir Into New King" not in response.data
+
+    client.post(f"/games/{meta.slug}/leaders/1/status", data={"is_royal_heir": "on"})
+    response = client.get(f"/games/{meta.slug}/leaders/1")
+    assert response.status_code == 200
+    assert b"Finalize Royal Heir Into New King" in response.data
+
+
+def test_leader_finalize_royal_heir_creates_a_new_king(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(f"/games/{meta.slug}/leaders/1/status", data={"is_royal_heir": "on"})
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/finalize-heir",
+        data={
+            "name": "Aldric II",
+            "temper": "BERSERK",
+            "sex": "MALE",
+            "heir_talent_MELEE": "2",
+            "heir_talent_ARCHERY": "2",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    _, state = open_game(tmp_path, meta.slug)
+    king = state.leaders[1]
+    assert king.is_royal_heir is False
+    assert king.name == "Aldric II"
+    assert king.temper == Temper.BERSERK
+    assert king.sex == Sex.MALE
+    assert king.skills is not None
+    # Royal training bonus (+1) on top of the 2 player-chosen points.
+    assert king.skills.pair_for_ability(Ability.MELEE)[0] == 3
+    assert king.skills.pair_for_ability(Ability.ARCHERY)[0] == 3
+
+
+def test_leader_finalize_royal_heir_rejects_a_bad_point_total(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    client.post(f"/games/{meta.slug}/leaders/1/status", data={"is_royal_heir": "on"})
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/finalize-heir",
+        data={
+            "name": "Aldric II",
+            "temper": "BERSERK",
+            "sex": "MALE",
+            "heir_talent_MELEE": "1",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"must assign exactly" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[1].is_royal_heir is True  # untouched
+
+
+def test_leader_finalize_royal_heir_requires_an_actual_royal_heir(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)  # leader 1's own is_royal_heir is False
+
+    response = client.post(
+        f"/games/{meta.slug}/leaders/1/finalize-heir",
+        data={
+            "name": "Aldric II",
+            "temper": "BERSERK",
+            "sex": "MALE",
+            "heir_talent_MELEE": "2",
+            "heir_talent_ARCHERY": "2",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"isn&#39;t an unfinalized Royal Heir" in response.data or b"isn't an unfinalized Royal Heir" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    assert state.leaders[1].name != "Aldric II"
+
+
 def test_leader_delete_removes_a_hero(tmp_path):
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
@@ -8721,6 +8811,84 @@ def test_turns_upload_missing_game_shows_an_error_not_a_crash(tmp_path):
     client = _client(tmp_path)
 
     response = _upload_move_file(client, "does-not-exist", "AK3__T1.K1")
+
+    assert response.status_code == 200
+    assert b"Game not found" in response.data
+
+
+_GW_WORLD_FIXTURE = Path(__file__).parent / "fixtures" / "world" / "G3" / "GW3__T1"
+
+
+def test_turns_sync_world_leaders_updates_matched_leaders(tmp_path):
+    # Phase 1193: the real call site turn/kingdom_bridge.py
+    # sync_leaders_from_gw_world() previously had none of. "Bradipo I"
+    # is a real King name in the GW3__T1 fixture (also used directly in
+    # tests/test_kingdom_bridge.py) -- this project's own seeded test
+    # world never produces that exact name, so a leader matching it has
+    # to be added by hand to exercise a real, successful match here.
+    from ak_engine.models.game_state import LeaderState
+
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+    _, state = open_game(tmp_path, meta.slug)
+    state.add_leader(LeaderState(100, kingdom_id=1, name="Bradipo I", location=state.leaders[1].location))
+    save_game(tmp_path, meta.slug, state)
+
+    response = client.post(
+        f"/games/{meta.slug}/turns/sync-world-leaders",
+        data={"world_file": (BytesIO(_GW_WORLD_FIXTURE.read_bytes()), "GW3__T1")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Synced" in response.data
+    _, state = open_game(tmp_path, meta.slug)
+    bradipo = state.leaders[100]
+    assert bradipo.race is not None
+    assert bradipo.alignment is not None
+    assert bradipo.skills is not None
+
+
+def test_turns_sync_world_leaders_with_no_file_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/turns/sync-world-leaders",
+        data={},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Please choose a world file" in response.data
+
+
+def test_turns_sync_world_leaders_with_unrecognizable_content_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+    meta = _game_with_world(tmp_path, client)
+
+    response = client.post(
+        f"/games/{meta.slug}/turns/sync-world-leaders",
+        data={"world_file": (BytesIO(b"not a real world file at all"), "garbage.txt")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"no recognizable King/Hero records" in response.data
+
+
+def test_turns_sync_world_leaders_missing_game_shows_an_error_not_a_crash(tmp_path):
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/games/does-not-exist/turns/sync-world-leaders",
+        data={"world_file": (BytesIO(_GW_WORLD_FIXTURE.read_bytes()), "GW3__T1")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
 
     assert response.status_code == 200
     assert b"Game not found" in response.data

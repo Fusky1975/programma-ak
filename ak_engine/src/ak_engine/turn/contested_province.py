@@ -23,6 +23,19 @@ turn_processor.py _dispatch_contested_rebattles()`` to decide whether a
 still-eligible attacker forces another battle next phase. **Stale as of
 Phase 409** -- this paragraph used to say no such persistent state
 existed anywhere in the project; it has, for a while.
+
+**Phase 1192 bug fix -- ``contested_battle_movement_cost()`` removed.**
+It used to implement its own, pre-Phase-915 "extra point only if
+conquered" reading of [7.7]'s movement-cost rule, duplicating (and never
+receiving) the real fix ``turn/conquest.py movement_cost_for_move()``
+got: a battle merely taking place, win or lose, owes the same single
+extra point as a conquest does -- see that module's own Phase 915
+docstring. Since this module's own real caller (``_dispatch_contested_
+rebattles()``) only ever computes this cost *after* unconditionally
+calling ``fight_battle()``, a battle has always just occurred there, so
+the correct, shared formula is simply ``movement_cost_for_move(battle_
+occurred=True, conquered=...)`` -- reused directly rather than
+reimplemented a second time as its own always-2 constant.
 """
 
 from __future__ import annotations
@@ -60,8 +73,3 @@ def is_illegal_move_from_contested(origin_is_contested: bool, target_owner_is_en
     return origin_is_contested and target_owner_is_enemy
 
 
-def contested_battle_movement_cost(*, conquered: bool) -> int:
-    """"your armies will use up a movement point to fight a battle... If the
-    province is conquered, the attacker uses another movement point." """
-
-    return 2 if conquered else 1

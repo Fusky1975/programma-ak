@@ -15,6 +15,7 @@ of English reports would be its own, needless inconsistency.
 from __future__ import annotations
 
 import random
+import tempfile
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, url_for
@@ -71,8 +72,10 @@ from ak_engine.webapp.players import (
     list_players,
     remove_player,
 )
-from ak_engine.parser.gw_world import DiplomaticRelation
+from ak_engine.parser.gw_world import DiplomaticRelation, parse_gw_leaders
 from ak_engine.turn.diplomacy import set_relation
+from ak_engine.turn.kingdom_bridge import sync_leaders_from_gw_world
+from ak_engine.turn.succession import create_king
 from ak_engine.turn.encounter import MonsterTalkReply
 from ak_engine.turn.exploration import FIND_MINES_TAX_CAP
 from ak_engine.turn.plan_dispatch import SUPPORTED_ACTIONS
@@ -2011,6 +2014,55 @@ def create_app(games_root: Path | None = None) -> Flask:
         save_game(root, slug, state)
         return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
 
+    @app.post("/games/<slug>/leaders/<int:leader_id>/finalize-heir")
+    def leader_finalize_royal_heir(slug: str, leader_id: int):
+        # Phase 1193: the real call site turn/succession.py create_king()
+        # previously had none of -- see that module's own Phase 1193
+        # addendum.
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        leader = state.leaders.get(leader_id)
+        if leader is None:
+            return redirect(url_for("leaders_list", slug=slug, error="Hero not found."))
+
+        def _edit_error(message: str):
+            return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id, error=message))
+
+        if not leader.is_royal_heir:
+            return _edit_error("This Hero/King isn't an unfinalized Royal Heir.")
+
+        name = request.form.get("name", "").strip()
+        if not name:
+            return _edit_error("Please enter the new King's name.")
+        try:
+            temper = Temper[request.form.get("temper", "")]
+        except KeyError:
+            return _edit_error("Please choose a valid Temper.")
+        try:
+            sex = Sex[request.form.get("sex", "")]
+        except KeyError:
+            return _edit_error("Please choose a valid Sex.")
+
+        skill_points: dict[Ability, int] = {}
+        for ability in Ability:
+            raw_points = request.form.get(f"heir_talent_{ability.name}", "0").strip()
+            try:
+                points = int(raw_points) if raw_points else 0
+            except ValueError:
+                return _edit_error("Talent points must be whole numbers.")
+            if points:
+                skill_points[ability] = points
+
+        result = create_king(state, leader_id, name=name, temper=temper, sex=sex, skill_points=skill_points)
+        if not result.applied:
+            return _edit_error(result.reason or "Couldn't finalize this Royal Heir.")
+
+        save_game(root, slug, state)
+        return redirect(url_for("leader_edit", slug=slug, leader_id=leader_id))
+
     @app.post("/games/<slug>/leaders/<int:leader_id>/delete")
     def leader_delete(slug: str, leader_id: int):
         root: Path = app.config["GAMES_ROOT"]
@@ -2921,6 +2973,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             uploads=uploads,
             processed_turns=processed_turn_numbers(directory),
             error=request.args.get("error"),
+            gw_sync_result=request.args.get("gw_sync_result"),
         )
 
     @app.get("/games/<slug>/turns/diplomacy")
@@ -3024,6 +3077,51 @@ def create_app(games_root: Path | None = None) -> Flask:
         except InvalidMoveFileError as exc:
             return redirect(url_for("turns_hub", slug=slug, error=f"{upload.filename}: not a valid move file ({exc})."))
         return redirect(url_for("turns_hub", slug=slug))
+
+    @app.post("/games/<slug>/turns/sync-world-leaders")
+    def turns_sync_world_leaders(slug: str):
+        # Phase 1193: the real call site turn/kingdom_bridge.py
+        # sync_leaders_from_gw_world() previously had none of -- see
+        # that module's own Phase 1193 addendum. Unlike a move file
+        # (turns_upload() above), a world file isn't tied to any one
+        # turn's own upload slot -- it's a point-in-time snapshot the GM
+        # applies whenever they have a fresher one, so nothing is kept
+        # on disk after parsing (unlike move files, which stay uploaded
+        # for turns_process() to consume later).
+        root: Path = app.config["GAMES_ROOT"]
+        try:
+            _, state = open_game(root, slug)
+        except GameNotFoundError:
+            return redirect(url_for("games_list", error="Game not found."))
+        upload = request.files.get("world_file")
+        if upload is None or not upload.filename:
+            return redirect(url_for("turns_hub", slug=slug, error="Please choose a world file to upload."))
+
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp.write(upload.read())
+                tmp_path = Path(tmp.name)
+            records = parse_gw_leaders(tmp_path)
+        finally:
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
+
+        if not records:
+            return redirect(
+                url_for(
+                    "turns_hub", slug=slug, error=f"{upload.filename}: no recognizable King/Hero records found in this file."
+                )
+            )
+
+        report = sync_leaders_from_gw_world(records, state)
+        save_game(root, slug, state)
+        summary = (
+            f"Synced {len(report.synced_names)} leader(s) from the world file "
+            f"({len(report.kingdom_id_set_for_names)} Kingdom assignment(s) updated); "
+            f"{len(report.not_found_names)} name(s) had no matching Hero/King in this game."
+        )
+        return redirect(url_for("turns_hub", slug=slug, gw_sync_result=summary))
 
     @app.post("/games/<slug>/turns/<int:kingdom_id>/remove")
     def turns_remove_upload(slug: str, kingdom_id: int):

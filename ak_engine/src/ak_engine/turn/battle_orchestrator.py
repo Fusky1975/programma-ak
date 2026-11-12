@@ -3481,7 +3481,7 @@ def fight_multi_attacker_battle(
             # only inside `if armies and needs_conquest`). turn_
             # processor.py's own caller reads this same flag straight
             # into its movement-cost calculation
-            # (`contested_battle_movement_cost(conquered=...)`) and into
+            # (`movement_cost_for_move(battle_occurred=True, conquered=...)`) and into
             # world-event/report narration, so a second, friendly group
             # arriving at a province an earlier group in this same call
             # already conquered -- needs_conquest correctly False, no

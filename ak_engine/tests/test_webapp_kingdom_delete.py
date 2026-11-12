@@ -121,6 +121,15 @@ def test_delete_kingdom_cleans_every_pairwise_diplomacy_collection():
     state.kingdoms_met_since = {frozenset({1, 2}): 1, frozenset({2, 3}): 2}
     state.treat_permissions = {(1, 2), (2, 3)}
     state.break_treat_orders = {(1, 2), (3, 2)}
+    # Phase 1192 bug fix: these two predate this module and were missed.
+    state.pending_treat_transitions = {
+        frozenset({1, 2}): (DiplomaticRelation.NEUTRAL, DiplomaticRelation.ALLIED),
+        frozenset({2, 3}): (DiplomaticRelation.NEUTRAL, DiplomaticRelation.ALLIED),
+    }
+    state.pending_break_treat_transitions = {
+        frozenset({1, 2}): (DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL),
+        frozenset({2, 3}): (DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL),
+    }
 
     delete_kingdom(state, 1)
 
@@ -131,6 +140,10 @@ def test_delete_kingdom_cleans_every_pairwise_diplomacy_collection():
     assert state.kingdoms_met_since == {frozenset({2, 3}): 2}
     assert state.treat_permissions == {(2, 3)}
     assert state.break_treat_orders == {(3, 2)}
+    assert state.pending_treat_transitions == {frozenset({2, 3}): (DiplomaticRelation.NEUTRAL, DiplomaticRelation.ALLIED)}
+    assert state.pending_break_treat_transitions == {
+        frozenset({2, 3}): (DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL)
+    }
 
 
 def test_delete_kingdom_refuses_the_crowned_emperor():

@@ -64,6 +64,18 @@
   </form>
 </div>
 
+<div class="panel" style="border-left: 6px solid var(--phase-turns);">
+  <h2>Sync Leaders from World File</h2>
+  <p class="hex-map-legend-note">Enriches every existing Hero/King in this game with real race/alignment/temper/skills from a world file (<code>GW3__T{{ state.turn_number }}</code>-style) -- including idle Heroes who never submitted a move file, and real <code>kingdom_id</code> corrections for independent/Hired Heroes. Matched by name; a Hero never matched here isn't created, only reported. Never creates new Heroes, never touches a King's own <code>kingdom_id</code>.</p>
+  {% if gw_sync_result %}
+    <p class="status-ok">{{ gw_sync_result }}</p>
+  {% endif %}
+  <form class="inline" method="post" action="{{ url_for('turns_sync_world_leaders', slug=meta.slug) }}" enctype="multipart/form-data">
+    <input type="file" name="world_file" required>
+    <button type="submit">Sync from World File</button>
+  </form>
+</div>
+
 {% if processed_turns %}
 <div class="panel" style="border-left: 6px solid var(--phase-turns);">
   <h2>Past Turn Reports</h2>

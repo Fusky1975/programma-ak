@@ -37,11 +37,16 @@ of those four reference shapes dangling:
 - Every pairwise diplomacy/contact collection keyed by this Kingdom's
   id -- ``allied_kingdoms``, ``diplomatic_relations``/``_since``,
   ``kingdoms_met``/``_since``, ``treat_permissions``, ``break_treat_
-  orders`` -- has every entry naming this Kingdom removed. ``turn/
-  emperor_election.py _alliance_component()``'s own real BFS over
-  ``allied_kingdoms`` is the one confirmed live consumer that would
-  otherwise hand a stale id back to a caller that *does* bracket-index
-  ``state.kingdoms[...]`` with it.
+  orders``, and (Phase 1192 bug fix -- these two predate this module
+  and were missed) ``pending_break_treat_transitions``/``pending_
+  treat_transitions`` -- has every entry naming this Kingdom removed.
+  ``turn/emperor_election.py _alliance_component()``'s own real BFS
+  over ``allied_kingdoms`` is the one confirmed live consumer that
+  would otherwise hand a stale id back to a caller that *does*
+  bracket-index ``state.kingdoms[...]`` with it; ``turn/diplomacy.py
+  advance_pending_diplomacy()`` is the one that would otherwise write
+  a stale id straight back into ``allied_kingdoms``/``diplomatic_
+  relations`` next turn via ``set_relation()``, undoing this cleanup.
 
 Refuses outright (``KingdomHasEmperorError``) rather than silently
 un-crowning when this Kingdom currently holds ``GameState.emperor_
@@ -96,6 +101,19 @@ def delete_kingdom(state: GameState, kingdom_id: int) -> None:
     }
     state.break_treat_orders = {
         (a, b) for a, b in state.break_treat_orders if kingdom_id not in (a, b)
+    }
+    # Phase 1192 bug fix: these two (turn/diplomacy.py's own Phase 1026
+    # additions) predate this module and were never added to the
+    # cleanup list above -- without this, a pending transition naming a
+    # just-deleted Kingdom would survive to next turn's own
+    # advance_pending_diplomacy() call, which writes its id straight
+    # back into allied_kingdoms/diplomatic_relations via set_relation(),
+    # resurrecting exactly the stale id this function exists to prevent.
+    state.pending_break_treat_transitions = {
+        pair: transition for pair, transition in state.pending_break_treat_transitions.items() if kingdom_id not in pair
+    }
+    state.pending_treat_transitions = {
+        pair: transition for pair, transition in state.pending_treat_transitions.items() if kingdom_id not in pair
     }
 
     del state.kingdoms[kingdom_id]

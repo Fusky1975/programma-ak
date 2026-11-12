@@ -156,7 +156,7 @@
 
     <p>
       <label><input type="checkbox" name="is_royal_heir" {% if leader.is_royal_heir %}checked{% endif %}> Unfinalized Royal Heir</label>
-      <br><span class="hex-map-legend-note">Set automatically on a King's death until the Heir is finalized into a real King; Resurrection eligibility is actually decided by total skill level, not this flag alone.</span>
+      <br><span class="hex-map-legend-note">Set automatically on a King's death until the Heir is finalized into a real King (see "Finalize Royal Heir" below); Resurrection eligibility is actually decided by total skill level, not this flag alone.</span>
     </p>
 
     <p>
@@ -213,6 +213,59 @@
     <button type="submit">Save Status &amp; Guild Effects</button>
   </form>
 </div>
+
+{% if leader.is_royal_heir %}
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Finalize Royal Heir</h2>
+  <p class="hex-map-legend-note">Rulebook [2.1]: this Heir was installed automatically when the previous King died, and needs a name, Temper, Sex, and a fresh 4-point Talent allocation (at most 2 points per Ability) to become a real new King. Race and Alignment aren't re-chosen -- they already carry forward from the dead King. At most 1 Talent may end up above the dead King's own preserved skill in that same Ability, and then by at most 1 level -- the "dead_king_skill" column below (when a snapshot exists) is this leader's own preserved skill at death, for reference while choosing points, not an input.</p>
+  <form method="post" action="{{ url_for('leader_finalize_royal_heir', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <p>
+      <label for="heir_name">New King's Name</label><br>
+      <input type="text" id="heir_name" name="name" required>
+    </p>
+
+    <p>
+      <label for="heir_temper">Temper</label><br>
+      <select id="heir_temper" name="temper" required>
+        {% for temper in tempers %}
+          <option value="{{ temper.name }}">{{ temper|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="heir_sex">Sex</label><br>
+      <select id="heir_sex" name="sex" required>
+        {% for sex in sexes %}
+          <option value="{{ sex.name }}">{{ sex|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Ability</th>
+          <th>Talent Points (0-2)</th>
+          <th>Dead King's Own Preserved Skill</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set dead_king = state.dead_leaders.get(leader.leader_id) %}
+        {% for ability in skill_abilities %}
+          <tr>
+            <td>{{ ability|display_name }}</td>
+            <td><input type="number" name="heir_talent_{{ ability.name }}" value="0" min="0" max="2" style="width: 4em;"></td>
+            <td>{{ dead_king.skills.pair_for_ability(ability)[0] if dead_king and dead_king.skills else '--' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <button type="submit">Finalize Royal Heir Into New King</button>
+  </form>
+</div>
+{% endif %}
 
 <div class="panel" style="border-left: 6px solid var(--phase-editor);">
   <h2>Items Held</h2>

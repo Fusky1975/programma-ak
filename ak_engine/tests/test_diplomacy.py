@@ -5,12 +5,14 @@ each branch below is sourced from.
 
 from __future__ import annotations
 
+import pytest
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.game_state import GameState, KingdomState, ProvinceState
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.parser.gw_world import DiplomaticRelation
-from ak_engine.turn.diplomacy import advance_pending_diplomacy, apply_treat_orders, is_attackable_at
+from ak_engine.turn.diplomacy import advance_pending_diplomacy, apply_treat_orders, is_attackable_at, set_relation
 
 HOME_A = HexCoord(0, 0)
 HOME_B = HexCoord(1, 0)
@@ -31,6 +33,20 @@ def test_all_kings_start_neutral():
 def test_self_relation_is_always_allied():
     state = _state()
     assert state.diplomatic_relation(1, 1) is DiplomaticRelation.ALLIED
+
+
+def test_set_relation_rejects_teamed():
+    # Phase 1192 bug fix: TEAMED support is deliberately deferred (module
+    # docstring) -- set_relation() must reject it itself, the shared
+    # primitive, rather than relying on every caller to repeat the same
+    # check (and silently writing it would only crash much later and far
+    # less clearly, inside _downgrade()/_upgrade()).
+    state = _state()
+
+    with pytest.raises(ValueError):
+        set_relation(state, 1, 2, DiplomaticRelation.TEAMED)
+
+    assert state.diplomatic_relation(1, 2) is DiplomaticRelation.NEUTRAL  # untouched
 
 
 def test_mutual_treat_upgrades_neutral_to_allied_only_once_promoted_next_turn():
