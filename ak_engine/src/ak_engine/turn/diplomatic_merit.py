@@ -83,10 +83,12 @@ def apply_diplomatic_merit(
         for partner_id in kingdom_ids:
             if partner_id == receiver_id:
                 continue
-            if not state.is_allied(receiver_id, partner_id):
-                continue
 
-            king.merit_tally.diplomatic_merit_points += 1
+            # Phase 1191 bug fix: A and B are independent per-partner terms
+            # (module docstring) -- B must still apply to a non-allied but
+            # adjacent partner, not only when A also applies.
+            if state.is_allied(receiver_id, partner_id):
+                king.merit_tally.diplomatic_merit_points += 1
 
             if _kingdoms_are_adjacent(state, receiver_id, partner_id, bounds):
                 king.merit_tally.diplomatic_merit_points += 2

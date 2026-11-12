@@ -85,13 +85,24 @@ OFFICE`) rather than one `if` branch per race, since all 11 share the
 exact same formula shape. Two things this generic loop does *not*
 handle on its own, both applied explicitly:
 
-- **These titles don't grant Victory Points** (see `turn/
-  race_titles.py`'s own module docstring) -- `models/office.py
-  OFFICE_VALUE` already reflects this correctly (real, non-zero
-  Phase-81-sourced values for all 11, describing a different in-game
-  effect than the 8 majors' own Victory Point share), so nothing
-  changes here; this module resolves *who holds the title*, not what
-  it's worth.
+- **Phase 1191 correction: these titles DO grant Victory Points**, same
+  as every other real Imperial Office -- `turn/victory_points.py
+  office_victory_points()` applies `OFFICE_VALUE[office] * (1-reduct)`
+  uniformly with no exclusion list, and `turn/final_standings.py
+  kingdom_points()` sums it over every office in `ALL_OFFICES`, which
+  includes all 11 race titles. (This module's own Phase 633 addendum,
+  below, already establishes this reading: it treats `ALL_OFFICES`'
+  sum as correct and complete for the 44 offices it does cover, fixing
+  only the 3 army-scoped titles' *absence* from that set -- not a
+  second, narrower exclusion for these 11.) The claim this replaced --
+  that `OFFICE_VALUE`'s own real, non-zero Phase-81-sourced values for
+  these 11 "describe a different in-game effect than the 8 majors' own
+  Victory Point share" -- predates Phase 439's real `Pray_Report`
+  formula being pinned down and was never revisited once that formula
+  confirmed every real Office (this project's own `OFFICE_VALUE`
+  included) banks real Victory Points uniformly; this module still
+  resolves *who holds the title*, not what it's worth -- that part was
+  always correct, only the VP-exclusion claim was wrong.
 - **The turn gate** ("questa carica entra in gioco alla fine del turno
   N") is an office-level cutoff, not a per-leader one -- `resolve_
   office_holder()` returns `None` outright for any of these 11 offices
@@ -116,9 +127,11 @@ built from turned out not to match the real compiled formulas. See
 for exactly what changed; this module's own dispatch shape (which
 branch calls which function) didn't need to change, only what each
 function computes. Like the 11 race titles and King of Pain/Prince of
-Thieves before them, none of these 8 grant Victory Points (`models/
-office.py OFFICE_VALUE` already reflects this, Phase 81), and none of
-the 6 alignment-King titles has a turn gate stated in the source --
+Thieves before them, these 8 DO grant Victory Points, same Phase 1191
+correction as above -- `models/office.py OFFICE_VALUE` (Phase 81) is
+their real per-office VP quota, not a different, VP-exempt figure --
+and none of the 6 alignment-King titles has a turn gate stated in the
+source --
 unlike the 11 race titles, no office-level cutoff is applied here.
 Each formula function already returns 0/None
 for an ineligible leader on its own (King-only, alignment-gated where
@@ -129,9 +142,10 @@ formula, not the loop" shape Phase 277 established.
 **Phase 379: 18 more leader-scoped royal titles join** (4 magic-school,
 6 terrain-King, Battle Fool, Curator, Teacher, Assassin, Duellist,
 Wingman, Cravenest, Bravest) -- one `if` branch each in `_leader_merit_
-points()`, same shape as Phase 368's 8. None of the 18 grant Victory
-Points and none is exempted from the death penalty (see `turn/merit_
-points.py`'s own Phase 379 addendum, which also explains why the
+points()`, same shape as Phase 368's 8. These 18 DO grant Victory
+Points too (Phase 1191 correction, same as the 11 race titles and the
+previous 8 above), and none is exempted from the death penalty (see
+`turn/merit_points.py`'s own Phase 379 addendum, which also explains why the
 remaining 3 titles the source names -- `AIR_FORCE`/`PRAETOR`/
 `FLAGSHIP` -- were deliberately **not** modeled there: they're
 army-scoped, not leader-scoped, and don't fit `OfficeHolder.leader_id`
@@ -567,10 +581,28 @@ def _ranking_candidates(state: GameState, office: Office) -> list[tuple[int, int
     already treats it: only a Kingdom's own King is a candidate, scored via
     `emperor_merit_points()` (Tax_Base-based), not `_leader_merit_points()`
     (which explicitly refuses Emperor).
+
+    **Phase 1191 bug fix**: this used to skip both real exclusions
+    `resolve_office_holder()` applies -- the Valhalla visitor (Phase 550:
+    never a genuine office candidate, however high their own Merit Points)
+    and the race-title turn gate (`RACE_TITLE_TURN_GATE`: the office
+    doesn't exist yet before it) -- so every ranking primitive built on
+    this function (`leader_office_rank`/`office_rival_best_points`/
+    `kingdom_best_candidate`/`kingdom_runner_up`) could surface the
+    visitor as a rival/best-candidate, or a race title before its own
+    gate turn, contradicting this function's own "ranking and 'who holds
+    it' stay consistent with each other" claim above.
     """
+
+    if office in _OFFICE_RACE:
+        turn_gate = RACE_TITLE_TURN_GATE[_OFFICE_RACE[office]]
+        if state.turn_number < turn_gate:
+            return []
 
     candidates: list[tuple[int, int | float]] = []
     for leader_id, leader in state.leaders.items():
+        if leader_id == VALHALLA_VISITOR_LEADER_ID:
+            continue
         if office is Office.EMPEROR:
             if not leader.is_king or leader.kingdom_id is None:
                 continue
@@ -786,12 +818,25 @@ def army_office_rank(state: GameState, office: Office, army_id: int) -> int:
     strictly outscore this one. Phase 668 -- see `describe_imperial_
     office_report()`'s own addendum for why this reuses the leader
     formula's exact shape against the army candidate pool instead.
+
+    **Phase 1191 bug fix**: raises a clear `ValueError`, not an opaque
+    `StopIteration`, when `army_id` doesn't itself qualify as a
+    candidate for `office` (wrong Quality/ArmyType, or no base-strength
+    data for its type) -- `_army_ranking_candidates()` silently drops
+    such armies, so the old bare `next()` with no default crashed
+    uninformatively instead of telling the caller why no rank exists.
+    Every real call site (`report/turn_report.py`) only ever passes the
+    office's own already-resolved holder, which is always a genuine
+    candidate by construction, so this never actually fires today --
+    it's a defensive fix for any future caller that doesn't guarantee
+    that.
     """
 
-    own_points = next(points for aid, points in _army_ranking_candidates(state, office) if aid == army_id)
-    betters = sum(
-        1 for other_id, points in _army_ranking_candidates(state, office) if other_id != army_id and points > own_points
-    )
+    candidates = _army_ranking_candidates(state, office)
+    own_points = next((points for aid, points in candidates if aid == army_id), None)
+    if own_points is None:
+        raise ValueError(f"army {army_id} is not itself a real candidate for {office}")
+    betters = sum(1 for other_id, points in candidates if other_id != army_id and points > own_points)
     return betters + 1
 
 

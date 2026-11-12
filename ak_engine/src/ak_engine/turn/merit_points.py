@@ -463,9 +463,11 @@ temperamento di quel Hero sale di un livello") is wired** (Phase 469):
 on the `Office.BRAVEST` holder issuing a `Maneuver.TALK` tactic against
 a Hero target.
 
-**None of these 18 grant Victory Points** (`models/office.py
-OFFICE_VALUE` already reflects this, Phase 81, same as every royal
-title before them) and **none is exempted from the death penalty**:
+**These 18 DO grant Victory Points** (Phase 1191 correction, same as
+every royal title before them -- `turn/office_holder.py`'s own module
+docstring has the full citation for why the earlier "none of these
+grant VP" reading didn't survive Phase 439's real `Pray_Report`
+formula) and **none is exempted from the death penalty**:
 `royal_title_system.death_rule` states plainly "the separate 25% death
 reduction documented for lgenp/ladmp/lmhpp is not generalized to
 Tit_Pts" -- confirming `MeritTally.apply_death_penalty()` (Phase 377)

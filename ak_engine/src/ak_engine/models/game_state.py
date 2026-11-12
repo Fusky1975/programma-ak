@@ -1955,6 +1955,23 @@ class GameState:
     # scheduled, cleared alongside it once tallied (see `process_
     # election_turn()`'s own Phase 778 addendum).
     election_pending_alignment_trigger: Alignment | None = None
+    # Phase 1191 bug fix, same lifecycle/rationale as `election_pending_
+    # alignment_trigger` immediately above: REPORTS.PAS:1937-1944's own
+    # `vote_perc` ("Kings owning X% of the world's tax base called for
+    # an election") is only ever computable correctly on the *request*
+    # turn, where each Kingdom's own `kprevgold` still holds a real
+    # election-request toggle (`KingdomMoveHeader.is_vote_turn()`). On
+    # the later *tally* turn, `kprevgold` instead holds the voted-for
+    # candidate's own King-index -- a completely different value range
+    # -- so recomputing this figure from that turn's own data (as a
+    # prior phase mistakenly did) silently reads back an empty "requesting"
+    # set and always yields `0`. Set alongside `election_pending_turn`/
+    # `election_pending_alignment_trigger` when a vote is scheduled (the
+    # value `turn/emperor_election.py evaluate_election_call()` already
+    # computed correctly that same turn), copied onto that later tally's
+    # own `ElectionResult.caller_percent` instead of being recomputed,
+    # and cleared alongside the other two once tallied.
+    election_pending_caller_percent: int = 0
     # GENERAL INTELLIGENCE REPORT's own raw material (Phase 231) -- see
     # WorldEvent's own docstring. Populated by a caller (``report/
     # turn_report.py record_battle_world_events()`` today, the one real
