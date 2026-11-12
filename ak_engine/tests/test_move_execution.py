@@ -1525,7 +1525,11 @@ def test_execute_move_grants_a_naval_advanced_ability_when_the_real_credit_cross
         state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=ScriptedRandom([0.9, 0.0, 0.5])
     )
 
-    assert leader.skills.pair_for_ability(Ability.NAVAL) == (5, 5)
+    # Phase 1189 bug fix: the rise itself is deferred to next phase (same
+    # [3.13]-equivalent rule add_experience() now shares with Practice) --
+    # not yet written into the real skill table.
+    assert leader.pending_skill_advancement == {Ability.NAVAL: (5, 5)}
+    assert leader.skills.pair_for_ability(Ability.NAVAL) == (4, 5)
     assert result.naval_advanced_ability_granted is AdvancedAbility.NAVAL_LONG_DEFEND
     assert AdvancedAbility.NAVAL_LONG_DEFEND in leader.advanced_abilities
 
@@ -1559,7 +1563,9 @@ def test_execute_move_a_march_credit_never_grants_a_naval_advanced_ability():
         state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=ScriptedRandom([0.9, 0.0, 0.5])
     )
 
-    assert leader.skills.pair_for_ability(Ability.MARCH) == (5, 5)  # the real credit still rose
+    # Phase 1189 bug fix: deferred to next phase, same as the Naval case above.
+    assert leader.pending_skill_advancement == {Ability.MARCH: (5, 5)}
+    assert leader.skills.pair_for_ability(Ability.MARCH) == (4, 5)
     assert result.naval_advanced_ability_granted is None
     assert result.march_advanced_ability_granted is AdvancedAbility.MARCH_THROUGH_FLOODS
     assert leader.advanced_abilities == {AdvancedAbility.MARCH_THROUGH_FLOODS}
