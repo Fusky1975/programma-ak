@@ -891,7 +891,7 @@ def test_run_turn_practice_rise_takes_effect_only_from_the_next_turn_when_earned
 
     run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0))
 
-    assert state.leaders[10].pending_skill_advancement == (Ability.NECROMANCY, 2, 9)
+    assert state.leaders[10].pending_skill_advancement == {Ability.NECROMANCY: (2, 9)}
     assert state.leaders[10].skills.pair_for_ability(Ability.NECROMANCY) == (1, 9)
 
     # The next turn's own P0 (its phase loop's first statement, before
@@ -899,7 +899,7 @@ def test_run_turn_practice_rise_takes_effect_only_from_the_next_turn_when_earned
     # the turn boundary exactly like a real rise would be.
     run_turn([], state, board_width=BOARD_WIDTH, rng=random.Random(0))
 
-    assert state.leaders[10].pending_skill_advancement is None
+    assert state.leaders[10].pending_skill_advancement == {}
     assert state.leaders[10].skills.pair_for_ability(Ability.NECROMANCY) == (2, 9)
 
 

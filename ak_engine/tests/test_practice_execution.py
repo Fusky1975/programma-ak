@@ -178,16 +178,48 @@ def test_resolve_practice_solo_aptitude_increase_succeeds():
     assert outcome.new_credit is None
 
 
-def test_resolve_practice_solo_noop_when_skill_already_at_cap():
-    # SkillTable's documented 0-9 range -- no roll at all, no rng consumed.
-    rng = ScriptedRandom([])
+def test_resolve_practice_solo_at_cap_gate_failure_is_a_full_noop():
+    # SkillTable's documented 0-9 range -- the gate still rolls (Phase
+    # 1189: an already-maxed ability must not be excluded from the
+    # shared credit pool), but on gate *failure* nothing happens: no
+    # credit touched (the credit path only runs on gate success), and
+    # the gate-failure aptitude-rise attempt is still skipped at max
+    # skill (that part of the original guard was never the bug).
+    rng = ScriptedRandom([0.99])
     outcome = resolve_practice_solo(current_skill=MAX_SKILL_LEVEL, aptitude=9, credit=50, rng=rng)
 
     assert outcome.skill_rose is False
     assert outcome.aptitude_rose is False
     assert outcome.new_skill == MAX_SKILL_LEVEL
     assert outcome.new_aptitude == 9
-    assert outcome.new_credit is None  # credit dict untouched
+    assert outcome.new_credit is None
+
+
+def test_resolve_practice_solo_at_cap_gate_success_still_earns_credit_no_rise():
+    # Phase 1189 bug fix: a maxed ability's own successful gate still
+    # deposits into the shared experience_credit pool -- that credit can
+    # go on to raise a completely different, non-maxed ability later the
+    # same phase ("occult rule," module docstring) -- it just can't raise
+    # *this* ability's own skill past MAX_SKILL_LEVEL.
+    rng = ScriptedRandom([0.01])
+    outcome = resolve_practice_solo(current_skill=MAX_SKILL_LEVEL, aptitude=9, credit=50, rng=rng)
+
+    assert outcome.skill_rose is False
+    assert outcome.new_skill == MAX_SKILL_LEVEL
+    assert outcome.new_credit == 50 + PRACTICE_CREDIT_SOLO_GAIN
+
+
+def test_resolve_practice_solo_at_cap_threshold_crossing_consumes_credit_without_rising():
+    # Credit crossing the threshold at max skill still subtracts the full
+    # threshold (matching turn/experience.py add_experience()'s own
+    # analogous "consumed but wasted" treatment of the identical cap) --
+    # the skill itself stays capped.
+    rng = ScriptedRandom([0.01])
+    outcome = resolve_practice_solo(current_skill=MAX_SKILL_LEVEL, aptitude=9, credit=96, rng=rng)
+
+    assert outcome.skill_rose is False
+    assert outcome.new_skill == MAX_SKILL_LEVEL
+    assert outcome.new_credit == 96 + PRACTICE_CREDIT_SOLO_GAIN - PRACTICE_CREDIT_RISE_THRESHOLD
 
 
 # -- resolve_practice_pair --------------------------------------------------
@@ -360,14 +392,14 @@ def test_execute_practice_credit_carries_over_and_raises_a_different_ability():
     assert result.new_skill == 3
     # [3.13] "effetto fin dalla fase successiva" -- not yet written into
     # the real skill table until commit_pending_skill_advancements() runs.
-    assert state.leaders[1].pending_skill_advancement == (Ability.NECROMANCY, 3, 9)
+    assert state.leaders[1].pending_skill_advancement == {Ability.NECROMANCY: (3, 9)}
     assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (2, 9)
     assert state.leaders[1].skills.pair_for_ability(Ability.SAGE) == (0, 0)  # never touched by the credit it earned
     assert state.leaders[1].experience_credit == 1  # 96 + 5 - 100
 
     commit_pending_skill_advancements(state)
     assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (3, 9)
-    assert state.leaders[1].pending_skill_advancement is None
+    assert state.leaders[1].pending_skill_advancement == {}
 
 
 def test_execute_practice_blocked_while_comatose():
@@ -976,9 +1008,9 @@ def test_execute_practice_group_lower_skill_member_gets_deferred_rise():
     assert results[1].skill_rose is False
     assert results[1].new_skill == 3
     # [3.13] "effetto fin dalla fase successiva" -- deferred, not immediate.
-    assert state.leaders[1].pending_skill_advancement == (Ability.NECROMANCY, 2, 9)
+    assert state.leaders[1].pending_skill_advancement == {Ability.NECROMANCY: (2, 9)}
     assert state.leaders[1].skills.pair_for_ability(Ability.NECROMANCY) == (1, 9)
-    assert state.leaders[2].pending_skill_advancement is None
+    assert state.leaders[2].pending_skill_advancement == {}
     assert state.leaders[2].skills.pair_for_ability(Ability.NECROMANCY) == (3, 9)
     assert state.leaders[1].experience_credit == 0  # immediate rise, no credit
 

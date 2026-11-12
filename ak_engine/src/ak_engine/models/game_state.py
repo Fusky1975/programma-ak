@@ -1224,25 +1224,32 @@ class LeaderState:
     # instant it resolved -- visible to any same-phase combat strength
     # lookup (``effective_skill_level()``) for a leader who both
     # practiced and passively commanded an army drawn into that same
-    # phase's own combat. Holds ``(ability, new_skill, new_aptitude)``
-    # from the most recent rise not yet committed; ``turn/turn_
-    # processor.py run_turn()``'s own ``commit_pending_skill_
-    # advancements()`` call, at the very start of every phase before
-    # that phase dispatches anything, writes it into ``LeaderState.
-    # skills`` and clears this field -- so it's already in effect by
-    # the time the *next* phase (including next turn's own P0, if
-    # earned in P4) runs. Deliberately NOT reset by ``_replenish_turn_
-    # scoped_state()`` -- it must survive a turn boundary exactly like
-    # a P4 rise surviving into next turn's P0. At most one entry at a
-    # time per leader (one Practice order per phase; always already
-    # committed, by construction, before this phase's own Practice can
-    # set a new one) -- see ``turn/practice_execution.py``'s own module
-    # docstring for the full citation and scope (this delay applies
-    # only to the core [3.13] skill/aptitude pair, not to the same
-    # Practice attempt's other, separately-sourced side effects --
-    # Advanced Ability grants, Discoveries, Society Maps, gems, bandit
-    # loot -- none of which carry a "next phase" qualifier of their own).
-    pending_skill_advancement: tuple[Ability, int, int] | None = None
+    # phase's own combat. Keyed by ``Ability``, holding each one's own
+    # ``(new_skill, new_aptitude)`` from the most recent rise not yet
+    # committed; ``turn/turn_processor.py run_turn()``'s own ``commit_
+    # pending_skill_advancements()`` call, at the very start of every
+    # phase before that phase dispatches anything, writes every entry
+    # into ``LeaderState.skills`` and clears this field -- so it's
+    # already in effect by the time the *next* phase (including next
+    # turn's own P0, if earned in P4) runs. Deliberately NOT reset by
+    # ``_replenish_turn_scoped_state()`` -- it must survive a turn
+    # boundary exactly like a P4 rise surviving into next turn's P0.
+    # A dict, not a single ``(ability, new_skill, new_aptitude)`` tuple
+    # (Phase 1189 bug fix) -- Practice itself only ever sets one entry
+    # per phase (one order per phase), but ``turn/experience.py add_
+    # experience()`` also defers its own rises through this same field
+    # (its own Phase 1189 fix, see that module's docstring), and several
+    # real call sites already award two *different* abilities' worth of
+    # Add_Experience within one phase (e.g. Melee and Archery from the
+    # same combat round) -- a single-tuple slot would silently drop
+    # whichever of the two committed second. See ``turn/practice_
+    # execution.py``'s own module docstring for the full citation and
+    # scope (this delay applies only to the core [3.13]-equivalent
+    # skill/aptitude pair, not to the same attempt's other, separately-
+    # sourced side effects -- Advanced Ability grants, Discoveries,
+    # Society Maps, gems, bandit loot -- none of which carry a "next
+    # phase" qualifier of their own).
+    pending_skill_advancement: dict[Ability, tuple[int, int]] = field(default_factory=dict)
     # Phase 493 -- which of the 89 catalogued Advanced Abilities (Phase
     # 128) this leader has actually been granted. A flat set, not keyed
     # by Ability category: the source excerpt's own rule (``models/

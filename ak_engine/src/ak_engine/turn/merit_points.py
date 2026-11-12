@@ -27,16 +27,21 @@ independent cross-confirmation the two sources describe the same system.
 **Phase 467 cross-check against `AKGEN_reverse_engineering_report
 (2).md` SS14.2's own compact disassembly table** (the same globals Phase
 137 found unrecoverable, now named alongside a one-line-each formula):
-every term below is either an exact match or a fully consistent
-translation, no confirmed discrepancy found, so no formula below changed
-as a result --
+every term below was, at the time, either an exact match or a fully
+consistent translation -- `lfdisc`/`ldiscp` were still bare global names
+then, with no further disassembly detail in SS14.2, so this cross-check
+found no confirmed discrepancy for Chancellor specifically. **That
+assumption didn't survive Phase 795** (see below) --
 - Emperor: `Tax_Base(Re)` -- exact match (`compute_tax_base()`).
 - Chancellor: `Spy + Sage + Explorer + 2*lfdisc + ldiscp` -- the skill
-  term matches exactly; `lfdisc`/`ldiscp` (bare global names, no further
-  disassembly detail in SS14.2) are consistent with this module's own
-  "+2 per Feature discovered first" and 3/2/1-point Discovery-attribution
-  terms below, read as two separate accumulators the compiled Chancellor
-  formula sums directly rather than recomputing.
+  term and `lfdisc` ("+2 per Feature discovered first") still match
+  exactly. `ldiscp` no longer merely "consistent" with a guess -- `turn/
+  practice_execution.py`'s own Phase 795 addendum (`Desktop/DISCVAL.md`
+  SS4.2/15.2-15.3) gives it a concrete formula, `2*discoveries_found_
+  first + discoveries_via_espionage`, confirming a real discrepancy with
+  this module's former Phase 271 user-specified 3/2/1-point scoring
+  (3, not 2, points per world-first discovery; a nonzero 2 points, not 0,
+  for a non-first one) -- corrected below, Phase 1189, user-confirmed.
 - Treasurer: `lgold` -- exact match (`KingdomState.treasury`).
 - Marshal: `lgenp` (bare global, no further SS14.2 detail) -- consistent
   with the Phase 308 quality-weighted battle table below (the accumulator
@@ -64,15 +69,17 @@ reimplemented.
 ## Gran Cancelliere / Chancellor (10%)
 - +1 per level in Explorer, Spy, and Sage
 - +2 per Special Place (Feature) discovered first
-- Invention (Discovery) attribution: **3 points to the world's first
-  hero/King ever to discover a given Discovery, 2 points to every
-  later, independent discoverer of that same Discovery** -- a
-  user-specified, project-original scoring rule (confirmed 2026-07-29)
-  that *supersedes* the rulebook's own flat "+2 per Invention found
-  first" figure quoted above the fix (the rulebook itself gives no
-  points at all for a non-first personal discovery; this project's own
-  owner chose to score both cases, at these two values, rather than
-  leave the non-first case at zero).
+- Invention (Discovery) attribution, **Phase 1189 correction, user-
+  confirmed**: **2 points to the world's first hero/King ever to
+  discover a given Discovery, 0 to every later, independent discoverer
+  of that same Discovery** -- the real compiled `ldiscp` accumulator
+  (`turn/practice_execution.py`'s own Phase 795 addendum,
+  `2*discoveries_found_first + discoveries_via_espionage`), which
+  supersedes this module's own former Phase 271 user-specified 3/2/1
+  scoring (itself a deliberate override of the rulebook's flat "+2 per
+  Invention found first" figure, made before `ldiscp`'s own formula was
+  pinned down). `discoveries_found_not_first` is still tracked on
+  `MeritTally` for other consumers; it no longer earns Chancellor merit.
 - +1 per Invention obtained via espionage
 
 **All four terms are now live.** `features_discovered_first` is live
@@ -542,18 +549,26 @@ def emperor_merit_points(state: GameState, kingdom_id: int) -> int:
 
 
 def chancellor_merit_points(state: GameState, leader: LeaderState) -> int:
-    """See module docstring: all four terms are live. Discovery
-    attribution uses the user-specified 3-for-world-first/2-for-not-
-    first scoring (Phase 271), not the rulebook's own flat "+2 per
-    Invention found first" figure.
+    """See module docstring: all three terms are live. Discovery
+    attribution formula corrected (Phase 1189, user-confirmed) to the
+    real compiled ``ldiscp`` accumulator -- ``turn/practice_execution.py``
+    own Phase 795 addendum gives it as ``2*discoveries_found_first +
+    discoveries_via_espionage`` -- superseding this module's own former
+    Phase 271 user-specified 3-for-world-first/2-for-not-first scoring,
+    which Phase 467's cross-check had assumed (with no detail yet
+    available for `ldiscp` at the time) was consistent with this real
+    formula but wasn't: no points at all for a non-first personal
+    discovery, and 2 (not 3) points for a world-first one.
+    ``discoveries_found_not_first`` is still tracked on ``MeritTally``
+    (other consumers, e.g. the webapp's own stats display, still read
+    it) -- it just no longer feeds this merit formula.
     """
 
     tally = leader.merit_tally
     return (
         _skill_level_sum(state, leader, _CHANCELLOR_SKILL_ABILITIES)
         + 2 * tally.features_discovered_first
-        + 3 * tally.discoveries_found_first
-        + 2 * tally.discoveries_found_not_first
+        + 2 * tally.discoveries_found_first
         + tally.discoveries_via_espionage
     )
 

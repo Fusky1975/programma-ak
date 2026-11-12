@@ -92,10 +92,10 @@ def test_chancellor_merit_points_sums_explorer_spy_sage_skills():
 
 
 def test_chancellor_merit_points_adds_discovery_tally_terms():
-    # Phase 271: discoveries_found_first is worth 3 (world's first
-    # discoverer), discoveries_found_not_first is worth 2 -- the
-    # user-specified scoring that supersedes the rulebook's own flat
-    # "+2 per Invention found first" figure.
+    # Phase 1189 correction: discoveries_found_first is worth 2 (the real
+    # compiled ldiscp accumulator, turn/practice_execution.py's own Phase
+    # 795 addendum) and discoveries_found_not_first earns nothing --
+    # superseding the former Phase 271 user-specified 3/2 scoring.
     state = make_state()
     leader = state.leaders[1]
     leader.merit_tally.features_discovered_first = 2
@@ -103,7 +103,7 @@ def test_chancellor_merit_points_adds_discovery_tally_terms():
     leader.merit_tally.discoveries_found_not_first = 4
     leader.merit_tally.discoveries_via_espionage = 3
 
-    assert chancellor_merit_points(state, leader) == 2 * 2 + 3 * 1 + 2 * 4 + 3
+    assert chancellor_merit_points(state, leader) == 2 * 2 + 2 * 1 + 3
 
 
 def test_chancellor_merit_points_zero_with_no_skills_and_no_tally():

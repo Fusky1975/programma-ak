@@ -132,7 +132,24 @@ class ExperienceOutcome:
 def add_experience(leader: LeaderState, ability: Ability, base_points: int, rng: random.Random) -> ExperienceOutcome:
     """Applies one real ``Add_Experience`` call to ``leader``'s own
     ``ability`` -- see module docstring for the full sourced formula.
-    Mutates ``leader.skills``/``leader.experience_credit`` directly.
+
+    **Phase 1189 bug fix**: a skill/aptitude rise is deferred into
+    ``LeaderState.pending_skill_advancement`` (committed next phase by
+    ``turn/practice_execution.py commit_pending_skill_advancements()``)
+    rather than written straight into ``leader.skills``, mirroring the
+    identical fix ``turn/practice_execution.py execute_practice()`` got
+    for the same real rule ([3.13]/SS3.3: a rise "avrà effetto fin dalla
+    fase successiva," takes effect starting next phase, not this one).
+    Add_Experience shares that same rule and that same field -- several
+    real call sites (e.g. ``turn/battle_orchestrator.py``'s own Melee/
+    Archery awards from the same battle round) call this repeatedly
+    within one phase, and a same-phase rise here was just as visible to
+    ``effective_skill_level()`` combat-strength lookups for the rest of
+    that phase as the Practice-only gap Phase 822^W1189 (``LeaderState.
+    pending_skill_advancement``'s own docstring) already closed.
+    ``leader.experience_credit`` is still written immediately -- that
+    counter has no "next phase" rule of its own, only the skill/aptitude
+    pair it can eventually trigger a rise in.
     """
 
     skills = _get_or_create_skills(leader)
@@ -144,7 +161,7 @@ def add_experience(leader: LeaderState, ability: Ability, base_points: int, rng:
                 skill_rose=False, aptitude_rose=False, new_skill=current_skill, new_aptitude=aptitude,
                 new_credit=leader.experience_credit,
             )
-        skills.set_pair_for_ability(ability, current_skill + 1, aptitude)
+        leader.pending_skill_advancement[ability] = (current_skill + 1, aptitude)
         return ExperienceOutcome(
             skill_rose=True, aptitude_rose=False, new_skill=current_skill + 1, new_aptitude=aptitude,
             new_credit=leader.experience_credit,
@@ -169,7 +186,7 @@ def add_experience(leader: LeaderState, ability: Ability, base_points: int, rng:
         )
 
     if roll_practice_aptitude_gate(current_skill, aptitude, rng):
-        skills.set_pair_for_ability(ability, current_skill + 1, aptitude)
+        leader.pending_skill_advancement[ability] = (current_skill + 1, aptitude)
         return ExperienceOutcome(
             skill_rose=True, aptitude_rose=False, new_skill=current_skill + 1, new_aptitude=aptitude,
             new_credit=leader.experience_credit,
@@ -177,7 +194,7 @@ def add_experience(leader: LeaderState, ability: Ability, base_points: int, rng:
 
     levels_beyond_aptitude = max(0, (current_skill + 1) - aptitude)
     if levels_beyond_aptitude > 0 and _maybe_raise_aptitude(current_skill, aptitude, rng):
-        skills.set_pair_for_ability(ability, current_skill, aptitude + 1)
+        leader.pending_skill_advancement[ability] = (current_skill, aptitude + 1)
         return ExperienceOutcome(
             skill_rose=False, aptitude_rose=True, new_skill=current_skill, new_aptitude=aptitude + 1,
             new_credit=leader.experience_credit,
