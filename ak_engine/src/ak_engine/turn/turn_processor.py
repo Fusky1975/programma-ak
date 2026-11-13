@@ -885,14 +885,32 @@ def run_turn(
         spy_province = state.provinces.get(spy.location)
         if spy_province is None or spy_province.owner_kingdom_id != hiring_kingdom_id:
             continue
-        double_agent_report = execute_aspy(
-            state,
-            spy.leader_id,
-            SpyProvinceRequest(target_province=0, unconfirmed_extra0=0),
-            board_width=state.board_width,
-            board_height=state.board_height,
-            rng=rng,
-        )
+        # Bug fix: same isolation convention as run_leader_plan()'s own
+        # per-phase try/except -- an exception for one Double Agent spy
+        # used to propagate straight out of run_turn(), discarding every
+        # already-computed PhaseDispatchResult for every other kingdom/
+        # leader processed earlier this same call.
+        try:
+            double_agent_report = execute_aspy(
+                state,
+                spy.leader_id,
+                SpyProvinceRequest(target_province=0, unconfirmed_extra0=0),
+                board_width=state.board_width,
+                board_height=state.board_height,
+                rng=rng,
+            )
+        except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
+            results.append(
+                PhaseDispatchResult(
+                    leader_id=spy.leader_id,
+                    segment_index=-1,
+                    phase_label="double-agent-report",
+                    action=None,
+                    result=None,
+                    error=exc,
+                )
+            )
+            continue
         if double_agent_report is not None:
             results.append(
                 PhaseDispatchResult(

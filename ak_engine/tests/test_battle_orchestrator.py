@@ -41,7 +41,7 @@ from ak_engine.turn.battle_orchestrator import (
     _qual_modfr_score_by_army_id,
     _record_battle_merit,
     _select_side_commander,
-    _side_has_present_leader_with_ability,
+    side_has_present_leader_with_ability,
     fight_battle,
     fight_multi_attacker_battle,
 )
@@ -1303,7 +1303,7 @@ def test_side_has_present_leader_with_ability_true_when_present_and_qualified():
     leader.advanced_abilities.add(AdvancedAbility.EXPLORER_FIND_WATER)
     state.add_leader(leader)
 
-    assert _side_has_present_leader_with_ability(
+    assert side_has_present_leader_with_ability(
         state, FIELD, frozenset({1}), AdvancedAbility.EXPLORER_FIND_WATER
     )
 
@@ -1315,7 +1315,7 @@ def test_side_has_present_leader_with_ability_false_when_elsewhere():
     leader.advanced_abilities.add(AdvancedAbility.EXPLORER_FIND_WATER)
     state.add_leader(leader)
 
-    assert not _side_has_present_leader_with_ability(
+    assert not side_has_present_leader_with_ability(
         state, FIELD, frozenset({1}), AdvancedAbility.EXPLORER_FIND_WATER
     )
 
@@ -1327,7 +1327,7 @@ def test_side_has_present_leader_with_ability_false_for_a_different_kingdom():
     leader.advanced_abilities.add(AdvancedAbility.EXPLORER_FIND_WATER)
     state.add_leader(leader)
 
-    assert not _side_has_present_leader_with_ability(
+    assert not side_has_present_leader_with_ability(
         state, FIELD, frozenset({1}), AdvancedAbility.EXPLORER_FIND_WATER
     )
 
@@ -1338,7 +1338,7 @@ def test_side_has_present_leader_with_ability_false_without_the_ability():
     leader = LeaderState(1, kingdom_id=1, name="Scout", location=FIELD)
     state.add_leader(leader)
 
-    assert not _side_has_present_leader_with_ability(
+    assert not side_has_present_leader_with_ability(
         state, FIELD, frozenset({1}), AdvancedAbility.EXPLORER_FIND_WATER
     )
 
@@ -2548,6 +2548,36 @@ def test_build_battle_units_no_fog_effect_when_province_not_fogged():
 
     expected = compute_effective_strength(ArmyType.DRAGON_WING, Race.DRAGONS, Quality.AVERAGE, Terrain.PLAINS)
     assert units[0].effective_strength == pytest.approx(expected)
+
+
+def test_build_battle_units_prefers_monstrous_army_race_over_owning_kingdoms_race():
+    # Bug fix: `army_race` must prefer `MONSTROUS_ARMY_RACE` over the
+    # owning kingdom's own race. Humania (Race.HUMAN) owns both the
+    # battle province and an unled Dragon Wing army (legitimately
+    # possible via province-race-based recruiting) -- the army's own
+    # Druidic-shortfall falls back to the province-owning Kingdom's King
+    # (`king_druidic_shortfall_for`), whose own Druid skill is 0. Correct
+    # resolution (army_race=DRAGONS) needs Druid level 4 and gives a
+    # real shortfall of 4; the inverted-priority bug (army_race=HUMAN,
+    # the same race as the King) hits `compute_druidic_shortfall`'s own
+    # same-race short-circuit and wrongly gives 0.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=FIELD))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="King", location=FIELD, is_king=True))
+    army = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, location=FIELD, commanded_by=None)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(
+        ArmyType.DRAGON_WING, Race.DRAGONS, Quality.AVERAGE, Terrain.PLAINS, druidic_shortfall=4
+    )
+    wrong = compute_effective_strength(ArmyType.DRAGON_WING, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+    assert units[0].effective_strength != pytest.approx(wrong)
 
 
 def test_build_battle_units_marks_an_overflight_unit_rear_targeting_blocked_when_shortfall_is_positive():
@@ -5145,6 +5175,31 @@ def test_qual_modfr_score_by_army_id_gives_plus_one_for_home_province():
     )
 
     assert scores == {101: 1}
+
+
+def test_qual_modfr_score_by_army_id_prefers_monstrous_army_race_over_owning_kingdoms_race():
+    # Bug fix: same inverted-priority bug as _build_battle_units' own
+    # regression test above, in this function's own separate copy of
+    # the `army_race` resolution line. Humania (Race.HUMAN) owns FIELD
+    # (its own home_province, +1) and fields an unled Dragon Wing army
+    # there; the province-owning King's Druid skill is 0. Correct
+    # resolution (army_race=DRAGONS, needs Druid level 4) gives a real
+    # shortfall of 4, netting 1 - 4 = -3; the inverted-priority bug
+    # (army_race=HUMAN, same race as the King) hits
+    # compute_druidic_shortfall's own same-race short-circuit (shortfall
+    # 0) and wrongly nets +1.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=FIELD))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="King", location=FIELD, is_king=True))
+    army = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, location=FIELD, commanded_by=None)
+    state.add_army(army)
+
+    scores = _qual_modfr_score_by_army_id(
+        [army], state, terrain=Terrain.PLAINS, province_coord=FIELD, explorer_find_water=False,
+    )
+
+    assert scores == {101: -3}
 
 
 def test_qual_modfr_score_by_army_id_gives_minus_one_for_desert_without_camels():

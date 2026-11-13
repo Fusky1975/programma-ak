@@ -395,7 +395,7 @@ def _build_army(state: GameState, army: ArmyState, army_index: int, kingdom_id: 
     known_location = (
         (province is not None and province.owner_kingdom_id == kingdom_id)
         or (commander is not None and commander.kingdom_id == kingdom_id)
-        or known_mercenary(state, army, kingdom_id)
+        or known_mercenary(state, army, kingdom_id, board_width=state.board_width)
     )
 
     if not known_location:

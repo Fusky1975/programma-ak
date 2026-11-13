@@ -295,6 +295,45 @@ def test_run_turn_grants_no_double_agent_report_when_the_province_is_not_the_hir
     assert state.leaders[20].double_agent_hired_by_kingdom_id is None
 
 
+def test_run_turn_double_agent_isolates_one_spys_exception_from_the_others():
+    # Bug fix: an exception resolving one Double Agent spy's report used
+    # to propagate straight out of run_turn(), discarding every already-
+    # computed PhaseDispatchResult for every other kingdom/leader
+    # processed earlier this same call -- the same per-leader isolation
+    # convention run_leader_plan()'s own per-phase try/except already
+    # established elsewhere in this module.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    coord = HexCoord(5, 5)
+    state.add_province(ProvinceState(coord, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    broken_spy = LeaderState(20, 1, "Broken Spy", coord, race=Race.HUMAN)
+    broken_spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+    broken_spy.double_agent_hired_by_kingdom_id = 2
+    good_spy = LeaderState(21, 1, "Good Spy", coord, race=Race.HUMAN)
+    good_spy.advanced_abilities.add(AdvancedAbility.SPY_DOUBLE_AGENT)
+    good_spy.double_agent_hired_by_kingdom_id = 2
+    state.add_leader(broken_spy)
+    state.add_leader(good_spy)
+    leader = _empty_plan_leader(10, "A")
+
+    from ak_engine.turn.turn_processor import execute_aspy as real_execute_aspy
+
+    def flaky_execute_aspy(state, leader_id, *args, **kwargs):
+        if leader_id == 20:
+            raise ValueError("boom")
+        return real_execute_aspy(state, leader_id, *args, **kwargs)
+
+    with patch("ak_engine.turn.turn_processor.execute_aspy", side_effect=flaky_execute_aspy):
+        results = run_turn([TurnLeader(leader, 1)], state, board_width=BOARD_WIDTH, rng=random.Random(0))
+
+    matching = {r.leader_id: r for r in results if r.phase_label == "double-agent-report"}
+    assert matching[20].error is not None
+    assert matching[21].error is None
+    assert isinstance(matching[21].result, SpyReport)
+    assert state.leaders[20].double_agent_hired_by_kingdom_id is None
+    assert state.leaders[21].double_agent_hired_by_kingdom_id is None
+
+
 def test_run_turn_no_hire_this_turn_grants_no_report_and_draws_no_extra_rng():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))

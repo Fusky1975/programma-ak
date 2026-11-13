@@ -151,6 +151,7 @@ from ak_engine.models.valhalla import (
     ValhallaHero,
     _valhalla_stay_phase_count,
 )
+from ak_engine.turn.battle_orchestrator import find_king_of_kingdom
 from ak_engine.turn.cast_execution import GATE_ANGEL_ELIGIBLE_ALIGNMENTS, gate_angel_due_alignment
 from ak_engine.turn.movement import MapBounds, neighbors
 
@@ -291,10 +292,7 @@ def _spawn_valhalla_visitor(
     template = _select_visitor_template(state, alignment, roster, rng)
 
     kingdom = state.kingdoms[kingdom_id]
-    king = next(
-        (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
-        None,
-    )
+    king = find_king_of_kingdom(state, kingdom_id)
     location = king.location if king is not None else kingdom.home_province
 
     # Phase 546 -- the visitor's own one active turn is the turn *after*
@@ -503,7 +501,7 @@ def _reassign_visitor_armies(state: GameState, kingdom_id: int, location, board_
     if not armies:
         return
 
-    king = next((leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king), None)
+    king = find_king_of_kingdom(state, kingdom_id)
     new_commander_id = king.leader_id if king is not None else None
 
     if new_commander_id is None:
@@ -599,10 +597,7 @@ def process_valhalla_departure(state: GameState, *, board_width: int | None = No
     visitor = state.leaders.get(VALHALLA_VISITOR_LEADER_ID)
     if visitor is not None and visitor.valhalla_active_turn == state.turn_number:
         _reassign_visitor_armies(state, visitor.kingdom_id, visitor.location, board_width)
-        king = next(
-            (leader for leader in state.leaders.values() if leader.kingdom_id == visitor.kingdom_id and leader.is_king),
-            None,
-        )
+        king = find_king_of_kingdom(state, visitor.kingdom_id)
         if king is not None:
             for item in state.items_held_by(VALHALLA_VISITOR_LEADER_ID):
                 state.transfer_item(item.item_id, king.leader_id)

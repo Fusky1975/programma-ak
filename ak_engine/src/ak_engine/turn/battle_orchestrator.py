@@ -855,7 +855,7 @@ def _build_battle_units(
         # already safe with `None`) only for an unowned, non-monstrous
         # army type, where no source says what race it should fight as.
         kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
-        army_race = kingdom.race if kingdom is not None else MONSTROUS_ARMY_RACE.get(army.army_type)
+        army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
         is_home = kingdom is not None and province_coord == kingdom.home_province
         if army.army_type is ArmyType.ELEPHANTS:
             override = roll_elephants_strength(rng)
@@ -884,13 +884,7 @@ def _build_battle_units(
         battle_quality = army.quality
         if army.is_skeletal and opponent_owns_osteopathic:
             battle_quality = quality_one_level_down(battle_quality)
-        race_item_bonus = 0
-        if army.commanded_by is not None:
-            needed_treasure = RACE_LEADERSHIP_TREASURE.get(army_race)
-            if needed_treasure is not None and any(
-                item.treasure == needed_treasure for item in state.items_held_by(army.commanded_by)
-            ):
-                race_item_bonus = 1
+        race_item_bonus = race_item_bonus_for(state, army_race, army.commanded_by)
         phantasmal_armies_bonus_per_level = (
             OBSERVATION_BALLOONS_PHANTASMAL_ARMIES_BONUS_PER_LEVEL
             if phantasmal_armies_level > 0 and opponent_owns_balloons
@@ -1044,6 +1038,30 @@ def find_king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | Non
         if leader.kingdom_id == kingdom_id and leader.is_king:
             return leader
     return None
+
+
+def race_item_bonus_for(state: GameState, army_race: Race | None, commanded_by: int | None) -> int:
+    """The user's own rules 3-6 race-matching legendary leadership item,
+    +1 (Excalibur for Human, Bow of the Elven Kings for Elf, Axe of the
+    Dwarven Lords for Dwarf, Scimitar of Orc Mastery for Orc) -- 0 for an
+    unled army (``commanded_by is None``), matching the rulebook text's
+    own "the army's own commanding Hero or King" scope, no King-
+    substitution carve-out unlike Druidic ability.
+
+    Shared verbatim by this module's own two real-combat call sites
+    (``_build_battle_units``, ``_qual_modfr_score_by_army_id``) and
+    ``turn/army_quality.py compute_army_modified_quality()``'s peacetime
+    report column -- previously three separate, byte-identical copies.
+    """
+
+    if commanded_by is None:
+        return 0
+    needed_treasure = RACE_LEADERSHIP_TREASURE.get(army_race)
+    if needed_treasure is not None and any(
+        item.treasure == needed_treasure for item in state.items_held_by(commanded_by)
+    ):
+        return 1
+    return 0
 
 
 def _phantasmal_armies_level_for(army: ArmyState, state: GameState) -> int:
@@ -1969,7 +1987,7 @@ def _apply_pursuit(
         # for an army type with a fixed, intrinsic race, else `None` (no
         # sourced race, no race-based strength bonus -- not a guess).
         kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
-        army_race = kingdom.race if kingdom is not None else MONSTROUS_ARMY_RACE.get(army.army_type)
+        army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
         pursued_quality = Quality(max(int(Quality.DEPLETED), int(army.quality) - 1))
         strength = compute_effective_strength(
             army.army_type, army_race, pursued_quality, terrain, is_defender=True, is_island=is_island,
@@ -2265,7 +2283,7 @@ def _qual_modfr_score_by_army_id(
         # fixed, intrinsic race else `None` (no sourced race -- not a
         # guess).
         kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
-        army_race = kingdom.race if kingdom is not None else MONSTROUS_ARMY_RACE.get(army.army_type)
+        army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
         is_home = kingdom is not None and province_coord == kingdom.home_province
         desert_without_camels = (
             terrain is Terrain.DESERT
@@ -2273,13 +2291,7 @@ def _qual_modfr_score_by_army_id(
             and not any(a.army_type is ArmyType.CAMEL_CORPS for a in armies)
         )
         druidic_shortfall = druidic_shortfall_for(army, state, army_race, province_coord)
-        race_item_bonus = 0
-        if army.commanded_by is not None:
-            needed_treasure = RACE_LEADERSHIP_TREASURE.get(army_race)
-            if needed_treasure is not None and any(
-                item.treasure == needed_treasure for item in state.items_held_by(army.commanded_by)
-            ):
-                race_item_bonus = 1
+        race_item_bonus = race_item_bonus_for(state, army_race, army.commanded_by)
         scores[army.army_id] = quality_modifier_delta(
             desert_without_camels=desert_without_camels,
             is_home_province=is_home,
@@ -2331,7 +2343,7 @@ MONSTER_SUMMONING_INVASION_DEFECTION_CHANCE = 0.33
 MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE = 0.165
 
 
-def _side_has_present_leader_with_ability(
+def side_has_present_leader_with_ability(
     state: GameState, province_coord: HexCoord, kingdom_ids: frozenset[int], ability: AdvancedAbility
 ) -> bool:
     """Find Water (Phase 511): "If the Explorer is present at a battle" --
@@ -2340,6 +2352,13 @@ def _side_has_present_leader_with_ability(
     kingdoms and already holds ``ability``, not specifically the side's
     own Supreme Commander (the rulebook says "present," not
     "commanding," unlike ``combat_ability_level``/``duellist_side`` above).
+
+    Made public (dropped the leading underscore) so ``turn/army_quality.py
+    compute_army_modified_quality()`` can reuse it verbatim for the same
+    Find Water carve-out on its peacetime desert-without-camels check,
+    the same "reuse instead of re-deriving" convention this module's own
+    ``druidic_shortfall_for()``/``king_druidic_shortfall_for()`` already
+    established.
     """
 
     return any(
@@ -2837,10 +2856,10 @@ def fight_battle(
     # leader_with_ability's own docstring: any leader physically present
     # at this province who belongs to the side and already holds the
     # ability, not necessarily the side's own Supreme Commander.
-    attacker_find_water = _side_has_present_leader_with_ability(
+    attacker_find_water = side_has_present_leader_with_ability(
         state, province_coord, attacker_kingdom_ids, AdvancedAbility.EXPLORER_FIND_WATER
     )
-    defender_find_water = _side_has_present_leader_with_ability(
+    defender_find_water = side_has_present_leader_with_ability(
         state, province_coord, defender_kingdom_ids, AdvancedAbility.EXPLORER_FIND_WATER
     )
 

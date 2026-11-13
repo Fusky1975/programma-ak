@@ -43,17 +43,17 @@ from __future__ import annotations
 
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
-from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.discovery_effects import effective_skill_level, total_skill
 
 
 def character_initiative(state: GameState, leader: LeaderState) -> int:
     """The character-wide Initiative score -- see module docstring for the
-    full sourced formula. Every real skill read goes through
-    ``effective_skill_level()``, so a leader with ``skills is None``
-    (Phase 30's own "no data" placeholder) reads a flat 0 across every
-    Ability, the same fallback every other consumer of that function
-    already uses.
+    full sourced formula. Reuses ``total_skill()`` (Phase 1055's own
+    shared extraction of this exact "sum ``effective_skill_level()``
+    over every ``Ability``" formula) rather than re-deriving it a third
+    time -- a leader with ``skills is None`` (Phase 30's own "no data"
+    placeholder) reads a flat 0 across every Ability, the same fallback
+    every other consumer of ``effective_skill_level()`` already uses.
     """
 
-    total = sum(effective_skill_level(state, leader, ability) for ability in Ability)
-    return total + 2 * effective_skill_level(state, leader, Ability.MARCH)
+    return total_skill(state, leader) + 2 * effective_skill_level(state, leader, Ability.MARCH)

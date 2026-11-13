@@ -137,6 +137,23 @@ def test_nearby_mercenary_army_is_known_via_known_mercenary_rule():
     assert len(mercenary_records) == 1
 
 
+def test_mercenary_army_known_via_wraparound_board_width():
+    # Bug fix: `_build_army()` must pass `board_width=state.board_width`
+    # to `known_mercenary()`, not silently default to `leader_
+    # visibility.py`'s own `DEFAULT_WIDTH` (18). King Aldric sits at
+    # (0, 0); a mercenary army at (5, 0), in an unowned province, is
+    # within `Ldr_Near`'s own radius-1 cylindrical-wraparound distance
+    # on this test's real `board_width=6` -- the wrong, wider default
+    # would miss that wraparound entirely and treat it as 5 hexes away.
+    state = _realistic_state()
+    state.add_army(ArmyState(104, None, ArmyType.WARG_RIDERS, Quality.GREEN, HexCoord(5, 0), is_mercenary=True))
+
+    world = build_xk_world_for_kingdom(state, 1)
+
+    record = next(a for a in world.armies if a.army_type is ArmyType.WARG_RIDERS)
+    assert record.coord == HexCoord(5, 0)
+
+
 def test_build_army_status_distinguishes_a_real_mercenary_from_an_unowned_native_garrison():
     # Bug fix, sourced directly from the user (2026-10-25, "troppe
     # truppe mercenarie"): an ordinary unclaimed province's own native
