@@ -1532,6 +1532,75 @@ def test_run_turn_mutual_encounter_exception_does_not_crash_the_whole_turn():
     # exception instead of propagating it out of run_turn() itself.
     assert isinstance(by_leader[10].error, RuntimeError)
     assert isinstance(by_leader[20].error, RuntimeError)
+
+
+def test_run_turn_multi_attacker_lmove_exception_does_not_crash_the_whole_turn():
+    # Phase 1041 bug fix -- see test_run_turn_mutual_encounter_exception_
+    # does_not_crash_the_whole_turn's own docstring: this is that same
+    # fix's own multi-attacker-LMOVE call site, exercised directly
+    # instead of relying on the mutual-encounter test to stand in for
+    # all three identically-shaped try/except blocks.
+    state = _base_state()
+    march_4 = _skills_with(Ability.MARCH, 4, 9)
+    state.add_leader(LeaderState(10, kingdom_id=1, name="A", location=ORIGIN, skills=march_4))
+    state.add_leader(LeaderState(20, kingdom_id=1, name="B", location=ORIGIN, skills=march_4))
+    state.add_leader(LeaderState(30, kingdom_id=1, name="Bystander", location=ORIGIN2))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=10))
+    state.add_army(ArmyState(102, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, ORIGIN, movement_points=5, commanded_by=20))
+
+    leader_a = _leader_with_phase(10, "A", "P0", _lmove_phase("P0", TARGET))
+    leader_b = _leader_with_phase(20, "B", "P0", _lmove_phase("P0", TARGET))
+    bystander_wait = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    leader_c = _leader_with_phase(30, "Bystander", "P0", bystander_wait)
+
+    with patch("ak_engine.turn.turn_processor._dispatch_multi_attacker_lmove", side_effect=RuntimeError("boom")):
+        results = run_turn(
+            [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1), TurnLeader(leader_c, 1)],
+            state,
+            board_width=BOARD_WIDTH,
+            rng=random.Random(0),
+        )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[30].action is ActionCode.WAIT
+    assert by_leader[30].error is None
+    assert isinstance(by_leader[10].error, RuntimeError)
+    assert isinstance(by_leader[20].error, RuntimeError)
+
+
+def test_run_turn_multi_practice_exception_does_not_crash_the_whole_turn():
+    # Phase 1041 bug fix -- see test_run_turn_mutual_encounter_exception_
+    # does_not_crash_the_whole_turn's own docstring: this is that same
+    # fix's own multi-practice call site, exercised directly instead of
+    # relying on the mutual-encounter test to stand in for all three
+    # identically-shaped try/except blocks.
+    state = _practice_state(
+        10,
+        20,
+        skills_by_id={
+            10: _skills_with(Ability.NECROMANCY, skill=1, aptitude=9),
+            20: _skills_with(Ability.NECROMANCY, skill=4, aptitude=9),
+        },
+    )
+    state.add_leader(LeaderState(30, kingdom_id=1, name="Bystander", location=ORIGIN2))
+    leader_a = _leader_with_phase(10, "A", "P0", _practice_phase("P0", Ability.NECROMANCY))
+    leader_b = _leader_with_phase(20, "B", "P0", _practice_phase("P0", Ability.NECROMANCY))
+    bystander_wait = PlanPhase(label="P0", action=ActionCode.WAIT, obj=0, extra=[0])
+    leader_c = _leader_with_phase(30, "Bystander", "P0", bystander_wait)
+
+    with patch("ak_engine.turn.turn_processor._dispatch_multi_practice", side_effect=RuntimeError("boom")):
+        results = run_turn(
+            [TurnLeader(leader_a, 1), TurnLeader(leader_b, 1), TurnLeader(leader_c, 1)],
+            state,
+            board_width=BOARD_WIDTH,
+            rng=ScriptedRandom([0.01, 0.0]),
+        )
+
+    by_leader = {r.leader_id: r for r in results}
+    assert by_leader[30].action is ActionCode.WAIT
+    assert by_leader[30].error is None
+    assert isinstance(by_leader[10].error, RuntimeError)
+    assert isinstance(by_leader[20].error, RuntimeError)
     assert by_leader[10].result is None
     assert by_leader[20].result is None
 
