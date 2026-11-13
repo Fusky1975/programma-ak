@@ -36,13 +36,18 @@ provinces:
   (no monster in the sourced table guards it), a project-original
   inference rather than a guessed number.
 
-All other 27 real ``FeatureType`` members (``NOFTYPE``, the generic
+All other 28 real ``FeatureType`` members (``NOFTYPE``, the generic
 wandering-encounter sentinel, excluded -- see ``models/feature.py``'s
-own docstring) are land-only.
+own docstring -- leaving 31 real members total, 3 sea + 28 land) are
+land-only. (Phase 1194 correction: this used to say "27"/"30" below,
+off by one against the actual 32-member enum; the derived "16 sourced
++ 14 uncovered = 28 land" breakdown two paragraphs down was already
+internally consistent with the real 28, so only these two summary
+totals were wrong.)
 
 **Guardian selection**: ``FEATURE_TYPE_CANDIDATE_MONSTERS`` inverts
 ``MONSTER_GUARDED_FEATURE_TYPES`` (a monster's own primary/secondary
-type both make it a candidate for that type). Only 16 of the 30 real
+type both make it a candidate for that type). Only 16 of the 31 real
 types have any sourced candidate at all; ``UND_CAVERN`` is seeded with
 the same aquatic candidates as ``MAG_POOL``/``MAELSTROM`` (both sea
 types are always covered this way). For the 14 remaining, uncovered

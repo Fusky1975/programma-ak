@@ -3004,6 +3004,16 @@ def test_can_talk_to_monster_gate():
     assert can_talk_to_monster(Monster.ARCHER, 0) is True
 
 
+def test_can_talk_to_monster_refuses_nomonster_regardless_of_skill():
+    # Phase 1194 bug fix: NOMONSTER (the real "no monster" sentinel) used
+    # to pass this gate trivially (unlisted in TALK_MONSTER_DRUID_LEVEL_
+    # REQUIRED, defaulting to a 0 requirement), letting any leader "talk"
+    # to a feature with no real guardian and crash resolve_monster_raid_
+    # reply()'s own bare MONSTER_RUNTIME_PROFILE[monster] index.
+    assert can_talk_to_monster(Monster.NOMONSTER, 0) is False
+    assert can_talk_to_monster(Monster.NOMONSTER, 9) is False
+
+
 def test_resolve_talk_reaction_boundaries():
     # Attack 0-0.40, Ignore 0.40-0.75, Deal 0.75-1.0.
     assert resolve_talk_reaction(ScriptedRandom([0.0])) is TalkReaction.ATTACK

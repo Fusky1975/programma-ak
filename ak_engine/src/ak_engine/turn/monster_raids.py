@@ -201,13 +201,24 @@ def age_feature_guardian(state: GameState, feature: Feature, rng: random.Random)
     threshold roll only on a hit, matching the real short-circuit exactly
     (including consuming both rolls even for an already-``looted`` Dead
     feature, or one with no guardian_alignment recorded).
+
+    **Phase 1194 bug fix**: this used to also gate the whole roll behind
+    ``state.provinces.get(feature.coord).owner_kingdom_id is not None``
+    -- apparently copy-pasted from ``resolve_province_raids()``'s own,
+    legitimately ownership-scoped sibling (that one only runs over
+    *owned* provinces because unowned provinces generate no taxable
+    income for a raid to reduce). Maturation has nothing to do with
+    income: THUNDERBIRD.md's own text says "every feature with a real
+    guardian," no ownership precondition named, and the module's own
+    docstring already promised "consumes the 3% roll always first" --
+    a promise this function broke for any feature in a never-claimed or
+    no-longer-claimed province, consuming zero rolls there instead
+    (desyncing every later feature's own rolls in the same ``age_all_
+    feature_guardians()`` call against this module's own test suite's
+    scripted sequences).
     """
 
     if feature.guardian_monster is None:
-        return
-
-    province = state.provinces.get(feature.coord)
-    if province is None or province.owner_kingdom_id is None:
         return
 
     if rng.random() >= MONSTER_MATURATION_ROLL_CHANCE:

@@ -62,8 +62,11 @@ HERO_WANDER_ACCESS_CHANCE = 0.5
 HERO_WANDER_MAX_STEPS = 5
 
 # MERCHERO.md's own confirmed continuation mask -- a land Hero keeps
-# stepping while ``(IRand(100) AND 4) != 0`` (roughly 5/8 odds), a Sea
-# Hero while ``(IRand(100) AND 7) != 0`` (roughly 7/8 odds).
+# stepping while ``(IRand(100) AND 4) != 0`` (48/100, roughly 1/2 odds --
+# Phase 1194 correction, this used to misstate it as "roughly 5/8"; the
+# mask constant below was always correct, only this comment's own figure
+# was wrong), a Sea Hero while ``(IRand(100) AND 7) != 0`` (87/100,
+# roughly 7/8 odds).
 _LAND_CONTINUATION_MASK = 4
 _SEA_CONTINUATION_MASK = 7
 

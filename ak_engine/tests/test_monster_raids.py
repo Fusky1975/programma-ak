@@ -59,18 +59,25 @@ def test_age_feature_guardian_no_guardian_is_a_no_op_and_rolls_nothing():
     assert feature.guardian_state is MonsterEngagementState.MERCENARY
 
 
-def test_age_feature_guardian_unowned_province_never_rolls():
+def test_age_feature_guardian_unowned_province_still_rolls_and_matures():
+    # Phase 1194 bug fix: maturation has nothing to do with province
+    # ownership (THUNDERBIRD.md names no such precondition) -- this used
+    # to silently skip the roll entirely for an unowned province, unlike
+    # the module's own docstring's "consumes the 3% roll always first"
+    # promise.
     state = _state_with_owned_province(owner_kingdom_id=None)
-    feature = _feature(guardian_state=MonsterEngagementState.CALM)
-    age_feature_guardian(state, feature, ScriptedRandom([]))
-    assert feature.guardian_state is MonsterEngagementState.CALM
+    feature = _feature(guardian_state=MonsterEngagementState.CALM, guardian_alignment=Alignment.NEUTRAL)
+    age_feature_guardian(state, feature, ScriptedRandom([0.02, 0.1]))
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
 
 
-def test_age_feature_guardian_no_province_recorded_never_rolls():
+def test_age_feature_guardian_no_province_recorded_still_rolls_and_matures():
+    # Phase 1194 bug fix: same as above -- province data (or its
+    # absence) was never a real precondition for maturation.
     state = GameState()
-    feature = _feature(guardian_state=MonsterEngagementState.CALM)
-    age_feature_guardian(state, feature, ScriptedRandom([]))
-    assert feature.guardian_state is MonsterEngagementState.CALM
+    feature = _feature(guardian_state=MonsterEngagementState.CALM, guardian_alignment=Alignment.NEUTRAL)
+    age_feature_guardian(state, feature, ScriptedRandom([0.02, 0.1]))
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
 
 
 def test_age_feature_guardian_3_percent_miss_consumes_no_threshold_roll():

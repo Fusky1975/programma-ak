@@ -5314,8 +5314,24 @@ TALK_MONSTER_DRUID_LEVEL_REQUIRED: dict[Monster, int] = {
 def can_talk_to_monster(monster_species: Monster, druid_level: int) -> bool:
     """Whether a character's own Druid skill level meets `talkdiff`'s own
     per-species requirement to communicate with this monster at all.
+
+    **Phase 1194 bug fix**: ``Monster.NOMONSTER`` (the real, GM-selectable
+    "no monster" sentinel -- the webapp's own Feature editor offers it
+    as a literal dropdown option, same as ``turn/monster_raids.py
+    resolve_province_raids()``'s own "Bug fix (crash)" note already
+    documents for the raid path) used to pass this gate trivially --
+    unlisted in ``TALK_MONSTER_DRUID_LEVEL_REQUIRED``, so the ``.get()``
+    default of ``0`` let any leader, even one with zero Druid skill,
+    "talk to" a feature with no real guardian at all. The real call
+    this gate protects, ``turn/monster_raids.py resolve_monster_raid_
+    reply()``, bare-indexes ``MONSTER_RUNTIME_PROFILE[monster]`` with no
+    entry for ``NOMONSTER`` "by design" -- reaching it crashed with an
+    unhandled ``KeyError``. There is no monster here to talk to, so the
+    gate now refuses outright, regardless of skill.
     """
 
+    if monster_species is Monster.NOMONSTER:
+        return False
     return druid_level >= TALK_MONSTER_DRUID_LEVEL_REQUIRED.get(monster_species, 0)
 
 
