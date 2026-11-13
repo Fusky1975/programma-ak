@@ -126,6 +126,7 @@ from dataclasses import dataclass
 
 from ak_engine.models.game_state import GameState
 from ak_engine.turn.emperor_election import _kingdom_treasure_vote_points
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.merit_points import legendary_item_victory_point_bonus_count
 from ak_engine.turn.office_holder import ALL_OFFICES, ARMY_RANKED_OFFICES, resolve_office_holder
 from ak_engine.turn.tax_base import compute_tax_base
@@ -151,20 +152,6 @@ def kingdom_points(state: GameState, kingdom_id: int) -> float:
     return office_points + _kingdom_treasure_vote_points(state, kingdom_id)
 
 
-def _find_king(state: GameState, kingdom_id: int) -> int | None:
-    """`kingdom_id`'s own acting King's `leader_id`, or `None` if it has
-    none currently registered -- the same `is_king` lookup pattern already
-    used by `turn/expenses.py`/`turn/plan_dispatch.py`/`turn/valhalla_
-    execution.py`.
-    """
-
-    king = next(
-        (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
-        None,
-    )
-    return king.leader_id if king is not None else None
-
-
 def individual_king_points(state: GameState, kingdom_id: int) -> float:
     """`kingdom_id`'s own real `k_indivpoints` -- see module docstring for
     how this narrows `kingdom_points()` to the King's own personal wins
@@ -174,9 +161,10 @@ def individual_king_points(state: GameState, kingdom_id: int) -> float:
     if state.emperor_kingdom_id is None:
         return 0.0
 
-    king_leader_id = _find_king(state, kingdom_id)
-    if king_leader_id is None:
+    king = find_king_of_kingdom(state, kingdom_id)
+    if king is None:
         return 0.0
+    king_leader_id = king.leader_id
 
     office_points = 0.0
     for office in ALL_OFFICES:

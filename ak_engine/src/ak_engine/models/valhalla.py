@@ -1711,3 +1711,18 @@ VALHALLA_ROSTER_UNCONFIRMED: dict[Alignment, tuple[ValhallaHero, ...]] = {
            [4, 3, 2, 2, 0, 2, 1, 3, 1, 3, 4, 3, 0, 4, 2, 3, 1, 2, 3, 2, 3, 3, 0, 4, 2, 2, 0, 2, 1, 3]),
     ),
 }
+
+# Phase 979: name -> full stat block, built from VALHALLA_ROSTER (the
+# confirmed half only -- VALHALLA_ROSTER_UNCONFIRMED is deliberately
+# excluded, same caution as everywhere else that roster is treated as
+# less certain). Keeps the *last* occurrence on a duplicate name (the
+# Phase 560 docstring above already names every real duplicate --
+# "Winner" x3, "Kalko"/"Swk"/"Rogvold"/"Skilza"/"Mary"/"Lancelot"/
+# "La-La"/"Fire"/"Artur" -- none of which this project currently looks
+# up by name here; a future lookup for one of those names would need
+# its own disambiguation). Used by worldgen/generate_new_game.py to
+# resolve a world-gen-time reserved roster id's real name (e.g.
+# "Kitralus", "Kelderek") to its full Alignment/Temper/Race/SkillTable.
+VALHALLA_HERO_BY_NAME: dict[str, ValhallaHero] = {
+    hero.name: hero for bucket in VALHALLA_ROSTER.values() for hero in bucket
+}

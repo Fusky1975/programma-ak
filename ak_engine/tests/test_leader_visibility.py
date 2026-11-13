@@ -32,15 +32,26 @@ def test_hex_distance_wrapped_same_cell_is_zero():
 
 
 def test_hex_distance_wrapped_six_even_row_neighbors_are_one():
+    # Bug fix: this used to list (4,3)/(4,5) here and treat (6,5) as the
+    # non-adjacent case below -- the pre-Phase-314 "guessed" offset
+    # convention's own neighbor set for an even row, never updated when
+    # that phase corrected the parity to the real, confirmed-from-game-
+    # data convention (see movement.py's own Phase 314 docstring and
+    # hex_distance_wrapped()'s own Bug fix note). HOME=(5,4) is an even
+    # row, so its real neighbors (movement.neighbors(), unchanged by
+    # this fix) are (5,3)/(6,3)/(4,4)/(6,4)/(5,5)/(6,5).
     for coord in [
-        HexCoord(4, 3), HexCoord(5, 3), HexCoord(4, 4),
-        HexCoord(6, 4), HexCoord(4, 5), HexCoord(5, 5),
+        HexCoord(5, 3), HexCoord(6, 3), HexCoord(4, 4),
+        HexCoord(6, 4), HexCoord(5, 5), HexCoord(6, 5),
     ]:
         assert hex_distance_wrapped(HOME, coord) == 1
 
 
 def test_hex_distance_wrapped_non_adjacent_diagonal_is_two():
-    assert hex_distance_wrapped(HOME, HexCoord(6, 5)) == 2
+    # (7, 4) is two real steps east of HOME (via the real neighbor (6, 4)),
+    # genuinely distance 2 -- see the test above's own Bug fix note for why
+    # the old (6, 5) example here was wrong (it is a real distance-1 neighbor).
+    assert hex_distance_wrapped(HOME, HexCoord(7, 4)) == 2
 
 
 def test_hex_distance_wrapped_horizontal_wraparound():
@@ -150,7 +161,7 @@ def test_known_loc_false_for_an_unknown_leader_id():
 
 
 def _mercenary(army_id: int, coord: HexCoord) -> ArmyState:
-    return ArmyState(army_id, None, ArmyType.BOWMEN, Quality.AVERAGE, coord)
+    return ArmyState(army_id, None, ArmyType.BOWMEN, Quality.AVERAGE, coord, is_mercenary=True)
 
 
 def test_known_mercenary_true_in_an_owned_province():
@@ -183,3 +194,14 @@ def test_known_mercenary_false_for_an_owned_army():
     state.provinces[HOME] = _province(HOME, owner=1)
     owned_army = ArmyState(9, 1, ArmyType.BOWMEN, Quality.AVERAGE, HOME)
     assert known_mercenary(state, owned_army, 1) is False
+
+
+def test_known_mercenary_false_for_an_unowned_army_not_flagged_mercenary():
+    # Bug fix, sourced directly from the user (2026-10-25, "troppe
+    # truppe mercenarie"): an ordinary unclaimed province's own native
+    # garrison has `kingdom_id=None` too, but is not a real `astate=
+    # Mercenary` army -- see `ArmyState.is_mercenary`'s own docstring.
+    state = GameState()
+    state.provinces[HOME] = _province(HOME, owner=1)
+    native_garrison = ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HOME)
+    assert known_mercenary(state, native_garrison, 1) is False

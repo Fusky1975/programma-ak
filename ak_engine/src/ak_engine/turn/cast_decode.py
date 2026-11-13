@@ -87,6 +87,7 @@ from dataclasses import dataclass
 from ak_engine.models.enums import Spell, spell_from_int
 from ak_engine.models.map import Terrain
 from ak_engine.models.plan import PlanPhase
+from ak_engine.turn.decode_utils import phase_extra0, terrain_from_extra
 
 # Rulebook [4.21]-[4.25]: each spell's target is a character, a province,
 # or nothing at all -- never more than one of these, and never both a
@@ -166,13 +167,10 @@ def decode_cast_phase(phase: PlanPhase) -> CastRequest:
     """Decode a Cast PlanPhase's target spell, target, and (for Illus_Terrain) fake terrain."""
 
     spell = spell_from_int(phase.obj)
-    target = phase.extra[0] if phase.extra else 0
+    target = phase_extra0(phase)
 
     terrain: Terrain | int | None = None
-    if spell is Spell.ILLUS_TERRAIN and len(phase.extra) > 1:
-        try:
-            terrain = Terrain(phase.extra[1])
-        except ValueError:
-            terrain = phase.extra[1]
+    if spell is Spell.ILLUS_TERRAIN:
+        terrain = terrain_from_extra(phase.extra, 1)
 
     return CastRequest(spell=spell, target=target, terrain=terrain)

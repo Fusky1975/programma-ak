@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Heroes -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('world_setup', slug=meta.slug) }}">&larr; World</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Kings &amp; Heroes</h2>
+
+  {% if leaders %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Kingdom</th>
+          <th>Race</th>
+          <th>Alignment</th>
+          <th>Temper</th>
+          <th>Sex</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for leader in leaders %}
+          <tr>
+            <td>{{ leader.name }}{% if leader.is_king %} (King){% endif %}</td>
+            <td>{{ state.kingdoms[leader.kingdom_id].name if leader.kingdom_id in state.kingdoms else 'Independent' }}</td>
+            <td>{{ leader.race|display_name }}</td>
+            <td>{{ leader.alignment|display_name if leader.alignment else '--' }}</td>
+            <td>{{ leader.temper|display_name if leader.temper else '--' }}</td>
+            <td>{{ leader.sex|display_name if leader.sex else '--' }}</td>
+            <td><a class="button" href="{{ url_for('leader_edit', slug=meta.slug, leader_id=leader.leader_id) }}">Edit</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">This game has no world yet -- <a href="{{ url_for('world_setup', slug=meta.slug) }}">create it first</a>.</p>
+  {% endif %}
+</div>
+
+{% if state.kingdoms %}
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Add Hero</h2>
+  <p>Adds a brand-new Hero (never a King -- use the Kings &amp; Titles screen during setup for that).</p>
+  <form method="post" action="{{ url_for('leaders_create', slug=meta.slug) }}">
+    <div class="inline">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" required>
+
+      <label for="race">Race</label>
+      <select id="race" name="race" required>
+        {% for race in races %}
+          <option value="{{ race.name }}">{{ race|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="alignment">Alignment</label>
+      <select id="alignment" name="alignment">
+        <option value="">-- Unset --</option>
+        {% for alignment in alignments %}
+          <option value="{{ alignment.name }}">{{ alignment|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="temper">Temper</label>
+      <select id="temper" name="temper">
+        <option value="">-- Unset --</option>
+        {% for temper in tempers %}
+          <option value="{{ temper.name }}">{{ temper|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="sex">Sex</label>
+      <select id="sex" name="sex">
+        <option value="">-- Unset --</option>
+        {% for sex in sexes %}
+          <option value="{{ sex.name }}">{{ sex|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="kingdom_id">Kingdom</label>
+      <select id="kingdom_id" name="kingdom_id">
+        <option value="">-- Independent --</option>
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}">{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="location_x">Location (x, y)</label>
+      <input type="number" id="location_x" name="location_x" required style="width: 6em;">
+      <input type="number" id="location_y" name="location_y" required style="width: 6em;">
+    </div>
+    <button type="submit">Add Hero</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

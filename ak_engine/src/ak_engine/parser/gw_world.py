@@ -1486,9 +1486,43 @@ def parse_gw_world(path: Path) -> list[GWProvinceRecord]:
             int(exploitation_raw),
             int(alt_terrain_raw),
         )
+        # Bug fix (crash, defense-in-depth): unlike every other record
+        # parser in this file (parse_gw_leaders/parse_gw_armies/parse_
+        # gw_features/etc.), this one constructed Terrain/Race directly
+        # from the raw ordinal with no membership check -- an unhandled
+        # ValueError instead of this module's own GWParseError for a
+        # malformed/corrupted province-header line. Not currently
+        # reachable (parse_gw_world has no production caller anywhere
+        # in this codebase, only tests), but worth closing the same way
+        # every sibling parser already does, before any future feature
+        # accepts an untrusted .gw file.
+        if terrain_ordinal not in {member.value for member in Terrain}:
+            raise GWParseError(
+                f"unrecognized Terrain ordinal {terrain_ordinal} on a province header line",
+                line_number=i + 1,
+                line=lines[i],
+            )
+        if race_ordinal not in {member.value for member in Race}:
+            raise GWParseError(
+                f"unrecognized Race ordinal {race_ordinal} on a province header line",
+                line_number=i + 1,
+                line=lines[i],
+            )
+        if alt_terrain_ordinal not in {member.value for member in Terrain}:
+            raise GWParseError(
+                f"unrecognized alternate Terrain ordinal {alt_terrain_ordinal} on a province header line",
+                line_number=i + 1,
+                line=lines[i],
+            )
         recruit_type_1, recruit_type_2 = _parse_recruit_types(lines[line3_idx], line3_idx)
         governor_raw = lines[owner_idx].strip()
-        if not governor_raw.lstrip("-").isdigit():
+        # Bug fix (crash): `"--5".lstrip("-")` is `"5"`, which `.isdigit()`
+        # passes, but `int("--5")` itself still raises -- this guard
+        # didn't actually verify "is this a valid int() literal", just
+        # "does stripping every leading dash leave only digits". Replaced
+        # with `_all_int()`, the same real int()-based check every other
+        # token-validation site in this file already uses.
+        if not _all_int([governor_raw]):
             raise GWParseError(
                 "expected an integer governor id after the province record",
                 line_number=owner_idx + 1,
@@ -1522,7 +1556,11 @@ def _parse_recruit_types(line3: str, line_number: int) -> tuple[ArmyType | None,
     """
 
     tokens = line3.split()
-    if len(tokens) != 4 or not all(t.lstrip("-").isdigit() for t in tokens):
+    # Bug fix (crash): same flaw as parse_gw_world's own governor-id
+    # check -- `t.lstrip("-").isdigit()` is fooled by a multi-dash token
+    # like "--3" (strips to "3", passes .isdigit(), but int("--3") still
+    # raises) -- replaced with `_all_int()`, the real int()-based check.
+    if len(tokens) != 4 or not _all_int(tokens):
         raise GWParseError(
             "expected four integers on the recruiting-types line "
             '("<type1_ord> 0  <type2_ord> 0")',
@@ -1600,8 +1638,50 @@ class GWLeaderRecord:
       two unlanded "companions" plus one further reserved roster slot,
       none of whom ever become a province's own governor. This is a
       real, structural correlation (companions never received a
-      meaningful birth coordinate), not a parsing bug -- but the exact
-      out-of-range values themselves aren't independently decoded here.
+      meaningful birth coordinate), not a parsing bug.
+
+      **Phase 1040 addendum -- the companion case's own raw value
+      re-derived, not just flagged.** Re-checked across all 12 real
+      `GW3__T1`-`GW3__T12` snapshots, tracking each stable leader by
+      name turn over turn: every one of the 20 real companions across
+      the whole corpus (389 data points total, once the same 20 stable
+      leaders are counted across 12 turns) keeps the *exact same*
+      `birth_coord` on every turn it exists -- never re-rolled, written
+      once at creation and never touched again, matching "companions
+      never land" directly. Every single one of those 389 out-of-range
+      `birth_x` values satisfies `birth_x & 0b11100000 == 0b00100000`
+      (bit 5, value 32, set; bits 6-7 clear; `birth_x & 0b00011111`
+      -- the low 5 bits -- always within `[0, 17]`, this world's own
+      real `board_width - 1`) with **zero exceptions**, and the paired
+      `birth_y` always falls within `[0, 8]`, this world's own real
+      `board_height - 1`, also with zero exceptions. Tried and ruled
+      out as the source of these values: `kingdom_id`, companion index
+      within a Kingdom (first vs. second), `race`, the owning King's
+      own `coord`, this leader's own current `coord`, and plain
+      creation/file order -- none of them predicts a given companion's
+      own `birth_x`/`birth_y` (two companions of the *same* King can
+      and do read completely different values).
+
+      Reading `birth_x`'s low 5 bits as a real, in-bounds x-coordinate
+      and bit 5 as a standalone "not actually landed" flag is a strong,
+      data-confirmed hypothesis -- `0..29`'s own compiled X ceiling
+      (this same leader-header addendum's own earlier sentence) fits
+      exactly in 5 bits, leaving bit 5 free for exactly this kind of
+      packed flag, and real uninitialized memory landing *inside* the
+      true board's own x/y bounds on every single one of 389 real
+      samples, with zero exceptions, is far too consistent to be
+      leftover noise. **Still not promoted past "strongly supported by
+      data," though**: no surviving `.PAS` fragment or disassembly
+      excerpt available to this project names this specific packing for
+      this specific field, and only one real board width (18) exists in
+      the available corpus, so whether `32` is this format's own fixed
+      constant or happens to just clear `board_width`'s own high bit for
+      *this* board can't be told apart from data alone. Not exposed as
+      a new parsed field for that reason -- there is no real consumer
+      for "the coordinate a companion almost landed at but didn't"
+      waiting on this either, so this stays a documented, closely-
+      bounded research finding rather than new API surface invented
+      without a use for it.
     - `original_liege_raw`: the Liege field's own *original* value
       (`lliege`/`liege0` are two separate Pascal fields, confirmed by
       the disassembly's own `liege0 := lliege` copy) -- always equal to

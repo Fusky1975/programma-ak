@@ -379,3 +379,25 @@ del _id, _name
 STANDARD_HERO_SEX_BY_NAME: dict[str, Sex] = {
     name: default_hero_sex(hero_id) for name, hero_id in STANDARD_HERO_ID_BY_NAME.items()
 }
+
+# Phase 979: the reserved last roster id's own real name, by leader_count
+# tier -- confirmed directly from real GW world files rather than
+# guessed. Both real games are turn-1 or reconstructed-from-a-turn-1-
+# fixture; the 100-slot tier has one real game behind it ("Kitralus",
+# `GW3__T1`, 10 Kings); the 250-slot tier has two genuinely different
+# real games behind it ("Kelderek", a 3-King `NORMAL`-type game and a
+# 23-King `EARTH`-type "Super AK" game at turn 4 -- same name despite
+# different king_count, game_type, and `valhalla_alignment_rotation_
+# mask`, which is why this is treated as a fixed per-tier constant
+# rather than a per-game draw). Both names resolve via `models/
+# valhalla.py VALHALLA_HERO_BY_NAME` to a full, real Alignment/Temper/
+# Race/SkillTable -- this project's own Valhalla-visitor roster, not a
+# coincidence (both names are verified present there). The 175-slot
+# Arcanes_V tier has no real file checked yet, so it's deliberately
+# absent here rather than guessed -- worldgen/generate_new_game.py
+# leaves the reserved slot unmaterialized for any leader_count not
+# listed in this dict.
+RESERVED_ROSTER_HERO_NAME: dict[int, str] = {
+    100: "Kitralus",
+    250: "Kelderek",
+}

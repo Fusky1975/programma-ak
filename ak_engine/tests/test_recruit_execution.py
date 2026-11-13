@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
@@ -38,6 +40,11 @@ def test_recruits_and_debits_exact_cost():
     assert state.armies[new_army_id].army_type == ArmyType.BOWMEN
     assert state.armies[new_army_id].location == LOCATION
     assert state.armies[new_army_id].commanded_by is None
+    # Bug fix, sourced directly from the user (2026-10-29), rulebook
+    # [3.9]: a fresh levy can't be Pick Up'd the same turn it was
+    # recruited -- turn/plan_dispatch.py _dispatch_pick_up()'s own
+    # real consumer of this flag.
+    assert state.armies[new_army_id].recruited_this_turn is True
 
 
 def test_new_army_commanded_by_requested_leader():
@@ -78,7 +85,7 @@ def test_recruit_falls_back_to_unled_leaves_a_colocated_mercenary_unaffected_by_
     # Same "nonexistent target -> garrison" fallback, exercised through
     # the mercenary-hiring branch instead of the fresh-levy branch.
     state = build_state()
-    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))
+    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, is_mercenary=True))
     request = RecruitRequest(leader_id=999, army_types=[ArmyType.BOWMEN])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -248,7 +255,7 @@ def test_mercenary_hire_still_works_in_hostile_territory_where_a_levy_would_be_b
     state = build_state(treasury=100)
     state.add_kingdom(KingdomState(2, "Hostilia", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0), treasury=0))
     state.provinces[LOCATION].owner_kingdom_id = 2
-    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION))
+    state.add_army(ArmyState(50, None, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, is_mercenary=True))
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -354,13 +361,88 @@ def test_race_compatible_but_unlisted_type_costs_double_when_mod_pat_known():
     state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
     # Bowmen is humanoid-compatible (race-approximation would call it
     # "native"), but this province's own real Mod_PAT list only names
-    # Legion -- still recruitable, just at double cost.
-    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])  # pay 2 -> 4
+    # Legion -- still recruitable at double cost, provided the commander
+    # already has another Bowmen unit (RULES.AK [3.4], sourced directly
+    # from the user, 2026-10-28).
+    state.add_army(ArmyState(900, 1, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, commanded_by=LEADER_ID))
+    request = RecruitRequest(leader_id=LEADER_ID, army_types=[ArmyType.BOWMEN])  # pay 2 -> 4
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
 
     assert result.recruited[0].gold_paid == 4
     assert result.recruited[0].army_type == ArmyType.BOWMEN
+
+
+def test_race_compatible_but_unlisted_type_without_an_existing_unit_is_not_recruitable():
+    # Same scenario as above, but the commander has no pre-existing
+    # Bowmen unit -- the new ownership precondition blocks it outright,
+    # rather than merely doubling the price.
+    state = build_state()
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    request = RecruitRequest(leader_id=LEADER_ID, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.non_native_type_not_owned == [ArmyType.BOWMEN]
+
+
+def test_garrison_recruitable_in_any_humanoid_province_with_real_slot_data():
+    # Phase 1054 bug fix: Garrison is recruitable (2/turn, recruit_limit()'s
+    # own real "any humanoid province, home or not" rule) in ANY humanoid
+    # province -- it is never genuinely a listed slot type in real
+    # per-province data (recruit_type_1/2 here are set to ordinary types,
+    # never GARRISON), so without the Phase 1054 exemption, Garrison could
+    # never satisfy is_native (slot-table membership) or
+    # commander_already_has_type (a Garrison-targeted order has no
+    # commander roster), making it permanently unrecruitable once real
+    # slot data exists.
+    state = build_state()
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    state.provinces[LOCATION].recruit_type_2 = ArmyType.BOWMEN
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.GARRISON])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.non_native_type_not_owned == []
+    assert len(result.recruited) == 1
+    assert result.recruited[0].army_type == ArmyType.GARRISON
+
+
+def test_non_native_type_blocked_for_a_garrison_targeted_order():
+    # A Garrison-targeted order (leader_id=None) has no commander roster
+    # to check ownership against, so a non-native type can never pass
+    # this precondition for it -- even with an existing Garrison-
+    # commanded unit of that type already present.
+    state = build_state()
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    state.add_army(ArmyState(900, 1, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, commanded_by=None))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.non_native_type_not_owned == [ArmyType.BOWMEN]
+
+
+def test_non_native_type_ownership_check_is_re_evaluated_for_every_unit_in_the_request():
+    # The ownership check is re-scanned fresh on every loop iteration
+    # (not cached once up front) -- a single pre-existing Bowmen unit
+    # from an earlier turn still satisfies the precondition for every
+    # Bowmen unit requested in this one call, not just the first.
+    # Home province: the per-turn limit for Bowmen is 2, so both units in
+    # this one request can actually be recruited -- isolating the
+    # ownership check from the separate per-type limit check.
+    state = build_state(is_home_province=True)
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    state.provinces[LOCATION].recruit_type_2 = ArmyType.LEGION
+    state.add_army(ArmyState(900, 1, ArmyType.BOWMEN, Quality.AVERAGE, LOCATION, commanded_by=LEADER_ID))
+    request = RecruitRequest(leader_id=LEADER_ID, army_types=[ArmyType.BOWMEN, ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 2
+    assert all(unit.army_type is ArmyType.BOWMEN for unit in result.recruited)
 
 
 def test_mod_pat_unknown_falls_back_to_race_compatibility_single_cost():
@@ -378,7 +460,7 @@ def test_mod_pat_unknown_falls_back_to_race_compatibility_single_cost():
 
 def test_recruit_hires_colocated_mercenary_instead_of_levying_new_army():
     state = build_state()
-    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION))
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION, is_mercenary=True))
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -391,11 +473,86 @@ def test_recruit_hires_colocated_mercenary_instead_of_levying_new_army():
     assert state.armies[999].commanded_by is None
     assert state.armies[999].quality == Quality.VETERAN  # preserved, not reset to Average
     assert len(state.armies) == 1  # no new army created
+    # Rulebook [3.9]'s own exception: a hired mercenary "already
+    # existed, with its own id" -- exempt from the same-turn Pick Up
+    # restriction, unlike a fresh levy.
+    assert state.armies[999].recruited_this_turn is False
+    # Bug fix (2026-10-25): a hired mercenary is no longer "available to
+    # Recruit" -- see `ArmyState.is_mercenary`'s own docstring.
+    assert state.armies[999].is_mercenary is False
+
+
+def test_recruit_hires_a_race_incompatible_mercenary_in_any_province():
+    # Phase 1054 bug fix: RULES.AK [3.4] "mercenaries can be Recruited in
+    # any province by any character" -- resolve_recruit()'s own race-
+    # compatibility gate used to run before the mercenary lookup, so a
+    # race-incompatible mercenary (e.g. Ents, Race.ENTISH-locked) sitting
+    # in an ordinary Human province was rejected via IncompatibleRaceError
+    # before ever being discovered, even though a real, hireable
+    # mercenary of that exact type was physically present.
+    state = build_state()  # province race is Race.HUMAN
+    state.add_army(ArmyState(999, None, ArmyType.ENTS, Quality.VETERAN, LOCATION, is_mercenary=True))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.ENTS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.incompatible == []
+    assert len(result.recruited) == 1
+    assert result.recruited[0].army_id == 999
+    assert result.recruited[0].hired is True
+
+
+def test_recruit_does_not_rehire_the_same_mercenary_twice_in_one_request():
+    # Phase 1055 cleanup regression: state.mercenaries_at(location) is now
+    # hoisted once above the per-army_type loop instead of re-fetched live
+    # on every iteration. A single mercenary hired by an earlier iteration
+    # sets its own is_mercenary=False in place -- the hoisted list still
+    # holds that same object, so the per-iteration filter must keep
+    # checking .is_mercenary explicitly (now that the live re-filtering
+    # mercenaries_at() used to provide is gone) or a later request for the
+    # same army_type would wrongly "hire" the same already-hired army a
+    # second time instead of levying a fresh one.
+    state = build_state(is_home_province=True)  # limit 2 for Bowmen
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION, is_mercenary=True))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN, ArmyType.BOWMEN])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 2
+    hired_flags = sorted(unit.hired for unit in result.recruited)
+    assert hired_flags == [False, True]  # one hire, one fresh levy -- never the same army twice
+    army_ids = {unit.army_id for unit in result.recruited}
+    assert 999 in army_ids
+    assert len(army_ids) == 2
+
+
+def test_recruit_hires_a_non_native_mercenary_without_requiring_prior_ownership():
+    # Phase 1054 bug fix: same bug, the other exception -- a race-
+    # compatible-but-unlisted mercenary used to be rejected via
+    # NonNativeTypeNotYetOwnedError before the mercenary lookup ever ran,
+    # even though the commander-ownership precondition that exception
+    # encodes is only about levying from the populace, not about hiring
+    # an army that already physically exists.
+    state = build_state()
+    state.provinces[LOCATION].recruit_type_1 = ArmyType.LEGION
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION, is_mercenary=True))
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])  # not owned, not listed
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.non_native_type_not_owned == []
+    assert len(result.recruited) == 1
+    assert result.recruited[0].army_id == 999
+    assert result.recruited[0].hired is True
+    # Still subject to the real non-native doubling the module docstring's
+    # own "doesn't distinguish hiring from levying on price" rule
+    # (Phase 16) describes -- 2 base, doubled to 4.
+    assert result.total_gold_spent == 4
 
 
 def test_recruit_ignores_mercenary_below_average_quality():
     state = build_state()
-    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.GREEN, LOCATION))
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.GREEN, LOCATION, is_mercenary=True))
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -407,7 +564,7 @@ def test_recruit_ignores_mercenary_below_average_quality():
 
 def test_recruit_ignores_unhireable_mercenary():
     state = build_state()
-    mercenary = ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION)
+    mercenary = ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION, is_mercenary=True)
     mercenary.unhireable_this_turn = True
     state.add_army(mercenary)
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
@@ -420,8 +577,8 @@ def test_recruit_ignores_unhireable_mercenary():
 
 def test_recruit_ignores_mercenary_of_a_different_type_or_location():
     state = build_state()
-    state.add_army(ArmyState(998, None, ArmyType.AXEMEN, Quality.VETERAN, LOCATION))  # wrong type
-    state.add_army(ArmyState(997, None, ArmyType.BOWMEN, Quality.VETERAN, HexCoord(0, 0)))  # wrong place
+    state.add_army(ArmyState(998, None, ArmyType.AXEMEN, Quality.VETERAN, LOCATION, is_mercenary=True))  # wrong type
+    state.add_army(ArmyState(997, None, ArmyType.BOWMEN, Quality.VETERAN, HexCoord(0, 0), is_mercenary=True))  # wrong place
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -663,7 +820,7 @@ def test_no_neutral_king_discount_by_default():
     # title yet, matching the same "alignment alone isn't enough"
     # distinction the merit-formula itself makes.
     state = build_neutral_king_state()
-    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION))
+    state.add_army(ArmyState(999, None, ArmyType.BOWMEN, Quality.VETERAN, LOCATION, is_mercenary=True))
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.BOWMEN])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -674,7 +831,7 @@ def test_no_neutral_king_discount_by_default():
 def test_neutral_king_hires_a_mercenary_for_1_gold():
     state = build_neutral_king_state()
     _grant_neutral_king_title(state)
-    state.add_army(ArmyState(999, None, ArmyType.HVY_CAVALRY, Quality.VETERAN, LOCATION))  # pay 3 normally
+    state.add_army(ArmyState(999, None, ArmyType.HVY_CAVALRY, Quality.VETERAN, LOCATION, is_mercenary=True))  # pay 3 normally
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.HVY_CAVALRY])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -706,7 +863,7 @@ def test_neutral_king_discount_still_adds_the_ally_fee_in_ally_territory():
     state.allied_kingdoms.add(frozenset({1, 2}))
     state.provinces[LOCATION].owner_kingdom_id = 2
     state.treat_permissions.add((2, 1))
-    state.add_army(ArmyState(999, None, ArmyType.HVY_CAVALRY, Quality.VETERAN, LOCATION))
+    state.add_army(ArmyState(999, None, ArmyType.HVY_CAVALRY, Quality.VETERAN, LOCATION, is_mercenary=True))
     request = RecruitRequest(leader_id=None, army_types=[ArmyType.HVY_CAVALRY])
 
     result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
@@ -827,6 +984,108 @@ def test_a_dinosaur_recruit_locks_out_a_different_army_type_in_the_same_request(
     assert len(result.recruited) == 1
     assert result.recruited[0].army_type is ArmyType.DINOSAURS
     assert result.province_locked == [ArmyType.LT_CAVALRY]
+
+
+def build_dinosaur_state_with_slots(
+    *, recruit_type_1: ArmyType | None, recruit_type_2: ArmyType | None = None
+) -> GameState:
+    # Phase 980: a province with *real* recruit-slot data (recruit_type_1
+    # not None) -- the shape `ProvinceState` actually carries once bridged
+    # from a real world file or generated via generate_new_game(), unlike
+    # `build_dinosaur_state()` above, which leaves both slots at their
+    # default None (no real per-province data to check the new gate
+    # against at all -- see that fallback's own Phase 980 docstring note).
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Elvenholm", Race.ELVEN, Alignment.GOOD, HexCoord(0, 0), treasury=100))
+    state.add_province(
+        ProvinceState(
+            DINOSAUR_LOCATION,
+            Terrain.PLAINS,
+            Race.ELVEN,
+            owner_kingdom_id=1,
+            recruit_type_1=recruit_type_1,
+            recruit_type_2=recruit_type_2,
+        )
+    )
+    raw = [0] * 30
+    raw[Ability.DRUID.value * 2] = 5
+    state.add_leader(
+        LeaderState(
+            LEADER_ID,
+            1,
+            "Druid Leader",
+            DINOSAUR_LOCATION,
+            skills=SkillTable(raw_values=raw),
+            advanced_abilities={AdvancedAbility.DRUIDIC_DINOSAURS},
+        )
+    )
+    return state
+
+
+def test_dinosaur_recruit_blocked_when_province_has_neither_elven_el_lc_nor_hc_slot():
+    # Phase 980, user-confirmed: "only in place of elven EL, LC or HC" --
+    # a province recruiting ordinary Bowmen/Axemen has neither qualifying
+    # slot, so Dinosaurs can't be recruited there even with the ability
+    # and sufficient Druid skill.
+    state = build_dinosaur_state_with_slots(recruit_type_1=ArmyType.BOWMEN, recruit_type_2=ArmyType.AXEMEN)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert result.recruited == []
+    assert result.elven_slot_required == [ArmyType.DINOSAURS]
+
+
+@pytest.mark.parametrize("qualifying_type", [ArmyType.ELEPHANTS, ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY])
+def test_dinosaur_recruit_allowed_when_either_slot_is_elephants_lt_cavalry_or_hvy_cavalry(qualifying_type):
+    # Checked in both slot positions -- the gate doesn't care which of the
+    # province's two slots carries the qualifying type.
+    state_first_slot = build_dinosaur_state_with_slots(recruit_type_1=qualifying_type, recruit_type_2=ArmyType.BOWMEN)
+    result_first_slot = execute_recruit(
+        state_first_slot, kingdom_id=1, leader_id=LEADER_ID, request=RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+    )
+    assert len(result_first_slot.recruited) == 1
+    assert result_first_slot.elven_slot_required == []
+
+    state_second_slot = build_dinosaur_state_with_slots(recruit_type_1=ArmyType.BOWMEN, recruit_type_2=qualifying_type)
+    result_second_slot = execute_recruit(
+        state_second_slot, kingdom_id=1, leader_id=LEADER_ID, request=RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+    )
+    assert len(result_second_slot.recruited) == 1
+    assert result_second_slot.elven_slot_required == []
+
+
+def test_dinosaur_recruit_via_real_slot_data_is_not_charged_double():
+    # Phase 1054 bug fix: Dinosaurs' own complete cost is "Speed: 3; Pay:
+    # 3" per AdvancedAbility.DRUIDIC_DINOSAURS's own real description --
+    # no native/non-native doubling is mentioned anywhere in that sourced
+    # text. Previously, since DINOSAURS can never itself be one of a
+    # province's two real recruit_type_1/2 slots, is_native was always
+    # False via this path, silently doubling the price to 6 even with
+    # every real precondition (Elven province, ability, Druid skill 5,
+    # qualifying Elephants/Lt Cavalry/Hvy Cavalry slot) satisfied.
+    state = build_dinosaur_state_with_slots(recruit_type_1=ArmyType.ELEPHANTS, recruit_type_2=ArmyType.BOWMEN)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.recruited[0].gold_paid == 3
+    assert result.total_gold_spent == 3
+
+
+def test_dinosaur_recruit_slot_gate_is_skipped_when_province_has_no_real_slot_data():
+    # build_dinosaur_state() (above) never sets recruit_type_1/2 (None,
+    # None) -- the same "no real per-province data to check" fallback
+    # is_native_to_province already uses, so the new gate must not block
+    # every hand-built test fixture that predates it.
+    state = build_dinosaur_state(druid_skill=5)
+    request = RecruitRequest(leader_id=None, army_types=[ArmyType.DINOSAURS])
+
+    result = execute_recruit(state, kingdom_id=1, leader_id=LEADER_ID, request=request)
+
+    assert len(result.recruited) == 1
+    assert result.elven_slot_required == []
 
 
 def test_execute_recruit_by_a_dead_leader_is_a_clean_no_op_not_a_crash():

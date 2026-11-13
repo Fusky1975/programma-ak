@@ -37343,6 +37343,715 @@ supply of any of these doesn't have to be re-derived from scratch:
   ".[webapp]"`, `pyproject.toml`), not a hard dependency of the engine
   itself. No engine behavior changes. Full suite: 7144 passed (19 new
   tests).
+
+  **Phase 965: translated the GM interface (Phase 964) from Italian to
+  English.** The user's very next instruction after Phase 964 shipped: the
+  game itself, and every one of its reports (`report/turn_report.py`'s
+  composers, all `SAY.PAS`/`.X2`-sourced English prose), is English
+  throughout, so an Italian GM screen sitting in front of English reports
+  was its own, needless inconsistency -- one this session had introduced
+  by defaulting to the conversation's own language instead of the game's.
+  Translated `games_list.html`/`base.html`'s user-facing text, `app.py`'s
+  redirect error messages and module docstring, and `games.py`'s
+  `_slugify()` empty-name fallback (`"partita"` -> `"game"`); rewrote both
+  test files' sample data/assertions to match. Added
+  `test_interface_is_declared_english` (asserts `lang="en"` on the
+  rendered page) as a standing regression guard, since nothing else would
+  catch a future phase quietly reverting to Italian. No design/behavior
+  changes beyond the text itself -- reverified with a second real-browser
+  Playwright screenshot pass. Full suite: 7145 passed (20 webapp tests).
+
+  **Phase 966: Player Setup (`webapp/players.py` + `webapp/app.py`'s
+  `/games/<slug>/players` routes) -- the second step of the plan's
+  incremental build, letting the GM add/remove a game's Kings (2-12 per
+  the rulebook) before the world exists.** Deliberately does *not* create
+  real `KingdomState`/`LeaderState` entries yet, an adjustment from the
+  original plan text ("provincia natale opzionale") made once building
+  this screen surfaced a real constraint the plan hadn't accounted for:
+  `KingdomState.home_province` (`models/game_state.py`) is a required
+  field with no default, but a Home coordinate is meaningless before a
+  map exists -- and the map's own dimensions aren't chosen until the
+  "Create World" step (Phase 4 of the plan) that hasn't been built yet.
+  So this phase stores the roster as its own small JSON sidecar
+  (`players.json`, alongside `state.pkl`/`meta.json`) holding just
+  name/race/alignment; the real `KingdomState`/`LeaderState`/`KingSetup`
+  objects get constructed all at once when "Create World" runs, exactly
+  as `cli.py _cmd_new_game` already does today, with `KingSetup.home_coord
+  =None` for any King the GM didn't pin to an explicit province, deferring
+  automatic Home placement to the engine's own already-sourced
+  `worldgen/king_home_placement.py` at that point.
+
+  Player-created Kings are restricted to the four "humanoid" races (Human,
+  Elven, Dwarven, Orcish) in the race dropdown -- not a rules choice made
+  for this phase, but a hard engine constraint discovered and confirmed
+  directly: `worldgen/initial_armies.py`'s own `BEST_ATYPE` dict (the real
+  `home_first_slot()`/"forced best_atype[king race]" table) only has
+  entries for those four, so `generate_new_game()` would `KeyError` on any
+  other race chosen for a King's Home province. All 10 `Alignment` members
+  are offered (no equivalent engine restriction found for alignment).
+  Verified with `tests/test_webapp_players.py` (roster CRUD, the
+  `MAX_PLAYERS` bound, the playable-races set) and new route tests in
+  `test_webapp_app.py` (add/remove via form, validation errors, the
+  2-12 status banner), plus a real-browser Playwright pass. Full suite:
+  7161 passed (36 webapp tests).
+
+  **Phase 967: Optional Titles (`webapp/app.py`'s `/games/<slug>/titles`
+  routes) -- the third step of the plan, letting the GM choose which of
+  the game's optional titles are in play, beyond the 8 always-mandatory
+  Imperial Offices.** Added `GameState.enabled_optional_offices: set[
+  Office] | None` (`models/game_state.py`) -- `None` (every pre-existing
+  game/test) means "not configured yet," preserving `report/turn_report.py
+  describe_imperial_office_report()`'s own original, unfiltered behavior
+  exactly; once the GM saves a choice on this screen it becomes a concrete
+  set, and that composer's two office loops (leader-scoped and the 3
+  army-scoped titles) now skip an excluded title's row entirely -- not
+  the ordinary "None at present" suppression, which is about a title
+  that's in play but currently unheld.
+
+  The screen's own "42 optional titles" is not the rulebook's own rough
+  "circa 35" estimate -- it's the real, exact count this project actually
+  models: `turn/office_holder.py ALL_OFFICES` (47 total) minus the 8
+  mandatory ones (39), plus `ARMY_RANKED_OFFICES` (3, Air Force/Praetor/
+  Flagship, kept in a separate loop since they're military-unit-scoped
+  rather than leader-scoped). Cross-checked directly against that same
+  composer's own already-existing "39 offices past the 8 majors" comment
+  (`office.value > Office.MAGE.value`), confirming this session's
+  understanding of "optional" matches the code already governing which
+  titles get the extra display-suppression gate, not a guess. Verified
+  with new `tests/test_turn_report.py` cases (an excluded title gets no
+  row at all; `None` keeps every title shown, unchanged) and new
+  `test_webapp_app.py` route tests (mandatory offices always listed,
+  every optional title checked by default, a saved subset persists and
+  redisplays correctly, submitting none disables every optional title),
+  plus a real-browser Playwright pass confirming checkbox state survives
+  a save/reload round trip. Full suite: 7169 passed (42 webapp tests, 2
+  new `describe_imperial_office_report()` tests).
+
+  **Phase 968: Create World (`webapp/world_creation.py` + `webapp/app.py`'s
+  `/games/<slug>/world` routes) -- the fourth step, turning the Phase 2
+  roster into a real, fully generated game.** `create_world()` builds the
+  real `KingdomState`/`LeaderState`/`KingSetup` for every roster entry (a
+  placeholder `HexCoord(0, 0)` Home, immediately overwritten -- see the
+  companion engine fix below) and runs the existing `generate_new_game()`
+  pipeline against them -- the exact same one-shot construction `cli.py
+  _cmd_new_game` already does from a JSON roster, run here from the
+  webapp's own `players.json` instead. Every King's Home province is
+  auto-placed (`KingSetup.home_coord=None`): there's no map yet at
+  roster-entry time (Phase 2) for the GM to have pinned an explicit
+  coordinate to, so this phase doesn't offer one. Guards against the two
+  real misuses a screen (rather than a one-shot CLI script) makes
+  newly possible: creating a world twice for the same game
+  (`WorldAlreadyCreatedError`, checked via `state.kingdoms` -- the second
+  attempt is refused rather than silently discarding the real, already
+  in-progress game) and creating one outside the rulebook's own 2-12
+  King bound (`RosterOutOfBoundsError`).
+
+  **A real, if narrow, pre-existing engine bug found and fixed while
+  building this**: `generate_new_game()` (`worldgen/generate_new_game.py`)
+  auto-places a King's Home via `choose_king_home()` when
+  `KingSetup.home_coord=None` (Phase 427), and correctly updates that
+  King's own `LeaderState.location` to the real, chosen coordinate -- but
+  never updated `GameState.kingdoms[...].home_province` to match, leaving
+  it silently stuck at whatever placeholder the caller had constructed
+  the `KingdomState` with. Invisible until now because no real caller
+  had ever actually exercised the `home_coord=None` path (`cli.py` always
+  supplies an explicit Home from its JSON roster) -- only
+  `tests/test_generate_new_game.py`'s own auto-placement tests did, and
+  none of them happened to assert anything about `home_province` itself,
+  reading `leader.location` instead. Fixed by writing `home_province`
+  in the same per-King loop that already sets `leader.location`/
+  `leader.birth_x`/`leader.birth_y`, using the same already-in-scope
+  `home_coord` -- a no-op for the one real path that already passed an
+  explicit `home_coord` (it was already the same value), so no observed
+  behavior changes for any existing caller. New regression test:
+  `test_auto_selected_king_home_updates_the_kingdoms_own_home_province`.
+
+  Verified with `tests/test_webapp_world_creation.py` (population,
+  persistence, auto-placed Homes, both guard errors) and new
+  `test_webapp_app.py` route tests (the below-minimum warning replacing
+  the form entirely, the real generated summary, both error paths), plus
+  a real-browser Playwright pass creating an actual 3-King world (162
+  provinces, 54 armies, distinct auto-placed Homes) end to end from the
+  roster screen. Full suite: 7181 passed (11 new webapp/world-creation
+  tests, 1 new engine regression test).
+
+  **Phase 969: World Editor, province screen (`/games/<slug>/provinces`
+  routes) -- the first of Phase 5's three planned editor screens (province,
+  hero, special feature), all thin CRUD layers over `GameState` fields
+  that already exist, per the plan's own "no new data structures needed"
+  design.** A sortable table lists every generated province (coordinate,
+  terrain, race, owning Kingdom, tax, both recruitable unit slots) with
+  an Edit link each; the edit form lets the GM change terrain, race, tax,
+  and both recruit types directly on the live `ProvinceState`, saved
+  immediately via the existing `save_game()`. Deliberately narrower than
+  a full map view -- no visual hex grid, just a text table -- matching
+  this interface's own established "text-first, defer a real map
+  rendering" scope boundary; the coordinate column and Edit links are
+  enough for a GM to navigate to any of a world's (up to 450) provinces
+  by hand.
+
+  Verified with new `test_webapp_app.py` route tests (list before/after
+  world creation, edit-form prefill, a full save round-trip including
+  clearing an optional recruit slot back to "None", and both invalid-
+  input paths -- an unparseable terrain/race enum value, a non-numeric
+  tax). Caught one display bug of its own during the real-browser
+  Playwright pass: `Race.NO_RACE`/`ArmyType.EAGLE_WING`-style names
+  rendered as `"No_Race"`/`"Eagle_Wing"` (a bare `.title()` call, not
+  this project's own established `.replace('_', ' ').title()` convention
+  every other enum-display site already uses) -- fixed before commit, not
+  left for a later phase. Full suite: 7190 passed (9 new tests).
+
+  **Phase 970: World Editor, hero screen (`/games/<slug>/leaders` routes) --
+  the second of Phase 5's three editor screens.** A table lists every
+  `LeaderState` in the game -- both Kings and the independent lords/
+  companions `generate_new_game()` itself already populates, not just the
+  GM-entered Kings -- with Kingdom (or "Independent"), race, alignment,
+  temper, and sex; the edit form changes name/race/alignment/temper/sex
+  directly on the live object. Race offers the full 18-member `Race` enum
+  here (not the Phase 2 roster form's 4-race `PLAYABLE_RACES` subset) --
+  a Hero, unlike a player-created King, is never run through
+  `home_first_slot()`'s own `BEST_ATYPE` lookup, so the engine constraint
+  that narrows a King's race doesn't apply. Alignment/temper/sex are
+  editable back to "Unset" (`None`), matching how `LeaderState` already
+  represents "no data recorded" for a Hero the world-gen pipeline never
+  populated these for.
+
+  Confirmed while testing that a King's own `LeaderState.alignment` and
+  his Kingdom's `KingdomState.alignment` are genuinely two separate
+  fields, not a display duplicate -- Phase 4's `create_world()` only ever
+  sets the latter (from the Phase 2 roster), so every King's own
+  `leader.alignment` legitimately starts `None` until the GM sets it
+  here, confirmed by a real-browser screenshot showing exactly that for
+  a freshly created game, not a bug to chase.
+
+  Verified with new `test_webapp_app.py` route tests (list before/after
+  world creation, edit-form prefill, a full save round trip, clearing the
+  three optional fields back to "Unset", and the blank-name/invalid-race/
+  missing-leader error paths), plus a real-browser Playwright pass
+  confirming both the King and the world-generated companions/lords all
+  appear and edit correctly. Full suite: 7200 passed (10 new tests).
+
+  **Phase 971: World Editor, special-feature screen (`/games/<slug>/
+  features` routes) -- the third and last of Phase 5's editor screens,
+  closing out the plan's "editing every generated province/hero/feature
+  attribute" requirement.** A table lists every `Feature` a freshly
+  generated world actually carries (128 for a real 2-King, 18x9 game --
+  dungeons, tombs, pyramids and the like, each already given a real
+  guardian monster and treasure by `generate_new_game()`'s own world-
+  generation pipeline) with type/guardian/treasure/magic-power columns;
+  the edit form changes type, guardian monster, guardian alignment,
+  treasure, internal magic location, and magic power directly on the
+  live `Feature` object -- the full set of "cosa si trova dentro" data
+  the plan's own opening request named, all optional/clearable back to
+  "None"/"Unset" the same way the hero editor's fields are.
+
+  With this phase, Phase 5 (World Editor) is complete -- province, hero,
+  and feature screens all reachable from the "Create World" summary once
+  a world exists.
+
+  Verified with new `test_webapp_app.py` route tests (list before/after
+  world creation, edit-form prefill, a full save round trip across all
+  six fields, and the invalid-type/missing-feature error paths), plus a
+  real-browser Playwright pass over a real generated world's own features
+  (confirming, among other things, that `Power.PNONE` rendering as
+  "Pnone" is the enum's own real name with no underscore to split on --
+  not a display bug to chase, unlike Phase 969's genuine one). Full
+  suite: 7208 passed (8 new tests).
+
+  **Phase 972: Turn 0 Reports (`webapp/reports.py` + `/games/<slug>/turn0`
+  routes) -- Phase 6 of the plan, the step between "Create World" and the
+  turn-processing cycle Phase 7 will add.** Every King's own starting
+  letter report, viewable and downloadable as plain text, meant to be
+  handed to that player so they can prepare real Turn 1 moves in the
+  already-supported text format.
+
+  **A real design decision, not just an implementation detail**:
+  `process_turn(state, [])` (zero move files) was tried first, since the
+  plan's own "Scoperte chiave" section flagged it as the likely candidate
+  for a turn-0 report and asked for it to be verified against a real
+  freshly generated world before assuming it works. It doesn't, for this
+  purpose -- confirmed by actually running it: despite zero orders, it
+  still executes a full turn's own random dispatch (a real "visited by a
+  Hero from Valhalla" event fired in testing) and advances `state.
+  turn_number` from 1 to 2, which is correct for "a turn nobody moved in"
+  but wrong for a report meant to show only the world's own just-
+  generated starting state before any turn has run. `webapp/reports.py
+  turn_zero_report()` instead calls `report/turn_report.py
+  compose_letter_report()` directly with an empty `results` list (no
+  `PhaseDispatchResult` -- no orders have ever existed) and no
+  `run_turn()` call at all, so `turn_number` never moves and ACTION
+  REPORT renders as no section at all (confirmed empty, not a "None at
+  present" row) rather than a fabricated one.
+
+  Real-browser Playwright verification against an actual 2-King
+  generated world produced a report indistinguishable in *shape* from a
+  genuine `SE3__T*.K*` sample -- LETTER REPORTS, STATE OF THE NATION,
+  DIPLOMACY, FINANCES (a real "Gold in treasury: 10" line), PROVINCES,
+  CHARACTERS (including the world-gen's own independent Heroes, not just
+  the King), ARMIES, IMPERIAL OFFICE REPORT, ADVENTURE (real monster
+  lairs/treasures from the just-created Features), ELECTION STATUS --
+  confirming `compose_letter_report()`'s own existing section set
+  produces a genuinely complete, realistic report from nothing but a
+  freshly generated `GameState`, with no special-casing needed beyond
+  the empty `results` list.
+
+  Per the plan's own explicit v1 scope decision, this same per-Kingdom
+  report (already containing that Kingdom's full PROVINCES/CHARACTERS/
+  ARMIES status) is offered as the stand-in for the real, still
+  unreverse-engineered binary XK export -- the screen says so explicitly
+  rather than silently presenting one as the other. Verified with new
+  `tests/test_webapp_reports.py` (turn number never advances, no ACTION
+  REPORT section, reflects a live World Editor edit, genuinely differs
+  per Kingdom) and new `test_webapp_app.py` route tests (list/view/
+  download, both missing-game and unknown-Kingdom error paths, the
+  download's own `Content-Disposition` attachment header). Full suite:
+  7222 passed (14 new tests).
+
+  **Phase 973: the Turn Processing Cycle (`webapp/turn_processing.py` +
+  `/games/<slug>/turns` routes) -- Phase 7, the plan's final phase,
+  closing the whole GM interface loop.** The GM uploads each Kingdom's
+  real move-submission file for the current turn (preserving its own
+  filename -- `models/kingdom.py Kingdom.kingdom_id` is parsed from that
+  file's own trailing `.K<N>` suffix, not its content, confirmed directly
+  from that property's own docstring before relying on it), then one
+  "Process Turn N" button runs the existing `orchestrator.process_turn()`
+  against every upload at once, saves the resulting letter reports to
+  disk, and advances the game to the next turn -- the exact same
+  upload/process screen then serves the following turn, repeating until
+  the game ends.
+
+  A Kingdom with no uploaded file when the GM processes the turn is not
+  an error: `process_turn()` already gives it the real rulebook-mandated
+  missed-deadline Defend/Wait auto-fill, so the GM can process a turn
+  with only some Kingdoms having submitted, matching real GM discretion
+  over deadlines (confirmed both by a unit test and by the real-browser
+  pass below, where the second Kingdom's own report shows Aldric alone
+  contesting -- and winning -- every Imperial Office because Elara never
+  submitted).
+
+  **A processed turn's own report can't be regenerated later on demand**,
+  unlike Phase 6's `turn_zero_report()`: it reflects one real, RNG-driven
+  `run_turn()` dispatch that already happened and permanently mutated
+  `state`, so `process_and_save_current_turn()` writes each Kingdom's
+  `TurnOutcome.letter_reports` entry to its own text file immediately,
+  under that turn's own number (the number *before* `process_turn()`'s
+  own increment, not after), rather than leaving a later "view" request
+  to recompute something no longer reproducible.
+
+  Real-browser Playwright verification drove the complete cycle end to
+  end against an actual 2-King generated game: uploaded the repo's own
+  real `AK3__T1.K1` sample (correctly bucketed to "Aldric," the Kingdom
+  its own `.K1` suffix names, regardless of the sample's own internal
+  King name), clicked "Process Turn 1," and got back a genuine, complete
+  Turn 1 letter report -- ACTION REPORT (real travel/rumor narration),
+  IMPERIAL OFFICE REPORT (Aldric winning every office uncontested, since
+  Elara never submitted), FINANCES, PROVINCES, CHARACTERS, ARMIES,
+  ADVENTURE, an actual Emperor coronation, and FINAL STANDINGS -- with no
+  special-casing beyond what `process_turn()`/`compose_letter_report()`
+  already do, confirming the whole GM interface (Phases 1-7) genuinely
+  drives the real engine from an empty "My Games" list through a
+  processed turn.
+
+  Verified with new `tests/test_webapp_turn_processing.py` (upload/parse/
+  remove against the repo's own real move-file fixture, invalid-file
+  cleanup, per-turn scoping, the full process-and-save round trip) and
+  new `test_webapp_app.py` route tests (the upload form, both upload
+  error paths, remove, process, the missed-Kingdom auto-fill case, the
+  report list/view/download screens and their own not-found/missing-game
+  paths). Full suite: 7248 passed (26 new tests).
+
+  **With this phase, the GM interface plan is complete**: a GM can now go
+  from an empty games list through player setup, optional titles, world
+  creation, full world editing, Turn 0 reports, and a repeating real
+  turn-processing cycle, entirely from the browser, with no engine logic
+  duplicated anywhere in `webapp/` -- every screen is a thin, tested
+  layer over functions the engine already had.
+
+  **Phase 974: "Add Special Feature," and a real display-name bug found
+  and fixed while using the finished interface end to end with the
+  user.** The user drove a live demo (4 Kings, a full world, a province
+  edit, a Turn 1 process) and asked to add a brand-new Feature to an
+  empty Sea province -- a gap in Phase 971's own scope, which only let
+  the GM edit a Feature `generate_new_game()` had already created, never
+  create one from nothing. Added `/games/<slug>/provinces/<x>/<y>/
+  features/new` (GET/POST), reusing `GameState.new_feature_id()`/
+  `add_feature()` exactly as `turn/world_generation.py`'s own real
+  Feature-creation path already does, and showing the GM the assigned
+  `#N` before they commit (the user's own explicit question: "che numero
+  d'ordine riceve?").
+
+  **A real, user-caught display bug, not a cosmetic nitpick**: asking for
+  a "Gold Dragon" guardian, the GM interface's own dropdown showed "Go
+  Dragon" -- every enum-backed dropdown/table built in Phases 2/3/5
+  (terrain, race, recruit types, monsters, treasures, magic locations/
+  powers, alignments, tempers) had been displaying a naive `.name.
+  replace('_', ' ').title()` prettification of the enum's own Python
+  identifier instead of this project's own already-curated, real-game
+  display-name dicts (`models/race.py RACE_NAME`, `models/monster.py
+  MONSTER_NAMES`, `models/treasure.py TREASURE_NAME`, etc. -- the exact
+  same data `report/turn_report.py` already renders through). Confirmed
+  concretely: "Go Dragon" (wrong) vs. the real "Gold Dragon" curated in
+  `MONSTER_NAMES`; "Lt Cavalry" vs. "Light Cavalry"; "Elven" vs. the real
+  "Elf"; "Anti Holy" vs. the real "Anti-Holy" (`Alignment.ANTI_HOLY.
+  value`, no dict of its own needed since the member's own value already
+  is the display string). Fixed with one Jinja filter, `display_name`
+  (`webapp/app.py`), registered once (`app.jinja_env.filters`) and used
+  by every template instead of the bare prettifier -- a curated name
+  returned verbatim when one exists, falling back to the old plain
+  title-casing only for the documented handful of gaps in those dicts
+  themselves (`Race.DROW`, `ArmyType.ARTILLERY`, etc.) or enums with no
+  curated dict at all (`Sex` -- "Male"/"Female" was already right).
+
+  **A second-order bug caught before it shipped, by testing the fix
+  itself rather than trusting it**: the filter's first draft title-cased
+  *every* resolved name, curated or not -- harmless for single-word
+  names, but it silently corrupted real multi-word curated text, turning
+  "Large Hoard of Gold" (`models/treasure.py GOLD_HOARD_DISPLAY_NAME`,
+  that module's own confirmed real ADVENTURE-report string) into "Large
+  Hoard Of Gold." Caught by a real-browser re-check after wiring the
+  fix in, not assumed correct from the diff alone -- fixed by returning
+  a curated name exactly as stored, title-casing only the uncurated
+  fallback path. `models/treasure.py` also required picking the right
+  one of its *four* different `Treasure`-keyed name dicts: the generic
+  `TREASURE_NAME` gives the 3 gold-hoard tiers only a bare "Hoard" (that
+  module's own docstring: TREASURE.X2's flavor-name extraction, "not
+  what the report actually prints"), so `GOLD_HOARD_DISPLAY_NAME`
+  overrides those 3 specific entries.
+
+  Verified with new unit tests for `display_name()` directly (curated
+  names returned verbatim including the gold-hoard-override case and
+  Alignment's own real value, the documented-gap fallback, the no-
+  curated-dict-at-all case, `None`), route-level assertions that a
+  curated name actually renders (not the old wrong one), and new
+  `test_webapp_app.py` route tests for feature creation (the assigned-id
+  display, a full create round trip, invalid-type and missing-province/
+  game error paths), plus a real-browser Playwright pass creating an
+  actual Feature #129 (Cave, Gold Dragon, Large Hoard of Gold) end to
+  end and re-confirming the corrected display after the title-casing
+  fix. Full suite: 7263 passed (15 new tests).
+
+  **Phase 975: an Emperor-crowned advisory banner on the Turns hub.**
+  While driving the live Turn 1-6 demo with the user, Aldric the Bold was
+  crowned Emperor as early as Turn 1 (`turn/emperor_election.py`'s own
+  automatic, every-turn `evaluate_election_call()` -- no explicit King
+  order triggers it, confirmed directly from that module's own
+  docstring), yet turns kept being processed normally for several more
+  rounds. The user asked directly whether that was a bug. It is not --
+  confirmed from `turn/final_standings.py`'s own sourced docstring:
+  `kingdom_points()` "recomputes every turn after coronation, not as a
+  one-time 'game over' event, matching the real engine's own recompute-
+  on-every-`Pray_Report` behavior; no separate 'is this the last turn'
+  detection is needed." The real original engine never auto-halted on
+  election either -- ending a campaign was always the GM's own real-world
+  call, not something the software enforced.
+
+  Added a non-blocking advisory (`webapp/templates/turns_hub.html`, a new
+  `.status-info` style) once `state.emperor_kingdom_id` is set: names the
+  crowned Kingdom, states the rulebook framing ("this is how a game of
+  Adventurer-Kings is won"), and explicitly says turns can still be
+  processed afterward -- an informational nudge, not a stop condition,
+  matching the sourced "the real game doesn't force a stop either"
+  finding above. No new `GameState` field needed (no "first coronation
+  turn" is tracked or required -- the banner only needs to know an
+  Emperor currently exists, which `emperor_kingdom_id` already is).
+
+  Verified with new `test_webapp_app.py` route tests (no banner before
+  any election; the banner appears, naming the right Kingdom, after a
+  real Turn 1 processing run that crowns one) and a real-browser
+  Playwright screenshot against the live Turn 7 demo state. Full suite:
+  7265 passed (2 new tests).
+
+  **Phase 976: a real packaging bug, found while building a one-click
+  Windows launcher for the user to try the GM interface themselves.**
+  The user asked for a double-clickable Windows file; since a launcher
+  with no local source checkout to point at has to run a genuine
+  non-editable `pip install` (there's nothing to `-e .` back to), this
+  session built and ran one end to end as a pre-flight check before
+  handing it over -- and hit a real `jinja2.exceptions.TemplateNotFound:
+  games_list.html` on the very first page load. `pyproject.toml` had no
+  `[tool.setuptools.package-data]` entry at all, so setuptools only ever
+  packaged this project's `.py` files; `webapp/templates/*.html` and
+  `webapp/static/*.css` were silently excluded from any real install.
+
+  Invisible throughout Phases 964-975: every workflow that ever ran this
+  app -- the dev server, every `pytest` run, every manual/Playwright
+  browser check across this whole GM-interface build -- used either the
+  source tree directly or an editable install (`pip install -e .`),
+  both of which just point back at those same on-disk files regardless
+  of any packaging declaration. A real non-editable install was never
+  actually exercised until this session needed one for an end user who
+  has no source checkout at all.
+
+  Fixed by adding the missing `package-data` declaration
+  (`"ak_engine.webapp" = ["templates/*.html", "static/*.css"]`). Verified
+  by rebuilding the install from scratch in a clean virtualenv and
+  confirming both a real page (`GET /`) and the stylesheet
+  (`GET /static/style.css`) now return 200 from the installed package,
+  not just the source tree -- the exact gap a source-tree-only check
+  could never have caught. New `tests/test_packaging.py` guards the
+  `pyproject.toml` declaration itself plus that its glob patterns still
+  cover every real template/static file this package ships, so a future
+  new template under a different extension can't silently fall outside
+  it again. Full suite: 7267 passed (2 new tests).
+
+  Also delivered, outside this repository (a Windows `.bat` launcher +
+  README isn't source code this project tracks): a standalone launcher
+  script that downloads this branch as a zip (no `git` required on the
+  user's machine), installs it with `pip install ".[webapp]"`, and opens
+  the GM interface in the browser -- the real artifact this packaging
+  fix was needed for in the first place.
+
+  **Phase 977: a second real bug found by a self-review pass of the Turn
+  Processing Cycle -- an uploaded move file's own ``.K<N>`` suffix was
+  never checked against this game's real Kingdoms.** Confirmed
+  concretely before fixing: a plain copy of the repo's own real
+  `AK3__T1.K1` sample, renamed to the unrelated `AK3__T1.K99`, parses
+  without error (`Kingdom.kingdom_id` is read straight off the filename,
+  not validated against anything) and would have been accepted by the
+  upload form outright. Processing a turn with that file on disk would
+  have fed it straight into `process_turn()`, whose own `turn/kingdom_
+  bridge.py sync_leaders_from_kingdom()` trusts the filename-derived
+  Kingdom id unconditionally -- reassigning a real leader (matched by
+  `leader_id`, found in `state.leaders` regardless of which Kingdom they
+  actually belong to) to Kingdom #99, which doesn't exist in this game.
+  `webapp/turn_processing.py`'s own `uploaded_move_files()`/`save_
+  uploaded_move_file()`/`remove_uploaded_move_file()` now all take the
+  game's real `valid_kingdom_ids` (`state.kingdoms.keys()`) and reject or
+  filter out anything outside it -- at upload time (a clear "not a valid
+  move file" error, same path a parse failure already used) and, as a
+  second layer, in the listing itself (so a file that reached the folder
+  some other way, e.g. a GM editing it directly on disk, still can't
+  surface).
+
+  Verified with new `tests/test_webapp_turn_processing.py` cases (the
+  upload-time rejection and cleanup, the listing-level filter for a file
+  placed directly on disk) and a new `test_webapp_app.py` route test
+  confirming the real upload form rejects such a file with neither real
+  Kingdom showing a spurious upload. Full suite: 7270 passed (3 new
+  tests).
+
+  **Phase 978: two real GM-interface bugs found by the user testing
+  against their own real Turn-0 report from an actual historical game.**
+
+  First, King/Hero creation and editing offered all 10 `Alignment` enum
+  members, including `ANTI_HOLY`/`MECHANICAL`/`SPECIAL` -- but
+  `models/alignment.py`'s own `CTBOTH.PAS` sourcing already establishes
+  those three as monster/construct-only, and RULES.AK [1.0] names the
+  real seven a character can hold verbatim: "an Alignment (Divine, Good,
+  Druidic, Neutral, Pagan, Evil, Undead)". New `webapp/players.py
+  PLAYABLE_ALIGNMENTS` (mirroring the existing `PLAYABLE_RACES`
+  precedent) now scopes both `player_setup.html` (King creation) and
+  `leader_edit.html` (King/Hero editing) to those seven, validated
+  server-side too. `feature_edit.html`/`feature_new.html` (a monster
+  guardian's own Alignment) correctly keep all 10.
+
+  Second, there was no way for the GM to ever set a King's Temper or
+  starting talent allocation. RULES.AK [2.1] (user-supplied verbatim):
+  "At the start of the game, the player assigns the King's name, race,
+  temper, alignment and four ability levels... but can't assign more
+  than 2 levels to any Talent." `worldgen/king_talent.py
+  build_king_skill_table()` already implemented this exact formula
+  (confirmed against a real `AK3__T1.K1` skill line since Phase 430) --
+  but nothing in the webapp ever called it, so every King generated
+  through this interface silently kept `skills=None`/`temper=None`
+  forever, never receiving even the automatic +1 Melee/Archery/Sage
+  bonus every King gets unconditionally. `player_setup.html`'s "Add a
+  King" form now has a Temper selector and a 15-Ability point-allocation
+  grid (server-validated: exactly 4 points total, at most 2 per
+  Ability), and `webapp/world_creation.py create_world()` now calls
+  `build_king_skill_table()` for every King -- including one added
+  before this phase with no talent data at all, which still correctly
+  receives just the automatic bonuses rather than nothing.
+
+  Verified with new tests across `test_webapp_players.py` (the new
+  `PlayerEntry` fields round-trip through `players.json`),
+  `test_webapp_world_creation.py` (a King's real `LeaderState.alignment`/
+  `.temper`/`.skills` match `build_king_skill_table()`'s own output after
+  "Create World" runs), and `test_webapp_app.py` (the restricted dropdowns,
+  every new validation error path, and the existing roster/world-creation
+  tests' own helper updated to post a complete, valid King form). Full
+  suite: 7282 passed (12 new tests).
+
+  Two further points the user raised in the same report turned out, on
+  direct comparison against RULES.AK/ADDEND.AK, to already match
+  documented real behavior rather than being bugs: a King's Turn-0 map
+  correctly shows only the Home province (`ADDEND.AK`'s "European
+  variant" section grants "knowledge of the provinces surrounding his
+  Kingdom, up to 3 provinces distant" as an explicit *variant-only*
+  bonus, implying the standard game starts with none beyond Home --
+  matching the user's own real reference report exactly, which also
+  shows a single province); and the PROVINCES section is correctly
+  scoped to owned territory ("the lands of thy Empire"), not a
+  neighbor-intelligence listing. A separate, already-documented real gap
+  -- `generate_new_game()` never materializes "remaining mercenary
+  heroes" (leftover hero-roster ids beyond independent lords and King
+  companions), since no source material says where one starts -- remains
+  open pending the user confirming real hero-count figures that don't
+  yet reconcile with the already-fixture-verified `leader_count=100`
+  formula.
+
+  **Phase 979: the "remaining mercenary heroes" gap above, closed --
+  with two real, user-supplied `GW` world files from different actual
+  historical games settling the question Phase 978 left open.** Neither
+  matched the user's own recalled hero counts (96 for 2 Kings, 86 for
+  12) exactly, but both independently confirmed the *shape* of the
+  formula with zero discrepancy once checked directly: a 10-King/
+  `game_version=3`/100-slot-roster file (cross-referenced against this
+  project's own pre-existing `GW3__T1` fixture, byte-identical but for
+  line endings) shows exactly 90 Heroes; a freshly-supplied 3-King/
+  `game_version=4`/250-slot-roster file shows exactly 247 -- both
+  exactly `leader_count - king_count`, the same formula `remaining_
+  mercenary_count()`/`owner_leader_count()`/`companion_count()` already
+  implemented and tested since Phase 357, just never fully wired into
+  `generate_new_game()`.
+
+  The missing piece was sitting unused in the same sibling module:
+  `worldgen/leader_placement.py draw_mercenary_relocation_coordinate()`
+  ("redraw coordinates while on Sea or in a King-owned province; sharing
+  a lord-owned province is allowed") is listed in that module's own
+  docstring as "confirmed exactly... cross-checked against the source's
+  own two worked real-game examples" -- the same two examples `remaining_
+  mercenary_count()` is checked against -- yet nothing ever called it,
+  the identical "confirmed formula, never wired into the orchestrator"
+  shape as Phase 978's own `build_king_skill_table()` finding one phase
+  earlier. `generate_new_game()` now places every leftover roster id
+  this way, race set to the landing coordinate's own native race
+  (reusing `independent_lord_effects()`'s own convention, the one other
+  non-Home role, since no source covers a mercenary's race specifically).
+  This reverses this module's own prior Phase 426 conclusion that the
+  location was unrecoverable ("only the Earth_V-mode repositioning rule
+  survived") -- that caveat directly contradicts the sibling module's
+  own, more specific sourcing citation, and this project has no
+  surviving primary document in this environment to adjudicate between
+  them; flagged in the code for a human with the original material to
+  correct if the older caveat turns out to be right after all.
+
+  One slot deliberately still isn't materialized: the reserved last
+  roster id (Phase 357's own "attached separately to a Home, too
+  ambiguous to code"). Both real files independently strengthen that
+  gap rather than closing it: each shows this slot real and populated,
+  by a name genuinely found in `models/valhalla.py`'s own `VALHALLA_
+  ROSTER` ("Kitralus" for the 10-King game, "Kelderek" for the 3-King
+  one) -- not `STANDARD_HERO_ROSTER`, confirming Phase 357's "separate
+  mechanic" guess was right, though not yet how one gets selected. Both
+  happen to be the *last* entry of their own Alignment's bucket tuple --
+  a concrete lead, not a confirmed rule from just two data points, left
+  for whoever revisits this with more real files.
+
+  A 2-King game (the user's own original test scenario) now generates
+  97 Heroes (99 of 100 roster slots filled, only the reserved slot
+  still open) instead of 27. Verified with a new `test_generate_new_
+  game.py` test (`test_remaining_mercenary_heroes_are_placed_off_sea_
+  and_off_king_homes`) plus a total-count invariant test against the
+  newly-confirmed formula; two pre-existing tests that had silently
+  conflated "every independent (`kingdom_id=None`) leader is a lord"
+  needed their own filtering corrected now that mercenaries share that
+  same property (lords and mercenaries draw from the same ascending-id
+  pool, lords first, so id order still separates them cleanly). Two
+  unrelated integration tests with hardcoded seed-dependent feature
+  facts (`test_use_mi_item_creation_integration.py`) needed the same
+  "re-scan after a new RNG draw lands earlier in the pipeline" update
+  this project has already done after five earlier phases for the exact
+  same reason. Full suite: 7283 passed (3 new tests, 2 re-scanned).
+
+  **Phase 979 addendum: the one remaining gap -- the reserved last
+  roster id -- closed too, for the two tiers with real evidence behind
+  them.** Two further real, user-supplied `GW` world files kept settling
+  this as the user searched their own archive: a 23-King "Super AK"
+  (`game_type=EARTH`) file at turn 4 shows the reserved id (249, a
+  250-slot roster) is **"Kelderek" again** -- the same name the Phase
+  979 addendum above already found in a completely unrelated 3-King
+  game (different `game_number`, different `valhalla_alignment_
+  rotation_mask`). Two independently-matching real games settle that
+  this is a fixed per-tier constant, not a per-game Valhalla draw --
+  strong enough, with the user's own go-ahead, to finally materialize
+  this id rather than leave it open a third time. `models/valhalla.py`
+  gains `VALHALLA_HERO_BY_NAME`, and `models/hero_roster.py` gains
+  `RESERVED_ROSTER_HERO_NAME = {100: "Kitralus", 250: "Kelderek"}` --
+  both real names resolve to a complete, already-sourced Alignment/
+  Temper/Race/`SkillTable` from this project's own Valhalla-visitor
+  roster, confirming `models/hero_roster.py`'s own Phase 366 suspicion
+  that this slot was a Valhalla mechanic, not a `LNAMES.PAS` one.
+  `generate_new_game()` now materializes it (for any `leader_count`
+  with a confirmed entry -- the 175-slot `Arcanes_V` tier still has none
+  checked, so it deliberately stays open) via the same mercenary-
+  coordinate draw as every other non-Home leader, since its own
+  "attached separately to a Home" rule is still too ambiguous to know
+  *which* Home. The same turn-4 file's two other, unrelated name
+  mismatches (ids 75/106) are most simply explained by the rulebook's
+  own in-game character-rename option, not a world-gen gap, and aren't
+  acted on.
+
+  A 2-King game now generates all 100 of 100 roster slots (2 Kings + 98
+  Heroes, "Kitralus" included) -- the earlier mercenary-only fix above
+  was already verified live through the real running webapp via
+  Playwright (99 rows: 2 Kings + 97 Heroes, the reserved id still
+  missing at that point); this addendum's own last-slot fix was
+  confirmed the same way `generate_new_game()` itself is confirmed
+  elsewhere, directly: a fresh 2-King call now reports 100 total
+  leaders, with "Kitralus" present among them. New `test_generate_new_
+  game.py` test (`test_reserved_roster_id_gets_its_real_valhalla_name_
+  and_stats`); `_mercenaries()`'s own test helper updated to exclude the
+  now-separately-tested reserved id; one more "re-scan after an earlier
+  RNG draw" update to `test_use_mi_item_creation_integration.py` (this
+  time landing on a genuinely tough `GR_DRAGON` guardian for feature_id
+  1, hence a much larger win seed than every prior re-scan). Full suite:
+  7284 passed.
+
+  **Phase 980: Dinosaur armies fixed -- real "Race: Saurian" wired in,
+  plus a real, previously-deferred province-level recruiting
+  precondition, both found and user-confirmed while cross-referencing a
+  fresh, user-supplied reverse-engineering report of `REPORTS.PAS`
+  against this project's own CHARACTERS/ARMIES section.** That cross-
+  reference turned out to mostly re-derive material this project had
+  already mined in exhaustive detail over many earlier phases (`Tell_
+  Align`, `Get_News`, `Pray_Report`'s office-standings formulas -- all
+  independently spot-checked and found already correct) -- but it also
+  surfaced one genuine side effect nothing here modeled: "Rep_Armies,
+  atype=Dinosaurs e arace=Elven -> arace=Saurian." `models/
+  advanced_ability.py` already quoted the real source text verbatim
+  since Phase 691 ("Race: Saurian"), but nothing had ever wired it in --
+  `models/army_type.py MONSTROUS_ARMY_RACE` gains `ArmyType.DINOSAURS:
+  Race.SAURIAN`, so a Dinosaur army now reports and fights as Saurian
+  (real column text "Dinosaur", `RACE_NAME`'s own already-sourced form)
+  instead of the owning Kingdom's own race -- the real recruiting race
+  gate (province must be Elven, `turn/recruit.py
+  _ELVEN_ONLY_ARMY_TYPES`) is a separate check, run before this dict is
+  ever consulted, so it's unaffected.
+
+  The user also confirmed, from their own knowledge of the real game,
+  that the same Advanced Ability's own "only in place of elven EL, LC or
+  HC" is a real province-level *precondition* -- a province must
+  currently offer Elephants, Light Cavalry or Heavy Cavalry as one of
+  its own two recruit slots for Dinosaurs to be recruitable there at
+  all. An earlier phase (691) had already quoted this exact clause but
+  read it only as "descriptive context... no mechanism invented," having
+  ruled out one specific (wrong) reading -- a literal cross-type slot-
+  *consumption* formula, which really isn't sourced -- without
+  separately implementing the plainer existence-check reading, which
+  is. `turn/recruit_execution.py` now enforces it (new
+  `RecruitExecutionResult.elven_slot_required`), only when the province
+  actually carries real per-province slot data (`recruit_type_1 is not
+  None`) -- the same fallback `is_native_to_province` itself already
+  uses, so no hand-built test fixture that never populated real slots
+  is newly, silently blocked. No new move-command was needed: Recruit
+  orders were already fully generic over `ArmyType` (`turn/recruit_
+  decode.py`), and Dinosaurs' own real 2-letter code (`ArmyType.
+  DINOSAURS = "DI"`) already round-trips through the existing pipeline,
+  so "RE-DI" was never a missing command, just an existing one the
+  precondition above now actually gates correctly. Per this composer's
+  own pre-existing, deliberate "no sourced narrative template" stance
+  for every other administrative recruit rejection (`describe_recruit()`
+  Phase 419), the new block gets no player-facing sentence either --
+  consistent, not an oversight.
+
+  Verified with new/updated tests across `test_army_type.py` (`Race.
+  SAURIAN` now in `MONSTROUS_ARMY_RACE`, two stale "not in" assertions
+  corrected), `test_recruit_execution.py` (the slot gate blocking and
+  allowing in both slot positions, and staying a no-op for fixtures with
+  no real slot data), and `test_turn_report.py` (a Human-owned Dinosaur
+  army still shows "Dinosaur" race, not "Human" -- proof it's not merely
+  falling back to the owner's own race). Full suite: 7290 passed.
 ## What's excluded from this phase
 
 - ~~`SE3__T*.K1` files: same extension as the move files, but these are

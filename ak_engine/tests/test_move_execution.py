@@ -16,6 +16,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.battle_orchestrator import BattleReport
 from ak_engine.turn.battle_resolution import BattleResult
 from ak_engine.turn.combat import Quality
@@ -116,6 +117,19 @@ def test_leader_moving_alone_does_not_conquer():
     assert result.moved_without_armies is True
 
 
+def test_execute_move_stale_army_id_raises_a_clean_value_error():
+    # Phase 1044 bug fix: direct dict subscripting used to crash with an
+    # unhandled KeyError for a stale army_id (e.g. an army an earlier
+    # phase this same turn already destroyed in battle) instead of the
+    # same kind of clean, caught ValueError this function already raises
+    # for every other bad-input case just below (all-must-move-together,
+    # no movement points left).
+    state = base_state()
+
+    with pytest.raises(ValueError, match="no such army"):
+        execute_move(state, kingdom_id=1, army_ids=[101, 999], target=TARGET)
+
+
 def test_moving_with_armies_is_not_moved_without_armies():
     state = base_state()
 
@@ -176,6 +190,13 @@ def test_execute_move_map_of_the_marauders_extends_partial_exploration_to_a_furt
 
     assert state.provinces[TARGET].explored_percent_by_kingdom.get(1, 0) > 0
     assert state.provinces[further].explored_percent_by_kingdom.get(1, 0) > 0
+    # Phase 1044 bug fix: the extra hex used to update only the
+    # per-kingdom tracker above, leaving the shared scalar stale --
+    # models/game_state.py's own module docstring names every write
+    # site that updates explored_percent_by_kingdom as also updating
+    # this scalar together, the same way the entered TARGET hex already
+    # does two lines above this block's own real call site.
+    assert state.provinces[further].explored_percent == state.provinces[further].explored_percent_by_kingdom[1]
 
 
 def test_execute_move_without_the_map_does_not_extend_vision():
@@ -307,6 +328,32 @@ def test_record_kingdom_exploration_without_state_or_leader_id_never_doubles():
     assert result.new_percent == 50
 
 
+# -- Phase 1038: record_kingdom_exploration() also grows the Kingdom's own
+# KingdomState.map_primary_region_columns the first time a province crosses
+# the "known" floor --------------------------------------------------------
+
+
+def test_record_kingdom_exploration_grows_the_primary_region_on_first_crossing_the_known_floor():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Rangeria", Race.HUMAN, Alignment.NEUTRAL, TARGET))
+    state.kingdoms[1].map_primary_region_columns = {TARGET.x}
+    neighbor = HexCoord(TARGET.x + 1, TARGET.y)
+    province = ProvinceState(neighbor, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None)
+
+    record_kingdom_exploration(province, kingdom_id=1, explorer_skill=1, partial=False, state=state)
+
+    assert neighbor.x in state.kingdoms[1].map_primary_region_columns
+
+
+def test_record_kingdom_exploration_without_state_does_not_touch_the_primary_region():
+    province = ProvinceState(TARGET, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None)
+
+    record_kingdom_exploration(province, kingdom_id=1, explorer_skill=1, partial=False)
+
+    # No crash, and nothing to assert on -- there is no KingdomState at
+    # all in this call, which must stay the documented no-op case.
+
+
 def test_execute_move_credits_the_movers_own_terrain_king_title():
     state = base_state()
     state.add_leader(LeaderState(1, 1, "Scout", ORIGIN))
@@ -337,6 +384,23 @@ def test_reveal_adjacent_provinces_never_lowers_an_already_better_known_neighbor
     reveal_adjacent_provinces(state, state.provinces[TARGET], kingdom_id=1, bounds=bounds)
 
     assert state.provinces[DEFENDER_HOME].explored_percent_by_kingdom[1] == 50
+
+
+def test_reveal_adjacent_provinces_grows_the_primary_region_for_a_newly_known_neighbor():
+    # Phase 1038. TARGET=(2,1) is on an odd row, whose own real offset
+    # table includes (+1, 0) -- (3,1) is a genuine geometric neighbor in
+    # a different column from TARGET's own, unlike DEFENDER_HOME (same
+    # column by construction), so this actually exercises cross-column
+    # adjacency growth, not just a same-column no-op.
+    state = base_state()
+    far_column_neighbor = HexCoord(3, 1)
+    state.add_province(ProvinceState(far_column_neighbor, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None))
+    state.kingdoms[1].map_primary_region_columns = {TARGET.x}
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+
+    reveal_adjacent_provinces(state, state.provinces[TARGET], kingdom_id=1, bounds=bounds)
+
+    assert far_column_neighbor.x in state.kingdoms[1].map_primary_region_columns
 
 
 def test_reveal_adjacent_provinces_skips_neighbors_with_no_real_province_data():
@@ -486,7 +550,7 @@ def test_move_into_province_with_only_a_mercenary_band_is_uncontested():
     # Phase 754's own "Wandering Mercenaries" following is gated on a
     # real general, so it's never even considered for this call.
     state = base_state()
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET, is_mercenary=True))
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET)
 
@@ -505,7 +569,7 @@ def test_move_into_province_with_only_a_mercenary_band_is_uncontested():
 
 def test_resolve_wandering_mercenary_following_success():
     state = base_state()
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
 
     followed = resolve_wandering_mercenary_following(
         state, ORIGIN, TARGET, state.provinces[ORIGIN], state.provinces[TARGET]
@@ -520,7 +584,7 @@ def test_resolve_wandering_mercenary_following_success():
 
 def test_resolve_wandering_mercenary_following_refuses_without_movement_points():
     state = base_state()
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN))  # movement_points=0 default
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, is_mercenary=True))  # movement_points=0 default
 
     followed = resolve_wandering_mercenary_following(
         state, ORIGIN, TARGET, state.provinces[ORIGIN], state.provinces[TARGET]
@@ -535,7 +599,7 @@ def test_resolve_wandering_mercenary_following_refuses_an_illegal_transport_hop(
     # `find_transport_illegality()` (Phase 737) reused directly, the same
     # real gate any ordinary army making this hop would face.
     state = base_state()
-    state.add_army(ArmyState(301, None, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=2))
+    state.add_army(ArmyState(301, None, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
 
     followed = resolve_wandering_mercenary_following(
         state, ORIGIN, TARGET, state.provinces[ORIGIN], state.provinces[TARGET]
@@ -547,8 +611,8 @@ def test_resolve_wandering_mercenary_following_refuses_an_illegal_transport_hop(
 
 def test_resolve_wandering_mercenary_following_processes_every_eligible_army_in_sorted_order():
     state = base_state()
-    state.add_army(ArmyState(302, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
+    state.add_army(ArmyState(302, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
 
     followed = resolve_wandering_mercenary_following(
         state, ORIGIN, TARGET, state.provinces[ORIGIN], state.provinces[TARGET]
@@ -584,7 +648,7 @@ def test_resolve_wandering_mercenary_following_with_none_present():
 def test_execute_move_a_mercenary_left_at_the_origin_follows_the_general():
     state = base_state()
     state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10)
 
@@ -600,7 +664,7 @@ def test_execute_move_a_mercenary_left_at_the_destination_does_not_follow():
     # mercenary already standing at the destination is simply unaffected.
     state = base_state()
     state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET, movement_points=2))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, TARGET, movement_points=2, is_mercenary=True))
 
     result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=10)
 
@@ -615,7 +679,7 @@ def test_execute_move_leader_alone_does_not_trigger_wandering_mercenary_followin
     # still have positive movement points. An armyless leader has none.
     state = base_state()
     state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
 
     result = execute_move(state, kingdom_id=1, army_ids=[], target=TARGET, leader_id=10)
 
@@ -632,7 +696,7 @@ def test_execute_move_failed_conquest_does_not_trigger_wandering_mercenary_follo
     state = base_state()
     state.add_leader(LeaderState(10, kingdom_id=1, name="General", location=ORIGIN))
     state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, TARGET))
-    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2))
+    state.add_army(ArmyState(301, None, ArmyType.GARRISON, Quality.AVERAGE, ORIGIN, movement_points=2, is_mercenary=True))
     # Phase 906: turn/pursuit.py's own real, byte-confirmed mechanism
     # always runs once the attacker is clean swept (no "decline" roll
     # left) -- one extra .choice() draw (the sole retreating target) plus
@@ -1121,6 +1185,26 @@ def test_stopped_chasing_when_no_closer_neighbor_exists():
     assert state.armies[101].movement_points == 3
 
 
+def test_stopped_chasing_leader_alone_reports_moved_without_armies():
+    # Phase 1044 bug fix: this early return used to omit
+    # moved_without_armies entirely, silently defaulting it to False
+    # even for a genuinely armyless leader -- report/turn_report.py's
+    # own documented MARCH.md section 12 consumer needs the real value
+    # here too, not just on the function's final, successful-move return.
+    state = GameState()
+    origin = HexCoord(0, 0)
+    unreachable_target = HexCoord(-5, -5)
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, origin))
+    state.add_province(ProvinceState(origin, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, 1, "King", origin))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[], target=unreachable_target, leader_id=1)
+
+    assert result.stopped_chasing is True
+    assert result.moved is False
+    assert result.moved_without_armies is True
+
+
 def test_chase_step_breaks_ties_by_ownership_tier():
     # Mirrors turn/movement.py's own tie-break test case: from (5,5) toward
     # (5,0), (4,4) and (5,4) tie as the two strictly-closer candidates.
@@ -1356,6 +1440,31 @@ def test_execute_move_credits_experience_for_a_minority_air_mixed_force():
     mock_add_experience.assert_called_once_with(state.leaders[1], Ability.MARCH, MOVE_MARCH_NAVAL_EXPERIENCE_BASE_POINTS, ANY)
 
 
+def test_execute_move_credits_nothing_for_a_majority_air_transportable_force():
+    # Phase 1044 bug fix: this function's own Phase 768 docstring
+    # addendum states the exclusion covers "a majority-air-or-air-
+    # transportable force," but air_count used to count only armies
+    # whose own army_type is literally an air type, never a land army
+    # currently boarded on one -- 1 Dragon Wing carrying 2 boarded
+    # Bowmen (a wholly airlifted force) used to compute air_count=1
+    # against len(armies)=3 (2*1 < 3 -- treated as an ordinary,
+    # XP-eligible ground march), contradicting the documented exclusion.
+    state = _state_with_leader_and_army(ArmyType.DRAGON_WING)
+    state.add_army(
+        ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3, commanded_by=1, transported_by=101)
+    )
+    state.add_army(
+        ArmyState(103, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3, commanded_by=1, transported_by=101)
+    )
+
+    with patch("ak_engine.turn.move_execution.add_experience") as mock_add_experience:
+        execute_move(
+            state, kingdom_id=1, army_ids=[101, 102, 103], target=TARGET, leader_id=1, rng=ScriptedRandom([])
+        )
+
+    mock_add_experience.assert_not_called()
+
+
 def test_execute_move_credits_nothing_when_the_leader_is_armyless():
     state = _state_with_leader_and_army()
 
@@ -1416,7 +1525,11 @@ def test_execute_move_grants_a_naval_advanced_ability_when_the_real_credit_cross
         state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=ScriptedRandom([0.9, 0.0, 0.5])
     )
 
-    assert leader.skills.pair_for_ability(Ability.NAVAL) == (5, 5)
+    # Phase 1189 bug fix: the rise itself is deferred to next phase (same
+    # [3.13]-equivalent rule add_experience() now shares with Practice) --
+    # not yet written into the real skill table.
+    assert leader.pending_skill_advancement == {Ability.NAVAL: (5, 5)}
+    assert leader.skills.pair_for_ability(Ability.NAVAL) == (4, 5)
     assert result.naval_advanced_ability_granted is AdvancedAbility.NAVAL_LONG_DEFEND
     assert AdvancedAbility.NAVAL_LONG_DEFEND in leader.advanced_abilities
 
@@ -1450,7 +1563,9 @@ def test_execute_move_a_march_credit_never_grants_a_naval_advanced_ability():
         state, kingdom_id=1, army_ids=[101], target=TARGET, leader_id=1, rng=ScriptedRandom([0.9, 0.0, 0.5])
     )
 
-    assert leader.skills.pair_for_ability(Ability.MARCH) == (5, 5)  # the real credit still rose
+    # Phase 1189 bug fix: deferred to next phase, same as the Naval case above.
+    assert leader.pending_skill_advancement == {Ability.MARCH: (5, 5)}
+    assert leader.skills.pair_for_ability(Ability.MARCH) == (4, 5)
     assert result.naval_advanced_ability_granted is None
     assert result.march_advanced_ability_granted is AdvancedAbility.MARCH_THROUGH_FLOODS
     assert leader.advanced_abilities == {AdvancedAbility.MARCH_THROUGH_FLOODS}
@@ -2445,6 +2560,38 @@ def test_execute_move_enforced_permits_a_real_boarded_crossing():
     assert state.armies[102].transported_by == 101
 
 
+def test_execute_move_enforced_transport_illegality_leaves_no_partial_auto_boarding():
+    # Phase 1045 bug fix regression: before the fix, _auto_board_
+    # transport_group() committed real boarding for every candidate that
+    # fit *before* find_transport_illegality() ever ran, so a stack with
+    # more land armies than the Fleet had capacity for ended up with the
+    # ones that DID fit boarded for real even though the whole move was
+    # refused right after (turn/plan_dispatch.py run_leader_plan() catches
+    # TransportIllegalMoveError per-phase with no rollback). FLEET_
+    # INFANTRY_CAPACITY is 2 -- of 3 Bowmen-type candidates (102, 103,
+    # 104), the lowest two would have fit and (pre-fix) really boarded.
+    state = _sea_transport_legality_state()
+    state.add_army(ArmyState(101, 1, ArmyType.FLEET, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(103, 1, ArmyType.AXEMEN, Quality.AVERAGE, ORIGIN, movement_points=3))
+    state.add_army(ArmyState(104, 1, ArmyType.PHALANX, Quality.AVERAGE, ORIGIN, movement_points=3))
+
+    with pytest.raises(TransportIllegalMoveError) as excinfo:
+        execute_move(
+            state,
+            kingdom_id=1,
+            army_ids=[101, 102, 103, 104],
+            target=TARGET,
+            auto_board=True,
+            enforce_transport_legality=True,
+        )
+
+    assert excinfo.value.reason == "insufficient_water_transport"
+    for army_id in (101, 102, 103, 104):
+        assert state.armies[army_id].transported_by is None
+        assert state.armies[army_id].location == ORIGIN
+
+
 def test_execute_move_enforced_permits_a_real_naval_hug_coastline_hop():
     # Phase 819 bug fix: turn/plan_dispatch.py's own real LMOVE dispatch
     # already passes enforce_transport_legality=True unconditionally
@@ -2493,6 +2640,44 @@ def test_execute_move_enforced_permits_a_mixed_naval_hug_coastline_hop():
     assert state.armies[101].transported_by == 102
 
 
+def test_execute_move_contested_origin_raises_before_committing_auto_board_or_straggler_split():
+    # Phase 1045 bug fix regression -- the originally-deferred Batch 3
+    # finding: before the fix, a mixed Fleet/land-army stack ordered via
+    # Naval Hug Coastline from an origin the mover's own kingdom is
+    # contesting toward a non-adjacent, enemy-owned target still
+    # committed real mutation -- auto-boarding (101, 102) AND the
+    # unboarded straggler's (103) own real recursive execute_move()
+    # sub-move -- *before* the contested-province check ran and raised
+    # IllegalMoveFromContestedError. turn/plan_dispatch.py run_leader_
+    # plan() catches that exception per-phase with no rollback, so the
+    # refused LMOVE used to still leave the rest of the turn boarded/
+    # relocated as if it had gone through.
+    state = _hug_state()
+    state.add_kingdom(KingdomState(2, "Enemia", Race.HUMAN, Alignment.EVIL, HexCoord(5, 5)))
+    state.provinces[HUG_ORIGIN].contested_by_kingdom_id = 1  # kingdom 1 is the mover
+    state.provinces[HUG_TARGET].owner_kingdom_id = 2  # enemy-owned
+    state.add_army(ArmyState(102, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+    state.add_army(ArmyState(103, 1, ArmyType.BOWMEN, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+    state.add_army(ArmyState(104, 1, ArmyType.FLEET, Quality.AVERAGE, HUG_ORIGIN, movement_points=3))
+
+    with pytest.raises(IllegalMoveFromContestedError):
+        execute_move(
+            state,
+            kingdom_id=1,
+            army_ids=[101, 102, 103, 104],
+            target=HUG_TARGET,
+            has_naval_hug_coastline=True,
+            auto_board=True,
+        )
+
+    # Zero mutation: nobody boarded (not even the two, 101/102, that
+    # would have fit the Fleet), and the would-be straggler (103) never
+    # ran its own real recursive move.
+    for army_id in (101, 102, 103, 104):
+        assert state.armies[army_id].transported_by is None
+        assert state.armies[army_id].location == HUG_ORIGIN
+
+
 def test_execute_move_enforced_checks_the_real_chase_step_not_the_ultimate_target():
     # A 2-hex chase: FURTHER isn't adjacent to ORIGIN, so this call only
     # ever resolves the real single-hex hop toward it (through TARGET,
@@ -2528,3 +2713,81 @@ def test_execute_move_enforced_permits_a_mermen_carried_by_a_real_air_carrier():
 
     assert result.moved is True
     assert state.armies[102].transported_by == 101
+
+
+def test_army_move_is_blocked_into_an_explicitly_neutral_kingdoms_province():
+    # RULES.AK [8.1]: a Neutral relation blocks an army's own move order
+    # into the other Kingdom's territory -- the unit stays put, no battle.
+    state = base_state()
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.NEUTRAL
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.moved is False
+    assert result.battle_report is None
+    assert result.blocked_by_neutral_relations is True
+    assert result.stopped_chasing is True
+    assert state.armies[101].location == ORIGIN
+    assert state.armies[101].movement_points == 3
+
+
+def test_lone_character_passes_freely_into_an_explicitly_neutral_kingdoms_province():
+    state = base_state()
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.NEUTRAL
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Scout", location=ORIGIN))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[], target=TARGET, leader_id=10, rng=None)
+
+    assert result.blocked_by_neutral_relations is False
+    assert state.leaders[10].location == TARGET
+
+
+def test_army_move_is_not_blocked_when_the_pair_has_no_explicit_relation_recorded():
+    # A pair this project's own diplomacy logic has never touched keeps
+    # today's pre-existing (attackable) behavior -- see the call site's
+    # own comment for why this is deliberately narrower than
+    # GameState.diplomatic_relation()'s own lenient "missing = Neutral"
+    # default.
+    state = base_state()
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.blocked_by_neutral_relations is False
+    assert result.moved is True
+
+
+def test_army_move_is_not_blocked_when_the_pair_is_explicitly_allied():
+    state = base_state()
+    state.allied_kingdoms.add(frozenset({1, 2}))
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.blocked_by_neutral_relations is False
+
+
+def test_army_move_is_not_blocked_when_the_pair_is_explicitly_enemy():
+    state = base_state()
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ENEMY
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.blocked_by_neutral_relations is False
+
+
+def test_triangle_guest_army_on_allied_host_territory_is_not_attacked():
+    # [8.1]'s own "triangle" case: kingdom 1 (the mover/attacker, "Z")
+    # moves into TARGET, owned by kingdom 3 ("X"), who is Allied with
+    # kingdom 1 -- kingdom 2's ("Y") army is merely a guest there, and is
+    # Enemy with kingdom 1, but X's own hospitality shields it: no battle.
+    state = base_state()
+    state.add_kingdom(KingdomState(3, "Xaria", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.provinces[TARGET].owner_kingdom_id = 3
+    state.allied_kingdoms.add(frozenset({1, 3}))  # mover (1) allied with the host (3)
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ENEMY
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, TARGET))  # Y's guest army
+
+    result = execute_move(state, kingdom_id=1, army_ids=[101], target=TARGET, rng=None)
+
+    assert result.moved is True
+    assert result.battle_report is None
+    assert state.armies[201].location == TARGET  # Y's army untouched

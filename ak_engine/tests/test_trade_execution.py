@@ -28,6 +28,12 @@ def _state(*, giver_treasury: int = 1000, giver_is_king: bool = True) -> GameSta
     state.add_kingdom(KingdomState(GIVER_KINGDOM, "Giver", Race.HUMAN, Alignment.GOOD, HOME, treasury=giver_treasury))
     state.add_kingdom(KingdomState(RECIPIENT_KINGDOM, "Recipient", Race.HUMAN, Alignment.GOOD, HOME, treasury=0))
     state.add_leader(LeaderState(GIVER_LEADER, GIVER_KINGDOM, "King", HOME, is_king=giver_is_king))
+    # The 10% cap's own basis (2026-11-04) -- real play takes this
+    # snapshot once at the start of every run_turn() call; these tests
+    # call execute_gold_give()/execute_give() directly, so it's set here
+    # to match giver_treasury exactly, simulating "this call is the
+    # first Give of a fresh turn."
+    state.kingdoms[GIVER_KINGDOM].treasury_at_turn_start = giver_treasury
     return state
 
 
@@ -72,6 +78,41 @@ def test_execute_gold_give_cap_is_exactly_10_percent():
     assert state.kingdoms[GIVER_KINGDOM].treasury == 225
 
 
+def test_execute_gold_give_floor_allows_10_gold_when_10_percent_is_lower():
+    # Bug fix, sourced directly from the user (2026-10-29), independently
+    # confirmed in both RULES.AK and ADDEND.AK verbatim: "he may always
+    # give out at least 10 gold if he has it in his treasury." 10% of
+    # 50 is 5, but the King has 50 in treasury, so the real floor of 10
+    # applies instead.
+    state = _state(giver_treasury=50)
+
+    result = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 10)
+
+    assert result.applied is True
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 40
+
+
+def test_execute_gold_give_floor_still_rejects_more_than_the_floor():
+    state = _state(giver_treasury=50)
+
+    result = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 11)
+
+    assert result.applied is False
+    assert "exceeds 10% treasury cap" in result.reason
+
+
+def test_execute_gold_give_floor_never_exceeds_the_givers_real_treasury():
+    # "if he has it in his treasury" -- with only 7 in treasury, the
+    # King can't reach the 10-gold floor at all; the ordinary 10% cap
+    # (0, floored) still applies.
+    state = _state(giver_treasury=7)
+
+    result = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 10)
+
+    assert result.applied is False
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 7
+
+
 def test_execute_gold_give_rejects_non_king_giver():
     state = _state(giver_is_king=False)
 
@@ -79,6 +120,66 @@ def test_execute_gold_give_rejects_non_king_giver():
 
     assert result.applied is False
     assert result.reason == "only a King may Give Gold"
+
+
+# -- 2026-11-04: the 10% cap is a cumulative per-gameturn budget, based
+# on a start-of-turn snapshot, not a fresh live-treasury allowance
+# re-applied to each individual Give. --------------------------------
+
+
+def test_execute_gold_give_a_second_give_this_turn_draws_from_the_same_budget():
+    state = _state(giver_treasury=1000)  # budget for the turn: 100
+    first = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 60)
+    assert first.applied is True
+
+    second = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 41)  # 60 + 41 > 100
+
+    assert second.applied is False
+    assert "exceeds 10% treasury cap" in second.reason
+    # The first Give already went through -- only the second was rejected.
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 940
+    assert state.kingdoms[GIVER_KINGDOM].gold_given_this_turn == 60
+
+
+def test_execute_gold_give_a_second_give_within_the_remaining_budget_succeeds():
+    state = _state(giver_treasury=1000)  # budget for the turn: 100
+    execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 60)
+
+    second = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 40)  # exactly the remaining 40
+
+    assert second.applied is True
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 900
+    assert state.kingdoms[GIVER_KINGDOM].gold_given_this_turn == 100
+
+
+def test_execute_gold_give_cap_basis_is_the_turn_start_snapshot_not_live_treasury():
+    # The King's live treasury has already dropped below what it was at
+    # the start of the turn (e.g. spent on Recruit earlier this same
+    # turn) -- the 10% cap still reads the real snapshot (1000), not the
+    # smaller live value, so his remaining budget is still 100.
+    state = _state(giver_treasury=1000)
+    state.kingdoms[GIVER_KINGDOM].treasury = 150  # spent 850 elsewhere this turn
+
+    result = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 100)
+
+    assert result.applied is True
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 50
+
+
+def test_execute_gold_give_rejects_when_live_treasury_cannot_cover_it_despite_remaining_budget():
+    # Same setup as above, but requesting more than what's physically
+    # left on hand, even though it's still within the turn's own 10%
+    # budget -- a check that was never reachable before this fix (the
+    # old live-treasury-based cap could never exceed the live treasury).
+    state = _state(giver_treasury=1000)
+    state.kingdoms[GIVER_KINGDOM].treasury = 80  # spent 920 elsewhere this turn
+
+    result = execute_gold_give(state, GIVER_LEADER, RECIPIENT_KINGDOM, 100)
+
+    assert result.applied is False
+    assert "exceeds 10% treasury cap" in result.reason
+    assert state.kingdoms[GIVER_KINGDOM].treasury == 80
+    assert state.kingdoms[GIVER_KINGDOM].gold_given_this_turn == 0
 
 
 def test_execute_gold_give_rejects_non_positive_amount():
@@ -238,16 +339,42 @@ def test_execute_give_rejects_not_co_located():
     assert result.reason == "not co-located with recipient"
 
 
-def test_execute_give_rejects_non_king_recipient():
-    # "You can give limited amounts of gold to other Kings" -- the
-    # recipient, not just the giver, must be a King.
+def test_execute_give_gold_path_allows_a_hero_recipient_of_a_different_kingdom():
+    # Bug fix, sourced directly from the user (2026-10-29), independently
+    # confirmed in both RULES.AK and ADDEND.AK verbatim: "giving it to
+    # another player's character (King or Hero)" -- a Hero recipient of
+    # a genuinely different Kingdom is just as valid as a King.
     state = _state_with_recipient(recipient_is_king=False)
     request = TradeRequest(obj=100, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
 
     result = execute_give(state, GIVER_LEADER, request)
 
+    assert result.applied is True
+    assert result.gold_transferred == 100
+
+
+def test_execute_give_gold_path_rejects_a_recipient_of_the_givers_own_kingdom():
+    # Confirmed with the user: "another player's character" requires a
+    # genuinely different Kingdom, not merely "not a King."
+    state = _state_with_recipient(recipient_is_king=False)
+    state.leaders[RECIPIENT_LEADER].kingdom_id = GIVER_KINGDOM
+    request = TradeRequest(obj=100, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
     assert result.applied is False
-    assert result.reason == "gold Give recipient must be a King"
+    assert result.reason == "gold Give recipient must belong to a different Kingdom"
+
+
+def test_execute_give_gold_path_rejects_a_recipient_with_no_kingdom():
+    state = _state_with_recipient(recipient_is_king=False)
+    state.leaders[RECIPIENT_LEADER].kingdom_id = None
+    request = TradeRequest(obj=100, target_leader_id=RECIPIENT_LEADER, extra=[0, RECIPIENT_LEADER])
+
+    result = execute_give(state, GIVER_LEADER, request)
+
+    assert result.applied is False
+    assert result.reason == "gold Give recipient must belong to a different Kingdom"
 
 
 def test_execute_give_gold_path_still_enforces_the_10_percent_cap():

@@ -65,6 +65,59 @@ identical class of shift once more: feature_id 1 is now guarded by a
 ``RAKSHASHA`` (hp 18-27, melee skill 1), win seed ``2``; the
 ``SKILL_BOOK``-category feature moved to feature_id 86, guarded by a
 ``GI_CLAM`` (hp 14-27, melee skill 0), win seed ``5``.
+
+Re-scanned again after Phase 979 wired ``worldgen/leader_placement.py
+draw_mercenary_relocation_coordinate()`` into ``generate_new_game()``
+for "remaining mercenary heroes" (one ``PascalRandom`` draw per leftover
+roster id, consumed before ``place_all_features()``, the identical
+class of shift once more): feature_id 1 is now guarded by a
+``MINOTAUR`` (hp 15-25, melee skill 2), win seed ``0``; the
+``SKILL_BOOK``-category feature moved to feature_id 95, still guarded
+by a ``GI_CLAM`` (hp 14-27, melee skill 0, the same real fact as
+before -- only its feature id shifted), win seed ``5`` unchanged.
+
+Re-scanned a final time after Phase 979's own addendum materialized the
+reserved last roster id too (one more ``PascalRandom`` coordinate draw,
+same class of shift once more): feature_id 1 is now guarded by a
+``GR_DRAGON`` (hp 21-31, melee skill 2) -- a genuinely tough guardian
+for an unskilled Searcher, so its own win seed is larger than every
+prior rescan's, ``827``, rather than the usual small one; the
+``SKILL_BOOK``-category feature keeps feature_id 95/``GI_CLAM``/win
+seed ``5`` unchanged (that specific treasure+guardian pairing wasn't
+affected by this particular shift).
+
+Re-scanned again after Phase 982 added ``roll_temper()`` (one
+``PascalRandom`` draw per ordinary generated hero, consumed in the same
+``hero_pool``-building loop ``roll_alignment()``'s own draw already
+sits in, well before ``place_all_features()``), the identical class of
+shift once more: feature_id 1 keeps its own real facts unchanged (still
+a ``MINOTAUR``, win seed ``827`` still wins -- this particular shift
+happened not to move that specific pairing); the ``SKILL_BOOK``-category
+feature moved to feature_id 13, still guarded by a ``GI_CLAM`` (the
+same real monster as every prior rescan, just a new feature id and a
+different book, ``BOOK_SAGE``), win seed ``5`` unchanged.
+
+Re-scanned again after Phase 986 recalibrated ``worldgen/place_map.py``'s
+own land-growth target to match a real played game's land/Sea ratio (far
+more land cells now exist for the same ``generate_new_game(seed=1)``
+scenario, so the whole province grid -- and every RNG draw that depends
+on its size or contents, all of them before ``place_all_features()`` --
+shifts, the identical class of change as every rescan above, just from a
+different cause this time): feature_id 1 is now guarded by a ``GENIE``
+(good-aligned), win seed ``2``; the ``SKILL_BOOK``-category feature moved
+to feature_id 21, guarded by a ``MEDUSA`` and carrying a different book,
+``BOOK_TACTICAL``, win seed ``30``.
+
+Re-scanned again (2026-10-28) after ``turn/encounter.py roll_melee_
+attack()`` gained its own ``skill_difference_bonus`` (sourced directly
+from the user: "+1 per differenza nel Talento Melee tra chi attacca e
+difende") -- a combat-formula change this time, not a world-gen RNG
+shift, but the identical class of "re-scan the same fixed scenario"
+fix: feature_id 1 keeps its own real facts unchanged (still the same
+``GENIE``, hp 18-23, melee skill 1, good-aligned), but the guardian's
+own +1 Melee-skill advantage over the unskilled Searcher now lets it
+hit harder too, so seed ``2`` no longer wins -- re-scanned to seed
+``13``.
 """
 
 from __future__ import annotations
@@ -86,20 +139,16 @@ from ak_engine.worldgen.pascal_random import PascalRandom
 
 _KING_RACES = [Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH] * 3
 _SEARCHER_LEADER_ID = 999
-# Phase 902 note: generate_new_game(seed=1)'s own feature roster is a
-# fixed, reproducible fact of this scenario, re-checked after Phase 902
-# fixed ordinary_humanoid_budget()'s own formula and wired Trollish
-# provinces through it (RNG consumption before place_all_features(),
-# same class of shift as Phase 426/427/797/799/892 before it). The first
-# treasure+guardian feature (feature_id 1) is now guarded by a
-# RAKSHASHA (hp 18-27, melee skill 1) -- a real, reproducible fact, not
-# a tuning choice.
-_SEARCH_WIN_SEED = 2
-# feature_id 86 (GI_CLAM guarding a Tactical skill book) is the
-# SKILL_BOOK-category feature this test now targets -- picked for a
-# weak guardian (hp 14-27, melee skill 0) so the win seed stays small.
-_BOOK_FEATURE_ID = 86
-_BOOK_SEARCH_WIN_SEED = 5
+# Phase 986 note: generate_new_game(seed=1)'s own feature roster shifted
+# again after the land-ratio recalibration (see this module's own Phase
+# 986 rescan paragraph above) -- a fixed, reproducible fact of this
+# scenario, not a tuning choice. The first treasure+guardian feature
+# (feature_id 1) is now guarded by a good-aligned GENIE.
+_SEARCH_WIN_SEED = 13
+# feature_id 21 (a MEDUSA guarding a Tactical skill book) is the
+# SKILL_BOOK-category feature this test now targets.
+_BOOK_FEATURE_ID = 21
+_BOOK_SEARCH_WIN_SEED = 30
 
 
 def _generate_game(king_count: int = 10) -> GameState:
@@ -138,9 +187,9 @@ def test_world_generated_treasure_reaches_state_items_via_a_search_win():
 
 def test_a_world_generated_and_search_won_book_is_directly_usable_via_use_mi():
     # This project's real generate_new_game(seed=1) scenario places a
-    # BOOK_TACTICAL on feature_id 86 (guarded by a GI_CLAM) -- not tuned
+    # BOOK_TACTICAL on feature_id 21 (guarded by a MEDUSA) -- not tuned
     # for that, just what this fixed, reproducible generation run
-    # produces (see _BOOK_FEATURE_ID's own Phase 902 note above). Any
+    # produces (see _BOOK_FEATURE_ID's own Phase 986 note above). Any
     # SKILL_BOOK category member would exercise the same chain.
     state = _generate_game()
     feature = next(f for f in state.features.values() if f.feature_id == _BOOK_FEATURE_ID)

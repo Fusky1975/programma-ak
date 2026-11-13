@@ -129,9 +129,10 @@ this project has a real, sourced formula for:
    gold-slot feature (``feature_gets_item_slot()`` false) previously
    got `treasure=None` outright -- `magic_item_placement.py`'s own
    confirmed "the other half get gold" was never actually implemented,
-   only documented. It now draws uniformly among the 3 `GOLD_HOARD`
-   tiers (unsourced which tier -- no AKGEN note covers it -- so a plain
-   project-original uniform draw, `_GOLD_HOARD_TIERS`).
+   only documented. It now draws a real `GOLD_HOARD` tier via
+   `_draw_gold_hoard_tier()` (originally a flat uniform draw across the
+   3 tiers; Phase 985 recalibrated the weights against real data -- see
+   that function's own docstring).
 8. **Independent lords + King companions (Phase 426)** -- "place Kings,
    independent lords, companions and remaining mercenary heroes"'s own
    remaining two roles, closing the gap Phase 365 originally left open
@@ -195,22 +196,75 @@ specific Hero ends up where as a project-original convention, not a
 recovered fact; the *counts*, *race rules*, and *talent formula* are
 all real and sourced as described above.
 
+10. **Remaining mercenary heroes (Phase 979)** -- "place Kings,
+    independent lords, companions and remaining mercenary heroes"'s own
+    fourth and last role. **Reverses this module's own earlier Phase
+    426 conclusion that this was unsourced and therefore left
+    unmaterialized** -- found stale while chasing a real user-reported
+    bug (a 2-King webapp game producing only 27 total leaders, far
+    below the ~96 their own real historical games showed):
+    ``worldgen/leader_placement.py``'s own ``draw_mercenary_relocation_
+    coordinate()`` ("redraw coordinates while on Sea or in a King-owned
+    province; sharing a lord-owned province is allowed") is listed in
+    that module's own docstring under "Confirmed exactly and
+    implemented here, each cross-checked against the source's own two
+    worked real-game examples" -- the very same two examples
+    ``remaining_mercenary_count()`` is checked against, including
+    ``GW900_K4``'s own non-zero ``remaining_mercenaries: 46`` -- yet it
+    sat unused, the exact same "confirmed formula, never wired into the
+    orchestrator" shape as ``worldgen/king_talent.py
+    build_king_skill_table()`` before this same investigation. The
+    earlier "Earth_V-mode repositioning, not ordinary-mode starting
+    location" caveat is not repeated here as settled fact -- it
+    contradicts the sibling module's own, more specific sourcing
+    citation, and this project has no surviving primary document in
+    this environment to adjudicate between the two; a human with the
+    original ``AKGEN`` reverse-engineering material should correct this
+    if the caveat turns out to be right after all. Race is overwritten
+    to the landing coordinate's own native race, reusing
+    ``independent_lord_effects()``'s own convention for the one other
+    non-Home leader role (no source covers a mercenary's race
+    specifically). **Independently verified against two real, user-
+    supplied ``GW`` world files from two different actual historical
+    games** (3-King/``game_version=4``/250-slot roster: 247 real heroes;
+    10-King/``game_version=3``/100-slot roster, cross-referenced against
+    the pre-existing ``GW3__T1`` fixture): both match ``leader_count -
+    king_count`` exactly, with zero unexplained gap -- this phase closes
+    that gap for every king count, not just the ones with zero leftover
+    mercenaries (``GW3_T1_K10``'s own worked example happens to have
+    ``remaining_mercenaries: 0``, so it alone could never have caught
+    this).
+
+11. **The reserved last roster id (Phase 979 addendum)** -- Phase 357's
+    own "attached separately to a Home" note flagged this id's
+    placement as too ambiguous to code; left unmaterialized ever since.
+    **A third and fourth real ``GW`` file, gathered chasing the same
+    hero-count bug, resolve its name (if not yet its placement) for two
+    of the three ``leader_count`` tiers**: a 100-slot-tier game shows
+    "Kitralus" at this id; two genuinely different 250-slot-tier games
+    -- a 3-King ``NORMAL``-type game and an unrelated 23-King ``EARTH``-
+    type ("Super AK") game at turn 4, different ``game_number``,
+    different ``valhalla_alignment_rotation_mask`` -- both independently
+    show "Kelderek", settling that this is a fixed per-tier constant,
+    not a per-game draw (a turn-4 snapshot's own two *other*, unrelated
+    name mismatches at that same game's ids 75/106 are far more simply
+    explained by the rulebook's own "you may rename your characters"
+    option than by anything world-gen-time). Both names resolve via
+    ``models/valhalla.py VALHALLA_HERO_BY_NAME`` to a complete, real
+    Alignment/Temper/Race/``SkillTable`` -- not a guess, the same
+    Valhalla-visitor roster `models/hero_roster.py`'s own Phase 366
+    docstring already suspected this slot came from. Placement still has
+    no better source than the mercenary-coordinate draw above, so it
+    reuses that rather than inventing a "which Home" rule with less
+    evidence behind it. The 175-slot ``Arcanes_V`` tier has no real file
+    checked yet, so ``models/hero_roster.py RESERVED_ROSTER_HERO_NAME``
+    deliberately omits it -- that one id stays unmaterialized, same as
+    before this phase, rather than guessed.
+
 **Deliberately NOT implemented here**, each a genuine, separately
 documented gap carried over from the phases that already found it --
 none invented past here:
 
-- **Remaining mercenary heroes**: after lords and companions, any
-  leftover roster ids (``remaining_mercenary_count()``) are simply never
-  materialized as a ``LeaderState`` -- their non-``Earth_V`` "resting"
-  location is confirmed absent from the source (only the ``Earth_V``-
-  mode *repositioning* rule survived, not where an ordinary-mode
-  mercenary starts before it), so inventing one would be a guess.
-- **The reserved last roster id**: excluded from ``hero_pool`` entirely
-  (no talents rolled, no ``LeaderState`` created) -- its own "attached
-  separately to a Home" placement rule was already flagged by Phase 357
-  as too ambiguous to code (this is the Valhalla-visitor-reserved slot,
-  ``models/valhalla.py``'s own separate mechanic, not a King-loadable
-  Hero).
 - **Ordinary (non-Home, non-special-race) humanoid provinces' first
   recruit slot and army**: **closed, Phase 797** (backlog #22's own
   land-side half) -- ``worldgen/initial_armies.py humanoid_first_slot()``
@@ -309,22 +363,27 @@ the real reports exactly, instead of "None at present".
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, BASE_STRENGTH, ArmyType
 from ak_engine.models.feature import Feature
-from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState
-from ak_engine.models.hero_roster import LEADER_COUNT_BY_GAME_VERSION, STANDARD_HERO_ROSTER
+from ak_engine.models.game_state import ArmyState, GameState, LeaderState, ProvinceState, record_newly_known_column
+from ak_engine.models.hero_roster import LEADER_COUNT_BY_GAME_VERSION, RESERVED_ROSTER_HERO_NAME, STANDARD_HERO_ROSTER
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import roll_monster_alignment
 from ak_engine.models.race import Race
+from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
+from ak_engine.models.valhalla import VALHALLA_HERO_BY_NAME
+from ak_engine.turn.move_execution import reveal_adjacent_provinces
 from ak_engine.turn.movement import MapBounds
+from ak_engine.turn.rename_province import assign_province_name
 from ak_engine.turn.strength import ELEPHANTS_STRENGTH_RANGE
 from ak_engine.worldgen.feature_placement import place_all_features
-from ak_engine.worldgen.hero_talent_generation import roll_alignment, roll_skill_and_aptitude_table
+from ak_engine.worldgen.hero_talent_generation import roll_alignment, roll_skill_and_aptitude_table, roll_temper
 from ak_engine.worldgen.initial_armies import (
     COMMANDER_NONE,
     INITIAL_ARMY_QUALITY,
@@ -344,6 +403,7 @@ from ak_engine.worldgen.internal_magical_locations import resolve_power, resolve
 from ak_engine.worldgen.king_home_placement import choose_king_home, king_is_naval, second_recruit_slot
 from ak_engine.worldgen.leader_placement import (
     COMPANIONS_PER_KING,
+    draw_mercenary_relocation_coordinate,
     draw_second_companion_race,
     independent_lord_effects,
     king_home_effects,
@@ -445,12 +505,37 @@ def _special_race_army_budget(race: Race, tax: int, rng: PascalRandom) -> int | 
     return None
 
 
-# Phase 430: see the gold-tier-assignment call site's own comment below.
-_GOLD_HOARD_TIERS: tuple[Treasure, ...] = (
-    Treasure.GOLD_HOARD_LARGE,
-    Treasure.GOLD_HOARD_HUGE,
-    Treasure.GOLD_HOARD_FABULOUS,
-)
+def _draw_gold_hoard_tier(rng: PascalRandom) -> Treasure:
+    """Which of the 3 ``GOLD_HOARD`` tiers a gold-slot feature gets --
+    still genuinely unsourced (no AKGEN reverse-engineering note covers
+    it, see the call site's own comment below) -- but no longer a flat
+    uniform 1/3 each (Phase 430's own original, explicitly-flagged
+    guess). User-reported anomaly, Phase 985: a real game should show
+    far more Large hoards than Huge ones, confirmed directly by parsing
+    the real ``GW3__T1`` world file's own 64 real gold-hoard features
+    (``parser/gw_world.py parse_gw_features()``): **55 Large (85.9%), 9
+    Huge (14.1%), 0 Fabulous** -- a uniform 1/3 split would show roughly
+    equal counts of all three, which real data flatly contradicts.
+
+    Realized as two independent 1-in-8 "upgrade" rolls (``IRand AND 7``,
+    this module's own established idiom for an unsourced-but-plausible
+    power-of-two draw, e.g. ``second_recruit_slot()``'s own cavalry/
+    chariots choice) rather than a single 3-way weighted table, since
+    that shape is both simple and lands close to the one real sample
+    available: 7/8 Large (87.5%, vs 85.9% observed), 1/8 * 7/8 Huge
+    (10.9%, vs 14.1% observed), 1/8 * 1/8 Fabulous (1.6% -- a real,
+    nonzero chance, not ruled out by a single sample showing zero
+    occurrences in 64 draws, just confirmed rare). A project-original
+    calibration from real data, not a disassembly-sourced formula --
+    flagged as such, the same honesty standard every other unsourced
+    value in this module already follows.
+    """
+
+    if rng.irand() & 7:
+        return Treasure.GOLD_HOARD_LARGE
+    if rng.irand() & 7:
+        return Treasure.GOLD_HOARD_HUGE
+    return Treasure.GOLD_HOARD_FABULOUS
 
 
 def _elephants_aware_strength_of(rng: PascalRandom):
@@ -586,6 +671,16 @@ def generate_new_game(
         leader.location = effects.leader_current_coord
         leader.birth_x = effects.leader_born_coord.x
         leader.birth_y = effects.leader_born_coord.y
+        # GM interface Phase 4: a caller-supplied KingSetup.home_coord was
+        # always already this same value (the only path any real caller
+        # exercised before now, e.g. cli.py's own _cmd_new_game), so this
+        # is a no-op for that path -- but a `None` home_coord (auto-placed
+        # above via `choose_king_home()`) previously left this Kingdom's
+        # own `home_province` stuck at whatever placeholder the caller
+        # constructed it with, silently disagreeing with the King's real,
+        # just-chosen `leader.location`. Closing that gap here, the one
+        # place both values are already in scope together.
+        game_state.kingdoms[leader.kingdom_id].home_province = home_coord
         game_state.kingdoms[leader.kingdom_id].treasury = STARTING_TREASURY
 
     # Phase 426: independent lords + King companions ("place Kings,
@@ -595,12 +690,17 @@ def generate_new_game(
     # here versus still deferred (mercenaries, the reserved roster slot).
     king_leader_ids = frozenset(king.leader_id for king in kings)
     reserved_roster_id = leader_count - 1
-    hero_pool: dict[int, tuple[Alignment, SkillTable]] = {}
+    hero_pool: dict[int, tuple[Alignment, SkillTable, Temper]] = {}
     for hero_id in range(leader_count):
         if hero_id in king_leader_ids or hero_id == reserved_roster_id:
             continue
         alignment = roll_alignment(rng)
-        hero_pool[hero_id] = (alignment, roll_skill_and_aptitude_table(hero_id, alignment, rng))
+        # Phase 982: roll_temper()'s own docstring explains why this
+        # draw (unlike roll_alignment() right above it) has no real
+        # source -- a uniform pick added only to close the "every
+        # ordinary generated hero's CHARACTERS row says Unkn" gap,
+        # user-confirmed over leaving it unset.
+        hero_pool[hero_id] = (alignment, roll_skill_and_aptitude_table(hero_id, alignment, rng), roll_temper(rng))
     unused_hero_ids = iter(sorted(hero_pool))
 
     humanoid_coords = [coord for coord in grid if race_grid[coord] in _HUMANOID_RACES]
@@ -611,7 +711,7 @@ def generate_new_game(
         hero_id = next(unused_hero_ids, None)
         if hero_id is None:
             break
-        alignment, skills = hero_pool[hero_id]
+        alignment, skills, temper = hero_pool[hero_id]
         lord_effects = independent_lord_effects(hero_id, coord, race_grid[coord])
         game_state.add_leader(
             LeaderState(
@@ -623,19 +723,42 @@ def generate_new_game(
                 birth_x=lord_effects.leader_born_coord.x,
                 birth_y=lord_effects.leader_born_coord.y,
                 alignment=alignment,
+                temper=temper,
                 race=lord_effects.leader_race,
             )
         )
 
     for king in kings:
         king_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
+        king_alignment = game_state.kingdoms[king_kingdom_id].alignment
         home_coord = home_coord_by_king[king.leader_id]
         for companion_index in range(COMPANIONS_PER_KING):
             hero_id = next(unused_hero_ids, None)
             if hero_id is None:
                 break
-            alignment, skills = hero_pool[hero_id]
+            alignment, skills, temper = hero_pool[hero_id]
             companion_race = king.race if companion_index == 0 else draw_second_companion_race(king.race, rng)
+            # Bug fix, sourced directly from the user (2026-10-25) and
+            # independently confirmed by this project's own real sample
+            # (SE3__T0.K1: Uga-Buga Makumb, Elf/Undead, has companion
+            # Guerin -- same race as the King (Elf), Undead-aligned --
+            # and companion Teleko -- a different, drawn race (Dwarf),
+            # Evil-aligned): an Undead King's first companion (same race
+            # as the King, companion_index 0) is always Undead-aligned;
+            # the second (companion_index 1, a drawn race) is Evil or
+            # Pagan -- a fresh 50/50 draw, the user's own "uno evil o
+            # pagan" being a choice between the two, not a fixed one.
+            # Both overrides also re-roll the skill/aptitude table,
+            # since roll_aptitude() (inside roll_skill_and_aptitude_
+            # table()) depends on the alignment passed in -- reusing the
+            # pre-rolled hero_pool table here would leave aptitudes
+            # rolled for the wrong alignment.
+            if king_alignment is Alignment.UNDEAD:
+                if companion_index == 0:
+                    alignment = Alignment.UNDEAD
+                else:
+                    alignment = Alignment.EVIL if rng.irand() % 2 == 0 else Alignment.PAGAN
+                skills = roll_skill_and_aptitude_table(hero_id, alignment, rng)
             game_state.add_leader(
                 LeaderState(
                     leader_id=hero_id,
@@ -646,9 +769,82 @@ def generate_new_game(
                     birth_x=home_coord.x,
                     birth_y=home_coord.y,
                     alignment=alignment,
+                    temper=temper,
                     race=companion_race,
+                    # Phase 984: turn/hire_pay.py required_pay()'s own
+                    # "conquest surcharge" would otherwise fire for a
+                    # misaligned starting companion simply for being
+                    # born at the King's own Home -- real-sample-
+                    # confirmed wrong, see that function's own docstring.
+                    is_starting_companion=True,
                 )
             )
+
+    # Phase 979: "remaining mercenary heroes" -- the third and last of
+    # "place Kings, independent lords, companions and remaining
+    # mercenary heroes"'s own four roles, closing the gap this module's
+    # own docstring previously left open. worldgen/leader_placement.py's
+    # own `draw_mercenary_relocation_coordinate()` ("redraw coordinates
+    # while on Sea or in a King-owned province; sharing a lord-owned
+    # province is allowed") is already confirmed and Monte Carlo-tested
+    # against the real GW900_K4 example -- the same worked example whose
+    # own `remaining_mercenaries: 46` is what `remaining_mercenary_
+    # count()` matches exactly -- but was never actually called from
+    # here. Race is overwritten to the landing province's own native
+    # race, the same convention independent_lord_effects() already uses
+    # for a lord (no sourced rule covers a non-owning mercenary's race
+    # specifically, so this reuses the one other role's own precedent
+    # rather than inventing a new one).
+    is_sea = lambda coord: grid[coord] is Terrain.SEA  # noqa: E731
+    is_king_owned = lambda coord: coord in king_home_set  # noqa: E731
+    for hero_id in unused_hero_ids:
+        alignment, skills, temper = hero_pool[hero_id]
+        coord = draw_mercenary_relocation_coordinate(rng, width, height, is_sea, is_king_owned)
+        game_state.add_leader(
+            LeaderState(
+                leader_id=hero_id,
+                kingdom_id=None,
+                name=STANDARD_HERO_ROSTER[hero_id],
+                location=coord,
+                skills=skills,
+                birth_x=coord.x,
+                birth_y=coord.y,
+                alignment=alignment,
+                temper=temper,
+                race=race_grid[coord],
+            )
+        )
+
+    # Phase 979 addendum: the reserved last roster id, closed for the two
+    # leader_count tiers with a confirmed real name behind them
+    # (models/hero_roster.py RESERVED_ROSTER_HERO_NAME's own docstring --
+    # "Kitralus"/"Kelderek", both independently confirmed real-world
+    # names that resolve to a full, real Valhalla stat block). Its own
+    # "attached separately to a Home" placement rule is still too
+    # ambiguous to know *which* Home, so this reuses the same mercenary-
+    # coordinate draw as every other non-Home independent leader above,
+    # rather than inventing a Home-attachment rule with even less
+    # evidence behind it. Any leader_count without a confirmed name here
+    # (e.g. the 175-slot Arcanes_V tier) still leaves this id
+    # unmaterialized, unchanged from before.
+    reserved_hero_name = RESERVED_ROSTER_HERO_NAME.get(leader_count)
+    if reserved_hero_name is not None:
+        valhalla_hero = VALHALLA_HERO_BY_NAME[reserved_hero_name]
+        coord = draw_mercenary_relocation_coordinate(rng, width, height, is_sea, is_king_owned)
+        game_state.add_leader(
+            LeaderState(
+                leader_id=reserved_roster_id,
+                kingdom_id=None,
+                name=valhalla_hero.name,
+                location=coord,
+                skills=valhalla_hero.skills,
+                birth_x=coord.x,
+                birth_y=coord.y,
+                alignment=valhalla_hero.true_alignment,
+                temper=valhalla_hero.temper,
+                race=valhalla_hero.race,
+            )
+        )
 
     for coord, terrain in grid.items():
         race = race_grid[coord]
@@ -669,10 +865,18 @@ def generate_new_game(
             # see worldgen/king_home_placement.py's own module docstring
             # for the user-confirmed terrain/Naval-talent rules.
             naval = king_is_naval(game_state.leaders[king.leader_id].skills)
-            recruit_type_2 = second_recruit_slot(terrain, rng, naval=naval)
+            recruit_type_2 = second_recruit_slot(terrain, rng, naval=naval, king_race=king.race)
             owner_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
+            # Phase 987: King Home spends each army's `pay` (recruit/
+            # maintenance cost), not `BASE_STRENGTH` ("Str") -- see
+            # KING_HOME_BUDGET's own docstring for the real-data
+            # derivation. Every real Home second-slot type already has
+            # a fixed, non-"variable" `pay` in ARMY_TABLE (Elephants
+            # included), so no RNG-consuming strength roll is needed
+            # here at all, unlike the generic ordinary-province budget
+            # loop below.
             army_types = build_initial_armies(
-                recruit_type_1, recruit_type_2, KING_HOME_BUDGET, strength_of=_elephants_aware_strength_of(rng)
+                recruit_type_1, recruit_type_2, KING_HOME_BUDGET, strength_of=lambda t: ARMY_TABLE[t].pay
             )
             # Phase 428: every King Home starts 100% explored (confirmed
             # verbatim -- "Expl% 100%" -- across four independent real
@@ -684,6 +888,7 @@ def generate_new_game(
             # report()'s own read sites in report/turn_report.py.
             explored_percent = 100
             explored_percent_by_kingdom = {owner_kingdom_id: 100}
+            record_newly_known_column(game_state.kingdoms[owner_kingdom_id], coord.x, game_state.board_width)
         elif race in SPECIAL_RACE_BASE_COUNT:
             recruit_type_1 = special_race_recruit_slot(race)
             budget = _special_race_army_budget(race, tax, rng)
@@ -747,6 +952,51 @@ def generate_new_game(
                 )
             )
 
+    # Phase 982: a King starts physically present in their own Home
+    # province, the same real "known provinces" floor `turn/move_
+    # execution.py reveal_adjacent_provinces()` already grants any
+    # Kingdom entering a province during a turn (Phase 623) -- confirmed
+    # missing here directly: every real Turn-0 report the user supplied
+    # describes the Home province's own 6 real neighbors by name/race/
+    # ruler (`report/turn_report.py describe_home_province_neighbors()`,
+    # Phase 981), which requires each neighbor to already be `known_to_
+    # kingdom()` (>=1% explored) at world-creation time -- before this,
+    # only the Home province itself ever got an `explored_percent_by_
+    # kingdom` entry, so `describe_map_report()`'s own ASCII map showed
+    # just that one cell. Run once per King, after every `ProvinceState`
+    # above already exists (`reveal_adjacent_provinces()` looks up each
+    # neighbor's own real `ProvinceState`, which the loop above may not
+    # have reached yet mid-iteration).
+    for king in kings:
+        king_kingdom_id = game_state.leaders[king.leader_id].kingdom_id
+        home_coord = home_coord_by_king[king.leader_id]
+        reveal_adjacent_provinces(game_state, game_state.provinces[home_coord], king_kingdom_id, bounds)
+
+    # Phase 983: every generated province gets a real name -- confirmed
+    # missing here directly: no call site anywhere in this function ever
+    # set `ProvinceState.name`, so every province fell back to its own
+    # `(x, y)` coordinate everywhere a report/the webapp displays one
+    # (the PROVINCES table, the Phase 981 home-province neighbor
+    # paragraph, the hex map tooltip). `turn/rename_province.py
+    # assign_province_name()` and `models/province_names.py`'s own
+    # terrain-keyed pools (`PRNAMES.PAS`, real and already fixture-
+    # verified -- see that module's own docstring) already existed,
+    # fully built, just never called from world generation. Uses a
+    # fresh `random.Random` seeded from this same call's own
+    # `PascalRandom` stream (one more `irand()` draw) rather than the
+    # `PascalRandom` itself, which has no `choice()` method and isn't
+    # what `assign_province_name()` expects -- no real source documents
+    # a selection formula here anyway (that function's own docstring:
+    # "no real source documents how the original engine avoided
+    # collisions, since it never generated names at runtime at all").
+    # Seeding from `rng.irand()` instead of an unseeded `random.Random()`
+    # keeps `generate_new_game(PascalRandom(seed=N), ...)` fully
+    # reproducible for a given `N`, matching every other RNG consumption
+    # in this function.
+    naming_rng = random.Random(rng.irand())
+    for coord in game_state.provinces:
+        assign_province_name(game_state, coord, naming_rng)
+
     # Phase 892: "create province armies and one extra mercenary band per
     # King" -- world_generation.province_population_order's own stage 6
     # names both halves as one stage; the province/army half above has
@@ -792,6 +1042,14 @@ def generate_new_game(
                 location=home_coord,
                 commanded_by=None,
                 movement_points=ARMY_TABLE[band_type].speed,
+                # Bug fix, sourced directly from the user (2026-10-25):
+                # this is the one genuinely sourced "mercenary" army per
+                # King -- see `ArmyState.is_mercenary`'s own docstring.
+                # Every *other* `kingdom_id=None` army created elsewhere
+                # in this function (an ordinary unclaimed province's own
+                # native garrison) is deliberately left at the default
+                # `is_mercenary=False`.
+                is_mercenary=True,
             )
         )
 
@@ -816,13 +1074,10 @@ def generate_new_game(
             # *which* half of the 4-gold/4-item repeating pattern a
             # feature falls in (magic_item_placement.py's own docstring:
             # "the other half get gold") -- it never assigns the actual
-            # gold-tier treasure. Which of the 3 GOLD_HOARD tiers a gold
-            # feature gets is unsourced (no AKGEN reverse-engineering
-            # note covers it), so this is a project-original uniform
-            # draw across the 3 tiers -- the same "no source, uniform
-            # default" convention already used elsewhere in this module
-            # (e.g. `second_recruit_slot()`'s own cavalry/chariots draw).
-            treasure = _GOLD_HOARD_TIERS[rng.irand() % len(_GOLD_HOARD_TIERS)]
+            # gold-tier treasure. Phase 985: see `_draw_gold_hoard_tier()`'s
+            # own docstring for the real-sample-calibrated weighting
+            # (no longer a flat uniform 1/3 each).
+            treasure = _draw_gold_hoard_tier(rng)
 
         magic_location = resolve_visible_location(
             placement.feature_type, placement.feature_index, placement.coord.x

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import Counter
+
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ARMY_TABLE, ArmyType
 from ak_engine.models.enums import Ability
@@ -8,6 +10,7 @@ from ak_engine.models.hero_roster import STANDARD_HERO_ROSTER
 from ak_engine.models.kingdom import SkillTable
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
+from ak_engine.models.province_names import PROVINCE_NAME_POOLS
 from ak_engine.models.power import Power
 from ak_engine.models.race import Race
 from ak_engine.turn.movement import MapBounds, hex_distance, neighbors
@@ -21,7 +24,7 @@ from ak_engine.worldgen.generate_new_game import (
 from ak_engine.worldgen.initial_armies import BEST_ATYPE, COMMANDER_NONE
 from ak_engine.worldgen.king_home_placement import MIN_HOME_DISTANCE
 from ak_engine.worldgen.leader_placement import COMPANIONS_PER_KING, owner_leader_count
-from ak_engine.models.treasure import TREASURE_CATEGORY, TreasureCategory
+from ak_engine.models.treasure import TREASURE_CATEGORY, Treasure, TreasureCategory
 from ak_engine.worldgen.magic_item_placement import item_slot_count
 from ak_engine.worldgen.mercenary_band import hex_ring
 from ak_engine.worldgen.pascal_random import PascalRandom
@@ -162,6 +165,38 @@ def test_king_gets_a_real_extra_mercenary_band_at_home():
         assert band.commanded_by is None
         assert isinstance(band.army_type, ArmyType)
         assert band.movement_points == ARMY_TABLE[band.army_type].speed
+        # Bug fix, sourced directly from the user (2026-10-25, "troppe
+        # truppe mercenarie... 1 per ogni Re") and independently
+        # confirmed against the real GW3__T1 sample (10 Kings, exactly
+        # 10 `is_mercenary=True` army rows out of 218 total) -- this is
+        # the one genuinely sourced mercenary band per King, distinct
+        # from every ordinary unclaimed province's own native garrison,
+        # which also has `kingdom_id=None` but must never be flagged
+        # `is_mercenary`. See `ArmyState.is_mercenary`'s own docstring.
+        assert band.is_mercenary is True
+
+
+def test_exactly_one_mercenary_band_exists_per_king_world_wide():
+    # The same bug fix as above, checked the other way around: across
+    # *every* army generate_new_game() creates (every King Home, every
+    # ordinary humanoid province, every special-race province), the
+    # total `is_mercenary=True` count must be exactly len(kings) -- not
+    # inflated by the many other `kingdom_id=None` native-garrison
+    # armies this same pipeline also creates at every unclaimed
+    # province.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=3)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    mercenary_armies = [a for a in result.armies.values() if a.is_mercenary]
+    assert len(mercenary_armies) == len(kings)
+
+    # And every ordinary province's own native garrison with no owning
+    # Kingdom (there are many, on any real map) is NOT one of them.
+    unowned_non_mercenary_armies = [
+        a for a in result.armies.values() if a.kingdom_id is None and not a.is_mercenary
+    ]
+    assert len(unowned_non_mercenary_armies) > 0
 
 
 def test_extra_mercenary_band_type_is_compatible_or_fallback():
@@ -366,6 +401,30 @@ def test_magic_item_cursor_assigns_treasure_to_exactly_the_confirmed_slot_count(
     assert magic_item_treasure == item_slot_count(feature_count(1))
 
 
+def test_gold_hoard_tier_is_mostly_large_not_a_uniform_third_each():
+    # Phase 985: user-reported anomaly -- too many Huge hoards. Confirmed
+    # against the real GW3__T1 world file's own 64 real gold-hoard
+    # features: 55 Large (85.9%), 9 Huge (14.1%), 0 Fabulous. A flat
+    # uniform 1/3 draw (this function's own original Phase 430 shape)
+    # would show roughly equal counts of all three -- real data flatly
+    # contradicts that. See _draw_gold_hoard_tier()'s own docstring for
+    # the exact weighting this Monte Carlo checks.
+    from ak_engine.worldgen.generate_new_game import _draw_gold_hoard_tier
+
+    rng = PascalRandom(seed=1)
+    n = 50_000
+    counts = Counter(_draw_gold_hoard_tier(rng) for _ in range(n))
+
+    large_share = counts[Treasure.GOLD_HOARD_LARGE] / n
+    huge_share = counts[Treasure.GOLD_HOARD_HUGE] / n
+    fabulous_share = counts[Treasure.GOLD_HOARD_FABULOUS] / n
+
+    assert abs(large_share - 0.875) < 0.02
+    assert abs(huge_share - 0.109) < 0.02
+    assert abs(fabulous_share - 0.0156) < 0.01
+    assert large_share > huge_share > fabulous_share
+
+
 def test_generate_new_game_is_deterministic_for_a_fixed_seed():
     game_state_a, kings_a = _setup()
     game_state_b, kings_b = _setup()
@@ -427,6 +486,80 @@ def test_every_king_gets_exactly_two_companions_at_their_own_home():
             assert companion.alignment is not None
             assert companion.is_king is False
             assert companion.name == STANDARD_HERO_ROSTER[companion.leader_id]
+            # Phase 984: gates turn/hire_pay.py required_pay()'s own
+            # conquest surcharge off for a starting companion -- see
+            # that function's own Phase 984 docstring addendum.
+            assert companion.is_starting_companion is True
+
+
+def test_undead_king_companions_are_always_undead_and_evil_or_pagan():
+    # Bug fix: sourced directly from the user (2026-10-25) and
+    # independently confirmed by this project's own real sample
+    # (SE3__T0.K1: Uga-Buga Makumb, Elf/Undead, has companion Guerin --
+    # same race as the King (Elf), Undead-aligned -- and companion
+    # Teleko -- a different, drawn race (Dwarf), Evil-aligned): an
+    # Undead King's first companion (companion_index 0, same race as
+    # the King) is always Undead-aligned; the second (companion_index
+    # 1, a drawn race) is always Evil or Pagan.
+    game_state, kings = _setup()
+    game_state.kingdoms[0].alignment = Alignment.UNDEAD
+    rng = PascalRandom(seed=3)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    undead_king = kings[0]
+    king_kingdom_id = result.leaders[undead_king.leader_id].kingdom_id
+    companions = [
+        leader
+        for leader in result.leaders.values()
+        if leader.leader_id != undead_king.leader_id
+        and leader.kingdom_id == king_kingdom_id
+        and leader.location == undead_king.home_coord
+    ]
+    assert len(companions) == COMPANIONS_PER_KING
+
+    same_race_companions = [c for c in companions if c.race == undead_king.race]
+    other_companions = [c for c in companions if c.race != undead_king.race]
+    assert len(same_race_companions) == 1
+    assert len(other_companions) == 1
+    assert same_race_companions[0].alignment is Alignment.UNDEAD
+    assert other_companions[0].alignment in (Alignment.EVIL, Alignment.PAGAN)
+    for companion in companions:
+        assert companion.skills is not None
+
+
+def test_non_undead_king_companions_are_unaffected_by_the_undead_override():
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=3)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        king_kingdom_id = result.leaders[king.leader_id].kingdom_id
+        companions = [
+            leader
+            for leader in result.leaders.values()
+            if leader.leader_id != king.leader_id
+            and leader.kingdom_id == king_kingdom_id
+            and leader.location == king.home_coord
+        ]
+        for companion in companions:
+            assert companion.alignment is not Alignment.UNDEAD
+
+
+def _lords(result, kings):
+    # Phase 979: generate_new_game() now also places "remaining mercenary
+    # heroes" (kingdom_id=None, same as a lord) at coordinates not tied to
+    # any humanoid province, so kingdom_id=None alone no longer uniquely
+    # identifies a lord. Both roles draw from the same ascending-id
+    # unused_hero_ids iterator, lords first, so a lord's own id is always
+    # lower than every mercenary's -- the lowest lord_count independent
+    # ids are exactly the lords.
+    king_ids = {king.leader_id for king in kings}
+    humanoid_count = sum(1 for province in result.provinces.values() if province.race in _HUMANOID_RACES)
+    lord_count = owner_leader_count(humanoid_count, 100, len(kings)) - len(kings)
+    independent_ids = sorted(
+        leader.leader_id for leader in result.leaders.values() if leader.leader_id not in king_ids and leader.kingdom_id is None
+    )
+    return [result.leaders[leader_id] for leader_id in independent_ids[:lord_count]]
 
 
 def test_independent_lords_govern_free_humanoid_provinces_as_independent_heroes():
@@ -439,11 +572,8 @@ def test_independent_lords_govern_free_humanoid_provinces_as_independent_heroes(
     rng = PascalRandom(seed=1)
     result = generate_new_game(rng, game_state, kings, gamevers=1)
 
-    king_ids = {king.leader_id for king in kings}
     king_homes = {king.home_coord for king in kings}
-    lords = [
-        leader for leader in result.leaders.values() if leader.leader_id not in king_ids and leader.kingdom_id is None
-    ]
+    lords = _lords(result, kings)
     assert lords
     for lord in lords:
         assert lord.location not in king_homes
@@ -453,20 +583,51 @@ def test_independent_lords_govern_free_humanoid_provinces_as_independent_heroes(
         assert lord.skills is not None
         assert lord.alignment is not None
         assert lord.name == STANDARD_HERO_ROSTER[lord.leader_id]
+        # Phase 984: only a King's own two starting companions get this
+        # flag -- an independent Lord was never placed into a King's
+        # own service at all, so the question doesn't even arise.
+        assert lord.is_starting_companion is False
 
 
-def test_lord_count_matches_the_confirmed_owner_leader_count_formula():
+def test_every_ordinary_hero_gets_a_real_temper_not_left_unknown():
+    # Phase 982: no real source covers a generated hero's own starting
+    # Temper (unlike Alignment, roll_alignment() above) -- user-
+    # confirmed uniform-random roll_temper() over leaving it unset,
+    # which previously rendered every ordinary hero's own CHARACTERS row
+    # as "Unkn". Kings (player-chosen at setup) and the reserved roster
+    # slot (a fixed real Valhalla stat, checked separately above) are
+    # excluded -- this covers every lord/companion/mercenary instead.
     game_state, kings = _setup()
     rng = PascalRandom(seed=1)
     result = generate_new_game(rng, game_state, kings, gamevers=1)
 
-    king_ids = {king.leader_id for king in kings}
-    lord_count = sum(
-        1 for leader in result.leaders.values() if leader.leader_id not in king_ids and leader.kingdom_id is None
-    )
-    humanoid_count = sum(1 for province in result.provinces.values() if province.race in _HUMANOID_RACES)
-    expected_lord_count = owner_leader_count(humanoid_count, 100, len(kings)) - len(kings)
-    assert lord_count == expected_lord_count
+    king_leader_ids = {king.leader_id for king in kings}
+    reserved_roster_id = len(result.leaders) - 1
+    for leader_id, leader in result.leaders.items():
+        if leader_id in king_leader_ids or leader_id == reserved_roster_id:
+            continue
+        assert leader.temper is not None
+
+
+def test_total_leader_count_matches_leader_count_exactly():
+    # Phase 979 (+ its own addendum): "remaining mercenary heroes" and
+    # the reserved last roster id are both materialized now, so for
+    # leader_count=100 (this project's own default/only tier, with a
+    # confirmed RESERVED_ROSTER_HERO_NAME entry) every one of the 100
+    # roster slots is a real LeaderState -- independently confirmed
+    # against real GW world files from different actual historical
+    # games, each showing the full leader_count - king_count + 1
+    # reserved slot (90 Heroes + 1 reserved for a 10-King/v3 game, 247 +
+    # 1 for a 3-King/v4/250-slot game, the same +1 reconfirmed again by a
+    # second, unrelated 250-slot game).
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    # Kings occupy the same id range heroes otherwise would, one-for-one,
+    # so the *total* materialized leader count (Kings + Heroes) is simply
+    # leader_count, independent of king_count.
+    assert len(result.leaders) == 100
 
 
 def test_no_leader_id_is_reused_across_kings_lords_and_companions():
@@ -481,6 +642,79 @@ def test_no_leader_id_is_reused_across_kings_lords_and_companions():
     )
     companion_count = COMPANIONS_PER_KING * len(kings)
     assert non_king_count == lord_count + companion_count
+
+
+def _mercenaries(result, kings, *, leader_count=100):
+    """The complement of `_lords()` among kingdom_id=None non-King leaders,
+    also excluding the reserved last roster id (Phase 979 addendum -- its
+    own name doesn't come from STANDARD_HERO_ROSTER, see `test_reserved_
+    roster_id_gets_its_real_valhalla_name_and_stats` below) -- see
+    `_lords()`'s own docstring comment for why id order distinguishes
+    lords from mercenaries."""
+
+    king_ids = {king.leader_id for king in kings}
+    lord_ids = {lord.leader_id for lord in _lords(result, kings)}
+    reserved_id = leader_count - 1
+    return [
+        leader
+        for leader in result.leaders.values()
+        if leader.leader_id not in king_ids
+        and leader.kingdom_id is None
+        and leader.leader_id not in lord_ids
+        and leader.leader_id != reserved_id
+    ]
+
+
+def test_remaining_mercenary_heroes_are_placed_off_sea_and_off_king_homes():
+    # Phase 979: closes the "remaining mercenary heroes" gap -- every
+    # hero_pool id left over after lords and companions is now a real
+    # LeaderState, independent (kingdom_id=None like a lord), placed via
+    # worldgen/leader_placement.py's own confirmed draw_mercenary_
+    # relocation_coordinate() ("redraw while on Sea or in a King-owned
+    # province; sharing a lord-owned province is allowed").
+    # seed=1 stopped leaving any hero_pool ids unclaimed after the Phase
+    # 986 land-ratio recalibration (more land -> more free humanoid
+    # provinces -> more lords claim the 100-id hero pool before any are
+    # left over as mercenaries); seed=6 still leaves some.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=6)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    king_homes = {king.home_coord for king in kings}
+    mercenaries = _mercenaries(result, kings)
+    assert mercenaries
+    for mercenary in mercenaries:
+        assert mercenary.location not in king_homes
+        assert result.provinces[mercenary.location].terrain is not Terrain.SEA
+        assert mercenary.race == result.provinces[mercenary.location].race
+        assert mercenary.skills is not None
+        assert mercenary.alignment is not None
+        assert mercenary.name == STANDARD_HERO_ROSTER[mercenary.leader_id]
+
+
+def test_reserved_roster_id_gets_its_real_valhalla_name_and_stats():
+    # Phase 979 addendum: for a 100-slot leader_count (this project's own
+    # default/only tier, RESERVED_ROSTER_HERO_NAME[100] == "Kitralus"),
+    # the reserved last roster id (99) is now a real LeaderState too,
+    # with the full stat block of the matching VALHALLA_ROSTER entry --
+    # confirmed real (same name) across a real GW world file, not an
+    # invented identity.
+    from ak_engine.models.valhalla import VALHALLA_HERO_BY_NAME
+
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    reserved = result.leaders[99]
+    kitralus = VALHALLA_HERO_BY_NAME["Kitralus"]
+    assert reserved.name == "Kitralus"
+    assert reserved.kingdom_id is None
+    assert reserved.alignment is kitralus.true_alignment
+    assert reserved.temper is kitralus.temper
+    assert reserved.race is kitralus.race
+    assert reserved.skills == kitralus.skills
+    assert reserved.location not in {king.home_coord for king in kings}
+    assert result.provinces[reserved.location].terrain is not Terrain.SEA
 
 
 def _setup_naval(king_count: int = 3) -> tuple[GameState, list[KingSetup]]:
@@ -549,6 +783,23 @@ def test_auto_selected_non_naval_king_second_slot_matches_the_terrain_rule():
             assert province.recruit_type_2 in {ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY, ArmyType.CHARIOTS}
 
 
+def test_auto_selected_king_home_updates_the_kingdoms_own_home_province():
+    # GM interface Phase 4: KingdomState.home_province must track the
+    # real, auto-chosen Home -- not stay stuck at whatever placeholder
+    # the caller constructed the Kingdom with before generate_new_game()
+    # ever ran (every King here starts with home_province=(0, 0), per
+    # _setup_naval(), which no real King's actual auto-placed Home ever
+    # legitimately lands on -- MIN_HOME_DISTANCE keeps them apart, and a
+    # (0, 0) corner is not a real placement candidate).
+    game_state, kings = _setup_naval()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for king in kings:
+        leader = result.leaders[king.leader_id]
+        assert result.kingdoms[leader.kingdom_id].home_province == leader.location
+
+
 def test_every_kings_home_starts_fully_explored():
     # Phase 428: confirmed verbatim ("Expl% 100%") across four independent
     # real Turn-0 PROVINCES sections -- SE0__T0.K0.txt "Acacia", SE3__
@@ -565,6 +816,73 @@ def test_every_kings_home_starts_fully_explored():
         province = result.provinces[home_coord]
         assert province.explored_percent == 100
         assert province.explored_percent_by_kingdom.get(kingdom_id) == 100
+        # Phase 1038: the Home province seeds this Kingdom's own tracked
+        # primary map region (membership, not exact equality -- Phase
+        # 982's own "a King's Home also reveals its own real neighbors"
+        # effect can legitimately grow it further in this test's own
+        # densely-packed, 10-Kings-in-a-row synthetic world, see the
+        # very next test).
+        assert home_coord.x in result.kingdoms[kingdom_id].map_primary_region_columns
+
+
+def test_every_kings_home_also_reveals_its_own_real_neighbors_to_that_kingdom():
+    # Phase 982: a King starts physically present in their own Home --
+    # the same real "known provinces" floor `turn/move_execution.py
+    # reveal_adjacent_provinces()` already grants any Kingdom entering a
+    # province during a turn (Phase 623), now also applied once at
+    # world-creation time. Every real Turn-0 report the user supplied
+    # names the Home province's own 6 real neighbors
+    # (`report/turn_report.py describe_home_province_neighbors()`, Phase
+    # 981) -- which needs each neighbor already `known_to_kingdom()`
+    # (>=1% explored), not just the Home province itself (Phase 428).
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+    bounds = MapBounds(result.board_width, result.board_height)
+
+    for king in kings:
+        home_coord = result.leaders[king.leader_id].location
+        kingdom_id = result.leaders[king.leader_id].kingdom_id
+        for neighbor_coord in neighbors(home_coord, bounds):
+            neighbor_province = result.provinces.get(neighbor_coord)
+            assert neighbor_province is not None
+            assert neighbor_province.known_to_kingdom(kingdom_id)
+
+
+def test_every_province_gets_a_real_name_not_left_unnamed():
+    # Phase 983: no call site here ever set ProvinceState.name before
+    # this phase, so every province fell back to its own (x, y)
+    # coordinate everywhere a report/the webapp displays one.
+    # turn/rename_province.py assign_province_name() and models/
+    # province_names.py's own real, fixture-verified PRNAMES.PAS pools
+    # already existed -- this just wires them in.
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for province in result.provinces.values():
+        assert province.name
+
+
+def test_every_province_name_comes_from_its_own_terrain_pool():
+    game_state, kings = _setup()
+    rng = PascalRandom(seed=1)
+    result = generate_new_game(rng, game_state, kings, gamevers=1)
+
+    for province in result.provinces.values():
+        assert province.name in PROVINCE_NAME_POOLS[province.terrain]
+
+
+def test_province_names_are_reproducible_for_the_same_seed():
+    game_state_a, kings_a = _setup()
+    result_a = generate_new_game(PascalRandom(seed=1), game_state_a, kings_a, gamevers=1)
+
+    game_state_b, kings_b = _setup()
+    result_b = generate_new_game(PascalRandom(seed=1), game_state_b, kings_b, gamevers=1)
+
+    assert {coord: p.name for coord, p in result_a.provinces.items()} == {
+        coord: p.name for coord, p in result_b.provinces.items()
+    }
 
 
 def test_every_kings_home_carries_exactly_two_features():

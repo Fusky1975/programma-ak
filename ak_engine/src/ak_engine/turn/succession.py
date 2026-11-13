@@ -24,6 +24,14 @@ category as ``turn/practice_execution.py execute_practice_group()``'s
 own multi-character call (Phase 46's own docstring makes the same
 point for a different reason).
 
+**Phase 1193: the real call site is ``webapp/app.py leader_finalize_
+royal_heir()``** -- a GM-facing form on the leader-edit page, shown
+whenever ``LeaderState.is_royal_heir`` is set, collecting exactly the
+player-facing choices this function needs (name, Temper, Sex, and a
+4-point Talent allocation across the 15 ``Ability`` members) and
+surfacing ``KingCreationResult.reason`` back to the GM on a rejected
+allocation instead of silently failing.
+
 **Rulebook [2.1], quoted in full where relevant**: "At the start of
 the game, the player assigns the King's name, race, temper, alignment
 and four ability levels. The King can have four abilities start at
@@ -108,7 +116,7 @@ from dataclasses import dataclass
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState
-from ak_engine.models.kingdom import SkillTable
+from ak_engine.models.kingdom import SkillTable, trailing_skill_value_for_alignment
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 
@@ -277,6 +285,16 @@ def create_king(
             aptitude = _ordinary_aptitude(skill)
         raw_values[ability.value * 2] = skill
         raw_values[ability.value * 2 + 1] = aptitude
+    # Phase 1192 bug fix: worldgen/king_talent.py build_king_skill_table()
+    # -- the near-identical twin this function duplicates the same real
+    # 4-point/2-per-ability talent formula from -- always sets this real
+    # trailing SkillTable byte (Phase 910); this function never did,
+    # silently leaving every succession-created King with raw_values[30]
+    # == 0, a value no real alignment ever produces (see ALIGNMENT_
+    # TRAILING_SKILL_VALUE's own docstring). Same permissive "leave it at
+    # 0" fallback as elsewhere in this project when alignment is missing.
+    if alignment is not None:
+        raw_values[30] = trailing_skill_value_for_alignment(alignment)
 
     heir.name = name
     heir.temper = temper

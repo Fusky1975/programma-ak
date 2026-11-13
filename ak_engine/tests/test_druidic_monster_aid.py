@@ -112,8 +112,8 @@ def test_monster_strength_bonus_floors_the_division():
 # -- find_druidic_monster_assistance -----------------------------------------
 
 
-def _guarded_feature(feature_id: int, monster: Monster, *, looted: bool = False) -> Feature:
-    return Feature(feature_id, HOME, FeatureType.CAVE, guardian_monster=monster, looted=looted)
+def _guarded_feature(feature_id: int, monster: Monster, *, looted: bool = False, magically_hidden: bool = False) -> Feature:
+    return Feature(feature_id, HOME, FeatureType.CAVE, guardian_monster=monster, looted=looted, magically_hidden=magically_hidden)
 
 
 def test_find_druidic_monster_assistance_grants_a_bonus_on_a_successful_roll():
@@ -157,6 +157,20 @@ def test_find_druidic_monster_assistance_skips_a_failed_roll():
 def test_find_druidic_monster_assistance_skips_looted_features():
     state = GameState()
     state.add_feature(_guarded_feature(1, Monster.GO_DRAGON, looted=True))
+
+    result = find_druidic_monster_assistance(state, HOME, Alignment.EVIL, line_length=5, rng=ScriptedRandom([]))
+
+    assert result == {}
+
+
+def test_find_druidic_monster_assistance_skips_a_magically_hidden_feature():
+    # Phase 1194 bug fix: this used to omit magically_hidden entirely,
+    # unlike the equivalent guardian-eligibility filters elsewhere
+    # (monster_raids.py resolve_province_raids(), rumor.py find_rumor_
+    # candidates()) -- a Hide-Feature'd, supposedly-undetectable
+    # guardian could still roll to join a battle.
+    state = GameState()
+    state.add_feature(_guarded_feature(1, Monster.GO_DRAGON, magically_hidden=True))
 
     result = find_druidic_monster_assistance(state, HOME, Alignment.EVIL, line_length=5, rng=ScriptedRandom([]))
 

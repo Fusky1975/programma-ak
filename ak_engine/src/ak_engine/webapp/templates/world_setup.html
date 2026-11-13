@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Create World -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('titles_setup', slug=meta.slug) }}">&larr; Optional Titles</a></p>
+
+{% if state.kingdoms %}
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>{{ meta.name }} &mdash; World Created</h2>
+    <p class="status-ok">{{ state.kingdoms|length }} Kingdoms &middot; {{ state.provinces|length }} provinces &middot; {{ state.armies|length }} armies &middot; {{ state.board_width }}x{{ state.board_height }} map.</p>
+    <ul class="game-list">
+      {% for kingdom_id, kingdom in state.kingdoms.items() %}
+        <li>
+          <div>
+            <div class="game-name">{{ kingdom.name }}</div>
+            <div class="game-meta">{{ kingdom.race|display_name }} &middot; {{ kingdom.alignment|display_name }} &middot; Home at ({{ kingdom.home_province.x }}, {{ kingdom.home_province.y }})</div>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <a class="button" href="{{ url_for('kingdom_edit', slug=meta.slug, kingdom_id=kingdom_id) }}">Edit</a>
+            <form class="inline" method="post" action="{{ url_for('kingdom_delete', slug=meta.slug, kingdom_id=kingdom_id) }}"
+                  data-confirm="Permanently delete the Kingdom of {{ kingdom.name }}? This also deletes its King and every Hero in its service and every Army it owns, and releases every province it owns back to unowned. This cannot be undone.">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+    <p>
+      <a class="button" href="{{ url_for('provinces_list', slug=meta.slug) }}">Edit Provinces &rarr;</a>
+      <a class="button" href="{{ url_for('leaders_list', slug=meta.slug) }}">Edit Heroes &rarr;</a>
+      <a class="button" href="{{ url_for('features_list', slug=meta.slug) }}">Edit Special Features &rarr;</a>
+      <a class="button" href="{{ url_for('armies_list', slug=meta.slug) }}">Edit Armies &rarr;</a>
+    </p>
+    <p>
+      <a class="button" href="{{ url_for('turn_zero_list', slug=meta.slug) }}">View Turn 0 Reports &rarr;</a>
+      <a class="button" href="{{ url_for('turns_hub', slug=meta.slug) }}">Process Turns &rarr;</a>
+    </p>
+  </div>
+
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>World Emperor</h2>
+    <p class="hex-map-legend-note">Normally elected by rulebook [10.2]'s own vote -- exposed here for the GM to set up a scenario directly or correct by hand. Gates the Emperor/Imperial Treasurer office perks and the STATE OF THE NATION report section.</p>
+    <form method="post" action="{{ url_for('world_emperor_save', slug=meta.slug) }}">
+      <p>
+        <label for="emperor_kingdom_id">World Emperor</label><br>
+        <select id="emperor_kingdom_id" name="emperor_kingdom_id">
+          <option value="" {% if state.emperor_kingdom_id is none %}selected{% endif %}>-- None --</option>
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <option value="{{ kingdom_id }}" {% if state.emperor_kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+          {% endfor %}
+        </select>
+      </p>
+
+      <p>
+        <label for="last_emperor_vote_turn">Last Emperor Vote Turn</label><br>
+        <input type="number" id="last_emperor_vote_turn" name="last_emperor_vote_turn" value="{{ state.last_emperor_vote_turn if state.last_emperor_vote_turn is not none else '' }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">The turn a vote was last held (win or not) -- a new vote can't be requested for the very next turn after this one. Leave blank for "never held."</span>
+      </p>
+
+      <button type="submit">Save World Emperor</button>
+    </form>
+  </div>
+
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>World Header</h2>
+    <p class="hex-map-legend-note">The GW world header's own raw fields -- normally set once at world generation, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+    <form method="post" action="{{ url_for('world_header_save', slug=meta.slug) }}">
+      <p>
+        <label for="game_number">Game Number</label><br>
+        <input type="number" id="game_number" name="game_number" value="{{ state.game_number }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">AKGEN's own per-game seed source for the Advanced Ability level-schedule build.</span>
+      </p>
+
+      <p>
+        <label for="game_type">Game Type</label><br>
+        <select id="game_type" name="game_type">
+          <option value="" {% if state.game_type is none %}selected{% endif %}>-- Unset --</option>
+          {% for game_type in game_types %}
+            <option value="{{ game_type.name }}" {% if state.game_type == game_type %}selected{% endif %}>{{ game_type|display_name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">Gates the Arcane's Valor artifacts behind Arcanes. Every real observed world reads Normal.</span>
+      </p>
+
+      <p>
+        <label for="miscwrit">Miscwrit</label><br>
+        <input type="number" id="miscwrit" name="miscwrit" value="{{ state.miscwrit }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">The header's own persistent bitmask (field #33). Only bit 0x0002 has a live consumer here (Cast Spell/Answer Prayer location derivation); AKGEN sets it unconditionally on a freshly-generated world.</span>
+      </p>
+
+      <p>
+        <label for="gdday">Due Day</label><br>
+        <input type="number" id="gdday" name="gdday" value="{{ state.gdday }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">The turn's own Due date day-of-month. Feeds Power.CHANCE's own sub-power roll.</span>
+      </p>
+
+      <button type="submit">Save World Header</button>
+    </form>
+  </div>
+
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>World Events</h2>
+    <p class="hex-map-legend-note">Gate Angel, Valhalla and Imperial Election turn-scoped facts -- normally set by the Gate Angel cast, the ordinary Valhalla rotation, the Emperor election cycle, and a Fire order's own Assassins Guild interception, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+    <form method="post" action="{{ url_for('world_events_save', slug=meta.slug) }}">
+      <p>
+        <label for="last_gate_angel_turn">Last Gate Angel Turn</label><br>
+        <input type="number" id="last_gate_angel_turn" name="last_gate_angel_turn" value="{{ state.last_gate_angel_turn if state.last_gate_angel_turn is not none else '' }}" style="width: 6em;">
+      </p>
+
+      <p>
+        <label for="last_gate_angel_kingdom">Last Gate Angel Kingdom</label><br>
+        <select id="last_gate_angel_kingdom" name="last_gate_angel_kingdom">
+          <option value="" {% if state.last_gate_angel_kingdom is none %}selected{% endif %}>-- None --</option>
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <option value="{{ kingdom_id }}" {% if state.last_gate_angel_kingdom == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">This turn's reservoir-sampling winner -- which Kingdom gets the Gate Angel visit, and when.</span>
+      </p>
+
+      <p>
+        <label for="last_valhalla_visited_kingdom_id">Last Valhalla Visited Kingdom</label><br>
+        <select id="last_valhalla_visited_kingdom_id" name="last_valhalla_visited_kingdom_id">
+          <option value="" {% if state.last_valhalla_visited_kingdom_id is none %}selected{% endif %}>-- None --</option>
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <option value="{{ kingdom_id }}" {% if state.last_valhalla_visited_kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">The Kingdom that received the immediately preceding Valhalla visit -- excluded from this turn's own candidate pool.</span>
+      </p>
+
+      <p>
+        <label for="gate_angel_due_alignment">Gate Angel Due Alignment</label><br>
+        <select id="gate_angel_due_alignment" name="gate_angel_due_alignment">
+          <option value="" {% if state.gate_angel_due_alignment is none %}selected{% endif %}>-- Unset --</option>
+          {% for alignment in all_alignments %}
+            <option value="{{ alignment.name }}" {% if state.gate_angel_due_alignment == alignment %}selected{% endif %}>{{ alignment|display_name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">This turn's randomly-chosen due alignment, cached once per turn so every caster this turn sees the same answer.</span>
+      </p>
+
+      <p>
+        <label for="gate_angel_due_alignment_turn">Gate Angel Due Alignment Turn</label><br>
+        <input type="number" id="gate_angel_due_alignment_turn" name="gate_angel_due_alignment_turn" value="{{ state.gate_angel_due_alignment_turn if state.gate_angel_due_alignment_turn is not none else '' }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">The turn the Due Alignment above was cached on.</span>
+      </p>
+
+      <p>
+        <label for="gate_angel_candidates_this_turn">Gate Angel Candidates This Turn</label><br>
+        <input type="number" id="gate_angel_candidates_this_turn" name="gate_angel_candidates_this_turn" value="{{ state.gate_angel_candidates_this_turn }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">How many successful due-alignment casters have been seen so far this turn.</span>
+      </p>
+
+      <p>
+        <label for="gate_angel_cycle_visited">Gate Angel Cycle Visited</label><br>
+        <select id="gate_angel_cycle_visited" name="gate_angel_cycle_visited" multiple size="5">
+          {% for alignment in all_alignments if alignment.name in ("GOOD", "DRUID", "NEUTRAL", "PAGAN", "EVIL") %}
+            <option value="{{ alignment.name }}" {% if alignment in state.gate_angel_cycle_visited %}selected{% endif %}>{{ alignment|display_name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">Which of the 5 eligible alignments (never Divine or Undead) have already had their turn in the current 5-turn rotation cycle. Ctrl/Cmd-click to select more than one.</span>
+      </p>
+
+      <p>
+        <label for="election_pending_turn">Election Pending Turn</label><br>
+        <input type="number" id="election_pending_turn" name="election_pending_turn" value="{{ state.election_pending_turn if state.election_pending_turn is not none else '' }}" style="width: 6em;">
+        <br><span class="hex-map-legend-note">The turn a scheduled Imperial Election vote will actually be tallied on. Leave blank for "no election currently pending."</span>
+      </p>
+
+      <p>
+        <label for="election_pending_alignment_trigger">Election Pending Alignment Trigger</label><br>
+        <select id="election_pending_alignment_trigger" name="election_pending_alignment_trigger">
+          <option value="" {% if state.election_pending_alignment_trigger is none %}selected{% endif %}>-- None (King-request weight alone) --</option>
+          {% for alignment in all_alignments %}
+            <option value="{{ alignment.name }}" {% if state.election_pending_alignment_trigger == alignment %}selected{% endif %}>{{ alignment|display_name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">The Alignment whose own world-power bloc triggered the pending election, if any.</span>
+      </p>
+
+      <p>
+        <label for="pending_guild_target">Pending Guild Target</label><br>
+        <select id="pending_guild_target" name="pending_guild_target">
+          <option value="" {% if state.pending_guild_target is none %}selected{% endif %}>-- None --</option>
+          {% for leader_id, leader in state.leaders.items() %}
+            <option value="{{ leader_id }}" {% if state.pending_guild_target == leader_id %}selected{% endif %}>{{ leader.name }}</option>
+          {% endfor %}
+        </select>
+        <br><span class="hex-map-legend-note">A single global slot: a Fire order's own Assassins Guild interception target, resolved and always cleared back to None once per turn after battles.</span>
+      </p>
+
+      <button type="submit">Save World Events</button>
+    </form>
+  </div>
+
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>Discoveries &mdash; First Found By</h2>
+    <p class="hex-map-legend-note">The global, world-wide registry of which Kingdom was first to invent each Discovery (a Discovery is one shared invention, unlike a Feature-type secret several Kingdoms can each hold independently) -- feeds the Chancellor Merit Point formula's own "found first" (3 points) vs. "found, not first" (2 points) split. Normally written once, permanently, the instant a Kingdom's own Practice/Sage action gains a Discovery no other Kingdom already held; exposed here for the GM to set up a scenario directly or correct by hand. Granting a Discovery to a Kingdom on its own Kingdom page does not update this registry automatically.</p>
+    <form method="post" action="{{ url_for('world_discoveries_save', slug=meta.slug) }}">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Discovery</th>
+            <th>First Found By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for discovery in discoveries %}
+            <tr>
+              <td>{{ discovery|display_name }}</td>
+              <td>
+                <select name="first_found_by_{{ discovery.name }}">
+                  <option value="" {% if discovery not in state.discoveries_first_found_by %}selected{% endif %}>-- Not found yet --</option>
+                  {% for kingdom_id, kingdom in state.kingdoms.items() %}
+                    <option value="{{ kingdom_id }}" {% if state.discoveries_first_found_by.get(discovery) == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit">Save Discoveries -- First Found By</button>
+    </form>
+  </div>
+
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>Office Holders</h2>
+    <p class="hex-map-legend-note">The 37 leader-scoped Imperial Offices' own sticky tie-break record (Emperor is excluded -- see the World Emperor panel above, resolved directly from Emperor Kingdom, not a Rank-contest). "Current Holder" is live-computed from each Hero/King's own Merit Tally and Race Title Tally; "Sticky Tie-Break Record" is the raw, GM-settable fact that keeps a tied title with its own previous holder rather than flipping arbitrarily turn to turn (normally set once per turn by commit_office_holders(), not auto-recomputed here).</p>
+    <form method="post" action="{{ url_for('world_office_holders_save', slug=meta.slug) }}">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Office</th>
+            <th>Current Holder (computed)</th>
+            <th>Sticky Tie-Break Record</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for office in ranked_offices %}
+            {% set current_id = office_current_holders.get(office) %}
+            {% set current_leader = state.leaders.get(current_id) if current_id is not none else none %}
+            <tr>
+              <td>{{ office_name[office] }}</td>
+              <td>
+                {% if current_leader %}
+                  {{ current_leader.name }}
+                {% else %}
+                  <span class="empty-state">No qualifying Hero/King</span>
+                {% endif %}
+              </td>
+              <td>
+                <select name="office_holder_{{ office.name }}">
+                  <option value="" {% if office not in state.office_holders %}selected{% endif %}>-- None --</option>
+                  {% for leader_id, leader in state.leaders.items() %}
+                    <option value="{{ leader_id }}" {% if state.office_holders.get(office) == leader_id %}selected{% endif %}>{{ leader.name }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit">Save Office Holders</button>
+    </form>
+  </div>
+
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>Create Kingdom</h2>
+    <p>Adds a brand-new Kingdom and its King to this already-created world. The Home province must be an existing,
+      unowned province (not already anyone's Home) -- pick one from the Provinces map, then enter its coordinates
+      below.</p>
+    <form method="post" action="{{ url_for('kingdom_create', slug=meta.slug) }}">
+      <div class="inline">
+        <label for="new_kingdom_name">King's Name</label>
+        <input type="text" id="new_kingdom_name" name="name" required>
+
+        <label for="new_kingdom_race">Race</label>
+        <select id="new_kingdom_race" name="race" required>
+          {% for race in races %}
+            <option value="{{ race.name }}">{{ race|display_name }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="new_kingdom_alignment">Alignment</label>
+        <select id="new_kingdom_alignment" name="alignment" required>
+          {% for alignment in alignments %}
+            <option value="{{ alignment.name }}">{{ alignment|display_name }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="new_kingdom_temper">Temper</label>
+        <select id="new_kingdom_temper" name="temper" required>
+          {% for temper in tempers %}
+            <option value="{{ temper.name }}">{{ temper|display_name }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="new_kingdom_home_x">Home Province (x, y)</label>
+        <input type="number" id="new_kingdom_home_x" name="home_x" required style="width: 6em;">
+        <input type="number" id="new_kingdom_home_y" name="home_y" required style="width: 6em;">
+      </div>
+
+      <p>
+        <strong>Starting Talents</strong> &mdash; rulebook [2.1]: distribute exactly {{ max_talent_points }} ability
+        points, at most {{ max_points_per_ability }} in any one Ability. Kings automatically get +1 Melee, Archery
+        and Sage on top of this, regardless of choice.
+      </p>
+      <div class="talent-grid">
+        {% for ability in abilities %}
+          <label for="new_kingdom_talent_{{ ability.name }}">{{ ability|display_name }}
+            <input type="number" id="new_kingdom_talent_{{ ability.name }}" name="talent_{{ ability.name }}" min="0" max="{{ max_points_per_ability }}" value="0">
+          </label>
+        {% endfor %}
+      </div>
+
+      <button type="submit">Create Kingdom</button>
+    </form>
+  </div>
+{% else %}
+  <div class="panel" style="border-left: 6px solid var(--phase-world);">
+    <h2>{{ meta.name }} &mdash; Create World</h2>
+
+    {% if player_count < min_players or player_count > max_players %}
+      <p class="status-warning">{{ player_count }} Kings on the roster &mdash; need {{ min_players }}-{{ max_players }} before the world can be created.</p>
+    {% else %}
+      <p class="status-ok">{{ player_count }} Kings ready. Every King's Home province is placed automatically.</p>
+      <form class="inline" method="post" action="{{ url_for('world_create', slug=meta.slug) }}">
+        <label for="width">Map width</label>
+        <input type="number" id="width" name="width" min="1" placeholder="{{ default_width }}">
+
+        <label for="height">Map height</label>
+        <input type="number" id="height" name="height" min="1" placeholder="{{ default_height }}">
+
+        <label for="seed">Random seed</label>
+        <input type="number" id="seed" name="seed" placeholder="random">
+
+        <button type="submit">Create World</button>
+      </form>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% endblock %}

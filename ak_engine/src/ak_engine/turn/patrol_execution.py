@@ -88,11 +88,40 @@ are quite similar":
 
 Combat resolution once a target is confirmed reuses the exact same
 armyless-Encounter core ``turn/pursue_execution.py execute_pursue``
-already uses (``has_combat_intent``/``is_encounter_accepted``/
-``resolve_melee_duel``) -- duplicated rather than shared, the same
-established small-per-consumer-duplication precedent ``_leader_combatant``
-itself already uses across ``challenge_execution.py``/
-``pursue_execution.py``.
+already uses (``is_encounter_accepted``/``resolve_challenge_combat``) --
+duplicated rather than shared, the same established small-per-consumer-
+duplication precedent ``_leader_combatant`` itself already uses across
+``challenge_execution.py``/``pursue_execution.py``.
+
+**2026-11-06 -- real Steal/Give (and Fire Arrow/Cast/Flee) dispatch,
+closing a real gap.** Until now, ``execute_patrol()``'s own combat
+resolution used ``has_combat_intent`` as its dispatch gate and a bare
+``resolve_melee_duel()`` call once past it -- so a Patrol's own
+Encounter Plan tactics beyond a plain Melee/Fire-Arrow/Cast mix were
+silently never walked at all: a Steal- or Give-only plan never even
+reached combat (``has_combat_intent`` doesn't count either as "combat
+intent" -- see ``challenge_execution.py has_combat_intent()``'s own
+docstring), and even a plan that *did* pass the gate (because it also
+had a Melee/Shoot/Cast tactic) still never actually ran its own Steal
+or Give tactic, since the old code path went straight to an atomic
+duel, skipping the tactic walk entirely. [3.16]'s own text that a
+Patrol "is written... having the character 'Pursue' his own character
+number" means Patrol *is* a Pursue order, so the same "All rules
+listed under the Encounter action apply" scope ``turn/pursue_
+execution.py``'s own module docstring already reads literally for
+directed Pursue's armyless case applies here too -- there was never a
+rulebook basis for Patrol's own Encounter Plan to support a narrower
+tactic set than Pursue's. Fixed by switching to the exact same gate
+(``challenge_execution.py plan_needs_combat_dispatch``) and the exact
+same tactic-walking combat core (``resolve_challenge_combat``) Pursue's
+own armyless case already uses, including the same ``target_tactics``
+Special-Encounter-Plan lookup -- Patrol now genuinely inherits Fire
+Arrow, Cast, Steal, Give, and Flee for free, the same way Pursue's own
+Phase 290/743 addenda describe inheriting them from this exact same
+core. The three stale "Patrol has no Fire Arrow at all" comments this
+module and ``report/turn_report.py describe_patrol_combat()`` used to
+carry are corrected alongside this fix, not left as a dangling false
+claim.
 """
 
 from __future__ import annotations
@@ -102,11 +131,16 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.enums import Ability
+from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
-from ak_engine.turn.challenge_execution import has_combat_intent, is_encounter_accepted, target_evades_via_sense_danger
+from ak_engine.turn.challenge_execution import (
+    is_encounter_accepted,
+    plan_needs_combat_dispatch,
+    resolve_challenge_combat,
+    target_evades_via_sense_danger,
+)
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.discovery_effects import (
     arcane_valor_hit_points_bonus,
@@ -117,6 +151,8 @@ from ak_engine.turn.discovery_effects import (
 from ak_engine.turn.encounter import (
     CHARACTER_HIT_POINTS,
     Combatant,
+    CombatRange,
+    FireArrowShot,
     MeleeSwing,
     archery_free_attack_bonus,
     bow_of_elven_kings_archery_damage_bonus,
@@ -124,7 +160,7 @@ from ak_engine.turn.encounter import (
     loot_defeated_leader,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
-    resolve_melee_duel,
+    resolve_refusal_to_meet,
     weapon_defensive_hit_multiplier,
     weapon_grants_auto_invisibility,
     weapon_melee_damage_bonus,
@@ -132,7 +168,8 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.movement import MapBounds, neighbors
-from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.office_holder import cached_office_holder_leader_id
+from ak_engine.turn.sep_decode import target_uses_special_encounter_plan
 
 _MAGIC_ABILITIES = (Ability.WHITE, Ability.NECROMANCY, Ability.ELEMENTAL, Ability.PSYCHIC, Ability.ILLUSION)
 
@@ -205,7 +242,9 @@ def find_patrol_target(state: GameState, patroller_leader_id: int, bounds: MapBo
     return candidates[0]
 
 
-def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
+def _leader_combatant(
+    leader: LeaderState, state: GameState, *, office_cache: dict[Office, int | None] | None = None
+) -> Combatant:
     """Same construction as ``pursue_execution.py``/``challenge_execution.py``'s own
     ``_leader_combatant`` -- duplicated per this project's own established
     small-per-consumer-lookup precedent (see module docstring).
@@ -235,18 +274,21 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
     at the dataclass's own ``0`` default), unlike every one of its 5
     sibling copies (``challenge_execution.py``, ``pursue_execution.py``,
     ``cast_execution.py``, ``search_execution.py``, ``battle_
-    orchestrator.py``). **Confirmed currently a no-op, not a live bug**:
-    ``execute_patrol()``'s own combat resolution calls only ``resolve_
-    melee_duel()`` -- Patrol has no Fire Arrow tactic at all (that same
-    function's own Phase 686 comment already says so explicitly, "Patrol
-    has no Fire Arrow at all"), and ``archery_skill`` is read nowhere
-    outside the Fire-Arrow-specific helpers in ``turn/encounter.py``
-    (``effective_archery_skill()``/``fire_arrow_hit_chance()``/
-    ``fire_arrow_free_attacks()``). Fixed anyway, matching this project's
-    own established precedent (Phase 682/684) of closing a duplicate-
-    builder field gap the moment it's found rather than leaving a
-    correctly-computable field silently wrong for whenever a future
-    caller does start reading it off this same ``Combatant``.
+    orchestrator.py``). **Was a no-op at the time, not a live bug**:
+    ``execute_patrol()``'s own combat resolution at that point called
+    only ``resolve_melee_duel()`` -- Patrol had no Fire Arrow dispatch of
+    any kind yet -- and ``archery_skill`` is read nowhere outside the
+    Fire-Arrow-specific helpers in ``turn/encounter.py`` (``effective_
+    archery_skill()``/``fire_arrow_hit_chance()``/``fire_arrow_free_
+    attacks()``). Fixed anyway, matching this project's own established
+    precedent (Phase 682/684) of closing a duplicate-builder field gap
+    the moment it's found rather than leaving a correctly-computable
+    field silently wrong for whenever a future caller does start reading
+    it off this same ``Combatant`` -- which is exactly what the
+    2026-11-06 addendum above does: ``execute_patrol()`` now reuses the
+    same ``resolve_challenge_combat()`` core Pursue's armyless case
+    does, so this ``archery_skill`` really is read, for real Fire Arrow
+    dispatch, from this point on.
     """
 
     melee_skill = effective_skill_level(state, leader, Ability.MELEE)
@@ -257,12 +299,12 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         kingdom = state.kingdoms.get(leader.kingdom_id)
         neutral_bonus = kingdom is not None and kingdom.alignment is Alignment.NEUTRAL
 
-    defender_office = resolve_office_holder(state, Office.DEFENDER)
-    damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
-    illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
-    always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
-    necro_mage_office = resolve_office_holder(state, Office.NECRO_MAGE)
-    is_necro_mage = necro_mage_office is not None and necro_mage_office.leader_id == leader.leader_id
+    defender_leader_id = cached_office_holder_leader_id(state, Office.DEFENDER, office_cache)
+    damage_reduction = 1 if defender_leader_id == leader.leader_id else 0
+    illus_mage_leader_id = cached_office_holder_leader_id(state, Office.ILLUS_MAGE, office_cache)
+    always_acts_first = illus_mage_leader_id == leader.leader_id
+    necro_mage_leader_id = cached_office_holder_leader_id(state, Office.NECRO_MAGE, office_cache)
+    is_necro_mage = necro_mage_leader_id == leader.leader_id
     has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
     effective_race = leader.race
     if effective_race is None and leader.kingdom_id is not None:
@@ -315,13 +357,28 @@ class PatrolExecutionResult:
     # Phase 313: same field/reason as `turn/challenge_execution.py
     # ChallengeExecutionResult`'s own Phase 313 addendum.
     looted_item_ids: list[int] = field(default_factory=list)
-    # Phase 733: real per-swing detail (Patrol has no Fire Arrow at all,
-    # per the module docstring's own Phase 686 addendum) -- lets
-    # `report/turn_report.py describe_patrol_combat()` narrate the whole
-    # duel, not just its own final blow. Same shape/reason as `turn/
-    # challenge_execution.py ChallengeExecutionResult`'s own Phase 417
-    # addendum.
+    # Phase 733: real per-swing detail -- lets `report/turn_report.py
+    # describe_patrol_combat()` narrate the whole duel, not just its own
+    # final blow. Same shape/reason as `turn/challenge_execution.py
+    # ChallengeExecutionResult`'s own Phase 417 addendum.
     melee_swings: tuple[MeleeSwing, ...] = ()
+    # 2026-11-06: the remaining fields `ChallengeExecutionResult`/
+    # `PursueExecutionResult` already carry from `resolve_challenge_
+    # combat()`'s own `ChallengeCombatOutcome` -- see module docstring's
+    # own 2026-11-06 addendum for why Patrol now shares that exact same
+    # combat core (and therefore the exact same shape) rather than its
+    # own narrower bare-melee-duel result. Same field names, deliberately
+    # -- `report/turn_report.py describe_steal()`/`describe_encounter_
+    # combat()` already reuse `ChallengeExecutionResult`/`PursueExecutionResult`
+    # by shared field name, no `isinstance` check; this widening lets
+    # `PatrolExecutionResult` join that same reuse.
+    fled: bool = False
+    fire_arrow_shots: tuple[FireArrowShot, ...] = ()
+    steal_outcome: str | None = None
+    steal_capture_range: CombatRange | None = None
+    gold_raided: int = 0
+    stolen_item_ids: list[int] = field(default_factory=list)
+    fizzled_spells: tuple[tuple[str, Spell], ...] = ()
 
 
 def execute_patrol(
@@ -336,7 +393,9 @@ def execute_patrol(
     """Resolve one phase of a standing Patrol order: rules (a)-(c), (f)-(h)'s
     target detection, rule (i)'s Spy Table wander roll, and (once a target
     is confirmed) the same armyless-Encounter combat core directed Pursue
-    uses. See module docstring for what isn't modeled and why.
+    uses -- including that core's own Steal/Give/Fire-Arrow/Cast/Flee
+    dispatch, not just a bare Melee duel (2026-11-06, see module
+    docstring). See module docstring for what isn't modeled and why.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -353,38 +412,94 @@ def execute_patrol(
                 intercepted=False, target_leader_id=target.leader_id, reason="wandered into a random hex"
             )
 
-    if not has_combat_intent(request):
+    if not plan_needs_combat_dispatch(request):
         return PatrolExecutionResult(intercepted=True, target_leader_id=target.leader_id, combat_occurred=False)
 
+    has_spy_assassinate = AdvancedAbility.SPY_ASSASSINATE in patroller.advanced_abilities
     accepted = is_encounter_accepted(
         target_is_king=target.is_king,
         target_leads_army=False,  # guaranteed by find_patrol_target's own rule (a) filter
         challenger_is_king=patroller.is_king,
         mutual_encounter=False,
         rng=rng,
-        has_spy_assassinate=AdvancedAbility.SPY_ASSASSINATE in patroller.advanced_abilities,
+        has_spy_assassinate=has_spy_assassinate,
         has_sense_danger_evasion=target_evades_via_sense_danger(state, target, patroller),
     )
+    # Phase 1041 bug fix -- [5.6]'s own Temper-based "Refusal to Meet"
+    # gate (challenge_execution.py execute_challenge()'s own Phase 898
+    # addendum), the same gap pursue_execution.py execute_pursue()'s own
+    # Phase 1041 fix closes -- see that fix's own note for the full
+    # sourcing. opponent_leads_army is always False here: find_patrol_
+    # target()'s own rule (a) filter already guarantees an armied
+    # patroller never reaches this point.
+    if accepted and not has_spy_assassinate:
+        if resolve_refusal_to_meet(target.temper, is_king=target.is_king, opponent_leads_army=False, rng=rng):
+            accepted = False
     if not accepted:
         return PatrolExecutionResult(intercepted=True, target_leader_id=target.leader_id, reason="encounter refused")
 
-    patroller_combatant = _leader_combatant(patroller, state)
-    target_combatant = _leader_combatant(target, state)
-    combat_result = resolve_melee_duel(patroller_combatant, target_combatant, rng)
+    # Efficiency (Phase 1193): one shared office-holder cache for both
+    # sibling Combatants built in this one call -- see
+    # cached_office_holder_leader_id()'s own docstring.
+    office_cache: dict[Office, int | None] = {}
+    patroller_combatant = _leader_combatant(patroller, state, office_cache=office_cache)
+    target_combatant = _leader_combatant(target, state, office_cache=office_cache)
+    # Same target_tactics lookup as pursue_execution.py execute_pursue()'s
+    # own armyless case -- the target is structurally armyless here too
+    # (find_patrol_target()'s own rule (a) filter), so [5.10]'s own
+    # Special Encounter Plan eligibility check applies identically.
+    target_tactics = list(target.special_encounter_plan) if target_uses_special_encounter_plan(state, target) else None
+    combat_result = resolve_challenge_combat(
+        request.tactics,
+        patroller,
+        patroller_combatant,
+        target,
+        target_combatant,
+        state,
+        rng,
+        target_tactics=target_tactics,
+    )
 
     # Phase 686: AKGEN_reverse_engineering_report (2).md SS3.3's own
-    # Melee row -- "evento di mischia/duello qualificante" -- a landed
-    # hit, credited once per encounter per side, independent of who
-    # ultimately wins. Patrol has no Fire Arrow at all.
+    # Melee/Archery rows -- "evento di mischia/duello qualificante"/
+    # "evento di tiro riuscito" -- a landed hit, credited once per
+    # encounter per side, independent of who ultimately wins.
     if any(s.hit for s in combat_result.melee_swings if s.attacker == "a"):
         add_experience(patroller, Ability.MELEE, 10, rng)
     if any(s.hit for s in combat_result.melee_swings if s.attacker == "b"):
         add_experience(target, Ability.MELEE, 10, rng)
+    if any(s.hit for s in combat_result.fire_arrow_shots if s.shooter == "a"):
+        add_experience(patroller, Ability.ARCHERY, 10, rng)
+    if any(s.hit for s in combat_result.fire_arrow_shots if s.shooter == "b"):
+        add_experience(target, Ability.ARCHERY, 10, rng)
+
+    if combat_result.fled:
+        return PatrolExecutionResult(
+            intercepted=True,
+            target_leader_id=target.leader_id,
+            combat_occurred=True,
+            fled=True,
+            melee_swings=combat_result.melee_swings,
+            fire_arrow_shots=combat_result.fire_arrow_shots,
+            steal_outcome=combat_result.steal_outcome,
+            steal_capture_range=combat_result.steal_capture_range,
+            gold_raided=combat_result.gold_raided,
+            stolen_item_ids=combat_result.stolen_item_ids,
+            fizzled_spells=combat_result.fizzled_spells,
+        )
 
     if combat_result.winner is None:
         return PatrolExecutionResult(
-            intercepted=True, target_leader_id=target.leader_id, combat_occurred=True,
+            intercepted=True,
+            target_leader_id=target.leader_id,
+            combat_occurred=True,
             melee_swings=combat_result.melee_swings,
+            fire_arrow_shots=combat_result.fire_arrow_shots,
+            steal_outcome=combat_result.steal_outcome,
+            steal_capture_range=combat_result.steal_capture_range,
+            gold_raided=combat_result.gold_raided,
+            stolen_item_ids=combat_result.stolen_item_ids,
+            fizzled_spells=combat_result.fizzled_spells,
         )
 
     winner_id, loser_id = (
@@ -402,6 +517,12 @@ def execute_patrol(
         winner_leader_id=winner_id,
         loser_leader_id=loser_id,
         melee_swings=combat_result.melee_swings,
+        fire_arrow_shots=combat_result.fire_arrow_shots,
         loser_killed=True,
         looted_item_ids=[item.item_id for item in looted_items],
+        steal_outcome=combat_result.steal_outcome,
+        steal_capture_range=combat_result.steal_capture_range,
+        gold_raided=combat_result.gold_raided,
+        stolen_item_ids=combat_result.stolen_item_ids,
+        fizzled_spells=combat_result.fizzled_spells,
     )

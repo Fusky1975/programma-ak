@@ -18,7 +18,12 @@ columns both closed before it.
    (rulebook, ``turn/battle_orchestrator.py _build_battle_units``'s own
    Phase 35/41 wiring) -- resolved here the same way, but against
    ``army.location`` directly (there is no "battle province" distinct
-   from the army's own current province in peacetime).
+   from the army's own current province in peacetime). The desert
+   penalty's own Find Water carve-out (Advanced Ability, Phase 511) is
+   reused verbatim via ``turn/battle_orchestrator.py side_has_present_
+   leader_with_ability()``, scoped to this army's own kingdom at its own
+   location -- the same "present, not necessarily commanding" reading
+   ``_build_battle_units`` already uses for a real battle.
 2. **Druidic-ability shortfall** (rulebook [4.32], `turn/strength.py
    DRUID_TABLE`/``compute_druidic_shortfall``, `turn/battle_orchestrator.py
    druidic_shortfall_for()`/``king_druidic_shortfall_for()`` -- Phase
@@ -28,14 +33,15 @@ columns both closed before it.
    of re-deriving the same commander/King lookup a second time.
 3. **Race-matching legendary leadership item, +1** (the user's own rules
    3-6: Excalibur for Human, Bow of the Elven Kings for Elf, Axe of the
-   Dwarven Lords for Dwarf, Scimitar of Orc Mastery for Orc) -- genuinely
-   new wiring; `models/treasure.py` only ever named these four items
-   (`TREASURE_NAME`) and scored them for an unrelated Merit Point bonus
-   (`turn/merit_points.py LEGENDARY_ITEM_BONUS_TREASURES`), neither of
-   which is a combat-quality effect. Unlike Druidic ability, the
-   rulebook text the user quoted names only the army's own commanding
-   Hero or King -- no King-substitution carve-out for an unled army,
-   so ``army.commanded_by is None`` always contributes 0 here.
+   Dwarven Lords for Dwarf, Scimitar of Orc Mastery for Orc). Unlike
+   Druidic ability, the rulebook text the user quoted names only the
+   army's own commanding Hero or King -- no King-substitution carve-out
+   for an unled army, so ``army.commanded_by is None`` always
+   contributes 0 here. Reused verbatim via `turn/battle_orchestrator.py
+   race_item_bonus_for()`, the same single shared helper this module's
+   two real-combat call sites (`_build_battle_units`,
+   `_qual_modfr_score_by_army_id`) also call -- previously three
+   separate, byte-identical copies.
 
 All four numeric modifiers are combined via `turn/strength.py
 modified_quality()`'s own single-pass clamp (its new Phase 279
@@ -58,12 +64,16 @@ against `army.location` instead of a live battle's province.
 
 from __future__ import annotations
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.army_type import ArmyType, MONSTROUS_ARMY_RACE
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.map import Terrain
-from ak_engine.models.treasure import RACE_LEADERSHIP_TREASURE
-from ak_engine.turn.battle_orchestrator import druidic_shortfall_for
+from ak_engine.turn.battle_orchestrator import (
+    druidic_shortfall_for,
+    race_item_bonus_for,
+    side_has_present_leader_with_ability,
+)
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.strength import compute_effective_strength, modified_quality
@@ -83,22 +93,23 @@ def compute_army_modified_quality(state: GameState, army: ArmyState) -> Quality:
     terrain = province.effective_terrain() if province is not None else None
 
     is_home = army.location == kingdom.home_province
-    desert_without_camels = terrain is Terrain.DESERT and not any(
-        other.army_type is ArmyType.CAMEL_CORPS
-        for other in state.armies.values()
-        if other.kingdom_id == army.kingdom_id and other.location == army.location
+    explorer_find_water = side_has_present_leader_with_ability(
+        state, army.location, frozenset({army.kingdom_id}), AdvancedAbility.EXPLORER_FIND_WATER
+    )
+    desert_without_camels = (
+        terrain is Terrain.DESERT
+        and not explorer_find_water
+        and not any(
+            other.army_type is ArmyType.CAMEL_CORPS
+            for other in state.armies.values()
+            if other.kingdom_id == army.kingdom_id and other.location == army.location
+        )
     )
 
     army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race)
     druidic_shortfall = druidic_shortfall_for(army, state, army_race, army.location)
 
-    race_item_bonus = 0
-    if army.commanded_by is not None:
-        needed_treasure = RACE_LEADERSHIP_TREASURE.get(army_race)
-        if needed_treasure is not None and any(
-            item.treasure == needed_treasure for item in state.items_held_by(army.commanded_by)
-        ):
-            race_item_bonus = 1
+    race_item_bonus = race_item_bonus_for(state, army_race, army.commanded_by)
 
     return modified_quality(
         army.quality,

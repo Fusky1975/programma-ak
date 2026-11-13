@@ -15,5 +15,16 @@ webapp = ["flask>=3.1"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# Flask's render_template()/static file serving read these straight off
+# disk relative to the installed package's own directory -- without this,
+# a non-editable `pip install .` (e.g. the standalone launcher script)
+# silently excludes every .html/.css file, since setuptools only ever
+# packages .py files by default. An editable install (`pip install -e .`,
+# every workflow used during development) never hit this: it just points
+# back at the source tree, templates and all, so the gap went unnoticed
+# until a real non-editable install was tested.
+"ak_engine.webapp" = ["templates/*.html", "static/*.css"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

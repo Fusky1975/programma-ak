@@ -43,6 +43,25 @@ behavior a simple always-on/always-off race term could never reproduce.
     else:
         LCost = base_cost
 
+**Phase 984 exclusion, not part of the dossier above -- a real-sample-
+confirmed correction to this project's own reuse of the formula**: the
+surcharge's own "born in a province the King now owns" condition is
+true of a King's own two starting companions by construction (both are
+born at the King's own Home, `worldgen/generate_new_game.py`'s own
+`COMPANIONS_PER_KING` loop), not because of any conquest -- and 2 of
+the 4 real Turn-0 samples this project has (K1's Teleko/Evil under
+Uga-Buga/Undead, K3's Garin/Pagan under Kwoth/Neutral) show exactly
+this situation (a starting companion whose own real Alignment
+genuinely differs from their King's), yet both report that companion
+paying the *same* gold as their own aligned companion counterpart --
+the surcharge the formula would otherwise add there is simply never
+observed. `LeaderState.is_starting_companion` (set only by that same
+`COMPANIONS_PER_KING` loop) now gates the surcharge off for exactly
+this one case, confirmed with the user directly (2026-10-01) after a
+user-reported "5 gold pay" anomaly traced to exactly this gap. Every
+other real Hire scenario the dossier's own disassembly covers (a Lord/
+mercenary Hero, `is_starting_companion` always `False`) is unaffected.
+
 ``h``/``k`` are the real engine's own internal leader indices (``LKing``
 resolves a King to *his own* leader index, not a separate "kingdom id"
 concept the Pascal source doesn't have) -- this project's own
@@ -76,10 +95,12 @@ A missing ``birth_x``/``birth_y`` also zeroes ``bias``'s own personal-bit
 inputs (the same "even bit -> gate off" effect a real, unset coordinate
 would have).
 
-**``Total_USkill``** reuses this project's own already-established
-``effective_skill_level()`` sum across all 15 ``Ability`` members --
-named ``Total_Skill`` at its other real call site
-(``report/turn_report.py _total_skill()``), the identical real quantity.
+**``Total_USkill``** reuses ``turn/discovery_effects.py total_skill()``
+-- the same sum-across-all-15-``Ability``-members formula named
+``Total_Skill`` at its other real call site (``report/turn_report.py
+describe_characters_report()``), the identical real quantity. Phase
+1055: both call sites used to carry their own private copy of this
+exact formula; now both import the one shared implementation.
 
 **The "rare exception" bypass (Phase 264) is unaffected** -- still a
 user-specified 15% chance to drop an otherwise-refused (``pay >= 5``)
@@ -92,11 +113,10 @@ from __future__ import annotations
 import random
 
 from ak_engine.models.alignment import ALIGNMENT_ORDINAL, Alignment
-from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
-from ak_engine.turn.discovery_effects import effective_skill_level
+from ak_engine.turn.discovery_effects import total_skill
 
 _UNHIREABLE_PAY = 5
 _ALIGN_FLOOR = 1  # NormAlign's "current rules" floor -- see module docstring.
@@ -116,12 +136,6 @@ def _align_penalty(hero_alignment: Alignment | None, king_alignment: Alignment |
         return 0
     distance = abs(_norm_align(hero_alignment) - _norm_align(king_alignment))
     return 8 >> max(0, 4 - distance)
-
-
-def _total_uskill(state: GameState, leader: LeaderState) -> int:
-    """``Total_USkill(leader)`` -- see module docstring."""
-
-    return sum(effective_skill_level(state, leader, ability) for ability in Ability)
 
 
 def _leader_race(state: GameState, leader: LeaderState) -> Race | None:
@@ -160,7 +174,7 @@ def hero_liking(state: GameState, hero: LeaderState, king: LeaderState) -> int:
     hero_temper = hero.temper
     king_temper = king.temper
     temper_conflict = hero_temper is not None and king_temper is not None and hero_temper is not king_temper
-    if not temper_conflict and hero.kingdom_id is None and _total_uskill(state, king) < 7:
+    if not temper_conflict and hero.kingdom_id is None and total_skill(state, king) < 7:
         temper_conflict = True
     temper_penalty = (bornx_h & 1) * (1 if temper_conflict else 0)
 
@@ -176,7 +190,25 @@ def required_pay(state: GameState, hero: LeaderState, king: LeaderState | None) 
     (``None`` if no King is currently recorded for the kingdom -- treated
     as "no data," the same permissive default as a missing alignment or
     temper).
+
+    ``hero.is_starting_companion`` (Phase 984) skips the "conquest
+    surcharge" term -- see module docstring's own Phase 984 addendum for
+    the real-sample evidence this exclusion is based on.
+
+    **Undead fixed pay, sourced directly from the user (2026-10-25,
+    confirmed as a fixed rule via an explicit follow-up question rather
+    than assumed from phrasing)**: an Undead-aligned Hero always costs
+    exactly 1 gold/turn, unconditionally bypassing the ``like``-based
+    formula above (and its King-is-``None`` default, which already
+    happens to be 1 but for an unrelated reason). This is deliberately
+    unconditional on `hero.is_starting_companion`/race/temper -- the
+    user confirmed it as a flat rule for the alignment itself, not a
+    byproduct of the liking formula finally landing on 1 for some other
+    reason.
     """
+
+    if hero.alignment is Alignment.UNDEAD:
+        return 1
 
     if king is None:
         return 1
@@ -187,7 +219,8 @@ def required_pay(state: GameState, hero: LeaderState, king: LeaderState | None) 
     king_alignment = king.alignment
     hero_alignment = hero.alignment
     if (
-        king_alignment is not None
+        not hero.is_starting_companion
+        and king_alignment is not None
         and king_alignment is not Alignment.DIVINE
         and hero_alignment is not None
         and hero_alignment != king_alignment

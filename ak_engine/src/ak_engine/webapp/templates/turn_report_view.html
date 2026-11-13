@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ kingdom_name }} -- Turn {{ turn_number }} -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('turn_report_list', slug=meta.slug, turn_number=turn_number) }}">&larr; Turn {{ turn_number }} Reports</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-report);">
+  <h2>{{ meta.name }} &mdash; {{ kingdom_name }} &mdash; Turn {{ turn_number }}</h2>
+  <p>
+    <a class="button" href="{{ url_for('turn_report_download', slug=meta.slug, turn_number=turn_number, kingdom_id=kingdom_id) }}">Download as .txt</a>
+    <a class="button" href="{{ url_for('turn_report_download_xk', slug=meta.slug, turn_number=turn_number, kingdom_id=kingdom_id) }}">Download as .xk</a>
+  </p>
+  <pre class="report-text">{% for line in lines %}{{ line }}
+{% endfor %}</pre>
+</div>
+
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Special Features -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('world_setup', slug=meta.slug) }}">&larr; World</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Special Features</h2>
+
+  {% if hex_map %}
+    <div class="hex-map-scroll">
+      <svg width="{{ hex_map.width }}" height="{{ hex_map.height }}" class="hex-map">
+        {% for cell in hex_map.cells %}
+          {% if cell.first_feature_id is not none %}
+            {% set cell_href = url_for('feature_edit', slug=meta.slug, feature_id=cell.first_feature_id) %}
+          {% else %}
+            {% set cell_href = url_for('feature_new', slug=meta.slug, x=cell.x, y=cell.y) %}
+          {% endif %}
+          <a xlink:href="{{ cell_href }}">
+            <polygon points="{{ cell.points }}" fill="{{ cell.fill }}" stroke="{{ cell.stroke }}" stroke-width="{{ cell.stroke_width }}">
+              <title>{{ cell.title }}</title>
+            </polygon>
+            {% if cell.home_marker %}
+              <circle cx="{{ cell.home_marker[0] }}" cy="{{ cell.home_marker[1] }}" r="5" fill="#fdf6e3" stroke="{{ cell.stroke }}" stroke-width="2">
+                <title>{{ cell.title }}</title>
+              </circle>
+            {% endif %}
+            {% if cell.feature_marker %}
+              <circle cx="{{ cell.feature_marker[0] }}" cy="{{ cell.feature_marker[1] }}" r="4" fill="#b8860b" stroke="#2b1d0e" stroke-width="1">
+                <title>{{ cell.title }}</title>
+              </circle>
+            {% endif %}
+          </a>
+        {% endfor %}
+      </svg>
+    </div>
+
+    <div class="hex-map-legend">
+      <div class="hex-map-legend-group">
+        {% for terrain, color in [
+          ('Plains', '#d9c88f'), ('Forest', '#3f6b35'), ('Jungle', '#1f5c2e'),
+          ('Mountains', '#8a8378'), ('Desert', '#e0b96a'), ('Sea', '#4a7fa8')
+        ] %}
+          <span class="hex-map-swatch"><span class="hex-map-swatch-color" style="background:{{ color }};"></span>{{ terrain }}</span>
+        {% endfor %}
+      </div>
+      <div class="hex-map-legend-group">
+        <span class="hex-map-swatch"><span class="hex-map-swatch-color" style="background:#fdf6e3; border: 2px solid #8b5e34; border-radius: 50%;"></span>Home province</span>
+        <span class="hex-map-swatch"><span class="hex-map-swatch-color" style="background:#b8860b; border-radius: 50%;"></span>Special Feature</span>
+      </div>
+      <p class="hex-map-legend-note">Click a province with no gold marker to add a new Special Feature there.</p>
+    </div>
+  {% endif %}
+
+  {% if features %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Coord</th>
+          <th>Type</th>
+          <th>Guardian</th>
+          <th>Treasure</th>
+          <th>Magic Power</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for feature in features %}
+          <tr>
+            <td>({{ feature.coord.x }}, {{ feature.coord.y }})</td>
+            <td>{{ feature.kind|display_name }}</td>
+            <td>{{ feature.guardian_monster|display_name if feature.guardian_monster else '--' }}</td>
+            <td>{{ feature.treasure|display_name if feature.treasure else '--' }}</td>
+            <td>{{ feature.magic_power|display_name if feature.magic_power else '--' }}</td>
+            <td><a class="button" href="{{ url_for('feature_edit', slug=meta.slug, feature_id=feature.feature_id) }}">Edit</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">This game has no world yet -- <a href="{{ url_for('world_setup', slug=meta.slug) }}">create it first</a>.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

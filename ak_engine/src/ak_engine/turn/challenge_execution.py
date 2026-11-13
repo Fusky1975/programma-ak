@@ -329,6 +329,7 @@ from ak_engine.turn.encounter import (
     bow_of_elven_kings_archery_damage_bonus,
     bow_of_elven_kings_archery_hit_multiplier,
     control_undead_anti_holy_resist_chance,
+    effective_melee_skill,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
     weapon_melee_damage_bonus,
@@ -374,11 +375,16 @@ from ak_engine.turn.encounter import (
     words_of_healing_heal,
 )
 from ak_engine.turn.experience import add_experience
-from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.office_holder import cached_office_holder_leader_id, resolve_office_holder
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.sep_decode import plan_intent, sep_accepts_challenge, target_uses_special_encounter_plan
 
 _COMBAT_MANEUVERS = frozenset({Maneuver.MELEE, Maneuver.SHOOT})
+
+# plan_needs_combat_dispatch()'s own widening set -- neither Maneuver
+# counts as "combat intent" under has_combat_intent()'s [3.12]-scoped
+# definition, but both still need real dispatch to fire at all.
+_COMBAT_DISPATCH_MANEUVERS = frozenset({Maneuver.STEAL, Maneuver.GIVE})
 
 # Phase 290: same secret-spell skill-5+ gate `turn/search_execution.py`
 # uses for Illusory Hero/Words of Healing, duplicated per this project's
@@ -545,6 +551,42 @@ def has_combat_intent(request: ChallengeRequest) -> bool:
     return False
 
 
+def plan_needs_combat_dispatch(request: ChallengeRequest) -> bool:
+    """``has_combat_intent(request)`` widened for Steal and Give --
+    neither counts as "combat intent" by that function's own [3.12]-
+    scoped definition, but both still need to reach ``resolve_
+    challenge_combat()`` to fire at all (Steal's own dispatch, Give's
+    own item transfer). Without this widening, a Steal- or Give-only
+    plan hits the early peaceful-bypass return both real callers
+    (``execute_challenge()``, ``execute_pursue()``) make around that
+    early return, and never reaches real dispatch.
+
+    One shared function for both callers, rather than each
+    independently re-deriving this same OR -- Steal's own gap here was
+    found and fixed at both call sites independently on the same day
+    (2026-11-01); a single shared check means a third Maneuver needing
+    the same treatment only has to be added to
+    ``_COMBAT_DISPATCH_MANEUVERS`` below, not to every caller.
+
+    **2026-11-06 -- now reused by ``turn/patrol_execution.py
+    execute_patrol()`` too.** Until this addendum, Patrol never
+    dispatched into ``resolve_challenge_combat()``'s own tactic walk at
+    all (its own post-gate path was a single, unconditional ``resolve_
+    melee_duel()`` call, no Steal/Give handling of any kind) -- widening
+    its gate here alone, without also switching its combat resolution
+    to this same function, would have silently forced a melee fight onto
+    a GM's own deliberately peaceful Steal- or Give-only Patrol plan
+    instead of actually making either tactic fire, a worse behavior
+    change than the gap it would "fix." ``execute_patrol()`` now does
+    both together -- this gate *and* ``resolve_challenge_combat()``
+    itself, the same pairing Pursue's own armyless case already uses --
+    so Patrol genuinely gains Steal/Give dispatch, not just a wider gate
+    in front of the same narrow duel.
+    """
+
+    return has_combat_intent(request) or any(tactic.maneuver in _COMBAT_DISPATCH_MANEUVERS for tactic in request.tactics)
+
+
 def target_evades_via_sense_danger(state: GameState, target: LeaderState, challenger: LeaderState) -> bool:
     """Phase 706 -- ``AdvancedAbility.SENSE_DANGER_TALENT``'s own real
     description: "The Psychic is able to sense the approach of
@@ -699,7 +741,9 @@ def is_encounter_accepted(
     return True  # "Heroes who don't lead armies can always be Encountered by other Heroes"
 
 
-def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
+def _leader_combatant(
+    leader: LeaderState, state: GameState, *, office_cache: dict[Office, int | None] | None = None
+) -> Combatant:
     """Same construction as ``battle_orchestrator.py _commander_combatant`` (Phase 49),
     duplicated rather than shared -- a Duel commander and an Encounter
     participant are different concepts that happen to need the same
@@ -714,12 +758,12 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         kingdom = state.kingdoms.get(leader.kingdom_id)
         neutral_bonus = kingdom is not None and kingdom.alignment is Alignment.NEUTRAL
 
-    defender_office = resolve_office_holder(state, Office.DEFENDER)
-    damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
-    illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
-    always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
-    necro_mage_office = resolve_office_holder(state, Office.NECRO_MAGE)
-    is_necro_mage = necro_mage_office is not None and necro_mage_office.leader_id == leader.leader_id
+    defender_leader_id = cached_office_holder_leader_id(state, Office.DEFENDER, office_cache)
+    damage_reduction = 1 if defender_leader_id == leader.leader_id else 0
+    illus_mage_leader_id = cached_office_holder_leader_id(state, Office.ILLUS_MAGE, office_cache)
+    always_acts_first = illus_mage_leader_id == leader.leader_id
+    necro_mage_leader_id = cached_office_holder_leader_id(state, Office.NECRO_MAGE, office_cache)
+    is_necro_mage = necro_mage_leader_id == leader.leader_id
     has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
     effective_race = leader.race
     if effective_race is None and leader.kingdom_id is not None:
@@ -774,6 +818,9 @@ def _resolve_personal_combat_cast(
     cast_slots_used: dict[Ability, int],
     cast_spells_attempted: set[Spell],
     fizzled_spells: list[tuple[str, Spell]] | None = None,
+    is_defensive: bool = False,
+    melee_setup_done: list[bool] | None = None,
+    melee_swings: list[MeleeSwing] | None = None,
 ) -> str | None:
     """Leader-vs-leader Personal-Combat spell dispatch -- see module
     docstring's own Phase 290 addendum for how this was re-derived
@@ -795,6 +842,42 @@ def _resolve_personal_combat_cast(
     unset ``alignment`` as "not eligible/not immune," the same
     permissive-missing-data convention used everywhere else in this
     project.
+
+    **``is_defensive`` (2026-10-31)**: ``True`` only when this call is
+    the encounter's own *target* casting back in defense of itself --
+    i.e. ``_resolve_target_cast()``'s own call below, where the overall
+    target plays this function's ``caster`` role. ``False`` (default)
+    for every other call site, including the overall caster's own
+    ordinary offensive ``CAST`` tactic. The only consumer today is Kill
+    Enemy's own [4.25.2] "un negromante non può usarlo per difendere sé
+    stesso in un piano incontro" restriction -- every other spell is
+    unaffected either way.
+
+    **Phase 1042 bug fix -- ``melee_setup_done``/``melee_swings``**:
+    Kill Enemy's own failed-cast retaliation duel and Gate Demon's own
+    summoned-monster duel each resolve a real ``resolve_melee_duel()``
+    call, but this function previously had no way to tell that duel
+    whether the encounter's own one-time ``apply_temper_melee_setup()``
+    had already run, nor anywhere to surface the swings it produced --
+    so those two sub-duels always re-applied the setup (silently
+    compounding a Temper/Ability bonus that should only ever apply
+    once per encounter) and their own melee swings never reached
+    ``ChallengeCombatOutcome.melee_swings``, so neither Melee XP
+    crediting nor the turn report's own narration ever saw them.
+
+    ``melee_setup_done`` is a **single-element mutable list**, not a
+    plain ``bool`` -- deliberately, so this function can report back
+    "a sub-duel just applied it" to its own two real callers below
+    without widening this function's own ``str | None`` return type
+    (far more invasive, touching every one of its ~15 return
+    statements). A plain bool read-only parameter would tempt a caller
+    into unconditionally setting its own local to ``True`` right after
+    *any* call here "to be safe" -- wrong for the large majority of
+    spells (Charm, Fireball, Invisibility, Telek Storm, ...) that never
+    touch melee at all, which would wrongly suppress the Temper/Ability
+    bonus for a genuine melee round still to come later in the same
+    plan. ``None`` (the default) means "not tracked" -- both real
+    callers always pass a real one-element box.
     """
 
     if caster.blocked_from_cast:
@@ -842,6 +925,23 @@ def _resolve_personal_combat_cast(
         )
         if not (target_is_undead or control_undead_target_is_anti_holy_only):
             return None
+
+    if spell is Spell.KILL_ENEMY:
+        # Kill Enemy's own eligibility preconditions, same "ineligible
+        # means no roll at all" pattern as Control Undead above:
+        # [4.25.2]'s "un negromante non può usarlo per difendere sé
+        # stesso in un piano incontro" (checked first -- a defensive
+        # cast never even reaches the King/Undead checks below), "I Re
+        # sono immuni a questo incantesimo", and "inefficace contro
+        # Non-Morti...". This module has no Monster-target concept
+        # (leader-vs-leader only, per this function's own docstring),
+        # so only the character-alignment half of the Undead clause
+        # applies here.
+        if is_defensive:
+            return None
+        if target_leader is not None and (target_leader.is_king or target_leader.alignment is Alignment.UNDEAD):
+            return None
+
     if spell is Spell.ILLUS_HERO:
         level = effective_skill_level(state, caster_leader, ability)
         if level < ILLUS_HERO_KNOWN_ABILITY_LEVEL:
@@ -892,7 +992,23 @@ def _resolve_personal_combat_cast(
     if not try_consume_combat_cast_slot(ability, spell, level, cast_slots_used, cast_spells_attempted):
         return None
 
-    succeeded = resolve_personal_combat_spell_cast(level, rng, caster_is_pagan=caster_is_pagan)
+    # Kill Enemy [4.25.2]: "la possibilità di riuscita è ridotta alla
+    # metà in un incontro in un Luogo Speciale o contro un Eroe che
+    # comanda unità militari" -- same two OR'd triggers as the Action-
+    # Cast form (`cast_execution.py _execute_kill_enemy()`), reusing
+    # its own "any Feature at the caster's own province" reading of
+    # "Luogo Speciale" (this module has no Search-style guaranteed-at-
+    # a-Feature context to make that half unconditionally true, unlike
+    # `turn/search_execution.py`'s own Kill Enemy branch).
+    kill_enemy_multiplier = 1.0
+    if spell is Spell.KILL_ENEMY:
+        halving_applies = bool(state.features_at(caster_leader.location)) or (
+            target_leader is not None and bool(state.armies_commanded_by(target_leader.leader_id))
+        )
+        kill_enemy_multiplier = 0.5 if halving_applies else 1.0
+    succeeded = resolve_personal_combat_spell_cast(
+        level, rng, caster_is_pagan=caster_is_pagan, success_chance_multiplier=kill_enemy_multiplier
+    )
 
     # Phase 531: AKGEN_reverse_engineering_report (4).md SS8 -- a target
     # holding the Anti-Magic Amulet that personally blocks this exact
@@ -921,6 +1037,63 @@ def _resolve_personal_combat_cast(
             return "a"
         target.hit_points = control_undead_failure_new_hit_points(target.hit_points, rng)
         return None
+
+    if spell is Spell.KILL_ENEMY:
+        if succeeded:
+            # Hidden Tattoos (Discovery.txt, Phase 270): "neutralize the
+            # Kill Enemy spell of Necromancers... All characters of the
+            # Kingdom are protected." Checked after the generic Anti-
+            # Necromancy-Amulet immunity above (lines 910-914), same
+            # order as `cast_execution.py _execute_kill_enemy()`'s own
+            # True-Cross-then-Hidden-Tattoos sequence.
+            target_has_hidden_tattoos = (
+                target_leader is not None
+                and target_leader.kingdom_id is not None
+                and Discovery.HIDDEN_TATTOOS in state.kingdoms[target_leader.kingdom_id].discoveries
+            )
+            if target_has_hidden_tattoos:
+                return None
+            # "Se l'incantesimo riesce, la vittima viene uccisa" --
+            # unlike the Action-Cast form's documented coma substitute,
+            # a Personal-Combat success is the real kill.
+            return "a"
+        # "Se fallisce, la vittima designata attaccherà l'autore
+        # dell'incantesimo assumendo per l'occasione un temperamento
+        # Berserk, se necessario anche aggredendolo in quella stessa
+        # fase" -- an immediate `resolve_melee_duel()` between the
+        # designated victim (temper forced to Berserk "for the
+        # occasion", mirroring `cast_execution.py
+        # _kill_enemy_combatant()`'s own Action-Cast precedent) and the
+        # caster, resolved inline. The retaliator (`target`) is passed
+        # first (this sub-duel's own local "a"=retaliator/"b"=caster
+        # convention), then translated back into this function's outer
+        # "a"=caster/"b"=target convention.
+        # Phase 1042 bug fix -- this used to duel a `replace(target, ...)`
+        # COPY ("retaliator") instead of the real `target` object, while
+        # `caster` was passed directly. `resolve_melee_duel()` mutates
+        # both its arguments in place, so on the "vanishingly rare"
+        # draw below, the real `target.hit_points` silently never
+        # reflected the damage exchanged (only the disposable copy
+        # did), while `caster.hit_points` was correctly reduced --
+        # giving the target an unearned HP advantage for the rest of
+        # the encounter. The real `target` object now takes part
+        # directly; its Temper is forced to Berserk "for the occasion"
+        # only for this one call, then restored (the rule's own "per
+        # l'occasione" wording -- not a permanent Temper change).
+        original_temper = target.temper
+        target.temper = Temper.BERSERK
+        skip_setup = melee_setup_done[0] if melee_setup_done is not None else True
+        duel_result = resolve_melee_duel(target, caster, rng, skip_temper_setup=skip_setup)
+        target.temper = original_temper
+        if melee_setup_done is not None:
+            melee_setup_done[0] = True
+        if melee_swings is not None:
+            melee_swings.extend(duel_result.melee_swings)
+        if duel_result.winner == "a":  # the designated victim's Berserk retaliation kills the caster
+            return "b"
+        if duel_result.winner == "b":  # the caster survives and wins the retaliation
+            return "a"
+        return None  # the vanishingly rare max-rounds-exhausted draw -- the encounter continues
 
     if not succeeded:
         # Phase 858: SBUNGLE.X's own real "personal-combat Cast that just
@@ -1006,11 +1179,23 @@ def _resolve_personal_combat_cast(
         caster.bonus_unanswered_attacks += roll_psychic_blast_stun_rounds(
             rng, target_has_lead_lined_helmet=target_has_lead_lined_helmet
         )
+        # Phase 1050 -- records that `target` is now a real Psychic-Blast
+        # stun victim, for Psychic Flail's own "+1 additional round if
+        # already under Psychic Blast" stacking clause (`turn/encounter.py
+        # Combatant.stunned_by_psychic_blast`'s own docstring).
+        target.stunned_by_psychic_blast = True
         return None
 
     if spell is Spell.TELEK_STORM:
         target.hit_points -= roll_telekinetic_storm_victim_damage(rng, target_is_immune=False)
         caster.hit_points -= roll_telekinetic_storm_caster_damage(CombatRange.SPELL_RANGE, rng, target_is_immune=False)
+        # Phase 1042 -- reviewed and confirmed intentional (user-decided):
+        # on a genuine double-KO (both target and caster drop to <= 0 HP
+        # from this same cast), the target's own death is checked first
+        # and the caster is credited as the winner, never the reverse --
+        # the engine has no representation for "both combatants die" in
+        # a single personal-combat-spell outcome (only "a"/"b"/None), and
+        # the defender-dies-first priority is the one this project keeps.
         if target.hit_points <= 0:
             return "a"
         if caster.hit_points <= 0:
@@ -1106,9 +1291,16 @@ def _resolve_personal_combat_cast(
         channel_result = resolve_hand_of_death_channel(
             caster, target, level, rng, target_is_immune=target_is_immune, target_has_artificial_organs=target_has_artificial_organs
         )
-        if channel_result.winner is not None:
+        if channel_result.winner == "a":
             # "a" in resolve_hand_of_death_channel's own convention always means the caster.
             return "a"
+        if channel_result.winner == "b":
+            # Phase 1050 bug fix -- "b" means the victim's own disrupting
+            # counter-attack was itself lethal to the caster; this used to
+            # be unreachable (the channel only ever returned "a" or None),
+            # so a caster already dead by this point was previously
+            # carried forward as if the channel had merely fizzled.
+            return "b"
         return None
 
     if spell is Spell.MIRROR_IMAGE:
@@ -1194,7 +1386,16 @@ def _resolve_personal_combat_cast(
             missile_damage_range=demon_stats.missile_damage if demon_stats.missile_damage is not None else FIRE_ARROW_DAMAGE_RANGE,
             is_undead_or_anti_holy=demon_species in (HAND_OF_DEATH_ANTI_HOLY_MONSTERS | SPIRITWRACK_UNDEAD_MONSTERS),
         )
-        duel_result = resolve_melee_duel(demon, target, rng)
+        # Phase 1042 bug fix -- threads the same skip_temper_setup/
+        # melee_swings this function's own docstring addendum
+        # describes, mirroring the identical fix on Kill Enemy's own
+        # retaliation duel just above.
+        skip_setup = melee_setup_done[0] if melee_setup_done is not None else True
+        duel_result = resolve_melee_duel(demon, target, rng, skip_temper_setup=skip_setup)
+        if melee_setup_done is not None:
+            melee_setup_done[0] = True
+        if melee_swings is not None:
+            melee_swings.extend(duel_result.melee_swings)
         if duel_result.winner == "a":
             return "a"
         return None
@@ -1240,7 +1441,10 @@ def _consume_bonus_attacks(attacker: Combatant, defender: Combatant, rng: random
     while attacker.bonus_unanswered_attacks > 0:
         attacker.bonus_unanswered_attacks -= 1
         damage = roll_melee_attack(
-            rng, damage_range=attacker.melee_damage_range, hit_chance_multiplier=defender.defensive_hit_multiplier
+            rng,
+            damage_range=attacker.melee_damage_range,
+            hit_chance_multiplier=defender.defensive_hit_multiplier,
+            skill_difference_bonus=max(0, effective_melee_skill(attacker) - effective_melee_skill(defender)),
         )
         damage = max(0, damage - attacker.melee_damage_dealt_reduction)
         defender.hit_points -= damage
@@ -1499,17 +1703,25 @@ class ChallengeCombatOutcome:
 
 
 def _close_to(target_range: CombatRange, current_range: CombatRange) -> CombatRange:
-    """Phase 292: advance ``current_range`` one tier per (implicit,
-    RNG-free) round until it reaches ``target_range`` -- closing the
-    distance is pure movement, not a combat action, so it consumes no
-    roll (the same "movement itself consumes no RNG" convention this
-    project's own Move/Pursue/Trail chase-step primitives already
-    established). Never widens the range back out -- there is no
-    rulebook mechanic for retreating to a farther range mid-Encounter.
+    """Phase 292, one-tier-per-call fixed 2026-11-04 (RULES.AK [5.2]/
+    [5.3], quoted in full at this function's own call sites below):
+    advances ``current_range`` by exactly **one** tier toward
+    ``target_range`` -- closing the distance is pure movement, consumes
+    no roll of its own (the same "movement itself consumes no RNG"
+    convention this project's own Move/Pursue/Trail chase-step
+    primitives already established), but **does consume the whole
+    round it happens in** for whoever is closing -- no attack from them
+    that same round. A caller whose own target range is more than one
+    tier away must call this once per round and let the loop run; it no
+    longer silently jumps straight to ``target_range`` in one call (this
+    docstring's own "one tier per round" was already the intent even
+    before this fix -- the code just never matched it). Never widens
+    the range back out -- there is no rulebook mechanic for retreating
+    to a farther range mid-Encounter.
     """
 
-    while current_range.value < target_range.value:
-        current_range = CombatRange(current_range.value + 1)
+    if current_range.value < target_range.value:
+        return CombatRange(current_range.value + 1)
     return current_range
 
 
@@ -1921,6 +2133,18 @@ def resolve_challenge_combat(
         function's own outer `"a"=caster,"b"=target` convention.
         """
 
+        nonlocal melee_setup_done
+        # Phase 1042 bug fix -- a one-element box, not the plain bool
+        # itself: only a Kill Enemy/Gate Demon sub-duel this call might
+        # resolve ever actually applies the one-time Temper/Ability
+        # setup, and only that sub-duel's own code should report "now
+        # done" back out -- most spells never touch melee at all, and
+        # blindly setting this function's own `melee_setup_done = True`
+        # after *every* call here (the previous, buggy shape) would
+        # silently skip the real bonus for a genuine melee round still
+        # to come later in the same plan. See `_resolve_personal_combat_
+        # cast()`'s own Phase 1042 docstring addendum for the full reasoning.
+        setup_box = [melee_setup_done]
         outcome = _resolve_personal_combat_cast(
             target,
             target_leader,
@@ -1933,7 +2157,11 @@ def resolve_challenge_combat(
             cast_slots_used=target_cast_slots_used,
             cast_spells_attempted=target_cast_spells_attempted,
             fizzled_spells=fizzled_spells,
+            is_defensive=True,
+            melee_setup_done=setup_box,
+            melee_swings=melee_swings,
         )
+        melee_setup_done = setup_box[0]
         if outcome == "fled":
             return "fled"
         if outcome == "a":
@@ -1982,19 +2210,45 @@ def resolve_challenge_combat(
         # Phase 674: mirrors search_execution.py's own "Melee vs Cast"
         # branch -- [5.1]'s own melee-precedence rule still applies, so
         # the caster's own swing lands on the casting target first.
-        swing_result = resolve_reactive_melee_swing(caster, target, rng)
-        melee_swings.append(
-            MeleeSwing(
-                attacker="a",
-                hit=swing_result.hit,
-                damage=swing_result.damage,
-                weapon_proc=swing_result.weapon_proc,
-                weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
+        # (Reviewed at Phase 1042: unlike the sibling Melee-vs-Melee
+        # branch just above, this branch never calls apply_temper_
+        # melee_setup() itself -- but that's provably not a gap in
+        # practice, not a silent bug. The one-time setup is always
+        # already applied by the time this branch can ever run: the
+        # pre-loop above (_resolve_target_casts()) fully drains every
+        # *leading* Cast in the target's own plan before the main
+        # tactics walk -- and this function's own -- even starts, so
+        # _peek_target_cast() cannot return a real Cast on this
+        # function's first-ever call; and the sibling "no cast" branch
+        # just above, which runs on every such first call instead,
+        # always applies setup -- via this exact `apply_temper_melee_
+        # setup()` call or via `resolve_melee_duel()`'s own internal
+        # `skip_temper_setup` handling -- before it ever advances the
+        # target's own plan index onto a later Cast entry this branch
+        # could then see.)
+        # Phase 1042 bug fix -- mirrors the main loop's own symmetric
+        # fix: a target already blocked_from_cast has a guaranteed
+        # no-op CAST coming (`_resolve_target_cast()` below resolves to
+        # the same blocked_from_cast check, role-swapped), so the
+        # caster's own reactive swing against them -- which could kill
+        # them outright -- is skipped instead of landing before that
+        # guaranteed no-op is discovered.
+        if not target.blocked_from_cast:
+            swing_result = resolve_reactive_melee_swing(caster, target, rng)
+            melee_swings.append(
+                MeleeSwing(
+                    attacker="a",
+                    hit=swing_result.hit,
+                    damage=swing_result.damage,
+                    weapon_proc=swing_result.weapon_proc,
+                    weapon_proc_hit_points=swing_result.weapon_proc_hit_points,
+                )
             )
-        )
-        if target.hit_points <= 0:
-            return True, "a"
-        disrupted = _resolve_cast_disruption(target_cast, swing_result.damage, rng)
+            if target.hit_points <= 0:
+                return True, "a"
+            disrupted = _resolve_cast_disruption(target_cast, swing_result.damage, rng)
+        else:
+            disrupted = False
         is_first_target_tactic = target_tactic_index == 0
         _advance_target_tactic()
         if disrupted:
@@ -2109,21 +2363,71 @@ def resolve_challenge_combat(
             ):
                 result = resolve_fire_arrow_duel(caster, target, rng, long_range_archer="a")
             else:
+                # RULES.AK [5.2]: "Se un personaggio riceve l'ordine di
+                # attaccare con armi da lancio a portata d'incantesimo,
+                # si avvicina a portata d'arco, consumando così un round
+                # e tira quindi nel round successivo" -- closing from
+                # Spell Range costs the caster the round he closes in
+                # (no shot that round), confirmed with the user: the
+                # *target* still fires back normally that same round if
+                # they have Archery of their own -- resolve_fire_arrow_
+                # duel()'s own `closing_side` models exactly that.
+                needs_closing = current_range is not CombatRange.BOW_RANGE
                 current_range = _close_to(CombatRange.BOW_RANGE, current_range)
-                result = resolve_fire_arrow_duel(caster, target, rng)
+                result = resolve_fire_arrow_duel(caster, target, rng, closing_side="a" if needs_closing else None)
             fire_arrow_shots.extend(result.shots)
             if result.winner is not None:
                 return _outcome(winner=result.winner)
             continue
         if tactic.maneuver is Maneuver.MELEE:
-            current_range = _close_to(CombatRange.MELEE_RANGE, current_range)
+            # RULES.AK [5.3]: "Se un personaggio riceve l'ordine di
+            # sferrare un attacco di mischia a portata d'incantesimo o
+            # di arco, cercherà di ridurre la distanza, avvicinandosi,
+            # consumando così il suo round. Combatterà corpo a corpo
+            # dopo aver raggiunto la zona di mischia." -- each closing
+            # round is the caster's alone (no swing of his own that
+            # round). May take more than one round when starting from
+            # Spell Range (Spell -> Bow -> Melee), hence the loop --
+            # this is the *same* "ME" tactic's own closing-then-fighting
+            # sequence, not a separate plan entry consumed per round.
+            #
+            # Confirmed with the user: the target still acts normally
+            # meanwhile. No separate check is needed to make that real
+            # here, though: _resolve_target_casts()'s own pre-loop
+            # (above, run once before this function's main tactics loop
+            # even starts) already drains every *leading* Cast the
+            # target's own plan could expose via _peek_target_cast() --
+            # and a plan that instead leads with its own MELEE makes
+            # that same peek return `None` until an ordinary *completed*
+            # melee round specifically advances past it
+            # (_advance_target_tactic(), inside _resolve_melee_round()'s
+            # own "no cast" branch below) -- which can only happen once
+            # real melee combat has actually started, i.e. after closing
+            # is done. So during these closing rounds specifically, the
+            # target genuinely has nothing reachable to act on either --
+            # this is what "normal" already means for them here, not a
+            # gap to special-case.
+            while current_range is not CombatRange.MELEE_RANGE:
+                current_range = _close_to(CombatRange.MELEE_RANGE, current_range)
             encounter_over, round_result = _resolve_melee_round(is_last_tactic=(index == len(tactics) - 1))
             if encounter_over:
                 return _outcome(fled=True) if round_result == "fled" else _outcome(winner=round_result)
             continue
         if tactic.maneuver is Maneuver.CAST:
             target_cast_at_melee = _peek_target_cast() if current_range is CombatRange.MELEE_RANGE else None
-            if current_range is CombatRange.MELEE_RANGE and target_cast_at_melee is None:
+            # Phase 1042 bug fix -- mirrors the SHOOT-at-Melee-Range
+            # branch's own explicit `not caster.blocked_from_archery`
+            # guard just above: a caster already blocked_from_cast is
+            # guaranteed a no-op CAST (see _resolve_personal_combat_
+            # cast()'s own first line), but this branch used to give
+            # the target a full reactive melee swing anyway -- which
+            # could even kill the blocked caster outright -- before
+            # that guaranteed no-op was ever discovered.
+            if (
+                current_range is CombatRange.MELEE_RANGE
+                and target_cast_at_melee is None
+                and not caster.blocked_from_cast
+            ):
                 # Phase 417: the target's own reactive swing (attacker="b",
                 # since the caster="a" is the one attempting to cast here)
                 # is now logged into melee_swings too, reading .hit/.damage
@@ -2149,6 +2453,7 @@ def resolve_challenge_combat(
                 disrupted = _resolve_cast_disruption(tactic, damage, rng)
                 if disrupted:
                     continue
+            setup_box = [melee_setup_done]
             outcome = _resolve_personal_combat_cast(
                 caster,
                 caster_leader,
@@ -2161,7 +2466,17 @@ def resolve_challenge_combat(
                 cast_slots_used=caster_cast_slots_used,
                 cast_spells_attempted=caster_cast_spells_attempted,
                 fizzled_spells=fizzled_spells,
+                melee_setup_done=setup_box,
+                melee_swings=melee_swings,
             )
+            # Phase 1042 bug fix -- see _resolve_personal_combat_cast()'s
+            # own Phase 1042 docstring addendum and _resolve_target_cast()'s
+            # own identical fix above: only read back `setup_box[0]`, never
+            # blindly set `melee_setup_done = True` here -- most spells
+            # never touch melee at all, and doing so unconditionally would
+            # silently skip the real Temper/Ability bonus for a genuine
+            # melee round still to come later in the same plan.
+            melee_setup_done = setup_box[0]
             if outcome == "fled":
                 return _outcome(fled=True)
             if outcome in ("a", "b"):
@@ -2182,9 +2497,29 @@ def resolve_challenge_combat(
                     return _outcome(winner=target_outcome)
             continue
         if tactic.maneuver is Maneuver.STEAL:
-            steal_outcome, gold_raided, stolen_item_ids = _resolve_steal_tactic(
+            # Phase 1042 bug fix -- a plan can carry more than one STEAL
+            # tactic (the same "no single-tactic-per-maneuver limit"
+            # convention this function's own Phase 2026-11-01 GIVE
+            # addendum already documents). Plainly reassigning
+            # `gold_raided`/`stolen_item_ids` here silently discarded an
+            # earlier *successful* theft's own loot the moment a later
+            # Steal tactic in the same plan resolved to anything else
+            # (evaded/ransom/unresolved) -- the real `state.transfer_item()`
+            # / treasury debit from that earlier success had already
+            # happened, but the report layer would never hear about it.
+            # Accumulated below, mirroring `melee_swings`/`fire_arrow_
+            # shots`'s own extend/append pattern just above; `steal_
+            # outcome`/`steal_capture_range` stay single-valued (the most
+            # recent attempt's own result) -- `ChallengeCombatOutcome.
+            # steal_outcome` has no shape for "narrate every attempt",
+            # and the loot fields above already guarantee nothing actually
+            # stolen is ever lost from the report.
+            this_steal_outcome, this_gold_raided, this_stolen_item_ids = _resolve_steal_tactic(
                 caster_leader, caster, target_leader, state, rng
             )
+            steal_outcome = this_steal_outcome
+            gold_raided += this_gold_raided
+            stolen_item_ids.extend(this_stolen_item_ids)
             if steal_outcome == "executed":
                 return _outcome(winner="b")
             if steal_outcome == "combat":
@@ -2207,6 +2542,47 @@ def resolve_challenge_combat(
                 )
                 continue
             continue  # success / evaded / ransom / unresolved -- plan continues
+        if tactic.maneuver is Maneuver.GIVE:
+            # Rulebook (2026-11-01): "Nel Piano d'Incontro, si può dare
+            # qualsiasi numero di oggetti a chiunque si incontra... Non
+            # è però possibile scambiare oggetti per denaro" -- extends
+            # the top-level Give [GI] Action's own single-item-per-
+            # phase limit by letting the same Encounter Plan carry
+            # several separate GIVE tactic tokens, one item each
+            # (``turn/search_decode.py``'s own wire format has no
+            # list-valued sub-object -- confirmed by research, "more
+            # than one item" is composed as more than one GIVE slot,
+            # not one slot carrying several). ``state.transfer_item()``
+            # itself enforces nothing at all (a bare reassignment,
+            # ``turn/trade_execution.py``'s own real caller is what
+            # checks ownership) -- mirrored here explicitly, the same
+            # "item.owner_leader_id != leader_id -> no-op" guard
+            # ``turn/search_execution.py _resolve_give_tactic()``'s own
+            # unrelated Druidic-Trades mechanic already uses (confirmed
+            # unrelated: that one only ever trades with a Search
+            # feature's own monster guardian, never a character). Never
+            # gold (the rulebook's own explicit exclusion) -- there is
+            # no gold-sub-object reading anywhere in this branch.
+            # Co-location is already guaranteed by the encounter itself
+            # (both sides are already resolving it together); no
+            # Kingdom-crossing restriction, matching the top-level
+            # Give's own item path ("crosses kingdoms freely"). Caster-
+            # side only -- the target's own queued Special Encounter
+            # Plan has no GIVE agency, matching this module's own Phase
+            # 674 "Flee" scope decision (``_peek_target_cast()``'s own
+            # docstring) rather than Cast's dedicated target-side path;
+            # a Give tactic never ends the encounter either way, so it
+            # simply continues the plan regardless.
+            item = state.items.get(tactic.sub_object) if tactic.sub_object is not None else None
+            if (
+                item is not None
+                and caster_leader is not None
+                and item.owner_leader_id == caster_leader.leader_id
+                and item.item_id != caster_leader.valhalla_fixed_item_id
+                and target_leader is not None
+            ):
+                state.transfer_item(item.item_id, target_leader.leader_id)
+            continue
         # every other tactic is unwired -- skip it and keep walking
     if not _target_has_more_casts_pending():
         result = resolve_melee_duel(caster, target, rng, skip_temper_setup=melee_setup_done)
@@ -2348,6 +2724,7 @@ def _apply_spy_brainwash_alignment_shift(challenger: LeaderState, target: Leader
 
 
 def _apply_duel_encounter_merit(
+    state: GameState,
     challenger: LeaderState,
     target: LeaderState,
     *,
@@ -2386,10 +2763,15 @@ def _apply_duel_encounter_merit(
     Bravest is not a transfer: only the *protagonist* (the challenger, in
     this project's framing -- the leader whose own CHALLENGE order is
     executing) is ever credited, and only when they win, for however many
-    of their own starting hit points they never got back
-    (``CHARACTER_HIT_POINTS - challenger_combatant.hit_points``). A
-    challenger who wins unscathed is credited 0, not skipped -- the
-    ``Inc_Tit`` triplet still gets created, per the source.
+    of their own starting hit points they never got back (their own real
+    starting hit points -- ``CHARACTER_HIT_POINTS`` plus whatever
+    ``arcane_valor_hit_points_bonus()`` gave them, the same total
+    ``_leader_combatant()`` seeded them with -- minus ``challenger_
+    combatant.hit_points``). **Bug fix**: this used to subtract from the
+    bare ``CHARACTER_HIT_POINTS`` constant instead, crediting a negative
+    ``bravery_merit`` to any Scepter-of-Life-boosted challenger who won
+    cleanly. A challenger who wins unscathed is credited 0, not skipped
+    -- the ``Inc_Tit`` triplet still gets created, per the source.
     """
 
     if not accepted:
@@ -2406,7 +2788,16 @@ def _apply_duel_encounter_merit(
     loser_leader.merit_tally.courage_encounter_merit -= 1
 
     if winner_leader is challenger and challenger_combatant is not None:
-        bravery_gain = CHARACTER_HIT_POINTS - challenger_combatant.hit_points
+        # Bug fix: the challenger's own real starting hit points can
+        # exceed the bare CHARACTER_HIT_POINTS constant (_leader_
+        # combatant()'s own arcane_valor_hit_points_bonus() under
+        # GameType.ARCANES, Phase 538) -- using the bare constant here
+        # instead credited a negative bravery_gain for any such
+        # challenger winning cleanly, contradicting this function's own
+        # docstring ("a challenger who wins unscathed is credited 0,
+        # not skipped").
+        starting_hit_points = CHARACTER_HIT_POINTS + arcane_valor_hit_points_bonus(state, challenger)
+        bravery_gain = starting_hit_points - challenger_combatant.hit_points
         winner_leader.merit_tally.bravery_merit += bravery_gain
 
 
@@ -2513,7 +2904,7 @@ def execute_challenge(
 
     has_talk_tactic = any(tactic.maneuver is Maneuver.TALK for tactic in request.tactics)
 
-    if not has_combat_intent(request) and not has_steal_tactic:
+    if not plan_needs_combat_dispatch(request):
         if has_talk_tactic:
             _apply_bravest_talk_inspiration(state, challenger, target)
             _apply_spy_brainwash_alignment_shift(challenger, target)
@@ -2543,7 +2934,7 @@ def execute_challenge(
             accepted = False
     if not accepted:
         _apply_duel_encounter_merit(
-            challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
+            state, challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
         )
         return ChallengeExecutionResult(accepted=False, reason="encounter refused")
 
@@ -2555,8 +2946,12 @@ def execute_challenge(
         _apply_bravest_talk_inspiration(state, challenger, target)
         _apply_spy_brainwash_alignment_shift(challenger, target)
 
-    challenger_combatant = _leader_combatant(challenger, state)
-    target_combatant = _leader_combatant(target, state)
+    # Efficiency (Phase 1193): one shared office-holder cache for both
+    # sibling Combatants built in this one call -- see
+    # cached_office_holder_leader_id()'s own docstring.
+    office_cache: dict[Office, int | None] = {}
+    challenger_combatant = _leader_combatant(challenger, state, office_cache=office_cache)
+    target_combatant = _leader_combatant(target, state, office_cache=office_cache)
     # Phase 674: rulebook [5.10]'s own "used in every Encounter
     # solicited by another character" (only when the target commands no
     # armies -- `target_leads_army` above already gives that answer).
@@ -2620,6 +3015,7 @@ def execute_challenge(
     )
     winner_leader, loser_leader = (challenger, target) if combat_result.winner == "a" else (target, challenger)
     _apply_duel_encounter_merit(
+        state,
         challenger,
         target,
         accepted=True,

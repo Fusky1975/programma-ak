@@ -11,7 +11,6 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.emperor_election import (
-    ELECTION_REQUEST_THRESHOLD_PERCENT,
     ElectionCallOutcome,
     ElectionResult,
     _alignment_auto_trigger,
@@ -82,6 +81,15 @@ def test_can_request_election_exactly_at_threshold_is_not_enough():
 
 
 def test_can_request_election_via_alliance_combined_total():
+    # Bug fix: "neither ally alone clears the threshold" used to be
+    # checked as `30 * 100 <= ELECTION_REQUEST_THRESHOLD_PERCENT * 100`
+    # -- pure constant arithmetic (3000 <= 5500) with no call into
+    # can_request_election()/state at all, true unconditionally
+    # regardless of its actual behavior. Replaced with a real control:
+    # an unallied variant of this same tax distribution, where kingdom
+    # 1's and kingdom 2's own 30% each really do fail the threshold
+    # alone, proving the True result above genuinely comes from the
+    # alliance combining them (60%), not from some other path.
     state = make_state()
     state.allied_kingdoms.add(frozenset({1, 2}))
     give_tax(state, 1, HexCoord(0, 0), 30)
@@ -89,8 +97,13 @@ def test_can_request_election_via_alliance_combined_total():
     give_tax(state, 3, HexCoord(2, 2), 40)
 
     assert can_request_election(state, 1, current_turn=5) is True
-    # Neither ally alone clears the threshold.
-    assert 30 * 100 <= ELECTION_REQUEST_THRESHOLD_PERCENT * 100
+
+    unallied_state = make_state()
+    give_tax(unallied_state, 1, HexCoord(0, 0), 30)
+    give_tax(unallied_state, 2, HexCoord(1, 1), 30)
+    give_tax(unallied_state, 3, HexCoord(2, 2), 40)
+    assert can_request_election(unallied_state, 1, current_turn=5) is False
+    assert can_request_election(unallied_state, 2, current_turn=5) is False
 
 
 def test_can_request_election_alliance_is_transitive():
@@ -641,27 +654,27 @@ def test_process_election_turn_scheduling_branch_reports_the_caller_percentage()
     assert outcome.caller_percent == 60
 
 
-def test_process_election_turn_tally_computes_this_turns_own_caller_percentage():
-    # `vote_perc` is computed fresh every turn, independent of `req_vote`'s
-    # own state -- even on the exact turn a pending vote is tallied, a
-    # fresh (redundant, since a vote is already pending) request this same
-    # turn still moves the figure, sourced from *this* turn's own headers,
-    # not whatever set of Kingdoms originally scheduled the pending vote.
+def test_process_election_turn_tally_carries_forward_the_scheduling_turns_caller_percentage():
+    # Phase 1191 correction: `kprevgold` holds each King's own candidate
+    # choice by the time a vote is tallied, not the request toggle
+    # `_caller_percent()`/`is_vote_turn()` need -- so this figure is fixed
+    # at scheduling time (state.election_pending_caller_percent) and
+    # carried forward, not recomputed from this tally turn's own headers.
     state = make_state()
     state.election_pending_turn = 6
+    state.election_pending_caller_percent = 40
     give_tax(state, 1, HexCoord(0, 0), 60)
     give_tax(state, 2, HexCoord(1, 1), 40)
-    headers = {1: _header(kprevgold=1), 2: _header(kprevgold=VOTE_TURN_SENTINEL)}
+    headers = {1: _header(kprevgold=1), 2: _header(kprevgold=2)}
 
     result = process_election_turn(state, headers, current_turn=6)
 
     assert isinstance(result, ElectionResult)
-    # Kingdom 1's own header is a real ballot (candidate #1), not a vote
-    # request -- only Kingdom 2 (weight 40) requested this turn: 40/100 = 40%.
     assert result.caller_percent == 40
+    assert state.election_pending_caller_percent == 0  # cleared once tallied, same as the other pending fields
 
 
-def test_process_election_turn_tally_caller_percentage_is_zero_with_no_requesters_this_turn():
+def test_process_election_turn_tally_caller_percentage_is_zero_when_none_was_pending():
     state = make_state()
     state.election_pending_turn = 6
     give_tax(state, 1, HexCoord(0, 0), 60)
@@ -671,6 +684,24 @@ def test_process_election_turn_tally_caller_percentage_is_zero_with_no_requester
     result = process_election_turn(state, headers, current_turn=6)
 
     assert result.caller_percent == 0
+
+
+def test_process_election_turn_scheduling_stores_caller_percent_for_the_tally_turn():
+    # Phase 1191: the scheduling branch computes caller_percent while
+    # kprevgold still holds the request toggle, and stores it for the
+    # later tally turn to copy forward verbatim.
+    state = make_state()
+    give_tax(state, 1, HexCoord(0, 0), 30)
+    give_tax(state, 2, HexCoord(1, 1), 30)
+    give_tax(state, 3, HexCoord(2, 2), 40)
+    headers = {1: _header(VOTE_TURN_SENTINEL), 2: _header(VOTE_TURN_SENTINEL), 3: _header()}
+
+    outcome = process_election_turn(state, headers, current_turn=5)
+
+    assert isinstance(outcome, ElectionCallOutcome)
+    assert outcome.election_scheduled_next_turn is True
+    assert state.election_pending_caller_percent == outcome.caller_percent
+    assert state.election_pending_caller_percent == 60  # Kingdoms 1+2, 30+30 of 100 total
 
 
 # -- Phase 466: process_election_turn() -----------------------------------

@@ -160,7 +160,13 @@ def find_druidic_monster_assistance(
     features = sorted(state.features_at(province_coord), key=lambda feature: feature.feature_id)
 
     for feature in features:
-        if feature.looted or feature.guardian_monster is None:
+        # Phase 1194 bug fix: this used to omit `magically_hidden`,
+        # unlike the equivalent guardian-eligibility filters elsewhere
+        # (turn/monster_raids.py resolve_province_raids(), turn/rumor.py
+        # find_rumor_candidates()) -- a Hide-Feature'd guardian is
+        # supposed to be undetectable, yet could still roll to join a
+        # battle and get named in the report.
+        if feature.looted or feature.guardian_monster is None or feature.magically_hidden:
             continue
         profile = MONSTER_RUNTIME_PROFILE.get(feature.guardian_monster)
         if profile is None:

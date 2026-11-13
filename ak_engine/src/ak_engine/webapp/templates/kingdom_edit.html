@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}{{ kingdom.name }} -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('world_setup', slug=meta.slug) }}">&larr; World</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; {{ kingdom.name }}</h2>
+  <p class="game-meta">Home province: ({{ kingdom.home_province.x }}, {{ kingdom.home_province.y }}) -- <a href="{{ url_for('province_edit', slug=meta.slug, x=kingdom.home_province.x, y=kingdom.home_province.y) }}">edit from the Province page</a>.</p>
+
+  <form method="post" action="{{ url_for('kingdom_save', slug=meta.slug, kingdom_id=kingdom.kingdom_id) }}">
+    <p>
+      <label for="name">Name</label><br>
+      <input type="text" id="name" name="name" value="{{ kingdom.name }}" required>
+    </p>
+
+    <p>
+      <label for="race">Race</label><br>
+      <select id="race" name="race">
+        {% for race in races %}
+          <option value="{{ race.name }}" {% if kingdom.race == race %}selected{% endif %}>{{ race|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="alignment">Alignment</label><br>
+      <select id="alignment" name="alignment">
+        {% for alignment in alignments %}
+          <option value="{{ alignment.name }}" {% if kingdom.alignment == alignment %}selected{% endif %}>{{ alignment|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="treasury">Treasury</label><br>
+      <input type="number" id="treasury" name="treasury" value="{{ kingdom.treasury }}" required>
+    </p>
+
+    <p>
+      <label for="account_number">Account Number</label><br>
+      <input type="number" id="account_number" name="account_number" value="{{ kingdom.account_number }}" required>
+      <br><span class="hex-map-legend-note">The real XK "account number" field -- plain bookkeeping, not a login/password.</span>
+    </p>
+
+    <p>
+      <label for="king_title_prefix">King's Title -- Prefix</label><br>
+      <input type="text" id="king_title_prefix" name="king_title_prefix" value="{{ kingdom.king_title_prefix }}" placeholder="e.g. Lord">
+    </p>
+
+    <p>
+      <label for="king_title_suffix">King's Title -- Suffix</label><br>
+      <input type="text" id="king_title_suffix" name="king_title_suffix" value="{{ kingdom.king_title_suffix }}" placeholder="e.g. Master of the Eastern Reach">
+      <br><span class="hex-map-legend-note">Flavor text only -- not derived from the Imperial Office/optional-titles system, and not required.</span>
+    </p>
+
+    <button type="submit">Save Kingdom</button>
+  </form>
+
+  <form method="post" action="{{ url_for('kingdom_delete', slug=meta.slug, kingdom_id=kingdom.kingdom_id) }}"
+        data-confirm="Permanently delete the Kingdom of {{ kingdom.name }}? This also deletes its King and every Hero in its service and every Army it owns, and releases every province it owns back to unowned. This cannot be undone.">
+    <button type="submit" class="danger">Delete Kingdom</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Status Effects</h2>
+  <p class="hex-map-legend-note">Lasting marks real turn processing leaves on this Kingdom -- normally set by turn processing itself, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('kingdom_status_save', slug=meta.slug, kingdom_id=kingdom.kingdom_id) }}">
+    <p>
+      <label for="treasury_raid_attempts_this_turn">Treasury Raid Attempts This Turn</label><br>
+      <input type="number" id="treasury_raid_attempts_this_turn" name="treasury_raid_attempts_this_turn" value="{{ kingdom.treasury_raid_attempts_this_turn }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">How many successful Thief Treasury Raids have already targeted this Kingdom this turn -- widens the success chance divisor for the next one; cleared at the end of every gameturn.</span>
+    </p>
+
+    <p>
+      <label for="valhalla_visit_count">Valhalla Visit Count</label><br>
+      <input type="number" id="valhalla_visit_count" name="valhalla_visit_count" value="{{ kingdom.valhalla_visit_count }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Persistent, real per-King visit/selection counter -- a King with fewer visits always outscores one with more when Valhalla next selects a recipient.</span>
+    </p>
+
+    <fieldset>
+      <legend>Pending Blackmail</legend>
+      <p class="hex-map-legend-note">Delivered this turn, not yet due -- promoted to Active at the start of the next gameturn. Leave all three blank for no claim.</p>
+      <p>
+        <label for="pending_spy_leader_id">Spy</label><br>
+        <select id="pending_spy_leader_id" name="pending_spy_leader_id">
+          <option value="" {% if kingdom.pending_blackmail is none %}selected{% endif %}>-- None --</option>
+          {% for leader_id, leader in state.leaders.items() %}
+            <option value="{{ leader_id }}" {% if kingdom.pending_blackmail and kingdom.pending_blackmail.spy_leader_id == leader_id %}selected{% endif %}>{{ leader.name }}</option>
+          {% endfor %}
+        </select>
+      </p>
+      <p>
+        <label for="pending_spy_kingdom_id">Spy's Kingdom</label><br>
+        <select id="pending_spy_kingdom_id" name="pending_spy_kingdom_id">
+          <option value="" {% if kingdom.pending_blackmail is none %}selected{% endif %}>-- None --</option>
+          {% for other_id, other in state.kingdoms.items() %}
+            <option value="{{ other_id }}" {% if kingdom.pending_blackmail and kingdom.pending_blackmail.spy_kingdom_id == other_id %}selected{% endif %}>{{ other.name }}</option>
+          {% endfor %}
+        </select>
+      </p>
+      <p>
+        <label for="pending_amount">Amount</label><br>
+        <input type="number" id="pending_amount" name="pending_amount" value="{{ kingdom.pending_blackmail.amount if kingdom.pending_blackmail else '' }}" style="width: 6em;">
+      </p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Active Blackmail</legend>
+      <p class="hex-map-legend-note">Due this turn -- unpaid by the end of the turn costs this Kingdom 3x the amount in tax revenue. Leave all three blank for no claim.</p>
+      <p>
+        <label for="active_spy_leader_id">Spy</label><br>
+        <select id="active_spy_leader_id" name="active_spy_leader_id">
+          <option value="" {% if kingdom.active_blackmail is none %}selected{% endif %}>-- None --</option>
+          {% for leader_id, leader in state.leaders.items() %}
+            <option value="{{ leader_id }}" {% if kingdom.active_blackmail and kingdom.active_blackmail.spy_leader_id == leader_id %}selected{% endif %}>{{ leader.name }}</option>
+          {% endfor %}
+        </select>
+      </p>
+      <p>
+        <label for="active_spy_kingdom_id">Spy's Kingdom</label><br>
+        <select id="active_spy_kingdom_id" name="active_spy_kingdom_id">
+          <option value="" {% if kingdom.active_blackmail is none %}selected{% endif %}>-- None --</option>
+          {% for other_id, other in state.kingdoms.items() %}
+            <option value="{{ other_id }}" {% if kingdom.active_blackmail and kingdom.active_blackmail.spy_kingdom_id == other_id %}selected{% endif %}>{{ other.name }}</option>
+          {% endfor %}
+        </select>
+      </p>
+      <p>
+        <label for="active_amount">Amount</label><br>
+        <input type="number" id="active_amount" name="active_amount" value="{{ kingdom.active_blackmail.amount if kingdom.active_blackmail else '' }}" style="width: 6em;">
+      </p>
+    </fieldset>
+
+    <button type="submit">Save Status Effects</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Discoveries</h2>
+  <p class="hex-map-legend-note">The Sage secrets this Kingdom currently knows -- consumed by Scientific Treaty exchanges and shown in the ADVENTURE-turn report's own "Discoveries of the Sages" list, ordered the same way (highest exchange priority first).</p>
+  {% if discoveries %}
+    <ul class="game-list">
+      {% for discovery in discoveries %}
+        <li>
+          <div class="game-name">{{ discovery|display_name }}</div>
+          <form class="inline" method="post"
+                action="{{ url_for('kingdom_discovery_delete', slug=meta.slug, kingdom_id=kingdom.kingdom_id, discovery_name=discovery.name) }}"
+                data-confirm="Remove {{ discovery|display_name }} from {{ kingdom.name }}?">
+            <button type="submit" class="danger">Remove</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No Discoveries known yet.</p>
+  {% endif %}
+
+  {% if available_discoveries %}
+    <form method="post" action="{{ url_for('kingdom_discovery_create', slug=meta.slug, kingdom_id=kingdom.kingdom_id) }}">
+      <div class="inline">
+        <label for="discovery">Discovery</label>
+        <select id="discovery" name="discovery" required>
+          {% for discovery in available_discoveries %}
+            <option value="{{ discovery.name }}">{{ discovery|display_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit">Add Discovery</button>
+    </form>
+  {% endif %}
+</div>
+
+{% endblock %}

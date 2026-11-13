@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Kings -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('games_list') }}">&larr; My Games</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-players);">
+  <h2>{{ meta.name }} &mdash; Kings</h2>
+
+  {% set count = players|length %}
+  {% if count < min_players %}
+    <p class="status-warning">{{ count }} of {{ min_players }}-{{ max_players }} Kings added &mdash; add at least {{ min_players - count }} more to start the game.</p>
+  {% elif count > max_players %}
+    <p class="status-warning">{{ count }} Kings added &mdash; a game can have at most {{ max_players }}.</p>
+  {% else %}
+    <p class="status-ok">{{ count }} of {{ min_players }}-{{ max_players }} Kings added.
+      <a class="button" href="{{ url_for('titles_setup', slug=meta.slug) }}">Continue to Optional Titles &rarr;</a>
+    </p>
+  {% endif %}
+
+  {% if players %}
+    <ul class="game-list">
+      {% for player in players %}
+        <li>
+          <div>
+            <div class="game-name">{{ player.name }}</div>
+            <div class="game-meta">{{ player.race_enum|display_name }} &middot; {{ player.alignment_enum|display_name }} &middot; {{ player.temper_enum|display_name }}</div>
+          </div>
+          <form class="inline" method="post" action="{{ url_for('players_remove', slug=meta.slug, player_id=player.player_id) }}"
+                data-confirm="Remove King &quot;{{ player.name }}&quot;?">
+            <button type="submit" class="danger">Remove</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No Kings added yet. Add the first one below.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-world);">
+  <h2>Add a King</h2>
+  <form method="post" action="{{ url_for('players_add', slug=meta.slug) }}">
+    <div class="inline">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" placeholder="e.g. Aldric the Bold" required>
+
+      <label for="race">Race</label>
+      <select id="race" name="race" required>
+        {% for race in playable_races %}
+          <option value="{{ race.name }}">{{ race|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="alignment">Alignment</label>
+      <select id="alignment" name="alignment" required>
+        {% for alignment in alignments %}
+          <option value="{{ alignment.name }}">{{ alignment|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="temper">Temper</label>
+      <select id="temper" name="temper" required>
+        {% for temper in tempers %}
+          <option value="{{ temper.name }}">{{ temper|display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <p>
+      <strong>Starting Talents</strong> &mdash; rulebook [2.1]: distribute exactly 4 ability points,
+      at most 2 in any one Ability (e.g. four Abilities at level 1, or two at level 2).
+      Kings automatically get +1 Melee, Archery and Sage on top of this, regardless of choice.
+    </p>
+    <div class="talent-grid">
+      {% for ability in abilities %}
+        <label for="talent_{{ ability.name }}">{{ ability|display_name }}
+          <input type="number" id="talent_{{ ability.name }}" name="talent_{{ ability.name }}" min="0" max="2" value="0">
+        </label>
+      {% endfor %}
+    </div>
+
+    <button type="submit">Add King</button>
+  </form>
+</div>
+
+{% endblock %}

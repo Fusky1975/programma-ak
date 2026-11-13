@@ -125,6 +125,36 @@ def test_group_attackers_same_king_same_origin_unite():
     assert len(groups[0]) == 2
 
 
+def test_group_attackers_non_transitive_alliance_does_not_unite_through_a_common_ally():
+    # Phase 1041 bug fix -- eligibility used to be checked only against
+    # group[0] (the group's founding member), not every member already
+    # in the group. allied_kingdoms is a flat set of pairs with no
+    # guaranteed transitive closure (A-B allied and B-C allied doesn't
+    # imply A-C allied), so a chain through a common ally could
+    # silently unite two kingdoms [7.8] itself requires to be "the same
+    # King, or two Kings allied with each other" -- not merely each
+    # allied with some third party already in the group.
+    #
+    # Kingdom 5 (B) is allied with both 1 (A) and 99 (C), but A and C
+    # are not allied with each other. B's attacker forms the group; A's
+    # attacker joins (eligible vs B); C's attacker must NOT also join
+    # just because it's eligible vs B -- it must be checked against A
+    # too, where it fails.
+    attackers = [
+        Attacker(leader_id=1, kingdom_id=5, origin_province=ORIGIN_A),  # B, forms the group
+        Attacker(leader_id=2, kingdom_id=1, origin_province=ORIGIN_A),  # A, allied with B
+        Attacker(leader_id=3, kingdom_id=99, origin_province=ORIGIN_A),  # C, allied with B, NOT with A
+    ]
+    allied_kingdoms = {frozenset({5, 1}), frozenset({5, 99})}
+    rng = random.Random()
+    rng.random = lambda: 0.0  # always succeeds the unite roll whenever eligible
+
+    groups = group_attackers_into_battles(attackers, allied_kingdoms=allied_kingdoms, rng=rng)
+
+    group_kingdom_sets = sorted((sorted(a.kingdom_id for a in group) for group in groups), key=lambda g: g[0])
+    assert group_kingdom_sets == [[1, 5], [99]]
+
+
 def test_group_attackers_unrelated_kingdoms_always_separate():
     attackers = [
         Attacker(leader_id=1, kingdom_id=5, origin_province=ORIGIN_A),

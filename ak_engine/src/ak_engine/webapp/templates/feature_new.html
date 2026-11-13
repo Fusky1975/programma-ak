@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}New Feature ({{ coord.x }}, {{ coord.y }}) -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('province_edit', slug=meta.slug, x=coord.x, y=coord.y) }}">&larr; Province ({{ coord.x }}, {{ coord.y }})</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; New Feature at ({{ coord.x }}, {{ coord.y }})</h2>
+  <p>This will be Feature <strong>#{{ next_feature_id }}</strong>.</p>
+
+  <form method="post" action="{{ url_for('feature_create', slug=meta.slug, x=coord.x, y=coord.y) }}">
+    <p>
+      <label for="kind">Type</label><br>
+      <select id="kind" name="kind">
+        {% for kind in feature_types %}
+          <option value="{{ kind.name }}">{{ kind|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="guardian_monster">Guardian Monster</label><br>
+      <select id="guardian_monster" name="guardian_monster">
+        <option value="">-- None --</option>
+        {% for monster in monsters %}
+          <option value="{{ monster.name }}">{{ monster|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="guardian_alignment">Guardian Alignment</label><br>
+      <select id="guardian_alignment" name="guardian_alignment">
+        <option value="">-- Unset --</option>
+        {% for alignment in alignments %}
+          <option value="{{ alignment.name }}">{{ alignment|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="treasure">Treasure</label><br>
+      <select id="treasure" name="treasure">
+        <option value="">-- None --</option>
+        {% for treasure in treasures %}
+          <option value="{{ treasure.name }}">{{ treasure|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="magic_location">Magic Location</label><br>
+      <select id="magic_location" name="magic_location">
+        <option value="">-- Unset --</option>
+        {% for location in magic_locations %}
+          <option value="{{ location.name }}">{{ location|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="magic_power">Magic Power</label><br>
+      <select id="magic_power" name="magic_power">
+        <option value="">-- None --</option>
+        {% for power in powers %}
+          <option value="{{ power.name }}">{{ power|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <button type="submit">Create Feature</button>
+  </form>
+</div>
+
+{% endblock %}

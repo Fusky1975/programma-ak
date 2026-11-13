@@ -34,7 +34,9 @@ from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import TREASURE_NAME, Treasure
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.feature_power_execution import FeaturePowerAttemptResult
+from ak_engine.turn.movement import Direction, neighbor_in_direction_wrapped
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError
 from ak_engine.turn.random_encounter_execution import RandomEncounterResult
 from ak_engine.report.turn_report import (
@@ -87,15 +89,20 @@ from ak_engine.report.turn_report import (
     describe_imperial_office_report,
     describe_armies_report,
     describe_characters_report,
+    describe_diplomacy_change_notices,
     describe_diplomacy_report,
     describe_feature_discovery,
     describe_finances_report,
+    describe_home_province_neighbors,
     describe_letter_reports,
     describe_provinces_report,
     describe_aspy,
     _bluck_cluck_leader_id,
+    _resolve_ctrl_a_markers,
     describe_battle,
     describe_quality_changes,
+    render_battle_line_diagram,
+    render_battle_reserve_sentences,
     describe_cast,
     describe_locate_object,
     render_locate_object,
@@ -103,7 +110,6 @@ from ak_engine.report.turn_report import (
     describe_challenge,
     describe_curator_research,
     describe_encounter_combat,
-    describe_patrol_combat,
     describe_random_encounter,
     describe_random_encounter_combat,
     describe_turn_results,
@@ -302,6 +308,7 @@ from ak_engine.report.turn_report import (
     render_monster_threat_death,
     render_bless_graveyard_outcome,
     render_skeletal_army_outcome,
+    render_hide_feature_outcome,
     render_tornado_outcome,
     render_charm_outcome,
     render_illus_terrain_cast_outcome,
@@ -318,6 +325,8 @@ from ak_engine.report.turn_report import (
     render_pursuit_and_destroy,
     render_quest_errand_thanks,
     render_quote_of_the_week,
+    render_guardian_poses_riddle,
+    render_guardian_proposes_quest_location,
     render_quest_fled_in_fear,
     render_quest_hero_not_tasty,
     render_quest_insufficient_price,
@@ -1304,6 +1313,306 @@ def test_describe_battle_appends_quality_change_sentences_after_retreats():
     ]
 
 
+# -- render_battle_line_diagram (Phase 1035) ---------------------------------
+
+
+def test_render_battle_line_diagram_matches_a_real_one_column_sample():
+    # tests/fixtures/reports/G3/SE3__T6.K6 -- Kahn (kingdom 6) attacks
+    # Gnarlia (#1301), defended by the independent Hero Fingol (#27), no
+    # Kingdom owner. Real diagram (border bytes aside, and this
+    # renderer's own documented "always show the quality letter"
+    # simplification): 3 attacker Legions (144th, 219th, 142nd/Crack)
+    # printed rear-to-front, defender's single 141st/Average Bowmen
+    # marked with Fingol's own leader_id (27), not a Kingdom id.
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+        attacker_units=[
+            BattleUnit(ArmyType.LEGION, 10.0, source_id=144, quality=Quality.AVERAGE, kingdom_id=6),
+            BattleUnit(ArmyType.LEGION, 10.0, source_id=219, quality=Quality.AVERAGE, kingdom_id=6),
+            BattleUnit(ArmyType.LEGION, 10.0, source_id=142, quality=Quality.CRACK, kingdom_id=6),
+        ],
+        defender_units=[
+            BattleUnit(ArmyType.BOWMEN, 5.0, source_id=141, quality=Quality.AVERAGE, kingdom_id=None, commanded_by=27),
+        ],
+    )
+    result = BattleResult(columns=[column])
+
+    assert render_battle_line_diagram(result, "Gnarlia", HexCoord(13, 1)) == [
+        "  ATTACKING ARMY, Battle of Gnarlia (1301):",
+        "",
+        " 142nd/C  ",
+        "  Legion  ",
+        "    06    ",
+        "          ",
+        " 219th/A  ",
+        "  Legion  ",
+        "    06    ",
+        "          ",
+        " 144th/A  ",
+        "  Legion  ",
+        "    06    ",
+        "----------",
+        "    27    ",
+        " 141st/A  ",
+        "  Bowmen  ",
+        "          ",
+        "  DEFENDING ARMY",
+    ]
+
+
+def test_render_battle_line_diagram_a_ragged_line_sits_in_the_columns_assign_battle_lines_gave_it():
+    # tests/fixtures/reports/G3/SE3__T6.K1 -- 11 attacker units dealt
+    # round-robin into 5 columns: column 0 alone reaches a 3rd (rearmost)
+    # line (the real `assign_battle_lines()` round-robin gives the extra
+    # depth to the lowest-indexed columns, not a centered sub-block) --
+    # confirmed directly against the real sample's own raw bytes.
+    columns = [
+        BattleColumnResult(
+            attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+            attacker_units=units, defender_units=[],
+        )
+        for units in (
+            [
+                BattleUnit(ArmyType.BOWMEN, 1.0, source_id=316, quality=Quality.VETERAN, kingdom_id=1),
+                BattleUnit(ArmyType.LEGION, 1.0, source_id=282, quality=Quality.VETERAN, kingdom_id=1),
+                BattleUnit(ArmyType.LEGION, 1.0, source_id=267, quality=Quality.AVERAGE, kingdom_id=1),
+            ],
+            [
+                BattleUnit(ArmyType.DRAGON_WING, 1.0, source_id=293, quality=Quality.AVERAGE, kingdom_id=1),
+                BattleUnit(ArmyType.CHARIOTS, 1.0, source_id=70, quality=Quality.CRACK, kingdom_id=1),
+            ],
+            [
+                BattleUnit(ArmyType.TROLLS, 1.0, source_id=317, quality=Quality.AVERAGE, kingdom_id=1),
+                BattleUnit(ArmyType.LEGION, 1.0, source_id=71, quality=Quality.VETERAN, kingdom_id=1),
+            ],
+            [
+                BattleUnit(ArmyType.DRAGON_WING, 1.0, source_id=314, quality=Quality.VETERAN, kingdom_id=1),
+                BattleUnit(ArmyType.LEGION, 1.0, source_id=283, quality=Quality.VETERAN, kingdom_id=1),
+            ],
+            [
+                BattleUnit(ArmyType.TROLLS, 1.0, source_id=318, quality=Quality.AVERAGE, kingdom_id=1),
+                BattleUnit(ArmyType.CHARIOTS, 1.0, source_id=233, quality=Quality.AVERAGE, kingdom_id=1),
+            ],
+        )
+    ]
+    result = BattleResult(columns=columns)
+
+    lines = render_battle_line_diagram(result, "Chaco", HexCoord(5, 4))
+    assert lines[0] == "  ATTACKING ARMY, Battle of Chaco (0504):"
+    # The rearmost (3rd) line has only column 0 populated -- the other 4
+    # columns render as blank cells, not centered elsewhere in the row.
+    assert lines[2] == " 267th/A  " + " " * 40
+    assert lines[3] == "  Legion  " + " " * 40
+    assert lines[4] == "    01    " + " " * 40
+    assert lines[13] == "-" * 50
+
+
+def test_render_battle_line_diagram_defender_shows_kingdom_id_when_kingdom_owned():
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=False, cluck_index=9,
+        attacker_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=1, kingdom_id=1)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=2, kingdom_id=4)],
+    )
+    result = BattleResult(columns=[column])
+
+    lines = render_battle_line_diagram(result, "Keep", HexCoord(1, 1))
+    # separator, then defender number row first.
+    assert lines[5] == "----------"
+    assert lines[6] == "    04    "
+
+
+def test_render_battle_line_diagram_defender_shows_gc_when_no_commander_present():
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=False, cluck_index=9,
+        attacker_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=1, kingdom_id=1)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=2, kingdom_id=None, commanded_by=None)],
+    )
+    result = BattleResult(columns=[column])
+
+    lines = render_battle_line_diagram(result, "Keep", HexCoord(1, 1))
+    assert lines[6] == "    GC    "
+
+
+def test_render_battle_line_diagram_skeletal_flag_appends_s_after_the_quality_letter():
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+        attacker_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=71, quality=Quality.CRACK, kingdom_id=1, is_skeletal=True)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=2, kingdom_id=4)],
+    )
+    result = BattleResult(columns=[column])
+
+    lines = render_battle_line_diagram(result, "Keep", HexCoord(1, 1))
+    assert lines[2] == " 71st/CS  "
+
+
+def test_render_battle_line_diagram_skips_a_unit_with_no_source_id():
+    # No backing ArmyState (a pure combat calculation) -- rendered as a
+    # blank cell, the same "no source, don't guess" convention
+    # build_battle_army_names() already uses for this exact case.
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+        attacker_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=None, kingdom_id=1)],
+        defender_units=[BattleUnit(ArmyType.LEGION, 1.0, source_id=2, kingdom_id=4)],
+    )
+    result = BattleResult(columns=[column])
+
+    lines = render_battle_line_diagram(result, "Keep", HexCoord(1, 1))
+    assert lines[2] == " " * 10
+    assert lines[3] == " " * 10
+    assert lines[4] == " " * 10
+
+
+def test_render_battle_line_diagram_returns_empty_list_for_no_columns():
+    result = BattleResult(columns=[])
+    assert render_battle_line_diagram(result, "Keep", HexCoord(1, 1)) == []
+
+
+def test_describe_battle_skips_diagram_when_province_coord_is_unset():
+    # The instant-conquest/no-real-battle shortcut (Phase 927's own
+    # "was this a real battle" gate) -- no province_coord means no
+    # diagram either, matching BLUCK/CLUCK/the leader roster's own gate.
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    battle_result = BattleResult(winner="attacker", columns=[column])
+    report = BattleReport(battle_result=battle_result, conquered=True)
+
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=rng,
+    )
+    assert lines[0] != "The armies were drawn up into lines of battle as shown here:"
+
+
+# -- render_battle_reserve_sentences (Phase 1036) ----------------------------
+
+
+def test_render_battle_reserve_sentences_matches_a_real_one_column_sample():
+    # tests/fixtures/reports/G3/SE3__T6.K1:274-296 (Bir Nzaran): 8 real
+    # attacker units in a single column -- only the first 3 (strongest)
+    # make it into the diagram, the other 5 go to reserve verbatim.
+    attacker_units = [
+        BattleUnit(ArmyType.BOWMEN, 1.0, source_id=240, quality=Quality.AVERAGE, kingdom_id=1),
+        BattleUnit(ArmyType.DRAGON_WING, 1.0, source_id=124, quality=Quality.AVERAGE, kingdom_id=1, is_skeletal=True),
+        BattleUnit(ArmyType.BOWMEN, 1.0, source_id=108, quality=Quality.CRACK, kingdom_id=1, is_skeletal=True),
+        BattleUnit(ArmyType.BOWMEN, 1.0, source_id=241, quality=Quality.AVERAGE, kingdom_id=1),
+        BattleUnit(ArmyType.BOWMEN, 1.0, source_id=110, quality=Quality.AVERAGE, kingdom_id=1),
+        BattleUnit(ArmyType.HVY_CAVALRY, 1.0, source_id=109, quality=Quality.AVERAGE, kingdom_id=1),
+        BattleUnit(ArmyType.EAGLE_WING, 1.0, source_id=277, quality=Quality.AVERAGE, kingdom_id=1),
+        BattleUnit(ArmyType.WARG_RIDERS, 1.0, source_id=209, quality=Quality.AVERAGE, kingdom_id=1),
+    ]
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+        attacker_units=attacker_units,
+        defender_units=[BattleUnit(ArmyType.AXEMEN, 1.0, source_id=130, quality=Quality.AVERAGE, kingdom_id=22)],
+    )
+    result = BattleResult(columns=[column])
+
+    assert render_battle_reserve_sentences(result, random.Random(0)) == [
+        "The attackers had the 241st Bowmen, the 110th Bowmen, the 109th Heavy Cavalry, "
+        "the 277th Eagles and the 209th Warg Riders in reserve.",
+    ]
+
+
+def test_render_battle_reserve_sentences_matches_a_real_three_column_sample():
+    # tests/fixtures/reports/G3/SE3__T11.K1:388-417 (Maplehaven): 15 real
+    # defender units across 3 columns -- only the first 3 lines (9 units)
+    # make it into the diagram, the other 6 (depths 3 and 4) go to
+    # reserve in depth-then-column order, matching the real sentence.
+    def col(*ids_and_types):
+        return [BattleUnit(t, 1.0, source_id=i, kingdom_id=7) for i, t in ids_and_types]
+
+    AT = ArmyType
+    columns = [
+        BattleColumnResult(
+            attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+            attacker_units=[], defender_units=units,
+        )
+        for units in (
+            col((186, AT.LEGION), (275, AT.LEGION), (242, AT.LT_CAVALRY), (243, AT.LT_CAVALRY), (248, AT.LT_CAVALRY)),
+            col((274, AT.LEGION), (299, AT.LEGION), (311, AT.LEGION), (331, AT.BOWMEN), (215, AT.CAMEL_CORPS)),
+            col((259, AT.LEGION), (177, AT.LEGION), (185, AT.LT_CAVALRY), (21, AT.LEGION), (332, AT.BOWMEN)),
+        )
+    ]
+    result = BattleResult(columns=columns)
+
+    assert render_battle_reserve_sentences(result, random.Random(0)) == [
+        "The defenders had the 243rd Light Cavalry, the 331st Bowmen, the 21st Legion, "
+        "the 248th Light Cavalry, the 215th Camel Corps and the 332nd Bowmen in reserve.",
+    ]
+
+
+def test_render_battle_reserve_sentences_both_sides_get_their_own_sentence():
+    # tests/fixtures/reports/G3/SE3__T8.K1:427-428: both sides can have a
+    # real reserve sentence in the very same battle, as two independent
+    # list entries, not one combined sentence.
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+        attacker_units=[
+            BattleUnit(ArmyType.LEGION, 1.0, source_id=i, kingdom_id=1) for i in (1, 2, 3, 4)
+        ],
+        defender_units=[
+            BattleUnit(ArmyType.BOWMEN, 1.0, source_id=i, kingdom_id=2) for i in (10, 20, 30, 40)
+        ],
+    )
+    result = BattleResult(columns=[column])
+
+    lines = render_battle_reserve_sentences(result, random.Random(0))
+    assert lines == [
+        "The attackers had the 4th Legion in reserve.",
+        "The defenders had the 40th Bowmen in reserve.",
+    ]
+
+
+def test_render_battle_reserve_sentences_returns_empty_list_when_nothing_is_held_back():
+    column = _column(bres=3, attacker_source_id=10, defender_source_id=20)
+    result = BattleResult(columns=[column])
+    assert render_battle_reserve_sentences(result, random.Random(0)) == []
+
+
+def test_render_battle_reserve_sentences_skips_a_unit_with_no_source_id():
+    column = BattleColumnResult(
+        attacker_strength=0.0, defender_strength=0.0, bres=0, attacker_won=True, cluck_index=9,
+        attacker_units=[
+            BattleUnit(ArmyType.LEGION, 1.0, source_id=1, kingdom_id=1),
+            BattleUnit(ArmyType.LEGION, 1.0, source_id=2, kingdom_id=1),
+            BattleUnit(ArmyType.LEGION, 1.0, source_id=3, kingdom_id=1),
+            BattleUnit(ArmyType.LEGION, 1.0, source_id=None, kingdom_id=1),
+        ],
+        defender_units=[BattleUnit(ArmyType.BOWMEN, 1.0, source_id=20, kingdom_id=2)],
+    )
+    result = BattleResult(columns=[column])
+    assert render_battle_reserve_sentences(result, random.Random(0)) == []
+
+
+def test_describe_battle_includes_reserve_sentence_right_after_the_diagram():
+    attacker_units = [BattleUnit(ArmyType.GARRISON, 10.0, source_id=i) for i in (10, 11, 12, 13)]
+    column = BattleColumnResult(
+        attacker_strength=10.0, defender_strength=10.0, bres=3, attacker_won=True, cluck_index=20,
+        attacker_units=attacker_units,
+        defender_units=[BattleUnit(ArmyType.LEGION, 10.0, source_id=20)],
+    )
+    battle_result = BattleResult(winner="attacker", columns=[column])
+    report = BattleReport(battle_result=battle_result, conquered=True, province_coord=HexCoord(3, 5))
+
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
+    lines = describe_battle(
+        report,
+        attacker_name="Attackia",
+        defender_name="Defendia",
+        province_name="the Dolphin Sea",
+        state=GameState(),
+        destination_names={},
+        rng=rng,
+    )
+    diagram_end = lines.index("  DEFENDING ARMY")
+    assert lines[diagram_end + 1] == "The attackers had the 13th Garrison in reserve."
+
+
 # -- BLUCK/CLUCK luck narration wiring (Phase 615) ---------------------------
 
 
@@ -1333,6 +1642,21 @@ def test_describe_battle_prepends_bluck_and_interleaves_cluck_when_phase_is_supp
     )
 
     assert lines == [
+        # Phase 1035: the real battle-line ASCII diagram is this
+        # composer's own first output, before any narrative line -- see
+        # `render_battle_line_diagram()`'s own module comment.
+        "The armies were drawn up into lines of battle as shown here:",
+        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
+        "",
+        "  10th/A  ",
+        " Garrison ",
+        "    GC    ",
+        "----------",
+        "    GC    ",
+        "  20th/A  ",
+        "  Legion  ",
+        "          ",
+        "  DEFENDING ARMY",
         # Phase 927: neither side's own `*_commanding_leader_ids`/
         # `*_present_leader_ids` roster is populated on this fixture (only
         # the separate, singular `attacker_commander_leader_id`/`defender_
@@ -1380,6 +1704,20 @@ def test_describe_battle_skips_bluck_and_cluck_when_phase_is_not_supplied():
     )
 
     assert lines == [
+        # Phase 1035: see the previous test's own comment -- the diagram
+        # always prints first, regardless of whether `phase` is supplied.
+        "The armies were drawn up into lines of battle as shown here:",
+        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
+        "",
+        "  10th/A  ",
+        " Garrison ",
+        "    GC    ",
+        "----------",
+        "    GC    ",
+        "  20th/A  ",
+        "  Legion  ",
+        "          ",
+        "  DEFENDING ARMY",
         # Phase 927: same "no BATLDR roster populated on this fixture"
         # case as the previous test -- see its own comment.
         "no generals were present to lead the forces of Defendia.",
@@ -1452,6 +1790,20 @@ def test_describe_battle_falls_back_to_each_sides_own_king_when_unled():
     )
 
     assert lines == [
+        # Phase 1035: the diagram prints first -- see the earlier tests'
+        # own comment.
+        "The armies were drawn up into lines of battle as shown here:",
+        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
+        "",
+        "  10th/A  ",
+        " Garrison ",
+        "    GC    ",
+        "----------",
+        "    GC    ",
+        "  20th/A  ",
+        "  Legion  ",
+        "          ",
+        "  DEFENDING ARMY",
         # Phase 927: the Kings added above are real leaders, but neither
         # is *present at the battle province* (their own `LeaderState.
         # location` is each Kingdom's home, not `HexCoord(3, 5)`) -- so
@@ -1492,6 +1844,20 @@ def test_describe_battle_skips_bluck_and_cluck_when_no_leader_id_resolves_for_ei
     )
 
     assert lines == [
+        # Phase 1035: the diagram prints first -- see the earlier tests'
+        # own comment.
+        "The armies were drawn up into lines of battle as shown here:",
+        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
+        "",
+        "  10th/A  ",
+        " Garrison ",
+        "    GC    ",
+        "----------",
+        "    GC    ",
+        "  20th/A  ",
+        "  Legion  ",
+        "          ",
+        "  DEFENDING ARMY",
         # Phase 927: no BATLDR roster on this fixture -- see the earlier
         # "phase is not supplied" test's own comment.
         "no generals were present to lead the forces of Defendia.",
@@ -1531,6 +1897,20 @@ def test_describe_battle_bluck_appears_without_cluck_for_an_ineligible_column():
     )
 
     assert lines == [
+        # Phase 1035: the diagram prints first -- see the earlier tests'
+        # own comment.
+        "The armies were drawn up into lines of battle as shown here:",
+        "  ATTACKING ARMY, Battle of the Dolphin Sea (0305):",
+        "",
+        "  10th/A  ",
+        " Garrison ",
+        "    GC    ",
+        "----------",
+        "    GC    ",
+        "  20th/A  ",
+        "  Legion  ",
+        "          ",
+        "  DEFENDING ARMY",
         # Phase 927: no BATLDR roster on this fixture -- see the "phase
         # is not supplied" test's own comment above.
         "no generals were present to lead the forces of Defendia.",
@@ -4093,24 +4473,31 @@ def test_describe_encounter_combat_returns_empty_for_a_peaceful_accepted_plan():
     assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
 
 
-# -- Phase 733: describe_patrol_combat() --
+# -- Phase 733 / 2026-11-06: describe_encounter_combat() for Patrol --
+# PatrolExecutionResult used to have its own narrower sibling composer,
+# describe_patrol_combat(), because its result shape didn't carry
+# Steal/Fire-Arrow/fizzled-spell data. Now that execute_patrol() shares
+# the exact same resolve_challenge_combat() core (and therefore the
+# exact same PatrolExecutionResult field names) Pursue's armyless case
+# already uses, describe_encounter_combat() itself is reused directly --
+# see that function's own docstring addendum.
 
 
-def test_describe_patrol_combat_returns_empty_when_no_combat_occurred():
+def test_describe_encounter_combat_for_patrol_returns_empty_when_no_combat_occurred():
     result = PatrolExecutionResult(intercepted=False, reason="wandered into a random hex")
     rng = ScriptedRandom([])
 
-    assert describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
+    assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
 
 
-def test_describe_patrol_combat_returns_empty_for_a_peaceful_accepted_encounter():
+def test_describe_encounter_combat_for_patrol_returns_empty_for_a_peaceful_accepted_encounter():
     result = PatrolExecutionResult(intercepted=True, target_leader_id=2, combat_occurred=False)
     rng = ScriptedRandom([])
 
-    assert describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
+    assert describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng) == []
 
 
-def test_describe_patrol_combat_narrates_melee_swings_in_order():
+def test_describe_encounter_combat_for_patrol_narrates_melee_swings_in_order():
     result = PatrolExecutionResult(
         intercepted=True,
         target_leader_id=2,
@@ -4119,7 +4506,7 @@ def test_describe_patrol_combat_narrates_melee_swings_in_order():
     )
     rng = ScriptedRandom([0.1] * 40, choice_indices=[0] * 10)
 
-    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
     assert lines == [
         "Aldric assailed Borin and inflicted 5 damage points.",
@@ -4127,7 +4514,7 @@ def test_describe_patrol_combat_narrates_melee_swings_in_order():
     ]
 
 
-def test_describe_patrol_combat_narrates_the_mortal_wound_line_for_the_loser():
+def test_describe_encounter_combat_for_patrol_narrates_the_mortal_wound_line_for_the_loser():
     result = PatrolExecutionResult(
         intercepted=True,
         target_leader_id=2,
@@ -4140,7 +4527,7 @@ def test_describe_patrol_combat_narrates_the_mortal_wound_line_for_the_loser():
     # items were looted.
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0, 0])
 
-    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
     assert lines == [
         "Borin was mortally wounded.",
@@ -4150,7 +4537,7 @@ def test_describe_patrol_combat_narrates_the_mortal_wound_line_for_the_loser():
     ]
 
 
-def test_describe_patrol_combat_narrates_the_spoils_line_with_one_looted_item():
+def test_describe_encounter_combat_for_patrol_narrates_the_spoils_line_with_one_looted_item():
     # Phase 836: PatrolExecutionResult.looted_item_ids (Phase 313) was
     # populated by execute_patrol() from day one but never read here --
     # the SPOILS line describe_encounter_combat() already renders for
@@ -4168,7 +4555,7 @@ def test_describe_patrol_combat_narrates_the_spoils_line_with_one_looted_item():
     # Phase 859: one more choice_indices entry for THATT.X.
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0])
 
-    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
 
     assert lines == [
         "Borin was mortally wounded.",
@@ -4178,7 +4565,7 @@ def test_describe_patrol_combat_narrates_the_spoils_line_with_one_looted_item():
     ]
 
 
-def test_describe_patrol_combat_narrates_the_spoils_line_when_the_patroller_is_the_loser():
+def test_describe_encounter_combat_for_patrol_narrates_the_spoils_line_when_the_patroller_is_the_loser():
     # The winner isn't always "a" -- an intruder can win the duel and
     # loot the patroller. Proves winner_name resolution, not just the
     # a_leader_id-is-always-the-winner shortcut.
@@ -4195,7 +4582,7 @@ def test_describe_patrol_combat_narrates_the_spoils_line_when_the_patroller_is_t
     # Phase 859: one more choice_indices entry for THATT.X.
     rng = ScriptedRandom([0.1] * 20, choice_indices=[0, 0, 0, 0])
 
-    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng, state=state)
 
     assert lines == [
         "Aldric was mortally wounded.",
@@ -4205,7 +4592,7 @@ def test_describe_patrol_combat_narrates_the_spoils_line_when_the_patroller_is_t
     ]
 
 
-def test_describe_patrol_combat_omits_the_spoils_line_without_state():
+def test_describe_encounter_combat_for_patrol_omits_the_spoils_line_without_state():
     # Same "no data, no guess" fallback _item_display_names() itself
     # already documents -- non-regression for every existing caller
     # that never threads state through. THATT.X (Phase 859) still
@@ -4223,7 +4610,7 @@ def test_describe_patrol_combat_omits_the_spoils_line_without_state():
     )
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0, 0, 0])
 
-    lines = describe_patrol_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
+    lines = describe_encounter_combat(result, a_leader_id=1, a_name="Aldric", b_name="Borin", rng=rng)
 
     assert lines == [
         "Borin was mortally wounded.",
@@ -4997,20 +5384,46 @@ def test_describe_turn_results_skips_a_hide_feature_cast_without_board_width():
     assert lines == []
 
 
-def test_describe_turn_results_skips_a_hide_feature_cast_with_more_than_one_feature():
-    # Phase 946: the deliberate, documented multi-feature exception --
-    # no real fixture example of a successful Hide_Feature cast survives
-    # to confirm the real grouping rule for more than one feature, so
-    # this stays silently unwired rather than guessed at (the same
-    # "no data to weigh a default against" reasoning this branch's own
-    # comment gives, unlike Tornado/Plague's own resolved multi-army
-    # ambiguity).
+def test_describe_turn_results_narrates_a_hide_feature_cast_with_more_than_one_feature():
+    # Phase 1037: the real multi-feature case -- modeled on Tornado/
+    # Plague's own confirmed "repeat the sentence per real target, never
+    # join into one list" precedent (no real fixture example of a
+    # multi-feature Hide_Feature cast itself survives to confirm this
+    # directly, but this project's own corpus does settle the
+    # structurally analogous multi-army case, and this reuses that
+    # reasoned default rather than staying silent forever).
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
     state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Sageleaf"))
     state.add_feature(Feature(feature_id=1, coord=HexCoord(0, 0), kind=FeatureType.DUNGEON))
     state.add_feature(Feature(feature_id=2, coord=HexCoord(0, 0), kind=FeatureType.CAVE))
+    request = CastRequest(spell=Spell.HIDE_FEATURE, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    result = CastExecutionResult(request=request, applied=True)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == [
+        "Aldric cast a Hide Feature spell."
+        "The Dungeon in Sageleaf was magically hidden."
+        "The Cave in Sageleaf was magically hidden."
+    ]
+
+
+def test_describe_turn_results_skips_a_hide_feature_cast_with_zero_features():
+    # The shouldn't-happen-post-success defensive fallback -- a success
+    # requires at least one real Feature at cast time (`_execute_hide_
+    # feature()`'s own "no feature to hide" failure guard), so this only
+    # covers a Feature removed later the same turn by some other event;
+    # still silently skipped rather than guessed at, the same "no
+    # source, don't guess" stance the rest of this branch already takes.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Aldric", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Sageleaf"))
     request = CastRequest(spell=Spell.HIDE_FEATURE, target=encode_hex_number(HexCoord(0, 0), board_width=10))
     result = CastExecutionResult(request=request, applied=True)
     entries = [
@@ -5053,6 +5466,38 @@ def test_describe_turn_results_narrates_a_successful_tornado_cast():
     result = CastExecutionResult(request=request, applied=True, tornado_destroyed=destroyed)
     entries = [
         PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
+
+    assert lines == [
+        "Sir Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Limerick."
+        "Tornadoes sucked up the 20th Legion in Limerick and destroyed them."
+    ]
+
+
+def test_describe_turn_results_narrates_a_successful_wand_of_tornado_use_mi():
+    # Phase 1046 bug fix: a Wand of Tornado used via Use_MI really
+    # executes the spell (turn/use_mi_execution.py -> turn/cast_
+    # execution.py _execute_tornado()), but describe_turn_results()'s
+    # own ActionCode.USE_MI branch used to only narrate the 6 character-
+    # targeted spells in _AUTO_RESOLVABLE_CAST_TARGET_SPELLS and silently
+    # drop narration for every other spell, Tornado included -- even
+    # though the identical CastExecutionResult, reached via an ordinary
+    # top-level Cast (the test right above this one), was already
+    # narrated. Same fixture, wrapped in a UseMIExecutionResult and
+    # dispatched as ActionCode.USE_MI instead of ActionCode.CAST --
+    # expects the exact same narration line.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Sir Aldric", location=HexCoord(0, 0)))
+    state.add_province(ProvinceState(HexCoord(0, 0), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2, name="Limerick"))
+    request = CastRequest(spell=Spell.TORNADO, target=encode_hex_number(HexCoord(0, 0), board_width=10))
+    destroyed = [ArmyState(20, 2, ArmyType.LEGION, Quality.AVERAGE, HexCoord(0, 0))]
+    cast_result = CastExecutionResult(request=request, applied=True, tornado_destroyed=destroyed)
+    result = UseMIExecutionResult(applied=True, cast_result=cast_result)
+    entries = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.USE_MI, result=result, error=None)
     ]
 
     lines = describe_turn_results(entries, state, ScriptedRandom([]), board_width=10)
@@ -5486,6 +5931,25 @@ def test_compose_letter_report_includes_valhalla_visit_announcement_in_action_re
     assert "ACTION REPORT" in lines_for_kingdom_1
     assert render_valhalla_visit_announcement("Aldric", "Quintilian", ScriptedRandom([])) in lines_for_kingdom_1
     assert not any("Valhalla" in line for line in lines_for_kingdom_2)
+
+
+def test_compose_letter_report_puts_a_diplomacy_change_notice_first_in_action_report():
+    # 2026-11-03: describe_diplomacy_change_notices()'s own line must
+    # read before describe_turn_results()'s own ordinary narrative --
+    # see that composer's own docstring for why.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.HUMAN, Alignment.EVIL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(1, 1, "Aldric", HexCoord(0, 0), is_king=True))
+    state.add_leader(LeaderState(2, 2, "Borin", HexCoord(1, 1), is_king=True))
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.NEUTRAL, DiplomaticRelation.ENEMY))
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    header_index = lines.index("ACTION REPORT")
+    assert lines[header_index + 2] == (
+        "My lord, dire tidings: Borin (#2) has declared war upon us! We are now at war."
+    )
 
 
 def test_compose_letter_report_includes_battle_narrative_for_both_involved_kingdoms():
@@ -6944,6 +7408,50 @@ def test_quest_riddle_answer_text_congratulates_on_every_ordinal():
         assert text.startswith("Sayeth [, ")
 
 
+def test_render_guardian_poses_riddle_resolves_the_ctrl_a_marker():
+    # Phase 1027. "monster" is consonant-initial -> "a", "end" is
+    # vowel-initial -> "an" -- the one real, deterministic grammar rule
+    # this project resolves for this catalog; every other sourced word
+    # is untouched.
+    result = render_guardian_poses_riddle("the Sphinx", Treasure.QUEST_RA_RIDDLE)
+    assert result == (
+        'the Sphinx poses a riddle: "\'I am a monster, strange and alien.A band '
+        "of hunters follows behind me looking for the tracks made by my feet."
+        "They desire greatly to put me to an end, yet they seek no meat, only "
+        "knowledge.i inhabit the darkest places, and if I pass from the shadows "
+        "into the bright light my soul quickly slips away.What am I?'"
+    )
+
+
+def test_render_guardian_poses_riddle_collapses_coffins_stanza_markers():
+    result = render_guardian_poses_riddle("the Mummy", Treasure.QUEST_RA_COFFIN)
+    assert "$+" not in result
+    assert result.startswith('the Mummy poses a riddle: "Solve this riddle: There was a man bespake a thing,')
+
+
+def test_render_guardian_poses_riddle_leaves_plain_entries_untouched():
+    # QUEST_RA_BRIDGE/MAN carry no CTRL-byte markers at all -- the
+    # sourced text passes straight through, verbatim.
+    assert render_guardian_poses_riddle("the Troll", Treasure.QUEST_RA_BRIDGE) == (
+        f"the Troll poses a riddle: {QUEST_RIDDLE_TEXT[Treasure.QUEST_RA_BRIDGE]}"
+    )
+
+
+def test_resolve_ctrl_a_markers_defaults_to_a_when_nothing_follows():
+    # Bug fix: `"" in "aeiou"` is True in Python (empty string is a
+    # substring of everything), so a marker with no following word used
+    # to wrongly resolve to "an" with nothing after it. None of
+    # QUEST_RIDDLE_TEXT's own 7 real entries end on the marker today,
+    # but the helper itself must still degrade sanely if one ever did.
+    assert _resolve_ctrl_a_markers("a marker at the very end: ⟦CTRL-A:a/an⟧ ") == (
+        "a marker at the very end: a "
+    )
+
+
+def test_resolve_ctrl_a_markers_still_picks_an_before_a_vowel():
+    assert _resolve_ctrl_a_markers("saw ⟦CTRL-A:a/an⟧ owl") == "saw an owl"
+
+
 def test_quest_visit_text_and_fulfilled_text_cover_the_five_location_quests():
     location_quests = {
         Treasure.QUEST_SNOW_QUEST,
@@ -6968,6 +7476,43 @@ def test_quest_visit_text_control_byte_codes_preserved_literally():
     # Not resolved -- render() has no defined behavior for these, see
     # module docstring's own Phase 582 addendum.
     assert "⟦CTRL-X:province-3⟧" in QUEST_VISIT_TEXT[Treasure.QUEST_SNOW_QUEST]
+
+
+def test_render_guardian_proposes_quest_location_resolves_the_ctrl_a_marker():
+    # Phase 1028. GODS_QUEST carries no CTRL-A marker at all -- GODS_QUEST
+    # is covered separately below; this one (LUCKY_PENNY) has exactly one
+    # CTRL-A marker ("wishing-well" is consonant-initial -> "a").
+    result = render_guardian_proposes_quest_location("the Hermit", Treasure.QUEST_LUCKY_PENNY)
+    assert result == (
+        "the Hermit proposes a quest: the province of my birth, there is a "
+        "wishing-well which I remember from my younger days.For me, it is the "
+        "luckiest well in the world.You see, for years I have been having bad "
+        "luck.take my lucky penny and journey to the well.When you get there, "
+        "wish me luck and toss it into the well.Then, maybe my luck will "
+        "change!"
+    )
+
+
+def test_render_guardian_proposes_quest_location_resolves_the_ctrl_x_marker_to_a_generic_placeholder():
+    # SNOW_QUEST and MERMAID_AMULET are the only two entries carrying the
+    # real province-reference marker -- resolved to a generic phrase per
+    # explicit user instruction, never an invented specific province.
+    snow = render_guardian_proposes_quest_location("the Oracle", Treasure.QUEST_SNOW_QUEST)
+    assert "⟦CTRL-X:province-3⟧" not in snow
+    assert "a distant province" in snow
+
+    mermaid = render_guardian_proposes_quest_location("the Oracle", Treasure.QUEST_MERMAID_AMULET)
+    assert "⟦CTRL-X:province-3⟧" not in mermaid
+    assert "a distant province" in mermaid
+    assert "charm a mermaid for me" in mermaid
+
+
+def test_render_guardian_proposes_quest_location_leaves_plain_entries_untouched():
+    # GODS_QUEST carries no CTRL-byte markers at all -- the sourced text
+    # passes straight through, verbatim.
+    assert render_guardian_proposes_quest_location("the Shaman", Treasure.QUEST_GODS_QUEST) == (
+        f"the Shaman proposes a quest: {QUEST_VISIT_TEXT[Treasure.QUEST_GODS_QUEST]}"
+    )
 
 
 # -- monster raid-truce offer (Phase 130) --
@@ -7379,6 +7924,28 @@ def test_render_tornado_outcome_with_armies_destroyed():
         "Aldric cast a Tornado spell.Magical tornadoes hit the defenders of Limerick."
         "Tornadoes sucked up the 20th Legion in Limerick and destroyed them."
         "Tornadoes sucked up the 21st Light Cavalry in Limerick and destroyed them."
+    )
+
+
+def test_render_hide_feature_outcome_with_one_feature():
+    rng = ScriptedRandom([])
+    result = render_hide_feature_outcome("Aldric", "Sageleaf", ["Dungeon"], rng)
+    assert result == "Aldric cast a Hide Feature spell.The Dungeon in Sageleaf was magically hidden."
+
+
+def test_render_hide_feature_outcome_with_multiple_features():
+    # Phase 1037: modeled on render_tornado_outcome()'s own real
+    # "repeat the sentence per target, never join into one list"
+    # precedent -- see this function's own module comment for the full
+    # reasoning.
+    rng = ScriptedRandom([])
+
+    result = render_hide_feature_outcome("Aldric", "Sageleaf", ["Dungeon", "Cave"], rng)
+
+    assert result == (
+        "Aldric cast a Hide Feature spell."
+        "The Dungeon in Sageleaf was magically hidden."
+        "The Cave in Sageleaf was magically hidden."
     )
 
 
@@ -8120,7 +8687,9 @@ def test_describe_trail_intelligence_no_king_lines_when_no_king_intelligence():
 def test_describe_trail_intelligence_king_lines_with_allies_and_provinces():
     state = _trail_intel_state()
     state.add_province(ProvinceState(HexCoord(0, 0), None, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
-    king = KingIntelligence(treasury=500, allied_kingdom_ids=(2,), controlled_provinces=(HexCoord(0, 0),))
+    king = KingIntelligence(
+        treasury=500, allied_kingdom_ids=(2,), enemy_kingdom_ids=(), controlled_provinces=(HexCoord(0, 0),)
+    )
     result = TrailExecutionResult(spied_on=True, king_intelligence=king)
     rng = ScriptedRandom([0.1] * 20)
 
@@ -8128,11 +8697,12 @@ def test_describe_trail_intelligence_king_lines_with_allies_and_provinces():
 
     assert "Aldric learned that Borin commands a treasury of 500 gold." in lines
     assert "Aldric learned that Borin is allied with Alliedland." in lines
+    assert "Aldric learned that Borin has no enemies." in lines
     assert "Aldric learned that Borin controls Capital City." in lines
 
 
 def test_describe_trail_intelligence_king_lines_with_no_allies_or_provinces():
-    king = KingIntelligence(treasury=0, allied_kingdom_ids=(), controlled_provinces=())
+    king = KingIntelligence(treasury=0, allied_kingdom_ids=(), enemy_kingdom_ids=(), controlled_provinces=())
     result = TrailExecutionResult(spied_on=True, king_intelligence=king)
     rng = ScriptedRandom([0.1] * 20)
 
@@ -8142,7 +8712,20 @@ def test_describe_trail_intelligence_king_lines_with_no_allies_or_provinces():
 
     assert "Aldric learned that Borin commands a treasury of 0 gold." in lines
     assert "Aldric learned that Borin has no allies." in lines
+    assert "Aldric learned that Borin has no enemies." in lines
     assert "Aldric learned that Borin controls no provinces." in lines
+
+
+def test_describe_trail_intelligence_king_lines_with_enemies():
+    state = _trail_intel_state()
+    state.add_kingdom(KingdomState(3, "Enemyland", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    king = KingIntelligence(treasury=0, allied_kingdom_ids=(), enemy_kingdom_ids=(3,), controlled_provinces=())
+    result = TrailExecutionResult(spied_on=True, king_intelligence=king)
+    rng = ScriptedRandom([0.1] * 20)
+
+    lines = describe_trail_intelligence(result, state=state, trailer_name="Aldric", target_name="Borin", rng=rng)
+
+    assert "Aldric learned that Borin is at war with Enemyland." in lines
 
 
 # -- Phase 832: SPY_SUPER_SLEUTH's own "guessed distance" (Pursue/Trail)
@@ -8300,6 +8883,77 @@ def test_describe_search_rejected_for_other_reasons_renders_nothing():
 
 def test_describe_search_accepted_no_combat_renders_only_the_opening_line():
     result = SearchExecutionResult(accepted=True, combat_resolved=False, reason="no Melee tactic in encounter plan")
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+def test_describe_search_guardian_riddle_appends_the_riddle_line():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=False,
+        reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
+        guardian_monster=Monster.SPHINX,
+        guardian_riddle=Treasure.QUEST_RA_BRIDGE,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        render_guardian_poses_riddle("Sphinx", Treasure.QUEST_RA_BRIDGE),
+    ]
+
+
+def test_describe_search_non_riddle_quest_reply_appends_no_extra_line():
+    # The other 18 QUEST_OR_AGREEMENT replies still render nothing
+    # beyond the opening line -- guardian_riddle stays None for them.
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=False,
+        reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
+        guardian_monster=Monster.ARCHER,
+        guardian_riddle=None,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == ["Aldric approached the Ancient Ruins, intending to root out its mysteries."]
+
+
+def test_describe_search_guardian_quest_location_appends_the_quest_line():
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=False,
+        reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
+        guardian_monster=Monster.SPHINX,
+        guardian_quest_location=Treasure.QUEST_GODS_QUEST,
+    )
+    rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
+
+    lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
+
+    assert lines == [
+        "Aldric approached the Ancient Ruins, intending to root out its mysteries.",
+        render_guardian_proposes_quest_location("Sphinx", Treasure.QUEST_GODS_QUEST),
+    ]
+
+
+def test_describe_search_non_visit_quest_reply_appends_no_extra_line():
+    # The other 18 QUEST_OR_AGREEMENT replies still render nothing
+    # beyond the opening line -- guardian_quest_location stays None for
+    # them.
+    result = SearchExecutionResult(
+        accepted=True,
+        combat_resolved=False,
+        reason="the guardian proposes a deal -- honor it with Fulfill on a later Search",
+        guardian_monster=Monster.ARCHER,
+        guardian_quest_location=None,
+    )
     rng = ScriptedRandom([0.1] * 10, choice_indices=[0])
 
     lines = describe_search(result, character_name="Aldric", feature_name="Ancient Ruins", rng=rng)
@@ -9849,6 +10503,28 @@ def test_describe_armies_report_monstrous_army_uses_its_own_fixed_race():
     ]
 
 
+def test_describe_armies_report_dinosaurs_show_as_saurian_not_the_owning_kingdoms_race():
+    # Phase 980: AdvancedAbility.DRUIDIC_DINOSAURS's own "Race: Saurian"
+    # -- a Dinosaur army's race resolves to Race.SAURIAN regardless of
+    # the owning Kingdom's own race (Human here, to prove it's not
+    # merely falling back to kingdom.race -- in real play the owner is
+    # always Elven, per the separate recruiting race gate). The real
+    # column text is RACE_NAME[SAURIAN]'s own already-sourced "Dinosaur"
+    # (CTBOTH.PAS rname), the same short singular form every other
+    # MONSTROUS_ARMY_RACE entry already renders (e.g. Dragon_Wing's own
+    # "Dragons" designation shows race "Dragon", not "Dragons").
+    state = _armies_state()
+    state.add_army(ArmyState(1, 1, ArmyType.DINOSAURS, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert lines[2:] == [
+        _ARMIES_CAPTION_LINE_1,
+        _ARMIES_COLUMN_HEADER,
+        "Capital City      Garrison       Dinosaurs           Dinosaur  Average  Veteran",
+    ]
+
+
 def test_describe_armies_report_excludes_other_kingdoms_armies():
     state = _armies_state()
     state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
@@ -9973,7 +10649,7 @@ _ARMIES_MERCENARY_COLUMN_HEADER = "Province          Leader         Designation 
 
 def test_describe_armies_report_known_mercenary_in_owned_province():
     state = _armies_state()
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -9990,7 +10666,7 @@ def test_describe_armies_report_known_mercenary_via_adjacent_leader():
     state = _armies_state()
     state.add_province(ProvinceState(HexCoord(1, 0), Terrain.PLAINS, Race.HUMAN))  # unowned, adjacent to (0,0)
     state.add_leader(LeaderState(1, 1, "Sir Aldric", HexCoord(0, 0)))  # this kingdom's own leader, radius 1 away
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(1, 0)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(1, 0), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10008,7 +10684,7 @@ def test_describe_armies_report_known_mercenary_uses_the_real_board_width():
     assert state.board_width == 30
     state.add_leader(LeaderState(1, 1, "Sir Aldric", HexCoord(1, 2)))
     state.add_province(ProvinceState(HexCoord(18, 2), Terrain.PLAINS, Race.HUMAN))
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(18, 2)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(18, 2), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10018,7 +10694,7 @@ def test_describe_armies_report_known_mercenary_uses_the_real_board_width():
 def test_describe_armies_report_unknown_mercenary_is_absent():
     state = _armies_state()
     state.add_province(ProvinceState(HexCoord(5, 5), Terrain.PLAINS, Race.HUMAN))  # unowned, far away
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(5, 5)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(5, 5), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10035,12 +10711,29 @@ def test_describe_armies_report_no_mercenary_section_when_none_known():
     assert _ARMIES_MERCENARY_INTRO not in lines
 
 
+def test_describe_armies_report_unowned_native_garrison_is_not_a_mercenary():
+    # Bug fix, sourced directly from the user (2026-10-25, "troppe
+    # truppe mercenarie... 1 per ogni Re") and independently confirmed
+    # against the real GW3__T1 sample: an ordinary unclaimed province's
+    # own native garrison (`kingdom_id=None`, not flagged
+    # `is_mercenary`) must never appear in the "independent mercenaries
+    # which you may Recruit" section, even sitting right in the
+    # viewer's own owned province -- see `ArmyState.is_mercenary`'s own
+    # docstring.
+    state = _armies_state()
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+
+    lines = describe_armies_report(state, 1)
+
+    assert _ARMIES_MERCENARY_INTRO not in lines
+
+
 def test_describe_armies_report_mercenary_section_appears_even_with_no_owned_armies():
     # The real `none`/`strip` state is per-passtype (Phase 642 mirrors
     # Phase 639's own CHARACTERS-report fix for the identical bug class):
     # an empty Hired pass must not suppress a real Mercenary pass.
     state = _armies_state()
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10050,8 +10743,8 @@ def test_describe_armies_report_mercenary_section_appears_even_with_no_owned_arm
 
 def test_describe_armies_report_mercenary_suppresses_province_column_after_the_second():
     state = _armies_state()
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
-    state.add_army(ArmyState(10, None, ArmyType.AXEMEN, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), is_mercenary=True))
+    state.add_army(ArmyState(10, None, ArmyType.AXEMEN, Quality.AVERAGE, HexCoord(0, 0), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10065,7 +10758,7 @@ def test_describe_armies_report_mercenary_suppresses_province_column_after_the_s
 def test_describe_armies_report_mercenary_race_falls_back_to_the_provinces_own_race():
     state = _armies_state()  # viewing kingdom (Testland) is Human
     state.add_province(ProvinceState(HexCoord(2, 2), Terrain.PLAINS, Race.ELVEN, owner_kingdom_id=1))
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(2, 2)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(2, 2), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10076,7 +10769,7 @@ def test_describe_armies_report_mercenary_race_falls_back_to_the_provinces_own_r
 
 def test_describe_armies_report_mercenary_leader_column_is_blank_not_garrison():
     state = _armies_state()
-    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0)))
+    state.add_army(ArmyState(9, None, ArmyType.BOWMEN, Quality.AVERAGE, HexCoord(0, 0), is_mercenary=True))
 
     lines = describe_armies_report(state, 1)
 
@@ -10315,6 +11008,24 @@ def test_describe_diplomacy_report_no_other_kingdoms_renders_all_none():
     ]
 
 
+def test_describe_diplomacy_report_king_cache_matches_the_uncached_result():
+    # Phase 1193 efficiency: king_cache is an optional, purely additive
+    # memoization (orchestrator.py shares one across every Kingdom's own
+    # compose_letter_report() call) -- passing it must never change the
+    # rendered text, only how many times the underlying King lookup
+    # actually runs.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.GOOD, HexCoord(1, 1)))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1), is_king=True))
+    cache: dict = {}
+
+    cached_lines = describe_diplomacy_report(state, 1, king_cache=cache)
+
+    assert cached_lines == describe_diplomacy_report(state, 1)
+    assert cache == {1: None, 2: 9}
+
+
 def test_describe_diplomacy_report_unallied_kingdom_is_neutral():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
@@ -10357,7 +11068,7 @@ def test_describe_diplomacy_report_allied_kingdom_is_listed_as_allied():
     ]
 
 
-def test_describe_diplomacy_report_war_always_renders_none_at_present():
+def test_describe_diplomacy_report_war_renders_none_at_present_with_no_enemy_relation():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(1, 1)))
@@ -10367,6 +11078,29 @@ def test_describe_diplomacy_report_war_always_renders_none_at_present():
 
     war_index = lines.index(_DIPLOMACY_WAR_INTRO)
     assert lines[war_index + 1] == "None at present"
+
+
+def test_describe_diplomacy_report_enemy_relation_is_listed_as_at_war():
+    # Phase 1026: turn/diplomacy.py's own real Enemy relation (via a
+    # Break Treat order) now renders here -- previously always empty,
+    # since no war-declaration mechanism existed in this project at all.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.GOOD, HexCoord(1, 1)))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1), is_king=True))
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ENEMY
+
+    lines = describe_diplomacy_report(state, 1)
+
+    assert lines == [
+        "DIPLOMACY",
+        _DIPLOMACY_ALLIED_INTRO,
+        "None at present",
+        _DIPLOMACY_WAR_INTRO,
+        "Kwoth (#2)",
+        _DIPLOMACY_NEUTRAL_INTRO,
+        "None at present",
+    ]
 
 
 def test_describe_diplomacy_report_no_king_recorded_falls_back_to_kingdom_name():
@@ -10391,6 +11125,89 @@ def test_describe_diplomacy_report_lists_multiple_kingdoms_sorted_by_id():
 
     neutral_index = lines.index(_DIPLOMACY_NEUTRAL_INTRO)
     assert lines[neutral_index + 1 :] == ["Bertha (#2)", "Cyrus (#3)"]
+
+
+# -- 2026-11-03: describe_diplomacy_change_notices() -- a Break Treat
+# relation change, rendered at the top of ACTION REPORT -- see that
+# composer's own docstring for why this isn't sourced from a real
+# sample.
+
+
+def _notice_state() -> GameState:
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.EVIL, HexCoord(1, 1)))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1), is_king=True))
+    return state
+
+
+def test_describe_diplomacy_change_notices_allied_to_neutral():
+    state = _notice_state()
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL))
+
+    assert describe_diplomacy_change_notices(state, 1) == [
+        "My lord, grave tidings: Kwoth (#2) has broken his treaty with us; "
+        "relations between our two Kingdoms have cooled to Neutral."
+    ]
+
+
+def test_describe_diplomacy_change_notices_neutral_to_enemy():
+    state = _notice_state()
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.NEUTRAL, DiplomaticRelation.ENEMY))
+
+    assert describe_diplomacy_change_notices(state, 1) == [
+        "My lord, dire tidings: Kwoth (#2) has declared war upon us! We are now at war."
+    ]
+
+
+def test_describe_diplomacy_change_notices_allied_to_enemy():
+    state = _notice_state()
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.ENEMY))
+
+    assert describe_diplomacy_change_notices(state, 1) == [
+        "My lord, dire tidings: our alliance with Kwoth (#2) has been shattered; we are now at war."
+    ]
+
+
+def test_describe_diplomacy_change_notices_neutral_to_allied():
+    state = _notice_state()
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.NEUTRAL, DiplomaticRelation.ALLIED))
+
+    assert describe_diplomacy_change_notices(state, 1) == [
+        "My lord, glad tidings: swayed by Druidic wisdom, Kwoth (#2) has allied with us."
+    ]
+
+
+def test_describe_diplomacy_change_notices_enemy_to_allied():
+    state = _notice_state()
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.ENEMY, DiplomaticRelation.ALLIED))
+
+    assert describe_diplomacy_change_notices(state, 1) == [
+        "My lord, glad tidings: swayed by Druidic wisdom, our war with Kwoth (#2) has ended in alliance."
+    ]
+
+
+def test_describe_diplomacy_change_notices_renders_for_both_sides_of_the_pair():
+    state = _notice_state()
+    state.diplomacy_relation_change_notices.append((1, 2, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL))
+
+    assert describe_diplomacy_change_notices(state, 2) == [
+        "My lord, grave tidings: Testland (#1) has broken his treaty with us; "
+        "relations between our two Kingdoms have cooled to Neutral."
+    ]
+
+
+def test_describe_diplomacy_change_notices_ignores_a_pair_not_involving_this_kingdom():
+    state = _notice_state()
+    state.add_kingdom(KingdomState(3, "Thirdland", Race.DWARVEN, Alignment.GOOD, HexCoord(2, 2)))
+    state.diplomacy_relation_change_notices.append((2, 3, DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL))
+
+    assert describe_diplomacy_change_notices(state, 1) == []
+
+
+def test_describe_diplomacy_change_notices_empty_with_no_notices():
+    state = _notice_state()
+    assert describe_diplomacy_change_notices(state, 1) == []
 
 
 # -- Phase 640: DIPLOMACY's real Write_List/Desc_Align enrichment --
@@ -11234,6 +12051,142 @@ def test_describe_provinces_report_uses_effective_terrain_not_illusory():
     assert lines[-1] == _province_row("Drowned Fen", "Human", "Plain", 0)
 
 
+# -- Phase 981: describe_home_province_neighbors() --
+
+
+def _neighbor_coord(home: HexCoord, direction: Direction, state: GameState) -> HexCoord:
+    coord = neighbor_in_direction_wrapped(home, direction, state.board_width, state.board_height)
+    assert coord is not None
+    return coord
+
+
+def test_describe_home_province_neighbors_intro_names_the_home_province():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+
+    lines = describe_home_province_neighbors(state, 1)
+
+    assert any("The province of Capital City belongs to your Majesty." in line for line in lines)
+
+
+def test_describe_home_province_neighbors_names_a_claimed_humanoid_neighbor_with_full_army_names():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    state.add_kingdom(KingdomState(2, "Elfland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_leader(LeaderState(1, kingdom_id=2, name="Thranduil", location=HexCoord(0, 0), is_king=True, race=Race.ELVEN))
+    neighbor = _neighbor_coord(home, Direction.E, state)
+    state.add_province(
+        ProvinceState(
+            neighbor,
+            Terrain.FOREST,
+            Race.ELVEN,
+            owner_kingdom_id=2,
+            name="Elftown",
+            recruit_type_1=ArmyType.BOWMEN,
+            recruit_type_2=ArmyType.HVY_CAVALRY,
+        )
+    )
+
+    paragraph = " ".join(describe_home_province_neighbors(state, 1))
+
+    assert "Elftown" in paragraph
+    assert "It is ruled by Thranduil." in paragraph
+    assert "Their Elven warriors fight as Bowmen and Heavy Cavalry." in paragraph
+
+
+def test_describe_home_province_neighbors_unclaimed_humanoid_neighbor_still_gets_a_warriors_sentence():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    neighbor = _neighbor_coord(home, Direction.W, state)
+    state.add_province(
+        ProvinceState(neighbor, Terrain.JUNGLE, Race.ORCISH, owner_kingdom_id=None, name="Macondo", recruit_type_1=ArmyType.PHALANX)
+    )
+
+    paragraph = " ".join(describe_home_province_neighbors(state, 1))
+
+    assert "where no one rules" in paragraph
+    assert "Their Orcish warriors fight as Phalanx." in paragraph
+
+
+def test_describe_home_province_neighbors_unclaimed_monster_neighbor_gets_a_muster_sentence():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    neighbor = _neighbor_coord(home, Direction.NE, state)
+    state.add_province(ProvinceState(neighbor, Terrain.MTNS, Race.EAGLES, owner_kingdom_id=None, name="Shasta"))
+
+    paragraph = " ".join(describe_home_province_neighbors(state, 1))
+
+    assert "no one rules there" in paragraph
+    assert "If need be, they can muster an army of Eagles to defend their province." in paragraph
+
+
+def test_describe_home_province_neighbors_omits_a_no_race_neighbor():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+    neighbor = _neighbor_coord(home, Direction.NE, state)
+    state.add_province(ProvinceState(neighbor, Terrain.SEA, Race.NO_RACE, owner_kingdom_id=None))
+
+    paragraph = " ".join(describe_home_province_neighbors(state, 1))
+
+    assert "no races" not in paragraph
+
+
+def test_describe_home_province_neighbors_top_edge_uses_the_icy_expanse_line_and_drops_the_northeast_sentence():
+    state = GameState()
+    home = HexCoord(5, 0)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Birchwood"))
+
+    lines = describe_home_province_neighbors(state, 1)
+    paragraph = " ".join(lines)
+
+    assert "To the north lay an icy expanse which extends as far as the eye can see." in paragraph
+    assert "northeast" not in paragraph
+
+
+def test_describe_home_province_neighbors_empty_when_home_province_missing():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(5, 5)))
+    # No ProvinceState ever added at (5, 5).
+
+    assert describe_home_province_neighbors(state, 1) == []
+
+
+# -- Phase 981: compose_letter_report()'s own include_home_province_narrative flag --
+
+
+def test_compose_letter_report_omits_home_province_narrative_by_default():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+
+    lines = compose_letter_report([], state, 1, random.Random(1))
+
+    assert not any("belongs to your Majesty" in line for line in lines)
+
+
+def test_compose_letter_report_includes_home_province_narrative_when_requested():
+    state = GameState()
+    home = HexCoord(5, 5)
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, home))
+    state.add_province(ProvinceState(home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Capital City"))
+
+    lines = compose_letter_report([], state, 1, random.Random(1), include_home_province_narrative=True)
+
+    assert any("The province of Capital City belongs to your Majesty." in line for line in lines)
+
+
 # -- Phase 278: Tax + Recruiting Types columns --
 
 
@@ -11582,6 +12535,56 @@ def test_describe_map_report_wraps_at_the_real_30_wide_seam():
     assert "Nearland" in text
 
 
+def test_describe_map_report_falls_back_to_the_full_known_columns_when_no_primary_region_is_tracked():
+    # Baseline (pre-Phase-1038 behavior, still the honest fallback for a
+    # GameState bridged cold from an existing snapshot): with no
+    # ``map_primary_region_columns`` tracked, 9 genuinely contiguous
+    # known columns fit entirely within the floor tier's own 9-column
+    # page cap -- one single page, no far-side split.
+    state = GameState()
+    state.board_width = 18
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(4, 1)))
+    for x in range(1, 10):
+        state.add_province(
+            ProvinceState(
+                HexCoord(x, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name=f"P{x}", explored_percent_by_kingdom={1: 100}
+            )
+        )
+    assert state.kingdoms[1].map_primary_region_columns == set()
+
+    text = "\n".join(describe_map_report(state, 1))
+
+    assert "We also drew up this map of lands on the far side of the world:" not in text
+
+
+def test_describe_map_report_uses_the_tracked_primary_region_not_the_full_known_columns():
+    # Phase 1038's own real-corpus-confirmed case (SE3__T10.K8/SE3__T6.K6):
+    # a separately-grown far region can be cylindrically adjacent to the
+    # primary region with *zero* gap (here columns 6 and 7), yet the real
+    # report still splits them into two pages sharing a tier chosen from
+    # the smaller primary region alone. Same provinces as the fallback
+    # test above, but with the Kingdom's own tracked primary region set
+    # to just the first 6 columns -- this alone must now force a
+    # far-side split that the full-known-columns fallback does not.
+    state = GameState()
+    state.board_width = 18
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(4, 1)))
+    for x in range(1, 10):
+        state.add_province(
+            ProvinceState(
+                HexCoord(x, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name=f"P{x}", explored_percent_by_kingdom={1: 100}
+            )
+        )
+    state.kingdoms[1].map_primary_region_columns = {1, 2, 3, 4, 5, 6}
+
+    lines = describe_map_report(state, 1)
+    text = "\n".join(lines)
+
+    assert "We also drew up this map of lands on the far side of the world:" in text
+    for name in ("P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9"):
+        assert name in text
+
+
 def test_compose_letter_report_places_the_map_between_provinces_and_characters():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
@@ -11905,7 +12908,12 @@ def test_tell_align_basic_arithmetic_and_the_king_vs_hero_shift():
     king_target.alignment = Alignment.GOOD
     # Same coordinates/alignment, only is_king differs -> different tdmod shift,
     # so this is NOT a copy-paste of the assertion above.
-    assert _tell_align(king_target, priest) is Alignment.DRUID
+    # Bug fix: this used to expect Alignment.DRUID, computed from the
+    # pre-fix hex_distance_wrapped()'s own wrong distance (6, not 5) for
+    # (0, 0)-(3, 5) -- see that function's own Bug fix note. The real,
+    # confirmed distance is 5 (hex_distance() agrees), which changes
+    # tdmod and so the real `ta` arithmetic here too.
+    assert _tell_align(king_target, priest) is Alignment.GOOD
 
 
 def test_tell_align_clamps_at_the_divine_floor():
@@ -12004,13 +13012,21 @@ def test_impulse3_candidates_empty_without_a_priest():
 
 
 def test_impulse3_candidates_excludes_a_hero_and_a_too_distant_king():
+    # Bug fix: (4, 1) used to be reported at distance 5 by the pre-fix
+    # hex_distance_wrapped() (the stale, un-updated-since-Phase-314
+    # parity bug -- see that function's own Bug fix note); its real,
+    # confirmed distance from (0, 0) is 4, which is *inside* this
+    # function's own <=4 threshold, so it no longer exercises the
+    # "too distant" exclusion this test is about. (5, 1) is genuinely
+    # distance 5 (confirmed against hex_distance()'s own cube-coordinate
+    # math), so it still means what the comment below says.
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
     priest = _priest_leader(50, 1, HexCoord(0, 0))
     state.add_leader(priest)
-    hero = LeaderState(9, 2, "Kwoth", HexCoord(2, 1))  # distance 3, but not a King
+    hero = LeaderState(9, 2, "Kwoth", HexCoord(2, 1))  # distance 2, but not a King
     state.add_leader(hero)
-    far_king = LeaderState(10, 2, "Far King", HexCoord(4, 1), is_king=True)  # distance 5 > 4
+    far_king = LeaderState(10, 2, "Far King", HexCoord(5, 1), is_king=True)  # distance 5 > 4
     state.add_leader(far_king)
 
     assert _impulse3_candidates(state, 1, priest=priest, orig_turn=0) == []
@@ -12111,13 +13127,20 @@ def test_describe_characters_report_impulse2_secondary_reveal_fires_within_two_h
 
 
 def test_describe_characters_report_impulse2_secondary_reveal_does_not_fire_beyond_two_hexes():
+    # Bug fix: (2, 1) used to be reported at distance 3 by the pre-fix
+    # hex_distance_wrapped() (the stale, un-updated-since-Phase-314
+    # parity bug -- see that function's own Bug fix note); its real,
+    # confirmed distance from (0, 0) is only 2, inside this test's own
+    # 2-hex threshold, so it no longer exercises the "beyond two hexes"
+    # exclusion this test is about. (3, 1) is genuinely distance 3
+    # (confirmed against hex_distance()'s own cube-coordinate math).
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
-    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(2, 1)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.NEUTRAL, HexCoord(3, 1)))
     priest = _priest_leader(50, 1, HexCoord(0, 0))
     state.add_leader(priest)
-    state.add_province(ProvinceState(HexCoord(2, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))  # distance 3
-    stranger = LeaderState(9, 2, "Kwoth", HexCoord(2, 1))
+    state.add_province(ProvinceState(HexCoord(3, 1), Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))  # distance 3
+    stranger = LeaderState(9, 2, "Kwoth", HexCoord(3, 1))
     stranger.alignment = Alignment.GOOD
     state.add_leader(stranger)
 
@@ -13067,6 +14090,9 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "GENERAL INTELLIGENCE REPORT",
         "",
         "None at present",
+        "",
+        "",
+        "END MOVES REPORT",
     ]
 
 
@@ -13308,7 +14334,25 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "GENERAL INTELLIGENCE REPORT",
         "",
         "None at present",
+        "",
+        "",
+        "END MOVES REPORT",
     ]
+
+
+def test_compose_letter_report_always_ends_with_end_moves_report():
+    # Phase 1034: confirmed present, as the letter's own final line, in
+    # all 46 of tests/fixtures/reports/G6/'s real SE6__T*.K* samples --
+    # even the thinnest "missed the turn deadline" report still ends
+    # with it (SE6__T2.K0 line 289).
+    state = _armies_state()
+
+    lines = compose_letter_report([], state, 1, ScriptedRandom([]))
+
+    assert lines[-1] == "END MOVES REPORT"
+    assert lines[-2] == ""
+    assert lines[-3] == ""
+    assert lines[-4] != ""  # exactly two blank lines, not more
 
 
 def test_compose_letter_report_forwards_board_width_to_action_report_and_letters():
@@ -13907,6 +14951,38 @@ def test_describe_imperial_office_report_none_at_present_for_every_office_with_n
     assert lines.count("Praetorian Guard          None at present") == 1
     assert lines.count("Imperial Flag Squadron    None at present") == 1
     assert len(lines) == 52  # header + pre-election framing + 47 leader offices + 3 army offices
+
+
+def test_describe_imperial_office_report_omits_disabled_optional_titles():
+    # GM interface Phase 3: an optional title the GM excluded from this
+    # game gets no row at all -- not even "None at present" -- while the
+    # 8 mandatory Imperial Offices are unaffected by the same setting.
+    state = _armies_state()
+    state.enabled_optional_offices = {Office.EVIL_KING}  # excludes every other optional title
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert not any(line.startswith("Prince of Thieves") for line in lines)
+    assert not any(line.startswith("Savior of Humankind") for line in lines)
+    assert not any(line.startswith("Royal Air Force") for line in lines)
+    assert not any(line.startswith("Praetorian Guard") for line in lines)
+    assert not any(line.startswith("Imperial Flag Squadron") for line in lines)
+    # Kept: an explicitly-enabled optional title, and the 8 mandatory ones.
+    assert lines.count("King of Pain              None at present") == 1
+    assert lines.count("World Emperor             None at present") == 1
+    assert lines.count("Arch-Mage Palatine        None at present") == 1
+
+
+def test_describe_imperial_office_report_unset_enabled_optional_offices_shows_everything():
+    # None (never configured -- every pre-existing game/test) must keep
+    # this composer's original, unfiltered behavior.
+    state = _armies_state()
+    assert state.enabled_optional_offices is None
+
+    lines = describe_imperial_office_report(state, 1)
+
+    assert lines.count("Dragon Lord               None at present") == 1
+    assert lines.count("Royal Air Force           None at present") == 1
 
 
 def test_describe_imperial_office_report_shows_a_real_office_holder():
@@ -14958,6 +16034,34 @@ def test_record_spell_world_events_tornado_notifies_a_victim_kingdom():
     notices = state.tornado_victim_notices_by_kingdom[9]
     assert len(notices) == 1
     assert notices[0].endswith("Tornadoes sucked up the 20th Legion in Border Fort and destroyed them.")
+
+
+def test_record_spell_world_events_tornado_destroying_an_artillery_army_does_not_crash():
+    # Bug fix (crash): ARMY_TYPE_NAME deliberately excludes ArmyType.
+    # ARTILLERY/D_TURTLE (no confirmed full atname form) -- a correct
+    # gap when read via .get(), but this function's own victim-notice
+    # rendering used a bare ARMY_TYPE_NAME[army.army_type]. A GM can set
+    # an army's type to ARTILLERY directly via the web editor (an
+    # entirely ordinary action, no filtering on that form); Tornado
+    # destroying that army then crashed this function -- called
+    # unconditionally once per turn from orchestrator.py, before any
+    # per-kingdom report, so this crashed the whole turn for everyone.
+    state, battle_coord, _watcher_coord = _gir_state()
+    board_width = NORMAL_MAP_BOUNDS[0]
+    state.add_leader(LeaderState(1, 1, "Caster", battle_coord))
+    state.add_kingdom(KingdomState(9, "Victimia", Race.HUMAN, Alignment.NEUTRAL, HexCoord(9, 9)))
+    request = CastRequest(spell=Spell.TORNADO, target=encode_hex_number(battle_coord, board_width))
+    destroyed = [ArmyState(20, 9, ArmyType.ARTILLERY, Quality.AVERAGE, battle_coord)]
+    result = CastExecutionResult(request, applied=True, tornado_destroyed=destroyed)
+    results = [
+        PhaseDispatchResult(leader_id=1, segment_index=0, phase_label="P0", action=ActionCode.CAST, result=result, error=None)
+    ]
+
+    record_spell_world_events(state, results, ScriptedRandom([]), board_width=board_width)
+
+    notices = state.tornado_victim_notices_by_kingdom[9]
+    assert len(notices) == 1
+    assert "20th Artillery" in notices[0]
 
 
 def test_record_spell_world_events_tornado_excludes_the_casters_own_kingdom():

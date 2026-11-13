@@ -172,7 +172,7 @@ def test_individual_king_points_excludes_a_treasure_item_held_by_a_hero_not_the_
 
 def test_individual_king_points_excludes_an_office_won_by_a_hero_not_the_king():
     # A Hero with a real Chancellor-qualifying Merit tally (discoveries_
-    # found_first, 3 points each) outranks the King's own zero and wins
+    # found_first, 2 points each) outranks the King's own zero and wins
     # Office.CHANCELLOR outright -- kingdom_points still banks it (30.0 =
     # Emperor 20 + Chancellor 10), but individual_king_points only credits
     # the King's own personal win, Emperor alone (20.0).

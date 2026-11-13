@@ -206,7 +206,7 @@ from ak_engine.models.game_state import GameState
 from ak_engine.models.kingdom import KingdomMoveHeader
 from ak_engine.models.office import OFFICE_VALUE
 from ak_engine.turn.merit_points import LEGENDARY_ITEM_BONUS_TREASURES
-from ak_engine.turn.office_holder import resolve_all_office_holders
+from ak_engine.turn.office_holder import resolve_all_army_office_holders, resolve_all_office_holders
 from ak_engine.turn.tax_base import compute_tax_base
 from ak_engine.turn.victory_points import OUTLOOK_REDUCTION, _alignment_distance_capped_at_hellish
 
@@ -246,6 +246,14 @@ def _kingdom_office_vote_points(state: GameState, kingdom_id: int) -> int:
     points()`'s own alignment-discounted figure) since no Emperor exists
     yet during the very vote that elects one -- no alignment-distance term
     can apply at this point. See module docstring's Phase 450 note.
+
+    **Phase 1191 bug fix**: now also sums the 3 army-scoped Royal Titles
+    (`turn/office_holder.py ARMY_RANKED_OFFICES` -- Airforce/Praetor/
+    Flagship), via `resolve_all_army_office_holders()`. This function's
+    own "every real Imperial Office" claim already meant to include them
+    -- `turn/final_standings.py kingdom_points()` needed the identical
+    fix at Phase 633 for the same reason (`ALL_OFFICES` deliberately
+    excludes `ARMY_RANKED_OFFICES`; it was never folded back in here).
     """
 
     total = 0
@@ -254,6 +262,13 @@ def _kingdom_office_vote_points(state: GameState, kingdom_id: int) -> int:
             continue
         leader = state.leaders.get(holder.leader_id)
         if leader is None or leader.kingdom_id != kingdom_id:
+            continue
+        total += OFFICE_VALUE[office]
+    for office, army_holder in resolve_all_army_office_holders(state).items():
+        if army_holder is None:
+            continue
+        army = state.armies.get(army_holder.army_id)
+        if army is None or army.kingdom_id != kingdom_id:
             continue
         total += OFFICE_VALUE[office]
     return total
@@ -737,12 +752,15 @@ def process_election_turn(
       pending_turn` -- report/turn_report.py describe_election_status_
       report()`'s own real REPORTS.PAS notice needs it at exactly this
       moment, since it would otherwise be gone by report-generation
-      time. Phase 800: `result.caller_percent` is also set here, from
-      `_caller_percent(state, requesting_kingdom_ids)` computed against
-      *this same tally turn's own* `kingdom_headers` -- unlike `alignment_
-      trigger`, this is not a value carried forward from the scheduling
-      turn (the real source computes `vote_perc` fresh every turn,
-      independent of `req_vote`'s own state).
+      time. **Phase 1191 correction**: `result.caller_percent` is copied
+      from `state.election_pending_caller_percent` the same way --
+      Phase 800's original claim that this should instead be recomputed
+      fresh from *this same tally turn's own* `kingdom_headers` doesn't
+      hold up: by this turn, each Kingdom's own `kprevgold` holds its
+      candidate choice, not the request toggle `_caller_percent()`/
+      `is_vote_turn()` need, so that recomputation always read back an
+      empty "requesting" set and silently returned `0`. See `GameState.
+      election_pending_caller_percent`'s own docstring.
     - **Otherwise**: evaluate whether this turn crowns someone outright
       or schedules a vote for `current_turn + 1`
       (`evaluate_election_call()`), using each Kingdom's own `kprevgold`
@@ -751,8 +769,11 @@ def process_election_turn(
       (no vote to hold, so nothing gets scheduled); a scheduled election
       sets `state.election_pending_turn = current_turn + 1` and (Phase
       778) `state.election_pending_alignment_trigger = outcome.
-      alignment_trigger` alongside it -- see that field's own docstring
-      for the full sourcing.
+      alignment_trigger` alongside it, plus (Phase 1191)
+      `state.election_pending_caller_percent = outcome.caller_percent`
+      -- `evaluate_election_call()` already computed this correctly on
+      *this* turn, while `requesting_kingdom_ids` is still valid -- see
+      that field's own docstring for the full sourcing.
     """
 
     requesting_kingdom_ids = {
@@ -767,9 +788,10 @@ def process_election_turn(
         }
         result = resolve_emperor_election(state, ballots, current_turn)
         result.alignment_trigger = state.election_pending_alignment_trigger
-        result.caller_percent = _caller_percent(state, requesting_kingdom_ids)
+        result.caller_percent = state.election_pending_caller_percent
         state.election_pending_turn = None
         state.election_pending_alignment_trigger = None
+        state.election_pending_caller_percent = 0
         return result
 
     outcome = evaluate_election_call(state, requesting_kingdom_ids, current_turn)
@@ -778,5 +800,6 @@ def process_election_turn(
         state.last_emperor_vote_turn = current_turn
     elif outcome.election_scheduled_next_turn:
         state.election_pending_turn = current_turn + 1
+        state.election_pending_caller_percent = outcome.caller_percent
         state.election_pending_alignment_trigger = outcome.alignment_trigger
     return outcome

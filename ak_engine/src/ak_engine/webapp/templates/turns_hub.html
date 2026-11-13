@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Turn {{ state.turn_number }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('world_setup', slug=meta.slug) }}">&larr; World</a></p>
+
+{% if not state.kingdoms %}
+  <div class="panel" style="border-left: 6px solid var(--phase-turns);">
+    <p class="empty-state">This game has no world yet -- <a href="{{ url_for('world_setup', slug=meta.slug) }}">create it first</a>.</p>
+  </div>
+{% else %}
+
+<div class="panel" style="border-left: 6px solid var(--phase-turns);">
+  <h2>{{ meta.name }} &mdash; Turn {{ state.turn_number }}</h2>
+
+  {% if state.emperor_kingdom_id is not none %}
+    <p class="status-info">
+      &#128081; An Emperor has been crowned: <strong>{{ state.kingdoms[state.emperor_kingdom_id].name if state.emperor_kingdom_id in state.kingdoms else ('Kingdom #' ~ state.emperor_kingdom_id) }}</strong>.
+      Per the rulebook, this is how a game of Adventurer-Kings is won -- you may want to end the campaign here.
+      Turns can still be processed afterward if you'd rather keep playing (the real game doesn't force a stop either).
+    </p>
+  {% endif %}
+
+  <p>Upload each Kingdom's real move file (e.g. <code>AK3__T{{ state.turn_number }}.K1</code>), keeping its own filename -- the Kingdom is identified from the filename itself, not its content.</p>
+
+  <p><a class="button" href="{{ url_for('turns_diplomacy', slug=meta.slug) }}">Diplomacy Orders (Treat / Break Treat)</a></p>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Kingdom</th>
+        <th>Move File</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for kingdom_id, kingdom in state.kingdoms.items() %}
+        <tr>
+          <td>{{ kingdom.name }}</td>
+          {% if kingdom_id in uploads %}
+            <td class="status-ok">{{ uploads[kingdom_id].name }}</td>
+            <td>
+              <form class="inline" method="post" action="{{ url_for('turns_remove_upload', slug=meta.slug, kingdom_id=kingdom_id) }}">
+                <button type="submit" class="danger">Remove</button>
+              </form>
+            </td>
+          {% else %}
+            <td class="status-warning">Not uploaded</td>
+            <td><a class="button" href="{{ url_for('turns_compose', slug=meta.slug, kingdom_id=kingdom_id) }}">Compose Manually</a></td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <form class="inline" method="post" action="{{ url_for('turns_upload', slug=meta.slug) }}" enctype="multipart/form-data">
+    <input type="file" name="move_file" required>
+    <button type="submit">Upload Move File</button>
+  </form>
+
+  <form method="post" action="{{ url_for('turns_process', slug=meta.slug) }}"
+        data-confirm="Process Turn {{ state.turn_number }} now? Kingdoms with no uploaded moves will Defend/Wait.">
+    <button type="submit">Process Turn {{ state.turn_number }}</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-turns);">
+  <h2>Sync Leaders from World File</h2>
+  <p class="hex-map-legend-note">Enriches every existing Hero/King in this game with real race/alignment/temper/skills from a world file (<code>GW3__T{{ state.turn_number }}</code>-style) -- including idle Heroes who never submitted a move file, and real <code>kingdom_id</code> corrections for independent/Hired Heroes. Matched by name; a Hero never matched here isn't created, only reported. Never creates new Heroes, never touches a King's own <code>kingdom_id</code>.</p>
+  {% if gw_sync_result %}
+    <p class="status-ok">{{ gw_sync_result }}</p>
+  {% endif %}
+  <form class="inline" method="post" action="{{ url_for('turns_sync_world_leaders', slug=meta.slug) }}" enctype="multipart/form-data">
+    <input type="file" name="world_file" required>
+    <button type="submit">Sync from World File</button>
+  </form>
+</div>
+
+{% if processed_turns %}
+<div class="panel" style="border-left: 6px solid var(--phase-turns);">
+  <h2>Past Turn Reports</h2>
+  <ul class="game-list">
+    {% for turn_number in processed_turns %}
+      <li>
+        <div class="game-name">Turn {{ turn_number }}</div>
+        <a class="button" href="{{ url_for('turn_report_list', slug=meta.slug, turn_number=turn_number) }}">View Reports</a>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% endif %}
+
+{% endblock %}

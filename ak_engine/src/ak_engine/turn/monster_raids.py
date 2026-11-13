@@ -201,13 +201,24 @@ def age_feature_guardian(state: GameState, feature: Feature, rng: random.Random)
     threshold roll only on a hit, matching the real short-circuit exactly
     (including consuming both rolls even for an already-``looted`` Dead
     feature, or one with no guardian_alignment recorded).
+
+    **Phase 1194 bug fix**: this used to also gate the whole roll behind
+    ``state.provinces.get(feature.coord).owner_kingdom_id is not None``
+    -- apparently copy-pasted from ``resolve_province_raids()``'s own,
+    legitimately ownership-scoped sibling (that one only runs over
+    *owned* provinces because unowned provinces generate no taxable
+    income for a raid to reduce). Maturation has nothing to do with
+    income: THUNDERBIRD.md's own text says "every feature with a real
+    guardian," no ownership precondition named, and the module's own
+    docstring already promised "consumes the 3% roll always first" --
+    a promise this function broke for any feature in a never-claimed or
+    no-longer-claimed province, consuming zero rolls there instead
+    (desyncing every later feature's own rolls in the same ``age_all_
+    feature_guardians()`` call against this module's own test suite's
+    scripted sequences).
     """
 
     if feature.guardian_monster is None:
-        return
-
-    province = state.provinces.get(feature.coord)
-    if province is None or province.owner_kingdom_id is None:
         return
 
     if rng.random() >= MONSTER_MATURATION_ROLL_CHANCE:
@@ -321,7 +332,23 @@ def resolve_province_raids(
 
     events: list[RaidEvent] = []
     for feature in sorted(state.features_at(province.coord), key=lambda f: f.feature_id):
-        if feature.guardian_monster is None or feature.looted or feature.magically_hidden:
+        # Bug fix (crash): `Monster.NOMONSTER` (the "no monster" sentinel)
+        # is a real, GM-selectable value of `guardian_monster` distinct
+        # from `None` -- the webapp's own Feature editor offers it as a
+        # literal dropdown option -- but `MONSTER_RUNTIME_PROFILE` has no
+        # entry for it by design (models/monster.py's own docstring).
+        # This `is None` check alone let NOMONSTER through to the bare
+        # dict index below, crashing this function with an unhandled
+        # KeyError the instant a GM set a Feature's guardian to "No
+        # monster" + "Emboldened" -- an entirely ordinary editor action
+        # -- on the very next turn's revenue processing, called
+        # unconditionally for every kingdom-owned province.
+        if (
+            feature.guardian_monster is None
+            or feature.guardian_monster is Monster.NOMONSTER
+            or feature.looted
+            or feature.magically_hidden
+        ):
             continue
         if feature.guardian_state is not MonsterEngagementState.BOLD:
             continue

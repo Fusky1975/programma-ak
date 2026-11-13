@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Armies -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('world_setup', slug=meta.slug) }}">&larr; World</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Armies</h2>
+
+  {% if armies %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Quality</th>
+          <th>Kingdom</th>
+          <th>Location</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for army in armies %}
+          <tr>
+            <td>{{ army.army_type|display_name }}</td>
+            <td>{{ army.quality|display_name }}</td>
+            <td>{{ state.kingdoms[army.kingdom_id].name if army.kingdom_id in state.kingdoms else 'Unowned' }}</td>
+            <td>({{ army.location.x }}, {{ army.location.y }})</td>
+            <td><a class="button" href="{{ url_for('army_edit', slug=meta.slug, army_id=army.army_id) }}">Edit</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">This game has no world yet -- <a href="{{ url_for('world_setup', slug=meta.slug) }}">create it first</a>.</p>
+  {% endif %}
+</div>
+
+{% if armies %}
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Army-Scoped Royal Titles</h2>
+  <p class="hex-map-legend-note">Royal Air Force/Praetorian Guard/Imperial Flag Squadron -- unlike every other Imperial Office, these 3 are held by an Army, not a Hero/King. "Current Holder" is live-computed from each army's own strength and quality; "Sticky Tie-Break Record" is the raw, GM-settable fact that keeps a tied title with its own previous holder rather than flipping arbitrarily turn to turn (normally set once per turn by commit_army_office_holders(), not auto-recomputed here).</p>
+  <form method="post" action="{{ url_for('army_office_holders_save', slug=meta.slug) }}">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Current Holder (computed)</th>
+          <th>Sticky Tie-Break Record</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for office in army_ranked_offices %}
+          {% set current_id = army_office_current_holders.get(office) %}
+          {% set current_army = state.armies.get(current_id) if current_id is not none else none %}
+          <tr>
+            <td>{{ army_office_name[office] }}</td>
+            <td>
+              {% if current_army %}
+                {{ current_army.army_type|display_name }} #{{ current_army.army_id }}
+              {% else %}
+                <span class="empty-state">No qualifying Army</span>
+              {% endif %}
+            </td>
+            <td>
+              <select name="army_office_holder_{{ office.name }}">
+                <option value="" {% if office not in state.army_office_holders %}selected{% endif %}>-- None --</option>
+                {% for army in armies %}
+                  <option value="{{ army.army_id }}" {% if state.army_office_holders.get(office) == army.army_id %}selected{% endif %}>
+                    {{ army.army_type|display_name }} #{{ army.army_id }} ({{ state.kingdoms[army.kingdom_id].name if army.kingdom_id in state.kingdoms else 'Unowned' }})
+                  </option>
+                {% endfor %}
+              </select>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit">Save Army-Scoped Royal Titles</button>
+  </form>
+</div>
+{% endif %}
+
+{% if state.kingdoms %}
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Add Army</h2>
+  <form method="post" action="{{ url_for('armies_create', slug=meta.slug) }}">
+    <div class="inline">
+      <label for="army_type">Army Type</label>
+      <select id="army_type" name="army_type" required>
+        {% for army_type in army_types %}
+          <option value="{{ army_type.name }}">{{ army_type|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="quality">Quality</label>
+      <select id="quality" name="quality" required>
+        {% for quality in qualities %}
+          <option value="{{ quality.name }}">{{ quality|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="kingdom_id">Kingdom</label>
+      <select id="kingdom_id" name="kingdom_id">
+        <option value="">-- Unowned --</option>
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}">{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="location_x">Location (x, y)</label>
+      <input type="number" id="location_x" name="location_x" required style="width: 6em;">
+      <input type="number" id="location_y" name="location_y" required style="width: 6em;">
+    </div>
+    <button type="submit">Add Army</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

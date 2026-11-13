@@ -368,6 +368,14 @@ silently skipped -- same "can't act on what doesn't exist yet" rule as
 leader's phases interleaved with any nested characters') stays
 traceable to who actually issued each phase.
 
+**Phase 1039 addendum**: a Charm/Resurrection cast from a wand
+(``ActionCode.USE_MI``, not an ordinary ``ActionCode.CAST``) nests and
+dispatches a joined character's plan the same way -- see
+``_nested_plan_triggered()``/``_resolve_nested_plan_leader_id()``'s own
+docstrings for why that needed splitting into two separate checks
+(trigger vs. identity) instead of just adding one more ``elif`` branch
+the way Hire/Cast share.
+
 Every dispatch call takes an explicit ``leader_id`` -- the acting
 character -- and ``army_ids`` defaults to whatever that leader currently
 commands (``GameState.armies_commanded_by``) unless the caller overrides
@@ -383,7 +391,7 @@ from typing import Any
 from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
-from ak_engine.models.enums import Ability, ActionCode
+from ak_engine.models.enums import Ability, ActionCode, Spell
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
 from ak_engine.models.office import Office
@@ -401,6 +409,7 @@ from ak_engine.turn.exploration import SOCIETY_MAPS_EXPLORE_COUNT_RANGE, receive
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
 from ak_engine.turn.hire_pay import RARE_ALIGNMENT_EXCEPTION_PAY, required_pay, roll_rare_alignment_exception
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.move_execution import (
     MoveExecutionResult,
     execute_move,
@@ -676,7 +685,20 @@ def dispatch_phase(
         return result
 
     if action is ActionCode.EXPLORE:
-        province = state.provinces[state.leaders[leader_id].location]
+        # Phase 1041 bug fix -- `leader` is already fetched (`.get()`,
+        # None-safe) a few lines up for rumor generation, but this
+        # branch used to re-fetch it via a bare `state.leaders[leader_id]`
+        # subscript instead of reusing it, missing the "acting leader may
+        # have died earlier in the same turn" guard LEAVE/PICK_UP/
+        # DISBAND/HIRE/FIRE all already got (each via `.get()` + a clean
+        # no-op, not a raise). A leader removed from `state.leaders`
+        # earlier this turn (e.g. lost a Challenge/Search/Pursue duel)
+        # but with a stale EXPLORE still queued for a later phase used to
+        # raise an uncaught `KeyError` here instead of degrading like its
+        # sibling actions.
+        if leader is None:
+            return NoOpResult(action=action)
+        province = state.provinces[leader.location]
         result = resolve_explore(
             province.explored_percent,
             province.effective_terrain(),
@@ -711,7 +733,7 @@ def dispatch_phase(
         # attempt to close.
         for feature in exploration.discovered_features:
             if len(feature.discovered_by_kingdom) == 1:
-                state.leaders[leader_id].merit_tally.features_discovered_first += 1
+                leader.merit_tally.features_discovered_first += 1
 
         # Phase 510: Society Maps's own "If he Explores a province, 0-2
         # maps are received" trigger -- deliberately EXPLORE-only, not
@@ -1076,6 +1098,66 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
     own already-correct "a missing acting leader can't act at all"
     stance -- so a dead leader's Leave order now skips every listed
     army cleanly, the same as it already does for Disband.
+
+    **Three bug fixes, sourced directly from the user (2026-10-29), the
+    fuller rulebook [3.8] text they pasted while designing this
+    Action's own move-composer UI**:
+
+    (1) A *specific* army-id list (``request.all_armies`` is ``False``)
+    used to reassign command of *any* ``army_id`` present in ``state.
+    armies``, with no check that the acting leader actually commands
+    it, is co-located with it, or that it belongs to his own Kingdom at
+    all. Every target now must be either already commanded by the
+    acting leader (``army.commanded_by == leader_id``), or -- the
+    rulebook's own "novità" ("con questo comando si potranno passare
+    unità dal Comando di Guarnigione a un Eroe") -- unled and co-located
+    with the acting leader (``army.commanded_by is None and army.
+    location == acting_leader.location``); either way the army must
+    belong to the acting leader's own Kingdom. ``request.all_armies``
+    needs no equivalent check: it already resolves to ``armies_
+    commanded_by(leader_id)``, which trivially satisfies this rule.
+
+    (2) Leaving to a named Hero (``request.target_leader_id is not
+    None``) now requires that Hero to be of the acting leader's own
+    Kingdom or an allied one (``GameState.is_allied()``) -- "si può
+    lasciare... ad un altro Eroe, anche di un altro Reame, basta che sia
+    alleato." A target leader id that doesn't resolve to a real
+    ``LeaderState``, or belongs to a hostile/unrelated Kingdom, now
+    blocks the *whole* order (every requested army skipped) rather than
+    silently reassigning command to an invalid or hostile target --
+    there is no sourced "partial order" behavior for this case, so
+    skipping outright is the same conservative "no source, no guess"
+    choice `_dispatch_leave()`'s own pre-existing checks already make
+    elsewhere.
+
+    (3) "Un'unità lasciata a un generale... di un altro Reame diventa di
+    proprietà di quest'ultimo" is a *second*, independent Kingdom-
+    transfer trigger from the pre-existing "left in an ally's province"
+    one right below -- leaving directly to a named, allied-Kingdom Hero
+    (now guaranteed allied by check (2) above) transfers the army to
+    that Hero's own Kingdom, regardless of which Kingdom currently owns
+    the province the army happens to be standing in. The two triggers
+    are mutually exclusive by construction here (a named-Hero target
+    always takes the Hero's own Kingdom; only a Garrison target
+    (``target_leader_id is None``) ever falls back to the province-
+    ownership rule), avoiding an unsourced tie-break between the two
+    for the case where they'd otherwise disagree.
+
+    **2026-11-03 -- the gap this paragraph used to flag here is closed.**
+    "quello che ha iniziativa più alta aspetta quello che ha iniziativa
+    più bassa" -- when an order targets another leader of the same (or
+    an allied) Kingdom, the rulebook's own fuller text says the higher-
+    ``character_initiative()`` leader's own same-phase action waits for
+    the lower-Initiative leader's targeting order to actually resolve
+    first, even out of the ordinary Initiative order (worked example:
+    Hero #13, Initiative 20, Leaves all his armies to Hero #14,
+    Initiative 40, in P2; Hero #14's own P2 Move waits for that Leave to
+    land first, despite his higher Initiative). `turn/turn_processor.py
+    run_turn()`'s own per-phase dispatch loop now does exactly this --
+    see `_order_phase_entries_by_initiative()`'s own docstring there for
+    the full mechanism (Initiative-based base ordering plus this same
+    "waits for" override, covering Leave/Recruit/Give/a character-
+    targeted Cast alike, not just Leave).
     """
 
     request = decode_army_list_phase(phase)
@@ -1089,9 +1171,23 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
         [army.army_id for army in state.armies_commanded_by(leader_id)] if request.all_armies else request.army_ids
     )
 
+    target_leader = state.leaders.get(request.target_leader_id) if request.target_leader_id is not None else None
+    if request.target_leader_id is not None and (
+        target_leader is None or not state.is_allied(acting_leader.kingdom_id, target_leader.kingdom_id)
+    ):
+        result.skipped.extend(target_ids)
+        return result
+
     for army_id in target_ids:
         army = state.armies.get(army_id)
         if army is None:
+            result.skipped.append(army_id)
+            continue
+        owns_or_may_pass_along = army.kingdom_id == acting_leader.kingdom_id and (
+            army.commanded_by == leader_id
+            or (army.commanded_by is None and army.location == acting_leader.location)
+        )
+        if not owns_or_may_pass_along:
             result.skipped.append(army_id)
             continue
         if (
@@ -1103,16 +1199,23 @@ def _dispatch_leave(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyL
             state.remove_army(army_id)
             continue
         army.commanded_by = request.target_leader_id
-        province = state.provinces.get(army.location)
-        if (
-            province is not None
-            and province.owner_kingdom_id is not None
-            and province.owner_kingdom_id != army.kingdom_id
-            and state.is_allied(province.owner_kingdom_id, army.kingdom_id)
-        ):
-            # "If you Leave an army in an ally's province, the army then
-            # belongs to the ally." (rulebook [3.8])
-            army.kingdom_id = province.owner_kingdom_id
+        if target_leader is not None:
+            if target_leader.kingdom_id != army.kingdom_id:
+                # "An army left to a general of another Realm becomes
+                # that Realm's property" (rulebook [3.8]) -- already
+                # confirmed allied above.
+                army.kingdom_id = target_leader.kingdom_id
+        else:
+            province = state.provinces.get(army.location)
+            if (
+                province is not None
+                and province.owner_kingdom_id is not None
+                and province.owner_kingdom_id != army.kingdom_id
+                and state.is_allied(province.owner_kingdom_id, army.kingdom_id)
+            ):
+                # "If you Leave an army in an ally's province, the army then
+                # belongs to the ally." (rulebook [3.8])
+                army.kingdom_id = province.owner_kingdom_id
         result.succeeded.append(army_id)
 
     return result
@@ -1132,6 +1235,43 @@ def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
     established "a missing acting leader can't act at all" stance: with
     no leader to resolve a location from, every explicitly-listed army
     is skipped and an ``all_armies`` request finds nothing to pick up.
+
+    **Two bug fixes, sourced directly from the user (2026-10-29), the
+    fuller rulebook [3.9] text they pasted while designing this
+    Action's own move-composer UI**:
+
+    (1) A specific army-id list used to only check co-location, with no
+    check at all that the targeted army belongs to the acting leader's
+    own Kingdom. Investigated with the user whether a specific list
+    should instead be restricted to *unled* armies only (mirroring
+    ``all_armies``'s own restriction) -- their own call: no, a specific
+    Pick Up can still take over an army actively commanded by *anyone*
+    co-located, but only within the acting leader's own Kingdom (e.g.
+    reorganizing command among one's own Heroes) -- never a different
+    Kingdom's army, allied or not. Every target, whether from
+    ``all_armies`` or a specific list, now requires ``army.kingdom_id
+    == acting_leader.kingdom_id``.
+
+    (2) "Non è invece possibile usare questo ordine nello stesso turno
+    in cui un'unità militare viene reclutata... ad eccezione delle
+    unità mercenarie" -- a real precondition this project never
+    enforced at all: nothing previously tracked "this specific army was
+    freshly levied this turn" (``ProvinceState.recruited_this_turn`` is
+    a per-type *count* for the Recruit per-turn limit, not an identity
+    marker), so a move file listing Recruit in an earlier phase and
+    Pick Up (naming the newly assigned id) in a later phase of the
+    *same* turn could actually succeed -- a real, confirmed exploit
+    this project's own deterministic, sequential ``GameState.new_
+    army_id()`` makes the new id straightforwardly predictable for,
+    especially when the GM composer itself already shows the live
+    state. ``ArmyState.recruited_this_turn`` (new field, reset to
+    ``False`` alongside ``unhireable_this_turn`` in ``turn/turn_
+    processor.py _replenish_turn_scoped_state()``) is set ``True`` only
+    by a fresh levy (``turn/recruit_execution.py``'s own non-mercenary
+    branch) -- a hired mercenary is explicitly exempted by the
+    rulebook's own text ("already constituted, with their own id"), so
+    ``execute_recruit()`` never sets it there. A target carrying this
+    flag is skipped here, same as any other ineligible target.
     """
 
     request = decode_army_list_phase(phase)
@@ -1151,9 +1291,14 @@ def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
 
     for army_id in target_ids:
         army = state.armies.get(army_id)
-        if army is None or army.location != acting_leader.location:
+        if (
+            army is None
+            or army.location != acting_leader.location  # rulebook: can only pick up a co-located army
+            or army.kingdom_id != acting_leader.kingdom_id
+            or (army.recruited_this_turn and not army.is_mercenary)
+        ):
             result.skipped.append(army_id)
-            continue  # rulebook: can only pick up a co-located army
+            continue
         army.commanded_by = leader_id
         result.succeeded.append(army_id)
 
@@ -1163,6 +1308,41 @@ def _dispatch_pick_up(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
 def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> ArmyListExecutionResult:
     """Phase 420: returns a real ``ArmyListExecutionResult`` -- see
     ``_dispatch_leave()``'s own note above.
+
+    **Two bug fixes, sourced directly from the user (2026-10-29), the
+    fuller rulebook [3.6] text they pasted while designing this
+    Action's own move-composer UI**: (1) a King's own bypass used to
+    check co-location only, never that the targeted army actually
+    belongs to his own Kingdom -- "Se il comando lo fa il RE può
+    sciogliere qualsiasi unità militare del regno anche quelle al
+    garrison commander... o comandate da un altro eroe (sempre di
+    quel regno)" names the Kingdom boundary explicitly; a King could
+    previously target *any* ``army_id`` anywhere on the map, including
+    another Kingdom's. (2) An ordinary Hero's own co-location check had
+    the same gap -- the rulebook text only ever discusses disbanding
+    one's own forces, so a Hero merely standing in the same province as
+    a foreign army could disband it too, confirmed with the user as
+    unintended rather than a real mechanic. Both branches now also
+    require ``army.kingdom_id == acting_leader.kingdom_id``; the King's
+    own Phase 40 bypass still only ever waives *co-location*, never
+    this Kingdom-ownership check.
+
+    (3) The disbanded army now also gets ``is_mercenary = True`` -- the
+    rulebook text's own "i suoi soldati si trasformano in mercenari"
+    ("its soldiers turn into mercenaries"), and the real, dedicated flag
+    the rest of the engine already keys "is this army an ownerless,
+    hireable mercenary band" on (``GameState.mercenaries_at()``, read by
+    both ``turn/recruit_execution.py`` and ``turn/move_execution.py
+    resolve_wandering_mercenary_following()`` -- the latter is this
+    same rulebook paragraph's own "mercenaries in a province a general
+    passes through may follow him instead of staying put," the
+    mechanic the user's text says exists specifically to close the
+    disband-to-dodge-then-rehire loophole). Clearing ``kingdom_id``/
+    ``commanded_by`` alone was never a safe proxy for this (an unowned
+    native garrison also has ``kingdom_id=None`` but isn't a
+    mercenary) -- without this flag, a freshly-disbanded army silently
+    couldn't be followed or re-hired, exactly the loophole this
+    mechanic exists to close.
     """
 
     request = decode_army_list_phase(phase)
@@ -1179,15 +1359,21 @@ def _dispatch_disband(phase: PlanPhase, state: GameState, leader_id: int) -> Arm
             result.skipped.append(army_id)
             continue
         # "Releases the army(s) into mercenary status" (rulebook [3.6]:
-        # "A King may Disband any army at any time. A character can
-        # Disband an army only if he is in the same province.") --
-        # ownerless and unled, available to be hired later. A Hero must
-        # be co-located with the army; a King (Phase 40) bypasses that.
-        if not is_king and (acting_leader is None or army.location != acting_leader.location):
+        # "A King may Disband any army of his Kingdom at any time. A
+        # character can Disband an army of his Kingdom only if he is in
+        # the same province.") -- ownerless and unled, available to be
+        # hired later. Every target must belong to the acting leader's
+        # own Kingdom; a Hero must additionally be co-located with the
+        # army, a King (Phase 40) bypasses only that co-location check.
+        if acting_leader is None or army.kingdom_id != acting_leader.kingdom_id:
+            result.skipped.append(army_id)
+            continue
+        if not is_king and army.location != acting_leader.location:
             result.skipped.append(army_id)
             continue
         army.kingdom_id = None
         army.commanded_by = None
+        army.is_mercenary = True
         result.succeeded.append(army_id)
 
     return result
@@ -1246,10 +1432,7 @@ def _dispatch_hire(
         # same province."
         return HireExecutionResult(request, hired=False, reason="not co-located")
 
-    king = next(
-        (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
-        None,
-    )
+    king = find_king_of_kingdom(state, kingdom_id)
     pay = required_pay(state, hero, king)
     rare_exception = False
 
@@ -1281,6 +1464,7 @@ def _dispatch_hire(
         hero.double_agent_hired_by_kingdom_id = kingdom_id
     else:
         hero.kingdom_id = kingdom_id
+        hero.hire_turn = state.turn_number
 
     return HireExecutionResult(request, hired=True, minimum_gold=pay, rare_alignment_exception=rare_exception)
 
@@ -1304,27 +1488,61 @@ def _dispatch_fire(phase: PlanPhase, state: GameState, leader_id: int) -> FireEx
     per the manual's own note). See ``turn/assassin_guild.py``'s own
     module docstring for the full mechanic this queues into ``state.
     pending_guild_target`` for.
+
+    **2026-11-01, two bug fixes sourced directly from the user, found
+    while designing this Action's own GM composer** -- neither is in
+    the pasted [3.7] rulebook text itself, both confirmed as the user's
+    own deliberate choice via an explicit follow-up question rather
+    than assumed from phrasing:
+
+    - **Can't Fire a King.** Symmetric with Hire's own explicit "can't
+      Hire a King" guard (``_dispatch_hire()``, rulebook [3.5]) --
+      nothing in [3.7] suggests Fire should be able to "dekingdom" a
+      ruling King, and nothing elsewhere in this project models what a
+      Kingdom with no King at all would even mean. Checked immediately
+      after the "hero not found" guard, before anything else.
+    - **Same-Kingdom requirement for an ordinary Fire.** The pasted
+      [3.7] text, read literally ("un personaggio può congedare un
+      Eroe... se si trova nella stessa provincia"), doesn't restrict
+      *whose* Hero can be Fired -- unlike Disband, which operates on a
+      Kingdom's own owned property (an army) and was given this exact
+      same fix earlier (``_dispatch_disband()``'s own King-co-location-
+      bypass-isn't-a-Kingdom-bypass correction), a Hero is an
+      independent character whose service relationship a plain reading
+      of [3.7] arguably lets *any* co-located character interrupt, not
+      just their own Kingdom's. The user was asked this exact question
+      directly and chose to apply the same Kingdom-ownership
+      requirement anyway -- a King's or a co-located Hero's own Fire
+      order now only ever succeeds against a Hero of their *own*
+      Kingdom (or themself, trivially always same-Kingdom). This still
+      correctly leaves room for the Phase 614 Grandfather-of-Assassins
+      interception immediately below, which specifically exists for the
+      cross-Kingdom case.
     """
 
     request = decode_fire_phase(phase)
     hero = state.leaders.get(request.hero_id)
     if hero is None:
         return FireExecutionResult(request, fired=False, reason="hero not found")
+    if hero.is_king:
+        return FireExecutionResult(request, fired=False, reason="cannot fire a King")
 
     acting_leader = state.leaders.get(leader_id)
 
-    if not hero.is_king and acting_leader is not None and acting_leader.kingdom_id != hero.kingdom_id:
+    if acting_leader is not None and acting_leader.kingdom_id != hero.kingdom_id:
         titleholder = resolve_office_holder(state, Office.ASSASSIN)
         if titleholder is not None and titleholder.leader_id == leader_id:
             state.pending_guild_target = request.hero_id
             return FireExecutionResult(request, fired=False, guild_assassination_queued=True)
+        return FireExecutionResult(request, fired=False, reason="not this Kingdom's Hero")
 
     # "Releases the Hero into private life... will wander around until
     # hired by another King." (rulebook [3.7]: "A King may Fire a Hero
     # at any time. A character can Fire a Hero only if he is in the
     # same province.") A Hero must be co-located with the target (this
     # also naturally covers "firing himself" -- he's always in his own
-    # province); a King (Phase 40) bypasses that, same as Disband.
+    # province, and his own kingdom_id trivially matches itself above);
+    # a King (Phase 40) bypasses that, same as Disband.
     is_king = acting_leader is not None and acting_leader.is_king
     co_located = acting_leader is not None and acting_leader.location == hero.location
     if not (is_king or co_located):
@@ -1442,7 +1660,10 @@ def run_leader_plan(
                     results.append(PhaseDispatchResult(leader.leader_id, -1, label, None, random_encounter_result, None))
 
             if phase.nested_plan is not None and _nested_plan_triggered(phase.action, result):
-                results.extend(_dispatch_nested_plan(phase.nested_plan, state, kingdom_id, board_width, explorer_skill, rng))
+                nested_leader_id = _resolve_nested_plan_leader_id(phase.action, phase.nested_plan, result)
+                results.extend(
+                    _dispatch_nested_plan(phase.nested_plan, nested_leader_id, state, kingdom_id, board_width, explorer_skill, rng)
+                )
     return results
 
 
@@ -1458,17 +1679,74 @@ def _nested_plan_triggered(action: Any, result: Any) -> bool:
     way a successful Charm always has -- both are "a character (re-)joins
     the kingdom this turn," the same underlying condition ``applied=True``
     already captures without needing to inspect which spell it was.
+
+    **Phase 1039**: a wand's Use_MI can cast Charm/Resurrection exactly
+    the same way an ordinary Cast order can (``turn/use_mi_execution.py
+    execute_use_mi()``'s own ``SPELL_WAND`` branch dispatches into the
+    very same ``execute_cast()``) -- ``UseMIExecutionResult.cast_result``
+    is set (and mirrors ``CastExecutionResult`` exactly) whenever that
+    happened, so the same "did it apply" check extends here unchanged.
+    Which spell it actually was is deliberately not checked in this
+    trigger -- the real spell/target gating happens in
+    ``_resolve_nested_plan_leader_id()`` below instead, the same split
+    the existing Cast branch already relies on (a successful Cast of any
+    *other* spell also reaches this branch and returns ``True``, but
+    never carries a resolvable ``nested_plan.leader_id``, so ``_dispatch_
+    nested_plan`` below silently no-ops for it).
     """
 
     if action is ActionCode.HIRE:
         return isinstance(result, HireExecutionResult) and result.hired
     if action is ActionCode.CAST:
         return isinstance(result, CastExecutionResult) and result.applied
+    if action is ActionCode.USE_MI:
+        return isinstance(result, UseMIExecutionResult) and result.applied
     return False
+
+
+def _resolve_nested_plan_leader_id(action: Any, nested_plan: ActionPlan, result: Any) -> int | None:
+    """The newly-joined (or re-joined) character's own ``leader_id`` for a
+    nested plan that ``_nested_plan_triggered()`` just approved for
+    dispatch.
+
+    Hire and an ordinary Cast of Charm/Resurrection already have this
+    baked into ``nested_plan.leader_id`` at *parse* time
+    (``parser/k1_moves.py _maybe_parse_nested_plan``, Phase 23) -- the
+    move file's own tokens are self-describing enough there (``obj`` is
+    directly the target id for Hire, ``extra[0]`` directly the target id
+    for a Cast of Charm/Resurrection), no ``GameState`` needed.
+
+    **Phase 1039**: a Use_MI-triggered Charm/Resurrection cannot be
+    resolved that way -- ``turn/use_mi_decode.py``'s own docstring:
+    Use_MI's own ``obj`` is an opaque item-instance id, not a ``Spell``
+    ordinal, until ``state.items`` resolves which wand it is, which the
+    parser has no access to. So it's resolved here instead, after
+    execution, from ``UseMIExecutionResult.cast_result.request`` -- the
+    exact same ``CastRequest`` shape (``target``: "character id...
+    depending on spell") the ordinary Cast path already reads at parse
+    time, just reached one step later. Returns ``None`` (silently
+    skipping dispatch, same as an unresolvable Cast above) for any wand
+    that cast something other than Charm/Resurrection -- the structural
+    nesting condition in ``parser/k1_moves.py`` can in principle follow
+    *any* Use_MI phase, not just a Charm/Resurrection wand's own, the
+    same "nested_plan present, but not really this kind of trigger" case
+    the Cast branch already has to tolerate.
+    """
+
+    if action is ActionCode.USE_MI:
+        if (
+            isinstance(result, UseMIExecutionResult)
+            and result.cast_result is not None
+            and result.cast_result.request.spell in (Spell.CHARM, Spell.RESURRECTION)
+        ):
+            return result.cast_result.request.target
+        return None
+    return nested_plan.leader_id
 
 
 def _dispatch_nested_plan(
     nested_plan: ActionPlan,
+    nested_leader_id: int | None,
     state: GameState,
     kingdom_id: int,
     board_width: int,
@@ -1477,16 +1755,17 @@ def _dispatch_nested_plan(
 ) -> list[PhaseDispatchResult]:
     """Dispatch a newly-joined character's own embedded plan (see module docstring).
 
-    Silently skipped (empty list) if the nested plan has no resolved
-    ``leader_id`` or that character has no existing ``LeaderState`` in
-    ``state`` -- there's nothing to enrich, same "can't create from
-    nothing" rule as ``turn/kingdom_bridge.py`` (Phase 31). Never pins
-    ``army_ids``: a freshly Hired/Charmed character's own commanded armies
-    (if any) are re-derived fresh, independent of whatever the triggering
-    leader's own dispatch was pinned to.
+    Silently skipped (empty list) if ``nested_leader_id`` (``_resolve_
+    nested_plan_leader_id()``'s own result, Phase 1039 -- previously
+    always just ``nested_plan.leader_id``) couldn't be resolved, or that
+    character has no existing ``LeaderState`` in ``state`` -- there's
+    nothing to enrich, same "can't create from nothing" rule as
+    ``turn/kingdom_bridge.py`` (Phase 31). Never pins ``army_ids``: a
+    freshly Hired/Charmed character's own commanded armies (if any) are
+    re-derived fresh, independent of whatever the triggering leader's own
+    dispatch was pinned to.
     """
 
-    nested_leader_id = nested_plan.leader_id
     if nested_leader_id is None or nested_leader_id not in state.leaders:
         return []
 

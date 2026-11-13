@@ -229,7 +229,13 @@ from ak_engine.models.alignment import Alignment
 from ak_engine.models.discovery import DISCOVERY_DISPLAY_VALUE, Discovery
 from ak_engine.models.enums import Ability, Spell
 from ak_engine.models.feature import Feature
-from ak_engine.models.game_state import KNOWN_PROVINCE_MIN_PERCENT, ArmyState, GameState, LeaderState
+from ak_engine.models.game_state import (
+    KNOWN_PROVINCE_MIN_PERCENT,
+    ArmyState,
+    GameState,
+    LeaderState,
+    record_newly_known_column,
+)
 from ak_engine.models.magic_feature import MagicFeature
 from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
@@ -279,7 +285,20 @@ def parse_sa_argument(say_text: str) -> int | None:
     except ValueError:
         pass
     match = _SA_ARGUMENT_RE.search(stripped)
-    return int(match.group()) if match is not None else None
+    if match is None:
+        return None
+    try:
+        return int(match.group())
+    except ValueError:
+        # Bug fix (crash): Python 3.11+ caps int(str) conversion at
+        # sys.get_int_max_str_digits() (4300 by default) and raises
+        # ValueError above that. say_text comes straight from a Search
+        # order's SAY tactic free text (parser/k1_moves.py's own
+        # _recover_say_text(), no length cap), so a player naming a
+        # Feature with a 5000-digit SAY argument used to raise this
+        # unhandled ValueError here -- the first int(stripped) call
+        # already guards the same conversion, this second one didn't.
+        return None
 
 # FPDESC.X2's own "up to a maximum of 4" -- real for UP_SKILL, source-
 # confirmed stale for UP_APT (see power_condition_cost's own module).
@@ -894,8 +913,11 @@ def _reveal_unknown_provinces(state: GameState, leader: LeaderState, rng: random
     count = min(len(unknown), 3 + rng.randrange(3))
     rng.shuffle(unknown)
     revealed = tuple(unknown[:count])
+    kingdom = state.kingdoms.get(leader.kingdom_id)
     for coord in revealed:
         state.provinces[coord].explored_percent_by_kingdom[leader.kingdom_id] = KNOWN_PROVINCE_MIN_PERCENT
+        if kingdom is not None:
+            record_newly_known_column(kingdom, coord.x, state.board_width)
     return FeaturePowerAttemptResult(power=Power.MAP_PROV, applied=True, revealed_province_coords=revealed)
 
 

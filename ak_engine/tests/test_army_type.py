@@ -105,11 +105,14 @@ def test_army_type_designation_covers_all_nine_new_types():
     assert ARMY_TYPE_DESIGNATION[ArmyType.D_TURTLE] == "D-Turtle"
 
 
-def test_monstrous_army_race_gains_only_vampires_not_dinosaurs():
-    # `special_races` explicitly names Vampires but not Dinosaurs -- see
-    # module docstring. Unconfirmed name-symmetry alone doesn't qualify.
+def test_monstrous_army_race_gains_vampires_and_dinosaurs():
+    # `special_races` explicitly names Vampires -- see module docstring.
     assert MONSTROUS_ARMY_RACE[ArmyType.VAMPIRES] == Race.VAMPISH
-    assert ArmyType.DINOSAURS not in MONSTROUS_ARMY_RACE
+    # Phase 980: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real
+    # description -- "Race: Saurian" -- a real display/combat race,
+    # distinct from the separate Elven *recruiting* gate
+    # (`turn/recruit.py _ELVEN_ONLY_ARMY_TYPES`).
+    assert MONSTROUS_ARMY_RACE[ArmyType.DINOSAURS] == Race.SAURIAN
 
 
 def test_the_eight_remaining_new_army_types_have_no_rulebook_mechanics():
@@ -141,7 +144,7 @@ def test_dinosaurs_have_phase_691_rulebook_mechanics_but_no_base_strength():
     assert ARMY_TABLE[ArmyType.DINOSAURS] == ArmyTypeStats(3, 3, (), (Terrain.SEA,))
     assert NEMESIS[ArmyType.DINOSAURS] == frozenset({ArmyType.PHALANX})
     assert ArmyType.DINOSAURS not in BASE_STRENGTH
-    assert ArmyType.DINOSAURS not in MONSTROUS_ARMY_RACE
+    assert MONSTROUS_ARMY_RACE[ArmyType.DINOSAURS] == Race.SAURIAN
 
 
 def test_beasts_matches_the_rulebooks_own_direct_definition():

@@ -84,6 +84,7 @@ from dataclasses import dataclass, field
 
 from ak_engine.models.enums import TACTICS_WITH_SUB_OBJECT, Maneuver, maneuver_from_int
 from ak_engine.models.plan import PlanPhase
+from ak_engine.turn.decode_utils import strip_sentinel
 
 
 @dataclass(slots=True)
@@ -114,8 +115,7 @@ def decode_tactic_tokens(tokens: list[int | str]) -> list[SearchTactic]:
     than kept as three separate copies.
     """
 
-    if tokens and tokens[-1] == -1:
-        tokens = tokens[:-1]
+    tokens = strip_sentinel(tokens)
 
     tactics: list[SearchTactic] = []
     i = 0

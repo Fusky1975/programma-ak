@@ -298,6 +298,33 @@ def test_army_bridging_splits_mercenary_king_led_and_hero_led_correctly():
                 if a.location == record.coord and a.army_type == record.army_type and a.quality == record.quality
             ]
             assert any(a.commanded_by is None and a.kingdom_id is None for a in matches)
+            # Bug fix (2026-10-25): the real `is_mercenary` marker used
+            # to be silently dropped on import -- see `ArmyState.
+            # is_mercenary`'s own docstring.
+            assert any(a.is_mercenary for a in matches)
+
+    # And an *unled* row at a province with no real owning Kingdom (a
+    # native garrison, not a real mercenary) must bridge to
+    # `is_mercenary=False`, even though it also lands at
+    # `kingdom_id=None` -- same bug fix, the other direction.
+    unled_unowned_non_mercenary_records = [
+        r
+        for r in army_records
+        if not r.is_mercenary and r.commanded_by_leader_id is None and r.state is not MonsterEngagementState.DEAD
+    ]
+    found_any_unled_unowned = False
+    for record in unled_unowned_non_mercenary_records:
+        province = state.provinces.get(record.coord)
+        if province is None or province.owner_kingdom_id is not None:
+            continue
+        found_any_unled_unowned = True
+        matches = [
+            a
+            for a in state.armies.values()
+            if a.location == record.coord and a.army_type == record.army_type and a.quality == record.quality
+        ]
+        assert any(a.kingdom_id is None and a.is_mercenary is False for a in matches)
+    assert found_any_unled_unowned
 
     # No King happens to command a Block B row at T1 in this fixture, but
     # the invariant must hold for any that do: a King's own leader_id
@@ -455,6 +482,28 @@ def test_bridge_new_game_state_threads_real_king_extension_fields():
     assert frozenset({0, 2}) not in state.allied_kingdoms
 
 
+def test_bridge_new_game_state_bridges_a_real_mutual_enemy_pair_as_war():
+    # Bug fix (2026-11-02): king0<->king5 mutually record ENEMY for each
+    # other in this real fixture (a genuine war), but the bridge used to
+    # only ever look at ALLIED, so this pair silently loaded as Neutral
+    # instead -- letting their armies get blocked from attacking each
+    # other by the Neutral-relations movement rule, despite the save
+    # file recording them as already at war.
+    leader_records = parse_gw_leaders(FIXTURE.parent / "GW3__T5")
+    province_records = parse_gw_world(FIXTURE.parent / "GW3__T5")
+    army_records = parse_gw_armies(FIXTURE.parent / "GW3__T5")
+    king_extensions = parse_gw_king_extensions(FIXTURE.parent / "GW3__T5")
+
+    state, _ = bridge_new_game_state(
+        leader_records, province_records, army_records, king_extensions=king_extensions
+    )
+
+    assert state.diplomatic_relation(0, 5) is DiplomaticRelation.ENEMY
+    assert state.diplomatic_relation(0, 7) is DiplomaticRelation.ENEMY
+    assert state.diplomatic_relation(0, 8) is DiplomaticRelation.ENEMY
+    assert not state.is_allied(0, 5)
+
+
 def _synthetic_king_extension(*, diplomatic_relations: tuple[DiplomaticRelation, ...]) -> GWKingExtension:
     return GWKingExtension(
         is_male=True,
@@ -516,3 +565,24 @@ def test_bridge_new_game_state_never_bridges_a_one_sided_alliance_claim():
     )
 
     assert frozenset({0, 1}) not in state.allied_kingdoms
+
+
+def test_bridge_new_game_state_never_bridges_a_one_sided_enemy_claim_as_war():
+    # Mirrors the one-sided-alliance test above: king 0 claims ENEMY
+    # toward king 1, but king 1's own recorded view of king 0 is only
+    # NEUTRAL -- a still-pending declaration, not a settled war, so it
+    # stays Neutral (the missing-pair default) rather than bridging a
+    # one-sided claim as a real war.
+    leader_records = parse_gw_leaders(FIXTURE)
+    province_records = parse_gw_world(FIXTURE)
+    army_records = parse_gw_armies(FIXTURE)
+    king_extensions = [
+        _synthetic_king_extension(diplomatic_relations=(DiplomaticRelation.NEUTRAL, DiplomaticRelation.ENEMY)),
+        _synthetic_king_extension(diplomatic_relations=(DiplomaticRelation.NEUTRAL, DiplomaticRelation.NEUTRAL)),
+    ]
+
+    state, _ = bridge_new_game_state(
+        leader_records, province_records, army_records, king_extensions=king_extensions
+    )
+
+    assert state.diplomatic_relation(0, 1) is DiplomaticRelation.NEUTRAL

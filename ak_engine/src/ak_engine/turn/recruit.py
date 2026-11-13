@@ -62,6 +62,21 @@ class IncompatibleRaceError(ValueError):
     """Raised when an army type can't be recruited in a province of that race."""
 
 
+class NonNativeTypeNotYetOwnedError(ValueError):
+    """Raised when a non-native (race-compatible, but not province-listed)
+    army type is requested and the commander doesn't already have another
+    unit of that same type under their command -- sourced directly from
+    the user (2026-10-28): "si può comunque effettuare l'arruolamento se
+    il comandante, o il personaggio a favore del quale viene dato
+    l'ordine, ha già ai suoi ordini un'altra unità del tipo" -- a real
+    precondition this project's own earlier reading of [3.4] never
+    enforced (``resolve_recruit()`` used to double the price for any
+    race-compatible-but-non-native type unconditionally). Without an
+    existing unit of that type, the type simply isn't recruitable in
+    this province at all, native or not.
+    """
+
+
 @dataclass(slots=True)
 class RecruitResolution:
     max_units: int
@@ -127,11 +142,40 @@ def resolve_recruit(
     in_ally_territory: bool = False,
     is_former_home_province_now_allied: bool = False,
     chief_of_staff_discount: bool = False,
+    commander_already_has_type: bool = False,
+    hiring_existing_mercenary: bool = False,
 ) -> RecruitResolution:
     """Resolve the limit and cost for recruiting one army type in one province.
 
     Raises ``IncompatibleRaceError`` if the province's race can't field
     that army type at all (native or not).
+
+    Raises ``NonNativeTypeNotYetOwnedError`` if the type is race-
+    compatible but not native to this province and
+    ``commander_already_has_type`` is ``False`` -- RULES.AK [3.4], sourced
+    directly from the user (2026-10-28): "se non è possibile reclutare un
+    certo tipo di unità militare perché non previsto per la popolazione
+    nativa, si può comunque effettuare l'arruolamento se il comandante,
+    o il personaggio a favore del quale viene dato l'ordine, ha già ai
+    suoi ordini un'altra unità del tipo." Without that pre-existing unit,
+    the type isn't recruitable in this province at all -- the double
+    cost below only ever applies once this precondition holds.
+
+    ``hiring_existing_mercenary`` (Phase 1054 bug fix, default ``False``,
+    every pre-existing caller unaffected): bypasses BOTH of the two
+    exceptions above -- RULES.AK [3.4]: "mercenaries can be Recruited in
+    any province by any character," a real carve-out from the whole
+    race-compatibility/native-type-slot story those two checks otherwise
+    enforce for a populace *levy*. A hireable, Average-or-better-quality
+    mercenary army of this exact type already physically exists at this
+    location regardless of what this province's own race or recruit-
+    slot table says about it, so neither "can this type exist here at
+    all" nor "is it native here" is the right question once one is
+    already present and hireable. Does NOT change ``gold_per_unit``'s
+    own native/non-native doubling below -- the module docstring's own
+    "the rulebook doesn't distinguish hiring from levying on price"
+    rule (Phase 16) still applies, using whatever ``is_native_to_
+    province`` the caller actually passed.
 
     ``chief_of_staff_discount`` (Phase 663): `models/office.py OFFICE_
     TITLE_DESCRIPTION[Office.CHIEF_OF_STAFF]`'s own real "effect_while_
@@ -149,10 +193,30 @@ def resolve_recruit(
     execute_recruit()`.
     """
 
-    if not is_army_type_compatible_with_race(army_type, province_race):
-        raise IncompatibleRaceError(
-            f"{army_type.name} can't be recruited in a {province_race.name} province"
-        )
+    if not hiring_existing_mercenary:
+        if not is_army_type_compatible_with_race(army_type, province_race):
+            raise IncompatibleRaceError(
+                f"{army_type.name} can't be recruited in a {province_race.name} province"
+            )
+        if not is_native_to_province and not commander_already_has_type:
+            raise NonNativeTypeNotYetOwnedError(
+                f"{army_type.name} isn't native to this province and the commander "
+                "doesn't already have another unit of that type"
+            )
+    if army_type not in ARMY_TABLE:
+        # Bug fix (crash): 8 real ArmyType ordinals (Vampires, Marauders,
+        # Shamans, Crossbow, Javelins, Artillery, Spiders, D_Turtle --
+        # models/army_type.py's own Phase 383 addendum) never appear in
+        # the rulebook's own Army Type Table [6.3], so ARMY_TABLE has no
+        # entry -- an honest sourcing gap, not something to invent a pay
+        # cost for. is_army_type_compatible_with_race() still lets them
+        # through in any ordinary humanoid province (none of them has a
+        # MONSTROUS_ARMY_RACE entry either), so the bare `.pay` lookup
+        # below used to raise an unhandled KeyError the instant a player
+        # named one of these ordinals in a Recruit order. Treated the
+        # same as an incompatible-race rejection: there's no rulebook
+        # data to recruit by, so it can't be recruited, full stop.
+        raise IncompatibleRaceError(f"{army_type.name} has no rulebook recruiting cost and can't be recruited")
 
     base_pay = ARMY_TABLE[army_type].pay
     if chief_of_staff_discount:

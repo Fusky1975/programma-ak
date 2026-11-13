@@ -3,7 +3,7 @@ from __future__ import annotations
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import GameState, KingdomState, LeaderState
-from ak_engine.models.kingdom import SkillTable
+from ak_engine.models.kingdom import ALIGNMENT_TRAILING_SKILL_VALUE, SkillTable
 from ak_engine.models.map import HexCoord
 from ak_engine.models.race import Race
 from ak_engine.models.sex import Sex
@@ -208,6 +208,23 @@ def test_create_king_applies_royal_training_bonus_and_sets_identity_fields():
     untouched = set(Ability) - {Ability.TACTICAL, Ability.MARCH} - set(KING_TRAINING_BONUS_ABILITIES)
     for ability in untouched:
         assert heir.skills.pair_for_ability(ability)[0] == 0
+
+
+def test_create_king_sets_the_real_trailing_skill_table_byte():
+    # Phase 1192 bug fix: raw_values[30] (Phase 910's real alignment
+    # trailing value) used to stay at its 0 initializer -- a value no
+    # real alignment ever produces -- for every succession-created King,
+    # unlike worldgen/king_talent.py build_king_skill_table()'s own
+    # near-identical twin, which always sets it.
+    state = _state_with_heir(alignment=Alignment.NEUTRAL)
+
+    result = create_king(
+        state, HEIR_ID, name="Aldric II", temper=Temper.BERSERK, sex=Sex.FEMALE,
+        skill_points={Ability.MELEE: 2, Ability.ARCHERY: 2},
+    )
+
+    assert result.applied is True
+    assert state.leaders[HEIR_ID].skills.raw_values[30] == ALIGNMENT_TRAILING_SKILL_VALUE[Alignment.NEUTRAL]
 
 
 def test_create_king_race_and_alignment_are_never_touched():

@@ -18,8 +18,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ak_engine.models.army_type import ARMY_TYPE_BY_ORDINAL, NO_LEADER_SENTINEL, ArmyType
+from ak_engine.models.army_type import ARMY_TYPE_BY_ORDINAL, ArmyType, resolve_leader_id
 from ak_engine.models.plan import PlanPhase
+from ak_engine.turn.decode_utils import strip_sentinel
 
 
 @dataclass(slots=True)
@@ -32,11 +33,9 @@ class RecruitRequest:
 def decode_recruit_phase(phase: PlanPhase) -> RecruitRequest:
     """Decode a Recruit PlanPhase's target leader and requested army types."""
 
-    leader_id = None if phase.obj == NO_LEADER_SENTINEL else phase.obj
+    leader_id = resolve_leader_id(phase.obj)
 
-    ordinals = list(phase.extra[1:])  # extra[0] is the unconfirmed always-0 field
-    if ordinals and ordinals[-1] == -1:
-        ordinals = ordinals[:-1]
+    ordinals = strip_sentinel(list(phase.extra[1:]))  # extra[0] is the unconfirmed always-0 field
 
     army_types: list[ArmyType] = []
     unmapped: list[int] = []

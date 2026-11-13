@@ -377,6 +377,49 @@ def test_birth_coord_mismatches_exactly_the_2k_plus_1_unlanded_companions():
     assert len(matched) == 100 - (2 * 10 + 1)
 
 
+def test_birth_coord_of_every_unlanded_companion_is_stable_across_all_12_real_turns():
+    # Phase 1040 addendum: a companion's own birth_coord is written once
+    # at world creation and never touched again -- the same leader (by
+    # name, a stable identity across turns) must read the exact same
+    # birth_coord on every real GW3__T1..T12 snapshot it appears in.
+    all_fixtures = [Path(__file__).parent / "fixtures" / "world" / "G3" / f"GW3__T{t}" for t in range(1, 13)]
+    birth_coords_by_name: dict[str, set[HexCoord]] = {}
+    for fixture in all_fixtures:
+        for record in parse_gw_leaders(fixture):
+            if record.birth_coord.x > 29:
+                birth_coords_by_name.setdefault(record.name, set()).add(record.birth_coord)
+
+    # At least T1's own 20 (2 companions per King, 10 Kings) -- new
+    # companions/replacements can appear in later turns too, each
+    # contributing its own newly-seen name here.
+    assert len(birth_coords_by_name) >= 20
+    for name, coords in birth_coords_by_name.items():
+        assert len(coords) == 1, f"{name}'s own birth_coord changed turn over turn: {coords}"
+
+
+def test_every_unlanded_companions_birth_x_is_a_bit5_flagged_in_bounds_coordinate():
+    # Phase 1040 addendum: re-derives the out-of-range birth_x/birth_y
+    # pair's own real structure directly from the full 12-turn corpus --
+    # see parse_gw_leaders()'s own module docstring (GWLeaderRecord,
+    # "birth_coord") for the full account and what this does and
+    # doesn't confirm. Every single real out-of-range birth_x across
+    # all 12 turns has exactly bit 5 (32) set, no bit 6/7, and its own
+    # low 5 bits plus the paired birth_y both land inside this world's
+    # real board bounds -- zero exceptions.
+    BOARD_WIDTH, BOARD_HEIGHT = 18, 9
+    checked = 0
+    for t in range(1, 13):
+        fixture = Path(__file__).parent / "fixtures" / "world" / "G3" / f"GW3__T{t}"
+        for record in parse_gw_leaders(fixture):
+            bx, by = record.birth_coord.x, record.birth_coord.y
+            if bx > 29:
+                checked += 1
+                assert bx & 0b11100000 == 0b00100000, f"{record.name} T{t}: birth_x={bx} not bit5-only"
+                assert 0 <= (bx & 0b00011111) < BOARD_WIDTH, f"{record.name} T{t}: low bits out of bounds"
+                assert 0 <= by < BOARD_HEIGHT, f"{record.name} T{t}: birth_y={by} out of bounds"
+    assert checked == 389  # every real out-of-range sample across all 12 turns
+
+
 def test_parses_all_218_block_b_army_records():
     # 218 rows at T1, 104 unled (`leader_id == 255`) -- Phase 316's own
     # confirmed counts for this exact fixture.
@@ -450,6 +493,59 @@ def test_raises_gw_parse_error_on_unrecognized_race_ordinal(tmp_path: Path):
 
     with pytest.raises(K1ParseError):
         parse_gw_armies(bad_race)
+
+
+def _corrupt_first_province_header(tmp_path: Path, replace: str, with_: str) -> Path:
+    lines = FIXTURE.read_text(encoding="utf-8").splitlines()
+    header_idx = next(i for i, line in enumerate(lines) if line.strip() == replace)
+    lines[header_idx] = with_
+    broken = tmp_path / "GW3__Broken"
+    broken.write_text("\n".join(lines), encoding="utf-8")
+    return broken
+
+
+def test_parse_gw_world_raises_cleanly_on_an_unrecognized_terrain_ordinal(tmp_path: Path):
+    # Bug fix (crash, defense-in-depth): unlike every other record
+    # parser in this file, parse_gw_world() constructed Terrain/Race
+    # directly from the raw ordinal with no membership check -- an
+    # unhandled ValueError instead of this module's own GWParseError.
+    # Not currently reachable (parse_gw_world has no production caller
+    # today), but fixed the same way every sibling parser already is.
+    broken = _corrupt_first_province_header(tmp_path, "4 3 0 4 0 6", "4 99 0 4 0 6")
+
+    with pytest.raises(K1ParseError, match="Terrain"):
+        parse_gw_world(broken)
+
+
+def test_parse_gw_world_raises_cleanly_on_an_unrecognized_race_ordinal(tmp_path: Path):
+    broken = _corrupt_first_province_header(tmp_path, "4 3 0 4 0 6", "4 3 0 99 0 6")
+
+    with pytest.raises(K1ParseError, match="Race"):
+        parse_gw_world(broken)
+
+
+def test_parse_recruit_types_rejects_a_multi_dash_token_instead_of_crashing():
+    # Bug fix (crash): same lstrip("-").isdigit() flaw as the governor-id
+    # check above, in the sibling recruiting-types line parser.
+    from ak_engine.parser.gw_world import _parse_recruit_types
+
+    with pytest.raises(K1ParseError, match="four integers"):
+        _parse_recruit_types("--3 0 15 0", 10)
+
+
+def test_parse_gw_world_governor_line_rejects_a_multi_dash_token_instead_of_crashing(tmp_path: Path):
+    # Bug fix (crash): "--5".lstrip("-").isdigit() is True (strips to
+    # "5"), but int("--5") itself still raises ValueError -- the old
+    # guard didn't actually verify "is this a valid int() literal".
+    lines = FIXTURE.read_text(encoding="utf-8").splitlines()
+    header_idx = next(i for i, line in enumerate(lines) if line.strip() == "4 3 0 4 0 6")
+    owner_idx = header_idx + 2
+    lines[owner_idx] = "--5"
+    broken = tmp_path / "GW3__Broken"
+    broken.write_text("\n".join(lines), encoding="utf-8")
+
+    with pytest.raises(K1ParseError, match="governor"):
+        parse_gw_world(broken)
 
 
 # -- Phase 341: parse_gw_features() (Block A) ---------------------------

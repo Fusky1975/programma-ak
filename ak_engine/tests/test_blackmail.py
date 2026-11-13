@@ -206,3 +206,21 @@ def test_resolve_unpaid_blackmail_survives_a_dead_spy():
 
     assert penalty == 45
     assert state.kingdoms[2].active_blackmail is None
+
+
+def test_resolve_unpaid_blackmail_still_increments_the_exponent_for_an_archived_spy():
+    # Phase 1192 bug fix: a spy who died earlier the same turn (e.g. in
+    # combat) is moved by GameState.remove_leader() into dead_leaders,
+    # not destroyed -- the escalation must still land on that archived
+    # LeaderState for a future Resurrection to see it.
+    state = _state()
+    state.add_leader(_spy())
+    state.remove_leader(1)
+    claim = BlackmailClaim(spy_leader_id=1, spy_kingdom_id=1, amount=15)
+    state.kingdoms[2].active_blackmail = claim
+
+    penalty = resolve_unpaid_blackmail(state, 2)
+
+    assert penalty == 45
+    assert 1 not in state.leaders
+    assert state.dead_leaders[1].unpaid_blackmail_penalty_exponent == 1

@@ -76,13 +76,25 @@ def test_apply_diplomatic_merit_credits_the_other_direction_of_a_transfer():
     assert state.leaders[2].merit_tally.diplomatic_merit_points == 1 + 5
 
 
-def test_apply_diplomatic_merit_non_allied_credits_nothing():
-    state = build_state(adjacent=True)
+def test_apply_diplomatic_merit_non_allied_non_adjacent_credits_nothing():
+    state = build_state(adjacent=False)
 
     apply_diplomatic_merit(state, [], **BOUNDS)
 
     assert state.leaders[1].merit_tally.diplomatic_merit_points == 0
     assert state.leaders[2].merit_tally.diplomatic_merit_points == 0
+
+
+def test_apply_diplomatic_merit_non_allied_but_adjacent_still_credits_the_b_term():
+    # Phase 1191 bug fix: A (alliance, +1) and B (adjacency, +2) are
+    # independent per-partner terms (module docstring) -- B must still
+    # apply to a non-allied, hostile neighbor, not only an allied one.
+    state = build_state(adjacent=True)
+
+    apply_diplomatic_merit(state, [], **BOUNDS)
+
+    assert state.leaders[1].merit_tally.diplomatic_merit_points == 2
+    assert state.leaders[2].merit_tally.diplomatic_merit_points == 2
 
 
 def test_apply_diplomatic_merit_credits_only_the_kings_own_leader():

@@ -80,3 +80,18 @@ def test_draw_terrain_never_returns_a_weight_zero_terrain_for_its_band():
     for _ in range(5000):
         # Band 0 has zero weight for Desert and Jungle.
         assert draw_terrain(0, rng) not in (Terrain.DESERT, Terrain.JUNGLE)
+
+
+def test_band_for_row_stays_within_the_sourced_range_on_a_tall_board():
+    # Bug fix (crash): LATITUDE_TERRAIN_WEIGHTS was only ever confirmed
+    # for the default 18x9 board (bottom_y=8), where the raw formula
+    # never exceeds band 4. A taller board (e.g. the game's own
+    # documented 30x15 "Super-AK" maximum, bottom_y=14) used to produce
+    # out-of-range band indices with no entry in the table, crashing
+    # every caller with a KeyError.
+    max_band = max(LATITUDE_TERRAIN_WEIGHTS)
+    for bottom_y in range(8, 29):
+        for y in range(bottom_y + 1):
+            band = band_for_row(y, bottom_y)
+            assert 0 <= band <= max_band
+            assert band in LATITUDE_TERRAIN_WEIGHTS

@@ -41,6 +41,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.movement import MapBounds, hex_distance_wrapped
 from ak_engine.turn.office_holder import resolve_office_holder
 
@@ -62,8 +63,11 @@ HERO_WANDER_ACCESS_CHANCE = 0.5
 HERO_WANDER_MAX_STEPS = 5
 
 # MERCHERO.md's own confirmed continuation mask -- a land Hero keeps
-# stepping while ``(IRand(100) AND 4) != 0`` (roughly 5/8 odds), a Sea
-# Hero while ``(IRand(100) AND 7) != 0`` (roughly 7/8 odds).
+# stepping while ``(IRand(100) AND 4) != 0`` (48/100, roughly 1/2 odds --
+# Phase 1194 correction, this used to misstate it as "roughly 5/8"; the
+# mask constant below was always correct, only this comment's own figure
+# was wrong), a Sea Hero while ``(IRand(100) AND 7) != 0`` (87/100,
+# roughly 7/8 odds).
 _LAND_CONTINUATION_MASK = 4
 _SEA_CONTINUATION_MASK = 7
 
@@ -133,7 +137,7 @@ def _roll_step_direction(rng: random.Random, main_direction: int) -> int:
 
 
 def _kingdom_has_king(state: GameState, kingdom_id: int) -> bool:
-    return any(leader.kingdom_id == kingdom_id and leader.is_king for leader in state.leaders.values())
+    return find_king_of_kingdom(state, kingdom_id) is not None
 
 
 def _accept_wander_direction(

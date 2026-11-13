@@ -63,7 +63,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ak_engine.models.enums import Ability
+from ak_engine.models.enums import Ability, ability_from_int
 from ak_engine.models.plan import PlanPhase
 
 
@@ -75,8 +75,4 @@ class PracticeRequest:
 def decode_practice_phase(phase: PlanPhase) -> PracticeRequest:
     """Decode a Practice PlanPhase's target ability."""
 
-    try:
-        ability: Ability | int = Ability(phase.obj)
-    except ValueError:
-        ability = phase.obj
-    return PracticeRequest(ability=ability)
+    return PracticeRequest(ability=ability_from_int(phase.obj))

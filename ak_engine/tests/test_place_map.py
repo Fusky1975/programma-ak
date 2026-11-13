@@ -8,7 +8,8 @@ from ak_engine.worldgen.pascal_random import PascalRandom
 from ak_engine.worldgen.place_map import (
     DEFAULT_HEIGHT,
     DEFAULT_WIDTH,
-    FINAL_LAND_HARD_MAX,
+    REAL_LAND_FRACTION,
+    _land_hard_max,
     draw_land_terrain,
     generate_map,
 )
@@ -36,11 +37,23 @@ def test_generate_map_never_produces_unreachable_terrain_types():
         assert terrain is Terrain.SEA or terrain in LAND_TERRAINS
 
 
-def test_generate_map_never_exceeds_the_confirmed_land_hard_cap_at_default_size():
+def test_generate_map_never_exceeds_the_recalibrated_land_hard_cap_at_default_size():
     rng = PascalRandom(seed=3)
+    cap = _land_hard_max(DEFAULT_WIDTH * DEFAULT_HEIGHT)
     for _ in range(20):
         grid = generate_map(rng)
-        assert _land_count(grid) <= FINAL_LAND_HARD_MAX
+        assert _land_count(grid) <= cap
+
+
+def test_generate_map_lands_close_to_the_real_gw3_ratio_at_default_size():
+    # Phase 986: the user confirmed too much Sea was being generated; real
+    # played-game data (GW3__T1, same 18x9/10-king default shape) showed
+    # 112/162 land (69.1%), so a freshly generated default map should land
+    # in that neighborhood rather than the old 31-42% Monte Carlo range.
+    rng = PascalRandom(seed=8)
+    land_counts = [_land_count(generate_map(rng)) for _ in range(20)]
+    average_fraction = (sum(land_counts) / len(land_counts)) / (DEFAULT_WIDTH * DEFAULT_HEIGHT)
+    assert abs(average_fraction - REAL_LAND_FRACTION) < 0.1
 
 
 def test_generate_map_leaves_no_enclosed_sea_holes():
@@ -84,3 +97,15 @@ def test_draw_land_terrain_never_returns_sea():
     for band in range(5):
         for _ in range(2000):
             assert draw_land_terrain(band, rng) is not Terrain.SEA
+
+
+def test_generate_map_does_not_crash_on_the_games_own_maximum_super_ak_board():
+    # Bug fix (crash): the latitude-band terrain weights were only ever
+    # confirmed for the default 18x9 board. On a taller board -- up to
+    # and including the game's own documented 30x15 "Super-AK" maximum
+    # (Regolamento AK.txt [12.1]) -- band_for_row() used to return band
+    # indices with no entry in the weights table, crashing with a
+    # KeyError deep inside draw_land_terrain().
+    rng = PascalRandom(seed=1)
+    grid = generate_map(rng, width=30, height=15, king_count=10)
+    assert len(grid) == 30 * 15

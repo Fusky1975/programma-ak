@@ -34,6 +34,7 @@ from ak_engine.turn.plan_dispatch import (
     NoOpResult,
     UnsupportedActionError,
     _is_undead_king,
+    _resolve_nested_plan_leader_id,
     dispatch_phase,
     run_leader_plan,
 )
@@ -63,6 +64,11 @@ def _state_with_army(
 ) -> tuple[GameState, int]:
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.GOOD, location, treasury=treasury))
+    # The Give Gold 10% cap's own basis (2026-11-04) -- a real run_turn()
+    # call snapshots this at the very start of the turn; direct
+    # dispatch_phase() callers like this helper simulate "this call is
+    # the first Give of a fresh turn" by matching it to treasury.
+    state.kingdoms[1].treasury_at_turn_start = treasury
     state.add_province(ProvinceState(location, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     for coord, terrain in target_terrains.items():
         state.add_province(ProvinceState(coord, terrain, Race.HUMAN))
@@ -774,6 +780,28 @@ def test_dispatch_trade_self_targeted_secret_spell_zeroes_a_normally_targeted_sp
     assert result.reason == "province not found or not in range"
 
 
+def test_dispatch_trade_self_targeted_secret_spell_rewrite_by_a_dead_leader_is_a_clean_refusal():
+    # Phase 1046 bug fix: this Trade->Cast rewrite call site is the
+    # second of the two real places that called execute_cast() with no
+    # acting-leader liveness check (the other being _dispatch_cast()
+    # itself) -- see execute_cast()'s own Phase 1046 addendum. A leader
+    # who died earlier this same turn but still has a later-phase Trade
+    # order rewritten into a secret-spell Cast used to reach a bare
+    # state.leaders[leader_id] lookup inside one of Cast's own _execute_*
+    # handlers and raise an unhandled KeyError.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    del state.leaders[LEADER_ID]  # died in an earlier phase this same turn
+    phase = PlanPhase(label="P1", action=ActionCode.TRADE, obj=int(Spell.GATE_ANGEL), extra=[LEADER_ID, 3])
+
+    result = dispatch_phase(
+        phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH, rng=random.Random(0)
+    )
+
+    assert isinstance(result, CastExecutionResult)
+    assert result.applied is False
+    assert result.reason == "acting leader not found"
+
+
 def test_dispatch_trade_ordinary_give_of_a_secret_spell_ordinal_is_not_rewritten():
     # Same obj range, but not self-targeted (extra[0] != leader_id) -- an
     # ordinary Give to leader 3 of "item/gold 25", not a Cast rewrite.
@@ -1343,6 +1371,121 @@ def test_dispatch_leave_in_allied_province_transfers_kingdom_ownership():
     assert state.armies[army_id].kingdom_id == 2
 
 
+# -- Bug fixes, sourced directly from the user (2026-10-29), designing
+# Leave's own move-composer UI: ownership/co-location gate on a
+# specific army-id list, the Garrison-to-Hero "novità" pass-along, the
+# alliance gate on a named target leader, and the second (target-
+# leader-based) Kingdom-transfer trigger. ----------------------------
+
+
+def test_dispatch_leave_specific_army_not_commanded_by_acting_leader_is_skipped():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(2, 1, "Other Leader", location))
+    state.armies[army_id].commanded_by = 2  # not this leader's own army
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by == 2  # untouched
+
+
+def test_dispatch_leave_can_pass_a_colocated_garrison_commanded_army_to_another_hero():
+    # The rulebook's own "novità": a Hero merely co-located with (not
+    # personally commanding) a Garrison-commanded army of his own
+    # Kingdom can still pass it along to another Hero.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.armies[army_id].commanded_by = None  # Garrison-commanded
+    state.add_leader(LeaderState(2, 1, "Other Leader", location))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert state.armies[army_id].commanded_by == 2
+
+
+def test_dispatch_leave_a_noncolocated_garrison_commanded_army_is_skipped():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.armies[army_id].commanded_by = None
+    state.leaders[LEADER_ID].location = HexCoord(9, 9)  # not co-located with the army
+    state.add_leader(LeaderState(2, 1, "Other Leader", HexCoord(9, 9)))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_leave_a_colocated_garrison_commanded_army_of_a_different_kingdom_is_skipped():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.armies[army_id].commanded_by = None
+    state.armies[army_id].kingdom_id = 2  # a different Kingdom's idle garrison unit
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(3, 1, "Other Leader", location))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[3, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_leave_to_a_hostile_leader_is_rejected():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(2, 2, "Hostile Hero", location))  # not allied with Kingdom 1
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by == LEADER_ID  # untouched
+
+
+def test_dispatch_leave_to_an_unknown_leader_id_is_rejected():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[999, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by == LEADER_ID
+
+
+def test_dispatch_leave_to_an_allied_kingdoms_hero_transfers_the_armys_kingdom():
+    # "Un'unità lasciata a un generale... di un altro Reame diventa di
+    # proprietà di quest'ultimo" -- independent of who owns the
+    # province the army is standing in (still Kingdom 1's own here).
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.allied_kingdoms.add(frozenset({1, 2}))
+    state.add_leader(LeaderState(2, 2, "Allied Hero", location))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert state.armies[army_id].commanded_by == 2
+    assert state.armies[army_id].kingdom_id == 2
+
+
+def test_dispatch_leave_to_a_same_kingdoms_hero_does_not_change_kingdom_id():
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.add_leader(LeaderState(2, 1, "Other Leader", HexCoord(3, 9)))
+    phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert state.armies[army_id].kingdom_id == 1
+
+
 # -- Phase 647: Skeletal Army "digs its own grave" on Leave/reassign --
 
 
@@ -1403,6 +1546,7 @@ def test_dispatch_leave_skeletal_army_handed_to_undead_king_survives():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     state.armies[army_id].is_skeletal = True
     state.add_kingdom(KingdomState(2, "Nekrotia", Race.HUMAN, Alignment.UNDEAD, HexCoord(3, 9)))
+    state.allied_kingdoms.add(frozenset({1, 2}))
     state.add_leader(LeaderState(2, 2, "Lich King", HexCoord(3, 9), is_king=True))
     phase = PlanPhase(label="P3", action=ActionCode.LEAVE, obj=0, extra=[2, army_id, -1])
 
@@ -1500,6 +1644,24 @@ def test_dispatch_pick_up_by_a_dead_leader_does_not_crash():
     assert state.armies[army_id].commanded_by is None
 
 
+def test_dispatch_explore_by_a_dead_leader_is_a_clean_no_op():
+    # Phase 1041 bug fix -- the EXPLORE branch used to do a bare
+    # state.leaders[leader_id] lookup instead of reusing the already-
+    # fetched, None-checked `leader` variable computed a few lines up
+    # for rumor generation -- missing the "acting leader may have died
+    # earlier in the same turn" guard LEAVE/PICK_UP/DISBAND/HIRE/FIRE
+    # all already got (each via .get() + a clean no-op). A leader who
+    # died earlier this turn but still has a stale EXPLORE queued for a
+    # later phase used to raise an uncaught KeyError here instead.
+    state, _army_id = _state_with_army(HexCoord(3, 9), {})
+    del state.leaders[LEADER_ID]  # died in an earlier phase this same turn
+    phase = PlanPhase(label="P3", action=ActionCode.EXPLORE, obj=0, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, army_ids=[], board_width=BOARD_WIDTH)
+
+    assert result == NoOpResult(action=ActionCode.EXPLORE)
+
+
 def test_dispatch_pick_up_attaches_colocated_army():
     location = HexCoord(3, 9)
     state, army_id = _state_with_army(location, {})
@@ -1536,6 +1698,92 @@ def test_dispatch_pick_up_all_only_attaches_unled_armies():
     assert state.armies[2].commanded_by == 2  # already led by someone else -> untouched
 
 
+# -- Bug fixes, sourced directly from the user (2026-10-29), designing
+# Pick Up's own move-composer UI: a specific army-id list can take over
+# a co-located army actively commanded by anyone, but only within the
+# acting leader's own Kingdom; and a freshly-levied (non-mercenary)
+# army can't be picked up the same turn it was recruited. ------------
+
+
+def test_dispatch_pick_up_specific_list_can_take_over_a_colocated_armys_own_kingdom_army():
+    # The user's own explicit choice: unlike Leave/Disband, a specific
+    # Pick Up list may reassign an army away from another co-located
+    # Hero of the SAME Kingdom (reorganizing one's own forces) -- no
+    # "must be unled" restriction for the specific-list path.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(2, 1, "Other Leader", location))
+    state.armies[army_id].commanded_by = 2
+    phase = PlanPhase(label="P0", action=ActionCode.PICK_UP, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert state.armies[army_id].commanded_by == LEADER_ID
+
+
+def test_dispatch_pick_up_specific_list_skips_a_different_kingdoms_colocated_army():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.armies[army_id].kingdom_id = 2
+    state.armies[army_id].commanded_by = None
+    phase = PlanPhase(label="P0", action=ActionCode.PICK_UP, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_pick_up_all_skips_a_different_kingdoms_unled_colocated_army():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.armies[army_id].kingdom_id = 2
+    state.armies[army_id].commanded_by = None
+    phase = PlanPhase(label="P0", action=ActionCode.PICK_UP, obj=0, extra=[255, 255, -1])
+
+    dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_pick_up_skips_an_army_recruited_this_same_turn():
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.armies[army_id].commanded_by = None
+    state.armies[army_id].recruited_this_turn = True
+    phase = PlanPhase(label="P0", action=ActionCode.PICK_UP, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].commanded_by is None
+
+
+def test_dispatch_pick_up_allows_a_mercenary_recruited_this_same_turn():
+    # Rulebook [3.9]'s own exception: a hired mercenary already existed
+    # with a real id before this turn, so it's exempt from the
+    # same-turn restriction even though `recruited_this_turn` happens
+    # to be set (a fresh levy and a mercenary hire share one Recruit
+    # code path -- see `turn/recruit_execution.py`, which never sets
+    # this flag for an actual mercenary hire; this test instead directly
+    # confirms the dispatcher's own exemption for `is_mercenary` armies,
+    # independent of how that combination could arise).
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.armies[army_id].commanded_by = None
+    state.armies[army_id].recruited_this_turn = True
+    state.armies[army_id].is_mercenary = True
+    phase = PlanPhase(label="P0", action=ActionCode.PICK_UP, obj=0, extra=[255, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.succeeded == [army_id]
+    assert state.armies[army_id].commanded_by == LEADER_ID
+
+
 def test_dispatch_disband_releases_army_into_mercenary_status():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     phase = PlanPhase(label="P0", action=ActionCode.DISBAND, obj=0, extra=[0, army_id, -1])
@@ -1548,6 +1796,13 @@ def test_dispatch_disband_releases_army_into_mercenary_status():
     assert army_id in state.armies  # not removed -- still exists as an unowned mercenary
     assert state.armies[army_id].kingdom_id is None
     assert state.armies[army_id].commanded_by is None
+    # Bug fix, sourced directly from the user (2026-10-29): rulebook
+    # [3.6]'s own "i suoi soldati si trasformano in mercenari" -- the
+    # disbanded army must actually carry the real `is_mercenary` flag
+    # the rest of the engine keys "hireable mercenary band" on
+    # (`GameState.mercenaries_at()`), not just a cleared kingdom/
+    # commander.
+    assert state.armies[army_id].is_mercenary is True
 
 
 def test_dispatch_disband_all_releases_every_commanded_army():
@@ -1638,6 +1893,7 @@ def test_dispatch_hire_double_agent_appears_hired_by_a_foreign_king_without_chan
     assert result.hired is True
     assert state.leaders[32].kingdom_id == 2  # real employer never changes
     assert state.leaders[32].double_agent_hired_by_kingdom_id == 1
+    assert state.leaders[32].hire_turn == 0  # no real hire took place -- unchanged
     assert state.kingdoms[1].treasury == 98  # the foreign king's own gold really is spent
 
 
@@ -1812,6 +2068,7 @@ def test_dispatch_hire_succeeds_and_charges_only_the_required_pay_not_the_offer(
     assert result.hired is True
     assert result.minimum_gold == 2
     assert state.leaders[32].kingdom_id == 1
+    assert state.leaders[32].hire_turn == state.turn_number
     assert state.kingdoms[1].treasury == 98  # only the required 2, not the offered 4
 
 
@@ -1882,6 +2139,41 @@ def test_dispatch_disband_by_a_king_bypasses_colocation():
     assert state.armies[army_id].commanded_by is None
 
 
+def test_dispatch_disband_by_a_king_skips_a_different_kingdoms_army_even_though_colocation_is_bypassed():
+    # Bug fix, sourced directly from the user (2026-10-29): the fuller
+    # rulebook [3.6] text names "qualsiasi unità militare del regno" --
+    # a King's own co-location bypass was never meant to also bypass
+    # the Kingdom boundary. Co-located here specifically to isolate
+    # the Kingdom check from the co-location one.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(50, 2, "A Different King", location, is_king=True))
+    phase = PlanPhase(label="P0", action=ActionCode.DISBAND, obj=0, extra=[0, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=2, leader_id=50, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].kingdom_id == 1  # untouched -- a different Kingdom's army
+    assert state.armies[army_id].commanded_by == LEADER_ID
+
+
+def test_dispatch_disband_by_a_colocated_hero_skips_a_different_kingdoms_army():
+    # Same Kingdom-boundary fix as above, for an ordinary (non-King)
+    # Hero: co-location alone was never meant to be sufficient either.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(50, 2, "A Foreign Hero", location, is_king=False))
+    phase = PlanPhase(label="P0", action=ActionCode.DISBAND, obj=0, extra=[0, army_id, -1])
+
+    result = dispatch_phase(phase, state, kingdom_id=2, leader_id=50, board_width=BOARD_WIDTH)
+
+    assert result.skipped == [army_id]
+    assert state.armies[army_id].kingdom_id == 1
+    assert state.armies[army_id].commanded_by == LEADER_ID
+
+
 def test_dispatch_fire_by_a_hero_fails_when_not_colocated():
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     state.add_leader(LeaderState(32, 1, "Employed Hero", HexCoord(9, 9)))
@@ -1922,6 +2214,59 @@ def test_dispatch_fire_by_a_king_bypasses_colocation():
     assert state.leaders[32].kingdom_id is None
 
 
+def test_dispatch_fire_cannot_fire_a_king_even_a_colocated_one_of_the_same_kingdom():
+    # Bug fix, sourced directly from the user (2026-11-01): symmetric
+    # with Hire's own explicit "can't Hire a King" guard. Same Kingdom
+    # and co-located, so this isolates the King check from the
+    # Kingdom-ownership/co-location ones.
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(32, 1, "Another King", location, is_king=True))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.fired is False
+    assert result.reason == "cannot fire a King"
+    assert state.leaders[32].kingdom_id == 1
+
+
+def test_dispatch_fire_by_a_king_skips_a_different_kingdoms_hero_even_though_colocation_is_bypassed():
+    # Bug fix, sourced directly from the user (2026-11-01), same shape
+    # as Disband's own King-co-location-bypass-isn't-a-Kingdom-bypass
+    # correction, applied here after the user reconsidered an initial
+    # too-hasty analogy and asked for it explicitly anyway, despite the
+    # pasted [3.7] text itself not naming a Kingdom restriction.
+    state, army_id = _state_with_army(HexCoord(3, 9), {})
+    state.add_kingdom(KingdomState(2, "Rivalia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
+    state.add_leader(LeaderState(32, 2, "A Different Kingdom's Hero", HexCoord(9, 9)))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=32, extra=[])
+
+    # LEADER_ID (from _state_with_army) is a King, not co-located with 32.
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=LEADER_ID, board_width=BOARD_WIDTH)
+
+    assert result.fired is False
+    assert result.reason == "not this Kingdom's Hero"
+    assert state.leaders[32].kingdom_id == 2  # untouched
+
+
+def test_dispatch_fire_self_fire_always_succeeds():
+    # Rulebook [3.7]: "Un Eroe può sempre congedare sé stesso" -- a
+    # Hero's own kingdom_id trivially matches itself, and he's always
+    # co-located with himself, so no explicit self-fire branch is
+    # needed; confirmed here as its own dedicated test (previously
+    # untested in this suite).
+    location = HexCoord(3, 9)
+    state, army_id = _state_with_army(location, {})
+    state.add_leader(LeaderState(50, 1, "A Hero", location, is_king=False))
+    phase = PlanPhase(label="P1", action=ActionCode.FIRE, obj=50, extra=[])
+
+    result = dispatch_phase(phase, state, kingdom_id=1, leader_id=50, board_width=BOARD_WIDTH)
+
+    assert result.fired is True
+    assert state.leaders[50].kingdom_id is None
+
+
 # --- Grandfather of Assassins FI interception (Phase 614) -------------------
 
 
@@ -1958,12 +2303,12 @@ def test_dispatch_fire_by_the_titleholder_against_own_kingdom_stays_an_ordinary_
     assert state.leaders[32].kingdom_id is None
 
 
-def test_dispatch_fire_by_the_titleholder_against_a_foreign_king_stays_an_ordinary_fire():
-    # A King is never a valid Guild target -- falls through to ordinary
-    # Fire's own co-location check, which fails here (not co-located,
-    # and the target isn't a King so LEADER_ID's own King status doesn't
-    # bypass it either -- wait, LEADER_ID is a King, so co-location is
-    # bypassed and the ordinary Fire still succeeds).
+def test_dispatch_fire_by_the_titleholder_against_a_foreign_king_is_refused():
+    # A King is never a valid Guild target (the interception's own
+    # "not hero.is_king" precondition), and -- bug fix, sourced directly
+    # from the user (2026-11-01) -- is never a valid ordinary Fire
+    # target either, falling through to the explicit "cannot fire a
+    # King" guard before co-location/Kingdom-ownership is even checked.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     state.leaders[LEADER_ID].merit_tally.successful_assassinations = 2
     state.add_kingdom(KingdomState(2, "Targetia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
@@ -1974,9 +2319,18 @@ def test_dispatch_fire_by_the_titleholder_against_a_foreign_king_stays_an_ordina
 
     assert result.guild_assassination_queued is False
     assert state.pending_guild_target is None
+    assert result.fired is False
+    assert result.reason == "cannot fire a King"
+    assert state.leaders[32].kingdom_id == 2  # untouched
 
 
-def test_dispatch_fire_by_a_non_titleholder_against_a_foreign_hero_stays_an_ordinary_fire():
+def test_dispatch_fire_by_a_non_titleholder_against_a_foreign_hero_is_refused():
+    # Bug fix, sourced directly from the user (2026-11-01): an ordinary
+    # Fire (no Assassin title held) now requires the target to belong
+    # to the firer's own Kingdom, even though LEADER_ID is a King and
+    # so bypasses the co-location requirement -- the King's own bypass
+    # is for co-location only, same correction already applied to
+    # Disband's own King-co-location bypass.
     state, army_id = _state_with_army(HexCoord(3, 9), {})
     # LEADER_ID never earned the title (successful_assassinations stays 0).
     state.add_kingdom(KingdomState(2, "Targetia", Race.HUMAN, Alignment.EVIL, HexCoord(9, 9)))
@@ -1987,8 +2341,9 @@ def test_dispatch_fire_by_a_non_titleholder_against_a_foreign_hero_stays_an_ordi
 
     assert result.guild_assassination_queued is False
     assert state.pending_guild_target is None
-    assert result.fired is True  # LEADER_ID is a King, bypasses co-location
-    assert state.leaders[32].kingdom_id is None
+    assert result.fired is False
+    assert result.reason == "not this Kingdom's Hero"
+    assert state.leaders[32].kingdom_id == 2  # untouched
 
 
 def test_dispatch_hire_cannot_hire_a_king():
@@ -2471,6 +2826,108 @@ def test_resurrections_own_nested_plan_never_dispatches_without_a_dead_leader():
     assert len(results) == 1
     assert results[0].result.applied is False
     assert not any(r.leader_id == 50 for r in results)
+
+
+def test_successful_charm_wand_use_mi_dispatches_the_charmed_characters_own_plan():
+    # Phase 1039: the same nesting as an ordinary Cast of Charm, but
+    # triggered by Use_MI-ing a Cologne of Charming wand instead.
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(LeaderState(50, None, "Wandering Hero", location))
+    item = state.add_item(Treasure.WAND_CHARM, owner_leader_id=LEADER_ID, charges=1)
+
+    charm_phase = PlanPhase(
+        label="P0",
+        action=ActionCode.USE_MI,
+        obj=item.item_id,
+        extra=[50],
+        # The real parser can never resolve this at parse time for a
+        # Use_MI phase (see use_mi_decode.py's own docstring) -- always
+        # None, same as every other wand's own nested_plan would be.
+        nested_plan=ActionPlan(
+            leader_id=None,
+            segments=[PlanSegment(1, 1, (), {"P1": PlanPhase("P1", ActionCode.PRACTICE, 14, [0])})],
+        ),
+    )
+    leader = Leader(
+        leader_id=LEADER_ID,
+        name="Charmer",
+        plan=ActionPlan(leader_id=LEADER_ID, segments=[PlanSegment(0, 0, (), {"P0": charm_phase})]),
+    )
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    charmer_results = [r for r in results if r.leader_id == LEADER_ID]
+    nested_results = [r for r in results if r.leader_id == 50]
+    assert len(charmer_results) == 1
+    assert charmer_results[0].result.applied is True
+    assert len(nested_results) == 1
+    assert nested_results[0].phase_label == "P1"
+    assert nested_results[0].error is None
+    assert isinstance(nested_results[0].result, PracticeExecutionResult)
+    assert state.leaders[50].kingdom_id == 1
+    assert item.charges == 0  # the wand's own charge was spent
+
+
+def test_resurrection_wand_use_mi_never_dispatches_without_a_dead_leader():
+    # Mirrors test_resurrections_own_nested_plan_never_dispatches_without_
+    # a_dead_leader() above, but via a Rod of Resurrection wand -- the
+    # target is a plain, living LeaderState, not archived in
+    # state.dead_leaders, so execute_cast() still refuses regardless of
+    # the embedded plan.
+    location = HexCoord(3, 9)
+    state, _ = _state_with_army(location, {})
+    state.add_leader(LeaderState(50, None, "Would-be Revived", location))
+    item = state.add_item(Treasure.WAND_RESURRECTION, owner_leader_id=LEADER_ID, charges=1)
+
+    resurrection_phase = PlanPhase(
+        label="P0",
+        action=ActionCode.USE_MI,
+        obj=item.item_id,
+        extra=[50],
+        nested_plan=ActionPlan(
+            leader_id=None,
+            segments=[PlanSegment(1, 1, (), {"P1": PlanPhase("P1", ActionCode.LMOVE, 94, [0])})],
+        ),
+    )
+    leader = Leader(
+        leader_id=LEADER_ID,
+        name="Necromancer",
+        plan=ActionPlan(leader_id=LEADER_ID, segments=[PlanSegment(0, 0, (), {"P0": resurrection_phase})]),
+    )
+
+    results = run_leader_plan(leader, state, kingdom_id=1, board_width=BOARD_WIDTH)
+
+    assert len(results) == 1
+    assert results[0].result.applied is False
+    assert not any(r.leader_id == 50 for r in results)
+    assert item.charges == 1  # not spent -- the cast never actually applied
+
+
+def test_resolve_nested_plan_leader_id_ignores_a_use_mi_wand_that_isnt_charm_or_resurrection():
+    # Direct unit check of the new split: _nested_plan_triggered() only
+    # checks "did the Use_MI apply at all," so a structurally-nested
+    # plan tagging along some other wand (e.g. Fireball) must still be
+    # refused here, by spell, not just left to applied=True.
+    fireball_request = CastRequest(spell=Spell.FIREBALL, target=0)
+    cast_result = CastExecutionResult(request=fireball_request, applied=True)
+    use_mi_result = UseMIExecutionResult(applied=True, cast_result=cast_result)
+    nested_plan = ActionPlan(leader_id=None, segments=[])
+
+    resolved = _resolve_nested_plan_leader_id(ActionCode.USE_MI, nested_plan, use_mi_result)
+
+    assert resolved is None
+
+
+def test_resolve_nested_plan_leader_id_reads_the_use_mi_cast_results_own_target():
+    charm_request = CastRequest(spell=Spell.CHARM, target=77)
+    cast_result = CastExecutionResult(request=charm_request, applied=True)
+    use_mi_result = UseMIExecutionResult(applied=True, cast_result=cast_result)
+    nested_plan = ActionPlan(leader_id=None, segments=[])
+
+    resolved = _resolve_nested_plan_leader_id(ActionCode.USE_MI, nested_plan, use_mi_result)
+
+    assert resolved == 77
 
 
 def test_nested_plan_skipped_when_target_has_no_existing_leaderstate():

@@ -382,6 +382,25 @@ def test_malformed_header_multichar_sex_raises(tmp_path: Path) -> None:
         parse_k1_moves_file(broken_file)
 
 
+def test_truncated_header_line_raises_instead_of_crashing_emperor_election(tmp_path: Path) -> None:
+    # Bug fix (crash): unlike the skill-values line right below the
+    # header line (already validated), the header line itself had no
+    # length check at all -- KingdomMoveHeader.raw_fields' own 7 named
+    # properties all bare-index it, so a truncated header line (a
+    # plausible transcription error, not even a malicious file) used to
+    # parse cleanly here and crash turn/emperor_election.py with an
+    # unhandled IndexError during ordinary Emperor Election processing.
+    original = (GAME_DATA_DIR / "AK3__T1.K1").read_text(encoding="utf-8")
+    lines = original.splitlines()
+    header_line_index = next(i for i, line in enumerate(lines) if line.strip().startswith("M 27"))
+    lines[header_line_index] = "M 27 1 0"  # only 3 integer fields, needs 7
+    broken_file = tmp_path / "AK3__Broken.K1"
+    broken_file.write_text("\n".join(lines), encoding="utf-8")
+
+    with pytest.raises(K1ParseError, match="expected 7 integers"):
+        parse_k1_moves_file(broken_file)
+
+
 def test_malformed_skill_line_raises(tmp_path: Path) -> None:
     original = (GAME_DATA_DIR / "AK3__T1.K1").read_text(encoding="utf-8")
     lines = original.splitlines()
@@ -391,4 +410,27 @@ def test_malformed_skill_line_raises(tmp_path: Path) -> None:
     broken_file.write_text("\n".join(lines), encoding="utf-8")
 
     with pytest.raises(K1ParseError):
+        parse_k1_moves_file(broken_file)
+
+
+def test_a_few_thousand_consecutive_ap_segments_raise_instead_of_crashing(tmp_path: Path) -> None:
+    # Bug fix (crash/DoS): any phase at P0-P3 immediately followed by
+    # another "AP:" token triggers _maybe_parse_nested_plan()'s recursive
+    # call into _parse_action_plan(), regardless of that phase's own
+    # action -- so a leader body consisting of a few thousand consecutive
+    # "AP: 0 0 P0 0 0" segments used to blow Python's own recursion limit
+    # with an unhandled RecursionError, uncaught by any of this parser's
+    # callers (which only ever catch K1ParseError/ValueError/IndexError).
+    # Now capped and raised as a clean K1ParseError instead.
+    original = (GAME_DATA_DIR / "AK3__T1.K1").read_text(encoding="utf-8")
+    lines = original.splitlines()
+    leader_header_index = next(i for i, line in enumerate(lines) if line.strip() == "1 -Uga-Buga Makumb")
+    sentinel_index = next(i for i, line in enumerate(lines) if line.strip() == "255")
+
+    deeply_nested_body = "\n".join(["AP: 0 0 P0 0 0"] * 2000)
+    lines[leader_header_index + 1 : sentinel_index] = [deeply_nested_body]
+    broken_file = tmp_path / "AK3__Broken.K1"
+    broken_file.write_text("\n".join(lines), encoding="utf-8")
+
+    with pytest.raises(K1ParseError, match="nested plans are more than"):
         parse_k1_moves_file(broken_file)

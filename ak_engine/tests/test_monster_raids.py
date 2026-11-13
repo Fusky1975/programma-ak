@@ -59,18 +59,25 @@ def test_age_feature_guardian_no_guardian_is_a_no_op_and_rolls_nothing():
     assert feature.guardian_state is MonsterEngagementState.MERCENARY
 
 
-def test_age_feature_guardian_unowned_province_never_rolls():
+def test_age_feature_guardian_unowned_province_still_rolls_and_matures():
+    # Phase 1194 bug fix: maturation has nothing to do with province
+    # ownership (THUNDERBIRD.md names no such precondition) -- this used
+    # to silently skip the roll entirely for an unowned province, unlike
+    # the module's own docstring's "consumes the 3% roll always first"
+    # promise.
     state = _state_with_owned_province(owner_kingdom_id=None)
-    feature = _feature(guardian_state=MonsterEngagementState.CALM)
-    age_feature_guardian(state, feature, ScriptedRandom([]))
-    assert feature.guardian_state is MonsterEngagementState.CALM
+    feature = _feature(guardian_state=MonsterEngagementState.CALM, guardian_alignment=Alignment.NEUTRAL)
+    age_feature_guardian(state, feature, ScriptedRandom([0.02, 0.1]))
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
 
 
-def test_age_feature_guardian_no_province_recorded_never_rolls():
+def test_age_feature_guardian_no_province_recorded_still_rolls_and_matures():
+    # Phase 1194 bug fix: same as above -- province data (or its
+    # absence) was never a real precondition for maturation.
     state = GameState()
-    feature = _feature(guardian_state=MonsterEngagementState.CALM)
-    age_feature_guardian(state, feature, ScriptedRandom([]))
-    assert feature.guardian_state is MonsterEngagementState.CALM
+    feature = _feature(guardian_state=MonsterEngagementState.CALM, guardian_alignment=Alignment.NEUTRAL)
+    age_feature_guardian(state, feature, ScriptedRandom([0.02, 0.1]))
+    assert feature.guardian_state is MonsterEngagementState.MERCENARY
 
 
 def test_age_feature_guardian_3_percent_miss_consumes_no_threshold_roll():
@@ -190,6 +197,25 @@ def test_resolve_province_raids_skips_looted_hidden_and_non_bold_features():
     state.add_feature(_feature(feature_id=1, guardian_state=MonsterEngagementState.BOLD, looted=True))
     state.add_feature(_feature(feature_id=2, guardian_state=MonsterEngagementState.BOLD, magically_hidden=True))
     state.add_feature(_feature(feature_id=3, guardian_state=MonsterEngagementState.MERCENARY))
+
+    income, thunder_used, events = resolve_province_raids(state, 1, province, 100, None, False, ScriptedRandom([]))
+
+    assert income == 100
+    assert thunder_used is False
+    assert events == []
+
+
+def test_resolve_province_raids_skips_a_nomonster_bold_guardian_instead_of_crashing():
+    # Bug fix (crash): Monster.NOMONSTER (the "no monster" sentinel) is a
+    # real, GM-selectable value of guardian_monster distinct from None --
+    # the webapp's own Feature editor offers it as a literal dropdown
+    # option -- but MONSTER_RUNTIME_PROFILE has no entry for it by
+    # design. The old `is None`-only guard let it through to a bare
+    # dict index, crashing with an unhandled KeyError the instant a GM
+    # set a Feature's guardian to "No monster" + "Emboldened".
+    state = _state_with_owned_province()
+    province = state.provinces[HOME]
+    state.add_feature(_feature(feature_id=1, guardian_monster=Monster.NOMONSTER, guardian_state=MonsterEngagementState.BOLD))
 
     income, thunder_used, events = resolve_province_raids(state, 1, province, 100, None, False, ScriptedRandom([]))
 

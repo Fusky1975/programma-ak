@@ -27,16 +27,21 @@ independent cross-confirmation the two sources describe the same system.
 **Phase 467 cross-check against `AKGEN_reverse_engineering_report
 (2).md` SS14.2's own compact disassembly table** (the same globals Phase
 137 found unrecoverable, now named alongside a one-line-each formula):
-every term below is either an exact match or a fully consistent
-translation, no confirmed discrepancy found, so no formula below changed
-as a result --
+every term below was, at the time, either an exact match or a fully
+consistent translation -- `lfdisc`/`ldiscp` were still bare global names
+then, with no further disassembly detail in SS14.2, so this cross-check
+found no confirmed discrepancy for Chancellor specifically. **That
+assumption didn't survive Phase 795** (see below) --
 - Emperor: `Tax_Base(Re)` -- exact match (`compute_tax_base()`).
 - Chancellor: `Spy + Sage + Explorer + 2*lfdisc + ldiscp` -- the skill
-  term matches exactly; `lfdisc`/`ldiscp` (bare global names, no further
-  disassembly detail in SS14.2) are consistent with this module's own
-  "+2 per Feature discovered first" and 3/2/1-point Discovery-attribution
-  terms below, read as two separate accumulators the compiled Chancellor
-  formula sums directly rather than recomputing.
+  term and `lfdisc` ("+2 per Feature discovered first") still match
+  exactly. `ldiscp` no longer merely "consistent" with a guess -- `turn/
+  practice_execution.py`'s own Phase 795 addendum (`Desktop/DISCVAL.md`
+  SS4.2/15.2-15.3) gives it a concrete formula, `2*discoveries_found_
+  first + discoveries_via_espionage`, confirming a real discrepancy with
+  this module's former Phase 271 user-specified 3/2/1-point scoring
+  (3, not 2, points per world-first discovery; a nonzero 2 points, not 0,
+  for a non-first one) -- corrected below, Phase 1189, user-confirmed.
 - Treasurer: `lgold` -- exact match (`KingdomState.treasury`).
 - Marshal: `lgenp` (bare global, no further SS14.2 detail) -- consistent
   with the Phase 308 quality-weighted battle table below (the accumulator
@@ -64,15 +69,17 @@ reimplemented.
 ## Gran Cancelliere / Chancellor (10%)
 - +1 per level in Explorer, Spy, and Sage
 - +2 per Special Place (Feature) discovered first
-- Invention (Discovery) attribution: **3 points to the world's first
-  hero/King ever to discover a given Discovery, 2 points to every
-  later, independent discoverer of that same Discovery** -- a
-  user-specified, project-original scoring rule (confirmed 2026-07-29)
-  that *supersedes* the rulebook's own flat "+2 per Invention found
-  first" figure quoted above the fix (the rulebook itself gives no
-  points at all for a non-first personal discovery; this project's own
-  owner chose to score both cases, at these two values, rather than
-  leave the non-first case at zero).
+- Invention (Discovery) attribution, **Phase 1189 correction, user-
+  confirmed**: **2 points to the world's first hero/King ever to
+  discover a given Discovery, 0 to every later, independent discoverer
+  of that same Discovery** -- the real compiled `ldiscp` accumulator
+  (`turn/practice_execution.py`'s own Phase 795 addendum,
+  `2*discoveries_found_first + discoveries_via_espionage`), which
+  supersedes this module's own former Phase 271 user-specified 3/2/1
+  scoring (itself a deliberate override of the rulebook's flat "+2 per
+  Invention found first" figure, made before `ldiscp`'s own formula was
+  pinned down). `discoveries_found_not_first` is still tracked on
+  `MeritTally` for other consumers; it no longer earns Chancellor merit.
 - +1 per Invention obtained via espionage
 
 **All four terms are now live.** `features_discovered_first` is live
@@ -456,9 +463,11 @@ temperamento di quel Hero sale di un livello") is wired** (Phase 469):
 on the `Office.BRAVEST` holder issuing a `Maneuver.TALK` tactic against
 a Hero target.
 
-**None of these 18 grant Victory Points** (`models/office.py
-OFFICE_VALUE` already reflects this, Phase 81, same as every royal
-title before them) and **none is exempted from the death penalty**:
+**These 18 DO grant Victory Points** (Phase 1191 correction, same as
+every royal title before them -- `turn/office_holder.py`'s own module
+docstring has the full citation for why the earlier "none of these
+grant VP" reading didn't survive Phase 439's real `Pray_Report`
+formula) and **none is exempted from the death penalty**:
 `royal_title_system.death_rule` states plainly "the separate 25% death
 reduction documented for lgenp/ladmp/lmhpp is not generalized to
 Tit_Pts" -- confirming `MeritTally.apply_death_penalty()` (Phase 377)
@@ -542,18 +551,26 @@ def emperor_merit_points(state: GameState, kingdom_id: int) -> int:
 
 
 def chancellor_merit_points(state: GameState, leader: LeaderState) -> int:
-    """See module docstring: all four terms are live. Discovery
-    attribution uses the user-specified 3-for-world-first/2-for-not-
-    first scoring (Phase 271), not the rulebook's own flat "+2 per
-    Invention found first" figure.
+    """See module docstring: all three terms are live. Discovery
+    attribution formula corrected (Phase 1189, user-confirmed) to the
+    real compiled ``ldiscp`` accumulator -- ``turn/practice_execution.py``
+    own Phase 795 addendum gives it as ``2*discoveries_found_first +
+    discoveries_via_espionage`` -- superseding this module's own former
+    Phase 271 user-specified 3-for-world-first/2-for-not-first scoring,
+    which Phase 467's cross-check had assumed (with no detail yet
+    available for `ldiscp` at the time) was consistent with this real
+    formula but wasn't: no points at all for a non-first personal
+    discovery, and 2 (not 3) points for a world-first one.
+    ``discoveries_found_not_first`` is still tracked on ``MeritTally``
+    (other consumers, e.g. the webapp's own stats display, still read
+    it) -- it just no longer feeds this merit formula.
     """
 
     tally = leader.merit_tally
     return (
         _skill_level_sum(state, leader, _CHANCELLOR_SKILL_ABILITIES)
         + 2 * tally.features_discovered_first
-        + 3 * tally.discoveries_found_first
-        + 2 * tally.discoveries_found_not_first
+        + 2 * tally.discoveries_found_first
         + tally.discoveries_via_espionage
     )
 
@@ -611,10 +628,25 @@ def marshal_merit_points(leader: LeaderState) -> int:
     return tally.land_battles_won_points - tally.land_battles_lost_points
 
 
-def _rich_sea_province_count(state: GameState, kingdom_id: int | None) -> int:
+def _rich_sea_province_count(
+    state: GameState, kingdom_id: int | None, *, cache: dict[int, int] | None = None
+) -> int:
+    """``cache`` (Phase 1193 efficiency): an optional ``{kingdom_id:
+    count}`` dict the caller may reuse across several leaders of the
+    same Kingdom within one ``resolve_office_holder(Office.ADMIRAL)``
+    call -- this value depends only on ``kingdom_id``, not on which
+    leader is being scored, so a per-kingdom candidate loop otherwise
+    recomputes it once per candidate for no reason. Safe only within
+    one such read-only scan (nothing mutates ``state.provinces`` mid-
+    loop); ``None`` (every pre-existing caller) preserves the original
+    always-recompute behavior exactly.
+    """
+
     if kingdom_id is None:
         return 0
-    return sum(
+    if cache is not None and kingdom_id in cache:
+        return cache[kingdom_id]
+    count = sum(
         1
         for province in state.provinces.values()
         if province.owner_kingdom_id == kingdom_id
@@ -622,18 +654,22 @@ def _rich_sea_province_count(state: GameState, kingdom_id: int | None) -> int:
         and province.tax is not None
         and province.tax >= 2
     )
+    if cache is not None:
+        cache[kingdom_id] = count
+    return count
 
 
-def admiral_merit_points(state: GameState, leader: LeaderState) -> int:
+def admiral_merit_points(state: GameState, leader: LeaderState, *, rich_sea_cache: dict[int, int] | None = None) -> int:
     """Same won/lost-unit formula as Marshal (naval battles), plus a live
     Naval-skill term and a live "rich sea province" per-kingdom bonus --
     see module docstring for footnote 1's "applies to every character of
-    the Kingdom" reading.
+    the Kingdom" reading. ``rich_sea_cache`` -- see ``_rich_sea_province_
+    count()``'s own docstring.
     """
 
     tally = leader.merit_tally
     naval_skill = _skill_level_sum(state, leader, (Ability.NAVAL,))
-    rich_sea_provinces = _rich_sea_province_count(state, leader.kingdom_id)
+    rich_sea_provinces = _rich_sea_province_count(state, leader.kingdom_id, cache=rich_sea_cache)
     return tally.naval_battles_won_points - tally.naval_battles_lost_points + naval_skill + rich_sea_provinces
 
 
@@ -670,13 +706,13 @@ def mage_merit_points(state: GameState, leader: LeaderState) -> int:
     return skill_sum + wand_count
 
 
-def evilking_merit_points(state: GameState, leader: LeaderState) -> int:
+def evilking_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """King of Pain (Office.EVIL_KING) -- King-only, Evil-alignment-only,
     reformulated Phase 369: plain `Tax_Base(King)`, nothing else. See
     module docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.EVIL)
+    return _alignment_king_merit_points(state, leader, Alignment.EVIL, tax_base_cache=tax_base_cache)
 
 
 def thiefprince_merit_points(state: GameState, leader: LeaderState) -> int:
@@ -706,63 +742,80 @@ def _king_of_alignment(state: GameState, leader: LeaderState, alignment: Alignme
     return state.kingdoms[leader.kingdom_id].alignment is alignment
 
 
-def _alignment_king_merit_points(state: GameState, leader: LeaderState, alignment: Alignment) -> int:
+def _alignment_king_merit_points(
+    state: GameState, leader: LeaderState, alignment: Alignment, *, tax_base_cache: dict[int, int] | None = None
+) -> int:
     """The one real formula shared by all 7 alignment-King titles: plain
     `Tax_Base(King)`, gated to the King of the matching `Alignment`. See
     module docstring's Phase 369 addendum.
+
+    ``tax_base_cache`` (Phase 1193 efficiency): an optional ``{kingdom_id:
+    tax_base}`` dict the caller may reuse across all 7 alignment-King
+    offices within one ``resolve_all_office_holders()`` pass -- the same
+    King's own Kingdom has exactly one real `Tax_Base`, independent of
+    which of the 7 alignments is being checked, so resolving all 7
+    separately otherwise recomputes it 7 times for the same King. Safe
+    only within one such read-only pass (nothing mutates `state.
+    provinces`/taxation mid-pass); ``None`` (every pre-existing caller)
+    preserves the original always-recompute behavior exactly.
     """
 
     if not _king_of_alignment(state, leader, alignment):
         return 0
-    return compute_tax_base(state, leader.kingdom_id)
+    if tax_base_cache is not None and leader.kingdom_id in tax_base_cache:
+        return tax_base_cache[leader.kingdom_id]
+    tax_base = compute_tax_base(state, leader.kingdom_id)
+    if tax_base_cache is not None:
+        tax_base_cache[leader.kingdom_id] = tax_base
+    return tax_base
 
 
-def divinearchangel_merit_points(state: GameState, leader: LeaderState) -> int:
+def divinearchangel_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """Office.DIVINE_KING -- Divine-alignment Kings only. See module
     docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.DIVINE)
+    return _alignment_king_merit_points(state, leader, Alignment.DIVINE, tax_base_cache=tax_base_cache)
 
 
-def goodking_merit_points(state: GameState, leader: LeaderState) -> int:
+def goodking_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """Office.GOOD_KING (Most Blessed of Kings) -- Good-alignment Kings
     only. See module docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.GOOD)
+    return _alignment_king_merit_points(state, leader, Alignment.GOOD, tax_base_cache=tax_base_cache)
 
 
-def druidking_merit_points(state: GameState, leader: LeaderState) -> int:
+def druidking_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """Office.DRUID_KING (Great Druid of Life) -- Druid-alignment Kings
     only. See module docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.DRUID)
+    return _alignment_king_merit_points(state, leader, Alignment.DRUID, tax_base_cache=tax_base_cache)
 
 
-def neutralking_merit_points(state: GameState, leader: LeaderState) -> int:
+def neutralking_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """Office.NEUTRAL_KING (Defender of Freedom) -- Neutral-alignment
     Kings only. See module docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.NEUTRAL)
+    return _alignment_king_merit_points(state, leader, Alignment.NEUTRAL, tax_base_cache=tax_base_cache)
 
 
-def paganking_merit_points(state: GameState, leader: LeaderState) -> int:
+def paganking_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """Office.PAGAN_KING (Warlock of the Pagan Gods) -- Pagan-alignment
     Kings only. See module docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.PAGAN)
+    return _alignment_king_merit_points(state, leader, Alignment.PAGAN, tax_base_cache=tax_base_cache)
 
 
-def undeadking_merit_points(state: GameState, leader: LeaderState) -> int:
+def undeadking_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """Office.UNDEAD_KING (Angel of Death) -- Undead-alignment Kings
     only. See module docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.UNDEAD)
+    return _alignment_king_merit_points(state, leader, Alignment.UNDEAD, tax_base_cache=tax_base_cache)
 
 
 def chiefofstaff_merit_points(state: GameState, leader: LeaderState) -> int:

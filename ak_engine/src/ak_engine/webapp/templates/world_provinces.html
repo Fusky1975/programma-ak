@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Provinces -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('world_setup', slug=meta.slug) }}">&larr; World</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Provinces</h2>
+
+  {% if provinces %}
+    <p>{{ provinces|length }} provinces on a {{ state.board_width }}x{{ state.board_height }} map.</p>
+
+    <div class="hex-map-scroll">
+      <svg width="{{ hex_map.width }}" height="{{ hex_map.height }}" class="hex-map">
+        {% for cell in hex_map.cells %}
+          <a xlink:href="{{ url_for('province_edit', slug=meta.slug, x=cell.x, y=cell.y) }}">
+            <polygon points="{{ cell.points }}" fill="{{ cell.fill }}" stroke="{{ cell.stroke }}" stroke-width="{{ cell.stroke_width }}">
+              <title>{{ cell.title }}</title>
+            </polygon>
+            {% if cell.home_marker %}
+              <circle cx="{{ cell.home_marker[0] }}" cy="{{ cell.home_marker[1] }}" r="5" fill="#fdf6e3" stroke="{{ cell.stroke }}" stroke-width="2">
+                <title>{{ cell.title }}</title>
+              </circle>
+            {% endif %}
+          </a>
+        {% endfor %}
+      </svg>
+    </div>
+
+    <div class="hex-map-legend">
+      <div class="hex-map-legend-group">
+        {% for terrain, color in [
+          ('Plains', '#d9c88f'), ('Forest', '#3f6b35'), ('Jungle', '#1f5c2e'),
+          ('Mountains', '#8a8378'), ('Desert', '#e0b96a'), ('Sea', '#4a7fa8')
+        ] %}
+          <span class="hex-map-swatch"><span class="hex-map-swatch-color" style="background:{{ color }};"></span>{{ terrain }}</span>
+        {% endfor %}
+      </div>
+      {% if state.kingdoms %}
+        <div class="hex-map-legend-group">
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <span class="hex-map-swatch"><span class="hex-map-swatch-color hex-map-swatch-border" style="border-color:{{ kingdom_color(kingdom_id) }};"></span>{{ kingdom.name }}</span>
+          {% endfor %}
+          <span class="hex-map-swatch"><span class="hex-map-swatch-color hex-map-swatch-border" style="border-color: #9c8c6e;"></span>Unowned</span>
+        </div>
+        <p class="hex-map-legend-note">The small circle marks each King's own current Home province.</p>
+      {% endif %}
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Coord</th>
+          <th>Terrain</th>
+          <th>Race</th>
+          <th>Owner</th>
+          <th>Tax</th>
+          <th>Recruit 1</th>
+          <th>Recruit 2</th>
+          <th>Leaders Here</th>
+          <th>Armies Here</th>
+          <th>Features Here</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set home_coords = state.kingdoms.values()|map(attribute='home_province')|list %}
+        {% for province in provinces %}
+          {% set leaders_here = leaders_by_coord.get(province.coord, []) %}
+          {% set armies_here = armies_by_coord.get(province.coord, []) %}
+          {% set features_here = features_by_coord.get(province.coord, []) %}
+          <tr>
+            <td>({{ province.coord.x }}, {{ province.coord.y }})</td>
+            <td>{{ province.terrain|display_name }}</td>
+            <td>{{ province.race|display_name }}</td>
+            <td>{{ state.kingdoms[province.owner_kingdom_id].name if province.owner_kingdom_id in state.kingdoms else '--' }}</td>
+            <td>{{ province.tax if province.tax is not none else '--' }}</td>
+            <td>{{ province.recruit_type_1|display_name if province.recruit_type_1 else '--' }}</td>
+            <td>{{ province.recruit_type_2|display_name if province.recruit_type_2 else '--' }}</td>
+            <td>
+              {% if leaders_here %}
+                <ul style="list-style: none; margin: 0; padding: 0;">
+                  {% for leader in leaders_here %}
+                    <li style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem;">
+                      <a href="{{ url_for('leader_edit', slug=meta.slug, leader_id=leader.leader_id) }}">{{ leader.name }}{% if leader.is_king %} (King){% endif %}</a>
+                      <form class="inline" method="post"
+                            action="{{ url_for('leader_delete', slug=meta.slug, leader_id=leader.leader_id, return_to='provinces') }}"
+                            data-confirm="Permanently delete {{ leader.name }}?{% if leader.is_king %} This King rules a Kingdom -- deleting him leaves it without a King (no Royal Heir is installed, unlike an in-game death).{% endif %}">
+                        <button type="submit" class="danger">Delete</button>
+                      </form>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                --
+              {% endif %}
+            </td>
+            <td>
+              {% if armies_here %}
+                <ul style="list-style: none; margin: 0; padding: 0;">
+                  {% for army in armies_here %}
+                    <li style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem;">
+                      <a href="{{ url_for('army_edit', slug=meta.slug, army_id=army.army_id) }}">{{ army.army_type|display_name }}</a>
+                      <form class="inline" method="post"
+                            action="{{ url_for('army_delete', slug=meta.slug, army_id=army.army_id, return_to='provinces') }}"
+                            data-confirm="Permanently delete this {{ army.army_type|display_name }} Army?">
+                        <button type="submit" class="danger">Delete</button>
+                      </form>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                --
+              {% endif %}
+            </td>
+            <td>
+              {% if features_here %}
+                <ul style="list-style: none; margin: 0; padding: 0;">
+                  {% for feature in features_here %}
+                    <li style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem;">
+                      <a href="{{ url_for('province_edit', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">{{ feature.kind|display_name }}</a>
+                      <form class="inline" method="post"
+                            action="{{ url_for('feature_delete', slug=meta.slug, feature_id=feature.feature_id, return_to='provinces') }}"
+                            data-confirm="Permanently delete this {{ feature.kind|display_name }} Feature?">
+                        <button type="submit" class="danger">Delete</button>
+                      </form>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                --
+              {% endif %}
+            </td>
+            <td style="display: flex; gap: 0.5rem;">
+              <a class="button" href="{{ url_for('province_edit', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">Edit</a>
+              {% if province.owner_kingdom_id is none and province.coord not in home_coords %}
+                <a class="button" href="{{ url_for('province_kingdom_new', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">Create Kingdom</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">This game has no world yet -- <a href="{{ url_for('world_setup', slug=meta.slug) }}">create it first</a>.</p>
+  {% endif %}
+</div>
+
+{% if provinces %}
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Add Province</h2>
+  <p class="hex-map-legend-note">Fills in an empty cell (e.g. one you deleted) within this map's own {{ state.board_width }}x{{ state.board_height }} bounds -- it can't already have a province.</p>
+  <form method="post" action="{{ url_for('province_create', slug=meta.slug) }}">
+    <div class="inline">
+      <label for="new_x">X (0-{{ state.board_width - 1 }})</label>
+      <input type="number" id="new_x" name="x" min="0" max="{{ state.board_width - 1 }}" required style="width: 6em;">
+
+      <label for="new_y">Y (0-{{ state.board_height - 1 }})</label>
+      <input type="number" id="new_y" name="y" min="0" max="{{ state.board_height - 1 }}" required style="width: 6em;">
+
+      <label for="new_terrain">Terrain</label>
+      <select id="new_terrain" name="terrain" required>
+        {% for terrain in terrains %}
+          <option value="{{ terrain.name }}">{{ terrain|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="new_race">Race</label>
+      <select id="new_race" name="race" required>
+        {% for race in races %}
+          <option value="{{ race.name }}">{{ race|display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit">Add Province</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Resize Map</h2>
+  <p class="hex-map-legend-note">Currently {{ state.board_width }}x{{ state.board_height }}. Growing only -- a new, larger width and/or height adds provinces of the chosen Terrain/Race to fill the newly exposed area; shrinking isn't supported here (it would need to decide what happens to anything already standing in the removed area), so delete provinces individually first if you want a smaller map.</p>
+  <form method="post" action="{{ url_for('world_resize', slug=meta.slug) }}">
+    <div class="inline">
+      <label for="new_width">New Width</label>
+      <input type="number" id="new_width" name="new_width" value="{{ state.board_width }}" min="{{ state.board_width }}" required style="width: 6em;">
+
+      <label for="new_height">New Height</label>
+      <input type="number" id="new_height" name="new_height" value="{{ state.board_height }}" min="{{ state.board_height }}" required style="width: 6em;">
+
+      <label for="resize_terrain">Terrain</label>
+      <select id="resize_terrain" name="terrain" required>
+        {% for terrain in terrains %}
+          <option value="{{ terrain.name }}">{{ terrain|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="resize_race">Race</label>
+      <select id="resize_race" name="race" required>
+        {% for race in races %}
+          <option value="{{ race.name }}">{{ race|display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit">Resize Map</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

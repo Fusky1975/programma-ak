@@ -135,6 +135,7 @@ from ak_engine.models.army_type import ARMY_TABLE
 from ak_engine.models.game_state import GameState, LeaderState, MaintenanceResult
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.hire_pay import hero_liking, required_pay
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 
 # Phase 527: AKGEN_reverse_engineering_report (3).md SS28.1's own
 # "(IRand and 3) - 2" -- 4 equally-likely values, -2..+1.
@@ -145,12 +146,29 @@ def compute_army_maintenance(state: GameState, kingdom_id: int) -> int:
     """``ACost(kingdom_id)``: the sum of ``ARMY_TABLE[army_type].pay``
     across every Hired army this kingdom owns -- see module docstring for
     the real-sample cross-check.
+
+    Phase 1054 bug fix: this used to index ``ARMY_TABLE[army.army_type]``
+    with no guard. 8 real ``ArmyType`` ordinals (Vampires, Marauders,
+    Shamans, Crossbow, Javelins, Artillery, Spiders, D_Turtle --
+    ``models/army_type.py``'s own Phase 383 addendum) never appear in
+    the rulebook's own Army Type Table [6.3], so ``ARMY_TABLE`` has no
+    entry for them -- ``turn/recruit.py resolve_recruit()``'s own "Bug
+    fix (crash)" comment already documents and guards this exact same
+    lookup for the recruit-time path, but that guard only stops these
+    types from being recruited *through* ``execute_recruit()``; it
+    doesn't stop one from already existing in ``state.armies`` by other
+    means (e.g. the GM army editor, which applies no ``ARMY_TABLE``
+    filtering). Without this guard, a kingdom owning any such army
+    crashed every subsequent turn's maintenance computation with an
+    unhandled ``KeyError``. Treated the same honest "no rulebook data to
+    charge maintenance by" gap ``resolve_recruit()`` already treats it
+    as -- contributes 0, not a guessed cost.
     """
 
     return sum(
         ARMY_TABLE[army.army_type].pay
         for army in state.armies.values()
-        if army.kingdom_id == kingdom_id
+        if army.kingdom_id == kingdom_id and army.army_type in ARMY_TABLE
     )
 
 
@@ -175,10 +193,7 @@ def compute_leader_maintenance(state: GameState, kingdom_id: int) -> int:
     just observed, by ``turn/hire_pay.py``'s own Phase 505 real formula).
     """
 
-    king = next(
-        (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
-        None,
-    )
+    king = find_king_of_kingdom(state, kingdom_id)
     return sum(
         leader_pay(state, leader, king) for leader in state.leaders.values() if leader.kingdom_id == kingdom_id
     )
@@ -220,10 +235,7 @@ def apply_turn_maintenance(state: GameState, rng: random.Random | None = None) -
         debited = compute_army_maintenance(state, kingdom_id)
         kingdom.treasury -= debited
 
-        king = next(
-            (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
-            None,
-        )
+        king = find_king_of_kingdom(state, kingdom_id)
         heroes = sorted(
             (
                 leader

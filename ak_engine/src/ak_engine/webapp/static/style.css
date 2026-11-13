@@ -125,9 +125,62 @@ header.app-header h1 {
   font-size: 0.9rem;
 }
 
+.report-text {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+table.data-table th,
+table.data-table td {
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+table.data-table th {
+  color: var(--color-accent-primary);
+  background: var(--color-bg);
+}
+
+table.data-table tr:hover td {
+  background: var(--color-bg);
+}
+
 .empty-state {
   color: var(--color-text-muted);
   font-style: italic;
+}
+
+.status-ok {
+  color: var(--phase-players);
+  font-weight: bold;
+}
+
+.status-warning {
+  color: var(--color-danger);
+  font-weight: bold;
+}
+
+.status-info {
+  background: #fff6e0;
+  border: 1px solid var(--color-accent-gold);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+  color: var(--color-text);
 }
 
 form.inline {
@@ -137,8 +190,34 @@ form.inline {
   flex-wrap: wrap;
 }
 
+.talent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.talent-grid label {
+  font-weight: normal;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.talent-grid input[type="number"] {
+  width: 4rem;
+}
+
 label {
   font-weight: bold;
+}
+
+input[type="checkbox"] {
+  width: 1.2em;
+  height: 1.2em;
+  accent-color: var(--color-accent-primary);
+  flex-shrink: 0;
 }
 
 input[type="text"],
@@ -185,4 +264,61 @@ button.danger:hover {
   background: transparent;
   color: var(--color-accent-primary);
   border: 2px solid var(--color-accent-primary);
+}
+
+/* Provinces page hex map (Phase 981). */
+.hex-map-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #fffaf0;
+  margin: 1rem 0;
+  padding: 0.5rem;
+}
+
+.hex-map a polygon {
+  cursor: pointer;
+  transition: opacity 0.1s ease;
+}
+
+.hex-map a:hover polygon {
+  opacity: 0.75;
+}
+
+.hex-map-legend {
+  margin-bottom: 1rem;
+}
+
+.hex-map-legend-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin-bottom: 0.4rem;
+}
+
+.hex-map-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.hex-map-swatch-color {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 3px;
+}
+
+.hex-map-swatch-border {
+  background: transparent;
+  border: 3px solid;
+}
+
+.hex-map-legend-note {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+  margin: 0;
 }

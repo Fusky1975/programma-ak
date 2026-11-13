@@ -33,12 +33,13 @@ program was run on, and `startfact[company]` is a per-company offset --
 both host-only runtime state with no representation in a parsed
 ``AK3__T*.K1`` move file and no available source for how either is
 initialized (the missing main program's own territory, this project's
-recurring, documented gap). This module therefore stops at the same
-boundary as ``turn/rename_province.py`` (Phase 150, `Read_T1Names`'s own
-real but unavailable `miscfile` input format): the quote table and the
-block-lookup mechanism are modeled and real; the caller supplies the
-block index (0-93) directly rather than this module guessing at a
-calendar-driven rotation it cannot verify.
+recurring, documented gap) -- genuinely unavailable data, unlike
+``turn/rename_province.py``'s own `Read_T1Names` gap (Phase 1192
+correction: that one turned out to be a real decode location not yet
+found within already-available data, not missing data at all). The
+quote table and the block-lookup mechanism are modeled and real; the
+caller supplies the block index (0-93) directly rather than this
+module guessing at a calendar-driven rotation it cannot verify.
 
 Quote text and attribution are transcribed verbatim, exactly as they
 appear on their own two source lines, including whichever order the

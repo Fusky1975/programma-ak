@@ -25,6 +25,7 @@ from ak_engine.turn.office_holder import (
     apply_cravenest_temperament_escalation,
     army_office_rank,
     army_office_rival_best_points,
+    cached_office_holder_leader_id,
     commit_army_office_holders,
     commit_office_holders,
     kingdom_best_army_candidate,
@@ -174,6 +175,34 @@ def test_resolve_office_holder_tiebreak_falls_through_to_lower_leader_id():
 
     assert holder is not None
     assert holder.leader_id == 3
+
+
+def test_cached_office_holder_leader_id_matches_the_uncached_result():
+    # Phase 1193 efficiency: the cache is an optional, purely additive
+    # memoization (several files' own duplicate _leader_combatant()-
+    # style Combatant builders share one across 2 sibling Combatants
+    # built in the same call) -- passing it must never change the
+    # result, only how many times resolve_office_holder() actually runs.
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    leader.merit_tally.monster_hp_defeated = 10
+    state.add_leader(leader)
+    cache: dict = {}
+
+    first = cached_office_holder_leader_id(state, Office.DEFENDER, cache)
+    second = cached_office_holder_leader_id(state, Office.DEFENDER, cache)
+
+    assert first == second == 1
+    assert cache == {Office.DEFENDER: 1}
+
+
+def test_cached_office_holder_leader_id_caches_a_none_result_too():
+    state = make_state()
+    cache: dict = {}
+
+    assert cached_office_holder_leader_id(state, Office.DEFENDER, cache) is None
+    assert Office.DEFENDER in cache
+    assert cache[Office.DEFENDER] is None
 
 
 def test_resolve_office_holder_previous_holder_wins_a_tie_over_more_treasury():
@@ -517,6 +546,28 @@ def test_resolve_army_office_holder_praetor_picks_the_stronger_non_flying_army()
 
     assert holder is not None
     assert holder.army_id == 101
+
+
+def test_resolve_army_office_holder_excludes_an_army_type_with_no_known_base_strength():
+    # Bug fix (crash): Elephants/Dinosaurs have variable strength that's
+    # only ever rolled during a real battle -- army_peacetime_strength()
+    # never has a roll to pass as an override, so it always raised a
+    # ValueError here. 8 further real ArmyType ordinals (Vampires,
+    # Marauders, Shamans, Crossbow, Javelins, Artillery, Spiders,
+    # D_Turtle) have no rulebook-sourced stats at all and raised a bare
+    # KeyError instead. Either way, this crashed resolve_army_office_
+    # holder() -- and therefore commit_army_office_holders(), called
+    # unconditionally every turn with no caller anywhere up to the Flask
+    # route catching it -- the instant such an army reached Quality
+    # Crack/Elite, an entirely ordinary outcome of normal play for
+    # Elephants. Now excluded from candidacy instead of crashing.
+    for army_type in (ArmyType.ELEPHANTS, ArmyType.DINOSAURS, ArmyType.VAMPIRES, ArmyType.CROSSBOW):
+        state = make_state()
+        state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+        state.add_army(ArmyState(101, 1, army_type, Quality.ELITE, HOME))
+
+        assert resolve_army_office_holder(state, Office.PRAETOR) is None
+        commit_army_office_holders(state)  # must not raise
 
 
 def test_resolve_army_office_holder_flagship_requires_a_naval_army_type():

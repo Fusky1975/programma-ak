@@ -204,6 +204,7 @@ from ak_engine.turn.battle_resolution import BattleResult, resolve_battle
 from ak_engine.turn.cast_execution import is_illusory_fog_affected_air_unit, quality_one_level_down
 from ak_engine.turn.challenge_execution import resolve_challenge_combat
 from ak_engine.turn.combat import Quality, direct_destruction_probability
+from ak_engine.turn.diplomacy import is_attackable_at
 from ak_engine.turn.discovery_effects import (
     arcane_valor_hit_points_bonus,
     effective_skill_level,
@@ -228,10 +229,11 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.initiative import character_initiative
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.merit_points import battle_quality_points
 from ak_engine.turn.movement import MapBounds, neighbors
 from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles, is_march_immune_party
-from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.office_holder import cached_office_holder_leader_id, resolve_office_holder
 from ak_engine.turn.pursuit import resolve_pursuit
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
 from ak_engine.turn.retreat import find_retreat_destination, select_attacker_retreat_destination
@@ -396,6 +398,7 @@ def _build_battle_units(
     alignment_king_office: Office | None = None,
     explorer_find_water: bool = False,
     race_fanatic_units: list[tuple[int, Race, int]] | None = None,
+    camel_corps_armies: list[ArmyState] | None = None,
 ) -> list[BattleUnit]:
     """Build BattleUnits for one side of a battle at ``province_coord``.
 
@@ -437,6 +440,16 @@ def _build_battle_units(
     rulebook names "Camels" specifically here, not the broader "Beasts"
     grouping used for the nemesis table -- a confident reading, not a
     guess). Fully deterministic, no ``rng`` involved.
+
+    ``camel_corps_armies`` (Phase 1043 bug fix, default ``None`` ->
+    falls back to ``armies`` itself, unchanged for every pre-existing
+    caller): lets a caller building units for only *part* of a side
+    (``_apply_monster_summoning_aid``'s own nested call for a single
+    player-led aiding army) still check the above rule against the
+    side's real, full committed army list instead of the narrow
+    ``armies`` list this one call happens to be building units from --
+    see that function's own Phase 1043 addendum for the real bug this
+    closes.
 
     **Find Water** (Advanced Ability, Phase 511 -- ``explorer_find_
     water``): quoted directly from ``models/advanced_ability.py
@@ -763,7 +776,10 @@ def _build_battle_units(
     desert_without_camels = (
         terrain is Terrain.DESERT
         and not explorer_find_water
-        and not any(army.army_type is ArmyType.CAMEL_CORPS for army in armies)
+        and not any(
+            army.army_type is ArmyType.CAMEL_CORPS
+            for army in (camel_corps_armies if camel_corps_armies is not None else armies)
+        )
     )
     province = state.provinces.get(province_coord)
     illusory_fog_active = province is not None and province.illusory_fog_active
@@ -817,10 +833,37 @@ def _build_battle_units(
             _title_office_holder_cache[office] = holder.leader_id if holder is not None else None
         return _title_office_holder_cache[office]
 
+    # Efficiency: every unled army of the same race in this one battle
+    # gets the identical King-Druidic-shortfall result (see
+    # king_druidic_shortfall_for()'s own docstring) -- shared across
+    # this call's own loop instead of re-resolving the King per army.
+    king_shortfall_cache: dict[tuple[Race, HexCoord], int] = {}
+
     units = []
     for army in armies:
-        kingdom = state.kingdoms[army.kingdom_id]
-        is_home = province_coord == kingdom.home_province
+        # Bug fix (crash): an unowned mercenary (`army.kingdom_id is
+        # None`, picked up and commanded into battle by any leader --
+        # `plan_dispatch.py`'s ordinary Pick Up mechanic) has no owning
+        # Kingdom to read a race/alignment/home-province from at all --
+        # `state.kingdoms[army.kingdom_id]` used to raise `KeyError:
+        # None` here unconditionally, the instant such an army ever
+        # attacked or defended. Every Kingdom-sourced value below falls
+        # back to the same "no data, no bonus/penalty" default this
+        # project already uses for an analogous gap (turn/trail_
+        # execution.py's own Phase 165 addendum: "an independent Hero
+        # genuinely has no kingdom to infer a race from"), rather than
+        # guessing: no home province, no national alignment to roll
+        # fanaticism from. `army_race` is still knowable when this army's
+        # own type has a fixed, intrinsic race regardless of ownership
+        # (`MONSTROUS_ARMY_RACE`, the same lookup turn/army_quality.py
+        # army_peacetime_strength() already uses for this exact purpose)
+        # -- `None` (no race-based bonus at all, never a guessed one;
+        # every real use below is a dict `.get()`/`in` check that's
+        # already safe with `None`) only for an unowned, non-monstrous
+        # army type, where no source says what race it should fight as.
+        kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
+        army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
+        is_home = kingdom is not None and province_coord == kingdom.home_province
         if army.army_type is ArmyType.ELEPHANTS:
             override = roll_elephants_strength(rng)
         elif army.army_type is ArmyType.DINOSAURS:
@@ -829,17 +872,19 @@ def _build_battle_units(
             override = None
         # Short-circuited: roll_fanaticism (and its rng.random() call) never
         # runs at all when apply_fanaticism is False -- see docstring.
-        is_fanatical = apply_fanaticism and roll_fanaticism(kingdom.alignment, rng)
+        is_fanatical = apply_fanaticism and kingdom is not None and roll_fanaticism(kingdom.alignment, rng)
         if apply_fanaticism and not is_fanatical and army.commanded_by is not None:
             # See this function's own Phase 390 addendum: an independent,
             # additive second chance, only rolled (consuming rng) when a
             # real title-race match exists.
-            title_office = RACE_TITLE_OFFICE.get(kingdom.race)
+            title_office = RACE_TITLE_OFFICE.get(army_race)
             if title_office is not None and _title_holder_leader_id(title_office) == army.commanded_by:
                 is_fanatical = roll_title_fanaticism(title_office, rng)
                 if is_fanatical and race_fanatic_units is not None:
-                    race_fanatic_units.append((army.army_id, kingdom.race, army.commanded_by))
-        druidic_shortfall = druidic_shortfall_for(army, state, kingdom.race, province_coord)
+                    race_fanatic_units.append((army.army_id, army_race, army.commanded_by))
+        druidic_shortfall = druidic_shortfall_for(
+            army, state, army_race, province_coord, king_shortfall_cache=king_shortfall_cache
+        )
         phantasmal_armies_level = _phantasmal_armies_level_for(army, state)
         mystic_winds_active = mystic_winds_active_for(army, state)
         illusory_fog_affected = illusory_fog_active and is_illusory_fog_affected_air_unit(
@@ -848,13 +893,7 @@ def _build_battle_units(
         battle_quality = army.quality
         if army.is_skeletal and opponent_owns_osteopathic:
             battle_quality = quality_one_level_down(battle_quality)
-        race_item_bonus = 0
-        if army.commanded_by is not None:
-            needed_treasure = RACE_LEADERSHIP_TREASURE.get(kingdom.race)
-            if needed_treasure is not None and any(
-                item.treasure == needed_treasure for item in state.items_held_by(army.commanded_by)
-            ):
-                race_item_bonus = 1
+        race_item_bonus = race_item_bonus_for(state, army_race, army.commanded_by)
         phantasmal_armies_bonus_per_level = (
             OBSERVATION_BALLOONS_PHANTASMAL_ARMIES_BONUS_PER_LEVEL
             if phantasmal_armies_level > 0 and opponent_owns_balloons
@@ -884,7 +923,7 @@ def _build_battle_units(
             )
         strength = compute_effective_strength(
             army.army_type,
-            kingdom.race,
+            army_race,
             battle_quality,
             terrain,
             is_defender=is_defender,
@@ -913,7 +952,7 @@ def _build_battle_units(
         if duellist_side or alignment_king_eligible:
             fanatic_strength = compute_effective_strength(
                 army.army_type,
-                kingdom.race,
+                army_race,
                 battle_quality,
                 terrain,
                 is_defender=is_defender,
@@ -947,16 +986,27 @@ def _build_battle_units(
                 source_id=army.army_id,
                 druidic_rear_targeting_blocked=rear_targeting_blocked,
                 led_by_insufficient_druid=druidic_shortfall > 0,
-                is_humanoid_race=kingdom.race in HUMANOID_RACES,
+                is_humanoid_race=army_race in HUMANOID_RACES,
                 duellist_bonus_if_selected=duellist_bonus_if_selected,
                 alignment_king_bonus_if_selected=alignment_king_bonus_if_selected,
                 has_druidic_horse_control=has_druidic_horse_control,
+                quality=army.quality,
+                is_skeletal=army.is_skeletal,
+                kingdom_id=army.kingdom_id,
+                commanded_by=army.commanded_by,
             )
         )
     return units
 
 
-def druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race, province_coord: HexCoord) -> int:
+def druidic_shortfall_for(
+    army: ArmyState,
+    state: GameState,
+    army_race: Race,
+    province_coord: HexCoord,
+    *,
+    king_shortfall_cache: dict[tuple[Race, HexCoord], int] | None = None,
+) -> int:
     """Rulebook [4.32] Druid Table -- see ``_build_battle_units``'s docstring for scope.
 
     Public (Phase 279, dropped its leading underscore): the ARMIES
@@ -964,6 +1014,9 @@ def druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race, pr
     reuses this exact resolution outside of an active battle -- a
     peacetime army still has a real commander (or lacks one) the same
     way, so no logic changed, only visibility.
+
+    ``king_shortfall_cache`` -- see ``king_druidic_shortfall_for()``'s
+    own docstring; only reached (and so only matters) for an unled army.
     """
 
     if army.commanded_by is not None:
@@ -974,10 +1027,16 @@ def druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race, pr
         leader_druidic_skill = effective_skill_level(state, leader, Ability.DRUID)
         return compute_druidic_shortfall(leader_race, army_race, leader_druidic_skill)
 
-    return king_druidic_shortfall_for(state, army_race, province_coord)
+    return king_druidic_shortfall_for(state, army_race, province_coord, cache=king_shortfall_cache)
 
 
-def king_druidic_shortfall_for(state: GameState, army_race: Race, province_coord: HexCoord) -> int:
+def king_druidic_shortfall_for(
+    state: GameState,
+    army_race: Race,
+    province_coord: HexCoord,
+    *,
+    cache: dict[tuple[Race, HexCoord], int] | None = None,
+) -> int:
     """Phase 42, rulebook [4.32]: "If a unit is under the garrison commander of a
     province, and is of a different race than the King, then the King's
     druidic ability is used" -- the province's *owning* kingdom's King
@@ -986,24 +1045,63 @@ def king_druidic_shortfall_for(state: GameState, army_race: Race, province_coord
     or no King identified for it, falls back to 0 -- insufficient data,
     not a guessed penalty. Public since Phase 279 -- see
     ``druidic_shortfall_for``'s own note.
+
+    ``cache`` (Phase 1193 efficiency): this function's own result
+    depends only on ``(army_race, province_coord)``, never on which
+    specific unled army is asking -- every unled army of the same race
+    fighting in the same battle province gets the identical shortfall.
+    An optional ``{(army_race, province_coord): shortfall}`` dict the
+    caller may reuse across every unled army in one single battle's own
+    unit-building pass. Safe only within one such read-only pass
+    (nothing mutates `state.leaders`/kingdoms mid-pass); ``None``
+    (every pre-existing caller) preserves the original always-recompute
+    behavior exactly.
     """
+
+    key = (army_race, province_coord)
+    if cache is not None and key in cache:
+        return cache[key]
 
     province = state.provinces.get(province_coord)
     if province is None or province.owner_kingdom_id is None:
+        if cache is not None:
+            cache[key] = 0
         return 0
     king = find_king_of_kingdom(state, province.owner_kingdom_id)
     if king is None or king.kingdom_id is None:
+        if cache is not None:
+            cache[key] = 0
         return 0
     king_race = state.kingdoms[king.kingdom_id].race
     king_druidic_skill = effective_skill_level(state, king, Ability.DRUID)
-    return compute_druidic_shortfall(king_race, army_race, king_druidic_skill)
+    shortfall = compute_druidic_shortfall(king_race, army_race, king_druidic_skill)
+    if cache is not None:
+        cache[key] = shortfall
+    return shortfall
 
 
-def find_king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | None:
-    for leader in state.leaders.values():
-        if leader.kingdom_id == kingdom_id and leader.is_king:
-            return leader
-    return None
+def race_item_bonus_for(state: GameState, army_race: Race | None, commanded_by: int | None) -> int:
+    """The user's own rules 3-6 race-matching legendary leadership item,
+    +1 (Excalibur for Human, Bow of the Elven Kings for Elf, Axe of the
+    Dwarven Lords for Dwarf, Scimitar of Orc Mastery for Orc) -- 0 for an
+    unled army (``commanded_by is None``), matching the rulebook text's
+    own "the army's own commanding Hero or King" scope, no King-
+    substitution carve-out unlike Druidic ability.
+
+    Shared verbatim by this module's own two real-combat call sites
+    (``_build_battle_units``, ``_qual_modfr_score_by_army_id``) and
+    ``turn/army_quality.py compute_army_modified_quality()``'s peacetime
+    report column -- previously three separate, byte-identical copies.
+    """
+
+    if commanded_by is None:
+        return 0
+    needed_treasure = RACE_LEADERSHIP_TREASURE.get(army_race)
+    if needed_treasure is not None and any(
+        item.treasure == needed_treasure for item in state.items_held_by(commanded_by)
+    ):
+        return 1
+    return 0
 
 
 def _phantasmal_armies_level_for(army: ArmyState, state: GameState) -> int:
@@ -1318,7 +1416,9 @@ class _DuelOutcome:
     loser_fled: bool = False
 
 
-def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
+def _commander_combatant(
+    commander: Commander, state: GameState, *, office_cache: dict[Office, int | None] | None = None
+) -> Combatant:
     """Build an ``encounter.Combatant`` for a Supreme Commander (Phase 49, opt-in real duel combat).
 
     ``leader_id=None`` (the provincial garrison commander, rulebook
@@ -1361,13 +1461,13 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
     hit_points_bonus = 0
     if leader is not None:
         hit_points_bonus = arcane_valor_hit_points_bonus(state, leader)
-        defender_office = resolve_office_holder(state, Office.DEFENDER)
-        if defender_office is not None and defender_office.leader_id == leader.leader_id:
+        defender_leader_id = cached_office_holder_leader_id(state, Office.DEFENDER, office_cache)
+        if defender_leader_id == leader.leader_id:
             damage_reduction = 1
-        illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
-        always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
-        necro_mage_office = resolve_office_holder(state, Office.NECRO_MAGE)
-        if necro_mage_office is not None and necro_mage_office.leader_id == leader.leader_id:
+        illus_mage_leader_id = cached_office_holder_leader_id(state, Office.ILLUS_MAGE, office_cache)
+        always_acts_first = illus_mage_leader_id == leader.leader_id
+        necro_mage_leader_id = cached_office_holder_leader_id(state, Office.NECRO_MAGE, office_cache)
+        if necro_mage_leader_id == leader.leader_id:
             regenerates_hp = 1
             regenerates_hp_interval = 2
         has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
@@ -1654,10 +1754,25 @@ def _maybe_fight_duel(
     agency Phase 674 already built for Challenge/Pursue (previously
     the defender was purely passive in a real-combat Duel regardless
     of its own plan). The Phase 389 Flee-first-tactic branch just above
-    can never newly fire via this default: Phase 669's own trigger
-    predicates (``sep_is_aggressive``/``sep_accepts_challenge``) already
-    exclude a Flee-first SEP from ever reaching a triggered duel in the
-    first place, verified by tracing both predicates directly.
+    can never newly fire via this default for an *ordinary* defender:
+    Phase 669's own trigger predicates (``sep_is_aggressive``/``sep_
+    accepts_challenge``) already exclude a Flee-first SEP from ever
+    reaching a triggered duel that way.
+
+    **Phase 1043 bug fix -- this claim was incomplete.**
+    ``_commander_challenges()``'s own neutral-province carve-out
+    (a non-Cowardly Hero/King governing a province nobody owns is
+    forced to accept *any* encounter unconditionally, bypassing ``sep_
+    accepts_challenge`` entirely -- see that function's own docstring)
+    *can* put a real Flee-first defender into a genuinely triggered
+    duel. Before this fix, such a defender had no guaranteed-escape
+    shortcut of its own at all -- only ``duel_maneuvers`` (the
+    attacker's own plan, by default) was ever consulted here, so this
+    defender was pulled into a real fight instead of the escape the
+    identical attacker-side scenario gets. A second, symmetric check
+    below now reads ``defender_sep`` directly (it has no caller-
+    supplied-override parameter the way the attacker's ``duel_
+    maneuvers`` does, since no real caller has ever needed one).
     ~~**Still genuinely out of scope**: ``use_real_duel_combat`` itself
     still defaults ``False`` for every production caller in this
     project (confirmed by grep) -- this is what keeps all of the above
@@ -1737,7 +1852,24 @@ def _maybe_fight_duel(
         attacker_challenges = _commander_challenges(state, attacker_commander, attacker_sep, defender_commander, defender_sep)
         defender_challenges = _commander_challenges(state, defender_commander, defender_sep, attacker_commander, attacker_sep)
         if not (attacker_challenges or defender_challenges):
-            return _DuelOutcome(None, None, None)
+            # Phase 1043 bug fix -- both commanders are real here (the
+            # `is None` early return above already excluded an unled
+            # side), so discarding their own leader_ids along with
+            # `loser_side` wrongly erased a real fact ("this battle had
+            # a real commander on each side") just because no *personal
+            # duel* was triggered this phase. `_record_battle_merit()`
+            # (Phase 254, called with these same ids further down) reads
+            # them independently of whether a duel happened, to credit/
+            # debit each side's own commander for the battle's overall
+            # outcome -- so every led battle where neither SEP is
+            # aggressive enough to trigger a challenge was silently
+            # skipping Marshal/Admiral merit crediting entirely,
+            # reopening the exact gap Phase 254 closed. `loser_side=None`
+            # already has the identical "a real commander exists but no
+            # decisive duel loser" shape a few lines below (the
+            # inconclusive-combat_result.winner branch) -- this mirrors
+            # it instead of inventing a new convention.
+            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, None)
 
     attacker_commander_units = _units_led_by(attacker_armies, attacker_units, attacker_commander.leader_id)
     defender_commander_units = _units_led_by(defender_armies, defender_units, defender_commander.leader_id)
@@ -1758,9 +1890,29 @@ def _maybe_fight_duel(
                     attacker_units[index] = demoralized_by_id[unit.source_id]
             return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, "attacker", loser_fled=True)
 
+    # Phase 1043 bug fix -- the symmetric defender-side check this
+    # function's own Phase 675 docstring addendum never had: reads
+    # `defender_sep` directly rather than `duel_maneuvers` (which only
+    # ever defaults to the attacker's own plan). See this function's
+    # own Phase 1043 docstring addendum above for why this is reachable
+    # (the neutral-province forced-acceptance carve-out) and real.
+    if defender_sep:
+        first_tactic = defender_sep[0]
+        first_maneuver = first_tactic if isinstance(first_tactic, Maneuver) else first_tactic.maneuver
+        if first_maneuver is Maneuver.FLEE:
+            demoralized_by_id = {u.source_id: u for u in apply_duel_demoralization(defender_commander_units)}
+            for index, unit in enumerate(defender_units):
+                if unit.source_id in demoralized_by_id:
+                    defender_units[index] = demoralized_by_id[unit.source_id]
+            return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, "defender", loser_fled=True)
+
     if use_real_duel_combat and state is not None:
-        attacker_combatant = _commander_combatant(attacker_commander, state)
-        defender_combatant = _commander_combatant(defender_commander, state)
+        # Efficiency (Phase 1193): one shared office-holder cache for
+        # both sibling Combatants built in this one call -- see
+        # cached_office_holder_leader_id()'s own docstring.
+        office_cache: dict[Office, int | None] = {}
+        attacker_combatant = _commander_combatant(attacker_commander, state, office_cache=office_cache)
+        defender_combatant = _commander_combatant(defender_commander, state, office_cache=office_cache)
         attacker_leader = (
             state.leaders.get(attacker_commander.leader_id) if attacker_commander.leader_id is not None else None
         )
@@ -1875,10 +2027,16 @@ def _apply_pursuit(
 
     retreating_units = []
     for army in losing_armies:
-        kingdom = state.kingdoms[army.kingdom_id]
+        # Bug fix (crash): same root cause as _build_battle_units()'s own
+        # fix -- an unowned mercenary (`army.kingdom_id is None`) has no
+        # Kingdom to read a race from. Same fallback: MONSTROUS_ARMY_RACE
+        # for an army type with a fixed, intrinsic race, else `None` (no
+        # sourced race, no race-based strength bonus -- not a guess).
+        kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
+        army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
         pursued_quality = Quality(max(int(Quality.DEPLETED), int(army.quality) - 1))
         strength = compute_effective_strength(
-            army.army_type, kingdom.race, pursued_quality, terrain, is_defender=True, is_island=is_island,
+            army.army_type, army_race, pursued_quality, terrain, is_defender=True, is_island=is_island,
             illusory_terrain=illusory_terrain, illusory_terrain_enhanced=illusory_terrain_enhanced,
         )
         retreating_units.append(BattleUnit(army.army_type, strength, source_id=army.army_id))
@@ -2163,22 +2321,29 @@ def _qual_modfr_score_by_army_id(
     """
 
     scores: dict[int, int] = {}
+    # Efficiency: shared by every army on this side (doesn't depend on
+    # the loop variable at all), so this is hoisted above the loop
+    # instead of rescanning `armies` once per army -- was O(armies^2).
+    camel_corps_present = any(a.army_type is ArmyType.CAMEL_CORPS for a in armies)
+    # Efficiency: see _build_battle_units()'s own identical note --
+    # king_druidic_shortfall_for()'s result only depends on (army_race,
+    # province_coord), shared across every unled army of the same race.
+    king_shortfall_cache: dict[tuple[Race, HexCoord], int] = {}
     for army in armies:
-        kingdom = state.kingdoms[army.kingdom_id]
-        is_home = province_coord == kingdom.home_province
-        desert_without_camels = (
-            terrain is Terrain.DESERT
-            and not explorer_find_water
-            and not any(a.army_type is ArmyType.CAMEL_CORPS for a in armies)
+        # Bug fix (crash): same root cause as _build_battle_units()'s own
+        # fix -- an unowned mercenary (`army.kingdom_id is None`) has no
+        # Kingdom to read a race/home-province from. Same fallbacks: no
+        # home province, and MONSTROUS_ARMY_RACE for an army type with a
+        # fixed, intrinsic race else `None` (no sourced race -- not a
+        # guess).
+        kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
+        army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
+        is_home = kingdom is not None and province_coord == kingdom.home_province
+        desert_without_camels = terrain is Terrain.DESERT and not explorer_find_water and not camel_corps_present
+        druidic_shortfall = druidic_shortfall_for(
+            army, state, army_race, province_coord, king_shortfall_cache=king_shortfall_cache
         )
-        druidic_shortfall = druidic_shortfall_for(army, state, kingdom.race, province_coord)
-        race_item_bonus = 0
-        if army.commanded_by is not None:
-            needed_treasure = RACE_LEADERSHIP_TREASURE.get(kingdom.race)
-            if needed_treasure is not None and any(
-                item.treasure == needed_treasure for item in state.items_held_by(army.commanded_by)
-            ):
-                race_item_bonus = 1
+        race_item_bonus = race_item_bonus_for(state, army_race, army.commanded_by)
         scores[army.army_id] = quality_modifier_delta(
             desert_without_camels=desert_without_camels,
             is_home_province=is_home,
@@ -2230,7 +2395,7 @@ MONSTER_SUMMONING_INVASION_DEFECTION_CHANCE = 0.33
 MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE = 0.165
 
 
-def _side_has_present_leader_with_ability(
+def side_has_present_leader_with_ability(
     state: GameState, province_coord: HexCoord, kingdom_ids: frozenset[int], ability: AdvancedAbility
 ) -> bool:
     """Find Water (Phase 511): "If the Explorer is present at a battle" --
@@ -2239,6 +2404,13 @@ def _side_has_present_leader_with_ability(
     kingdoms and already holds ``ability``, not specifically the side's
     own Supreme Commander (the rulebook says "present," not
     "commanding," unlike ``combat_ability_level``/``duellist_side`` above).
+
+    Made public (dropped the leading underscore) so ``turn/army_quality.py
+    compute_army_modified_quality()`` can reuse it verbatim for the same
+    Find Water carve-out on its peacetime desert-without-camels check,
+    the same "reuse instead of re-deriving" convention this module's own
+    ``druidic_shortfall_for()``/``king_druidic_shortfall_for()`` already
+    established.
     """
 
     return any(
@@ -2266,6 +2438,10 @@ def _apply_monster_summoning_aid(
     illusory_terrain_enhanced: bool = False,
     rng: random.Random,
     explorer_find_water: bool = False,
+    side_armies: list[ArmyState] | None = None,
+    duellist_side: bool = False,
+    alignment_king_office: Office | None = None,
+    race_fanatic_units: list[tuple[int, Race, int]] | None = None,
 ) -> None:
     """AKGEN's own confirmed `battle_engine.special_events` "Dragon/Eagle/
     Whale summoning item" row: "adjacent unled matching units aid the
@@ -2309,6 +2485,21 @@ def _apply_monster_summoning_aid(
     AKGEN's own "aid the bearer" wording, not "join the bearer's army":
     the aiding army experiences none of a real participant's post-battle
     consequences.
+
+    **Phase 1043 bug fix -- `side_armies`/`duellist_side`/
+    `alignment_king_office`/`race_fanatic_units`**: a player-led aiding
+    army's own nested `_build_battle_units()` call used to build it in
+    total isolation (`[army]` alone), unlike every other unit on the
+    side. Without `side_armies` (passed through as `camel_corps_armies`),
+    the desert-without-camels check saw only this one non-Camel-Corps
+    unit, wrongly penalizing it even when the side's own real armies
+    include a Camel Corps. Without the other three, an eligible
+    Duellist-/alignment-King-commanded side could never have this aid
+    unit selected for that bonus, and a successful title-fanaticism roll
+    for it was never recorded for `report/turn_report.py`'s own
+    `RACE_FANATICISM_TITLE` narration. All four default to the prior
+    (buggy) behavior only when omitted -- every real caller (`fight_
+    battle`) now passes its own real values.
     """
 
     if commander is None or commander.leader_id is None:
@@ -2347,9 +2538,36 @@ def _apply_monster_summoning_aid(
                     illusory_terrain=illusory_terrain,
                     illusory_terrain_enhanced=illusory_terrain_enhanced,
                 )
-                units.append(BattleUnit(matching_army_type, strength, source_id=army.army_id))
+                units.append(
+                    BattleUnit(
+                        matching_army_type,
+                        strength,
+                        source_id=army.army_id,
+                        quality=army.quality,
+                        is_skeletal=army.is_skeletal,
+                        kingdom_id=None,
+                        commanded_by=None,
+                    )
+                )
             else:
                 units.extend(
+                    # Phase 1043 bug fix -- this nested call used to build
+                    # the aid unit in total isolation: `armies=[army]`
+                    # alone made the desert-without-camels check (see
+                    # _build_battle_units()'s own docstring, "checked once
+                    # per side... if this side's armies include no Camel
+                    # Corps") see only this one non-Camel-Corps unit,
+                    # wrongly penalizing it even when the side's own real
+                    # armies (now passed separately as camel_corps_armies)
+                    # include a Camel Corps. Omitting duellist_side/
+                    # alignment_king_office/race_fanatic_units also meant
+                    # an eligible Duellist- or alignment-King-commanded
+                    # side could never have this aid unit selected for
+                    # that bonus, and a successful title-fanaticism roll
+                    # for it was never recorded for report/turn_report.py's
+                    # own RACE_FANATICISM_TITLE narration -- unlike every
+                    # unit the main per-side _build_battle_units() call
+                    # builds (see fight_battle()'s own call sites).
                     _build_battle_units(
                         [army], state, is_defender=is_defender, terrain=terrain, province_coord=province_coord,
                         rng=rng, combat_ability_level=combat_ability_level,
@@ -2360,6 +2578,10 @@ def _apply_monster_summoning_aid(
                         illusory_terrain=illusory_terrain,
                         illusory_terrain_enhanced=illusory_terrain_enhanced,
                         explorer_find_water=explorer_find_water,
+                        camel_corps_armies=side_armies,
+                        duellist_side=duellist_side,
+                        alignment_king_office=alignment_king_office,
+                        race_fanatic_units=race_fanatic_units,
                     )
                 )
 
@@ -2433,6 +2655,38 @@ def _supreme_commander_exploration_override(
     return 100 if holder is not None and holder.leader_id == commander_leader.leader_id else None
 
 
+def snapshot_army_types(state: GameState) -> dict[int, ArmyType]:
+    """Phase 736: a ``{army_id: army_type}`` snapshot of every army
+    currently in ``state``, taken *before* ``fight_battle()`` removes
+    any of them -- ``turn/sea_transport.py apply_battle_carrier_
+    destruction()`` needs a sunk carrier's own type to record a real
+    sinking event, but the carrier is already gone from ``state.armies``
+    by the time that function runs.
+
+    Previously this exact one-line dict comprehension was written out
+    identically at all 4 real call sites (this module's own
+    ``fight_multi_attacker_battle()``, ``turn/move_execution.py
+    execute_move()``, ``turn/pursue_execution.py execute_pursue()``,
+    ``turn/turn_processor.py``'s forced-rebattle continuation), each
+    one's own comment cross-referencing the others as "the same Phase
+    736 note." Extracted here, next to ``fight_battle()`` itself (every
+    call site already imports from this module for ``fight_battle``/
+    ``BattleReport``, so this needs no new import path anywhere).
+
+    Snapshots every army in the game, not just this battle's own
+    participants -- deliberately unchanged from the original inline
+    version: narrowing it to "only this battle's own attacker/defender
+    army ids" would mean re-deriving the defender side's own army list
+    a second time outside of ``fight_battle()``'s own resolution of it,
+    risking drift if that resolution logic ever changes. The redundant
+    work this does is bounded by the total army count, not battle size,
+    and this project has no indication that count is ever large enough
+    to matter in practice.
+    """
+
+    return {army.army_id: army.army_type for army in state.armies.values()}
+
+
 def fight_battle(
     state: GameState,
     attacker_kingdom_id: int,
@@ -2475,7 +2729,7 @@ def fight_battle(
         for army in state.armies_at(province_coord)
         if army.army_id not in attacker_army_ids
         and army.kingdom_id is not None
-        and not state.is_allied(army.kingdom_id, attacker_kingdom_id)
+        and is_attackable_at(state, army.kingdom_id, attacker_kingdom_id, province)
     ]
     if not attacker_armies:
         raise ValueError("no attacking armies given")
@@ -2686,10 +2940,10 @@ def fight_battle(
     # leader_with_ability's own docstring: any leader physically present
     # at this province who belongs to the side and already holds the
     # ability, not necessarily the side's own Supreme Commander.
-    attacker_find_water = _side_has_present_leader_with_ability(
+    attacker_find_water = side_has_present_leader_with_ability(
         state, province_coord, attacker_kingdom_ids, AdvancedAbility.EXPLORER_FIND_WATER
     )
-    defender_find_water = _side_has_present_leader_with_ability(
+    defender_find_water = side_has_present_leader_with_ability(
         state, province_coord, defender_kingdom_ids, AdvancedAbility.EXPLORER_FIND_WATER
     )
 
@@ -2740,6 +2994,13 @@ def fight_battle(
         is_island=is_island, illusory_terrain=illusory_terrain,
         illusory_terrain_enhanced=illusory_terrain_enhanced, rng=rng,
         explorer_find_water=attacker_find_water,
+        # Phase 1043 bug fix -- see _apply_monster_summoning_aid()'s own
+        # addendum: a player-led aiding army's own nested unit-building
+        # call needs this side's real context, not just the aid army alone.
+        side_armies=attacker_armies,
+        duellist_side=attacker_is_duellist_side,
+        alignment_king_office=attacker_alignment_king_office,
+        race_fanatic_units=attacker_race_fanatic_units,
     )
     _apply_monster_summoning_aid(
         defender_units, defender_commander, state, province_coord, monster_summoning_bounds,
@@ -2750,6 +3011,10 @@ def fight_battle(
         is_island=is_island, illusory_terrain=illusory_terrain,
         illusory_terrain_enhanced=illusory_terrain_enhanced, rng=rng,
         explorer_find_water=defender_find_water,
+        side_armies=defender_armies,
+        duellist_side=defender_is_duellist_side,
+        alignment_king_office=defender_alignment_king_office,
+        race_fanatic_units=defender_race_fanatic_units,
     )
 
     duel = _maybe_fight_duel(
@@ -2949,7 +3214,16 @@ def fight_battle(
             )
         elif attacker_clean_swept and loser_retreats:
             bounds = MapBounds(state.board_width, state.board_height)
-            friendly = state.friendly_provinces_for(attacker_kingdom_id) - {province_coord}
+            # Bug fix: this used attacker_kingdom_id (the coalition's
+            # own "claiming" kingdom for a united Multiple-Contingents
+            # battle, turn/multiple_contingents.py) instead of this
+            # specific army's own kingdom_id -- the mirrored defender-
+            # side branch below already uses army.kingdom_id correctly.
+            # A non-claiming coalition member's own retreat destination
+            # must be filtered by its own alliances, not the claiming
+            # kingdom's (which can include a kingdom this army has no
+            # alliance with at all).
+            friendly = state.friendly_provinces_for(army.kingdom_id) - {province_coord}
             if attacker_origin is not None:
                 destination = select_attacker_retreat_destination(attacker_origin, army.location, bounds, friendly)
             else:
@@ -3098,13 +3372,25 @@ def fight_multi_attacker_battle(
     previously had no way to opt into real duel combat at all, only
     ``apply_fanaticism``.
 
-    **Which kingdom claims a jointly-won province** isn't specified by
-    the rulebook for a united coalition of allied attackers -- resolved
-    here as a documented heuristic: whichever kingdom contributed the
-    largest combined contingent to that battle, the same "largest
-    contingent" principle already used for [7.1]'s Supreme Commander
-    selection. That kingdom's own party also supplies ``attacker_origin``
-    for ``fight_battle()``'s forced-retreat-destination rule -- a
+    **Which kingdom claims a jointly-won province**: [8.1] itself answers
+    this directly -- "una provincia conquistata da una forza mista viene
+    data al Re che controlla il maggior numero di unità dopo la
+    battaglia" (2026-11-02 correction: previously documented here as
+    unspecified by the rulebook, which was stale -- it is specified,
+    just not for [7.8]'s own coalition case by name). ``contingent_
+    sizes`` below is computed from each kingdom's own pre-battle
+    ``army_ids``, not a post-battle recount, but this is not a gap in
+    practice: ``claiming_kingdom_id`` is only ever read for a group that
+    goes on to win outright (``defender_clean_swept``, i.e.
+    ``battle_result.winner == "attacker"``), and the attacker-loop below
+    never destroys a winning side's own armies (only a quality change) --
+    so every kingdom's own unit count in the group is identical before
+    and after such a battle, and "largest pre-battle contingent" and
+    "largest post-battle contingent" always agree for exactly the cases
+    this value is used for. [7.1]'s own "largest contingent" Supreme
+    Commander-selection principle independently matches the same reading.
+    That kingdom's own party also supplies ``attacker_origin`` for
+    ``fight_battle()``'s forced-retreat-destination rule -- a
     simplification for a coalition that may not share one origin.
 
     **Also simplified**: ``fight_battle()`` itself only takes one
@@ -3242,13 +3528,15 @@ def fight_multi_attacker_battle(
         defenders_present = any(
             army.army_id not in combined_army_ids
             and army.kingdom_id is not None
-            and not state.is_allied(army.kingdom_id, claiming_kingdom_id)
+            and (
+                is_attackable_at(state, army.kingdom_id, claiming_kingdom_id, target_province)
+                if target_province is not None
+                else not state.is_allied(army.kingdom_id, claiming_kingdom_id)
+            )
             for army in state.armies_at(province_coord)
         )
         if defenders_present:
-            # Phase 736: snapshot army types before fight_battle() removes
-            # any of them -- see move_execution.py's own identical note.
-            army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
+            army_types_before_battle = snapshot_army_types(state)
             report = fight_battle(
                 state,
                 claiming_kingdom_id,
@@ -3272,7 +3560,46 @@ def fight_multi_attacker_battle(
         else:
             # An earlier group already cleared/claimed the province this
             # same call -- see module docstring's "Phase 73" note.
-            report = BattleReport(battle_result=BattleResult(winner="attacker"), conquered=True)
+            # Phase 1043 bug fix -- this branch reported conquered=True
+            # but never actually transferred ProvinceState.owner_kingdom_id,
+            # unlike move_execution.py execute_move()'s own identical
+            # uncontested-conquest case (its own Phase 410 addendum,
+            # "entering an enemy or unowned province, uncontested...
+            # still conquers it"), which this branch's own docstring
+            # claims to mirror. turn_processor.py's own caller
+            # (dispatch_multi_attacker_moves) relocates every mover's
+            # armies/leader into the province off this exact `conquered`
+            # flag, but nothing else here ever touched ownership --
+            # leaving the armies physically inside a province the game
+            # state still showed as unowned/owned by someone else.
+            # `needs_conquest` mirrors move_execution.py's own identical
+            # check so an already-friendly province's contest flags
+            # aren't needlessly cleared a second time.
+            #
+            # Phase 1044 bug fix -- `conquered` itself used to be
+            # hardcoded True here regardless of `needs_conquest`, unlike
+            # move_execution.py's own sibling branch (`conquered = True`
+            # only inside `if armies and needs_conquest`). turn_
+            # processor.py's own caller reads this same flag straight
+            # into its movement-cost calculation
+            # (`movement_cost_for_move(battle_occurred=True, conquered=...)`) and into
+            # world-event/report narration, so a second, friendly group
+            # arriving at a province an earlier group in this same call
+            # already conquered -- needs_conquest correctly False, no
+            # ownership change -- was still charged the conquest
+            # movement cost and could be narrated as freshly conquering
+            # a province it merely walked into peacefully.
+            needs_conquest = False
+            if target_province is not None:
+                needs_conquest = target_province.owner_kingdom_id is None or (
+                    target_province.owner_kingdom_id != claiming_kingdom_id
+                    and not state.is_allied(target_province.owner_kingdom_id, claiming_kingdom_id)
+                )
+                if needs_conquest:
+                    target_province.owner_kingdom_id = claiming_kingdom_id
+                    target_province.contested_by_kingdom_id = None
+                    target_province.contested_from_coord = None
+            report = BattleReport(battle_result=BattleResult(winner="attacker"), conquered=needs_conquest)
         reports.append(MultiAttackerBattle(leader_ids=[member.leader_id for member in group], report=report))
 
     return reports

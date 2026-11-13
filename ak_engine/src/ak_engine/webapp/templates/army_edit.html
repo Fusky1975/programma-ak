@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Army {{ army.army_id }} -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('armies_list', slug=meta.slug) }}">&larr; Armies</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Army #{{ army.army_id }}</h2>
+
+  <form method="post" action="{{ url_for('army_save', slug=meta.slug, army_id=army.army_id) }}">
+    <p>
+      <label for="army_type">Army Type</label><br>
+      <select id="army_type" name="army_type">
+        {% for army_type in army_types %}
+          <option value="{{ army_type.name }}" {% if army.army_type == army_type %}selected{% endif %}>{{ army_type|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="quality">Quality</label><br>
+      <select id="quality" name="quality">
+        {% for quality in qualities %}
+          <option value="{{ quality.name }}" {% if army.quality == quality %}selected{% endif %}>{{ quality|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="kingdom_id">Kingdom</label><br>
+      <select id="kingdom_id" name="kingdom_id">
+        <option value="" {% if army.kingdom_id is none %}selected{% endif %}>-- Unowned --</option>
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}" {% if army.kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="location_x">Location (x, y)</label><br>
+      <input type="number" id="location_x" name="location_x" value="{{ army.location.x }}" required style="width: 6em;">
+      <input type="number" id="location_y" name="location_y" value="{{ army.location.y }}" required style="width: 6em;">
+    </p>
+
+    <p>
+      <label for="commanded_by">Commander</label><br>
+      <select id="commanded_by" name="commanded_by">
+        <option value="" {% if army.commanded_by is none %}selected{% endif %}>-- None (unled) --</option>
+        {% for leader in commanders %}
+          <option value="{{ leader.leader_id }}" {% if army.commanded_by == leader.leader_id %}selected{% endif %}>
+            {{ leader.name }}{% if leader.location != army.location %} (not here){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">Only lists Heroes currently at this Army's own location -- a new Commander must already be here (the real Pick_Up rule).</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="is_skeletal" {% if army.is_skeletal %}checked{% endif %}> Skeletal (raised by Skeletal Army -- "Skel" shows before its type in reports)</label>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="is_mercenary" {% if army.is_mercenary %}checked{% endif %}> Mercenary (an independent band any Kingdom may Recruit -- not just "no Kingdom owns it", a real separate flag)</label>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="plague_immune" {% if army.plague_immune %}checked{% endif %}> Plague Immune (survived a past Plague -- a future one downgrades Quality instead of destroying it)</label>
+    </p>
+
+    <button type="submit">Save Army</button>
+  </form>
+
+  <form method="post" action="{{ url_for('army_delete', slug=meta.slug, army_id=army.army_id) }}"
+        data-confirm="Permanently delete this Army?">
+    <button type="submit" class="danger">Delete Army</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Turn Effects</h2>
+  <p class="hex-map-legend-note">Lasting marks this gameturn's own processing leaves on this Army -- normally set and cleared by turn processing itself, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('army_effects_save', slug=meta.slug, army_id=army.army_id) }}">
+    <p>
+      <label for="movement_points">Movement Points Remaining</label><br>
+      <input type="number" id="movement_points" name="movement_points" value="{{ army.movement_points }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Replenished to this Army's own base speed at the end of every gameturn; the one-time March/Naval movement bonus applies dynamically on top of whatever this holds when it actually moves.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="unhireable_this_turn" {% if army.unhireable_this_turn %}checked{% endif %}> Unhireable this turn</label>
+      <br><span class="hex-map-legend-note">Cleared at the end of every gameturn.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="march_bonus_applied_this_turn" {% if army.march_bonus_applied_this_turn %}checked{% endif %}> March bonus already applied this turn</label>
+      <br><span class="hex-map-legend-note">Idempotency flag for the March/Mastery Advanced Ability's own once-per-turn movement bonus.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="naval_bonus_applied_this_turn" {% if army.naval_bonus_applied_this_turn %}checked{% endif %}> Naval bonus already applied this turn</label>
+      <br><span class="hex-map-legend-note">Idempotency flag for the Naval Advanced Ability's own once-per-turn movement bonus (Whale League/Fleet/Mermen).</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="march_table_bonus_applied_this_turn" {% if army.march_table_bonus_applied_this_turn %}checked{% endif %}> March Table bonus already applied this turn</label>
+      <br><span class="hex-map-legend-note">Idempotency flag for the base [4.12] MARCH TABLE skill-level movement bonus -- distinct from the Advanced-Ability-gated March bonus above, stacks with it.</span>
+    </p>
+
+    <p>
+      <label for="flood_dams_exempt_at_x">Flood Dams Exempt At (x, y)</label><br>
+      <input type="number" id="flood_dams_exempt_at_x" name="flood_dams_exempt_at_x" value="{{ army.flood_dams_exempt_at.x if army.flood_dams_exempt_at else '' }}" style="width: 6em;">
+      <input type="number" id="flood_dams_exempt_at_y" name="flood_dams_exempt_at_y" value="{{ army.flood_dams_exempt_at.y if army.flood_dams_exempt_at else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">The Flooded province where this Army already paid the one-time Discovery.FLOOD_DAMS toll -- excuses it from the ongoing "stuck in a Flooded province" block there for the rest of the turn. Leave both blank for no exemption.</span>
+    </p>
+
+    <button type="submit">Save Turn Effects</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Transport</h2>
+  {% if current_carrier %}
+    <p>Boarded on <strong>{{ current_carrier.army_type|display_name }} (#{{ current_carrier.army_id }})</strong>.</p>
+    <form method="post" action="{{ url_for('army_disembark', slug=meta.slug, army_id=army.army_id) }}">
+      <button type="submit">Disembark</button>
+    </form>
+  {% else %}
+    <p class="empty-state">Not boarded on anything.</p>
+    {% if carrier_candidates %}
+      <form method="post" action="{{ url_for('army_board', slug=meta.slug, army_id=army.army_id) }}">
+        <div class="inline">
+          <label for="carrier_id">Board onto</label>
+          <select id="carrier_id" name="carrier_id" required>
+            {% for carrier in carrier_candidates %}
+              <option value="{{ carrier.army_id }}">{{ carrier.army_type|display_name }} (#{{ carrier.army_id }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit">Board</button>
+      </form>
+      <p class="hex-map-legend-note">Only lists Armies co-located with this one -- boarding also needs the chosen Carrier to actually have room and accept this cargo type (Fleet/Whale rules); an illegal choice shows an error rather than silently failing.</p>
+    {% endif %}
+  {% endif %}
+</div>
+
+{% endblock %}

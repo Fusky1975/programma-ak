@@ -7,6 +7,7 @@ from ak_engine.models.race import Race
 from ak_engine.turn.recruit import (
     FORMER_HOME_PROVINCE_ALLY_RECRUIT_LIMIT,
     IncompatibleRaceError,
+    NonNativeTypeNotYetOwnedError,
     is_army_type_compatible_with_race,
     recruit_limit,
     resolve_recruit,
@@ -108,10 +109,21 @@ def test_resolve_recruit_native_cost_matches_army_table_pay():
 def test_resolve_recruit_non_native_cost_is_doubled():
     result = resolve_recruit(
         ArmyType.HVY_CAVALRY, Race.HUMAN,
-        is_home_province=False, is_native_to_province=False,
+        is_home_province=False, is_native_to_province=False, commander_already_has_type=True,
     )
     assert result.gold_per_unit == 6
     assert result.is_double_cost is True
+
+
+def test_resolve_recruit_non_native_without_an_existing_unit_is_not_recruitable():
+    # RULES.AK [3.4], sourced directly from the user: a non-native type is
+    # only recruitable at double cost if the commander already has another
+    # unit of that type -- without that, it isn't recruitable at all.
+    with pytest.raises(NonNativeTypeNotYetOwnedError):
+        resolve_recruit(
+            ArmyType.HVY_CAVALRY, Race.HUMAN,
+            is_home_province=False, is_native_to_province=False,
+        )
 
 
 def test_resolve_recruit_in_ally_territory_adds_flat_fee():
@@ -127,6 +139,62 @@ def test_resolve_recruit_raises_for_incompatible_race():
         resolve_recruit(
             ArmyType.DRAGON_WING, Race.HUMAN,
             is_home_province=False, is_native_to_province=True,
+        )
+
+
+def test_resolve_recruit_raises_cleanly_for_an_army_type_with_no_rulebook_cost():
+    # Bug fix (crash): Vampires/Marauders/Shamans/Crossbow/Javelins/
+    # Artillery/Spiders/D_Turtle never appear in the rulebook's own Army
+    # Type Table [6.3], so ARMY_TABLE has no entry for them -- an honest
+    # sourcing gap. is_army_type_compatible_with_race() still lets them
+    # through in any ordinary humanoid province (none has a
+    # MONSTROUS_ARMY_RACE entry), so this used to crash with a bare,
+    # unhandled KeyError on the `.pay` lookup instead of this clean,
+    # already-handled IncompatibleRaceError.
+    for army_type in (ArmyType.VAMPIRES, ArmyType.MARAUDERS, ArmyType.CROSSBOW):
+        with pytest.raises(IncompatibleRaceError):
+            resolve_recruit(
+                army_type, Race.HUMAN,
+                is_home_province=False, is_native_to_province=True,
+            )
+
+
+# -- Phase 1054 bug fix: hiring_existing_mercenary bypasses both
+# IncompatibleRaceError and NonNativeTypeNotYetOwnedError --
+
+
+def test_resolve_recruit_hiring_existing_mercenary_bypasses_incompatible_race():
+    # RULES.AK [3.4]: "mercenaries can be Recruited in any province by
+    # any character" -- a hireable mercenary of a race-incompatible type
+    # must not be rejected by the same race-compatibility gate a populace
+    # levy would hit.
+    result = resolve_recruit(
+        ArmyType.DRAGON_WING, Race.HUMAN,
+        is_home_province=False, is_native_to_province=False, hiring_existing_mercenary=True,
+    )
+    assert result is not None
+
+
+def test_resolve_recruit_hiring_existing_mercenary_bypasses_non_native_ownership():
+    result = resolve_recruit(
+        ArmyType.HVY_CAVALRY, Race.HUMAN,
+        is_home_province=False, is_native_to_province=False, hiring_existing_mercenary=True,
+    )
+    # Still subject to the real non-native doubling -- the module's own
+    # "doesn't distinguish hiring from levying on price" rule (Phase 16)
+    # -- only the two eligibility exceptions are bypassed, not the cost.
+    assert result.gold_per_unit == 6
+    assert result.is_double_cost is True
+
+
+def test_resolve_recruit_hiring_existing_mercenary_still_requires_a_rulebook_cost():
+    # The missing-ARMY_TABLE-entry guard is unrelated to race/nativity --
+    # it stays unconditional even for a mercenary hire, since there is
+    # genuinely no cost data to charge by.
+    with pytest.raises(IncompatibleRaceError):
+        resolve_recruit(
+            ArmyType.VAMPIRES, Race.HUMAN,
+            is_home_province=False, is_native_to_province=True, hiring_existing_mercenary=True,
         )
 
 
@@ -155,6 +223,7 @@ def test_resolve_recruit_chief_of_staff_discount_taken_before_non_native_doublin
     result = resolve_recruit(
         ArmyType.HVY_CAVALRY, Race.HUMAN,
         is_home_province=False, is_native_to_province=False, chief_of_staff_discount=True,
+        commander_already_has_type=True,
     )
     assert result.gold_per_unit == 4
 

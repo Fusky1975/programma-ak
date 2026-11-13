@@ -554,10 +554,36 @@ MONSTER_COMMAND_RACE: dict[Monster, Race] = {
 }
 
 
+class _CuratedNameTable(dict):
+    """A ``dict`` that falls back to a title-cased identifier for a key
+    with no curated entry, instead of raising ``KeyError`` on ``[...]``.
+
+    Bug fix (crash): ``TREASURE_NAME``/``TREASURE_LABEL`` deliberately
+    exclude several reserved ``Treasure`` ordinals (``UNUSED_*``, and
+    for ``TREASURE_LABEL`` also the ``NAMED_UNIQUE_*`` artifacts -- see
+    this module's own comments) -- a correct, honest gap when every
+    caller reads them with ``.get()``, but several real callers across
+    report/turn_report.py use bare ``TREASURE_NAME[treasure]``/
+    ``TREASURE_LABEL[treasure]`` instead, and the webapp's own feature/
+    item editors let a GM set a treasure field to any of these directly
+    (``treasure=list(Treasure)``, no filtering) -- an entirely ordinary
+    editor action. The very next turn's report generation then crashed
+    with an unhandled ``KeyError``. The fallback reuses this project's
+    own already-established, tested convention for exactly this
+    situation: ``webapp/app.py``'s ``display_name()`` filter already
+    falls back to ``value.name.replace("_", " ").title()`` for an
+    uncurated enum member (confirmed by its own test,
+    ``test_display_name_falls_back_to_the_bare_identifier_when_uncurated``).
+    """
+
+    def __missing__(self, key):
+        return key.name.replace("_", " ").title()
+
+
 # HostAK/TP/PROSE/TREASAB.X2, verbatim, ordinals 0-92 (93 lines -- the file
 # ends exactly at "no treasure"; see module docstring for why ordinals
 # 93-112 have no line here).
-TREASURE_LABEL: dict[Treasure, str] = {
+TREASURE_LABEL: dict[Treasure, str] = _CuratedNameTable({
     Treasure.ABILITY_TACTICAL: "+1 Tactical",
     Treasure.ABILITY_MARCH: "+1 ForcedMarch",
     Treasure.ABILITY_NAVAL: "+1 Naval",
@@ -651,14 +677,14 @@ TREASURE_LABEL: dict[Treasure, str] = {
     Treasure.QUEST_CONTRACT: "May sell soul",
     Treasure.QUEST_CONTRACT_FULFILL: "Soul is gone!",
     Treasure.NO_TREASURE: "no treasure",
-}
+})
 
 
 # HostAK/TP/PROSE/TREASURE.X2-derived proper names, all 99 real ordinals
 # (0-98) -- see module docstring's Phase 580 correction for why ordinals
 # 50-52/94-96 are no longer treated as gaps, and why nothing past 98 is
 # transcribed. The file's own literal typos are kept verbatim.
-TREASURE_NAME: dict[Treasure, str] = {
+TREASURE_NAME: dict[Treasure, str] = _CuratedNameTable({
     Treasure.ABILITY_TACTICAL: "Standard of Command",
     Treasure.ABILITY_MARCH: "Magical Register of Marching Orders",
     Treasure.ABILITY_NAVAL: "Conch of Seamansip",
@@ -785,7 +811,7 @@ TREASURE_NAME: dict[Treasure, str] = {
     Treasure.NAMED_UNIQUE_MAP_MARAUDERS: "Map of the Marauders",
     Treasure.NAMED_UNIQUE_FANG_VAMPIRE: "Fang of the Vampire Lord",
     Treasure.NAMED_UNIQUE_HAMMER_POWER: "Hammer of Power",
-}
+})
 
 # HostAK/TP/PROSE/TREASURE.X2, verbatim, positional with Treasure's own
 # 99 real ordinals (0-98) -- module docstring's Phase 580 addendum.

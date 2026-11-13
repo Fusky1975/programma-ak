@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Feature ({{ feature.coord.x }}, {{ feature.coord.y }}) -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('features_list', slug=meta.slug) }}">&larr; Special Features</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Feature ({{ feature.coord.x }}, {{ feature.coord.y }})</h2>
+
+  <form method="post" action="{{ url_for('feature_save', slug=meta.slug, feature_id=feature.feature_id) }}">
+    <p>
+      <label for="kind">Type</label><br>
+      <select id="kind" name="kind">
+        {% for kind in feature_types %}
+          <option value="{{ kind.name }}" {% if feature.kind == kind %}selected{% endif %}>{{ kind|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="guardian_monster">Guardian Monster</label><br>
+      <select id="guardian_monster" name="guardian_monster">
+        <option value="">-- None --</option>
+        {% for monster in monsters %}
+          <option value="{{ monster.name }}" {% if feature.guardian_monster == monster %}selected{% endif %}>{{ monster|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="guardian_alignment">Guardian Alignment</label><br>
+      <select id="guardian_alignment" name="guardian_alignment">
+        <option value="">-- Unset --</option>
+        {% for alignment in alignments %}
+          <option value="{{ alignment.name }}" {% if feature.guardian_alignment == alignment %}selected{% endif %}>{{ alignment|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="treasure">Treasure</label><br>
+      <select id="treasure" name="treasure">
+        <option value="">-- None --</option>
+        {% for treasure in treasures %}
+          <option value="{{ treasure.name }}" {% if feature.treasure == treasure %}selected{% endif %}>{{ treasure|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="magic_location">Magic Location</label><br>
+      <select id="magic_location" name="magic_location">
+        <option value="">-- Unset --</option>
+        {% for location in magic_locations %}
+          <option value="{{ location.name }}" {% if feature.magic_location == location %}selected{% endif %}>{{ location|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="magic_power">Magic Power</label><br>
+      <select id="magic_power" name="magic_power">
+        <option value="">-- None --</option>
+        {% for power in powers %}
+          <option value="{{ power.name }}" {% if feature.magic_power == power %}selected{% endif %}>{{ power|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="looted" {% if feature.looted %}checked{% endif %}> Looted (already sacked -- a Search here won't yield its Treasure again)</label>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="magically_hidden" {% if feature.magically_hidden %}checked{% endif %}> Magically Hidden</label>
+    </p>
+
+    <button type="submit">Save Feature</button>
+  </form>
+
+  <form method="post" action="{{ url_for('feature_delete', slug=meta.slug, feature_id=feature.feature_id) }}"
+        data-confirm="Permanently delete this Feature?">
+    <button type="submit" class="danger">Delete Feature</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Discovery &amp; Deal Status</h2>
+  <p class="hex-map-legend-note">Normally set by Search/Talk/exploration themselves -- exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('feature_status_save', slug=meta.slug, feature_id=feature.feature_id) }}">
+    <p>
+      <label for="pending_deal_leader_id">Pending Deal Leader</label><br>
+      <select id="pending_deal_leader_id" name="pending_deal_leader_id">
+        <option value="" {% if feature.pending_deal_leader_id is none %}selected{% endif %}>-- None --</option>
+        {% for leader_id, leader in state.leaders.items() %}
+          <option value="{{ leader_id }}" {% if feature.pending_deal_leader_id == leader_id %}selected{% endif %}>{{ leader.name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">Which Hero/King currently holds a Talk-secured deal with this Feature's own guardian, pending a later turn's Fulfill.</span>
+    </p>
+
+    <p>
+      <label for="guardian_talk_reply_id">Guardian Talk Reply</label><br>
+      <select id="guardian_talk_reply_id" name="guardian_talk_reply_id">
+        <option value="" {% if feature.guardian_talk_reply_id is none %}selected{% endif %}>-- Not yet resolved --</option>
+        {% for reply in talk_replies %}
+          <option value="{{ reply.name }}" {% if feature.guardian_talk_reply_id == reply.value %}selected{% endif %}>{{ reply|display_name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">This guardian's own fixed Talk reply, normally rolled once (deterministically) the first time a Hero successfully Talks to it, then reused for every later Talk. Set it directly to force a specific reply for this guardian; leave at "Not yet resolved" to let the next successful Talk roll it as usual.</span>
+    </p>
+
+    <p>
+      <label for="guardian_state">Guardian State</label><br>
+      <select id="guardian_state" name="guardian_state">
+        {% for state_value in guardian_states %}
+          <option value="{{ state_value.name }}" {% if feature.guardian_state == state_value %}selected{% endif %}>{{ state_value|display_name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">This guardian's own negotiation/raid-maturation state (Mercenary/Bold/Calm escalation, etc.) -- independent of Looted above, which stays the one true "is this guardian dead" bit.</span>
+    </p>
+
+    <p>
+      <label for="power_used_turn">Power Used Turn</label><br>
+      <input type="number" id="power_used_turn" name="power_used_turn" value="{{ feature.power_used_turn if feature.power_used_turn is not none else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">The gameturn this Feature's own magic Power was last successfully used, for its one-activation-per-gameturn rule. Blank means never used.</span>
+    </p>
+
+    {% if state.kingdoms %}
+      <p><label>Discovered By Kingdom (0-3)</label></p>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Kingdom</th>
+            <th>Discovery Level</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <tr>
+              <td>{{ kingdom.name }}</td>
+              <td><input type="number" name="discovered_{{ kingdom_id }}" value="{{ feature.discovered_by_kingdom.get(kingdom_id, 0) }}" min="0" max="3" style="width: 4em;"></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="hex-map-legend-note">0 = undiscovered (the default), 3 = fully known.</p>
+    {% endif %}
+
+    <button type="submit">Save Discovery &amp; Deal Status</button>
+  </form>
+</div>
+
+{% endblock %}

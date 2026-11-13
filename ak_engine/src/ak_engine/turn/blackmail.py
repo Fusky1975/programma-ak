@@ -185,6 +185,15 @@ def resolve_unpaid_blackmail(state: GameState, kingdom_id: int) -> int:
     the real "3 times that much" tax-revenue penalty, increments the
     spy's own halving exponent for their next demand, and clears the
     claim. Returns ``0`` when there's nothing outstanding.
+
+    **Phase 1192 bug fix**: the spy's own exponent increment is applied
+    whether the spy is still in ``state.leaders`` or has since died and
+    been archived into ``state.dead_leaders`` (``GameState.remove_
+    leader()`` moves, never destroys, the ``LeaderState``) -- the spy
+    placing the demand earlier the same turn and then dying in combat
+    before this later end-of-turn step runs is a real, reachable
+    ordering, and the increment matters for a future Resurrection of
+    that same leader.
     """
 
     kingdom = state.kingdoms.get(kingdom_id)
@@ -193,7 +202,12 @@ def resolve_unpaid_blackmail(state: GameState, kingdom_id: int) -> int:
 
     claim = kingdom.active_blackmail
     kingdom.active_blackmail = None
-    spy = state.leaders.get(claim.spy_leader_id)
+    # Phase 1192 bug fix: a spy who died earlier the same turn (e.g. in
+    # combat) is moved to GameState.dead_leaders by remove_leader(), not
+    # destroyed -- a bare state.leaders.get() missed that archive and
+    # silently dropped the escalation, even though the LeaderState (and
+    # a future Resurrection's use of it) still exists.
+    spy = state.leaders.get(claim.spy_leader_id) or state.dead_leaders.get(claim.spy_leader_id)
     if spy is not None:
         spy.unpaid_blackmail_penalty_exponent += 1
     return claim.amount * BLACKMAIL_UNPAID_TAX_MULTIPLIER

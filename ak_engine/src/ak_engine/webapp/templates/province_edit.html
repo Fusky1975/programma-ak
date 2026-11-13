@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+{% block title %}Province ({{ province.coord.x }}, {{ province.coord.y }}) -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('provinces_list', slug=meta.slug) }}">&larr; Provinces</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; Province ({{ province.coord.x }}, {{ province.coord.y }})</h2>
+
+  <form method="post" action="{{ url_for('province_save', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">
+    <p>
+      <label for="name">Name</label><br>
+      <input type="text" id="name" name="name" value="{{ province.name or '' }}" placeholder="(unnamed)">
+      <br><span class="hex-map-legend-note">The real host engine never generates this at runtime -- it's baked in by world generation, except for a Turn 1 Home-province rename order. Blank clears it.</span>
+    </p>
+
+    <p>
+      <label for="terrain">Terrain</label><br>
+      <select id="terrain" name="terrain">
+        {% for terrain in terrains %}
+          <option value="{{ terrain.name }}" {% if province.terrain == terrain %}selected{% endif %}>{{ terrain|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="race">Race</label><br>
+      <select id="race" name="race">
+        {% for race in races %}
+          <option value="{{ race.name }}" {% if province.race == race %}selected{% endif %}>{{ race|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="owner_kingdom_id">Owner</label><br>
+      <select id="owner_kingdom_id" name="owner_kingdom_id">
+        <option value="" {% if province.owner_kingdom_id is none %}selected{% endif %}>-- Unowned --</option>
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}" {% if province.owner_kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="tax">Tax</label><br>
+      <input type="number" id="tax" name="tax" value="{{ province.tax if province.tax is not none else '' }}">
+    </p>
+
+    <p>
+      <label for="recruit_type_1">Recruitable Unit 1</label><br>
+      <select id="recruit_type_1" name="recruit_type_1">
+        <option value="">-- None --</option>
+        {% for army_type in army_types %}
+          <option value="{{ army_type.name }}" {% if province.recruit_type_1 == army_type %}selected{% endif %}>{{ army_type|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="recruit_type_2">Recruitable Unit 2</label><br>
+      <select id="recruit_type_2" name="recruit_type_2">
+        <option value="">-- None --</option>
+        {% for army_type in army_types %}
+          <option value="{{ army_type.name }}" {% if province.recruit_type_2 == army_type %}selected{% endif %}>{{ army_type|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <button type="submit">Save Province</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Magic &amp; Terrain Effects</h2>
+  <p class="hex-map-legend-note">The lasting marks real casts (Part Sea/Flood, Bless/Earthquake, Illusory Terrain, Scar Terrain, Illusory Fog, Plague) and exploration (Find Mines, Island) leave on a province -- normally set and cleared by turn processing itself, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('province_effects_save', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">
+    <p>
+      <label for="terrain_override">Terrain Override (Part Sea / Flood)</label><br>
+      <select id="terrain_override" name="terrain_override">
+        <option value="" {% if province.terrain_override is none %}selected{% endif %}>-- None --</option>
+        {% for terrain in terrains %}
+          <option value="{{ terrain.name }}" {% if province.terrain_override == terrain %}selected{% endif %}>{{ terrain|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="tax_modifier_percent">Tax Modifier % (Bless / Earthquake)</label><br>
+      <input type="number" id="tax_modifier_percent" name="tax_modifier_percent" value="{{ province.tax_modifier_percent }}" style="width: 6em;">
+    </p>
+
+    <p>
+      <label for="illusory_terrain">Illusory Terrain</label><br>
+      <select id="illusory_terrain" name="illusory_terrain">
+        <option value="" {% if province.illusory_terrain is none %}selected{% endif %}>-- None --</option>
+        {% for terrain in terrains %}
+          <option value="{{ terrain.name }}" {% if province.illusory_terrain == terrain %}selected{% endif %}>{{ terrain|display_name }}</option>
+        {% endfor %}
+      </select>
+      <br>
+      <label><input type="checkbox" name="illusory_terrain_enhanced" {% if province.illusory_terrain_enhanced %}checked{% endif %}> Enhanced (caster held Enhanced Illusory Terrain)</label>
+    </p>
+
+    <p>
+      <label for="scar_terrain_gold_reduction">Scar Terrain Gold Reduction (cumulative)</label><br>
+      <input type="number" id="scar_terrain_gold_reduction" name="scar_terrain_gold_reduction" value="{{ province.scar_terrain_gold_reduction }}" style="width: 6em;">
+    </p>
+
+    <p>
+      <label for="earthquake_flat_reduction">Earthquake Flat Gold Reduction (Reinforced Concrete, this turn)</label><br>
+      <input type="number" id="earthquake_flat_reduction" name="earthquake_flat_reduction" value="{{ province.earthquake_flat_reduction }}" style="width: 6em;">
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="illusory_fog_active" {% if province.illusory_fog_active %}checked{% endif %}> Illusory Fog active (halves air-unit strength; dissipates at end of gameturn)</label>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="plague_active" {% if province.plague_active %}checked{% endif %}> Plague active</label>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="is_island" {% if province.is_island %}checked{% endif %}> Island (half-Sea/half-land terrain)</label>
+    </p>
+
+    <p>
+      <label for="mine_gold_bonus">Mine Gold Bonus (cumulative, capped at 10)</label><br>
+      <input type="number" id="mine_gold_bonus" name="mine_gold_bonus" value="{{ province.mine_gold_bonus }}" style="width: 6em;">
+    </p>
+
+    <p>
+      <label for="mine_find_attempts">Mine Find Attempts So Far</label><br>
+      <input type="number" id="mine_find_attempts" name="mine_find_attempts" value="{{ province.mine_find_attempts }}" style="width: 6em;">
+    </p>
+
+    <p>
+      <label for="contested_by_kingdom_id">Contested By (rulebook [7.6] mixed result)</label><br>
+      <select id="contested_by_kingdom_id" name="contested_by_kingdom_id">
+        <option value="" {% if province.contested_by_kingdom_id is none %}selected{% endif %}>-- Not Contested --</option>
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}" {% if province.contested_by_kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">The attacking Kingdom a battle here left in a "mixed result" standoff -- drives a forced rebattle each gameturn until it resolves.</span>
+    </p>
+
+    <p>
+      <label for="contested_from_x">Contested-From Coordinate (x, y)</label><br>
+      <input type="number" id="contested_from_x" name="contested_from_x" value="{{ province.contested_from_coord.x if province.contested_from_coord is not none else '' }}" style="width: 6em;">
+      <input type="number" id="contested_from_y" name="contested_from_y" value="{{ province.contested_from_coord.y if province.contested_from_coord is not none else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Where the contesting attacker originally invaded from -- rulebook [7.4]'s forced-rebattle retreat must return here or to an adjacent province. Leave both blank for not recorded.</span>
+    </p>
+
+    <button type="submit">Save Effects</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Exploration</h2>
+  <p class="hex-map-legend-note">How much of this province each Kingdom has explored (0-100%) -- normally advanced by Move/Explore orders, exposed here for the GM to set up a scenario directly or correct by hand. A Kingdom at 0% has no "known province" entry here at all, the same way the real game treats "never explored."</p>
+  {% if state.kingdoms %}
+    <form method="post" action="{{ url_for('province_exploration_save', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Kingdom</th>
+            <th>Explored %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <tr>
+              <td>{{ kingdom.name }}</td>
+              <td><input type="number" name="explored_{{ kingdom_id }}" value="{{ province.explored_percent_by_kingdom.get(kingdom_id, 0) }}" min="0" max="100" style="width: 5em;"></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit">Save Exploration</button>
+    </form>
+  {% else %}
+    <p class="empty-state">No Kingdoms yet.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Recruitment This Turn</h2>
+  <p class="hex-map-legend-note">Rulebook [3.4]: normally 1 of each unit type per province per turn, 2 in a King's own Home province -- normally tracked by Recruit orders themselves, exposed here for the GM to set up a scenario directly or correct by hand. Cleared at the end of every gameturn.</p>
+  <form method="post" action="{{ url_for('province_recruitment_save', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Unit Type</th>
+          <th>Recruited So Far</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for army_type in army_types %}
+          <tr>
+            <td>{{ army_type|display_name }}</td>
+            <td><input type="number" name="recruited_{{ army_type.name }}" value="{{ province.recruited_this_turn.get(army_type, 0) }}" min="0" style="width: 5em;"></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <p>
+      <label><input type="checkbox" name="recruit_locked_this_turn" {% if province.recruit_locked_this_turn %}checked{% endif %}> Recruitment Locked This Turn</label>
+      <br><span class="hex-map-legend-note">Druidic Dinosaurs' own "no further units may be recruited in the province that turn" hard lockout, regardless of unit type.</span>
+    </p>
+
+    <button type="submit">Save Recruitment</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Home Province</h2>
+  {% set current_homes = state.kingdoms.values()|selectattr('home_province', 'equalto', province.coord)|list %}
+  {% if current_homes %}
+    <p class="status-ok">Home of {{ current_homes|map(attribute='name')|join(', ') }}.</p>
+  {% else %}
+    <p class="game-meta">Not currently anyone's Home province.</p>
+  {% endif %}
+  {% if state.kingdoms %}
+    <form class="inline" method="post" action="{{ url_for('province_set_home', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">
+      <label for="home_kingdom_id">Make this the Home province of</label>
+      <select id="home_kingdom_id" name="kingdom_id">
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}">{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Set as Home</button>
+    </form>
+    <p class="hex-map-legend-note">This only moves the Home marker (used for Home-province bonuses, Royal Heir distance, etc.) -- it doesn't change this province's own owner, tax, or recruit types, or the old Home's either. Edit those separately if needed.</p>
+  {% endif %}
+  {% if province.owner_kingdom_id is none and not current_homes %}
+    <p><a class="button" href="{{ url_for('province_kingdom_new', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">Create Kingdom Here &rarr;</a></p>
+  {% endif %}
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Leaders Here</h2>
+  {% if leaders %}
+    <ul class="game-list">
+      {% for leader in leaders %}
+        <li>
+          <div>
+            <div class="game-name">{{ leader.name }}{% if leader.is_king %} (King){% endif %}</div>
+            <div class="game-meta">{{ state.kingdoms[leader.kingdom_id].name if leader.kingdom_id in state.kingdoms else 'Independent' }}</div>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <a class="button" href="{{ url_for('leader_edit', slug=meta.slug, leader_id=leader.leader_id) }}">Edit</a>
+            <form class="inline" method="post"
+                  action="{{ url_for('leader_delete', slug=meta.slug, leader_id=leader.leader_id, return_x=province.coord.x, return_y=province.coord.y) }}"
+                  data-confirm="Permanently delete {{ leader.name }}?{% if leader.is_king %} This King rules a Kingdom -- deleting him leaves it without a King (no Royal Heir is installed, unlike an in-game death).{% endif %}">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No Leaders here.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Armies Here</h2>
+  {% if armies %}
+    <ul class="game-list">
+      {% for army in armies %}
+        <li>
+          <div>
+            <div class="game-name">{{ army.army_type|display_name }} ({{ army.quality|display_name }})</div>
+            <div class="game-meta">{{ state.kingdoms[army.kingdom_id].name if army.kingdom_id in state.kingdoms else 'Unowned' }}</div>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <a class="button" href="{{ url_for('army_edit', slug=meta.slug, army_id=army.army_id) }}">Edit</a>
+            <form class="inline" method="post"
+                  action="{{ url_for('army_delete', slug=meta.slug, army_id=army.army_id, return_x=province.coord.x, return_y=province.coord.y) }}"
+                  data-confirm="Permanently delete this Army?">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No Armies here.</p>
+  {% endif %}
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Special Features</h2>
+  {% if features %}
+    <ul class="game-list">
+      {% for feature in features %}
+        <li>
+          <div class="game-name">#{{ feature.feature_id }} &mdash; {{ feature.kind|display_name }}</div>
+          <div style="display: flex; gap: 0.5rem;">
+            <a class="button" href="{{ url_for('feature_edit', slug=meta.slug, feature_id=feature.feature_id) }}">Edit</a>
+            <form class="inline" method="post"
+                  action="{{ url_for('feature_delete', slug=meta.slug, feature_id=feature.feature_id, return_x=province.coord.x, return_y=province.coord.y) }}"
+                  data-confirm="Permanently delete this Feature?">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No special features here yet.</p>
+  {% endif %}
+  <a class="button" href="{{ url_for('feature_new', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}">Add Special Feature</a>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Delete Province</h2>
+  <p class="hex-map-legend-note">There's no "Add Province" in this editor -- a deleted province can only come back by regenerating the whole world. Blocked while it's a Kingdom's Home province, or has any Army or Leader currently on it (move or remove them first); any Special Feature here is deleted along with it.</p>
+  <form method="post" action="{{ url_for('province_delete', slug=meta.slug, x=province.coord.x, y=province.coord.y) }}"
+        data-confirm="Permanently delete the province at ({{ province.coord.x }}, {{ province.coord.y }})? This cannot be undone from this interface.">
+    <button type="submit" class="danger">Delete Province</button>
+  </form>
+</div>
+
+{% endblock %}

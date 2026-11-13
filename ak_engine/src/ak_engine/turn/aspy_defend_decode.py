@@ -95,6 +95,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ak_engine.models.plan import PlanPhase
+from ak_engine.turn.decode_utils import phase_extra0
 
 
 @dataclass(slots=True)
@@ -112,12 +113,10 @@ class DefendRequest:
 def decode_aspy_phase(phase: PlanPhase) -> SpyProvinceRequest:
     """Decode an ASpy (Spy Province) PlanPhase's target province."""
 
-    extra0 = phase.extra[0] if phase.extra else 0
-    return SpyProvinceRequest(target_province=phase.obj, unconfirmed_extra0=extra0)
+    return SpyProvinceRequest(target_province=phase.obj, unconfirmed_extra0=phase_extra0(phase))
 
 
 def decode_defend_phase(phase: PlanPhase) -> DefendRequest:
     """Decode a Defend PlanPhase's target province."""
 
-    extra0 = phase.extra[0] if phase.extra else 0
-    return DefendRequest(target_province=phase.obj, unconfirmed_extra0=extra0)
+    return DefendRequest(target_province=phase.obj, unconfirmed_extra0=phase_extra0(phase))

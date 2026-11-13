@@ -35,8 +35,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ak_engine.models.army_type import NO_LEADER_SENTINEL
+from ak_engine.models.army_type import resolve_leader_id
 from ak_engine.models.plan import PlanPhase
+from ak_engine.turn.decode_utils import strip_sentinel
 
 ALL_ARMIES_SENTINEL = 255
 
@@ -57,12 +58,9 @@ def decode_army_list_phase(phase: PlanPhase) -> ArmyListRequest:
     if not values:
         return ArmyListRequest(target_leader_id=None, army_ids=[], all_armies=False)
 
-    leader_raw = values[0]
-    target_leader_id = None if leader_raw == NO_LEADER_SENTINEL else leader_raw
+    target_leader_id = resolve_leader_id(values[0])
 
-    ids = values[1:]
-    if ids and ids[-1] == -1:
-        ids = ids[:-1]
+    ids = strip_sentinel(values[1:])
 
     if ids == [ALL_ARMIES_SENTINEL]:
         return ArmyListRequest(target_leader_id=target_leader_id, army_ids=[], all_armies=True)

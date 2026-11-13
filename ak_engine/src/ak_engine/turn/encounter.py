@@ -26,9 +26,16 @@ connects them.
 
 **[5.3] Melee**: "You can enter melee even if you have no skill in melee
 combat... A character has a base chance to hit of 50%, and does 1-6
-damage points per swing." -- flat 50%, **not** skill-scaled (unlike Fire
-Arrow); the Melee `Ability` level still matters for initiative ordering
-per [5.0]'s generic rule, just not for the hit chance itself.
+damage points per swing." -- flat 50% *hit chance*, **not** skill-scaled
+(unlike Fire Arrow); the Melee `Ability` level still matters for
+initiative ordering per [5.0]'s generic rule. **Damage, however, does
+scale with skill** (sourced directly from the user, 2026-10-28, who
+corrected this module's own prior reading): "+1 per differenza nel
+Talento Melee tra chi attacca e chi difende" -- on a successful hit,
+``roll_melee_attack()``'s own ``skill_difference_bonus`` parameter adds
+``max(0, attacker's effective Melee skill - defender's)`` to the die
+roll, so a more-skilled attacker hits harder but a less-skilled one
+never does less than the base 1-6 die.
 
 **[5.2] Fire Arrow**: "You can have a number of free attacks equal to
 the level of archery skill... The base chance to hit is 30%, plus 10%
@@ -1529,6 +1536,20 @@ helper -- same Phase 516 scope boundary: those functions fight with
 freshly-built `Combatant`s that never carry a real leader's own Advanced
 Ability data in the first place.
 
+**Stale as of Phase 1050 -- this paragraph's own claim was wrong.**
+Directly checking both real call sites (`turn/challenge_execution.py`,
+`turn/search_execution.py`) shows `caster`/`opponent` passed into these
+two duels are always real leader `Combatant`s built by the same
+`_leader_combatant()` every ordinary Melee duel uses, and the
+throwaway `illusion` itself is a full-record copy of one of them
+(Phase 783 below) -- not a stripped-down placeholder. There was never
+a real reason these two duels couldn't call the shared helpers; they
+simply never had. Closed by routing both duels' own melee exchanges
+through `resolve_one_melee_round()` itself (not just `_melee_landed_
+damage()` in isolation), which also closes the matching gaps this
+same stale reasoning left in weapon on-hit procs and end-of-round
+regeneration -- see each function's own Phase 1050 addendum.
+
 **Phase 518 addendum -- `AdvancedAbility.MELEE_DUELLISTS_MEDAL`.**
 `models/advanced_ability.py`'s own sourced text: "When fighting against
 humanoid creatures, the character has a plus 10% chance to hit and plus
@@ -1997,6 +2018,24 @@ def hand_of_death_cast_and_archery_block(target_is_immune: bool, target_has_arti
     return blocked, blocked and not target_has_artificial_organs
 
 
+def _round_randomly(exact: float, rng: random.Random) -> int:
+    """Phase 1051: the "random rounding when fractional" convention
+    Spiritwrack's own Melee damage reduction established (Phase 182) and
+    Hand of Death's own attack damage (``roll_hand_of_death_damage``
+    below) later reused word for word -- a whole exact value resolves
+    without a roll, a fractional part is a weighted coin flip (e.g. a
+    0.5 fractional part is a 50/50 flip) between rounding down and up.
+    Extracted once both call sites were confirmed byte-identical, to
+    stop the formula from drifting between them.
+    """
+
+    whole = int(exact)
+    fraction = exact - whole
+    if fraction <= 0.0:
+        return whole
+    return whole + 1 if rng.random() < fraction else whole
+
+
 def spiritwrack_melee_damage_reduction(
     skill_level: int,
     rng: random.Random,
@@ -2022,12 +2061,7 @@ def spiritwrack_melee_damage_reduction(
     if target_is_animal_intelligence:
         rate *= SPIRITWRACK_ANIMAL_INTELLIGENCE_DAMAGE_RATE_MULTIPLIER
 
-    exact = rate * effective_level
-    whole = int(exact)
-    fraction = exact - whole
-    if fraction <= 0.0:
-        return whole
-    return whole + 1 if rng.random() < fraction else whole
+    return _round_randomly(rate * effective_level, rng)
 
 
 # Charm [CH], module docstring's own Phase 183 addendum -- project-
@@ -2450,8 +2484,10 @@ def roll_hand_of_death_damage(
     livello in magia nera" -- ``HAND_OF_DEATH_BASE_DAMAGE`` (1) plus
     ``HAND_OF_DEATH_DAMAGE_PER_LEVEL`` (0.5) per level, uncapped.
     Uses the same random-rounding-when-fractional convention
-    Spiritwrack's own melee damage reduction established (Phase 182):
-    a whole exact value resolves without a roll, a 0.5 fractional part
+    Spiritwrack's own melee damage reduction established (Phase 182) --
+    extracted into the shared ``_round_randomly()`` helper above at
+    Phase 1051, once both call sites were confirmed byte-identical: a
+    whole exact value resolves without a roll, a 0.5 fractional part
     is a 50/50 coin flip. Returns 0 without a roll when
     ``target_is_immune`` (mechanical, Undead, or anti-holy -- see
     ``models/monster.py HAND_OF_DEATH_IMMUNE_MONSTERS``).
@@ -2487,11 +2523,7 @@ def roll_hand_of_death_damage(
         return 0
 
     exact = HAND_OF_DEATH_BASE_DAMAGE + HAND_OF_DEATH_DAMAGE_PER_LEVEL * skill_level
-    whole = int(exact)
-    fraction = exact - whole
-    if fraction <= 0.0:
-        return whole
-    return whole + 1 if rng.random() < fraction else whole
+    return _round_randomly(exact, rng)
 
 
 def hand_of_death_victim_hit_chance(base_hit_chance: float, *, target_is_immune: bool = False) -> float:
@@ -2610,7 +2642,12 @@ PERSONAL_COMBAT_PLACES_BONUS_PERCENT = 0.20
 
 
 def personal_combat_spell_cast_chance(
-    skill_level: int, *, caster_is_pagan: bool = False, damp_magic: bool = False, places_bonus: bool = False
+    skill_level: int,
+    *,
+    caster_is_pagan: bool = False,
+    damp_magic: bool = False,
+    places_bonus: bool = False,
+    success_chance_multiplier: float = 1.0,
 ) -> float:
     """"Gli Incantesimi di Combattimento Individuale hanno una
     probabilità di riuscita del 30% più 15% per livello," capped at
@@ -2657,6 +2694,18 @@ def personal_combat_spell_cast_chance(
     Advanced Ability and the Feature currently being searched is one of
     that ability's own 3 named types; this function itself has no
     Feature concept to check.
+
+    **2026-10-31**: ``success_chance_multiplier`` (default 1.0, every
+    earlier caller unaffected) is a per-attempt multiplier applied
+    before the cap, in the same additive-then-cap block as the two
+    bonuses above -- mirrors ``cast_execution.py``'s own
+    ``_roll_cast_success()`` ``success_chance_multiplier`` parameter
+    exactly (same name, same "before the cap" placement, same
+    reasoning: keeps the cap the one final ceiling regardless of any
+    spell-specific modifier).
+    Kill Enemy's own Personal-Combat halving (``turn/search_
+    execution.py``/``turn/challenge_execution.py``'s own Kill Enemy
+    branches) is the first real caller.
     """
 
     effective_level = min(skill_level, PERSONAL_COMBAT_SPELL_LEVEL_CAP)
@@ -2665,6 +2714,7 @@ def personal_combat_spell_cast_chance(
         chance += PERSONAL_COMBAT_PAGAN_MAGE_ORDER_BONUS
     if places_bonus:
         chance += PERSONAL_COMBAT_PLACES_BONUS_PERCENT
+    chance *= success_chance_multiplier
     chance = min(chance, PERSONAL_COMBAT_SPELL_CAST_CHANCE_CAP)
     if damp_magic:
         chance *= DAMP_MAGIC_CAST_CHANCE_MULTIPLIER
@@ -2672,7 +2722,13 @@ def personal_combat_spell_cast_chance(
 
 
 def resolve_personal_combat_spell_cast(
-    skill_level: int, rng: random.Random, *, caster_is_pagan: bool = False, damp_magic: bool = False, places_bonus: bool = False
+    skill_level: int,
+    rng: random.Random,
+    *,
+    caster_is_pagan: bool = False,
+    damp_magic: bool = False,
+    places_bonus: bool = False,
+    success_chance_multiplier: float = 1.0,
 ) -> bool:
     """Rolls whether a Personal-Combat spell attempt succeeds, using
     ``personal_combat_spell_cast_chance()``'s own formula. Governs all
@@ -2682,7 +2738,11 @@ def resolve_personal_combat_spell_cast(
     """
 
     return rng.random() < personal_combat_spell_cast_chance(
-        skill_level, caster_is_pagan=caster_is_pagan, damp_magic=damp_magic, places_bonus=places_bonus
+        skill_level,
+        caster_is_pagan=caster_is_pagan,
+        damp_magic=damp_magic,
+        places_bonus=places_bonus,
+        success_chance_multiplier=success_chance_multiplier,
     )
 
 
@@ -2778,6 +2838,11 @@ PERSONAL_COMBAT_SPELL_ABILITY: dict[Spell, Ability] = {
     Spell.ICE_SUSPEND: Ability.ELEMENTAL,
     Spell.HAND_OF_DEATH: Ability.NECROMANCY,
     Spell.CONTROL_UNDEAD: Ability.NECROMANCY,
+    # Kill Enemy [4.25.2] (2026-10-31, user-requested Personal-Combat
+    # build): tied to Ability.NECROMANCY -- same [4.25] citation block
+    # as Hand of Death/Control Undead above, and the same Ability its
+    # own Action-Cast form uses (`cast_execution.py _SPELL_ABILITY`).
+    Spell.KILL_ENEMY: Ability.NECROMANCY,
 }
 
 
@@ -3044,6 +3109,28 @@ class Combatant:
     # the Melee-vs-Melee case (see that function's own Phase 767 addendum;
     # `resolve_reactive_melee_swing()` deliberately still doesn't drain it).
     bonus_unanswered_attacks: int = 0
+    # Phase 1050 -- whether this combatant is (or has been, this same
+    # encounter -- see below) the TARGET of a successful Psychic Blast
+    # cast, i.e. the stunned side, not the caster who banks `bonus_
+    # unanswered_attacks` above. The only real consumer is Psychic
+    # Flail's own on-hit proc (`apply_weapon_on_hit_effects()`): `models/
+    # treasure.py`'s sourced text grants an extra stunned round "if the
+    # opponent is already under the effects of the Psychic Blast spell"
+    # on top of the weapon's own base one-round stun -- unreadable
+    # before this field existed, since Psychic Blast's own stun is
+    # otherwise modeled entirely as the CASTER's `bonus_unanswered_
+    # attacks`, fully drained by `_consume_bonus_attacks()` before any
+    # Melee round (where Psychic Flail could land a hit) ever runs -- no
+    # state survived on the stunned side itself for a later Melee swing
+    # to observe. **No source gives an expiration for "already under the
+    # effects"** -- rather than invent an unsourced stun-round countdown
+    # this project has no other precedent for, this flag is simply never
+    # cleared once set: once a combatant has been hit by a real Psychic
+    # Blast cast this encounter, Psychic Flail's own stacking bonus can
+    # fire against them for the rest of it. A real, if generous,
+    # approximation of "currently stunned" -- not a guess at an invented
+    # decay rule.
+    stunned_by_psychic_blast: bool = False
     # Phase 284 -- multiplies the chance THIS combatant lands a hit (the
     # attacker-side counterpart to defensive_hit_multiplier above) --
     # Slancio's own +10% for a Brave combatant. Default 1.0 leaves every
@@ -3418,12 +3505,18 @@ def apply_weapon_on_hit_effects(
     chance, and Psychic Flail's stun -- see module docstring's own Phase
     536 addendum for the quoted dossier pseudocode. Called immediately
     after a landed Melee swing's own net damage is known, from both
-    ``resolve_one_melee_round()`` and ``resolve_reactive_melee_swing()``
-    (every real Melee-swing call site this module has outside the
-    simplified Mirror-Image/Illusory-Hero phantasm duels and Hand of
-    Death's own victim counter-swing, none of which apply any of the
-    other per-attacker ``Combatant`` bonus fields either -- the same
-    established scope boundary, not a new one). A no-op (returns
+    ``resolve_one_melee_round()`` and ``resolve_reactive_melee_swing()``.
+
+    **Stale as of Phase 1050**: this used to also list the Mirror-Image/
+    Illusory-Hero phantasm duels as deliberately out of scope here,
+    alongside Hand of Death's own victim counter-swing -- both
+    ``resolve_mirror_image_duel()``/``resolve_illusory_hero_duel()`` now
+    call ``resolve_one_melee_round()`` for their own melee exchanges
+    (see each one's own Phase 1050 addendum), which already calls this
+    function, so they're real callers now too, not an exception. Hand of
+    Death's victim counter-swing remains the one real gap: no sourced
+    text describes a weapon proc firing from that specific defensive
+    reflex, so it's deliberately not wired here. A no-op (returns
     ``None``) when ``attacker.equipped_weapon`` is not one of the three
     weapons with an on-hit effect, or when ``damage_dealt`` is 0 (a
     miss, or a hit reduced to net 0 by Spiritwrack/``damage_reduction``,
@@ -3444,13 +3537,32 @@ def apply_weapon_on_hit_effects(
     effect (``attacker.bonus_unanswered_attacks += 1``) is unchanged,
     but the caller finds out via the return value now, the same as the
     other two, rather than having to notice the counter changed.
+
+    **Phase 1050 bug fix**: Psychic Flail's own sourced text has a
+    second clause this function never implemented at all -- "if the
+    opponent is already under the effects of the Psychic Blast spell,
+    he is stunned for an additional round." Closed via ``Combatant.
+    stunned_by_psychic_blast`` (see that field's own docstring for the
+    full design and its own honestly-flagged "no source for an
+    expiration" simplification): a successful stun now credits 2 bonus
+    rounds instead of 1 when ``defender.stunned_by_psychic_blast`` is
+    set, matching the dossier's own "+1 additional round" wording
+    exactly (1 base + 1 additional).
     """
 
     if damage_dealt <= 0:
         return None
     weapon = attacker.equipped_weapon
     if weapon is Treasure.WEAPON_2:  # Shadow Sword
-        drain = int(damage_dealt * SHADOW_SWORD_LIFE_DRAIN_FRACTION)
+        # Phase 1050 bug fix -- no source gives a Trunc-vs-round direction
+        # for this 50% fraction (`models/treasure.py`'s own text: "Half
+        # the hit points... are used to restore..."), the same unsourced-
+        # rounding situation `Discovery.ASBESTOS_CLOTHING`'s own comment
+        # above documents this project's real default for: "reuse this
+        # project's own established round() default." This was the one
+        # unsourced-percentage site in this module still using `int()`
+        # truncation instead.
+        drain = round(damage_dealt * SHADOW_SWORD_LIFE_DRAIN_FRACTION)
         attacker.hit_points = min(CHARACTER_HIT_POINTS, attacker.hit_points + drain)
         return "shadow_sword_drain"
     elif weapon is Treasure.WEAPON_3:  # Flaming Scimitar
@@ -3459,7 +3571,7 @@ def apply_weapon_on_hit_effects(
             return "flaming_scimitar_instakill"
     elif weapon is Treasure.WEAPON_4:  # Psychic Flail
         if rng.random() < PSYCHIC_FLAIL_STUN_CHANCE:
-            attacker.bonus_unanswered_attacks += 1
+            attacker.bonus_unanswered_attacks += 2 if defender.stunned_by_psychic_blast else 1
             return "psychic_flail_stun"
     return None
 
@@ -3563,6 +3675,26 @@ def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random)
     (1.2 * 1.2 = 1.44, not the correct 1.4) -- dividing first isolates
     exactly the weapon's own contribution regardless of what else
     (Melee Mastery) is already composed into the same multiplier.
+
+    **Phase 1050 bug fix**: the identical swap was missing for the
+    weapon's own *defensive* side. ``models/treasure.py`` sources Holy
+    Sword's auto-protection as "the same as a Holy Symbol spell cast at
+    skill level 4, except it causes no damage" -- a real Holy Symbol
+    cast doubles its hit-chance reduction to 20%/level against an
+    Undead/Anti-Holy opponent (``holy_symbol_hit_chance()``'s own
+    ``target_is_undead_or_anti_holy`` parameter, module docstring's own
+    Phase 180 addendum), but ``weapon_defensive_hit_multiplier()`` (Phase
+    535, builder time) always calls it with that parameter left at its
+    default ``False``, since a builder never knows the opponent yet --
+    exactly the same "builder-time, opponent-blind" gap the offensive
+    side above already has a real fix for. Nothing else ever composes
+    into ``defensive_hit_multiplier`` at builder time for this weapon
+    (confirmed: every builder sets it to ``weapon_defensive_hit_
+    multiplier(weapon)`` directly, no further multiplication), but the
+    same divide-out-then-multiply-in shape as the offensive fix above is
+    used anyway, for the identical robustness reason -- correct
+    regardless of what else might already be composed into this
+    multiplier.
     """
 
     for combatant, opponent in ((a, b), (b, a)):
@@ -3571,6 +3703,13 @@ def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random)
             undead_hit_multiplier = 1.0 + HOLY_SWORD_HIT_BONUS_VS_UNDEAD / 100
             combatant.offensive_hit_multiplier = combatant.offensive_hit_multiplier / base_hit_multiplier * undead_hit_multiplier
             combatant.melee_damage_dealt_bonus += HOLY_SWORD_DAMAGE_BONUS_VS_UNDEAD - WEAPON_DAMAGE_BONUS[Treasure.WEAPON_1]
+            base_defensive_multiplier = holy_symbol_hit_chance(1.0, HOLY_SWORD_AUTO_PROTECTION_LEVEL)
+            undead_defensive_multiplier = holy_symbol_hit_chance(
+                1.0, HOLY_SWORD_AUTO_PROTECTION_LEVEL, target_is_undead_or_anti_holy=True
+            )
+            combatant.defensive_hit_multiplier = (
+                combatant.defensive_hit_multiplier / base_defensive_multiplier * undead_defensive_multiplier
+            )
         if combatant.has_duellists_medal_ability and opponent.is_humanoid:
             combatant.offensive_hit_multiplier *= 1.0 + MELEE_DUELLISTS_MEDAL_HIT_CHANCE_BONUS
             combatant.melee_damage_dealt_bonus += MELEE_DUELLISTS_MEDAL_DAMAGE_BONUS
@@ -3596,7 +3735,11 @@ def apply_temper_melee_setup(a: "Combatant", b: "Combatant", rng: random.Random)
 
 
 def roll_melee_attack(
-    rng: random.Random, damage_range: tuple[int, int] = MELEE_DAMAGE_RANGE, *, hit_chance_multiplier: float = 1.0
+    rng: random.Random,
+    damage_range: tuple[int, int] = MELEE_DAMAGE_RANGE,
+    *,
+    hit_chance_multiplier: float = 1.0,
+    skill_difference_bonus: int = 0,
 ) -> int:
     """Rulebook [5.3]: one Melee swing. Returns damage dealt (0 on a miss).
 
@@ -3606,10 +3749,22 @@ def roll_melee_attack(
     defaults to 1.0 (every pre-Phase-209 caller unaffected); pass a
     defender's own ``Combatant.defensive_hit_multiplier`` (Phase 209) to
     apply Holy Symbol's/Invisibility's own hit-chance reduction.
+
+    ``skill_difference_bonus`` -- sourced directly from the user
+    (2026-10-28): "infligge 1-6 punti danno per colpo più 1 per
+    differenza nel Talento Melee tra chi attacca e chi difende."
+    Defaults to 0 (every earlier caller unaffected -- this project's
+    own prior sourced reading of [5.3] had no such term at all, see
+    this module's own docstring). Added only on a successful hit (a
+    miss stays 0, never turned into damage); callers pass ``max(0,
+    effective_melee_skill(attacker) - effective_melee_skill(defender))``
+    -- floored at 0 per the user's own confirmation, so a less-skilled
+    attacker never deals *less* than the base die roll, only ever a
+    bonus when more skilled than the defender.
     """
 
     if rng.random() < MELEE_HIT_CHANCE * hit_chance_multiplier:
-        return rng.randint(*damage_range)
+        return rng.randint(*damage_range) + skill_difference_bonus
     return 0
 
 
@@ -3831,10 +3986,18 @@ def resolve_one_melee_round(
     for attacker, defender in ((first, second), (second, first)):
         if attacker.hit_points <= 0 or defender.hit_points <= 0:
             continue
+        # Phase 1051: both already computed once, above, as skill_a/
+        # skill_b -- reused here instead of calling effective_melee_
+        # skill() again for every swing (regular and bonus alike) this
+        # round, since neither side's melee_skill/neutral_duelist_bonus
+        # changes mid-round.
+        attacker_skill = skill_a if attacker is a else skill_b
+        defender_skill = skill_b if attacker is a else skill_a
         raw_damage = roll_melee_attack(
             rng,
             damage_range=attacker.melee_damage_range,
             hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
+            skill_difference_bonus=max(0, attacker_skill - defender_skill),
         )
         damage = _melee_landed_damage(raw_damage, attacker, defender)
         defender.hit_points -= damage
@@ -3864,6 +4027,7 @@ def resolve_one_melee_round(
                 rng,
                 damage_range=attacker.melee_damage_range,
                 hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
+                skill_difference_bonus=max(0, attacker_skill - defender_skill),
             )
             bonus_damage = _melee_landed_damage(bonus_raw_damage, attacker, defender)
             defender.hit_points -= bonus_damage
@@ -3910,6 +4074,7 @@ def resolve_reactive_melee_swing(attacker: Combatant, defender: Combatant, rng: 
         rng,
         damage_range=attacker.melee_damage_range,
         hit_chance_multiplier=attacker.offensive_hit_multiplier * defender.defensive_hit_multiplier,
+        skill_difference_bonus=max(0, effective_melee_skill(attacker) - effective_melee_skill(defender)),
     )
     damage = _melee_landed_damage(raw_damage, attacker, defender)
     defender.hit_points -= damage
@@ -4003,6 +4168,26 @@ def _apply_end_of_round_regeneration(a: Combatant, b: Combatant, round_number: i
         b.hit_points += b.regenerates_hp
 
 
+@dataclass(slots=True)
+class _FireArrowSide:
+    """Phase 1051: one side's own per-call Fire Arrow bookkeeping inside
+    ``resolve_fire_arrow_duel()`` below -- introduced once the function's
+    own ``if combatant is a: ... else: ...`` blocks were confirmed to be
+    the same shot-resolution logic twice over, differing only by which
+    side is shooting/shot-at. ``used`` is the only mutable field (the
+    shot count consumed so far this duel); everything else is fixed for
+    the whole call.
+    """
+
+    label: str  # "a" / "b", matching EncounterCombatResult.winner's own convention
+    shooter: Combatant
+    target: Combatant
+    skill: int
+    shots_allowed: int
+    long_range_multiplier: float
+    used: int = 0
+
+
 def resolve_fire_arrow_duel(
     a: Combatant,
     b: Combatant,
@@ -4010,6 +4195,7 @@ def resolve_fire_arrow_duel(
     *,
     long_range_archer: str | None = None,
     short_range_archer: str | None = None,
+    closing_side: str | None = None,
 ) -> EncounterCombatResult:
     """Rulebook [5.2]: each combatant fires up to ``fire_arrow_free_attacks(archery_skill)``
     shots, interleaved round-by-round by initiative (higher Archery
@@ -4056,6 +4242,25 @@ def resolve_fire_arrow_duel(
     exclusive in practice (a single Fire tactic is only ever resolved
     from one range at a time) but are independent flags here so neither
     accidentally implies the other's own multiplier.
+
+    **2026-11-04 -- RULES.AK [5.2]**: "Se un personaggio riceve l'ordine
+    di attaccare con armi da lancio a portata d'incantesimo, si avvicina
+    a portata d'arco, consumando così un round e tira quindi nel round
+    successivo." ``closing_side`` (default ``None``, every pre-existing
+    caller unaffected) names whichever side is closing from Spell Range
+    to Bow Range this call -- confirmed with the user: *that* side
+    alone skips round 1 entirely (no shot at all that round, not even a
+    reduced one -- the round is simply spent moving), while the *other*
+    side fires completely normally from round 1 onward, exactly as if
+    neither side were closing. The closing side's own total shot count
+    is unchanged; it only starts one round later, so the duel runs one
+    round longer than it otherwise would whenever that extra round is
+    actually needed (never shortened, never fewer rounds than either
+    side's own real total requires). Mutually exclusive with ``long_
+    range_archer``/``short_range_archer`` in practice (those model a
+    caster who skips closing entirely, firing from Spell Range itself,
+    the opposite situation) -- not enforced here, since no real caller
+    ever passes both.
     """
 
     skill_a, skill_b = effective_archery_skill(a), effective_archery_skill(b)
@@ -4067,44 +4272,37 @@ def resolve_fire_arrow_duel(
         shots_a = 0
     long_range_multiplier_a = LONG_RANGE_ARCHERY_HIT_MULTIPLIER if long_range_archer == "a" else 1.0
     long_range_multiplier_b = LONG_RANGE_ARCHERY_HIT_MULTIPLIER if long_range_archer == "b" else 1.0
-    used_a = used_b = 0
-    total_rounds = max(shots_a, shots_b)
+    side_a = _FireArrowSide("a", a, b, skill_a, shots_a, long_range_multiplier_a)
+    side_b = _FireArrowSide("b", b, a, skill_b, shots_b, long_range_multiplier_b)
+    rounds_needed_a = shots_a + (1 if closing_side == "a" else 0)
+    rounds_needed_b = shots_b + (1 if closing_side == "b" else 0)
+    total_rounds = max(rounds_needed_a, rounds_needed_b)
     shots: list[FireArrowShot] = []
 
     round_number = 0
     for round_number in range(1, total_rounds + 1):
         order = (
-            (a, b) if _acts_first(skill_a, skill_b, rng, a_always_first=a.always_acts_first, b_always_first=b.always_acts_first) else (b, a)
+            (side_a, side_b)
+            if _acts_first(skill_a, skill_b, rng, a_always_first=a.always_acts_first, b_always_first=b.always_acts_first)
+            else (side_b, side_a)
         )
-        for combatant in order:
+        for side in order:
             if a.hit_points <= 0 or b.hit_points <= 0:
                 break
-            if combatant is a:
-                if used_a >= shots_a:
-                    continue
-                used_a += 1
-                raw_damage = roll_fire_arrow_attack(
-                    skill_a,
-                    rng,
-                    damage_range=a.missile_damage_range,
-                    hit_chance_multiplier=a.archery_hit_multiplier * b.defensive_hit_multiplier * long_range_multiplier_a,
-                )
-                damage = _fire_arrow_landed_damage(raw_damage, a, b)
-                shots.append(FireArrowShot(shooter="a", hit=raw_damage > 0, damage=damage))
-                b.hit_points -= damage
-            else:
-                if used_b >= shots_b:
-                    continue
-                used_b += 1
-                raw_damage = roll_fire_arrow_attack(
-                    skill_b,
-                    rng,
-                    damage_range=b.missile_damage_range,
-                    hit_chance_multiplier=b.archery_hit_multiplier * a.defensive_hit_multiplier * long_range_multiplier_b,
-                )
-                damage = _fire_arrow_landed_damage(raw_damage, b, a)
-                shots.append(FireArrowShot(shooter="b", hit=raw_damage > 0, damage=damage))
-                a.hit_points -= damage
+            if closing_side == side.label and round_number == 1:
+                continue  # spent this round closing to Bow Range, not shooting
+            if side.used >= side.shots_allowed:
+                continue
+            side.used += 1
+            raw_damage = roll_fire_arrow_attack(
+                side.skill,
+                rng,
+                damage_range=side.shooter.missile_damage_range,
+                hit_chance_multiplier=side.shooter.archery_hit_multiplier * side.target.defensive_hit_multiplier * side.long_range_multiplier,
+            )
+            damage = _fire_arrow_landed_damage(raw_damage, side.shooter, side.target)
+            shots.append(FireArrowShot(shooter=side.label, hit=raw_damage > 0, damage=damage))
+            side.target.hit_points -= damage
         if a.hit_points <= 0 or b.hit_points <= 0:
             break
         _apply_end_of_round_regeneration(a, b, round_number)
@@ -4187,16 +4385,26 @@ def resolve_hand_of_death_channel(
     Necromancy duel: the caster's own attack always lands (``roll_hand_
     of_death_damage()`` has no hit-chance roll of its own -- it is a
     psychic, not physical, blow) for ``1 + 0.5*level`` damage, uncapped;
-    the victim's own Melee counter-attack uses their normal damage die at
-    ``HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER`` (halved) hit chance.
+    the victim's own Melee counter-attack uses their normal damage die,
+    composed exactly like every other Melee swing in this module
+    (``victim.offensive_hit_multiplier * caster.defensive_hit_multiplier``
+    -- Berserk/Duellist's-Medal/Invisibility etc.), then further halved
+    by ``HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER``.
     Initiative uses the caster's own Necromancy skill level in place of
     Melee (``hand_of_death_caster_melee_defense_skill()``, [5.0]'s
     generic rule) against the victim's own real effective Melee skill.
+
+    **Bug fix**: the victim's counter-attack used to be rolled at a flat
+    ``HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER`` only, silently
+    dropping the composed multiplier above -- an Invisible caster (or a
+    Berserk/Duellist's-Medal-equipped victim) was never consulted for
+    this one roll, unlike every other Melee swing in this module.
 
     ``winner="a"`` (the caster) only when the victim's hit points reach 0
     -- "chi lancia questo incantesimo" wins outright, same convention as
     every other instant-resolution Personal-Combat spell. Returns
     ``winner=None`` the instant the victim lands *any* hit on the caster
+    that does NOT itself drop the caster's own hit points to 0 or below
     ("quando chi lancia l'incantesimo viene colpito perde la
     concentrazione e l'incantesimo svanisce") -- the caster still takes
     that hit's real damage; the channel simply ends there and the caller
@@ -4207,6 +4415,26 @@ def resolve_hand_of_death_channel(
     MONSTERS`` for a monster target, or ``leader.alignment in {UNDEAD,
     ANTI_HOLY}`` for a leader target) -- "inefficace contro" mechanical/
     Undead/anti-holy targets, the spell simply never engages.
+
+    **Phase 1050 bug fix -- ``winner="b"`` (the victim) when that same
+    disrupting counter-attack is itself lethal.** The disruption-ends-
+    the-channel text above only describes a caster who survives the hit
+    (the sourced "loses concentration, spell fades" framing presumes
+    there's a caster left to lose concentration); it was previously
+    returning ``winner=None`` unconditionally, with no check on
+    ``caster.hit_points`` at all, unlike every other branch in this
+    function (and every other round-based duel resolver in this module)
+    that checks the side it just damaged before deciding the outcome.
+    Both real callers (``turn/challenge_execution.py``'s and ``turn/
+    search_execution.py``'s own ``Spell.HAND_OF_DEATH`` dispatch) trust
+    ``winner is None`` to mean "the caster is still a live combatant,
+    continue the encounter with a normal tactic" -- with the old
+    unconditional ``None``, a caster the counter-attack had just reduced
+    to 0 HP or below was carried forward as if still alive, through
+    ``_consume_bonus_attacks()`` and into the rest of the encounter
+    loop, which could go on to resolve the opponent's own queued tactic
+    against an already-dead combatant. Both call sites updated to treat
+    ``winner="b"`` the same way they already treat a Melee-duel loss.
 
     **Phase 884**: ``target_has_artificial_organs`` (``Discovery.
     ARTIFICIAL_ORGANS``) does NOT skip the channel the way ``target_is_
@@ -4299,11 +4527,35 @@ def resolve_hand_of_death_channel(
                 raw_damage = roll_melee_attack(
                     rng,
                     damage_range=victim.melee_damage_range,
-                    hit_chance_multiplier=HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER,
+                    # Bug fix: this used to pass only the flat Hand-of-
+                    # Death halving (0.5) as the whole hit_chance_
+                    # multiplier, silently dropping victim.offensive_
+                    # hit_multiplier/caster.defensive_hit_multiplier --
+                    # the same composition every other Melee swing in
+                    # this module applies (resolve_one_melee_round above:
+                    # attacker.offensive_hit_multiplier * defender.
+                    # defensive_hit_multiplier). An Invisible caster (or
+                    # a Berserk/Duellist's-Medal victim) was therefore
+                    # never consulted for this one roll.
+                    hit_chance_multiplier=(
+                        victim.offensive_hit_multiplier
+                        * caster.defensive_hit_multiplier
+                        * HAND_OF_DEATH_VICTIM_HIT_CHANCE_MULTIPLIER
+                    ),
                 )
                 if raw_damage > 0:
-                    damage = max(0, raw_damage - caster.damage_reduction)
+                    # Phase 1050 bug fix -- this used to hand-roll `max(0,
+                    # raw_damage - caster.damage_reduction)`, the same kind
+                    # of composition gap the hit-chance side above was
+                    # already fixed for: it silently dropped victim.melee_
+                    # damage_dealt_bonus/melee_damage_dealt_reduction (e.g.
+                    # Melee Mastery, Spiritwrack), unlike every other real
+                    # Melee swing in this module, which routes through the
+                    # shared _melee_landed_damage() helper.
+                    damage = _melee_landed_damage(raw_damage, victim, caster)
                     caster.hit_points -= damage
+                    if caster.hit_points <= 0:
+                        return EncounterCombatResult(winner="b", rounds=round_number, squeeze_hits=tuple(squeeze_hits))
                     return EncounterCombatResult(winner=None, rounds=round_number, squeeze_hits=tuple(squeeze_hits))
         _apply_end_of_round_regeneration(caster, victim, round_number)
     return EncounterCombatResult(winner=None, rounds=round_number, squeeze_hits=tuple(squeeze_hits))
@@ -4487,6 +4739,33 @@ def resolve_mirror_image_duel(
     the opponent's own revival isn't given anywhere in the source, and
     doesn't change this function's own reported winner, so it isn't
     modeled as a hit-points change here).
+
+    **Phase 1050 bug fix**: each stage's own melee exchange used to
+    hand-roll a bare-bones swing (``defender.hit_points -= max(0,
+    roll_melee_attack(rng, damage_range=attacker.melee_damage_range) -
+    defender.damage_reduction)``) instead of calling this module's own
+    ``resolve_one_melee_round()`` -- the single shared per-round Melee
+    resolver every other real duel in this file goes through. That
+    hand-rolled version silently dropped ``offensive_hit_multiplier``/
+    ``defensive_hit_multiplier`` (Temper, Melee Mastery, Duellist's
+    Medal, equipped-weapon bonuses, Invisibility/Holy Symbol),
+    ``skill_difference_bonus``, ``melee_damage_dealt_bonus``/
+    ``_reduction`` (Mastery, Spiritwrack), every weapon on-hit proc
+    (Shadow Sword, Flaming Scimitar, Psychic Flail), and end-of-round
+    regeneration (Troll, Necro-Mage office) -- for real leaders with
+    real stats (``illusion`` is a full-record copy of a real combatant,
+    per the Phase 783 addendum below, and ``caster``/``opponent`` are
+    always real), not placeholder stat blocks. A nearby comment had
+    claimed this was deliberate because these combatants "never carry a
+    real leader's own Advanced Ability data in the first place" -- false
+    for the real combatants involved, confirmed by directly checking
+    both real call sites. Fixed by routing each round's own exchange
+    through ``resolve_one_melee_round()`` instead, the same way
+    ``resolve_melee_duel()`` already does -- its own internal "who acts
+    first" computation (``effective_melee_skill``/``_acts_first``)
+    reproduces exactly what this function used to compute inline, so no
+    existing RNG-ordering assumption changes beyond what fixing the
+    dropped mechanics themselves requires.
     """
 
     # Phase 783 -- `AKGEN_reverse_engineering_report (2).md` SS21.2
@@ -4515,20 +4794,7 @@ def resolve_mirror_image_duel(
         total_rounds = round_number
         if resolve_mirror_image_disbelief(base_chance, skill_level, rng):
             return EncounterCombatResult(winner=None, rounds=total_rounds)
-        skill_a, skill_b = effective_melee_skill(illusion), effective_melee_skill(opponent)
-        first, second = (
-            (illusion, opponent)
-            if _acts_first(
-                skill_a, skill_b, rng, a_always_first=illusion.always_acts_first, b_always_first=opponent.always_acts_first
-            )
-            else (opponent, illusion)
-        )
-        for attacker, defender in ((first, second), (second, first)):
-            if attacker.hit_points <= 0 or defender.hit_points <= 0:
-                continue
-            defender.hit_points -= max(
-                0, roll_melee_attack(rng, damage_range=attacker.melee_damage_range) - defender.damage_reduction
-            )
+        resolve_one_melee_round(illusion, opponent, rng, round_number=round_number)
         if illusion.hit_points <= 0:
             return EncounterCombatResult(winner=None, rounds=total_rounds)
         if opponent.hit_points <= 0:
@@ -4544,20 +4810,7 @@ def resolve_mirror_image_duel(
         total_rounds += 1
         if resolve_mirror_image_disbelief(master_chance, skill_level, rng):
             return EncounterCombatResult(winner="a", rounds=total_rounds)
-        skill_a, skill_b = effective_melee_skill(caster), effective_melee_skill(illusion)
-        first, second = (
-            (caster, illusion)
-            if _acts_first(
-                skill_a, skill_b, rng, a_always_first=caster.always_acts_first, b_always_first=illusion.always_acts_first
-            )
-            else (illusion, caster)
-        )
-        for attacker, defender in ((first, second), (second, first)):
-            if attacker.hit_points <= 0 or defender.hit_points <= 0:
-                continue
-            defender.hit_points -= max(
-                0, roll_melee_attack(rng, damage_range=attacker.melee_damage_range) - defender.damage_reduction
-            )
+        resolve_one_melee_round(caster, illusion, rng, round_number=total_rounds)
         if illusion.hit_points <= 0:
             return EncounterCombatResult(winner="a", rounds=total_rounds)
         if caster.hit_points <= 0:
@@ -4650,6 +4903,12 @@ def resolve_illusory_hero_duel(
     for Illusory Hero's own version of this branch): ``winner="a"`` if
     the caster disbelieves or slays the illusion, ``winner="b"`` if the
     illusion kills the caster instead.
+
+    **Phase 1050 bug fix**: same hand-rolled-swing gap as ``resolve_
+    mirror_image_duel()`` above, and the identical fix -- see that
+    function's own Phase 1050 addendum for the full explanation. Both
+    melee exchanges below now route through ``resolve_one_melee_round()``
+    instead of a bare-bones inline swing.
     """
 
     # Phase 783 -- same SS21.2 full-record-copy fix as `resolve_mirror_
@@ -4670,20 +4929,7 @@ def resolve_illusory_hero_duel(
         total_rounds = round_number
         if resolve_illusory_hero_disbelief(base_chance, skill_level, rng):
             return EncounterCombatResult(winner=None, rounds=total_rounds)
-        skill_a, skill_b = effective_melee_skill(illusion), effective_melee_skill(opponent)
-        first, second = (
-            (illusion, opponent)
-            if _acts_first(
-                skill_a, skill_b, rng, a_always_first=illusion.always_acts_first, b_always_first=opponent.always_acts_first
-            )
-            else (opponent, illusion)
-        )
-        for attacker, defender in ((first, second), (second, first)):
-            if attacker.hit_points <= 0 or defender.hit_points <= 0:
-                continue
-            defender.hit_points -= max(
-                0, roll_melee_attack(rng, damage_range=attacker.melee_damage_range) - defender.damage_reduction
-            )
+        resolve_one_melee_round(illusion, opponent, rng, round_number=round_number)
         if illusion.hit_points <= 0:
             return EncounterCombatResult(winner=None, rounds=total_rounds)
         if opponent.hit_points <= 0:
@@ -4702,20 +4948,7 @@ def resolve_illusory_hero_duel(
         total_rounds += 1
         if resolve_illusory_hero_disbelief(master_chance, skill_level, rng):
             return EncounterCombatResult(winner="a", rounds=total_rounds)
-        skill_a, skill_b = effective_melee_skill(caster), effective_melee_skill(illusion)
-        first, second = (
-            (caster, illusion)
-            if _acts_first(
-                skill_a, skill_b, rng, a_always_first=caster.always_acts_first, b_always_first=illusion.always_acts_first
-            )
-            else (illusion, caster)
-        )
-        for attacker, defender in ((first, second), (second, first)):
-            if attacker.hit_points <= 0 or defender.hit_points <= 0:
-                continue
-            defender.hit_points -= max(
-                0, roll_melee_attack(rng, damage_range=attacker.melee_damage_range) - defender.damage_reduction
-            )
+        resolve_one_melee_round(caster, illusion, rng, round_number=total_rounds)
         if illusion.hit_points <= 0:
             return EncounterCombatResult(winner="a", rounds=total_rounds)
         if caster.hit_points <= 0:
@@ -5081,8 +5314,24 @@ TALK_MONSTER_DRUID_LEVEL_REQUIRED: dict[Monster, int] = {
 def can_talk_to_monster(monster_species: Monster, druid_level: int) -> bool:
     """Whether a character's own Druid skill level meets `talkdiff`'s own
     per-species requirement to communicate with this monster at all.
+
+    **Phase 1194 bug fix**: ``Monster.NOMONSTER`` (the real, GM-selectable
+    "no monster" sentinel -- the webapp's own Feature editor offers it
+    as a literal dropdown option, same as ``turn/monster_raids.py
+    resolve_province_raids()``'s own "Bug fix (crash)" note already
+    documents for the raid path) used to pass this gate trivially --
+    unlisted in ``TALK_MONSTER_DRUID_LEVEL_REQUIRED``, so the ``.get()``
+    default of ``0`` let any leader, even one with zero Druid skill,
+    "talk to" a feature with no real guardian at all. The real call
+    this gate protects, ``turn/monster_raids.py resolve_monster_raid_
+    reply()``, bare-indexes ``MONSTER_RUNTIME_PROFILE[monster]`` with no
+    entry for ``NOMONSTER`` "by design" -- reaching it crashed with an
+    unhandled ``KeyError``. There is no monster here to talk to, so the
+    gate now refuses outright, regardless of skill.
     """
 
+    if monster_species is Monster.NOMONSTER:
+        return False
     return druid_level >= TALK_MONSTER_DRUID_LEVEL_REQUIRED.get(monster_species, 0)
 
 
@@ -5240,6 +5489,13 @@ MONSTER_TALK_REPLY_FREQUENCY: dict[MonsterTalkReply, int] = {
     MonsterTalkReply.R_EXPALL: 4,
     MonsterTalkReply.R_MADVANCE: 10,
 }
+
+# Phase 1051: hoisted out of `select_monster_talk_reply()`'s own
+# rejection loop below, which otherwise rebuilt this identical list from
+# the `MonsterTalkReply` enum on every single call -- the uniform-id-
+# propose step itself (not the per-call `eligible` filter, which
+# genuinely does vary by `monster`) needs no re-deriving.
+ALL_MONSTER_TALK_REPLIES: list[MonsterTalkReply] = list(MonsterTalkReply)
 
 MONSTER_TALK_REPLY_INTELLIGENCE: dict[MonsterTalkReply, MonsterIntelligence] = {
     MonsterTalkReply.R_PUZZLED: MonsterIntelligence.SEMI,
@@ -5569,6 +5825,16 @@ def select_monster_talk_reply(
     against the source's own stated frequencies, not a byte-exact
     reproduction of a real captured trace (none exists for this
     routine).
+
+    Phase 1051: reviewed as a possible efficiency cleanup -- rejection
+    sampling over all replies, restricted to the ones ``eligible`` for
+    this ``monster``, is indeed more rolls on average than the closed-
+    form weighted choice this docstring's own opening paragraph already
+    names as mathematically equivalent. Left as the real described loop
+    anyway, deliberately, per this project's own stated convention
+    above; only ``ALL_MONSTER_TALK_REPLIES`` (this function's own
+    previously-rebuilt-every-call ``list(MonsterTalkReply)``) was hoisted
+    to a module constant, since that part varies with nothing.
     """
 
     if monster is Monster.SPHINX and rng.random() < 0.5:
@@ -5582,9 +5848,8 @@ def select_monster_talk_reply(
     if not eligible:
         return None
 
-    all_replies = list(MonsterTalkReply)
     while True:
-        candidate = rng.choice(all_replies)
+        candidate = rng.choice(ALL_MONSTER_TALK_REPLIES)
         if candidate not in eligible:
             continue
         if rng.random() < MONSTER_TALK_REPLY_FREQUENCY[candidate] / 10:

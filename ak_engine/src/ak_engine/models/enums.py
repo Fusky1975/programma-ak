@@ -55,6 +55,20 @@ class Ability(Enum):
     SAGE = 14
 
 
+def ability_from_int(value: int) -> "Ability | int":
+    """Map a raw ability int to ``Ability`` where valid, else keep it
+    raw -- the same ``*_from_int()`` convention already used for
+    ``ActionCode``/``Maneuver``/``Spell`` above, applied here so ``turn/
+    practice_decode.py`` doesn't need its own inline try/except for this
+    exact pattern.
+    """
+
+    try:
+        return Ability(value)
+    except ValueError:
+        return value
+
+
 # REPORTS.PAS `Rep_Leaders`'s own CHARACTERS-section column header
 # (~line 811-812): "Character      Loc Align  Temp M/F  Race Ini
 # TaMaNaArMe WhNeElPsIl DrThExSpSa" -- the last 30 characters are 15

@@ -30,7 +30,10 @@ Sixth phase of the world-generation sub-plan. Source:
   over ``0..7``, so ``P(tax > X) == (number of the 8 values below
   tax)/8 == min(tax,8)/8`` exactly.
 - Budget formulas (``initial_armies.budget_by_race_or_owner``):
-  ``KING_HOME_BUDGET = 7``; ``draw_r4()`` (uniform integer ``1..4``, the
+  ``KING_HOME_BUDGET = 7`` (the original disassembly-confirmed value --
+  see this constant's own Phase 987 docstring for why Phase 985's
+  brief ``8`` correction was actually masking a different bug);
+  ``draw_r4()`` (uniform integer ``1..4``, the
   source's own named "R4" primitive); ``whale_budget()`` (``tax + 1 +
   R4``); ``flying_or_special_budget()`` (``tax + R4a - R4b``, two
   independent R4 draws, left unclamped exactly as the source gives
@@ -543,6 +546,23 @@ def humanoid_first_slot(
 
 # -- Initial army budgets ---------------------------------------------------
 
+# Phase 985 had bumped this from 7 to 8, reasoning from only 2 real
+# samples ("Legion, Light Cavalry, Legion" and "Bowmen, Heavy Cavalry,
+# Bowmen") while assuming the King Home budget check spends each
+# army's `BASE_STRENGTH` ("Str"), the same field the confirmed generic
+# `build_initial_armies()` loop uses for ordinary/special-race
+# provinces. Phase 987 found that assumption was the real bug, not the
+# budget: every `BEST_ATYPE` (the Home's own first recruit slot) has
+# `ARMY_TABLE[...].pay == 2`, and every real Home second-slot option
+# (`LT_CAVALRY`/`HVY_CAVALRY`/`CHARIOTS`/`ELEPHANTS`/`FLEET`) has
+# `pay` of 2 or 3 -- so spending `pay`, not `Str`, against a budget of
+# **7** (2*2+2=6 or 2*2+3=7, either way too little remains for a 4th
+# army) reproduces *both* real shapes exactly, and -- unlike Str-based
+# spending -- provably reproduces exactly 3 armies for *every* possible
+# King race x Home second-slot combination, not just the 2 directly
+# observed. The original disassembly-confirmed ``7`` was right all
+# along; see ``generate_new_game.py``'s own King Home call site for the
+# ``pay``-based ``strength_of`` this budget is now paired with.
 KING_HOME_BUDGET = 7
 
 

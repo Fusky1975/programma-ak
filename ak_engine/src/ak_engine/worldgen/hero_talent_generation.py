@@ -47,6 +47,12 @@ here:
   matching ``favored_pairs``' own "Good: [White Magic, Sageness]") --
   all 15 entries matched with zero discrepancies.
 
+**``roll_temper()`` (Phase 982) is explicitly NOT part of the above --
+no real source covers it**, unlike every other roll in this module.
+See its own docstring: a uniform draw over the 4 real `Temper` values,
+added only because the alternative (every ordinary generated hero's own
+Temper staying unset, rendering "Unkn") was user-confirmed as worse.
+
 **Deliberately NOT implemented here**: the real DOS clock-word startup
 seed (``world_generation.hero_talents_and_aptitudes.rng`` -- already
 documented as unrecoverable in ``worldgen/pascal_random.py``'s own
@@ -73,6 +79,7 @@ from __future__ import annotations
 from ak_engine.models.alignment import ALIGNMENT_BY_ORDINAL, Alignment
 from ak_engine.models.enums import Ability
 from ak_engine.models.kingdom import SkillTable
+from ak_engine.models.temper import Temper
 from ak_engine.worldgen.pascal_random import PascalRandom
 
 # "1 + trunc(Random*5)", positional with the roll's own 1-5 range.
@@ -83,6 +90,10 @@ ORDINARY_ALIGNMENT_ROLL: tuple[Alignment, ...] = (
     Alignment.PAGAN,
     Alignment.EVIL,
 )
+
+# No real source for this one (see roll_temper()'s own docstring) -- a
+# uniform draw over all 4 real Temper values, user-confirmed Phase 982.
+TEMPER_ROLL: tuple[Temper, ...] = (Temper.COWARDLY, Temper.CAUTIOUS, Temper.BRAVE, Temper.BERSERK)
 
 INDEPENDENT_TRAINING_ABILITIES: tuple[Ability, ...] = (
     Ability.ARCHERY,
@@ -112,6 +123,28 @@ def roll_alignment(rng: PascalRandom) -> Alignment:
 
     index = int(rng.random() * 5)
     return ORDINARY_ALIGNMENT_ROLL[index]
+
+
+def roll_temper(rng: PascalRandom) -> Temper:
+    """A uniform draw over the 4 real `Temper` values (Phase 982).
+
+    Unlike `roll_alignment()` right above, no real source -- the
+    disassembly notes this project's `hero_talents_and_aptitudes`
+    citation covers, nor any other -- documents a formula for a
+    *generated* hero's own starting Temper (a King's own Temper is
+    player-chosen at setup instead, `worldgen/king_talent.py`; the
+    reserved roster slot's is a fixed real Valhalla stat,
+    `models/valhalla.py`). Left at `LeaderState.temper`'s own default
+    `None` before this phase, rendering every ordinary generated hero's
+    own CHARACTERS row as "Unkn" -- confirmed with the user directly
+    (2026-10-01) as the preferred stopgap over leaving it unset: reuses
+    this same module's own uniform-random-draw convention `roll_
+    alignment()` already establishes for this exact generation stage,
+    rather than inventing a non-uniform distribution with no evidence
+    behind the weighting.
+    """
+
+    return TEMPER_ROLL[int(rng.random() * len(TEMPER_ROLL))]
 
 
 def roll_primary_ability(hero_id: int, rng: PascalRandom) -> Ability:

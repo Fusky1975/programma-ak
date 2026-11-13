@@ -18,6 +18,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
 from ak_engine.turn.battle_line import BattleUnit
@@ -40,7 +41,8 @@ from ak_engine.turn.battle_orchestrator import (
     _qual_modfr_score_by_army_id,
     _record_battle_merit,
     _select_side_commander,
-    _side_has_present_leader_with_ability,
+    king_druidic_shortfall_for,
+    side_has_present_leader_with_ability,
     fight_battle,
     fight_multi_attacker_battle,
 )
@@ -254,6 +256,63 @@ def test_attacker_forced_retreat_skips_an_origin_captured_by_a_third_kingdom():
 
     assert 101 in report.retreated_army_ids
     assert state.armies[101].location == safe_neighbor_of_origin
+
+
+def test_coalition_member_retreat_uses_its_own_alliances_not_the_claiming_kingdoms():
+    # Bug fix (see fight_battle()'s own "elif attacker_clean_swept and
+    # loser_retreats" branch): a united Multiple-Contingents coalition
+    # (turn/multiple_contingents.py) can unite kingdoms that are not all
+    # mutually allied -- eligible_to_unite() only checks each joining
+    # kingdom against the FIRST member, never against every other member
+    # -- and the whole battle is then fought under one "claiming" kingdom
+    # id (the largest contingent). Kingdom 1 (Alfia) is allied with both
+    # kingdom 3 (Betia, the claiming kingdom here, largest contingent)
+    # and kingdom 4 (Gammia), but Betia and Gammia are NOT allied with
+    # each other. Gammia's own home province is the only province
+    # adjacent to the battlefield that is friendly to Gammia; it is NOT
+    # friendly to Betia (no alliance). If a losing coalition member's own
+    # retreat destination is filtered by the *claiming* kingdom's
+    # alliances (the bug) instead of its own, Gammia's (and, here, also
+    # Alfia's) army incorrectly finds no friendly neighbor at all and
+    # disbands instead of retreating home.
+    origin_a = HexCoord(10, 10)  # Alfia's and Betia's own homes -- never
+    origin_b = HexCoord(11, 11)  # adjacent to FIELD, so neither can ever
+    #                              be a usable retreat candidate by itself.
+    gammia_home = HexCoord(1, 0)  # the ONLY friendly neighbor of FIELD
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Alfia", Race.HUMAN, Alignment.GOOD, origin_a))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_kingdom(KingdomState(3, "Betia", Race.HUMAN, Alignment.GOOD, origin_b))
+    state.add_kingdom(KingdomState(4, "Gammia", Race.HUMAN, Alignment.GOOD, gammia_home))
+    state.allied_kingdoms.add(frozenset({1, 3}))  # Alfia <-> Betia (claiming kingdom)
+    state.allied_kingdoms.add(frozenset({1, 4}))  # Alfia <-> Gammia
+    # Betia and Gammia are deliberately NOT allied with each other.
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(origin_a, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_province(ProvinceState(origin_b, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+    state.add_province(ProvinceState(gammia_home, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=4))
+    state.add_army(ArmyState(101, 1, ArmyType.CHARIOTS, Quality.GREEN, FIELD))
+    state.add_army(ArmyState(102, 3, ArmyType.CHARIOTS, Quality.GREEN, FIELD))
+    state.add_army(ArmyState(103, 3, ArmyType.CHARIOTS, Quality.GREEN, FIELD))  # Betia: largest contingent, claims the battle
+    state.add_army(ArmyState(104, 4, ArmyType.CHARIOTS, Quality.GREEN, FIELD))  # Gammia -- the army under test
+    state.add_army(ArmyState(201, 2, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    # seed=0 (found by search over this exact scenario) is a decisive
+    # defender win with the attacker side clean swept and all four
+    # Chariots (speed matches the pursuer, guaranteed escape -- same
+    # reasoning as test_attacker_forced_retreat_uses_the_origin_when_
+    # supplied above) surviving pursuit to reach the per-army retreat
+    # branch, with attacker_origin=None (a mixed-origin coalition has no
+    # single invaded-from province to prefer).
+
+    report = fight_battle(
+        state, attacker_kingdom_id=3, province_coord=FIELD, attacker_army_ids=[101, 102, 103, 104],
+        attacker_origin=None, rng=random.Random(0),
+    )
+
+    assert 104 in report.retreated_army_ids
+    assert 104 not in report.disbanded_army_ids
+    assert state.armies[104].location == gammia_home  # Gammia's own home, not Betia's alliances
 
 
 def test_fight_battle_records_contested_from_coord_on_a_mixed_result():
@@ -1245,7 +1304,7 @@ def test_side_has_present_leader_with_ability_true_when_present_and_qualified():
     leader.advanced_abilities.add(AdvancedAbility.EXPLORER_FIND_WATER)
     state.add_leader(leader)
 
-    assert _side_has_present_leader_with_ability(
+    assert side_has_present_leader_with_ability(
         state, FIELD, frozenset({1}), AdvancedAbility.EXPLORER_FIND_WATER
     )
 
@@ -1257,7 +1316,7 @@ def test_side_has_present_leader_with_ability_false_when_elsewhere():
     leader.advanced_abilities.add(AdvancedAbility.EXPLORER_FIND_WATER)
     state.add_leader(leader)
 
-    assert not _side_has_present_leader_with_ability(
+    assert not side_has_present_leader_with_ability(
         state, FIELD, frozenset({1}), AdvancedAbility.EXPLORER_FIND_WATER
     )
 
@@ -1269,7 +1328,7 @@ def test_side_has_present_leader_with_ability_false_for_a_different_kingdom():
     leader.advanced_abilities.add(AdvancedAbility.EXPLORER_FIND_WATER)
     state.add_leader(leader)
 
-    assert not _side_has_present_leader_with_ability(
+    assert not side_has_present_leader_with_ability(
         state, FIELD, frozenset({1}), AdvancedAbility.EXPLORER_FIND_WATER
     )
 
@@ -1280,7 +1339,7 @@ def test_side_has_present_leader_with_ability_false_without_the_ability():
     leader = LeaderState(1, kingdom_id=1, name="Scout", location=FIELD)
     state.add_leader(leader)
 
-    assert not _side_has_present_leader_with_ability(
+    assert not side_has_present_leader_with_ability(
         state, FIELD, frozenset({1}), AdvancedAbility.EXPLORER_FIND_WATER
     )
 
@@ -2492,6 +2551,55 @@ def test_build_battle_units_no_fog_effect_when_province_not_fogged():
     assert units[0].effective_strength == pytest.approx(expected)
 
 
+def test_build_battle_units_prefers_monstrous_army_race_over_owning_kingdoms_race():
+    # Bug fix: `army_race` must prefer `MONSTROUS_ARMY_RACE` over the
+    # owning kingdom's own race. Humania (Race.HUMAN) owns both the
+    # battle province and an unled Dragon Wing army (legitimately
+    # possible via province-race-based recruiting) -- the army's own
+    # Druidic-shortfall falls back to the province-owning Kingdom's King
+    # (`king_druidic_shortfall_for`), whose own Druid skill is 0. Correct
+    # resolution (army_race=DRAGONS) needs Druid level 4 and gives a
+    # real shortfall of 4; the inverted-priority bug (army_race=HUMAN,
+    # the same race as the King) hits `compute_druidic_shortfall`'s own
+    # same-race short-circuit and wrongly gives 0.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=FIELD))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="King", location=FIELD, is_king=True))
+    army = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, location=FIELD, commanded_by=None)
+    state.add_army(army)
+
+    units = _build_battle_units(
+        [army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0)
+    )
+
+    expected = compute_effective_strength(
+        ArmyType.DRAGON_WING, Race.DRAGONS, Quality.AVERAGE, Terrain.PLAINS, druidic_shortfall=4
+    )
+    wrong = compute_effective_strength(ArmyType.DRAGON_WING, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
+    assert units[0].effective_strength == pytest.approx(expected)
+    assert units[0].effective_strength != pytest.approx(wrong)
+
+
+def test_king_druidic_shortfall_for_cache_matches_the_uncached_result():
+    # Phase 1193 efficiency: king_shortfall_cache is an optional, purely
+    # additive memoization (_build_battle_units()/_qual_modfr_score_by_
+    # army_id() share one across every unled army in a single battle) --
+    # passing it must never change the result, only how many times the
+    # underlying King lookup actually runs.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=FIELD))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="King", location=FIELD, is_king=True))
+    cache: dict = {}
+
+    first = king_druidic_shortfall_for(state, Race.DRAGONS, FIELD, cache=cache)
+    second = king_druidic_shortfall_for(state, Race.DRAGONS, FIELD, cache=cache)
+
+    assert first == second == king_druidic_shortfall_for(state, Race.DRAGONS, FIELD)
+    assert cache == {(Race.DRAGONS, FIELD): 4}
+
+
 def test_build_battle_units_marks_an_overflight_unit_rear_targeting_blocked_when_shortfall_is_positive():
     # Phase 43: same scenario as the test above (Dragon Wing shortfall of
     # 4) -- an overflight-type unit with a real shortfall also gets
@@ -3080,6 +3188,14 @@ def test_maybe_fight_duel_flee_anywhere_in_attacker_sep_never_challenges():
     )
 
     assert outcome.loser_side is None
+    # Phase 1043 bug fix regression: both sides still have a real,
+    # led commander even though no personal duel was triggered this
+    # phase -- _record_battle_merit() reads these ids independently of
+    # whether a duel happened, to credit/debit each commander for the
+    # battle's own overall outcome. These must never be silently
+    # discarded just because no challenge fired.
+    assert outcome.attacker_commander_leader_id == 501
+    assert outcome.defender_commander_leader_id == 502
 
 
 def test_maybe_fight_duel_defender_flee_first_never_accepts_the_attackers_challenge():
@@ -3121,6 +3237,12 @@ def test_maybe_fight_duel_neutral_province_hero_never_challenges():
 
 
 def test_maybe_fight_duel_neutral_province_hero_always_accepts_when_not_cowardly():
+    # Phase 1043 bug fix regression: this forced-acceptance carve-out
+    # genuinely puts a real Flee-first defender into a triggered duel --
+    # but that defender's own Flee-first SEP must still win it a
+    # guaranteed escape (the same shortcut the identical attacker-side
+    # scenario already gets), not a real strength-based roll. No rng is
+    # consumed: the escape shortcut fires before any roll would.
     state = _duel_gate_state()
     state.leaders[502].location = DEFENDER_HOME
     state.provinces[DEFENDER_HOME].owner_kingdom_id = None  # defender's own current province is unowned
@@ -3130,7 +3252,7 @@ def test_maybe_fight_duel_neutral_province_hero_always_accepts_when_not_cowardly
     attacker_armies, defender_armies, attacker_units, defender_units, attacker_commander, defender_commander = (
         _duel_gate_armies_and_units()
     )
-    rng = ScriptedRandom([0.01])
+    rng = ScriptedRandom([])
 
     outcome = _maybe_fight_duel(
         attacker_commander, defender_commander, attacker_armies, defender_armies, attacker_units, defender_units, rng,
@@ -3138,6 +3260,9 @@ def test_maybe_fight_duel_neutral_province_hero_always_accepts_when_not_cowardly
     )
 
     assert outcome.loser_side == "defender"
+    assert outcome.loser_fled is True
+    assert defender_units[0].effective_strength == 10.0 * 0.75  # DUEL_DEMORALIZATION_MULTIPLIER
+    assert attacker_units[0].effective_strength == 100.0  # winner's own units untouched
 
 
 def test_maybe_fight_duel_neutral_province_hero_cowardly_exception_does_not_apply():
@@ -4397,8 +4522,65 @@ def test_fight_multi_attacker_battle_second_separate_group_claims_an_already_cle
     # The second group finds nothing left to fight -- treated as an
     # uncontested claim rather than raising.
     assert second_battle.leader_ids == [20]
-    assert second_battle.report.conquered is True
+    # Phase 1044 bug fix regression: the first group's own real battle
+    # already conquered the province for this same kingdom, so the
+    # second group's own needs_conquest is correctly False here --
+    # conquered no longer hardcoded True regardless.
+    assert second_battle.report.conquered is False
     assert second_battle.report.battle_result.winner == "attacker"
+
+
+def test_fight_multi_attacker_battle_uncontested_claim_transfers_province_ownership():
+    # Phase 1043 bug fix: an uncontested group (no defenders present at
+    # all, not just "already cleared by an earlier group this call")
+    # used to report conquered=True without ever touching ProvinceState.
+    # owner_kingdom_id -- unlike move_execution.py execute_move()'s own
+    # identical single-attacker uncontested-conquest case, which this
+    # branch's own docstring claims to mirror. turn_processor.py's own
+    # caller relocates the attacker's armies/leader into the province
+    # off this exact `conquered` flag, so without this fix the armies
+    # would physically occupy a province the game state still showed as
+    # unowned.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5)),
+    ]
+    rng = ScriptedRandom([])  # no defenders at all -- no real battle, no roll consumed
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    assert len(battles) == 1
+    assert battles[0].report.conquered is True
+    assert state.provinces[FIELD].owner_kingdom_id == 1
+    assert state.provinces[FIELD].contested_by_kingdom_id is None
+    assert state.provinces[FIELD].contested_from_coord is None
+
+
+def test_fight_multi_attacker_battle_uncontested_claim_is_a_no_op_for_an_already_friendly_province():
+    # needs_conquest's own allied-owner carve-out -- a province already
+    # owned by an ally of the claiming kingdom isn't re-"conquered" or
+    # stripped of (non-existent) contest state.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(3, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.allied_kingdoms.add(frozenset({1, 3}))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    parties = [
+        MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5)),
+    ]
+    rng = ScriptedRandom([])
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=rng)
+
+    # Phase 1044 bug fix regression: no real conquest happens here, so
+    # conquered must be False -- no longer hardcoded True regardless of
+    # needs_conquest.
+    assert battles[0].report.conquered is False
+    assert state.provinces[FIELD].owner_kingdom_id == 3  # unchanged -- already a friendly owner
 
 
 # --- Contested-province priority for a double simultaneous neutral
@@ -5015,6 +5197,31 @@ def test_qual_modfr_score_by_army_id_gives_plus_one_for_home_province():
     assert scores == {101: 1}
 
 
+def test_qual_modfr_score_by_army_id_prefers_monstrous_army_race_over_owning_kingdoms_race():
+    # Bug fix: same inverted-priority bug as _build_battle_units' own
+    # regression test above, in this function's own separate copy of
+    # the `army_race` resolution line. Humania (Race.HUMAN) owns FIELD
+    # (its own home_province, +1) and fields an unled Dragon Wing army
+    # there; the province-owning King's Druid skill is 0. Correct
+    # resolution (army_race=DRAGONS, needs Druid level 4) gives a real
+    # shortfall of 4, netting 1 - 4 = -3; the inverted-priority bug
+    # (army_race=HUMAN, same race as the King) hits
+    # compute_druidic_shortfall's own same-race short-circuit (shortfall
+    # 0) and wrongly nets +1.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=FIELD))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="King", location=FIELD, is_king=True))
+    army = ArmyState(101, 1, ArmyType.DRAGON_WING, Quality.AVERAGE, location=FIELD, commanded_by=None)
+    state.add_army(army)
+
+    scores = _qual_modfr_score_by_army_id(
+        [army], state, terrain=Terrain.PLAINS, province_coord=FIELD, explorer_find_water=False,
+    )
+
+    assert scores == {101: -3}
+
+
 def test_qual_modfr_score_by_army_id_gives_minus_one_for_desert_without_camels():
     state = build_state()
     army = state.armies[101]
@@ -5458,3 +5665,183 @@ def test_apply_monster_summoning_aid_uses_the_halved_player_led_rate():
         miss_units, commander, state, FIELD, bounds, rng=ScriptedRandom([just_over]), **_aid_kwargs()
     )
     assert miss_units == []
+
+
+def test_apply_monster_summoning_aid_player_led_unit_desert_penalty_uses_the_real_side_army_list():
+    # Phase 1043 bug fix: the nested _build_battle_units([army], ...)
+    # call used to scope the desert-without-camels check to just the
+    # aid unit itself (always failing it, since the aid unit is never a
+    # Camel Corps), wrongly penalizing it even when the side's own real
+    # committed armies include a Camel Corps.
+    state, commander = _bearer_state(Treasure.MONSTER_AID_DRAGON)
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    aiding_army = ArmyState(301, 2, ArmyType.DRAGON_WING, Quality.AVERAGE, location=DEFENDER_HOME)
+    state.add_army(aiding_army)
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    camel_corps_army = ArmyState(401, 1, ArmyType.CAMEL_CORPS, Quality.AVERAGE, FIELD)
+    rng_value = MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE - 0.01  # hits, deterministically
+
+    units_without_camels: list[BattleUnit] = []
+    _apply_monster_summoning_aid(
+        units_without_camels, commander, state, FIELD, bounds, rng=ScriptedRandom([rng_value]),
+        **_aid_kwargs(terrain=Terrain.DESERT),
+    )
+
+    units_with_camels: list[BattleUnit] = []
+    _apply_monster_summoning_aid(
+        units_with_camels, commander, state, FIELD, bounds, rng=ScriptedRandom([rng_value]),
+        **_aid_kwargs(terrain=Terrain.DESERT, side_armies=[camel_corps_army]),
+    )
+
+    assert len(units_without_camels) == len(units_with_camels) == 1
+    assert units_with_camels[0].effective_strength > units_without_camels[0].effective_strength
+
+
+def test_apply_monster_summoning_aid_player_led_unit_threads_duellist_side():
+    # Phase 1043 bug fix: the nested _build_battle_units([army], ...)
+    # call used to omit duellist_side/alignment_king_office/race_
+    # fanatic_units entirely, so an eligible Duellist-commanded side
+    # could never have this aid unit selected for that bonus.
+    state, commander = _bearer_state(Treasure.MONSTER_AID_DRAGON)
+    state.add_kingdom(KingdomState(2, "Dragonia", Race.DRAGONS, Alignment.NEUTRAL, home_province=HexCoord(8, 8)))
+    aiding_army = ArmyState(301, 2, ArmyType.DRAGON_WING, Quality.AVERAGE, location=DEFENDER_HOME)
+    state.add_army(aiding_army)
+    bounds = MapBounds(*NORMAL_MAP_BOUNDS)
+    rng_value = MONSTER_SUMMONING_PLAYER_LED_DEFECTION_CHANCE - 0.01
+
+    units: list[BattleUnit] = []
+    _apply_monster_summoning_aid(
+        units, commander, state, FIELD, bounds, rng=ScriptedRandom([rng_value]), **_aid_kwargs(duellist_side=True)
+    )
+
+    assert len(units) == 1
+    assert units[0].duellist_bonus_if_selected is not None
+
+
+def test_fight_battle_raises_when_the_only_present_army_is_shielded_by_an_allied_host():
+    # [8.1]'s own "triangle" case: kingdom 2 ("Y") is a guest army in a
+    # province owned by kingdom 3 ("X"), who is Allied with the attacker
+    # (kingdom 1, "Z"). Even though Y and Z are Enemies, X's own
+    # hospitality shields Y -- no legitimate defender present at all.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Zantium", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Yland", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(3, "Xaria", Race.HUMAN, Alignment.GOOD, HexCoord(8, 8)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+    state.allied_kingdoms.add(frozenset({1, 3}))
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ENEMY
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD))
+
+    with pytest.raises(ValueError, match="no defending armies"):
+        fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101], rng=random.Random(0))
+
+
+def test_fight_multi_attacker_battle_treats_a_shielded_guest_as_uncontested():
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Zantium", Race.HUMAN, Alignment.EVIL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Yland", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
+    state.add_kingdom(KingdomState(3, "Xaria", Race.HUMAN, Alignment.GOOD, HexCoord(8, 8)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=3))
+    state.allied_kingdoms.add(frozenset({1, 3}))
+    state.diplomatic_relations[frozenset({1, 2})] = DiplomaticRelation.ENEMY
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD))
+    state.add_leader(LeaderState(10, kingdom_id=1, name="Zealot", location=HexCoord(5, 5)))
+    parties = [MultiAttackerParty(leader_id=10, kingdom_id=1, army_ids=[101], origin_province=HexCoord(5, 5))]
+
+    battles = fight_multi_attacker_battle(state, FIELD, parties, rng=random.Random(0))
+
+    assert len(battles) == 1
+    # Phase 1044 bug fix regression: the province is already owned by an
+    # ally of the attacker (Xaria), so entering it uncontested is not a
+    # real conquest -- conquered must be False, no longer hardcoded True.
+    assert battles[0].report.conquered is False
+    assert battles[0].report.battle_result.winner == "attacker"
+    assert state.armies[201].location == FIELD  # Y's shielded guest army untouched
+    assert state.provinces[FIELD].owner_kingdom_id == 3  # unchanged -- already a friendly owner
+
+
+def test_fight_battle_allows_a_kingdomless_mercenary_as_an_attacker():
+    # Bug fix (crash): a kingdomless mercenary (`ArmyState.kingdom_id is
+    # None`) picked up and commanded into battle by a leader (`turn/
+    # plan_dispatch.py`'s ordinary Pick Up mechanic) used to crash
+    # `_build_battle_units()` with `KeyError: None` the instant it
+    # reached `state.kingdoms[army.kingdom_id]` -- the defender side was
+    # already filtered on `army.kingdom_id is not None`, but the
+    # attacker side never was. Any of the mutually-untrusting players
+    # can trigger this deliberately (pick up a loose mercenary, then
+    # attack with it); since run_turn() dispatches every player's plan
+    # in one pass, this crashed the whole turn for every player, not
+    # just the one who triggered it.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Defendia", Race.HUMAN, Alignment.NEUTRAL, DEFENDER_HOME))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_province(ProvinceState(DEFENDER_HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
+    state.add_army(ArmyState(101, 1, ArmyType.HVY_CAVALRY, Quality.ELITE, FIELD))
+    state.add_army(ArmyState(102, None, ArmyType.LEGION, Quality.AVERAGE, FIELD, commanded_by=50))
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD))
+
+    report = fight_battle(state, attacker_kingdom_id=1, province_coord=FIELD, attacker_army_ids=[101, 102])
+
+    assert report is not None
+
+
+def test_build_battle_units_gives_a_kingdomless_mercenary_no_race_bonus():
+    # Same bug as above, checked directly at _build_battle_units()'s own
+    # level: a mundane (non-monstrous) army type has no source for what
+    # race a kingdomless mercenary should fight as, so it gets no race-
+    # type/race-terrain bonus at all (not a guessed one) -- Human Legion
+    # gets +1 in any terrain (RACE_TYPE_BONUS), so a kingdomless Legion
+    # must score strictly less than an otherwise-identical Human-owned
+    # one to prove no bonus leaked in.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Attackia", Race.HUMAN, Alignment.GOOD, HexCoord(0, 0)))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    owned_army = ArmyState(101, 1, ArmyType.LEGION, Quality.AVERAGE, FIELD)
+    mercenary_army = ArmyState(102, None, ArmyType.LEGION, Quality.AVERAGE, FIELD)
+
+    owned_units = _build_battle_units(
+        [owned_army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD, rng=random.Random(0),
+    )
+    mercenary_units = _build_battle_units(
+        [mercenary_army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=random.Random(0),
+    )
+
+    assert mercenary_units[0].effective_strength < owned_units[0].effective_strength
+
+
+def test_build_battle_units_gives_a_kingdomless_monstrous_mercenary_its_intrinsic_race():
+    # A kingdomless mercenary of a monstrous type (e.g. a loose Troll
+    # army) DOES have a sourced, knowable race regardless of ownership
+    # (MONSTROUS_ARMY_RACE) -- same as turn/army_quality.py's own
+    # army_peacetime_strength() already resolves it. Trolls get +1 in
+    # Mountains (RACE_TERRAIN_BONUS), so this must still apply.
+    state = GameState()
+    state.add_province(ProvinceState(FIELD, Terrain.MTNS, Race.TROLLISH, owner_kingdom_id=None))
+    mercenary_army = ArmyState(102, None, ArmyType.TROLLS, Quality.AVERAGE, FIELD)
+    flat_terrain_units = _build_battle_units(
+        [mercenary_army], state, is_defender=False, terrain=Terrain.PLAINS, province_coord=FIELD,
+        rng=random.Random(0),
+    )
+    mountain_units = _build_battle_units(
+        [mercenary_army], state, is_defender=False, terrain=Terrain.MTNS, province_coord=FIELD,
+        rng=random.Random(0),
+    )
+
+    assert mountain_units[0].effective_strength > flat_terrain_units[0].effective_strength
+
+
+def test_qual_modfr_score_by_army_id_allows_a_kingdomless_mercenary():
+    # Same root cause, same fix, in the post-battle quality-gain scorer.
+    state = GameState()
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=None))
+    mercenary_army = ArmyState(102, None, ArmyType.LEGION, Quality.AVERAGE, FIELD)
+
+    scores = _qual_modfr_score_by_army_id(
+        [mercenary_army], state, terrain=Terrain.PLAINS, province_coord=FIELD, explorer_find_water=False,
+    )
+
+    assert 102 in scores

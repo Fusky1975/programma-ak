@@ -375,23 +375,31 @@ def bridge_new_game_state(
     a King's own bridged `KingdomState` gets its real `treasury`,
     `discoveries` (the parsed `frozenset[Discovery]` copied into a
     `set`), and `valhalla_visit_count` -- directly, no computation.
-    `GameState.kingdoms_met`/`allied_kingdoms` (both pair-based, not
-    per-Kingdom) are populated from `met_kings_bitmask` (a real "have
-    these two ever made contact" bit, independent of the *quality* of
-    the relation) and from `diplomatic_relations` respectively --
-    **alliance is bridged only when both sides' own recorded view of
-    each other is `DiplomaticRelation.ALLIED`**, a deliberately
-    conservative reading: `kallst` is a *directed*, per-King array (this
-    King's own view of every other King), so a one-sided value could be
-    a still-pending request rather than a real, accepted alliance --
-    requiring mutual agreement avoids bridging a pending request as if
-    it were the real thing. Every other `GWKingExtension` field
-    (`team_state`, blackmail state, `kpower`/`powperc`, standby, ...)
-    has no matching `GameState`/`KingdomState` concept to receive it yet
-    (this project models no "Team" relation at all, and a real
-    `BlackmailClaim` needs an `amount`/`spy_leader_id` neither `GW` field
-    supplies) -- left unbridged rather than guessed, same as every other
-    "no source, no guess" gap in this module.
+    `GameState.kingdoms_met`/`allied_kingdoms`/`diplomatic_relations`
+    (all pair-based, not per-Kingdom) are populated from `met_kings_
+    bitmask` (a real "have these two ever made contact" bit, independent
+    of the *quality* of the relation) and from each King's own `kallst`-
+    sourced `diplomatic_relations` array respectively -- **Allied or
+    Enemy is bridged only when both sides' own recorded view of each
+    other agrees** (2026-11-02: Enemy is bridged the same way Allied
+    always was -- see this loop's own comment for why Enemy was missed
+    until now), a deliberately conservative reading: `kallst` is a
+    *directed*, per-King array (this King's own view of every other
+    King), so a one-sided value could be a still-pending request/
+    declaration rather than the real, settled relation -- requiring
+    mutual agreement avoids bridging a pending one-sided claim as if it
+    were final. A one-sided Enemy/Allied disagreement, and every mutual
+    `DiplomaticRelation.NEUTRAL` pair, both leave `diplomatic_relations`
+    without an entry -- `GameState.diplomatic_relation()`'s own missing-
+    pair default is already Neutral, so no entry is needed for either.
+    Every other `GWKingExtension` field (`team_state`, blackmail state,
+    `kpower`/`powperc`, standby, ...) has no matching `GameState`/
+    `KingdomState` concept to receive it yet (this project models no
+    "Team" relation at all -- `DiplomaticRelation.TEAMED` is deliberately
+    among what's left out here, not silently folded into Allied -- and a
+    real `BlackmailClaim` needs an `amount`/`spy_leader_id` neither `GW`
+    field supplies) -- left unbridged rather than guessed, same as every
+    other "no source, no guess" gap in this module.
     """
 
     kingdoms: dict[int, KingdomState] = {}
@@ -472,6 +480,23 @@ def bridge_new_game_state(
                     and king_extensions[other_king_id].diplomatic_relations[king_id] is DiplomaticRelation.ALLIED
                 ):
                     state.allied_kingdoms.add(frozenset({king_id, other_king_id}))
+                elif (
+                    relation is DiplomaticRelation.ENEMY
+                    and other_king_id < len(king_extensions)
+                    and king_id < len(king_extensions[other_king_id].diplomatic_relations)
+                    and king_extensions[other_king_id].diplomatic_relations[king_id] is DiplomaticRelation.ENEMY
+                ):
+                    # 2026-11-02: a real War state is just as sourced as an
+                    # ALLIED one -- bridged the same conservative, mutual-
+                    # agreement way -- into `GameState.diplomatic_relations`
+                    # (added by Phase 1026, after this loop was first
+                    # written, which is why only ALLIED was ever handled
+                    # here). Left unbridged before this fix, a mid-game
+                    # save where two Kings are already at war silently
+                    # loaded as Neutral instead (`diplomatic_relation()`'s
+                    # own missing-pair default), blocking their armies from
+                    # attacking each other instead of allowing it.
+                    state.diplomatic_relations[frozenset({king_id, other_king_id})] = DiplomaticRelation.ENEMY
 
     # Phase 780: record the real board size (column-major, so width is
     # simply the record count divided by the confirmed height) so
@@ -526,6 +551,11 @@ def bridge_new_game_state(
                 location=record.coord,
                 commanded_by=commanded_by,
                 is_skeletal=record.is_skeletal,
+                # Bug fix (2026-10-25): this real flag used to be
+                # silently dropped on import -- see `ArmyState.
+                # is_mercenary`'s own docstring for why it isn't simply
+                # `owner_kingdom_id is None`.
+                is_mercenary=record.is_mercenary,
             )
         )
         armies_created += 1
@@ -614,6 +644,11 @@ def apply_confirmed_hero_ids(
                     location=record.coord,
                     commanded_by=real_id,
                     is_skeletal=record.is_skeletal,
+                    # A Hero-led record (the only kind that can land
+                    # here) is never `is_mercenary` by construction --
+                    # see the main bridging loop's own branching above
+                    # -- passed through anyway for consistency.
+                    is_mercenary=record.is_mercenary,
                 )
             )
             report.armies_recovered += 1

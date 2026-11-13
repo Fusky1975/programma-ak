@@ -17,28 +17,38 @@ second, Kingdom-level effect of a "Treat" order -- Phase 261's own
 
 **Why this was previously marked blocked, and what unblocks it now**:
 earlier surveys of this gap flagged the underlying "Treat" order itself
-as unparseable -- true, and still true (same "no real order-file shape
-ever seen" category as Break Treaty/Call-For-Vote, ``turn/
-emperor_election.py``'s own docstring) -- but Phase 261 already solved
-the identical problem for [3.4]'s own half of the same order:
-``GameState.treat_permissions`` is populated directly by the caller,
-not decoded from a move file. [8.4] reuses that exact field -- a
-*mutual* Treat order is just ``(a, b)`` and ``(b, a)`` both present in
-``treat_permissions`` in the same gameturn -- rather than inventing a
-second, parallel permission model for what the rulebook itself
-describes as one order with two effects.
+as unparseable. **Stale as of Phase 1192** -- that was already false:
+``models/kingdom.py KingdomMoveHeader.allreq`` (Phase 920, earlier) is
+a confirmed-decoded, cross-validated real parser for exactly this order
+(see that property's own docstring); it's simply never wired into
+``GameState.treat_permissions`` yet (a separate, not-yet-done follow-up
+-- see that field's own docstring). What actually unblocks this gap is
+unrelated to parsing: Phase 261 already solved the identical "how is
+this order represented" problem for [3.4]'s own half of the same order
+by populating ``GameState.treat_permissions`` directly from the caller
+instead. [8.4] reuses that exact field -- a *mutual* Treat order is
+just ``(a, b)`` and ``(b, a)`` both present in ``treat_permissions`` in
+the same gameturn -- rather than inventing a second, parallel
+permission model for what the rulebook itself describes as one order
+with two effects.
 
-**"Have become Allies on a previous gameturn"**: this project has no
-alliance-formation timestamp anywhere. ``GameState.allied_kingdoms``
-(like ``treat_permissions``) is a bare set with no in-project mechanism
-that ever adds to it -- the "Ally" order itself is equally unparsed --
-it is entirely populated by the caller ahead of time, with no record of
-*when* an alliance began. Distinguishing "became allied last turn" from
-"became allied this turn" is therefore not information this engine has
-anywhere to read, so this precondition checks *current*
-``is_allied()`` status only, not its duration -- a documented
-limitation, not a silent guess, the same spirit as ``treat_
-permissions``'s own "caller's job" convention.
+**"Have become Allies on a previous gameturn"** (Phase 1026 -- previously
+documented here as an open gap, now closed): ``turn/diplomacy.py
+apply_treat_orders()`` now stamps ``GameState.diplomatic_relations_
+since`` with the real turn number every time a pair actually transitions
+into Allied, the same "turn-stamped companion set" pattern
+``kingdoms_met_since`` (Phase 491) already uses. This precondition now
+checks that timestamp is strictly *before* the current turn, not merely
+*current* ``is_allied()`` status -- an alliance formed this very turn
+(``since_turn == state.turn_number``) does not yet unlock the exchange,
+matching the rulebook's own "previous gameturn" wording exactly. A pair
+that's Allied with **no** recorded timestamp at all (an alliance set up
+directly -- e.g. a GM-authored starting ``GameState``, or an older test
+fixture predating Phase 1026 -- never having gone through
+``apply_treat_orders()``) is still treated as eligible, the same
+permissive "missing data defaults to neutral, not guessed" convention
+this project uses elsewhere, rather than retroactively penalizing state
+this module has no way to have seen form.
 
 **Adjacency-or-presence** ("the 2 Kingdoms are adjacent, or else a
 character from one Kingdom must be inside the other Kingdom"): read
@@ -167,16 +177,20 @@ leader presence).
 **"For each explorer of this level" -- not modeled as a per-exchange
 consumable**: the rulebook's own wording could be read as capping how
 many *simultaneous* non-adjacent exchanges a Kingdom's Explorers can
-sustain at once (one "slot" per qualifying Explorer). This module has no
-existing concept of a per-turn exchange budget anywhere -- every mutual
-Treat pair already gets its own independent resolution, with no limit on
-how many pairs one Kingdom can simultaneously treaty with -- and
-inventing a consumable-slot mechanic to give that phrase teeth would be
-exactly the kind of unsourced magnitude this project's "no source, no
-guess" policy avoids. Read instead as the qualitative permission this
-project *can* build: owning at least one qualifying Explorer unlocks the
-adjacency/presence bypass for all of that Kingdom's pairs this turn, not
-a counted, exhaustible resource.
+sustain at once (one "slot" per qualifying Explorer). **Stale as of
+Phase 1192** -- this used to additionally claim no per-turn exchange-
+budget mechanism exists anywhere in this project to build that cap
+from; that's false. ``turn/cast_execution.py action_cast_slots()``/
+``GameState.action_casts_used`` (Phase 575) is exactly that: a real
+per-(leader, ability) per-turn slot budget, reset every turn by
+``turn/turn_processor.py _replenish_turn_scoped_state()``. A real
+per-qualifying-Explorer-count budget for this rule could be built the
+same way -- that part of the earlier reasoning doesn't hold up. This
+module still implements the unlimited-boolean reading for now (owning
+at least one qualifying Explorer unlocks the adjacency/presence bypass
+for all of that Kingdom's pairs this turn, not a counted, exhaustible
+resource) -- replacing it with a real slot budget is a separate,
+not-yet-done follow-up, not something blocked on a missing mechanism.
 """
 
 from __future__ import annotations
@@ -274,9 +288,10 @@ def alignment_check_success_chance(kingdom_a_alignment: Alignment, kingdom_b_ali
 def execute_scientific_treaties(
     state: GameState, *, board_width: int, board_height: int, rng: random.Random | None = None
 ) -> list[ScientificTreatyResult]:
-    """Resolve every mutual Treat order between currently-Allied Kingdoms
-    in contact this gameturn -- see module docstring for each
-    precondition's own sourcing and this project's documented limits.
+    """Resolve every mutual Treat order between Kingdoms Allied since a
+    previous gameturn (Phase 1026) and in contact this gameturn -- see
+    module docstring for each precondition's own sourcing and this
+    project's documented limits.
     """
 
     rng = rng if rng is not None else random.Random()
@@ -285,6 +300,9 @@ def execute_scientific_treaties(
     for pair in _mutual_treat_pairs(state):
         kingdom_a_id, kingdom_b_id = sorted(pair)
         if not state.is_allied(kingdom_a_id, kingdom_b_id):
+            continue
+        since_turn = state.diplomatic_relations_since.get(frozenset({kingdom_a_id, kingdom_b_id}))
+        if since_turn is not None and since_turn >= state.turn_number:
             continue
         kingdom_a = state.kingdoms.get(kingdom_a_id)
         kingdom_b = state.kingdoms.get(kingdom_b_id)

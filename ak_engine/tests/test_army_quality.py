@@ -5,6 +5,7 @@ derivation of each of its five modifiers.
 
 from __future__ import annotations
 
+from ak_engine.models.advanced_ability import AdvancedAbility
 from ak_engine.models.alignment import Alignment
 from ak_engine.models.army_type import ArmyType
 from ak_engine.models.enums import Ability
@@ -68,6 +69,32 @@ def test_desert_with_a_camel_corps_present_has_no_penalty():
     state.add_army(camels)
 
     assert compute_army_modified_quality(state, bowmen) == Quality.AVERAGE
+
+
+def test_desert_without_camels_waived_by_a_present_explorer_with_find_water():
+    # Bug fix: this ARMIES-report column was missing the same Find
+    # Water (Advanced Ability) carve-out both real-combat copies in
+    # battle_orchestrator.py already honor -- "If the Explorer is
+    # present..., no units fighting with his side will suffer from
+    # thirst and penalties in a Desert province," read as "present,"
+    # not necessarily commanding this specific army.
+    state = _state()
+    state.provinces[FIELD].terrain = Terrain.DESERT
+    state.add_leader(LeaderState(1, 1, "Explorer", FIELD, advanced_abilities={AdvancedAbility.EXPLORER_FIND_WATER}))
+    army = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD)
+    state.add_army(army)
+
+    assert compute_army_modified_quality(state, army) == Quality.AVERAGE
+
+
+def test_desert_without_camels_still_penalized_without_find_water():
+    state = _state()
+    state.provinces[FIELD].terrain = Terrain.DESERT
+    state.add_leader(LeaderState(1, 1, "Hero", FIELD, advanced_abilities=set()))
+    army = ArmyState(1, 1, ArmyType.BOWMEN, Quality.AVERAGE, FIELD)
+    state.add_army(army)
+
+    assert compute_army_modified_quality(state, army) == Quality.GREEN
 
 
 def test_druidic_shortfall_for_a_led_army_of_a_foreign_race():

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.name }} -- Turn 0 Reports -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('world_setup', slug=meta.slug) }}">&larr; World</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-report);">
+  <h2>{{ meta.name }} &mdash; Turn 0 Reports</h2>
+
+  {% if state.kingdoms %}
+    <p>Each King's own starting report -- send it to that player so they can prepare their Turn 1 moves. It includes their full province, army, and character status. The real XK file is also available below for their own map program.</p>
+    <ul class="game-list">
+      {% for kingdom_id, kingdom in state.kingdoms.items() %}
+        <li>
+          <div class="game-name">{{ kingdom.name }}</div>
+          <div style="display: flex; gap: 0.5rem;">
+            <a class="button" href="{{ url_for('turn_zero_view', slug=meta.slug, kingdom_id=kingdom_id) }}">View</a>
+            <a class="button" href="{{ url_for('turn_zero_download', slug=meta.slug, kingdom_id=kingdom_id) }}">Download</a>
+            <a class="button" href="{{ url_for('turn_zero_download_xk', slug=meta.slug, kingdom_id=kingdom_id) }}">Download XK</a>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+    <p><a class="button" href="{{ url_for('turns_hub', slug=meta.slug) }}">Continue to Process Turns &rarr;</a></p>
+  {% else %}
+    <p class="empty-state">This game has no world yet -- <a href="{{ url_for('world_setup', slug=meta.slug) }}">create it first</a>.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

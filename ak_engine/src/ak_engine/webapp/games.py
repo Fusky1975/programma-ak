@@ -25,6 +25,14 @@ from ak_engine.persistence import load_game_state, save_game_state
 _META_FILENAME = "meta.json"
 _STATE_FILENAME = "state.pkl"
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+# Bug fix: a real slug is always this shape (see _slugify() below) --
+# anything else (a literal "..", an absolute path, a path with "/" in
+# it, ...) must never reach a filesystem join. Flask's own <slug> URL
+# converter does not reject ".." as a path segment (confirmed directly:
+# POST /games/../delete reaches this module with slug="..", and before
+# this fix, game_dir(root, "..") silently resolved to root's own parent
+# directory, which delete_game() then shutil.rmtree()'d in full).
+_VALID_SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
 class GameNotFoundError(Exception):
@@ -53,10 +61,29 @@ class GameMeta:
 
 def _slugify(name: str) -> str:
     slug = _SLUG_RE.sub("-", name.strip().lower()).strip("-")
-    return slug or "partita"
+    return slug or "game"
 
 
-def _game_dir(root: Path, slug: str) -> Path:
+def game_dir(root: Path, slug: str) -> Path:
+    """The on-disk directory for ``slug`` -- public so sibling modules
+    (``players.py``) can locate a game's own sidecar files without
+    duplicating the root/slug join.
+
+    Raises ``GameNotFoundError`` for any ``slug`` that isn't shaped like
+    a real ``_slugify()`` output (see ``_VALID_SLUG_RE``'s own docstring
+    note) -- every real game directory's own name is created that way,
+    so this never rejects a genuine game, only a slug that could escape
+    ``root`` via a filesystem join (e.g. ``".."``, an absolute path, or
+    anything containing ``/``). Every caller already treats a bad/
+    missing slug as ``GameNotFoundError`` one way or another (either
+    directly, or via this same exception already propagating from here
+    before an existence check even runs), so this is a stricter version
+    of an error every real caller already handles, not a new failure
+    mode to plumb through.
+    """
+
+    if not _VALID_SLUG_RE.fullmatch(slug):
+        raise GameNotFoundError(slug)
     return root / slug
 
 
@@ -104,20 +131,20 @@ def create_game(root: Path, name: str) -> GameMeta:
     """
 
     slug = _slugify(name)
-    game_dir = _game_dir(root, slug)
-    if game_dir.exists():
+    directory = game_dir(root, slug)
+    if directory.exists():
         raise DuplicateGameNameError(f"a game named {name!r} already exists (slug {slug!r})")
 
-    game_dir.mkdir(parents=True)
+    directory.mkdir(parents=True)
     created_at = datetime.now(timezone.utc).isoformat()
     return save_game(root, slug, GameState(), meta_overrides={"name": name, "created_at": created_at})
 
 
 def open_game(root: Path, slug: str) -> tuple[GameMeta, GameState]:
-    game_dir = _game_dir(root, slug)
-    if not game_dir.is_dir():
+    directory = game_dir(root, slug)
+    if not directory.is_dir():
         raise GameNotFoundError(slug)
-    return _read_meta(game_dir), load_game_state(game_dir / _STATE_FILENAME)
+    return _read_meta(directory), load_game_state(directory / _STATE_FILENAME)
 
 
 def save_game(root: Path, slug: str, state: GameState, *, meta_overrides: dict | None = None) -> GameMeta:
@@ -127,11 +154,11 @@ def save_game(root: Path, slug: str, state: GameState, *, meta_overrides: dict |
     ``GameState`` itself doesn't carry (``name``/``created_at``).
     """
 
-    game_dir = _game_dir(root, slug)
-    game_dir.mkdir(parents=True, exist_ok=True)
+    directory = game_dir(root, slug)
+    directory.mkdir(parents=True, exist_ok=True)
 
-    if (game_dir / _META_FILENAME).exists():
-        existing = _read_meta(game_dir)
+    if (directory / _META_FILENAME).exists():
+        existing = _read_meta(directory)
         name, created_at = existing.name, existing.created_at
     else:
         name, created_at = slug, datetime.now(timezone.utc).isoformat()
@@ -146,13 +173,13 @@ def save_game(root: Path, slug: str, state: GameState, *, meta_overrides: dict |
         turn_number=getattr(state, "turn_number", 0),
         kingdom_count=len(state.kingdoms),
     )
-    save_game_state(state, game_dir / _STATE_FILENAME)
-    _write_meta(game_dir, meta)
+    save_game_state(state, directory / _STATE_FILENAME)
+    _write_meta(directory, meta)
     return meta
 
 
 def delete_game(root: Path, slug: str) -> None:
-    game_dir = _game_dir(root, slug)
-    if not game_dir.is_dir():
+    directory = game_dir(root, slug)
+    if not directory.is_dir():
         raise GameNotFoundError(slug)
-    shutil.rmtree(game_dir)
+    shutil.rmtree(directory)

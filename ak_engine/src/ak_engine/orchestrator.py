@@ -320,9 +320,21 @@ def process_turn(
     # own alignment sentence, all of which read that same state.
     record_kingdom_contacts(state, MapBounds(board_width, state.board_height))
 
+    # Efficiency (Phase 1193): one shared King-lookup cache across every
+    # Kingdom's own letter report below -- safe since this whole
+    # comprehension is a single, read-only pass composed strictly after
+    # every turn-processing mutation above is already done. See
+    # compose_letter_report()'s own Phase 1193 docstring addendum.
+    king_cache: dict[int, int | None] = {}
     letter_reports = {
         kingdom_id: compose_letter_report(
-            results, state, kingdom_id, rng, board_width=board_width, election_outcome=election_outcome
+            results,
+            state,
+            kingdom_id,
+            rng,
+            board_width=board_width,
+            election_outcome=election_outcome,
+            king_cache=king_cache,
         )
         for kingdom_id in state.kingdoms
     }

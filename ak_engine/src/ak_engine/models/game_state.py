@@ -70,23 +70,28 @@ cast_execution.py``, Regolamento AK.txt [4.21]-[4.25]):
   call site exists in this project as of Phase 59, confirmed by grep,
   but a future one should call ``remove_leader`` to stay resurrectable).
 - ``ProvinceState.terrain_override`` (Part Sea, Flood): "for the rest of
-  the turn" province-terrain replacement. Not auto-cleared at a turn
-  boundary -- unlike ``recruited_this_turn``/``ArmyState.movement_
-  points`` (which Phase 573's own ``turn/turn_processor.py
-  _replenish_turn_scoped_state()`` now resets every ``run_turn()`` call),
-  this field still has no reset call anywhere. **Stale as of Phase 683 --
+  the turn" province-terrain replacement. **Stale as of Phase 683 --
   as of Phase 59 this had no consumer, but ``ProvinceState.effective_
   terrain()`` (below) has read it since Phase 225/226, over 166 phases
   later** (already correctly noted where `MeritTally`'s own analogous
   fields are discussed, further down in this file -- nobody had gone
-  back to fix the claim at its own original site until now).
+  back to fix the claim at its own original site until now). **Stale
+  as of Phase 1046** -- was left uncleared at every turn boundary for
+  166+ more phases after that (directly contradicting its own "for the
+  rest of the turn" sourced duration); ``turn/turn_processor.py
+  _replenish_turn_scoped_state()`` now resets it to ``None`` every
+  ``run_turn()`` call, the same way it already does for
+  ``illusory_fog_active`` (Phase 576).
 - ``ProvinceState.tax_modifier_percent`` (Bless, Earthquake): a signed
   percent (+60 / -100, matching each spell's exact rulebook number, and
   each spell *sets* rather than adds since both are documented "not
   cumulative"). **Stale as of Phase 683 -- as of Phase 59 no tax/
   revenue-collection system existed anywhere in this project, so this
   field had no consumer; ``turn/tax_base.py compute_tax_base()`` has
-  read it since Phase 412/222-224.**
+  read it since Phase 412/222-224.** **Stale as of Phase 1046** -- same
+  "sourced one-turn duration, never actually cleared" gap as
+  ``terrain_override`` above, now also reset to ``0`` every
+  ``run_turn()`` call, alongside ``earthquake_flat_reduction`` (below).
 - ``ProvinceState.illusory_terrain`` (Illusory Terrain): the fake
   terrain an outside observer would be told the province is. **Stale as
   of Phase 683 -- as of Phase 59 nothing read this; `report/turn_
@@ -323,6 +328,8 @@ from ak_engine.models.rumor import Rumor
 from ak_engine.models.sex import Sex
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
+from ak_engine.parser.gw_world import DiplomaticRelation
+from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.search_decode import SearchTactic
 
@@ -418,6 +425,28 @@ class KingdomState:
     # other "not auto-reset -- the caller's job" field in this project
     # uses.
     treasury_raid_attempts_this_turn: int = 0
+    # 2026-11-04 -- RULES.AK [3.18]: "a King may give out in a gameturn
+    # no more than 10% of the size of his treasury" -- "in a gameturn"
+    # (per the user's own confirmed reading) makes this a single,
+    # cumulative per-turn budget, not a limit re-applied fresh to each
+    # individual Give order. ``treasury_at_turn_start`` is a snapshot of
+    # ``treasury`` taken once, at the very start of every ``run_turn()``
+    # call (``turn/turn_processor.py _snapshot_treasury_at_turn_start()``),
+    # before any phase (including this same turn's own Give orders) can
+    # change it -- the 10%-cap basis `turn/trade_execution.py
+    # execute_gold_give()` now reads, replacing the previous, stale
+    # "live treasury at the moment of this specific Give" reading.
+    # ``gold_given_this_turn`` tracks how much of that budget has
+    # already been spent this turn, incremented by every successful
+    # Gold Give; reset to 0 at the same snapshot point. Both default to
+    # ``0``, matching a fresh ``KingdomState`` that has never gone
+    # through a real ``run_turn()`` call (the same "missing snapshot
+    # reads as if this King has given nothing and started this turn
+    # with 0 gold" permissive default this project uses elsewhere --
+    # never reached in practice since the snapshot always runs before
+    # any Give can be dispatched).
+    treasury_at_turn_start: int = 0
+    gold_given_this_turn: int = 0
     # Phase 713 (AdvancedAbility.SPY_BLACKMAIL): mirrors the real parsed
     # `GWKingExtension.pending_blackmailer_king_id`/`active_blackmailer_
     # king_id` field PAIR exactly (`parser/gw_world.py`) -- a demand
@@ -439,12 +468,103 @@ class KingdomState:
     # `score(k) = (IRand AND 1023) - 1024*visits(k)` formula, where a
     # King with fewer visits always outscores one with more.
     valhalla_visit_count: int = 0
+    # Phase 1026 -- confirmed exactly equal to `GWKingExtension.account_
+    # number`/XK's own `account_number` for this Kingdom's own King (both
+    # parsers' own Phase 1006 addendum); no other in-project mechanism
+    # reads or writes this, so a fresh `KingdomState` defaults to `0`,
+    # the same "missing data defaults to neutral, not guessed" convention
+    # `parser/gw_world_writer.py`'s own leader-header placeholder uses.
+    account_number: int = 0
+    # Phase 1026 -- the King's own honorific Title/Epithet text (``parser/
+    # gw_world.py GWKingExtension.title_prefix``/``.title_suffix``, e.g.
+    # "Lord"/"Master of the..." -- real, player/GM-assigned flavor text,
+    # not derived from the Office/optional-titles system). This project
+    # has no assignment mechanism for it yet (no GM-editor field, no
+    # world-generation default beyond the empty string) -- defaults to
+    # ``""``, the documented "no title" case both parsers already treat
+    # as valid, never absent.
+    king_title_prefix: str = ""
+    king_title_suffix: str = ""
+    # Phase 1038 (`report/ascii_map.py select_layout_tier()`'s own
+    # documented 82%-accuracy gap): which known-province columns belong
+    # to this Kingdom's own historically-primary ("main") exploration
+    # region, as opposed to a separately-grown "far side of the world"
+    # region -- see `record_newly_known_column()` below for how this
+    # grows, one newly-known province at a time, as the real game is
+    # actually played. Confirmed directly against 54 real map sections
+    # in `tests/fixtures/reports/G3` (Phase 1038 addendum): the real
+    # printed tier is driven by *this* primary-region column count
+    # alone, even once a separately-grown far region becomes
+    # cylindrically adjacent to it with *zero* geometric gap (one real
+    # Kingdom's own primary region ends at column 6 while its own far
+    # region starts at column 7, immediately next to it, and the two
+    # never merge for tier-selection purposes) -- exactly the
+    # historical, not-recoverable-from-a-single-snapshot distinction
+    # `select_layout_tier()`'s own docstring already named as the
+    # blocker. Always empty for a `GameState` bridged cold from an
+    # existing `GW`/`XK` snapshot (there is no way to backfill real
+    # per-turn growth history from a single point-in-time read) --
+    # `report/turn_report.py describe_map_report()` falls back to the
+    # old, honest, 82%-accurate whole-known-columns approximation
+    # whenever this is empty, exactly matching every pre-Phase-1038
+    # caller's behavior.
+    map_primary_region_columns: set[int] = field(default_factory=set)
+
+
+def record_newly_known_column(kingdom: KingdomState, x: int, board_width: int) -> None:
+    """Grows `KingdomState.map_primary_region_columns` by one column --
+    see that field's own docstring for the real-corpus evidence this is
+    sourced from. Call this once for every province column that just
+    now crossed `ProvinceState.known_to_kingdom()` for `kingdom` (every
+    real call site already has this exact "just became known" moment
+    available, since it is the same moment that writes `explored_
+    percent_by_kingdom[kingdom.kingdom_id]` past `KNOWN_PROVINCE_MIN_
+    PERCENT` for the first time).
+
+    The first-ever known column seeds the whole set (every real game
+    starts from the King's own 100%-explored Home province, Phase 428).
+    After that, a newly-known column only joins the primary region when
+    it is cylindrically adjacent to a column *already in* the region --
+    deliberately a one-shot check against the region's current
+    membership, not a fresh geometric recompute from every known column
+    (which would silently re-merge an already-separate far region the
+    moment a later reveal closes the gap between them, exactly the
+    wrong, over-eager merge `select_layout_tier()`'s own docstring
+    already flags as the source of its accuracy gap). A column that
+    doesn't touch the region when revealed stays out of it forever,
+    even if a later reveal would make it touch -- matching the real
+    game's own observed behavior (see this field's own docstring).
+    Idempotent: calling this again for an already-member column is a
+    harmless no-op.
+    """
+
+    if not kingdom.map_primary_region_columns:
+        kingdom.map_primary_region_columns = {x}
+        return
+    if x in kingdom.map_primary_region_columns:
+        return
+    # Bug fix: this used to be `((x - 2) % board_width) + 1` / `(x %
+    # board_width) + 1` -- only correct for a 1-indexed x (1..board_
+    # width); every real caller passes a 0-indexed `HexCoord.x`
+    # (0..board_width-1, the same convention `turn/movement.py`'s own
+    # confirmed `(coord.x + dx) % board_width` wraparound uses), so the
+    # old formula silently misplaced both seam columns -- a newly-known
+    # column adjacent to column 0 (via the wrap) or to the last column
+    # could never actually be detected as adjacent at all.
+    left = (x - 1) % board_width
+    right = (x + 1) % board_width
+    if left in kingdom.map_primary_region_columns or right in kingdom.map_primary_region_columns:
+        kingdom.map_primary_region_columns.add(x)
 
 
 @dataclass(slots=True)
 class ArmyState:
     army_id: int
-    kingdom_id: int | None  # None = unowned mercenary
+    # `None` = no Kingdom currently owns/controls this army -- this
+    # alone does NOT mean "a recruitable mercenary band" (see
+    # `is_mercenary` below): an ordinary unclaimed province's own
+    # native garrison also has `kingdom_id=None`.
+    kingdom_id: int | None
     army_type: ArmyType
     quality: Quality
     location: HexCoord
@@ -491,6 +611,40 @@ class ArmyState:
     # army raised via the Skeletal_Army spell, so `turn/cast_execution.py
     # _execute_skeletal_army()` sets this field on every army it raises.
     is_skeletal: bool = False
+    # Bug fix, sourced directly from the user (2026-10-25, "troppe truppe
+    # mercenarie... 1 per ogni Re") and independently confirmed against
+    # the real `GW3__T1` sample: that file's own `astate` enum (see
+    # `is_skeletal`'s own docstring above) has a genuine, separate
+    # `Mercenary` value (`parser/gw_world.py GWArmyRecord.is_mercenary`,
+    # Phase 337, "85 of 85 real letter cross-checks matched") that is
+    # NOT simply "no Kingdom owns this army" -- parsing that file's own
+    # Block B directly shows exactly 10 `is_mercenary=True` armies for
+    # its 10 Kings (one each, matching this project's own already-
+    # confirmed `worldgen/mercenary_band.py` "one extra mercenary band
+    # per King" sourcing) out of 218 total armies, the rest (every
+    # ordinary province's own native garrison with no owning Kingdom)
+    # correctly NOT flagged. Before this field existed, every one of
+    # those ordinary unowned garrisons was indistinguishable from a true
+    # recruitable mercenary band under the old `kingdom_id is None`
+    # proxy this field now replaces everywhere that proxy meant
+    # "mercenary" specifically (`mercenaries_at()` below, `turn/
+    # leader_visibility.py known_mercenary()`, `parser/xk_world_builder.py
+    # _build_army()`) -- every OTHER real use of `kingdom_id is None`
+    # (combat, office eligibility, spying: "no Kingdom controls this at
+    # all") is a separate, correct, unrelated concept and is left alone.
+    is_mercenary: bool = False
+    # Bug fix, sourced directly from the user (2026-10-29), rulebook
+    # [3.9]: "Non è invece possibile usare [Pick Up] nello stesso turno
+    # in cui un'unità militare viene reclutata... ad eccezione delle
+    # unità mercenarie." Set True only by a fresh levy (``turn/recruit_
+    # execution.py``'s own non-mercenary branch) -- a hired mercenary is
+    # explicitly exempted by that same text ("already constituted, with
+    # their own id") and never sets this. Reset to False at the end of
+    # every `run_turn()` call, alongside `unhireable_this_turn`/
+    # `movement_points` (Phase 573) -- see `turn/plan_dispatch.py
+    # _dispatch_pick_up()`'s own 2026-10-29 docstring addendum for the
+    # real consumer.
+    recruited_this_turn: bool = False
     # Phase 521: AdvancedAbility.MARCH_CAVALRY/_INFANTRY (+ Mastery tiers)
     # -- rulebook [6.2]: "The increased army-movement allowed by the March
     # and Naval abilities is always calculated at the moment an army
@@ -864,6 +1018,42 @@ class LeaderState:
     # `KingdomState.alignment` existed; `turn/hire_pay.py`'s
     # required-pay formula is this field's first real consumer.
     alignment: Alignment | None = None
+    # Phase 984: True only for a King's own two starting companions,
+    # placed directly into his service at world generation
+    # (`worldgen/generate_new_game.py`'s own `COMPANIONS_PER_KING` loop)
+    # -- never set for a Lord/mercenary Hero, who always starts with
+    # `kingdom_id=None` until a real Hire order (if any) later assigns
+    # one. `turn/hire_pay.py required_pay()`'s own "conquest surcharge"
+    # (a misaligned Hero born in a province the King now owns pays +1)
+    # is confirmed, from 4 real Turn-0 samples, to NOT apply to a
+    # starting companion: two of those samples have a starting
+    # companion whose Alignment genuinely differs from their own King's
+    # (K1's Teleko/Evil under Uga-Buga/Undead, K3's Garin/Pagan under
+    # Kwoth/Neutral), yet both report that companion paying *exactly*
+    # the same gold as their own aligned companion counterpart -- the
+    # surcharge the formula would otherwise add is simply never
+    # present. The surcharge's own real condition ("born in a province
+    # the King now owns") is true of every starting companion by
+    # construction (born at the King's own Home), not because of any
+    # conquest -- this flag lets `required_pay()` tell the two cases
+    # apart without guessing from `kingdom_id`/`birth_x`/`birth_y` alone,
+    # which look identical for both. Confirmed with the user directly
+    # (2026-10-01) after a user-reported "5 gold pay" anomaly traced to
+    # exactly this gap.
+    is_starting_companion: bool = False
+    # Phase 1026 -- XK's own confirmed ``hire_turn`` field (every full
+    # leader card in the real corpus reads ``-1``/``-1`` for ``planstart``/
+    # ``planend`` but a real, varying ``hire_turn`` -- see `parser/
+    # xk_world.py XKLeaderCard`'s own docstring). This project had no
+    # equivalent field at all: set to ``0`` for every leader created at
+    # world generation (``worldgen/generate_new_game.py``'s own King/
+    # starting-companion loop -- turn 0, before turn 1 itself begins,
+    # the same "genesis" convention this project already uses for
+    # pre-game state), and to the real ``GameState.turn_number`` at the
+    # moment a Hire order actually succeeds (``turn/plan_dispatch.py
+    # _dispatch_hire()``) -- the only two places a leader can newly enter
+    # a Kingdom's service.
+    hire_turn: int = 0
     # Phase 193: kingdom ids currently watching this leader via a successful
     # Clairvoyance cast -- see module docstring. Not auto-cleared.
     clairvoyance_watchers: set[int] = field(default_factory=set)
@@ -1026,6 +1216,40 @@ class LeaderState:
     # that read or wrote it, is Phase 456's own correction now that Add_
     # Experience's SS2.2/SS3.3 text makes the sharing explicit.
     experience_credit: int = 0
+    # Bug fix, sourced directly from the user (2026-10-29), rulebook
+    # [3.13]: "L'avanzamento avrà effetto fin dalla fase successiva" (a
+    # Practice skill/aptitude rise only takes effect starting the next
+    # phase, not the one it was earned in). ``turn/practice_execution.py``
+    # used to write a rise straight into ``SkillTable.raw_values`` the
+    # instant it resolved -- visible to any same-phase combat strength
+    # lookup (``effective_skill_level()``) for a leader who both
+    # practiced and passively commanded an army drawn into that same
+    # phase's own combat. Keyed by ``Ability``, holding each one's own
+    # ``(new_skill, new_aptitude)`` from the most recent rise not yet
+    # committed; ``turn/turn_processor.py run_turn()``'s own ``commit_
+    # pending_skill_advancements()`` call, at the very start of every
+    # phase before that phase dispatches anything, writes every entry
+    # into ``LeaderState.skills`` and clears this field -- so it's
+    # already in effect by the time the *next* phase (including next
+    # turn's own P0, if earned in P4) runs. Deliberately NOT reset by
+    # ``_replenish_turn_scoped_state()`` -- it must survive a turn
+    # boundary exactly like a P4 rise surviving into next turn's P0.
+    # A dict, not a single ``(ability, new_skill, new_aptitude)`` tuple
+    # (Phase 1189 bug fix) -- Practice itself only ever sets one entry
+    # per phase (one order per phase), but ``turn/experience.py add_
+    # experience()`` also defers its own rises through this same field
+    # (its own Phase 1189 fix, see that module's docstring), and several
+    # real call sites already award two *different* abilities' worth of
+    # Add_Experience within one phase (e.g. Melee and Archery from the
+    # same combat round) -- a single-tuple slot would silently drop
+    # whichever of the two committed second. See ``turn/practice_
+    # execution.py``'s own module docstring for the full citation and
+    # scope (this delay applies only to the core [3.13]-equivalent
+    # skill/aptitude pair, not to the same attempt's other, separately-
+    # sourced side effects -- Advanced Ability grants, Discoveries,
+    # Society Maps, gems, bandit loot -- none of which carry a "next
+    # phase" qualifier of their own).
+    pending_skill_advancement: dict[Ability, tuple[int, int]] = field(default_factory=dict)
     # Phase 493 -- which of the 89 catalogued Advanced Abilities (Phase
     # 128) this leader has actually been granted. A flat set, not keyed
     # by Ability category: the source excerpt's own rule (``models/
@@ -1165,9 +1389,9 @@ class ProvinceState:
     # the Discovery. Set (not accumulated) by a defended Earthquake cast
     # (``turn/cast_execution.py _execute_earthquake``); a *for one turn*
     # figure, unlike the cumulative/permanent ``scar_terrain_gold_
-    # reduction`` above -- the caller resets it the same "no auto-clear
-    # yet" way it already leaves ``tax_modifier_percent``/
-    # ``illusory_terrain`` between turns.
+    # reduction`` above -- reset to 0 the same way ``tax_modifier_
+    # percent``/``terrain_override`` now are (Phase 1046's own
+    # ``turn/turn_processor.py _replenish_turn_scoped_state()`` fix).
     earthquake_flat_reduction: int = 0
     # Illusory Fog (Phase 207) -- see module docstring. Set by a
     # successful cast (turn/cast_execution.py _execute_illus_fog).
@@ -1485,17 +1709,48 @@ class GameState:
     # docstring's Phase 309 addendum. Monotonic, never reset.
     graveyard_death_counter: int = 0
     allied_kingdoms: set[frozenset[int]] = field(default_factory=set)
+    # Phase 1026 -- RULES.AK [8.1]'s own full 3-state relation (Enemy/
+    # Neutral/Allied), one shared value per unordered Kingdom pair -- see
+    # ``diplomatic_relation()``'s own docstring for why a missing pair
+    # reads Neutral and why this stays in sync with ``allied_kingdoms``
+    # rather than replacing it. Written by ``turn/diplomacy.py
+    # apply_treat_orders()`` for every in-game transition, and (2026-11-02)
+    # by ``parser/gw_world_bridge.py bridge_new_game_state()`` for a real,
+    # mutually-recorded Enemy pair loaded from a mid-game save file.
+    diplomatic_relations: dict[frozenset[int], DiplomaticRelation] = field(default_factory=dict)
+    # Phase 1026 -- a turn-stamped companion to ``diplomatic_relations``
+    # above, same pattern as ``kingdoms_met_since`` (Phase 491): the turn
+    # number a pair most recently *became* Allied. Closes [8.4]'s own
+    # previously-documented gap (``turn/scientific_treaty.py``'s own
+    # Phase 869 addendum): "need to have become Allies on a *previous*
+    # gameturn" can now be checked for real instead of only against
+    # *current* ``is_allied()`` status.
+    diplomatic_relations_since: dict[frozenset[int], int] = field(default_factory=dict)
+    # Phase 1026 -- RULES.AK [8.3]'s own Break Treat order, directed
+    # ``(issuing_kingdom_id, target_kingdom_id)``, populated directly by
+    # the caller rather than decoded from a move file (same as
+    # ``treat_permissions`` right above -- see that field's own Phase
+    # 1192 note on why a real decoder exists but isn't wired in yet; a
+    # mutual Treat order is already read from ``treat_permissions``
+    # itself, see ``turn/diplomacy.py``'s own module docstring for why a
+    # second, parallel Treat-order field was not added here). Turn-scoped,
+    # same as ``treat_permissions``: cleared by ``turn/turn_processor.py
+    # _replenish_turn_scoped_state()``.
+    break_treat_orders: set[tuple[int, int]] = field(default_factory=set)
     # Phase 261: RULES.AK [3.4] "In order for you to Recruit in your
     # ally's territory, he MUST issue a 'Treat' order with you (even
     # though you may already be allied.)" -- a directed permission,
     # separate from the alliance relationship itself: the territory
     # *owner* grants a specific recruiter permission to recruit there
     # this gameturn. Pairs are ``(owner_kingdom_id, recruiter_kingdom_id)``.
-    # No parser/decoder exists for a Treat order anywhere in this project
-    # (same "no real order-file shape ever seen" category as Break Treaty
-    # and Call-For-Vote -- see turn/emperor_election.py's own docstring),
-    # so this is populated directly by the caller, not decoded from a
-    # move file. **Phase 874**: cleared at the end of every `run_turn()`
+    # **Stale as of Phase 1192** -- this used to say no parser/decoder
+    # for a Treat order exists anywhere in this project; that was already
+    # false when written. `models/kingdom.py KingdomMoveHeader.allreq`
+    # (Phase 920, earlier) is exactly that decoder, confirmed-decoded and
+    # cross-validated against real sample data -- see that property's own
+    # docstring. It's real and correct, just never wired into this field;
+    # this is still populated directly by the caller, not decoded from a
+    # move file, pending that follow-up. **Phase 874**: cleared at the end of every `run_turn()`
     # call by `turn/turn_processor.py _replenish_turn_scoped_state()`,
     # same as `recruited_this_turn`/`ArmyState.movement_points` -- the
     # rulebook's own quoted text above ("issue a 'Treat' order... this
@@ -1505,6 +1760,85 @@ class GameState:
     # grant permanent without this reset, the identical bug class Phase
     # 573/670/702 already found and fixed for other turn-scoped fields.
     treat_permissions: set[tuple[int, int]] = field(default_factory=set)
+    # 2026-11-03 -- RULES.AK [8.3]'s own timing exception: "I Re Malvagi
+    # e Non-Morti danno l'ordine Break Treat all'inizio del turno e non
+    # alla fine. Di conseguenza possono incominciare immediatamente
+    # un'invasione nello stesso turno in cui dichiarano guerra" -- every
+    # *other* King's own Break Treat order still resolves "alla fine del
+    # turno," so its relation change must stay invisible to this same
+    # turn's own combat. ``turn/diplomacy.py apply_treat_orders()`` now
+    # computes a pair's own new relation immediately only when at least
+    # one of the Kings who issued the break this turn is Evil or Undead;
+    # otherwise the ``(old, new)`` relation pair lands here instead of
+    # being written to ``diplomatic_relations`` right away. **Not
+    # turn-scoped** -- deliberately survives past ``run_turn()``'s own
+    # end-of-call ``_replenish_turn_scoped_state()`` (which clears
+    # ``break_treat_orders`` right above), since this is exactly the
+    # data that must still exist when the *next* ``run_turn()`` begins.
+    # ``turn/diplomacy.py advance_pending_diplomacy()`` (mirroring
+    # ``turn/blackmail.py advance_blackmail_claims()``'s own pending ->
+    # active promotion) applies every entry here and clears it, called
+    # once at the very start of ``run_turn()``, before that same turn's
+    # own fresh ``apply_treat_orders()`` call.
+    pending_break_treat_transitions: dict[frozenset[int], tuple[DiplomaticRelation, DiplomaticRelation]] = field(
+        default_factory=dict
+    )
+    # 2026-11-05 -- the same deferred-promotion shape as ``pending_
+    # break_treat_transitions`` right above, but for a Treat-driven
+    # transition RULES.AK [8] itself resolves "alla fine del turno" with
+    # no same-turn exception: an ordinary (non-Druidic) mutual Treat, or
+    # a Druidic Kingdom's own one-sided Treat toward a Neutral partner
+    # (confirmed with the user: that one-sided case has no "prima
+    # dell'inizio del turno" text covering it, unlike the *mutual*
+    # Druidic case, which stays immediate -- see ``turn/diplomacy.py``'s
+    # own module docstring for the full citations). Promoted by the same
+    # ``advance_pending_diplomacy()``, at the same point in the turn, but
+    # -- confirmed with the user -- generates no ``diplomacy_relation_
+    # change_notices`` entry: a formed alliance or a truce is shown only
+    # in that later turn's own DIPLOMACY report section, never announced
+    # at the top of ACTION REPORT the way a Break Treat promotion is.
+    # Not turn-scoped, for the exact same reason its Break Treat sibling
+    # isn't.
+    pending_treat_transitions: dict[frozenset[int], tuple[DiplomaticRelation, DiplomaticRelation]] = field(
+        default_factory=dict
+    )
+    # 2026-11-03 -- every diplomatic relation change actually made
+    # visible *this* turn by a Break Treat order (whether resolved
+    # immediately above, or promoted out of ``pending_break_treat_
+    # transitions`` this same turn) -- ``(kingdom_a_id, kingdom_b_id,
+    # old_relation, new_relation)``, one entry per changed pair, order
+    # arbitrary. Feeds ``report/turn_report.py describe_diplomacy_
+    # change_notices()``, rendered at the very top of both Kings' own
+    # ACTION REPORT section (``compose_letter_report()``), ahead of the
+    # ordinary turn narrative -- the user's own direct-play confirmation
+    # (2026-11-02) that a relation change is always announced this way,
+    # not something either available source text documents. **2026-11-05
+    # -- also fed by an immediate Druidic *mutual* Treat** (``turn/
+    # diplomacy.py apply_treat_orders()``'s own Treat-driven immediate
+    # branch) -- confirmed with the user that forming an alliance this
+    # way is announced the same way a Break Treat is, not scoped to war
+    # declarations specifically after all. Turn-scoped, but *not* by
+    # ``_replenish_turn_scoped_state()`` (which runs at the *end* of
+    # ``run_turn()``, before ``compose_letter_report()`` ever gets to
+    # read this) -- cleared instead at the very *start* of ``run_turn()``,
+    # the same spot that populates it, so a stale list never leaks into
+    # a later turn's own report.
+    diplomacy_relation_change_notices: list[tuple[int, int, DiplomaticRelation, DiplomaticRelation]] = field(
+        default_factory=list
+    )
+    # Phase 1041 bug fix -- rulebook [3.16] rule (d): "The Patrol stays
+    # active until the next Move, Trail or Pursue order" -- a real
+    # standing order meant to persist across the turn boundary, unlike
+    # Defend/Pursue/Trail (rulebook-scoped to "the rest of the turn").
+    # Previously tracked only in a `run_turn()`-local dict (``turn/
+    # turn_processor.py``), which was silently recreated empty on every
+    # call -- a Patrol order vanished at the next turn boundary even
+    # when nothing had ever cancelled it. Persisted here instead, the
+    # same way every other true cross-turn standing state already is
+    # (e.g. ``LeaderState.special_encounter_plan``). Keyed by the
+    # patroller's own ``leader_id``; value is the ``turn/challenge_
+    # pursue_decode.py PursueRequest`` their Patrol order decoded to.
+    active_patrols: dict[int, PursueRequest] = field(default_factory=dict)
     # Feature instances (Phase 75) -- see models/feature.py's own docstring
     # for why this is a flat dict-by-id, mirroring `armies`/`provinces`,
     # not a per-province list (Pascal's own `fx`/`fy` arrays are keyed by
@@ -1625,6 +1959,23 @@ class GameState:
     # scheduled, cleared alongside it once tallied (see `process_
     # election_turn()`'s own Phase 778 addendum).
     election_pending_alignment_trigger: Alignment | None = None
+    # Phase 1191 bug fix, same lifecycle/rationale as `election_pending_
+    # alignment_trigger` immediately above: REPORTS.PAS:1937-1944's own
+    # `vote_perc` ("Kings owning X% of the world's tax base called for
+    # an election") is only ever computable correctly on the *request*
+    # turn, where each Kingdom's own `kprevgold` still holds a real
+    # election-request toggle (`KingdomMoveHeader.is_vote_turn()`). On
+    # the later *tally* turn, `kprevgold` instead holds the voted-for
+    # candidate's own King-index -- a completely different value range
+    # -- so recomputing this figure from that turn's own data (as a
+    # prior phase mistakenly did) silently reads back an empty "requesting"
+    # set and always yields `0`. Set alongside `election_pending_turn`/
+    # `election_pending_alignment_trigger` when a vote is scheduled (the
+    # value `turn/emperor_election.py evaluate_election_call()` already
+    # computed correctly that same turn), copied onto that later tally's
+    # own `ElectionResult.caller_percent` instead of being recomputed,
+    # and cleared alongside the other two once tallied.
+    election_pending_caller_percent: int = 0
     # GENERAL INTELLIGENCE REPORT's own raw material (Phase 231) -- see
     # WorldEvent's own docstring. Populated by a caller (``report/
     # turn_report.py record_battle_world_events()`` today, the one real
@@ -1813,9 +2164,34 @@ class GameState:
     # for the turn are already resolved by then, matching the real "end
     # of phase 5, after battles" resolution timing).
     pending_guild_target: int | None = None
+    # GM interface Phase 3 (`webapp/app.py` titles_* routes): which of the
+    # 39 leader-scoped + 3 army-scoped optional titles (every real
+    # `turn/office_holder.py ALL_OFFICES`/`ARMY_RANKED_OFFICES` entry past
+    # the 8 mandatory Imperial Offices, rulebook [10.1]) the GM chose to
+    # include in this game, shown/hidden as a whole row in
+    # `report/turn_report.py describe_imperial_office_report()`. `None`
+    # (every existing game/test, and any new game before the GM has ever
+    # visited that screen) means "not configured yet" -- treated as "every
+    # optional title is in play," this report composer's own unfiltered
+    # behavior before this field existed, so no game that never sets this
+    # sees any change. The 8 mandatory offices are never gated by this
+    # field at all: they show unconditionally, matching the rulebook's
+    # own framing of them as compulsory rather than a GM choice.
+    enabled_optional_offices: set[Office] | None = None
 
     def add_kingdom(self, kingdom: KingdomState) -> None:
         self.kingdoms[kingdom.kingdom_id] = kingdom
+
+    def new_kingdom_id(self) -> int:
+        """Next unused id, checked against ``kingdoms``, ``leaders``, AND
+        ``dead_leaders`` at once -- a King's own ``leader_id`` always
+        equals his ``kingdom_id`` (confirmed project-wide, e.g. ``parser/
+        gw_world.py``'s own "a King resolves directly" docstring), so a
+        freshly-created Kingdom's id must be unused in either namespace,
+        not just its own.
+        """
+
+        return max((*self.kingdoms.keys(), *self.leaders.keys(), *self.dead_leaders.keys(), 0)) + 1
 
     def add_province(self, province: ProvinceState) -> None:
         self.provinces[province.coord] = province
@@ -1833,6 +2209,16 @@ class GameState:
 
     def add_leader(self, leader: LeaderState) -> None:
         self.leaders[leader.leader_id] = leader
+
+    def new_leader_id(self) -> int:
+        """Next unused leader id (1 above the current highest across both
+        ``leaders`` and ``dead_leaders``, or 1 if neither has any) --
+        same convention as ``new_army_id()``/``new_feature_id()``. Checks
+        ``dead_leaders`` too so a GM-created Hero never collides with an
+        archived one still eligible for a future Resurrection.
+        """
+
+        return max((*self.leaders.keys(), *self.dead_leaders.keys(), 0)) + 1
 
     def record_battle_death(self, coord: HexCoord, army_type: ArmyType, quality: Quality, kingdom_id: int | None) -> None:
         """Appends one ``GraveyardEntry`` for a genuine battle death at ``coord`` -- see
@@ -2020,7 +2406,9 @@ class GameState:
         return [army for army in self.armies.values() if army.commanded_by == leader_id]
 
     def mercenaries_at(self, coord: HexCoord) -> list[ArmyState]:
-        return [army for army in self.armies.values() if army.location == coord and army.kingdom_id is None]
+        # Bug fix (2026-10-25): `army.is_mercenary`, not merely `army.
+        # kingdom_id is None` -- see that field's own docstring.
+        return [army for army in self.armies.values() if army.location == coord and army.is_mercenary]
 
     # Phase 876: this class's own symmetric `independent_heroes_at(coord)`
     # (a per-coordinate mirror of the method above, for leaders instead of
@@ -2038,6 +2426,36 @@ class GameState:
         if kingdom_a == kingdom_b:
             return True
         return frozenset({kingdom_a, kingdom_b}) in self.allied_kingdoms
+
+    def diplomatic_relation(self, kingdom_a: int, kingdom_b: int) -> DiplomaticRelation:
+        """Phase 1026 -- RULES.AK [8.1]'s own 3-state relation (Enemy/
+        Neutral/Allied; ``DiplomaticRelation.TEAMED`` is never produced by
+        this project's own turn logic -- see ``turn/diplomacy.py``'s own
+        module docstring for why). A pair with no entry in
+        ``diplomatic_relations`` is Neutral, matching turn 1's own "all
+        Kings start Neutral to each other" rule ([8] itself); the
+        self-relation is always Allied, a query-time convention (never
+        actually stored) matching XK's own confirmed self-relation
+        sentinel.
+
+        ``allied_kingdoms`` stays the single source of truth for "Allied
+        or not" -- checked *first*, so a pair any of this project's own
+        pre-existing callers (or a test fixture, or a GM editor) sets
+        there directly, without ever going through ``turn/diplomacy.py
+        apply_treat_orders()``, still reads Allied here, never silently
+        downgraded back to Neutral for lack of a matching
+        ``diplomatic_relations`` entry. ``apply_treat_orders()`` keeps
+        both in sync on every real transition it computes, so the two
+        never actively disagree; this ordering only matters for state
+        nothing in this module itself ever wrote.
+        """
+
+        if kingdom_a == kingdom_b:
+            return DiplomaticRelation.ALLIED
+        pair = frozenset({kingdom_a, kingdom_b})
+        if pair in self.allied_kingdoms:
+            return DiplomaticRelation.ALLIED
+        return self.diplomatic_relations.get(pair, DiplomaticRelation.NEUTRAL)
 
     def has_met(self, kingdom_a: int | None, kingdom_b: int | None) -> bool:
         """Phase 408 -- mirrors ``kkmet``'s own read side (``SAY.PAS`` ~101,

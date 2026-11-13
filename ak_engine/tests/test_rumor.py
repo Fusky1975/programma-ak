@@ -9,7 +9,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.monster import Monster
 from ak_engine.models.race import Race
 from ak_engine.models.rumor import RumorContent
-from ak_engine.models.treasure import Treasure
+from ak_engine.models.treasure import TREASURE_NAME, Treasure
 from ak_engine.turn.rumor import (
     RUMOR_CHANCE_BY_ACTION,
     RUMOR_MAX_DISTANCE,
@@ -202,3 +202,25 @@ def test_resolve_rumor_generation_treasure_only_feature_always_uses_item_content
     rng = ScriptedRandom([0.0, 0.0], choice_indices=[0])
     rumor = resolve_rumor_generation(state, KINGDOM, LEADER, ORIGIN, ActionCode.EXPLORE, rng)
     assert rumor.content is RumorContent.ITEM
+
+
+def test_resolve_rumor_generation_corrupted_treasure_never_an_unused_ordinal():
+    # Regression: a false rumor's own "corrupt the treasure" branch used
+    # to draw from every real Treasure member, including the 14
+    # UNUSED_EXTENSION placeholder ordinals (99-112) that have no
+    # TREASURE_NAME entry -- describe_rumor() crashes with a KeyError if
+    # one is ever picked. Treasure.UNUSED_20 is literally the last real
+    # Treasure member, so choice_indices=[-1] (negative indexing always
+    # selects the list's own last element, whatever its length) forces
+    # exactly that draw under the old, unfiltered list; the fix must
+    # exclude it instead.
+    nearby = HexCoord(ORIGIN.x + 1, ORIGIN.y)
+    state = _state_with_provinces(nearby)
+    _add_feature(state, 1, nearby, treasure=Treasure.ABILITY_TACTICAL)  # no guardian -> always ITEM content
+    # trigger succeeds, candidate chosen, is_true=False (0.9 >= 0.50),
+    # corrupt-subject roll 0.0 < 0.50 -> corrupt the treasure.
+    rng = ScriptedRandom([0.0, 0.9, 0.0], choice_indices=[0, -1])
+    rumor = resolve_rumor_generation(state, KINGDOM, LEADER, ORIGIN, ActionCode.EXPLORE, rng)
+    assert rumor.is_true is False
+    assert rumor.described_treasure in TREASURE_NAME
+    assert rumor.described_treasure is not Treasure.ABILITY_TACTICAL

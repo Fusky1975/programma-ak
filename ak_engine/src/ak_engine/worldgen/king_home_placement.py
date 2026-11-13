@@ -36,7 +36,10 @@ clarifications on the three genuinely ambiguous points:**
   Cavalry/Heavy Cavalry/Chariots -- no percentage split for this
   specific draw exists anywhere in the AKGEN material (checked
   directly), and the user confirmed an equal-probability (1/3 each)
-  project-original default is acceptable here.
+  project-original default is acceptable here. **Orcish override
+  (2026-10-25)**: regardless of terrain, an Orcish King's second
+  recruit slot is always ``WARG_RIDERS`` -- see ``second_recruit_
+  slot()``'s own docstring addendum for the full sourcing.
 
 First-recruit-slot-by-race (Human->Legion, Elf->Bowmen, Dwarf->Axemen,
 Orc->Phalanx) needed no new work here -- it was already fully
@@ -118,11 +121,27 @@ def choose_king_home(
     return candidates[rng.irand() % len(candidates)]
 
 
-def second_recruit_slot(terrain: Terrain, rng: PascalRandom, *, naval: bool) -> ArmyType:
-    """The Home province's own second recruit slot, by the user's own confirmed rules."""
+def second_recruit_slot(terrain: Terrain, rng: PascalRandom, *, naval: bool, king_race: Race | None = None) -> ArmyType:
+    """The Home province's own second recruit slot, by the user's own confirmed rules.
+
+    **Orcish override, sourced directly from the user (2026-10-25)**: an
+    Orcish King's Home province always gets Warg Riders as its second
+    recruit slot, regardless of terrain -- confirmed from the user's own
+    observed bug report (a freshly-created Orc King's Home had no Warg
+    Riders among its two recruit types). Takes priority over the Jungle
+    -> Elephants and random-cavalry-or-chariots rules below (neither of
+    which the user scoped this override away from), but not over the
+    Naval branch above (a King's own chosen Naval talent is a deliberate
+    build choice independent of race). `king_race` defaults to `None`
+    for every pre-existing caller (ordinary, non-Home provinces have no
+    such override and never call this function at all), so this is a
+    pure addition, not a behavior change for any other caller.
+    """
 
     if naval:
         return ArmyType.FLEET
+    if king_race is Race.ORCISH:
+        return ArmyType.WARG_RIDERS
     if terrain is Terrain.JUNGLE:
         return ArmyType.ELEPHANTS
     return _SECOND_SLOT_CAVALRY_OR_CHARIOTS[rng.irand() % 3]

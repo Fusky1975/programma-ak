@@ -1312,6 +1312,7 @@ from __future__ import annotations
 
 import itertools
 import random
+import textwrap
 from typing import Sequence
 
 from ak_engine.models.enums import (
@@ -1352,7 +1353,14 @@ from ak_engine.models.power import (
     PowerCondition,
 )
 from ak_engine.models.quote import quote_of_the_week
-from ak_engine.models.race import HUMANOID_RACES, RACE_FANATICISM_TITLE, RACE_NAME, Race
+from ak_engine.models.race import (
+    HUMANOID_RACES,
+    RACE_ADJECTIVE,
+    RACE_FANATICISM_TITLE,
+    RACE_NAME,
+    RACE_PLURAL_NAME,
+    Race,
+)
 from ak_engine.models.rumor import Rumor, RumorContent
 from ak_engine.models.discovery import (
     DISCOVERY_NAME,
@@ -1379,6 +1387,7 @@ from ak_engine.turn.assassin_guild import GuildAssassinationOutcome
 from ak_engine.turn.army_quality import compute_army_modified_quality
 from ak_engine.turn.aspy_defend_decode import DefendRequest
 from ak_engine.turn.aspy_execution import SpyReport
+from ak_engine.turn.battle_line import BattleUnit
 from ak_engine.turn.battle_orchestrator import BattleReport, QualityChange, find_king_of_kingdom
 from ak_engine.turn.defend_execution import DefendReinforcement
 from ak_engine.turn.battle_luck import (
@@ -1390,7 +1399,7 @@ from ak_engine.turn.battle_luck import (
 from ak_engine.turn.battle_resolution import BattleColumnResult, BattleResult
 from ak_engine.turn.cast_execution import CastExecutionResult, is_unfinalized_royal_heir
 from ak_engine.turn.challenge_execution import ChallengeExecutionResult
-from ak_engine.turn.combat import QUALITY_NAME
+from ak_engine.turn.combat import QUALITY_NAME, Quality
 from ak_engine.turn.emperor_election import (
     _ORDINARY_ALIGNMENTS,
     ElectionCallOutcome,
@@ -1408,12 +1417,14 @@ from ak_engine.turn.move_execution import MoveExecutionResult, TransportIllegalM
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
 from ak_engine.turn.imperial_intelligence import known_bordering_kingdom_tax_bases, known_bordering_kingdom_treasuries
 from ak_engine.turn.leader_visibility import known_mercenary, leader_location_known_to_kingdom
-from ak_engine.turn.movement import MapBounds, hex_distance_wrapped
+from ak_engine.parser.gw_world import DiplomaticRelation
+from ak_engine.turn.movement import Direction, MapBounds, hex_distance_wrapped, neighbor_in_direction_wrapped
 from ak_engine.worldgen.place_map import DEFAULT_WIDTH
 from ak_engine.turn.discovery_effects import (
     effective_skill_level,
     emperor_holds_arcanes_valor_unification,
     kingdom_sees_through_illusory_terrain,
+    total_skill,
 )
 from ak_engine.turn.expenses import (
     MaintenanceResult,
@@ -2566,6 +2577,272 @@ def _bluck_cluck_leader_id(commander_leader_id: int | None, kingdom_id: int | No
     return king.leader_id if king is not None else None
 
 
+# Phase 1035 -- the real battle-line ASCII diagram (rulebook [7.2]):
+# confirmed by reverse-engineering 102 real battle-line diagrams across
+# two real games (G6 -- `tests/fixtures/reports/G6`, 5 diagrams; G3 --
+# `tests/fixtures/reports/G3`, 97 diagrams, user-supplied). The real
+# layout: a fixed-10-char-wide grid, one column per battle-line column
+# (`BattleResult.columns`, 1-7 wide in the real corpus). Attacker block
+# first, rear line printed at the top and front line printed last,
+# directly above the separator -- `turn/battle_line.py assign_battle_
+# lines()`'s own "front line = depth 0" convention means the printed
+# order (confirmed directly against a real 5-column sample, `tests/
+# fixtures/reports/G3/SE3__T6.K1:75-93`) has to run rear-to-front so both
+# sides' own front lines end up facing each other across the separator,
+# matching a real line-of-battle picture. Then a full-width `-`
+# separator. Then the defender block, front line first (right below the
+# separator), rear lines after.
+#
+# **A ragged/partial line** (fewer units at some depth than there are
+# columns) is NOT centered -- it occupies whichever columns `assign_
+# battle_lines()`'s own round-robin dealing actually gave the extra
+# depth to (confirmed directly against the real 5-column sample above:
+# the ragged rear line sits in column 0, exactly where that same
+# round-robin algorithm would put it), so this renderer reproduces it
+# the same way: a missing unit at a given depth/column just renders as
+# a blank cell, no re-centering.
+#
+# **Attacker's own number row** (user-confirmed directly, after three
+# rejected hypotheses -- Tactical skill and column count both failed
+# real-data checks): the unit's own owning Kingdom's `kingdom_id` --
+# uniform across every attacking unit in the overwhelming majority of
+# real diagrams (a multi-Kingdom coalition attack is the one real
+# exception, and renders correctly here too, since each unit reads its
+# own `BattleUnit.kingdom_id`, never an assumed-uniform side-level
+# value).
+#
+# **Defender's own number row** (user-confirmed directly): the unit's
+# own owning Kingdom's `kingdom_id` if it belongs to a Kingdom's army;
+# otherwise the defending independent Hero's own `leader_id`
+# (`BattleUnit.commanded_by`) if the unit is guarded by a Hero defending
+# a neutral/unclaimed province with no Kingdom owner (confirmed directly
+# against the real sample above: Gnarlia, a neutral province, defended
+# by the independent Hero Fingol (#27) -- the diagram's own defender
+# number row reads "27"); otherwise the literal `"GC"` marker when no
+# commander/leader is present at all (100% correlation, 20/20 real
+# samples, with the real narrative phrase "No generals were present to
+# lead the forces of...").
+#
+# **Quality-letter suffix** (`/A`/`/V`/`/C`/`/E`/`/G`/`/D`) and the
+# Skeletal `S` flag are both real (confirmed against the exact
+# grammatical adjective slot in the surrounding narrative prose at
+# 98.8%/95.1% precision) -- but whether a given real diagram shows the
+# letter at all for an Average, non-Skeletal unit, or omits it entirely,
+# turned out NOT to be a clean deterministic rule by side (closer to
+# "usually omitted on the attacker side, usually shown on the defender
+# side" than to an exact rule -- real counter-examples exist on both
+# sides this project has no further data to explain, e.g. the same real
+# 5-column sample above shows an explicit "/A" on three different
+# Average attacker units while a fourth attacker unit elsewhere in the
+# same diagram omits its own letter entirely). This renderer always
+# shows the letter -- a documented simplification, not a guess at
+# whatever the real (apparently non-deterministic, or deterministic on
+# a fact this project doesn't track) omission rule actually is.
+#
+# **Decorative border bytes** wrapping some numbers in the real raw
+# files (CP437-era dot-matrix printer font artifacts -- inconsistent,
+# non-decodable) are deliberately not reproduced -- plain zero-padded
+# numbers (or the literal `GC`) are this project's own established
+# convention for a byte this project can't make sense of (see
+# `render_guardian_poses_riddle()`'s own `$+` stanza-marker handling).
+#
+# **The real "The attackers had the 218th Legion... in reserve."
+# sentence** (units past the diagram's own 3-line cutoff) is Phase
+# 1036's own `render_battle_reserve_sentences()`, right after this
+# function -- see that function's own module comment for the full
+# sourcing, including why a unit past the cutoff still really fights
+# (this is a display-only limit, not a combat-participation one).
+_BATTLE_LINE_INTRO_SENTENCE = "The armies were drawn up into lines of battle as shown here:"
+
+_BATTLE_DIAGRAM_QUALITY_LETTER: dict[Quality, str] = {
+    Quality.DEPLETED: "D",
+    Quality.GREEN: "G",
+    Quality.AVERAGE: "A",
+    Quality.VETERAN: "V",
+    Quality.CRACK: "C",
+    Quality.ELITE: "E",
+}
+_BATTLE_DIAGRAM_CELL_WIDTH = 10
+# Phase 1036 -- the diagram itself never shows more than 3 lines per
+# side (confirmed across every one of the 102 real diagrams: attacker
+# depth tops out at 3, defender at 3, never 4+ -- Counter({3: 50, 2: 28,
+# 1: 24}) and Counter({1: 69, 2: 19, 3: 14}) respectively). This is a
+# display-only cutoff, not a combat-participation one: `turn/combat.py
+# line_contribution()`'s own disassembly-confirmed formula keeps halving
+# a unit's strength contribution indefinitely past the 3rd line (no cap
+# at all -- `turn/aftermath.py FORMATION_DIVISOR` even has its own
+# explicit "fourth_and_later" entry), so a unit past the cutoff still
+# really fights, just isn't drawn. Every real diagram with a unit past
+# this cutoff has a matching "in reserve" sentence listing it instead
+# (100% correlation, 40/40 real cases: `render_battle_reserve_
+# sentences()`'s own module comment has the full count) -- confirmed
+# this is purely where this project's own text generator stops drawing
+# the picture, not a combat rule this engine is missing.
+_BATTLE_DIAGRAM_MAX_LINES = 3
+
+
+def _battle_diagram_cell(text: str) -> str:
+    return text.center(_BATTLE_DIAGRAM_CELL_WIDTH)
+
+
+def _battle_diagram_blank_row(n_cols: int) -> str:
+    return " " * (_BATTLE_DIAGRAM_CELL_WIDTH * n_cols)
+
+
+def _battle_diagram_name_cell(unit: BattleUnit | None) -> str:
+    if unit is None or unit.source_id is None:
+        return _battle_diagram_cell("")
+    letter = _BATTLE_DIAGRAM_QUALITY_LETTER[unit.quality]
+    suffix = f"/{letter}{'S' if unit.is_skeletal else ''}"
+    return _battle_diagram_cell(f"{make_army_ordinal(unit.source_id)}{suffix}")
+
+
+def _battle_diagram_type_cell(unit: BattleUnit | None) -> str:
+    if unit is None or unit.source_id is None:
+        return _battle_diagram_cell("")
+    return _battle_diagram_cell(ARMY_TYPE_DESIGNATION[unit.army_type])
+
+
+def _battle_diagram_number_cell(unit: BattleUnit | None) -> str:
+    if unit is None or unit.source_id is None:
+        return _battle_diagram_cell("")
+    if unit.kingdom_id is not None:
+        marker = f"{unit.kingdom_id:02d}"
+    elif unit.commanded_by is not None:
+        # `:02d` only sets a *minimum* width (never truncates), so this
+        # is already exactly right for a leader_id >= 100 too -- no
+        # separate branch needed.
+        marker = f"{unit.commanded_by:02d}"
+    else:
+        marker = "GC"
+    return _battle_diagram_cell(marker)
+
+
+def render_battle_line_diagram(
+    battle_result: BattleResult, province_name: str, province_coord: HexCoord
+) -> list[str]:
+    """Renders the real battle-line ASCII diagram (rulebook [7.2]) -- see
+    this function's own module-level comment, right above, for the full
+    sourcing of every field. Returns ``[]`` when the battle has no real
+    column data at all (a manually-constructed ``BattleResult`` in a
+    test, not a real production battle -- ``resolve_battle()`` always
+    produces at least one column for a real fight).
+    """
+
+    columns = battle_result.columns
+    if not columns:
+        return []
+    n_cols = len(columns)
+
+    lines = [f"  ATTACKING ARMY, Battle of {province_name} ({province_code(province_coord):04d}):", ""]
+
+    attacker_depth = min(
+        max((len(column.attacker_units) for column in columns), default=0), _BATTLE_DIAGRAM_MAX_LINES
+    )
+    for depth in range(attacker_depth - 1, -1, -1):
+        units = [column.attacker_units[depth] if depth < len(column.attacker_units) else None for column in columns]
+        lines.append("".join(_battle_diagram_name_cell(u) for u in units))
+        lines.append("".join(_battle_diagram_type_cell(u) for u in units))
+        lines.append("".join(_battle_diagram_number_cell(u) for u in units))
+        if depth > 0:
+            lines.append(_battle_diagram_blank_row(n_cols))
+
+    lines.append("-" * (_BATTLE_DIAGRAM_CELL_WIDTH * n_cols))
+
+    defender_depth = min(
+        max((len(column.defender_units) for column in columns), default=0), _BATTLE_DIAGRAM_MAX_LINES
+    )
+    for depth in range(defender_depth):
+        units = [column.defender_units[depth] if depth < len(column.defender_units) else None for column in columns]
+        lines.append("".join(_battle_diagram_number_cell(u) for u in units))
+        lines.append("".join(_battle_diagram_name_cell(u) for u in units))
+        lines.append("".join(_battle_diagram_type_cell(u) for u in units))
+        lines.append(_battle_diagram_blank_row(n_cols))
+
+    lines.append("  DEFENDING ARMY")
+    return lines
+
+
+# Phase 1036 -- the real "The attackers had the 218th Legion... in
+# reserve." sentence (and its defender-side sibling, "The defenders
+# had..."): confirmed across 40 real occurrences in the corpus (32
+# attacker-side, 8 defender-side), every single one firing exactly when
+# that side's own battle-line reaches a 4th line this renderer's own
+# diagram never draws (see `_BATTLE_DIAGRAM_MAX_LINES`'s own comment).
+#
+# **Per-unit naming**: "the {ordinal} {Skeletal }{ArmyTypeName}" --
+# confirmed real (`SE3__T11.K1:416`: "the 243rd Light Cavalry..."; the
+# Skeletal case, `SE3__T6.K1:294` area/`SE3__T11.K1:913`: "the 184th
+# Skeletal Bowmen") -- the exact same "ordinal + optional 'Skeletal' +
+# `ARMY_TYPE_NAME`'s own full word, not `ARMY_TYPE_DESIGNATION`'s
+# abbreviation" convention this project already established for
+# `render_cast_announcement()`'s own Skeletal Army narration (see the
+# module comment above its own `army_names` list comprehension).
+#
+# **List join**: comma-separated, "and" before the last item, no comma
+# before "and" -- confirmed real (`SE3__T6.K1:294`: "the 241st Bowmen,
+# the 110th Bowmen, the 109th Heavy Cavalry, the 277th Eagles and the
+# 209th Warg Riders in reserve.") -- exactly `report/prose.py``^L``'s
+# own existing list-join convention, reused here via `render()`'s
+# `lists=` parameter rather than hand-rolled.
+#
+# **Order**: ascending depth, then column -- i.e. exactly the original
+# pre-sort (strongest-first) order `assign_battle_lines()`'s own
+# round-robin dealing already produces, read back out directly from
+# `BattleColumnResult`'s own per-column lists (`column.attacker_units[
+# depth]`/`defender_units[depth]`) rather than re-sorted. Confirmed
+# against the real 3-column Maplehaven sample (`SE3__T11.K1:388-417`,
+# 1 of this corpus's 2 real multi-column reserve cases): 6 real reserve
+# units across 2 leftover depths (3 and 4) x 3 columns match this order
+# exactly once laid out this way.
+#
+# **Both sides can each have their own sentence** (confirmed real,
+# `SE3__T8.K1:427-428`: "The attackers had... in reserve.  The
+# defenders had... in reserve.") -- two independent list entries, not
+# one combined sentence.
+_BATTLE_RESERVE_TEMPLATE = {
+    "attacker_units": "The attackers had ^L= in reserve.",
+    "defender_units": "The defenders had ^L= in reserve.",
+}
+
+
+def _battle_reserve_unit_name(unit: BattleUnit) -> str | None:
+    if unit.source_id is None:
+        return None
+    type_name = ARMY_TYPE_NAME[unit.army_type]
+    ordinal = make_army_ordinal(unit.source_id)
+    if unit.is_skeletal:
+        return f"the {ordinal} Skeletal {type_name}"
+    return f"the {ordinal} {type_name}"
+
+
+def render_battle_reserve_sentences(battle_result: BattleResult, rng: random.Random) -> list[str]:
+    """Renders the real "The attackers/defenders had ... in reserve."
+    sentence(s) -- see this function's own module-level comment, right
+    above, for the full sourcing. ``[]`` when nothing on either side
+    goes past the diagram's own ``_BATTLE_DIAGRAM_MAX_LINES`` cutoff
+    (the overwhelmingly common case), or when every such unit has no
+    ``source_id`` to name it (the same "no source, don't guess"
+    convention ``build_battle_army_names()`` already uses).
+    """
+
+    columns = battle_result.columns
+    lines: list[str] = []
+    for attribute, template in _BATTLE_RESERVE_TEMPLATE.items():
+        max_depth = max((len(getattr(column, attribute)) for column in columns), default=0)
+        names: list[str] = []
+        for depth in range(_BATTLE_DIAGRAM_MAX_LINES, max_depth):
+            for column in columns:
+                units = getattr(column, attribute)
+                if depth < len(units):
+                    name = _battle_reserve_unit_name(units[depth])
+                    if name is not None:
+                        names.append(name)
+        if names:
+            lines.append(render(template, {}, rng=rng, lists={"=": names}))
+    return lines
+
+
 def describe_battle(
     battle_report: BattleReport,
     *,
@@ -2689,6 +2966,27 @@ def describe_battle(
 
     army_names = build_battle_army_names(state, battle_report)
     lines: list[str] = []
+
+    # Phase 1035 -- the real battle-line ASCII diagram (rulebook [7.2])
+    # prints before any of this composer's own narrative lines (confirmed
+    # directly against real SE3 letter text -- see `render_battle_line_
+    # diagram()`'s own module-level comment for the full sourcing). Its
+    # own intro sentence is a fixed, unvarying real line, not a template.
+    # Gated on `province_coord is not None`, the same "was this a real
+    # battle" signal BLUCK/CLUCK/the leader roster below already use (an
+    # instant, battle-free conquest never invents a diagram either).
+    if battle_report.province_coord is not None:
+        diagram_lines = render_battle_line_diagram(
+            battle_report.battle_result, province_name, battle_report.province_coord
+        )
+        if diagram_lines:
+            lines.append(_BATTLE_LINE_INTRO_SENTENCE)
+            lines.extend(diagram_lines)
+            # Phase 1036 -- "in reserve" sentence(s), immediately after the
+            # diagram and before BATLDR's own leader-roster sentences --
+            # confirmed real order, see `render_battle_reserve_sentences()`'s
+            # own module comment.
+            lines.extend(render_battle_reserve_sentences(battle_report.battle_result, rng))
 
     # Phase 658: each side's own real roster is commanders first, then
     # present-but-not-commanding leaders (`_BLList`'s own `lp <= cdrdex
@@ -4072,6 +4370,57 @@ def render_tornado_outcome(
     return "".join(lines)
 
 
+# Phase 1037 -- Hide_Feature's own real multi-Feature case (rulebook
+# [3.2]: "There can sometimes be more than 1 feature in a province").
+# `_execute_hide_feature()` hides every real `Feature` at the target
+# coordinate at once, with no way to disambiguate which one the base
+# `SPELL_CAST_ANNOUNCEMENT[Spell.HIDE_FEATURE]` template's own single
+# `&` slot should name -- and, reconfirmed directly against both real
+# corpora this phase, zero fixture example of a successful multi-Feature
+# cast survives to settle the real grouping convention either way
+# (unlike Tornado/Plague's own multi-army case, Phase 937/944, where
+# both a repeated-sentence and a joined-list reading are directly
+# attested in real letters).
+#
+# Rather than leave this case silently unrendered forever, this reuses
+# the one real, structurally analogous precedent this project's own
+# corpus *does* settle: Tornado/Plague's own confirmed "one spell,
+# several same-kind real targets in the same province" case always
+# repeats the full per-target sentence once per target, never joins
+# them into one list (see `render_tornado_outcome()`'s own docstring
+# for that real evidence). A documented, reasoned default built from a
+# real in-project precedent, not a blind guess.
+#
+# `HIDE_FEATURE_OUTCOME_TEMPLATE` is the exact same real
+# `SPELL_CAST_ANNOUNCEMENT[Spell.HIDE_FEATURE]` text ("the & in @ was
+# magically hidden."), capitalized to stand as its own sentence instead
+# of being glued onto `CAST_SPELL_OPENING_CONTINUED_TEMPLATE`'s "< cast
+# a ~ spell and " -- `Spell.HIDE_FEATURE` isn't one of the 3 `CAST_
+# SPELL_OPENING_COMPLETE_SPELLS`, so the single-feature case still uses
+# the glued form via `render_cast_announcement()` unchanged; only this
+# multi-feature renderer needs the opening split into its own sentence,
+# the same shape Tornado's own `CAST_SPELL_OPENING_COMPLETE_TEMPLATE`
+# opening already uses for exactly this reason.
+HIDE_FEATURE_OUTCOME_TEMPLATE = "The & in @ was magically hidden."
+
+
+def render_hide_feature_outcome(
+    caster_name: str, province_name: str, feature_names: list[str], rng: random.Random
+) -> str:
+    """Renders Hide_Feature's own real multi-Feature cast outcome -- see
+    the module comment above ``HIDE_FEATURE_OUTCOME_TEMPLATE`` for the
+    full sourcing/reasoning. ``feature_names`` is never empty -- the
+    caller already filters the (shouldn't-happen-post-success) empty
+    case the same "no source, don't guess" way the single-feature branch
+    always has.
+    """
+
+    lines = [render(CAST_SPELL_OPENING_COMPLETE_TEMPLATE, {"<": caster_name, "~": SPELL_NAME[Spell.HIDE_FEATURE]}, rng=rng)]
+    for feature_name in feature_names:
+        lines.append(render(HIDE_FEATURE_OUTCOME_TEMPLATE, {"&": feature_name, "@": province_name}, rng=rng))
+    return "".join(lines)
+
+
 # HostAK/TP/SAY.PAS `_PPlague`: "plague ravaged the province of @." (S_Comm)
 # is a DIFFERENT real text from either the caster's own top-level line or
 # `_SPlague`'s bystander notice -- see `PLAGUE_WORLD_EVENT_TEMPLATE`'s own
@@ -4786,6 +5135,7 @@ def describe_use_mi(
     terrain_name: str | None = None,
     real_terrain_name: str | None = None,
     army_names: list[str] | None = None,
+    feature_name: str | None = None,
     book_name: str | None = None,
     ability_name: str | None = None,
 ) -> str | None:
@@ -4834,6 +5184,7 @@ def describe_use_mi(
             terrain_name=terrain_name,
             real_terrain_name=real_terrain_name,
             army_names=army_names,
+            feature_name=feature_name,
         )
     if result.ability_boosted is not None and book_name is not None and ability_name is not None:
         return render_skill_book_read(caster_name, book_name, ability_name, rng)
@@ -6402,18 +6753,21 @@ def render_monster_reinforcement_helped(monster_name: str, army_name: str, rng: 
 # sentence, describing a neighboring province seen from a distance
 # (Phase 594). `SAY.PAS:739 _LBinoc: FD('binocpr',S_Red,5)`.
 #
-# **Confirmed genuinely unwired, and unlike every other unwired renderer
-# in this file, for no documented reason until now**: no "sourced but
-# unwired" note was ever attached here, and grepping this whole project
-# for "binocular" (case-insensitive) turns up nothing else at all --
-# `models/treasure.py`'s own 113-member `Treasure` catalog has no entry
-# whose name or description plausibly matches "Binoculars." So this
-# isn't just a missing call site (the usual "sourced but unwired"
-# shape elsewhere in this file) -- the real magic item `_LBinoc` itself
-# fires for was never identified against this project's own item
-# catalog at all, and no mechanic anywhere computes "the neighboring
-# province a Binoculars holder would see." A real, separate item-
-# identification question, not attempted here.
+# **Deliberately out of scope -- explicit user decision (2026-10-18),
+# not a gap left to fill later.** Unlike every other unwired renderer
+# in this file ("sourced but unwired" = text transcribed, real trigger
+# condition already modeled elsewhere, just no call site yet), the real
+# magic item `_LBinoc` fires for was never identified against this
+# project's own 113-member `Treasure` catalog at all (grepping the
+# whole project for "binocular", case-insensitive, turns up nothing
+# else), and no mechanic anywhere computes "the neighboring province a
+# Binoculars holder would see." The user's own assessment: likely an
+# item the original game's designers planned but never finished
+# wiring into AKGEN/AK.EXE themselves, not a gap in this project's own
+# reverse-engineering. `render_binoculars_preview()` below is kept
+# (its own text is genuinely sourced and its tests cover the pure
+# rendering logic) but is NOT a candidate for closing this file's
+# "no consumer wired yet" gaps -- don't re-flag it.
 #
 # Every marker resolves through an already-established project
 # convention, not a new one invented for this phase: `*` (direction) is
@@ -7785,7 +8139,7 @@ def describe_pursue(
 
 
 def describe_encounter_combat(
-    result: ChallengeExecutionResult | PursueExecutionResult,
+    result: ChallengeExecutionResult | PursueExecutionResult | PatrolExecutionResult,
     *,
     a_leader_id: int,
     a_name: str,
@@ -7809,7 +8163,16 @@ def describe_encounter_combat(
     own `ActionCode.PURSUE` branch (which still opens with `describe_
     pursue()`'s own `_LCatch` sentence separately, unchanged) -- the same
     "shared field names, no isinstance check" reuse `describe_steal()`
-    already established for these same two result types (Phase 306).
+    already established for these same result types (Phase 306).
+
+    **2026-11-06**: also reused directly for `turn/patrol_execution.py
+    PatrolExecutionResult`, once that type gained the same field names
+    (see its own 2026-11-06 docstring addendum) -- Patrol used to have a
+    separate, narrower sibling composer here (`describe_patrol_combat()`,
+    removed) because its result shape genuinely didn't carry Steal/Fire-
+    Arrow/fizzled-spell data; now that it does, a third near-identical
+    composer would just be the same bug class this docstring already
+    warns about for Challenge/Pursue -- one shared function instead.
 
     Returns `[]` outright when `result.combat_occurred` is `False` --
     covers every administrative rejection (not accepted, not co-located,
@@ -7913,89 +8276,6 @@ def describe_encounter_combat(
         # (`looted_item_ids` non-empty but `state=None`, so `item_names`
         # comes back `[]`) renders neither, the same "no data, no guess"
         # fallback the SPOILS lines already use.
-        lines.append(render_thief_searches_treasure(winner_name, loser_name, rng))
-        if result.looted_item_ids:
-            item_names = _item_display_names(state, result.looted_item_ids)
-            if len(item_names) == 1:
-                lines.append(render_treasure_spoils_from_corpse(winner_name, loser_name, rng))
-            elif len(item_names) >= 2:
-                lines.append(
-                    render_group_spoils_from_corpse(winner_name, loser_name, item_names, rng, is_sea=is_sea)
-                )
-        else:
-            lines.append(render_thief_search_failed(winner_name, rng))
-
-    return lines
-
-
-def describe_patrol_combat(
-    result: PatrolExecutionResult,
-    *,
-    a_leader_id: int,
-    a_name: str,
-    b_name: str,
-    rng: random.Random,
-    is_sea: bool = False,
-    state: GameState | None = None,
-) -> list[str]:
-    """Phase 733: a smaller sibling of ``describe_encounter_combat()``
-    above, for ``turn/patrol_execution.py PatrolExecutionResult``
-    specifically -- deliberately **not** a call to `describe_encounter_
-    combat()` itself: that function also renders a Fire Arrow loop and
-    a ``describe_steal()`` sub-line, and Patrol has neither (its own
-    module docstring: "Patrol has no Fire Arrow at all", and its combat
-    resolution never walks a Steal tactic either) -- widening
-    ``PatrolExecutionResult`` with fields it doesn't otherwise need just
-    to satisfy that reuse isn't worth it, the same reasoning ``describe_
-    random_encounter_combat()`` already established for its own,
-    differently-shaped sibling case. No sourced sentence exists for a
-    non-combat Patrol outcome (a Spy Table wander, a refused encounter,
-    a peaceful accepted plan) -- only the real swings that happened are
-    narrated here, the same "no source, no guess" stance `describe_
-    encounter_combat()`'s own docstring already states for the
-    identical situation.
-
-    **Phase 836 bug fix**: ``PatrolExecutionResult.looted_item_ids``
-    (Phase 313, the exact same "loser's own items transfer to the
-    winner on a decisive kill" fact ``ChallengeExecutionResult``/
-    ``PursueExecutionResult`` already carry) was populated by
-    ``execute_patrol()`` from day one but never read here -- this
-    composer's own death branch stopped at ``render_character_death()``,
-    silently dropping the SPOILS sentence ``describe_encounter_combat()``
-    already renders for the identical situation. The same "sibling
-    field never cross-checked" class already found in this file's own
-    Kill-Enemy Berserk-retaliation composer (Phase 830).
-
-    **Phase 859**: `render_thief_searches_treasure()`/`render_thief_
-    search_failed()` (THATT.X/THFAIL.X) now bracket the SPOILS check
-    below too -- see `describe_encounter_combat()`'s own Phase 859
-    addendum for the full sourcing.
-    """
-
-    if not result.combat_occurred:
-        return []
-
-    lines: list[str] = []
-    for swing in result.melee_swings:
-        attacker_name, defender_name = (a_name, b_name) if swing.attacker == "a" else (b_name, a_name)
-        attack_line = render_melee_attack(attacker_name, defender_name, _MELEE_ATTACK_METHOD, rng)
-        attack_line += (
-            render_attack_hit(defender_name, swing.damage, rng)
-            if swing.hit
-            else render_attack_missed(attacker_name, defender_name, "blade", rng, is_sea=is_sea)
-        )
-        lines.append(attack_line)
-        proc_line = render_weapon_proc_line(swing.weapon_proc, attacker_name, defender_name, swing.weapon_proc_hit_points, rng)
-        if proc_line is not None:
-            lines.append(proc_line)
-
-    if result.loser_killed:
-        loser_name = a_name if result.loser_leader_id == a_leader_id else b_name
-        winner_name = b_name if loser_name == a_name else a_name
-        lines.append(render_mortally_wounded(loser_name, rng, is_sea=is_sea))
-        lines.append(render_character_death(loser_name, rng))
-        # Phase 859: THATT.X/THFAIL.X -- see describe_encounter_combat()'s
-        # own Phase 859 addendum for the full sourcing.
         lines.append(render_thief_searches_treasure(winner_name, loser_name, rng))
         if result.looted_item_ids:
             item_names = _item_display_names(state, result.looted_item_ids)
@@ -8276,6 +8556,13 @@ TRAIL_OFFICES_HELD_TEMPLATE = "< learned that [ holds the office of ^L^V."
 TRAIL_KING_FINANCES_TEMPLATE = "< learned that [ commands a treasury of # gold."
 TRAIL_KING_ALLIES_TEMPLATE = "< learned that [ is allied with ^L^V."
 TRAIL_KING_NO_ALLIES_TEMPLATE = "< learned that [ has no allies."
+# 2026-11-04 -- "enemies" closes turn/trail_execution.py's own real
+# [3.17] "alliances, enemies and controlled provinces" triple, now that
+# GameState.diplomatic_relation() tracks a real Enemy state to read --
+# same project-original template shape as its ALLIES sibling right
+# above (no confirmed PROSE source for the exact wording either way).
+TRAIL_KING_ENEMIES_TEMPLATE = "< learned that [ is at war with ^L^V."
+TRAIL_KING_NO_ENEMIES_TEMPLATE = "< learned that [ has no enemies."
 TRAIL_KING_PROVINCES_TEMPLATE = "< learned that [ controls ^L^V."
 TRAIL_KING_NO_PROVINCES_TEMPLATE = "< learned that [ controls no provinces."
 
@@ -8348,6 +8635,16 @@ def render_trail_king_allies(trailer_name: str, king_name: str, ally_names: list
 def render_trail_king_no_allies(trailer_name: str, king_name: str, rng: random.Random) -> str:
     values = {"<": trailer_name, "[": king_name}
     return render(TRAIL_KING_NO_ALLIES_TEMPLATE, values, rng=rng)
+
+
+def render_trail_king_enemies(trailer_name: str, king_name: str, enemy_names: list[str], rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": king_name}
+    return render(TRAIL_KING_ENEMIES_TEMPLATE, values, rng=rng, lists={"^V": enemy_names})
+
+
+def render_trail_king_no_enemies(trailer_name: str, king_name: str, rng: random.Random) -> str:
+    values = {"<": trailer_name, "[": king_name}
+    return render(TRAIL_KING_NO_ENEMIES_TEMPLATE, values, rng=rng)
 
 
 def render_trail_king_provinces(
@@ -8450,10 +8747,10 @@ def describe_trail_intelligence(
     owns nothing"), not missing data.
 
     ``result.king_intelligence`` (only set when the target is a King)
-    adds up to three further lines the same way: finances always
-    renders (a treasury of 0 gold is still a real fact); allies and
-    controlled provinces each choose between their populated/"none"
-    template pair. Kingdom names are resolved via
+    adds up to four further lines the same way: finances always
+    renders (a treasury of 0 gold is still a real fact); allies,
+    enemies (2026-11-04), and controlled provinces each choose between
+    their populated/"none" template pair. Kingdom names are resolved via
     ``GameState.kingdoms``; province names via ``ProvinceState.name``,
     falling back to a raw coordinate the same way
     ``describe_armies_report()``'s own Phase 158 precedent already
@@ -8517,6 +8814,14 @@ def describe_trail_intelligence(
             lines.append(render_trail_king_allies(trailer_name, target_name, ally_names, rng))
         else:
             lines.append(render_trail_king_no_allies(trailer_name, target_name, rng))
+
+        enemy_names = [
+            state.kingdoms[kid].name for kid in king.enemy_kingdom_ids if kid in state.kingdoms
+        ]
+        if enemy_names:
+            lines.append(render_trail_king_enemies(trailer_name, target_name, enemy_names, rng))
+        else:
+            lines.append(render_trail_king_no_enemies(trailer_name, target_name, rng))
 
         province_names = [_province_label(state, coord) for coord in king.controlled_provinces]
         if province_names:
@@ -9064,47 +9369,60 @@ def describe_turn_results(
             if spell is Spell.HIDE_FEATURE:
                 # Phase 946: the eighth and last `_CAST_ANNOUNCEMENT_
                 # PROVINCE_SPELLS` entry -- no dedicated bypass branch
-                # needed at all, since `_CAST_ANNOUNCEMENT_FEATURE_SPELLS`
-                # already made `render_cast_announcement()`'s generic
-                # fallback support `feature_name` (Phase 193). Reads
-                # `state.features_at(coord)` directly (the same "read
-                # fresh from state, no new CastExecutionResult field"
-                # shape Illusory Terrain's own Phase 943 fix already
-                # uses) rather than storing anything on the result --
-                # `_execute_hide_feature()` itself never distinguishes
-                # *which* feature(s) it hid.
+                # needed for the single-feature case, since
+                # `_CAST_ANNOUNCEMENT_FEATURE_SPELLS` already made
+                # `render_cast_announcement()`'s generic fallback support
+                # `feature_name` (Phase 193). Reads `state.features_at(
+                # coord)` directly (the same "read fresh from state, no
+                # new CastExecutionResult field" shape Illusory Terrain's
+                # own Phase 943 fix already uses) rather than storing
+                # anything on the result -- `_execute_hide_feature()`
+                # itself never distinguishes *which* feature(s) it hid.
                 #
-                # **Deliberately scoped to the single-feature case only**:
-                # `_execute_hide_feature()`'s own docstring already
-                # documents that a province can hold more than one
-                # `Feature` ([3.2]), and this spell hides *all* of them at
-                # once with no way to disambiguate which one `&` should
-                # name -- unlike Tornado/Plague's own multi-army ambiguity
-                # (Phase 937/944), where real fixture text exists for
-                # *both* a repeated-sentence and a joined-list reading,
-                # letting a majority-supported default be picked, here
-                # zero real fixture example of a successful Hide_Feature
-                # cast survives in either corpus (confirmed again this
-                # phase) -- there is no data to weigh a default against,
-                # so a multi-feature cast is silently skipped rather than
-                # guessed at.
+                # **Phase 1037: the real multi-Feature case**
+                # ([3.2]: "There can sometimes be more than 1 feature in
+                # a province") -- `_execute_hide_feature()` hides *all*
+                # of them at once with no way to disambiguate which one
+                # `&` should name, and (reconfirmed again this phase)
+                # zero real fixture example of a successful multi-Feature
+                # Hide_Feature cast survives in either corpus to settle
+                # the real grouping convention by direct evidence, unlike
+                # Tornado/Plague's own multi-army ambiguity (Phase
+                # 937/944), where both a repeated-sentence and a
+                # joined-list reading are directly attested. Rather than
+                # stay silent forever on a real, rulebook-acknowledged
+                # case, this models Hide_Feature on the single closest
+                # real precedent this project's own corpus *does* have
+                # for "one spell, several real same-kind targets in one
+                # province": Tornado/Plague's own confirmed convention is
+                # one repeated sentence per target, never a joined list
+                # (`render_tornado_outcome()`'s own Phase 937 docstring
+                # cites the real fixture evidence for that choice
+                # directly). `render_hide_feature_outcome()` reuses that
+                # shape -- a documented, reasoned default built from a
+                # real, structurally analogous in-project precedent, not
+                # a blind guess -- see its own docstring.
                 if board_width is None:
                     continue
                 coord = decode_hex_number(entry.result.request.target, board_width)
                 features = state.features_at(coord)
-                if len(features) != 1:
+                if not features:
                     continue
                 province_name = _province_label(state, coord)
-                feature_name = FEATURE_TYPE_NAMES[features[0].kind]
-                line = describe_cast(
-                    entry.result,
-                    caster_name=caster_name,
-                    rng=rng,
-                    province_name=province_name,
-                    feature_name=feature_name,
-                )
-                if line is not None:
-                    lines.append(line)
+                if len(features) == 1:
+                    feature_name = FEATURE_TYPE_NAMES[features[0].kind]
+                    line = describe_cast(
+                        entry.result,
+                        caster_name=caster_name,
+                        rng=rng,
+                        province_name=province_name,
+                        feature_name=feature_name,
+                    )
+                    if line is not None:
+                        lines.append(line)
+                else:
+                    feature_names = [FEATURE_TYPE_NAMES[feature.kind] for feature in features]
+                    lines.append(render_hide_feature_outcome(caster_name, province_name, feature_names, rng))
                 continue
             if spell is Spell.SKELETAL_ARMY:
                 # Phase 936: a `NO_TARGET_SPELLS` entry (`cast_decode.py`)
@@ -9143,6 +9461,125 @@ def describe_turn_results(
             cast_result = entry.result.cast_result
             if cast_result is not None:
                 spell = cast_result.request.spell
+                # Phase 1046 bug fix -- a Wand-triggered cast of any of
+                # the 9 province/no-target spells below (every one of
+                # `models/treasure.py TREASURE_WAND_SPELL`'s real wands
+                # with `spell.value < 20` except Locate_Object, which has
+                # no wand) used to fall straight through to the
+                # `_AUTO_RESOLVABLE_CAST_TARGET_SPELLS` check further
+                # down -- the same 6-member, *character*-targeted set the
+                # `ActionCode.CAST` branch above also falls through to,
+                # but only after already handling these 9 in dedicated
+                # branches first (Phases 935-946). None of those 9
+                # branches has an equivalent here, so a real, state-
+                # mutating Wand cast of e.g. Tornado or Bless was never
+                # narrated at all. Mirrors the CAST branch's own per-spell
+                # resolution exactly, composing through `describe_use_mi()`
+                # (which itself already delegates to `describe_cast()`)
+                # instead of `describe_cast()` directly.
+                if spell is Spell.BLESS:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province_name = _province_label(state, coord)
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.TORNADO:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province_name = _province_label(state, coord)
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.PART_SEA:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province_name = _province_label(state, coord)
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.EARTHQUAKE:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province_name = _province_label(state, coord)
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.ILLUS_TERRAIN:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province = state.provinces.get(coord)
+                    if province is None or not isinstance(cast_result.request.terrain, Terrain):
+                        continue
+                    province_name = _province_label(state, coord)
+                    real_terrain_name = TERRAIN_NAME[province.terrain]
+                    fake_terrain_name = TERRAIN_NAME[cast_result.request.terrain]
+                    line = describe_use_mi(
+                        entry.result,
+                        caster_name=caster_name,
+                        rng=rng,
+                        province_name=province_name,
+                        terrain_name=fake_terrain_name,
+                        real_terrain_name=real_terrain_name,
+                    )
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.PLAGUE:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province_name = _province_label(state, coord)
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.FLOOD:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    province_name = _province_label(state, coord)
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng, province_name=province_name)
+                    if line is not None:
+                        lines.append(line)
+                    continue
+                if spell is Spell.HIDE_FEATURE:
+                    if board_width is None:
+                        continue
+                    coord = decode_hex_number(cast_result.request.target, board_width)
+                    features = state.features_at(coord)
+                    if not features:
+                        continue
+                    province_name = _province_label(state, coord)
+                    if len(features) == 1:
+                        feature_name = FEATURE_TYPE_NAMES[features[0].kind]
+                        line = describe_use_mi(
+                            entry.result,
+                            caster_name=caster_name,
+                            rng=rng,
+                            province_name=province_name,
+                            feature_name=feature_name,
+                        )
+                        if line is not None:
+                            lines.append(line)
+                    else:
+                        feature_names = [FEATURE_TYPE_NAMES[feature.kind] for feature in features]
+                        lines.append(render_hide_feature_outcome(caster_name, province_name, feature_names, rng))
+                    continue
+                if spell is Spell.SKELETAL_ARMY:
+                    line = describe_use_mi(entry.result, caster_name=caster_name, rng=rng)
+                    if line is not None:
+                        lines.append(line)
+                    continue
                 if spell not in _AUTO_RESOLVABLE_CAST_TARGET_SPELLS:
                     continue
                 target_name = _leader_name(state, cast_result.request.target)
@@ -9233,8 +9670,13 @@ def describe_turn_results(
             leader_location = _leader_location(state, entry.leader_id)
             province = state.provinces.get(leader_location)
             is_sea = province is not None and province.effective_terrain() is Terrain.SEA
+            # 2026-11-06: PatrolExecutionResult now shares the same field
+            # names as ChallengeExecutionResult/PursueExecutionResult
+            # (see that dataclass's own docstring addendum), so this
+            # reuses describe_encounter_combat() directly -- the
+            # formerly-separate describe_patrol_combat() sibling is gone.
             lines.extend(
-                describe_patrol_combat(
+                describe_encounter_combat(
                     entry.result,
                     a_leader_id=entry.leader_id,
                     a_name=caster_name,
@@ -9864,7 +10306,7 @@ def _item_display_names(state: GameState | None, item_ids: list[int]) -> list[st
 
 
 def describe_steal(
-    result: ChallengeExecutionResult | PursueExecutionResult,
+    result: ChallengeExecutionResult | PursueExecutionResult | PatrolExecutionResult,
     *,
     thief_name: str,
     victim_name: str,
@@ -9875,9 +10317,10 @@ def describe_steal(
     ``ChallengeExecutionResult`` (``turn/challenge_execution.py
     execute_challenge()``, Phase 305/306) -- the same ``describe_hire()``
     -style composer, reused by Pursue's own ``PursueExecutionResult``
-    (which shares the same ``steal_outcome``/``steal_capture_range``
-    field names -- see that module's own docstring) via a plain
-    attribute read, not an isinstance check.
+    and (2026-11-06) Patrol's own ``PatrolExecutionResult`` (both share
+    the same ``steal_outcome``/``steal_capture_range`` field names --
+    see each module's own docstring) via a plain attribute read, not an
+    isinstance check.
 
     Wires two real, previously-unconsumed renderers (both already
     sourced, tested, and dispatch-ready before this phase, per their own
@@ -11092,6 +11535,59 @@ QUEST_RIDDLE_ANSWER_TEXT: dict[Treasure, str] = {
 }
 
 
+_CTRL_A_MARKER = "⟦CTRL-A:a/an⟧ "
+
+
+def _resolve_ctrl_a_markers(text: str) -> str:
+    """Resolves ``RIDDLE.X2``'s own ``⟦CTRL-A:a/an⟧`` "a"-vs-"an" pronoun
+    marker for ``render_guardian_poses_riddle()``'s own one call site --
+    a plain, deterministic English grammar rule (vowel-initial word ->
+    "an", else "a"), not invented content. ``report/prose.py``'s own
+    ``render()`` pipeline still has no defined behavior for CTRL-byte
+    codes in general (Phase 582's own "no consumer wired yet" posture
+    stays unchanged everywhere else this marker appears, e.g.
+    ``QUEST_VISIT_TEXT`` below) -- this helper is scoped to
+    ``QUEST_RIDDLE_TEXT``'s own 7 entries alone.
+    """
+
+    pieces = text.split(_CTRL_A_MARKER)
+    resolved = pieces[0]
+    for piece in pieces[1:]:
+        # Bug fix: `"" in "aeiou"` is True (an empty string is a
+        # substring of everything in Python), so a marker with nothing
+        # following it used to resolve to "an" -- guard the empty case
+        # explicitly rather than relying on substring membership.
+        article = "an" if piece[:1] and piece[0].lower() in "aeiou" else "a"
+        resolved += f"{article} {piece}"
+    return resolved
+
+
+def render_guardian_poses_riddle(monster_name: str, riddle: Treasure) -> str:
+    """Surfaces ``RIDDLE.X2``'s own already-transcribed riddle text
+    (``QUEST_RIDDLE_TEXT``) in the ACTION REPORT once a Talk resolves to
+    ``MonsterTalkReply.R_RIDDLE`` -- Phase 1027, closing the "no
+    consumer wired yet" gap Phase 582 first flagged for this catalog.
+    *Which* of the 7 real entries a given guardian poses is decided by
+    ``turn/search_execution.py _select_guardian_riddle()``, not here --
+    see that function's own docstring for why it's a project-original,
+    explicitly-unsourced stand-in (the real selector byte is
+    unrecovered), with zero effect on SA/Fulfill, which stay exactly as
+    undocumented as before this function existed. The riddle text
+    itself is sourced verbatim; only its one real, deterministic
+    English grammar marker (``⟦CTRL-A:a/an⟧``) is resolved
+    (``_resolve_ctrl_a_markers()``), and ``QUEST_RA_COFFIN``'s own
+    ``$+`` stanza-break markers collapse to a single space, the same
+    "don't invent a renderer for codes render() doesn't define, but
+    don't show the player a raw placeholder byte either" compromise.
+    """
+
+    text = QUEST_RIDDLE_TEXT[riddle].replace("$+", " ")
+    while "  " in text:
+        text = text.replace("  ", " ")
+    text = _resolve_ctrl_a_markers(text.strip())
+    return f"{monster_name} poses a riddle: {text}"
+
+
 # HostAK/TP/PROSE/VISIT.X2 (header "5 2", RUMORS.PAS:2098 CTRL-U) and
 # FUVIS.X2 (header "5 1", SAY.PAS:785 _LFuVis), both keyed by Treasure's
 # own 5 non-riddle "go somewhere and do something" quest-item members --
@@ -11112,6 +11608,52 @@ QUEST_VISIT_FULFILLED_TEXT: dict[Treasure, str] = {
     Treasure.QUEST_GODS_QUEST: 'While < was in @, < investigated the strange gods worshipped there.Some were strange hybrids between men and animals, and one even looked like a giant rat!Shaking > head in disbelief, < wrote down descriptions of all these bizarre gods.',
     Treasure.QUEST_MERMAID_AMULET: 'While < was in @, < found waters where frolicked many beautiful mermaids.Invoking the magic amulet, < charmed a comely mermaid and resolved to bear her flirtations until they could return to fulfill the quest.',
 }
+
+
+_CTRL_X_MARKER = "⟦CTRL-X:province-3⟧"
+_CTRL_X_PLACEHOLDER = "a distant province"
+
+
+def render_guardian_proposes_quest_location(monster_name: str, quest_location: Treasure) -> str:
+    """Surfaces ``VISIT.X2``'s own already-transcribed quest-offer text
+    (``QUEST_VISIT_TEXT``) in the ACTION REPORT once a Talk resolves to
+    ``MonsterTalkReply.R_VISIT`` -- Phase 1028, the direct sibling of
+    ``render_guardian_poses_riddle()`` above for this different
+    reply/catalog pair. *Which* of the 5 real entries a given guardian
+    proposes is decided by ``turn/search_execution.py
+    _select_guardian_quest_location()``, not here -- see that
+    function's own docstring for why it's a project-original,
+    explicitly-unsourced stand-in (the exact sibling of
+    ``_select_guardian_riddle()``'s own unrecovered-selector-byte
+    situation), with zero effect on SA/Fulfill.
+
+    The offer text itself is sourced verbatim. Two markers are
+    resolved:
+
+    - ``⟦CTRL-A:a/an⟧`` (present in 4 of the 5 entries) is the same
+      real, deterministic English grammar rule as Riddle's own, reused
+      via ``_resolve_ctrl_a_markers()``.
+    - ``⟦CTRL-X:province-3⟧`` (present only in ``QUEST_SNOW_QUEST`` and
+      ``QUEST_MERMAID_AMULET``) is a real province reference ("throw
+      the snowball in province X" / "find the mermaid in province X")
+      for which no selector -- real or project-original -- is
+      recoverable any more than the quest-location choice above is.
+      Per explicit user instruction, this is resolved to a generic
+      placeholder phrase, never an invented specific province, so the
+      sentence reads as complete without this project fabricating any
+      geography.
+
+    ``QUEST_VISIT_FULFILLED_TEXT`` (the "quest completed" narration) is
+    deliberately NOT wired here -- the same scope boundary as Riddle's
+    own unwired ``QUEST_RIDDLE_ANSWER_TEXT``: Fulfill's success is an
+    unverified generic alignment roll (``_resolve_fulfill()``'s own
+    docstring), not proof the quest was actually completed as
+    described.
+    """
+
+    text = QUEST_VISIT_TEXT[quest_location].replace(_CTRL_X_MARKER, _CTRL_X_PLACEHOLDER)
+    text = _resolve_ctrl_a_markers(text)
+    return f"{monster_name} proposes a quest: {text}"
 
 
 # HostAK/TP/RUMORS.PAS Check_Raid -- a single, real, hardcoded
@@ -11534,6 +12076,24 @@ def describe_search(
       weapon.py``'s own deliberately-preserved discrepancy, see that
       module's Phase 94 addendum) also falls back to the generic triplet
       for its own shots.
+    - **Phase 1027**: a Talk resolving to ``MonsterTalkReply.R_RIDDLE``
+      (``result.guardian_riddle is not None``) appends
+      ``render_guardian_poses_riddle()``, right after the opening line
+      -- the real, already-transcribed ``RIDDLE.X2`` text for whichever
+      of the 7 entries ``turn/search_execution.py
+      _select_guardian_riddle()`` picked (project-original selection,
+      real sourced text; see that function's own docstring). The other
+      18 ``QUEST_OR_AGREEMENT`` replies still render nothing at all --
+      this project still doesn't narrate those.
+    - **Phase 1028**: a Talk resolving to ``MonsterTalkReply.R_VISIT``
+      (``result.guardian_quest_location is not None``) appends
+      ``render_guardian_proposes_quest_location()``, right after the
+      Riddle line above -- the exact sibling treatment for the real,
+      already-transcribed ``VISIT.X2`` text for whichever of the 5
+      entries ``turn/search_execution.py
+      _select_guardian_quest_location()`` picked. See that function's
+      and ``render_guardian_proposes_quest_location()``'s own
+      docstrings for the sourcing/scope details.
     - A fatal loss (``combat_resolved and winner == "monster" and
       leader_killed``) appends ``render_mortally_wounded()`` -- the same
       already-sourced MORTWOUN.X sentence (Phase 112) every other
@@ -11595,6 +12155,17 @@ def describe_search(
     monster_name = MONSTER_NAMES.get(result.guardian_monster, "guardian") if result.guardian_monster is not None else "guardian"
     weapon = MONSTER_RANGED_WEAPON.get(result.guardian_monster) if result.guardian_monster is not None else None
     flavor = missile_attack_flavor(weapon) if weapon is not None else None
+
+    # Phase 1027/1028: Talks resolving to MonsterTalkReply.R_RIDDLE or
+    # R_VISIT are the two QUEST_OR_AGREEMENT replies this project
+    # narrates at all -- see render_guardian_poses_riddle()'s and
+    # render_guardian_proposes_quest_location()'s own docstrings. The
+    # other 18 quest/agreement replies still render nothing beyond the
+    # opening line above, unchanged.
+    if result.guardian_riddle is not None:
+        lines.append(render_guardian_poses_riddle(monster_name, result.guardian_riddle))
+    if result.guardian_quest_location is not None:
+        lines.append(render_guardian_proposes_quest_location(monster_name, result.guardian_quest_location))
 
     # Phase 858 (backlog: SBUNGLE.X, the "personal-combat Cast that just
     # fizzles" sentence -- see `SearchExecutionResult.fizzled_spells`'s
@@ -11819,7 +12390,9 @@ _DIPLOMACY_NEUTRAL_INTRO = (
 _DIPLOMACY_NONE_AT_PRESENT = "None at present"
 
 
-def _kingdom_display_name(state: GameState, other_kingdom_id: int) -> str:
+def _kingdom_display_name(
+    state: GameState, other_kingdom_id: int, *, king_cache: dict[int, int | None] | None = None
+) -> str:
     """`"<name> (#<kingdom_id>)"`, resolving the kingdom's own King via
     `_king_leader_id()` (Phase 217) with a `KingdomState.name` fallback
     -- the bare-name half `_diplomacy_entry()` below extends with the
@@ -11827,9 +12400,19 @@ def _kingdom_display_name(state: GameState, other_kingdom_id: int) -> str:
     project needs to name a kingdom by its King (GIR/battle world
     events), which have no "viewing kingdom" of their own and so can't
     use `_diplomacy_entry()`'s own enrichment.
+
+    ``king_cache`` (Phase 1193 efficiency): optional, see
+    `_king_leader_id()`'s own docstring -- only `compose_letter_report()`
+    passes one (built once in `orchestrator.py`, shared across every
+    Kingdom's own letter report, since that one pass is read-only and
+    composed strictly after every turn-processing mutation is done).
+    Every other caller (the GIR/battle-world-event recorders above,
+    which run *during* active turn processing, before that point) omits
+    it and gets the original always-fresh lookup, since a King could
+    still change between one recorded event and the next.
     """
 
-    king_id = _king_leader_id(state, other_kingdom_id)
+    king_id = _king_leader_id(state, other_kingdom_id, cache=king_cache)
     name = state.leaders[king_id].name if king_id is not None else state.kingdoms[other_kingdom_id].name
     return f"{name} (#{other_kingdom_id})"
 
@@ -11840,6 +12423,8 @@ def _diplomacy_entry(
     other_kingdom_id: int,
     known_tax: dict[int, int],
     known_treasury: dict[int, int],
+    *,
+    king_cache: dict[int, int | None] | None = None,
 ) -> str:
     """One DIPLOMACY entry (Phase 640), extended with `Write_List`'s own
     real per-entry enrichment (`REPORTS.PAS` lines 128-158): tax-base/
@@ -11855,7 +12440,7 @@ def _diplomacy_entry(
     than behind one combined branch.
     """
 
-    entry = _kingdom_display_name(state, other_kingdom_id)
+    entry = _kingdom_display_name(state, other_kingdom_id, king_cache=king_cache)
     if other_kingdom_id in known_tax:
         entry += f", {known_tax[other_kingdom_id]}g taxbase"
     if other_kingdom_id in known_treasury:
@@ -11870,22 +12455,23 @@ def _diplomacy_entry(
     return entry
 
 
-def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
+def describe_diplomacy_report(
+    state: GameState, kingdom_id: int, *, king_cache: dict[int, int | None] | None = None
+) -> list[str]:
     """Assembles the "DIPLOMACY" section (Phase 218) -- Allied/At War/
     Neutral lists of every other kingdom, from this kingdom's own
     point of view.
 
     **The real procedure tracks a genuine 3-state relation per kingdom
     pair** (`kallst[kng,k2]`, `Write_List(allstate)` called once per
-    state value) -- this project's own `GameState.allied_kingdoms`
-    (a flat `set[frozenset[int]]`, `is_allied()`) only ever models a
-    2-state relation (allied or not), confirmed absent for the third
-    "at war" state -- no war-declaration mechanism exists anywhere in
-    this project. **AT WAR therefore always renders empty** (real,
-    sourced `_DIPLOMACY_NONE_AT_PRESENT`, not a guess at zero wars);
-    every other kingdom not in `allied_kingdoms` is listed as NEUTRAL
-    instead, since this project has no way to distinguish a genuine
-    war from ordinary neutrality.
+    state value) -- **Phase 1026 closes the gap this docstring used to
+    flag here**: `turn/diplomacy.py`'s own RULES.AK [8] state machine
+    (`GameState.diplomatic_relation()`) now tracks the real third state
+    too (`DiplomaticRelation.ENEMY`, written by a real Break Treat order
+    via `turn/diplomacy.py apply_treat_orders()`), so AT WAR renders
+    every kingdom this one currently has an Enemy relation with, not
+    always empty. A kingdom with no relation ever recorded still reads
+    Neutral, matching [8]'s own "all Kings start Neutral" default.
 
     **The real `Write_List`'s own per-entry enrichment is now modeled
     in full** (Phase 640): a known King's tax-base/treasury figure
@@ -11912,10 +12498,15 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
 
     other_kingdom_ids = sorted(k for k in state.kingdoms if k != kingdom_id)
     allied_ids = [k for k in other_kingdom_ids if state.is_allied(kingdom_id, k)]
-    neutral_ids = [k for k in other_kingdom_ids if not state.is_allied(kingdom_id, k)]
+    war_ids = [
+        k
+        for k in other_kingdom_ids
+        if not state.is_allied(kingdom_id, k) and state.diplomatic_relation(kingdom_id, k) is DiplomaticRelation.ENEMY
+    ]
+    neutral_ids = [k for k in other_kingdom_ids if k not in allied_ids and k not in war_ids]
 
     bounds = MapBounds(state.board_width, state.board_height)
-    viewer_king_id = _king_leader_id(state, kingdom_id)
+    viewer_king_id = _king_leader_id(state, kingdom_id, cache=king_cache)
     known_tax: dict[int, int] = {}
     known_treasury: dict[int, int] = {}
     if viewer_king_id is not None:
@@ -11923,12 +12514,100 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
         known_treasury = known_bordering_kingdom_treasuries(state, bounds, viewer_king_id) or {}
 
     lines = ["DIPLOMACY", _DIPLOMACY_ALLIED_INTRO]
-    lines.extend([_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury) for k in allied_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
+    lines.extend(
+        [_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury, king_cache=king_cache) for k in allied_ids]
+        or [_DIPLOMACY_NONE_AT_PRESENT]
+    )
     lines.append(_DIPLOMACY_WAR_INTRO)
-    lines.append(_DIPLOMACY_NONE_AT_PRESENT)
+    lines.extend(
+        [_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury, king_cache=king_cache) for k in war_ids]
+        or [_DIPLOMACY_NONE_AT_PRESENT]
+    )
     lines.append(_DIPLOMACY_NEUTRAL_INTRO)
-    lines.extend([_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury) for k in neutral_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
+    lines.extend(
+        [_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury, king_cache=king_cache) for k in neutral_ids]
+        or [_DIPLOMACY_NONE_AT_PRESENT]
+    )
 
+    return lines
+
+
+# 2026-11-03 -- not from any available source text: the user's own
+# direct-play confirmation that a diplomatic relation change is always
+# announced this way, at the very top of the affected King's own
+# report, whichever side of it they're on. See `GameState.diplomacy_
+# relation_change_notices`'s own docstring for what populates this.
+# Keyed by ``(old_relation, new_relation)``; a pair with no template
+# (nothing else is reachable through either the Break Treat or the
+# Treat-driven immediate paths that populate this list, see
+# `turn/diplomacy.py apply_treat_orders()`) is silently skipped rather
+# than guessed at.
+#
+# 2026-11-05 -- the two ALLIED entries below close what this comment
+# used to call a deliberate gap ("an ordinary Treat-formed alliance...
+# was never part of what was reported from play"): that's still true
+# for an *ordinary* (non-Druidic) Treat, which stays unannounced here
+# (see `GameState.pending_treat_transitions`'s own docstring for why),
+# but a *mutual* Treat with at least one Druidic party turned out to be
+# announced the same way after all -- confirmed with the user directly,
+# not a guess.
+_DIPLOMACY_CHANGE_TEMPLATES: dict[tuple[DiplomaticRelation, DiplomaticRelation], str] = {
+    (DiplomaticRelation.ALLIED, DiplomaticRelation.NEUTRAL): (
+        "My lord, grave tidings: {name} has broken his treaty with us; "
+        "relations between our two Kingdoms have cooled to Neutral."
+    ),
+    (DiplomaticRelation.NEUTRAL, DiplomaticRelation.ENEMY): (
+        "My lord, dire tidings: {name} has declared war upon us! We are now at war."
+    ),
+    (DiplomaticRelation.ALLIED, DiplomaticRelation.ENEMY): (
+        "My lord, dire tidings: our alliance with {name} has been shattered; we are now at war."
+    ),
+    (DiplomaticRelation.NEUTRAL, DiplomaticRelation.ALLIED): (
+        "My lord, glad tidings: swayed by Druidic wisdom, {name} has allied with us."
+    ),
+    (DiplomaticRelation.ENEMY, DiplomaticRelation.ALLIED): (
+        "My lord, glad tidings: swayed by Druidic wisdom, our war with {name} has ended in alliance."
+    ),
+}
+
+
+def describe_diplomacy_change_notices(state: GameState, kingdom_id: int) -> list[str]:
+    """Every ``state.diplomacy_relation_change_notices`` entry touching
+    ``kingdom_id`` this turn, rendered as one royal-letter-style
+    sentence each -- meant to be read first, ahead of the ordinary
+    ACTION REPORT narrative (``compose_letter_report()``'s own call
+    site), since the entire reason [8.3] grants an ordinary King's own
+    Break Treat a one-turn delay (and an Evil/Undead King's own none at
+    all) is so the affected King finds out before, not after, that
+    turn's own combat. Rendered for *both* Kings in the pair, regardless
+    of which one issued the order, or whether it was a mutual break --
+    a deliberate, documented choice (no real sample confirms this either
+    way): the issuing King already knows what they ordered, and seeing
+    it confirmed here does no harm, while keeping one unconditional rule
+    is simpler than adding a second one to suppress it for the issuer.
+
+    No header of its own -- same "folds into the existing ACTION REPORT
+    section" placement `describe_valhalla_visit_announcement()` and the
+    battle-narrative/blackmail-demand notices right next to it in
+    `compose_letter_report()` already use, except prepended rather than
+    appended, so it reads first.
+
+    **2026-11-05**: also renders an immediate Druidic *mutual* Treat's
+    own new alliance -- a different kind of news (no "finds out before
+    combat" urgency behind it, just confirmed directly with the user
+    that it's announced the same prominent way) alongside the Break
+    Treat case this function was originally built for.
+    """
+
+    lines: list[str] = []
+    for kingdom_a, kingdom_b, old_relation, new_relation in state.diplomacy_relation_change_notices:
+        if kingdom_id not in (kingdom_a, kingdom_b):
+            continue
+        other_kingdom_id = kingdom_b if kingdom_id == kingdom_a else kingdom_a
+        template = _DIPLOMACY_CHANGE_TEMPLATES.get((old_relation, new_relation))
+        if template is None:
+            continue
+        lines.append(template.format(name=_kingdom_display_name(state, other_kingdom_id)))
     return lines
 
 
@@ -12393,6 +13072,222 @@ def describe_provinces_report(state: GameState, kingdom_id: int) -> list[str]:
     return lines
 
 
+# Phase 981: the Birthright (Turn 0) report's own per-direction home-
+# province neighbor paragraph -- real, sourced text that was never wired
+# into this composer at all before this phase. `turn/movement.py`'s own
+# Phase 314 addendum already quotes this exact paragraph (from 5 real
+# `SE3__T0.K*` samples the user supplied directly), but only as evidence
+# for reverse-engineering hex adjacency -- it never actually generated
+# this paragraph in a report. Cross-referencing all 5 samples (24
+# individual neighbor descriptions total) against each other confirms:
+#
+# - **A fixed opening clause per compass position** (not per-report --
+#   the same position always opens the same way within one sample, the
+#   real variation is *between* different Kings' own reports, which
+#   this implementation doesn't reproduce -- see below).
+# - **The ending sentence depends on the neighbor's own race, not on
+#   whether it's currently claimed**: a `HUMANOID_RACES` neighbor (Human/
+#   Elf/Dwarf/Orc) always ends "Their <adjective> warriors fight as
+#   <recruit types>." -- even when unclaimed (real example: Macondo
+#   (#205), Orcs, "where no one rules.  Their Orcish warriors prefer to
+#   fight in the style of Phalanx."). A non-humanoid neighbor (Eagles,
+#   Dragons, Were-Beasts in the real samples) always ends "...they can
+#   muster an army of <race> to defend their province." instead -- real
+#   monster races have no organized "warriors" of their own.
+# - **"Ruled by no one"** is independent of the above -- any unclaimed
+#   neighbor's ruler clause says so, civilized or not.
+# - **The board's own top/bottom edge collapses the NE+NW (or,
+#   symmetrically, SE+SW) pair into one line**: confirmed directly for
+#   the north case (a home province on `y == 0` drops its NE sentence
+#   entirely and replaces NW's with "To the north lay an icy expanse
+#   which extends as far as the eye can see." -- real sample, Birchwood
+#   (#0301)). The south case is this project's own inference by hex-
+#   geometric symmetry (`_EVEN_ROW_OFFSETS`/`_ODD_ROW_OFFSETS` both give
+#   NE/NW the same `dy` and SE/SW the same, opposite `dy`, regardless of
+#   row parity -- see `turn/movement.py neighbor_in_direction_wrapped()`),
+#   not independently confirmed by a real sample reaching the board's
+#   own bottom row.
+#
+# **Deliberately not reproduced** (documented gaps, not oversights):
+# - The real reports vary several synonyms this implementation fixes to
+#   one choice per slot: the opening verb ("Looking to"/"Turning to" the
+#   northeast), the ruled-by/owed-allegiance verb for the home province's
+#   own intro sentence, "warriors"/"fighters", "fight as"/"array
+#   themselves as"/"array themselves in the style of", and the muster
+#   sentence's own "an army of"/"a host of"/"they can call on". A
+#   prosperity adjective ("rich"/"poor"/"prosperous"/"scenic", seen on
+#   both the home province's own intro and some neighbors) isn't
+#   reproduced either -- no reliable tax-tier-to-adjective formula could
+#   be calibrated from only 5 samples, and showing one sometimes and not
+#   others would look like a bug, not a feature.
+# - One real sample (Belladonna, #0302) shows a neighbor at the SE
+#   position using what is everywhere else this project's own NW-shaped
+#   template ("a Forest area owned by no one, where Werefolk dwell")
+#   instead of SE's own usual shape -- a single anomalous data point out
+#   of 24, read as further confirmation of inter-report randomization
+#   this implementation doesn't attempt to reproduce (see above), not a
+#   second per-direction shape to add.
+# - The real paragraph is a raw, column-wrapped character stream (even
+#   splitting one real word, "southwestern", mid-word across a line
+#   break) -- `textwrap.wrap()` below word-wraps instead, matching the
+#   real ~77-column width without that artifact.
+
+_NEIGHBOR_OPENERS: dict[Direction, str] = {
+    Direction.NE: "Looking to the northeast, one can see",
+    Direction.E: "To the east lies",
+    Direction.SE: "Southeast of here lies",
+    Direction.SW: "Viewing the southwestern horizon, one can see",
+    Direction.W: "To the west there lies",
+    Direction.NW: "Northwest of here is",
+}
+
+_NORTH_ICE_CAP_LINE = "To the north lay an icy expanse which extends as far as the eye can see."
+_SOUTH_ICE_CAP_LINE = "To the south lay an icy expanse which extends as far as the eye can see."
+
+
+def real_province_number(coord: HexCoord) -> str:
+    """The real province-number convention confirmed by `turn/movement.py`'s
+    own Phase 314 addendum (`x*100 + y`, each zero-padded to 2 digits
+    before concatenation, e.g. ``(3, 5)`` -> ``"0305"``) -- distinct
+    from, and not reusing, `turn/hex_numbering.py encode_hex_number()`'s
+    own row-major formula, an earlier hypothesis Phase 314 superseded.
+
+    Public (no leading underscore) since this is also the real "#<N>"
+    number the GM webapp's own Move-order province dropdown shows
+    (``webapp/moves_compose.py``, sourced directly from the user,
+    2026-10-26: "il numero d'ordine della provincia come nell'AK
+    originale") -- not to be confused with that same dropdown's own
+    internal destination encoding, which still goes through `turn/
+    hex_numbering.py encode_hex_number()` unchanged (a different,
+    separately-confirmed scheme -- see that function's own docstring).
+    """
+
+    return f"{coord.x:02d}{coord.y:02d}"
+
+
+def _neighbor_ending(race: Race, race_plural: str, race_adjective: str, province: ProvinceState) -> str:
+    if race in HUMANOID_RACES:
+        # The real paragraph's own full army-type names ("Heavy
+        # Cavalry") -- not `ARMY_TYPE_DESIGNATION`'s abbreviated table
+        # column form ("Hvy Cav") the PROVINCES table above uses.
+        type1 = ARMY_TYPE_NAME[province.recruit_type_1] if province.recruit_type_1 is not None else None
+        type2 = ARMY_TYPE_NAME[province.recruit_type_2] if province.recruit_type_2 is not None else None
+        types = " and ".join(t for t in (type1, type2) if t)
+        if types:
+            return f"Their {race_adjective} warriors fight as {types}."
+        return f"Their {race_adjective} warriors stand ready to defend their province."
+    return f"If need be, they can muster an army of {race_plural} to defend their province."
+
+
+def _describe_neighbor_sentence(direction: Direction, coord: HexCoord, state: GameState) -> str | None:
+    province = state.provinces.get(coord)
+    if province is None:
+        return None
+    if province.race is Race.NO_RACE:
+        # None of the 5 real samples this paragraph was sourced from
+        # ever shows an uninhabited neighbor -- every real ArmyType
+        # template below expects an actual race, so there's no sourced
+        # text to render here rather than the broken "populated by no
+        # races" this would otherwise produce. Omitted entirely, same
+        # "nothing to say" convention as a missing province above.
+        return None
+
+    name = province.name if province.name else f"({coord.x}, {coord.y})"
+    number = real_province_number(coord)
+    terrain_name = TERRAIN_NAME[province.effective_terrain()]
+    race_plural = RACE_PLURAL_NAME[province.race]
+    race_adjective = RACE_ADJECTIVE[province.race]
+    owner = state.kingdoms.get(province.owner_kingdom_id) if province.owner_kingdom_id is not None else None
+    ruler_name = _leader_name(state, _king_leader_id(state, owner.kingdom_id)) if owner is not None else None
+    ending = _neighbor_ending(province.race, race_plural, race_adjective, province)
+
+    if direction is Direction.NE:
+        ruler_clause = f"{ruler_name} rules there" if ruler_name else "no one rules there"
+        return (
+            f"{_NEIGHBOR_OPENERS[direction]} a {terrain_name} area, which is known as {name} "
+            f"(#{number}).  It is populated by {race_plural} and {ruler_clause}.  {ending}"
+        )
+    if direction is Direction.E:
+        ruled_clause = f"It is ruled by {ruler_name}." if ruler_name else "It is ruled by no one."
+        return (
+            f"{_NEIGHBOR_OPENERS[direction]} a {terrain_name} area called {name} (#{number}), "
+            f"populated by {race_plural}.  {ruled_clause}  {ending}"
+        )
+    if direction is Direction.SE:
+        ruled_by = ruler_name if ruler_name else "no one"
+        return (
+            f"{_NEIGHBOR_OPENERS[direction]} the province of {name} (#{number}), ruled by {ruled_by}.  "
+            f"It is said to be a {terrain_name} province inhabited by {race_plural}.  {ending}"
+        )
+    if direction is Direction.SW:
+        reigns_clause = f"It is said that {ruler_name} reigns there." if ruler_name else "It is said that no one reigns there."
+        return (
+            f"{_NEIGHBOR_OPENERS[direction]} a {terrain_name} province known as {name} (#{number}).  "
+            f"{reigns_clause}  It is known to be populated by {race_plural}.  {ending}"
+        )
+    if direction is Direction.W:
+        rules_clause = f"where {ruler_name} rules" if ruler_name else "where no one rules"
+        return (
+            f"{_NEIGHBOR_OPENERS[direction]} a {terrain_name} province known as {name} (#{number}), "
+            f"a land of {race_plural} {rules_clause}.  {ending}"
+        )
+    # Direction.NW
+    ruled_by_clause = f"ruled by {ruler_name}" if ruler_name else "owned by no one"
+    return (
+        f"{_NEIGHBOR_OPENERS[direction]} {name} (#{number}), a {terrain_name} area {ruled_by_clause}, "
+        f"where {race_plural} dwell.  {ending}"
+    )
+
+
+def describe_home_province_neighbors(state: GameState, kingdom_id: int) -> list[str]:
+    """The Birthright (Turn 0) report's own home-province neighbor
+    paragraph -- see the module-level Phase 981 comment above for the
+    full sourcing, what's reproduced, and what's deliberately not.
+
+    Returns an empty list when this Kingdom has no home province on
+    record, or that coordinate isn't a real province in `state` -- the
+    same "nothing to say, omit the section" convention every other
+    composer here already follows.
+    """
+
+    kingdom = state.kingdoms.get(kingdom_id)
+    if kingdom is None:
+        return []
+    home_coord = kingdom.home_province
+    home_province = state.provinces.get(home_coord)
+    if home_province is None:
+        return []
+
+    home_name = home_province.name if home_province.name else f"({home_coord.x}, {home_coord.y})"
+    sentences = [f"The province of {home_name} belongs to your Majesty."]
+
+    board_width = state.board_width
+    board_height = state.board_height
+    north_missing = neighbor_in_direction_wrapped(home_coord, Direction.NE, board_width, board_height) is None
+    south_missing = neighbor_in_direction_wrapped(home_coord, Direction.SW, board_width, board_height) is None
+
+    for direction in (Direction.NE, Direction.E, Direction.SE, Direction.SW, Direction.W, Direction.NW):
+        if direction is Direction.NE and north_missing:
+            continue  # dropped entirely -- NW's own sentence below covers "to the north" instead
+        if direction is Direction.SE and south_missing:
+            continue  # dropped entirely -- SW's own sentence below covers "to the south" instead
+        if direction is Direction.NW and north_missing:
+            sentences.append(_NORTH_ICE_CAP_LINE)
+            continue
+        if direction is Direction.SW and south_missing:
+            sentences.append(_SOUTH_ICE_CAP_LINE)
+            continue
+        neighbor_coord = neighbor_in_direction_wrapped(home_coord, direction, board_width, board_height)
+        if neighbor_coord is None:
+            continue
+        sentence = _describe_neighbor_sentence(direction, neighbor_coord, state)
+        if sentence is not None:
+            sentences.append(sentence)
+
+    paragraph = "  ".join(sentences)
+    return textwrap.wrap(paragraph, width=77, initial_indent="  ", subsequent_indent="")
+
+
 # The real "royal scribe" intro (Phase 562), verbatim, confirmed
 # byte-for-byte identical across every real sample checked this phase
 # (`SE3__T1.K2`/`T4.K6`/`T5.K2` and others). Unlike every other section
@@ -12442,12 +13337,22 @@ def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
     the module's Phase 624 addendum for the full sourcing.
 
     Phase 627: which of the 6 real layout tiers to use is now chosen by
-    `select_layout_tier()` -- a labeled, 82%-accurate best-effort
-    approximation, not a solved formula (see that function's own
-    docstring for why the remaining gap needs real per-turn history
-    this project can't recover from report snapshots). Every page of a
-    given report uses the same chosen tier, matching every real sample
-    (a report's own far-side page never switches tiers mid-report).
+    `select_layout_tier()`. Every page of a given report uses the same
+    chosen tier, matching every real sample (a report's own far-side
+    page never switches tiers mid-report).
+
+    Phase 1038: `select_layout_tier()` is now fed `KingdomState.map_
+    primary_region_columns` (this Kingdom's own tracked primary/"main"
+    exploration region, see that field's own docstring) instead of the
+    full known-column set whenever it's non-empty -- confirmed 100%
+    accurate (54/54) against the real `tests/fixtures/reports/G3`
+    corpus once fed the real main/far split, closing what the original
+    Phase 627 labeled an 82%-accurate best-effort approximation. Falls
+    back to the full known-column set (the original, still 82%-
+    accurate approximation) for any `GameState` bridged cold from an
+    existing snapshot, which has no way to backfill that real per-turn
+    growth history -- see `select_layout_tier()`'s own docstring for
+    the full account of why a snapshot alone can't recover it.
 
     Phase 628: only provinces this Kingdom actually knows about
     (`ProvinceState.known_to_kingdom()`, Phase 623) are rendered --
@@ -12474,7 +13379,19 @@ def describe_map_report(state: GameState, kingdom_id: int) -> list[str]:
     home_x = kingdom.home_province.x if kingdom is not None else min(known_columns)
     board_width = state.board_width
 
-    chosen_stride = select_layout_tier(known_columns, home_x, board_width)
+    # Phase 1038: feed tier selection only this Kingdom's own tracked
+    # primary ("main") exploration-region columns when available -- see
+    # `models/game_state.py KingdomState.map_primary_region_columns`'s
+    # own docstring for why this closes most of `select_layout_tier()`'s
+    # documented 82%-accuracy gap (a separately-grown far region can be
+    # geometrically adjacent to the primary one with zero gap, which
+    # would otherwise make the "uncapped home-anchored contiguous run"
+    # swallow both into one oversized cluster). Empty for any `GameState`
+    # bridged cold from an existing snapshot -- falls back to the full
+    # `known_columns` set, exactly the old, honest approximation.
+    primary_columns = kingdom.map_primary_region_columns if kingdom is not None else set()
+    tier_input_columns = primary_columns if primary_columns else known_columns
+    chosen_stride = select_layout_tier(tier_input_columns, home_x, board_width)
     renderer = next(render for stride, render in LAYOUT_TIERS if stride == chosen_stride)
     pages = paginate_known_columns(known_columns, home_x, max_columns_per_page(chosen_stride), board_width)
 
@@ -12574,9 +13491,15 @@ def _total_skill(state: GameState, leader: LeaderState) -> int:
     ForcedMarch)*2`, `Desc_Apt`, `REPORTS.PAS` ~line 525) -- the user's
     own explicit "Implementa Total_Skill per intero" choice, not a
     placeholder.
+
+    Phase 1055: delegates to `turn/discovery_effects.py total_skill()`
+    -- this function and `turn/hire_pay.py`'s own `Total_USkill`
+    reading used to each carry a private copy of this exact formula,
+    confirmed byte-identical, now extracted to the one shared
+    implementation both import.
     """
 
-    return sum(effective_skill_level(state, leader, ability) for ability in Ability)
+    return total_skill(state, leader)
 
 
 def _discovery_skill_modifier_row(kingdom: KingdomState) -> str:
@@ -12710,10 +13633,6 @@ def _leader_ability_description(state: GameState, leader: LeaderState) -> str:
     return f"(a {RACE_NAME[race]} {phrase}{ABILITY_NAME[ability]})"
 
 
-def _king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | None:
-    return next((leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king), None)
-
-
 def _stranger_descriptor(state: GameState, target: LeaderState, *, viewer_kingdom_id: int) -> str:
     """The "as" descriptor string (`REPORTS.PAS Desc_Stranger`, Phase
     638), capped at 26 characters like the real `Delete(as,27,99)`:
@@ -12766,7 +13685,7 @@ def _stranger_descriptor(state: GameState, target: LeaderState, *, viewer_kingdo
     elif target.is_king:
         descriptor = ": a King character"
     else:
-        king = _king_of_kingdom(state, target.kingdom_id)
+        king = find_king_of_kingdom(state, target.kingdom_id)
         descriptor = f": {king.name}'s Hero" if king is not None else ": a Hero"
     return descriptor[:26]
 
@@ -12818,6 +13737,24 @@ def _was_clairved(state: GameState, target_leader_id: int, kingdom_id: int) -> b
         and AdvancedAbility.ENHANCED_CLAIRVOYANCE in leader.advanced_abilities
         for leader in state.leaders.values()
     )
+
+
+def _clairvoyance_watch_targets(owned: list[LeaderState]) -> set[int]:
+    """Every ``leader_id`` any of ``owned`` (one kingdom's own leaders)
+    currently holds an Enhanced-Clairvoyance-backed watch on -- the same
+    predicate as ``_was_clairved()`` above, restated as a set built once
+    per kingdom instead of rescanned per candidate foreign leader (that
+    function's own per-call ``state.leaders.values()`` scan, called once
+    per OTHER kingdom's leader, was O(leaders^2) per kingdom's CHARACTERS
+    report every turn).
+    """
+
+    return {
+        leader.clairvoyance_cast_target
+        for leader in owned
+        if leader.clairvoyance_cast_target is not None
+        and AdvancedAbility.ENHANCED_CLAIRVOYANCE in leader.advanced_abilities
+    }
 
 
 def _characters_report_display_name(state: GameState, leader: LeaderState) -> str:
@@ -13220,10 +14157,11 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     # resolved from `owned` alone, before this merge, so a Was_Clairved
     # leader who happens to be a foreign King is never mistaken for this
     # kingdom's own King by any row's `leader_pay()` call below.
+    clairvoyance_watch_targets = _clairvoyance_watch_targets(owned)
     clairved = [
         leader
         for leader in state.leaders.values()
-        if leader.kingdom_id != kingdom_id and _was_clairved(state, leader.leader_id, kingdom_id)
+        if leader.kingdom_id != kingdom_id and leader.leader_id in clairvoyance_watch_targets
     ]
     displayed = owned + clairved
     displayed.sort(key=lambda leader: leader.leader_id)
@@ -13989,6 +14927,20 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
     else:
         lines.append(_IMPERIAL_OFFICE_REPORT_PRE_ELECTION_INTRO)
     for office in ALL_OFFICES:
+        # GM interface Phase 3: an optional title (anything past the 8
+        # mandatory Imperial Offices) the GM excluded from this game via
+        # `GameState.enabled_optional_offices` doesn't get a row at all --
+        # not even "None at present" -- rather than the ordinary "nobody
+        # qualifies yet" suppression below, which is about a title that
+        # *is* in play but currently unheld. `None` (not configured, or
+        # every game/test predating this field) keeps every title shown,
+        # this composer's own original, unfiltered behavior.
+        if (
+            office.value > Office.MAGE.value
+            and state.enabled_optional_offices is not None
+            and office not in state.enabled_optional_offices
+        ):
+            continue
         office_name = f"{OFFICE_NAME[office]:<26}"
         top = resolve_office_holder(state, office) if election_settled else kingdom_best_candidate(state, office, kingdom_id)
 
@@ -14014,6 +14966,11 @@ def describe_imperial_office_report(state: GameState, kingdom_id: int) -> list[s
     # separate loop rather than folded into ALL_OFFICES above, since
     # every ranking/candidate primitive above assumes `leader_id`.
     for office in ARMY_RANKED_OFFICES:
+        # GM interface Phase 3: all 3 army-scoped titles are optional too
+        # (none is among the 8 mandatory Imperial Offices) -- same
+        # whole-row exclusion as the leader-scoped loop above.
+        if state.enabled_optional_offices is not None and office not in state.enabled_optional_offices:
+            continue
         office_name = f"{OFFICE_NAME[office]:<26}"
         army_top = (
             resolve_army_office_holder(state, office)
@@ -14253,11 +15210,23 @@ _LETTER_REPORTS_NONE = "There are no letters from anyone at this time."
 _LETTER_SALUTATION = "Honored Sovereign,"
 
 
-def _king_leader_id(state: GameState, kingdom_id: int) -> int | None:
-    for leader in state.leaders.values():
-        if leader.kingdom_id == kingdom_id and leader.is_king:
-            return leader.leader_id
-    return None
+def _king_leader_id(
+    state: GameState, kingdom_id: int, *, cache: dict[int, int | None] | None = None
+) -> int | None:
+    """``cache`` (Phase 1193 efficiency): an optional ``{kingdom_id:
+    king_leader_id}`` dict a caller may reuse across many kingdoms --
+    see ``_kingdom_display_name()``'s own docstring for which callers
+    may safely share one and why. ``None`` (every pre-existing caller)
+    preserves the original always-recompute behavior exactly.
+    """
+
+    if cache is not None and kingdom_id in cache:
+        return cache[kingdom_id]
+    king = find_king_of_kingdom(state, kingdom_id)
+    leader_id = king.leader_id if king is not None else None
+    if cache is not None:
+        cache[kingdom_id] = leader_id
+    return leader_id
 
 
 def _random_encounter_king_name(state: GameState, coord: HexCoord) -> str:
@@ -14520,16 +15489,23 @@ def describe_final_standings_report(state: GameState) -> list[str]:
     if report is None:
         return []
 
+    # Efficiency (Phase 1193): a Kingdom can appear in more than one of
+    # the 3 lists below (standings/all_star_qualifiers/valhalla_
+    # qualifiers) -- one shared cache for this one call avoids
+    # re-resolving the same King twice. Safe within one call: nothing
+    # mutates state.leaders between these 3 loops.
+    king_cache: dict[int, int | None] = {}
+
     lines = [_FINAL_STANDINGS_HEADER, _FINAL_STANDINGS_INTRO]
     for rank, kingdom_id in enumerate(report.standings, start=1):
         kingdom = state.kingdoms[kingdom_id]
-        king_leader_id = _king_leader_id(state, kingdom_id)
+        king_leader_id = _king_leader_id(state, kingdom_id, cache=king_cache)
         king_name = state.leaders[king_leader_id].name if king_leader_id is not None else "no King"
         points = _format_victory_points(report.kingdom_points[kingdom_id])
         lines.append(f"{rank}. {king_name} of {kingdom.name}: {points} Victory Points")
 
     for kingdom_id in report.all_star_qualifiers:
-        king_leader_id = _king_leader_id(state, kingdom_id)
+        king_leader_id = _king_leader_id(state, kingdom_id, cache=king_cache)
         if king_leader_id is None:
             continue
         king_name = state.leaders[king_leader_id].name
@@ -14537,7 +15513,7 @@ def describe_final_standings_report(state: GameState) -> list[str]:
         lines.append(f"{king_name} of {kingdom_name} has qualified for an all-star game of Adventurer-Kings.")
 
     for kingdom_id in report.valhalla_qualifiers:
-        king_leader_id = _king_leader_id(state, kingdom_id)
+        king_leader_id = _king_leader_id(state, kingdom_id, cache=king_cache)
         if king_leader_id is None:
             continue
         king_name = state.leaders[king_leader_id].name
@@ -15997,7 +16973,9 @@ _GENERAL_INTELLIGENCE_REPORT_HEADER = "GENERAL INTELLIGENCE REPORT"
 _GENERAL_INTELLIGENCE_REPORT_NONE = "None at present"
 
 
-def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> list[str]:
+def describe_general_intelligence_report(
+    state: GameState, kingdom_id: int, *, king_cache: dict[int, int | None] | None = None
+) -> list[str]:
     """Assembles the "GENERAL INTELLIGENCE REPORT" section (Phase 231) --
     the real cross-kingdom world-news feed, confirmed directly from
     ~15 real `SE3__T*.K*` fixture files: one `Kingdom of <Name> (#<id>):`
@@ -16127,7 +17105,7 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
         lines.append(_GENERAL_INTELLIGENCE_REPORT_NONE)
         return lines
     for owner in order:
-        lines.append(f"Kingdom of {_kingdom_display_name(state, owner)}:")
+        lines.append(f"Kingdom of {_kingdom_display_name(state, owner, king_cache=king_cache)}:")
         lines.extend(groups[owner])
     return lines
 
@@ -16141,10 +17119,14 @@ def compose_letter_report(
     ability_names: dict[Ability, str] | None = None,
     board_width: int | None = None,
     election_outcome: "ElectionResult | ElectionCallOutcome | None" = None,
+    include_home_province_narrative: bool = False,
+    king_cache: dict[int, int | None] | None = None,
 ) -> list[str]:
     """Assembles a single King's own end-of-turn letter report (Phase 215) by
     stitching together this project's already-built section composers, in
-    the real section order -- confirmed directly against actual generated
+    the real section order (see `include_home_province_narrative` below
+    for the one Phase 981 addition to this list, gated off by default) --
+    confirmed directly against actual generated
     turn-report output, not guessed: the Desktop's real `SE3__T*.K*` files
     (e.g. `SE3__T2.K2`, section headers at lines 31/174/313/319/352/367/
     416/450/471/491/506) show ACTION REPORT, LETTER REPORTS, STATE OF THE
@@ -16153,7 +17135,11 @@ def compose_letter_report(
     (`SE3__T2.K2` itself has no Emperor yet -- see the Phase 561 paragraph
     below for the Emperor-elected reordering, sourced from the report's
     own pseudocode rather than a real sample, since no available sample
-    has an Emperor).
+    has an Emperor). **Phase 1034**: `tests/fixtures/reports/G6/`'s own
+    46 real `SE6__T*.K*` samples confirm one more real section always
+    follows, as the letter's own final line -- `END MOVES REPORT` (a bare
+    trailing header, no body) -- see that phase's own comment at this
+    function's return statement.
     `REPORTS.PAS`'s own driver that calls these eleven sections in sequence
     lived in the missing main program -- the same "the caller is lost, not
     the callees" situation as `turn/movement.py`'s hex adjacency scheme --
@@ -16185,6 +17171,27 @@ def compose_letter_report(
     of this function's own two `imperial_office_lines` call sites
     actually fires this turn -- both are the same real procedure call,
     just repositioned pre/post-election per Phase 561 above.
+
+    **Phase 981**: a new optional `include_home_province_narrative`
+    keyword parameter (default `False`, every pre-existing caller/test
+    unaffected) appends `describe_home_province_neighbors()`'s own
+    paragraph directly after PROVINCES, no header of its own, the same
+    "continuation" shape the map below already has. Off by default
+    because the only real samples confirming this paragraph are Turn 0
+    "Birthright" reports -- `webapp/reports.py turn_zero_report()` is
+    the one caller that passes `True`; a regular turn's own report
+    (every other caller) is unaffected.
+
+    **Phase 1193 efficiency**: a new optional `king_cache` keyword
+    parameter (default `None`, every pre-existing caller/test
+    unaffected) threads an optional `{kingdom_id: king_leader_id}` dict
+    down into DIPLOMACY/GENERAL INTELLIGENCE's own king-name lookups.
+    `orchestrator.py` builds one shared dict and passes it into every
+    Kingdom's own `compose_letter_report()` call within its single
+    `letter_reports = {...}` comprehension -- safe because that whole
+    pass is read-only, composed strictly after every turn-processing
+    mutation for this turn is already done (see `_kingdom_display_
+    name()`'s own docstring for why no other caller may share it).
 
     **All 10 real sections were wired here as of Phase 231** (STATE OF THE
     NATION makes 11, Phase 561) -- ACTION REPORT, LETTER REPORTS, STATE OF
@@ -16392,10 +17399,19 @@ def compose_letter_report(
     King's own turn; every *other* leader's turn belongs in their own
     LETTER REPORTS entry instead (see that composer's own docstring).
     Kingdoms with no `is_king`-flagged leader recorded get no ACTION
-    REPORT at all, rather than falling back to the old kingdom-wide
-    scope -- the real section is always about one specific King. Its
-    own header is added here, since `describe_turn_results()` returns
-    bare narrative lines with none.
+    REPORT at all (unless a diplomacy change notice alone is enough to
+    populate it -- see right below), rather than falling back to the
+    old kingdom-wide scope -- the real section is always about one
+    specific King. Its own header is added here, since `describe_turn_
+    results()` returns bare narrative lines with none.
+
+    **2026-11-03**: `describe_diplomacy_change_notices()`'s own lines
+    are prepended, not appended -- ahead of even `describe_turn_
+    results()`'s own narrative, so a Break Treat relation change is the
+    first thing this King reads, matching the whole reason [8.3] gives
+    an ordinary King's own Break Treat a one-turn delay in the first
+    place (see that composer's own docstring, and `turn/diplomacy.py`'s
+    module docstring, for the full timing mechanics).
 
     **Phase 678**: a real Valhalla visit this turn (`describe_valhalla_
     visit_announcement()`) is folded into this same ACTION REPORT
@@ -16503,7 +17519,13 @@ def compose_letter_report(
 
     king_leader_id = _king_leader_id(state, kingdom_id)
     king_results = [entry for entry in kingdom_results if entry.leader_id == king_leader_id]
-    action_lines = describe_turn_results(king_results, state, rng, ability_names=ability_names, board_width=board_width)
+    # 2026-11-03 -- prepended, not appended like every other ACTION
+    # REPORT addition below: a Break Treat relation change must read
+    # first, ahead of the ordinary turn narrative -- see `describe_
+    # diplomacy_change_notices()`'s own docstring for why.
+    action_lines = describe_diplomacy_change_notices(state, kingdom_id) + describe_turn_results(
+        king_results, state, rng, ability_names=ability_names, board_width=board_width
+    )
     # Phase 678: the "gate-angel-visit" sentinel's own leader_id is the
     # visitor's, not the King's -- it would otherwise route into the
     # visitor's own LETTER REPORTS entry (backwards from the rulebook's
@@ -16575,7 +17597,7 @@ def compose_letter_report(
     state_of_the_nation_lines = describe_state_of_the_nation_report()
     _emit_section(state_of_the_nation_lines[0], state_of_the_nation_lines[1:])
 
-    diplomacy_lines = describe_diplomacy_report(state, kingdom_id)
+    diplomacy_lines = describe_diplomacy_report(state, kingdom_id, king_cache=king_cache)
     if diplomacy_lines:
         _emit_section(diplomacy_lines[0], diplomacy_lines[1:])
 
@@ -16586,6 +17608,19 @@ def compose_letter_report(
     provinces_lines = describe_provinces_report(state, kingdom_id)
     if provinces_lines:
         _emit_section(provinces_lines[0], provinces_lines[1:])
+
+    # Phase 981: the home-province neighbor paragraph -- real text, no
+    # header of its own, a direct continuation of PROVINCES exactly like
+    # the map below -- gated by include_home_province_narrative (default
+    # off) since the only real samples confirming it are Turn 0
+    # "Birthright" reports; see describe_home_province_neighbors()'s own
+    # docstring. webapp/reports.py turn_zero_report() is the one caller
+    # that passes True today.
+    if include_home_province_narrative and lines:
+        neighbor_lines = describe_home_province_neighbors(state, kingdom_id)
+        if neighbor_lines:
+            lines.append("")
+            lines.extend(neighbor_lines)
 
     # Phase 562: the real map has no header of its own -- a direct
     # continuation of PROVINCES (see describe_map_report()'s own
@@ -16614,7 +17649,7 @@ def compose_letter_report(
     if adventure_lines:
         _emit_section(adventure_lines[0], adventure_lines[1:])
 
-    general_intelligence_lines = describe_general_intelligence_report(state, kingdom_id)
+    general_intelligence_lines = describe_general_intelligence_report(state, kingdom_id, king_cache=king_cache)
     if general_intelligence_lines:
         _emit_section(general_intelligence_lines[0], general_intelligence_lines[1:])
 
@@ -16629,5 +17664,21 @@ def compose_letter_report(
     election_status_lines = describe_election_status_report(state, kingdom_id, election_outcome)
     if election_status_lines:
         _emit_section(election_status_lines[0], election_status_lines[1:])
+
+    # Phase 1034: the real letter's own closing marker -- confirmed present,
+    # as the very last section header, in all 46 of tests/fixtures/reports/
+    # G6/'s real SE6__T*.K* samples (e.g. SE6__T3.K3 line 484, SE6__T2.K2
+    # line 275), regardless of how thin the report is otherwise (even a
+    # bare "missed the turn deadline" report still ends with it, SE6__T2.K0
+    # line 289). Always the final line of the letter itself -- what follows
+    # it in every real sample (the account-balance/billing footer, the
+    # blank Moves Sheet order-entry form) is Sargona Games' own mail-
+    # fulfillment paperwork, not game content, and deliberately out of
+    # scope here. No body of its own (hence not routed through
+    # _emit_section(), which requires one) -- a bare trailing header.
+    if lines:
+        lines.append("")
+        lines.append("")
+    lines.append("END MOVES REPORT")
 
     return lines

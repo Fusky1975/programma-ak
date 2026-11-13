@@ -221,6 +221,20 @@ MONSTROUS_ARMY_RACE: dict[ArmyType, Race] = {
     # Phase 383: confirmed by `special_races`' own explicit 8-item list
     # (see module docstring) -- not name-symmetry guesswork.
     ArmyType.VAMPIRES: Race.VAMPISH,
+    # Phase 980: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real
+    # description -- "Race: Saurian" -- a genuine exception to this
+    # dict's usual "same race gates recruiting and shows as the army's
+    # own race" shape: Dinosaurs are recruited only in an *Elven*
+    # province (`turn/recruit.py _ELVEN_ONLY_ARMY_TYPES`, checked
+    # before this dict is ever consulted for that purpose -- unaffected
+    # by this entry), but the resulting army itself displays and fights
+    # as Saurian, never Elven. No province is ever actually native-race
+    # Saurian (`worldgen/special_race_placement.py SPECIAL_RACE_BASE_
+    # COUNT` has no Saurian entry), so inverting this dict for world-gen
+    # purposes (`worldgen/initial_armies.py NATIVE_ARMY_TYPE`) gains an
+    # inert `Race.SAURIAN -> ArmyType.DINOSAURS` entry that's simply
+    # never looked up.
+    ArmyType.DINOSAURS: Race.SAURIAN,
 }
 
 # "Str" column of the Army Type Table. Garrison and Elephants are excluded;
@@ -500,15 +514,49 @@ ARMY_TYPE_BY_ORDINAL: dict[int, ArmyType] = {
 NO_LEADER_SENTINEL = 255
 
 
+def resolve_leader_id(raw: int) -> int | None:
+    """``NO_LEADER_SENTINEL`` decoded to ``None`` -- shared by every
+    decode module that reads a raw leader-id field able to carry this
+    sentinel (``turn/recruit_decode.py``, ``turn/army_list_decode.py``).
+    """
+
+    return None if raw == NO_LEADER_SENTINEL else raw
+
+
 # CTBOTH.PAS `atname` (~line 1316), verbatim, positional with the `army`
 # enum -- confirmed real and used via RUMORS.PAS's own
 # `Say(Concat(tms,' ',atname[_atype]),spytype)`, matching PROSE.TXT's own
+class _CuratedNameTable(dict):
+    """A ``dict`` that falls back to a title-cased identifier for a key
+    with no curated entry, instead of raising ``KeyError`` on ``[...]``.
+
+    Bug fix (crash): ``ARMY_TYPE_NAME`` deliberately excludes
+    ``ArmyType.ARTILLERY``/``D_TURTLE`` (no confirmed full ``atname``
+    form for them -- see this dict's own comment above) -- a correct,
+    honest gap when every caller reads it with ``.get()``, but several
+    real callers across report/turn_report.py use bare
+    ``ARMY_TYPE_NAME[army_type]`` instead, and the webapp's own army
+    editor lets a GM set an army's type to either of these 2 directly
+    (``army_type=list(ArmyType)``, no filtering) -- an entirely ordinary
+    editor action. The very next battle/report involving that army then
+    crashed with an unhandled ``KeyError``. The fallback reuses this
+    project's own already-established, tested convention for exactly
+    this situation: ``webapp/app.py``'s ``display_name()`` filter
+    already falls back to ``value.name.replace("_", " ").title()`` for
+    an uncurated enum member (confirmed by its own test,
+    ``test_display_name_falls_back_to_the_bare_identifier_when_uncurated``).
+    """
+
+    def __missing__(self, key):
+        return key.name.replace("_", " ").title()
+
+
 # documented marker `"|: Army type name (\"Legion\", \"Fleet\" etc.)"`
 # (found continuing to mine CTBOTH.PAS the way Phases 79-89 found their
 # own real data). Ordinal 15 (`noarmy`, a sentinel) and ordinals 20+
 # (`dinosaurs`, `vampires`, `marauders`, `ea3`-`ea20`) are excluded, same
 # as `ARMY_TYPE_BY_ORDINAL` above.
-ARMY_TYPE_NAME: dict[ArmyType, str] = {
+ARMY_TYPE_NAME: dict[ArmyType, str] = _CuratedNameTable({
     ArmyType.GARRISON: "Garrison",
     ArmyType.BOWMEN: "Bowmen",
     ArmyType.AXEMEN: "Axemen",
@@ -540,7 +588,7 @@ ARMY_TYPE_NAME: dict[ArmyType, str] = {
     ArmyType.CROSSBOW: "Crossbow",
     ArmyType.JAVELINS: "Javelins",
     ArmyType.SPIDERS: "Spiders",
-}
+})
 
 # CTBOTH.PAS `atdesig` (~line 1288), verbatim, positional with the `army`
 # enum -- a shorter, 9-char-max form distinct from `atname` above.

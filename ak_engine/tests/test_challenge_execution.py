@@ -912,6 +912,259 @@ def test_resolve_personal_combat_cast_charm_unprotected_target_still_flees():
     assert outcome == "fled"
 
 
+# -- Kill Enemy [4.25.2] (2026-10-31, user-requested Personal-Combat build) --
+
+
+def test_resolve_personal_combat_cast_kill_enemy_defensive_use_is_blocked():
+    # [4.25.2]: "un negromante non può usarlo per difendere sé stesso in
+    # un piano incontro" -- `is_defensive=True` is `_resolve_target_cast()`'s
+    # own signal that the designated target is casting back in self-
+    # defense, which Kill Enemy can never do.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.0])
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
+        outcome = _resolve_personal_combat_cast(
+            caster,
+            caster_leader,
+            target,
+            target_leader,
+            tactic,
+            state,
+            rng,
+            is_first_tactic=True,
+            cast_slots_used={},
+            cast_spells_attempted=set(),
+            is_defensive=True,
+        )
+
+    assert outcome is None
+    assert not mock_roll.called
+
+
+def test_resolve_personal_combat_cast_kill_enemy_king_target_is_immune():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD, is_king=True)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.0])
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
+        outcome = _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+        )
+
+    assert outcome is None
+    assert not mock_roll.called
+
+
+def test_resolve_personal_combat_cast_kill_enemy_undead_target_is_immune():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.UNDEAD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.0])
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
+        outcome = _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+        )
+
+    assert outcome is None
+    assert not mock_roll.called
+
+
+def test_resolve_personal_combat_cast_kill_enemy_halved_against_an_army_leading_target():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    state.add_army(ArmyState(201, 2, ArmyType.GARRISON, Quality.GREEN, FIELD, commanded_by=2))
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.9])
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast") as mock_roll:
+        mock_roll.return_value = True
+        _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+        )
+
+    assert mock_roll.call_args.kwargs["success_chance_multiplier"] == 0.5
+
+
+def test_resolve_personal_combat_cast_kill_enemy_success_kills_the_target():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.0])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+    )
+
+    assert outcome == "a"
+
+
+def test_resolve_personal_combat_cast_kill_enemy_hidden_tattoos_wards_the_target():
+    state = _base_state()
+    state.kingdoms[2].discoveries.add(Discovery.HIDDEN_TATTOOS)
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.0])
+
+    outcome = _resolve_personal_combat_cast(
+        caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+    )
+
+    assert outcome is None  # warded -- survives, combat continues
+
+
+def test_resolve_personal_combat_cast_kill_enemy_failed_roll_berserk_retaliation_kills_the_caster():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 0, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.99])
+    original_temper = target.temper
+    observed_tempers = []
+
+    def _record_and_resolve(a, b, rng, **kwargs):
+        observed_tempers.append(a.temper)
+        return EncounterCombatResult(winner="a", rounds=1)
+
+    # Phase 1042 bug fix regression: `resolve_melee_duel()` now mutates the
+    # real `target` Combatant in place (temporarily set to Berserk, restored
+    # right after) instead of a disconnected `dataclasses.replace()` copy --
+    # the Berserk temper must be observed *during* the call (hence the
+    # side_effect capture below), since it's gone again by the time this
+    # test inspects `target`/`call_args` afterward.
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", side_effect=_record_and_resolve
+    ) as mock_melee:
+        outcome = _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+        )
+
+    # the retaliator (the designated target) is passed first -- "a" means it won.
+    assert observed_tempers == [Temper.BERSERK]
+    assert mock_melee.call_args[0][0] is target  # the real object, not a disconnected copy
+    assert target.temper == original_temper  # restored once the duel concludes
+    assert outcome == "b"
+
+
+def test_resolve_personal_combat_cast_kill_enemy_failed_roll_berserk_retaliation_the_caster_survives():
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 0, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.99])
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner="b", rounds=1)
+    ):
+        outcome = _resolve_personal_combat_cast(
+            caster, caster_leader, target, target_leader, tactic, state, rng, is_first_tactic=True, cast_slots_used={}, cast_spells_attempted=set()
+        )
+
+    assert outcome == "a"
+
+
+def test_resolve_personal_combat_cast_kill_enemy_retaliation_threads_skip_temper_setup_and_reports_melee_swings():
+    # Phase 1042 bug fix: the retaliation duel used to call
+    # resolve_melee_duel() with no skip_temper_setup at all (always
+    # re-applying the encounter's one-time Temper/Ability bonus, even
+    # when an earlier round in the same encounter already applied it)
+    # and never reported its own melee swings back to the caller's own
+    # accumulator -- so neither Melee XP crediting nor the turn
+    # report's own narration ever saw them.
+    state = _base_state()
+    caster_leader = LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 0, 9))
+    target_leader = LeaderState(2, kingdom_id=2, name="B", location=FIELD)
+    state.add_leader(caster_leader)
+    state.add_leader(target_leader)
+    caster = _leader_combatant(caster_leader, state)
+    target = _leader_combatant(target_leader, state)
+    tactic = SearchTactic(Maneuver.CAST, Spell.KILL_ENEMY.value)
+    rng = ScriptedRandom([0.99])
+    swing = MeleeSwing(attacker="a", hit=True, damage=4, weapon_proc=False, weapon_proc_hit_points=0)
+    melee_swings: list[MeleeSwing] = []
+    setup_box = [True]  # an earlier round in this same encounter already applied the bonus
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel",
+        return_value=EncounterCombatResult(winner="b", rounds=1, melee_swings=(swing,)),
+    ) as mock_melee:
+        outcome = _resolve_personal_combat_cast(
+            caster,
+            caster_leader,
+            target,
+            target_leader,
+            tactic,
+            state,
+            rng,
+            is_first_tactic=True,
+            cast_slots_used={},
+            cast_spells_attempted=set(),
+            melee_setup_done=setup_box,
+            melee_swings=melee_swings,
+        )
+
+    assert mock_melee.call_args.kwargs["skip_temper_setup"] is True
+    assert melee_swings == [swing]
+    assert setup_box == [True]
+    assert outcome == "a"
+
+
+def test_execute_challenge_cast_kill_enemy_kills_via_a_successful_roll():
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 9, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Target", location=FIELD))
+    request = _cast_request(2, Spell.KILL_ENEMY)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True):
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.0]))
+
+    assert result.winner_leader_id == 1
+    assert result.loser_killed is True
+    assert 2 not in state.leaders
+
+
 def test_resolve_personal_combat_cast_records_a_fizzle_on_a_failed_roll():
     # Phase 858: SBUNGLE.X's own real "personal-combat Cast that just
     # fizzles" trigger -- `resolve_personal_combat_spell_cast()` (real,
@@ -1399,6 +1652,17 @@ def test_execute_challenge_cast_fireball_target_kingdom_without_asbestos_clothin
 
 
 def test_execute_challenge_cast_words_of_healing_heals_the_caster():
+    # Bug fix: the caster never takes any damage before Heal resolves in
+    # this plan (CAST(HEAL) is the first tactic), so `caster_combatant.
+    # hit_points == CHARACTER_HIT_POINTS` held trivially either way --
+    # a dropped `words_of_healing_heal()` call would leave the caster at
+    # exactly the same already-full value. Verified concretely: with
+    # the real `words_of_healing_heal()` call deleted from challenge_
+    # execution.py's own Spell.HEAL branch, this assertion still passed.
+    # Fixed to assert the real dispatch instead: words_of_healing_heal()
+    # (already unit-tested on its own in test_encounter.py) must be
+    # called once, with the real caster combatant that goes on to fight
+    # the Melee duel, and the real CHARACTER_HIT_POINTS ceiling.
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.WHITE, 5, 9)))
     state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, skills=_skills_with(Ability.MELEE, 9, 9)))
@@ -1406,12 +1670,14 @@ def test_execute_challenge_cast_words_of_healing_heals_the_caster():
 
     with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
         "ak_engine.turn.challenge_execution.resolve_melee_duel"
-    ) as mock_melee:
+    ) as mock_melee, patch("ak_engine.turn.challenge_execution.words_of_healing_heal") as mock_heal:
         mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1)
         execute_challenge(state, 1, request, rng=ScriptedRandom([]))
 
-    caster_combatant = mock_melee.call_args[0][0]
-    assert caster_combatant.hit_points == CHARACTER_HIT_POINTS
+    mock_heal.assert_called_once()
+    healed_combatant, max_hit_points = mock_heal.call_args[0]
+    assert healed_combatant is mock_melee.call_args[0][0]  # the real caster, not a disconnected object
+    assert max_hit_points == CHARACTER_HIT_POINTS
 
 
 def test_execute_challenge_cast_words_of_healing_level_gate_blocks_low_white_skill():
@@ -1497,6 +1763,28 @@ def test_execute_challenge_cast_hand_of_death_channel_win_kills_target():
 
     assert result.winner_leader_id == 1
     assert result.loser_leader_id == 2
+
+
+def test_execute_challenge_cast_hand_of_death_victims_lethal_counter_attack_wins():
+    # Phase 1050 bug fix: resolve_hand_of_death_channel() can now return
+    # winner="b" (the victim's own disrupting counter-attack was itself
+    # lethal to the caster) -- this dispatcher used to only ever check
+    # `is not None` and unconditionally report "a" (the caster) as the
+    # winner whenever the channel's own result wasn't None, which used
+    # to be correct only because "b" was previously unreachable.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 4, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD))
+    request = _cast_request(2, Spell.HAND_OF_DEATH)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.resolve_hand_of_death_channel"
+    ) as mock_channel:
+        mock_channel.return_value = EncounterCombatResult(winner="b", rounds=3)
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([]))
+
+    assert result.winner_leader_id == 2
+    assert result.loser_leader_id == 1
 
 
 def test_execute_challenge_cast_hand_of_death_enhanced_ability_overrides_the_immune_flag():
@@ -1838,6 +2126,33 @@ def test_execute_challenge_cast_gate_demon_summons_and_the_demon_wins():
     assert demon_combatant.is_undead_or_anti_holy is True
 
 
+def test_execute_challenge_cast_gate_demon_duel_passes_skip_temper_setup_and_surfaces_its_swings():
+    # Phase 1042 bug fix: the summoned demon's own duel used to call
+    # resolve_melee_duel() with no skip_temper_setup at all (so it
+    # always re-applied the encounter's one-time Temper/Ability bonus
+    # a second time) and never extended its own melee swings into
+    # ChallengeCombatOutcome.melee_swings, so neither Melee XP crediting
+    # nor the turn report's own narration ever saw them.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.NECROMANCY, 5, 9)))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="B", location=FIELD, alignment=Alignment.GOOD))
+    request = _cast_request(2, Spell.GATE_DEMON)
+    swing = MeleeSwing(attacker="a", hit=True, damage=5, weapon_proc=False, weapon_proc_hit_points=0)
+
+    with patch("ak_engine.turn.challenge_execution.resolve_personal_combat_spell_cast", return_value=True), patch(
+        "ak_engine.turn.challenge_execution.roll_gate_demon_type", return_value=Monster.SUCCUBUS
+    ), patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_melee:
+        mock_melee.return_value = EncounterCombatResult(winner="a", rounds=1, melee_swings=(swing,))
+        # the surfaced swing now also credits Melee XP (add_experience()'s
+        # own "1 + random() - random()" spread) -- two extra draws needed.
+        result = execute_challenge(state, 1, request, rng=ScriptedRandom([0.5, 0.5, 0.5]))
+
+    # Gate Demon is the plan's own first and only tactic -- this is the
+    # encounter's very first melee contact, so setup was not done yet.
+    assert mock_melee.call_args.kwargs["skip_temper_setup"] is False
+    assert swing in result.melee_swings
+
+
 def test_execute_challenge_cast_psychic_blast_bonus_attacks_can_finish_the_target():
     state = _base_state()
     state.add_leader(LeaderState(1, kingdom_id=1, name="A", location=FIELD, skills=_skills_with(Ability.PSYCHIC, 4, 9)))
@@ -1990,8 +2305,14 @@ def _combatants(**overrides):
 
 
 def test_close_to_advances_one_tier_at_a_time_and_never_widens():
+    # Bug fix (2026-11-04): this test's own name always claimed "one
+    # tier at a time," but its second assertion below used to encode
+    # the actual (buggy) behavior instead -- a single call jumping
+    # straight from Spell Range to Melee Range, two tiers at once. See
+    # _close_to()'s own current docstring for the real RULES.AK [5.2]/
+    # [5.3] sourcing ("closing the distance consumes a whole round").
     assert _close_to(CombatRange.BOW_RANGE, CombatRange.SPELL_RANGE) is CombatRange.BOW_RANGE
-    assert _close_to(CombatRange.MELEE_RANGE, CombatRange.SPELL_RANGE) is CombatRange.MELEE_RANGE
+    assert _close_to(CombatRange.MELEE_RANGE, CombatRange.SPELL_RANGE) is CombatRange.BOW_RANGE
     assert _close_to(CombatRange.MELEE_RANGE, CombatRange.BOW_RANGE) is CombatRange.MELEE_RANGE
     assert _close_to(CombatRange.MELEE_RANGE, CombatRange.MELEE_RANGE) is CombatRange.MELEE_RANGE
     assert _close_to(CombatRange.SPELL_RANGE, CombatRange.MELEE_RANGE) is CombatRange.MELEE_RANGE  # never widens
@@ -2698,6 +3019,40 @@ def test_resolve_challenge_combat_melee_vs_target_cast_disrupted_never_attempts_
     assert not mock_cast.called  # disrupted -- the target's own cast never gets attempted
 
 
+def test_resolve_challenge_combat_melee_vs_a_blocked_target_cast_skips_the_reactive_swing():
+    # Phase 1042 bug fix: a target already blocked_from_cast (e.g. by an
+    # earlier Spiritwrack/Hand of Death cast earlier in this same
+    # encounter) has a guaranteed no-op CAST coming (_resolve_personal_
+    # combat_cast()'s own first line) -- the caster's own reactive
+    # melee swing against them, which could kill them outright before
+    # that guaranteed no-op is ever discovered, must be skipped.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    target.blocked_from_cast = True
+    tactics = [SearchTactic(Maneuver.MELEE)]
+    target_tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing"
+    ) as mock_swing, patch(
+        "ak_engine.turn.challenge_execution._resolve_personal_combat_cast", return_value=None
+    ) as mock_cast, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(
+            tactics,
+            caster_leader,
+            caster,
+            target_leader,
+            target,
+            state,
+            ScriptedRandom([]),
+            target_tactics=target_tactics,
+        )
+
+    assert not mock_swing.called
+    assert mock_cast.called  # the guaranteed no-op is still reached, just without a live-fire swing first
+
+
 def test_resolve_challenge_combat_targets_leading_cast_can_end_with_the_caster_losing():
     # The leading-cast burst has no reactive swing of its own (only the
     # round-stepped Melee-vs-Cast branch does) -- the target's own
@@ -2874,7 +3229,7 @@ def test_apply_duel_encounter_merit_refusal_credits_stake_one_and_cravenest_pena
     state.add_leader(target)
 
     _apply_duel_encounter_merit(
-        challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
+        state, challenger, target, accepted=False, winner_leader=None, loser_leader=None, challenger_combatant=None
     )
 
     assert challenger.merit_tally.duel_merit_net == 1
@@ -2895,6 +3250,7 @@ def test_apply_duel_encounter_merit_decisive_win_credits_stake_two_cravenest_and
     challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS - 3)
 
     _apply_duel_encounter_merit(
+        state,
         challenger,
         target,
         accepted=True,
@@ -2920,6 +3276,7 @@ def test_apply_duel_encounter_merit_decisive_win_unscathed_credits_zero_bravery(
     challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS)
 
     _apply_duel_encounter_merit(
+        state,
         challenger,
         target,
         accepted=True,
@@ -2944,6 +3301,7 @@ def test_apply_duel_encounter_merit_target_wins_credits_no_bravery_to_anyone():
     challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS - 5)
 
     _apply_duel_encounter_merit(
+        state,
         challenger,
         target,
         accepted=True,
@@ -2959,6 +3317,61 @@ def test_apply_duel_encounter_merit_target_wins_credits_no_bravery_to_anyone():
     assert challenger.merit_tally.bravery_merit == 0
 
 
+def test_apply_duel_encounter_merit_credits_zero_bravery_for_an_unscathed_arcane_valor_winner():
+    # Bug fix: a challenger whose own real starting hit points exceed
+    # the bare CHARACTER_HIT_POINTS constant (GameType.ARCANES's own
+    # arcane_valor_hit_points_bonus(), Phase 538 -- personally holding
+    # the Scepter of Life) used to be credited a *negative*
+    # bravery_merit for winning cleanly, contradicting this function's
+    # own documented "wins unscathed is credited 0, not skipped" rule.
+    state = _base_state()
+    state.game_type = GameType.ARCANES
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+    # The challenger's own real starting hit points under this bonus:
+    # CHARACTER_HIT_POINTS + 5 (personal Scepter possession alone).
+    challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS + 5)
+
+    _apply_duel_encounter_merit(
+        state,
+        challenger,
+        target,
+        accepted=True,
+        winner_leader=challenger,
+        loser_leader=target,
+        challenger_combatant=challenger_combatant,
+    )
+
+    assert challenger.merit_tally.bravery_merit == 0
+
+
+def test_apply_duel_encounter_merit_credits_real_damage_taken_for_an_arcane_valor_winner():
+    state = _base_state()
+    state.game_type = GameType.ARCANES
+    challenger = LeaderState(1, kingdom_id=1, name="Challenger", location=FIELD)
+    target = LeaderState(2, kingdom_id=2, name="Target", location=FIELD)
+    state.add_leader(challenger)
+    state.add_leader(target)
+    state.add_item(Treasure.NAMED_UNIQUE_SCEPTER_LIFE, owner_leader_id=1)
+    # Started at CHARACTER_HIT_POINTS + 5, took 3 damage along the way.
+    challenger_combatant = Combatant(name="Challenger", hit_points=CHARACTER_HIT_POINTS + 2)
+
+    _apply_duel_encounter_merit(
+        state,
+        challenger,
+        target,
+        accepted=True,
+        winner_leader=challenger,
+        loser_leader=target,
+        challenger_combatant=challenger_combatant,
+    )
+
+    assert challenger.merit_tally.bravery_merit == 3
+
+
 def test_apply_duel_encounter_merit_no_op_when_no_winner_or_loser():
     # Draw or magical escape (fled) -- excluded from all three titles.
     state = _base_state()
@@ -2968,7 +3381,7 @@ def test_apply_duel_encounter_merit_no_op_when_no_winner_or_loser():
     state.add_leader(target)
 
     _apply_duel_encounter_merit(
-        challenger, target, accepted=True, winner_leader=None, loser_leader=None, challenger_combatant=None
+        state, challenger, target, accepted=True, winner_leader=None, loser_leader=None, challenger_combatant=None
     )
 
     assert challenger.merit_tally.duel_merit_net == 0
@@ -3540,6 +3953,29 @@ def test_resolve_challenge_combat_steal_capture_at_melee_range_then_a_following_
     mock_duel.assert_called_once()
 
 
+def test_resolve_challenge_combat_repeated_steal_accumulates_loot_instead_of_overwriting():
+    # Phase 1042 bug fix: a plan can carry more than one STEAL tactic (no
+    # single-tactic-per-maneuver limit -- the same convention this
+    # module's own GIVE addendum already documents). Plainly reassigning
+    # gold_raided/stolen_item_ids on every STEAL tactic silently
+    # discarded an earlier *successful* theft's own already-transferred
+    # loot the moment a later Steal tactic in the same plan resolved to
+    # anything else (here: evaded).
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.STEAL), SearchTactic(Maneuver.STEAL)]
+
+    with patch(
+        "ak_engine.turn.challenge_execution._resolve_steal_tactic",
+        side_effect=[("success", 5, [101]), ("evaded", 0, [])],
+    ), patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner="a", rounds=1)
+        outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert outcome.steal_outcome == "evaded"  # the most recent attempt's own result
+    assert outcome.gold_raided == 5  # the first attempt's gold must not be lost
+    assert outcome.stolen_item_ids == [101]  # the first attempt's item must not be lost
+
+
 # -- Phase 674: execute_challenge() threads a real armyless target's own --
 # -- special_encounter_plan into resolve_challenge_combat() ---------------
 
@@ -3735,7 +4171,7 @@ def test_resolve_challenge_combat_without_the_ability_closes_to_bow_range():
             [SearchTactic(Maneuver.SHOOT)], caster_leader, caster, target_leader, target, state, ScriptedRandom([])
         )
 
-    mock_resolve.assert_called_once_with(caster, target, ANY)
+    mock_resolve.assert_called_once_with(caster, target, ANY, closing_side="a")
 
 
 def test_resolve_challenge_combat_no_caster_leader_closes_to_bow_range():
@@ -3755,7 +4191,77 @@ def test_resolve_challenge_combat_no_caster_leader_closes_to_bow_range():
             [SearchTactic(Maneuver.SHOOT)], None, caster, target_leader, target, state, ScriptedRandom([])
         )
 
-    mock_resolve.assert_called_once_with(caster, target, ANY)
+    mock_resolve.assert_called_once_with(caster, target, ANY, closing_side="a")
+
+
+# -- 2026-11-04: RULES.AK [5.2]/[5.3] -- closing from Spell Range costs
+# the closer the round he closes in, with no attack of his own; the
+# other side still acts completely normally that same round.
+
+
+def test_resolve_challenge_combat_shoot_closing_round_the_target_still_fires_back():
+    state, caster_leader, caster, target_leader, target = _combatants(
+        caster_kwargs={"skills": _skills_with(Ability.ARCHERY, 2, 9)},
+        target_kwargs={"skills": _skills_with(Ability.ARCHERY, 1, 9)},
+    )
+    tactics = [SearchTactic(Maneuver.SHOOT)]
+    # Round 1: only the target fires (the caster is closing). Round 2:
+    # only the caster fires (the target is already out of shots). Round
+    # 3: the caster's own second shot.
+    rng = ScriptedRandom([0.99, 0.99, 0.99])
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        outcome = resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, rng)
+
+    assert [shot.shooter for shot in outcome.fire_arrow_shots] == ["b", "a", "a"]
+
+
+def test_resolve_challenge_combat_melee_closing_from_spell_range_advances_one_tier_per_round():
+    # Spell Range -> Bow Range -> Melee Range is two separate closing
+    # rounds, each advancing exactly one tier -- never a single call
+    # jumping straight from Spell Range to Melee Range (the bug this
+    # round fixes). NB: a target_tactics plan whose own leading Cast(s)
+    # would otherwise be reachable here gets them drained by _resolve_
+    # target_casts()'s own pre-loop before this tactic (or any closing
+    # round) is ever reached -- see the MELEE branch's own current
+    # comment for why that makes a target-side assertion here always
+    # vacuously true regardless of this fix, and so not a meaningful
+    # test of it.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.MELEE)]
+
+    with patch("ak_engine.turn.challenge_execution._close_to", wraps=_close_to) as mock_close, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ) as mock_duel:
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert [call.args for call in mock_close.call_args_list] == [
+        (CombatRange.MELEE_RANGE, CombatRange.SPELL_RANGE),
+        (CombatRange.MELEE_RANGE, CombatRange.BOW_RANGE),
+    ]
+    assert mock_duel.called  # melee itself still happens, once Melee Range is actually reached
+
+
+def test_resolve_challenge_combat_melee_after_fire_arrow_only_needs_one_more_closing_round():
+    # Fire Arrow's own closing already brought current_range to Bow
+    # Range -- the following Melee tactic only needs one more step from
+    # there, not a fresh two-step climb from Spell Range.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    tactics = [SearchTactic(Maneuver.SHOOT), SearchTactic(Maneuver.MELEE)]
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_fire_arrow_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ), patch("ak_engine.turn.challenge_execution._close_to", wraps=_close_to) as mock_close, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ) as mock_duel:
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert [call.args for call in mock_close.call_args_list] == [
+        (CombatRange.BOW_RANGE, CombatRange.SPELL_RANGE),  # Fire Arrow's own closing
+        (CombatRange.MELEE_RANGE, CombatRange.BOW_RANGE),  # Melee's own, one step from there
+    ]
+    assert mock_duel.called
 
 
 # -- Phase 701: AdvancedAbility.SHORT_RANGE_ARCHERY ----------------------
@@ -3885,6 +4391,33 @@ def test_resolve_challenge_combat_short_range_archery_is_refused_for_a_blocked_c
 
     assert not mock_swing.called
     assert not mock_shoot.called
+
+
+# -- Phase 1042 bug fix: Combatant.blocked_from_cast now gates the target's --
+# -- own reactive swing at a blocked caster's CAST, mirroring the SHOOT --
+# -- block just above --------------------------------------------------
+
+
+def test_resolve_challenge_combat_cast_at_melee_range_skips_the_targets_reactive_swing_for_a_blocked_caster():
+    # Real bug found by review: a caster already blocked_from_cast (e.g.
+    # by an earlier Spiritwrack/Hand of Death cast earlier in this same
+    # encounter) has a guaranteed no-op CAST coming (_resolve_personal_
+    # combat_cast()'s own first line) -- but this branch used to give
+    # the target a full reactive melee swing anyway, which could kill
+    # the already-blocked caster outright before that guaranteed no-op
+    # was ever discovered.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    caster.blocked_from_cast = True
+    tactics = [SearchTactic(Maneuver.MELEE), SearchTactic(Maneuver.CAST, Spell.FIREBALL.value)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_one_melee_round") as mock_round, patch(
+        "ak_engine.turn.challenge_execution.resolve_reactive_melee_swing"
+    ) as mock_swing, patch("ak_engine.turn.challenge_execution.resolve_melee_duel") as mock_duel:
+        mock_round.return_value = MeleeRoundOutcome(result=None)
+        mock_duel.return_value = EncounterCombatResult(winner=None, rounds=1)
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert not mock_swing.called
 
 
 # -- Phase 702: AdvancedAbility.THIEF_TREASURY_RAIDS ---------------------
@@ -4413,3 +4946,97 @@ def test_execute_challenge_steal_only_plan_against_a_king_still_refused_without_
 
     assert result.accepted is False
     assert result.reason == "encounter refused"
+
+
+def _give_request(target_id: int, item_id: int, *following: Maneuver) -> ChallengeRequest:
+    tactics = [SearchTactic(Maneuver.GIVE, item_id)]
+    tactics += [SearchTactic(m) for m in following]
+    return ChallengeRequest(target_character_id=target_id, unconfirmed_extra0=0, tactics=tactics)
+
+
+def test_execute_challenge_give_only_plan_transfers_an_owned_item_to_the_target():
+    # Rulebook (2026-11-01): "si può dare qualsiasi numero di oggetti a
+    # chiunque si incontra" -- needed the same has_combat_intent gate
+    # widening Steal already got above, or this never reaches resolve_
+    # challenge_combat() at all.
+    state = _base_state()
+    giver = LeaderState(1, kingdom_id=1, name="Giver", location=FIELD)
+    recipient = LeaderState(2, kingdom_id=2, name="Recipient", location=FIELD)
+    state.add_leader(giver)
+    state.add_leader(recipient)
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=1)
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        result = execute_challenge(state, 1, _give_request(2, item.item_id), rng=ScriptedRandom([]))
+
+    assert result.accepted is True
+    assert result.combat_occurred is True
+    assert state.items[item.item_id].owner_leader_id == 2
+
+
+def test_execute_challenge_give_tactic_is_a_noop_without_real_ownership():
+    # Defense in depth: a tampered/stale item id the giver doesn't
+    # actually own is silently skipped, same as search_execution.py's
+    # own unrelated Druidic-Trades GIVE handler.
+    state = _base_state()
+    giver = LeaderState(1, kingdom_id=1, name="Giver", location=FIELD)
+    recipient = LeaderState(2, kingdom_id=2, name="Recipient", location=FIELD)
+    state.add_leader(giver)
+    state.add_leader(recipient)
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=2)  # already the recipient's own item
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        execute_challenge(state, 1, _give_request(2, item.item_id), rng=ScriptedRandom([]))
+
+    assert state.items[item.item_id].owner_leader_id == 2  # unchanged
+
+
+def test_execute_challenge_give_tactic_never_transfers_gold():
+    # Rulebook's own explicit exclusion: "Non è però possibile scambiare
+    # oggetti per denaro" -- there's no gold-sub-object reading in the
+    # new branch at all, confirmed by a sub_object that doesn't resolve
+    # to any real item leaving the giver's own treasury untouched.
+    state = _base_state()
+    giver = LeaderState(1, kingdom_id=1, name="Giver", location=FIELD)
+    recipient = LeaderState(2, kingdom_id=2, name="Recipient", location=FIELD)
+    state.add_leader(giver)
+    state.add_leader(recipient)
+    state.kingdoms[1].treasury = 50
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        execute_challenge(state, 1, _give_request(2, 999), rng=ScriptedRandom([]))
+
+    assert state.kingdoms[1].treasury == 50
+
+
+def test_resolve_challenge_combat_give_tactic_is_a_safe_noop_with_no_caster_leaderstate():
+    # Bug fix: a garrison-commander side (Phase 291's own Duel reuse,
+    # caster_leader=None) used to crash with AttributeError evaluating
+    # item.owner_leader_id == caster_leader.leader_id -- every other
+    # tactic branch in this function already tolerates a None caster.
+    state, caster_leader, caster, target_leader, target = _combatants()
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=caster_leader.leader_id)
+    tactics = [SearchTactic(Maneuver.GIVE, item.item_id)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)):
+        resolve_challenge_combat(tactics, None, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert state.items[item.item_id].owner_leader_id == caster_leader.leader_id  # unchanged, no crash
+
+
+def test_resolve_challenge_combat_give_tactic_never_transfers_the_valhalla_visitors_own_fixed_item():
+    state, caster_leader, caster, target_leader, target = _combatants()
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=caster_leader.leader_id)
+    caster_leader.valhalla_fixed_item_id = item.item_id
+    tactics = [SearchTactic(Maneuver.GIVE, item.item_id)]
+
+    with patch("ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)):
+        resolve_challenge_combat(tactics, caster_leader, caster, target_leader, target, state, ScriptedRandom([]))
+
+    assert state.items[item.item_id].owner_leader_id == caster_leader.leader_id  # never transferred

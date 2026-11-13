@@ -59,6 +59,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ak_engine.models.plan import PlanPhase
+from ak_engine.turn.decode_utils import phase_extra0
 
 
 @dataclass(slots=True)
@@ -70,5 +71,4 @@ class TrailRequest:
 def decode_trail_phase(phase: PlanPhase) -> TrailRequest:
     """Decode a Trail PlanPhase's target character."""
 
-    extra0 = phase.extra[0] if phase.extra else 0
-    return TrailRequest(target_character_id=phase.obj, unconfirmed_extra0=extra0)
+    return TrailRequest(target_character_id=phase.obj, unconfirmed_extra0=phase_extra0(phase))

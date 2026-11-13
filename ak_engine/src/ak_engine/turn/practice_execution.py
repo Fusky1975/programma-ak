@@ -589,28 +589,53 @@ def _resolve_practice_attempt(
     is forwarded to the gate roll only -- see ``roll_practice_aptitude_
     gate()``'s own docstring for why every other use of ``aptitude``
     below stays unboosted.
+
+    **Phase 1189 bug fix**: an already-maxed ability used to short-
+    circuit this entire function before ever touching ``credit``, so a
+    leader who kept Practicing a skill-9 ability earned *zero* shared
+    credit from those attempts -- credit that, per the documented
+    shared-``experience_credit``-pool design (Phase 456, this module's
+    own docstring), should still be available to push a *different*,
+    non-maxed ability over the threshold. The gate still rolls and
+    ``credit_delta``/threshold-crossing still apply at max skill, same
+    as any other attempt; only the resulting *skill* increment is
+    capped (mirroring ``turn/experience.py add_experience()``'s own
+    "consume the threshold crossing, but don't raise an already-maxed
+    skill" treatment of the identical real cap). The gate-failure
+    aptitude-rise attempt stays skipped at max skill, unchanged from
+    before -- that part of the original guard was never the bug.
     """
 
-    if current_skill >= MAX_SKILL_LEVEL:
-        return PracticeOutcome(skill_rose=False, aptitude_rose=False, new_skill=current_skill, new_aptitude=aptitude)
+    at_max_skill = current_skill >= MAX_SKILL_LEVEL
 
     if roll_practice_aptitude_gate(current_skill, aptitude, rng, aptitude_bonus=aptitude_bonus):
         if immediate_rise:
+            if at_max_skill:
+                return PracticeOutcome(skill_rose=False, aptitude_rose=False, new_skill=current_skill, new_aptitude=aptitude)
             return PracticeOutcome(
                 skill_rose=True, aptitude_rose=False, new_skill=current_skill + 1, new_aptitude=aptitude
             )
         new_credit = credit + credit_delta
         if new_credit >= PRACTICE_CREDIT_RISE_THRESHOLD:
+            remaining_credit = new_credit - PRACTICE_CREDIT_RISE_THRESHOLD
+            if at_max_skill:
+                return PracticeOutcome(
+                    skill_rose=False, aptitude_rose=False, new_skill=current_skill, new_aptitude=aptitude,
+                    new_credit=remaining_credit,
+                )
             return PracticeOutcome(
                 skill_rose=True,
                 aptitude_rose=False,
                 new_skill=current_skill + 1,
                 new_aptitude=aptitude,
-                new_credit=new_credit - PRACTICE_CREDIT_RISE_THRESHOLD,
+                new_credit=remaining_credit,
             )
         return PracticeOutcome(
             skill_rose=False, aptitude_rose=False, new_skill=current_skill, new_aptitude=aptitude, new_credit=new_credit
         )
+
+    if at_max_skill:
+        return PracticeOutcome(skill_rose=False, aptitude_rose=False, new_skill=current_skill, new_aptitude=aptitude)
 
     levels_beyond_aptitude = max(0, (current_skill + 1) - aptitude)
     if levels_beyond_aptitude > 0 and _maybe_raise_aptitude(current_skill, aptitude, rng):
@@ -778,6 +803,36 @@ def _get_or_create_skills(leader: LeaderState) -> SkillTable:
     if leader.skills is None:
         leader.skills = SkillTable([0] * 30)
     return leader.skills
+
+
+def commit_pending_skill_advancements(state: GameState) -> None:
+    """Applies every leader's ``LeaderState.pending_skill_advancement``
+    (set by ``execute_practice()``/``execute_practice_group()``/``turn/
+    experience.py add_experience()`` when an attempt raised a skill or
+    aptitude) into their real ``SkillTable``, then clears it.
+
+    Sourced from [3.13]: "L'avanzamento avrà effetto fin dalla fase
+    successiva" -- a rise earned in phase N must stay invisible to
+    anything reading that leader's skill level during phase N itself,
+    and only take effect starting phase N+1. ``turn/turn_processor.py
+    run_turn()`` calls this once, as the very first statement of its
+    phase loop, before that phase dispatches anything -- so a rise
+    earned last phase (including the previous turn's own P4, carried
+    across the turn boundary by this field deliberately surviving
+    ``_replenish_turn_scoped_state()``) is already committed by the time
+    anything in the new phase runs. The field is a dict keyed by
+    ``Ability`` (Phase 1189) since more than one ability can earn a
+    same-phase rise now that Add_Experience also feeds it; every pending
+    entry is applied.
+    """
+
+    for leader in state.leaders.values():
+        if not leader.pending_skill_advancement:
+            continue
+        skills = _get_or_create_skills(leader)
+        for ability, (new_skill, new_aptitude) in leader.pending_skill_advancement.items():
+            skills.set_pair_for_ability(ability, new_skill, new_aptitude)
+        leader.pending_skill_advancement = {}
 
 
 def _maybe_grant_advanced_ability(
@@ -1289,7 +1344,14 @@ def execute_practice(
     current_skill, aptitude = skills.pair_for_ability(ability)
     credit = leader.experience_credit
     outcome = resolve_practice_solo(current_skill, aptitude, credit, rng)
-    skills.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
+    if outcome.skill_rose or outcome.aptitude_rose:
+        # [3.13]: "L'avanzamento avrà effetto fin dalla fase successiva" --
+        # deferred to LeaderState.pending_skill_advancement, applied by
+        # commit_pending_skill_advancements() at the start of the next
+        # phase. See that field's own docstring for the full citation.
+        leader.pending_skill_advancement[ability] = (outcome.new_skill, outcome.new_aptitude)
+    else:
+        skills.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
     if outcome.new_credit is not None:
         leader.experience_credit = outcome.new_credit
     # Phase 553 correction: this call site used to clear is_royal_heir
@@ -1456,6 +1518,27 @@ def execute_practice_group(
     if len(leader_ids) < 2:
         raise ValueError("execute_practice_group needs at least 2 leaders; use execute_practice for 1")
 
+    # Phase 1189 bug fix, mirroring Phase 822's identical fix for the solo
+    # path above: a co-practicer in this same-phase group can have died
+    # earlier this same phase (e.g. a multi-attacker LMOVE battle dispatched
+    # before this group's own Practice dispatch, turn/turn_processor.py
+    # run_turn()). A bare state.leaders[leader_id] lookup below would raise
+    # an unhandled KeyError for the whole call, discarding every surviving
+    # co-practicer's own valid outcome too -- not just the dead leader's.
+    # Mirror execute_practice()'s own "no acting leader, nothing happens"
+    # result for exactly that leader_id, and re-resolve the rest (as a
+    # smaller group, or solo if only one survives) instead.
+    live_leader_ids = [leader_id for leader_id in leader_ids if leader_id in state.leaders]
+    if len(live_leader_ids) < len(leader_ids):
+        if len(live_leader_ids) >= 2:
+            live_results = execute_practice_group(state, live_leader_ids, ability, rng)
+        elif len(live_leader_ids) == 1:
+            live_results = [execute_practice(state, live_leader_ids[0], ability, rng)]
+        else:
+            live_results = []
+        live_results_by_id = dict(zip(live_leader_ids, live_results))
+        return [live_results_by_id.get(leader_id, PracticeExecutionResult(ability=ability)) for leader_id in leader_ids]
+
     skills_tables = [_get_or_create_skills(state.leaders[leader_id]) for leader_id in leader_ids]
     pairs = [table.pair_for_ability(ability) for table in skills_tables]
     triples = [
@@ -1487,7 +1570,12 @@ def execute_practice_group(
             # circuit (it returns before ever reaching that roll).
             results.append(PracticeExecutionResult(ability=ability))
             continue
-        table.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
+        if outcome.skill_rose or outcome.aptitude_rose:
+            # [3.13] "effetto fin dalla fase successiva" -- same deferral
+            # as execute_practice()'s own; see that call site's comment.
+            leader.pending_skill_advancement[ability] = (outcome.new_skill, outcome.new_aptitude)
+        else:
+            table.set_pair_for_ability(ability, outcome.new_skill, outcome.new_aptitude)
         if outcome.new_credit is not None:
             leader.experience_credit = outcome.new_credit
         # Phase 553: same removal as execute_practice()'s own -- see that

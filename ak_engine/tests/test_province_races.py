@@ -44,12 +44,23 @@ def test_draw_base_race_is_always_norace_on_no_terrain():
         assert draw_base_race(Terrain.NO_TERRAIN, rng) is Race.NO_RACE
 
 
-def test_draw_base_race_never_produces_orcish_or_elven_on_plains():
-    # Plains only ever provisionally rolls Human, so no non-humanoid-mix
-    # race is possible, and the terrain never provisionally rolls Elf/Orc.
+def test_draw_base_race_is_confined_to_the_four_mix_races_on_plains():
+    # Bug fix: this used to claim Plains "never produces Orcish or
+    # Elven" -- false for the real draw_base_race(): the humanoid-mix
+    # layer it applies on top of Plains' own Human-only provisional
+    # roll confirms Elven/Dwarven/Orcish each at 7.5%
+    # (_CONFIRMED_FINAL_PERCENT[Terrain.PLAINS] above). The old
+    # assertion's own allowed set already included all four races, so
+    # it passed trivially regardless and never caught this
+    # contradiction between the comment and the real distribution.
+    # What IS a real, checkable invariant: a land terrain like Plains
+    # never yields NO_RACE or any race outside this confirmed 4-race
+    # set -- and (using == rather than <=) every one of the four must
+    # actually appear, so a regression that silently made one of them
+    # impossible (e.g. a broken humanoid-mix layer) would be caught too.
     rng = PascalRandom(seed=4)
     results = {draw_base_race(Terrain.PLAINS, rng) for _ in range(3000)}
-    assert results <= {Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH}
+    assert results == {Race.HUMAN, Race.ELVEN, Race.DWARVEN, Race.ORCISH}
 
 
 def test_draw_base_race_forest_never_produces_dwarves_above_the_mix_share():

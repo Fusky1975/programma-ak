@@ -12,6 +12,7 @@ from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.movement import NORMAL_MAP_BOUNDS, MapBounds, hex_distance
 from ak_engine.turn.office_holder import OfficeHolder
@@ -196,11 +197,45 @@ def test_execute_trail_success_reports_none_race_for_an_independent_hero():
     assert result.race is None
 
 
+def test_execute_trail_success_reports_none_race_when_kingdom_id_is_dangling():
+    # Phase 1041 bug fix -- execute_trail() used to bracket-index
+    # state.kingdoms[target.kingdom_id] directly once kingdom_id was
+    # not None, instead of using .get() + a None-check like every
+    # sibling _leader_combatant() builder (pursue_execution.py/
+    # patrol_execution.py/random_encounter_execution.py). A dangling
+    # kingdom_id -- reachable via turn/kingdom_bridge.py's own
+    # unchecked sync from a move file's filename/world-file Liege
+    # field -- used to raise an uncaught KeyError here instead of
+    # degrading gracefully like those sibling builders.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=999, name="Target", location=FIELD))  # kingdom 999 never added
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert result.race is None
+
+
+def test_execute_trail_king_intelligence_treasury_defaults_to_zero_when_kingdom_id_is_dangling():
+    # Same Phase 1041 bug fix, for _build_king_intelligence()'s own
+    # identical bare state.kingdoms[kingdom_id] subscript.
+    state = _base_state()
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=999))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
+    state.add_leader(LeaderState(2, kingdom_id=999, name="Target King", location=FIELD, is_king=True))
+
+    result = execute_trail(state, 1, _request(2), rng=ScriptedRandom([0.0, 0.5, 0.5]))
+
+    assert result.king_intelligence.treasury == 0
+
+
 def test_execute_trail_success_reports_king_intelligence_for_a_king_target():
     state = _base_state()
     state.add_kingdom(KingdomState(3, "Ally", Race.HUMAN, Alignment.GOOD, FIELD, treasury=42))
+    state.add_kingdom(KingdomState(4, "Foe", Race.HUMAN, Alignment.EVIL, FIELD, treasury=13))
     state.kingdoms[2].treasury = 77
     state.allied_kingdoms.add(frozenset({2, 3}))
+    state.diplomatic_relations[frozenset({2, 4})] = DiplomaticRelation.ENEMY
     state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=2))
     state.add_province(ProvinceState(FAR_AWAY, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
     state.add_leader(LeaderState(1, kingdom_id=1, name="Trailer", location=FIELD))
@@ -211,6 +246,7 @@ def test_execute_trail_success_reports_king_intelligence_for_a_king_target():
     assert result.king_intelligence == KingIntelligence(
         treasury=77,
         allied_kingdom_ids=(3,),
+        enemy_kingdom_ids=(4,),
         controlled_provinces=(FIELD,),
     )
 

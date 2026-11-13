@@ -146,19 +146,38 @@ def test_plan_intent_cast_invisibility_charm_augur_combat_are_exempt():
 
 
 def test_plan_intent_use_mi_charm_wand_is_exempt_with_real_state():
+    # Bug fix: a trailing SCOUT (itself a no-op in plan_intent()'s own
+    # loop) can't actually distinguish "USE_MI was skipped as exempt,
+    # so the scan continued" from "USE_MI set MELEE directly" -- both
+    # paths still end up at MELEE either way (the loop's own fallback
+    # converts a leftover NONE to MELEE too), so this test passed
+    # regardless of whether _use_mi_is_exempt() worked at all. A
+    # trailing TALK tactic -- which DOES set a distinct, observable
+    # intent if actually reached -- tells the two paths apart: TALK
+    # proves the scan genuinely continued past USE_MI (exempt), MELEE
+    # would prove it broke there instead (not exempt).
     state = GameState()
     item = state.add_item(Treasure.WAND_CHARM, owner_leader_id=1)
-    tactics = [SearchTactic(Maneuver.USE_MI, sub_object=item.item_id), SearchTactic(Maneuver.SCOUT)]
+    tactics = [SearchTactic(Maneuver.USE_MI, sub_object=item.item_id), SearchTactic(Maneuver.TALK)]
 
-    assert plan_intent(tactics, state) is Maneuver.MELEE  # exempt item is a no-op; falls through to default
+    assert plan_intent(tactics, state) is Maneuver.TALK  # exempt item is a no-op; the scan reaches the real next tactic
 
 
 def test_plan_intent_use_mi_other_wand_is_aggressive_with_real_state():
+    # Bug fix: with no trailing tactic at all, MELEE was also exactly
+    # what the loop's own unconditional fallback (intent is NONE ->
+    # MELEE) would produce if _use_mi_is_exempt() wrongly treated this
+    # wand as exempt too -- the assertion couldn't tell "aggressive"
+    # from "exempt" apart. Verified concretely: monkeypatching
+    # _use_mi_is_exempt() to always return True still passed this
+    # exact assertion. A trailing TALK tactic (reached only if the scan
+    # continues past USE_MI, i.e. only if it were wrongly exempt) now
+    # makes the two cases diverge.
     state = GameState()
     item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=1)
-    tactics = [SearchTactic(Maneuver.USE_MI, sub_object=item.item_id)]
+    tactics = [SearchTactic(Maneuver.USE_MI, sub_object=item.item_id), SearchTactic(Maneuver.TALK)]
 
-    assert plan_intent(tactics, state) is Maneuver.MELEE
+    assert plan_intent(tactics, state) is Maneuver.MELEE  # non-exempt breaks immediately, never reaching TALK
 
 
 def test_plan_intent_use_mi_without_state_falls_back_to_aggressive():

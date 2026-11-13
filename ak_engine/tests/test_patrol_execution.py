@@ -15,6 +15,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
 from ak_engine.models.treasure import Treasure
+from ak_engine.turn.challenge_execution import ChallengeCombatOutcome
 from ak_engine.turn.challenge_pursue_decode import PursueRequest
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.encounter import CHARACTER_HIT_POINTS, EncounterCombatResult, MeleeSwing
@@ -287,10 +288,12 @@ def test_leader_combatant_arcane_valor_bonus_is_zero_outside_arcanes():
 def test_leader_combatant_reads_archery_skill():
     # Regression: Phase 894 found this builder never computed/passed
     # archery_skill at all (silently defaulting to 0), unlike every one
-    # of its 5 sibling _leader_combatant() copies. Confirmed currently a
-    # no-op for real Patrol combat (execute_patrol() only ever calls
-    # resolve_melee_duel(), never Fire Arrow) -- fixed anyway to keep
-    # this builder in sync with its siblings, per that same docstring.
+    # of its 5 sibling _leader_combatant() copies -- at the time a no-op
+    # (execute_patrol() only ever called resolve_melee_duel(), never Fire
+    # Arrow), fixed anyway to keep this builder in sync with its
+    # siblings. 2026-11-06: no longer a no-op at all -- execute_patrol()
+    # now dispatches through resolve_challenge_combat(), so this field
+    # really is read for real Fire Arrow combat.
     state = _base_state()
     leader = LeaderState(1, kingdom_id=1, name="Patroller", location=HOME, skills=_skills_with(Ability.ARCHERY, 4, 5))
     state.add_leader(leader)
@@ -602,7 +605,7 @@ def test_execute_patrol_melee_request_fights_and_removes_the_loser():
 
 
 def test_execute_patrol_draw_still_carries_the_real_melee_swings():
-    # Phase 733: an inconclusive duel (resolve_melee_duel's own
+    # Phase 733: an inconclusive duel (resolve_challenge_combat's own
     # defensive max_rounds cap) must still carry whatever swings were
     # actually landed before it gave up -- mocked here since a real
     # draw is astronomically unlikely to script by hand.
@@ -612,8 +615,8 @@ def test_execute_patrol_draw_still_carries_the_real_melee_swings():
     swings = (MeleeSwing(attacker="a", hit=True, damage=1),)
 
     with patch(
-        "ak_engine.turn.patrol_execution.resolve_melee_duel",
-        return_value=EncounterCombatResult(winner=None, rounds=999, melee_swings=swings),
+        "ak_engine.turn.patrol_execution.resolve_challenge_combat",
+        return_value=ChallengeCombatOutcome(winner=None, melee_swings=swings),
     ):
         # 2 extra scripted values: the landed swing's own Add_Experience
         # triangular draw (Phase 686).
@@ -651,7 +654,7 @@ def test_execute_patrol_melee_request_loots_the_decisive_losers_items():
     assert state.items[item.item_id].owner_leader_id == 1
 
 
-# -- Phase 686: Melee combat-experience wiring (Patrol has no Fire Arrow) --
+# -- Phase 686: Melee combat-experience wiring --
 
 
 def test_execute_patrol_landed_melee_hit_credits_the_patroller():
@@ -661,11 +664,11 @@ def test_execute_patrol_landed_melee_hit_credits_the_patroller():
     state.add_leader(patroller)
     state.add_leader(target)
 
-    with patch("ak_engine.turn.patrol_execution.resolve_melee_duel") as mock_resolve, patch(
+    with patch("ak_engine.turn.patrol_execution.resolve_challenge_combat") as mock_resolve, patch(
         "ak_engine.turn.patrol_execution.add_experience"
     ) as mock_add_experience:
-        mock_resolve.return_value = EncounterCombatResult(
-            winner="a", rounds=1, melee_swings=(MeleeSwing(attacker="a", hit=True, damage=3),)
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner="a", melee_swings=(MeleeSwing(attacker="a", hit=True, damage=3),)
         )
         execute_patrol(
             state, 1, _melee_request(2), ScriptedRandom([0.5]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
@@ -681,11 +684,11 @@ def test_execute_patrol_landed_melee_hit_credits_the_target_independently():
     state.add_leader(patroller)
     state.add_leader(target)
 
-    with patch("ak_engine.turn.patrol_execution.resolve_melee_duel") as mock_resolve, patch(
+    with patch("ak_engine.turn.patrol_execution.resolve_challenge_combat") as mock_resolve, patch(
         "ak_engine.turn.patrol_execution.add_experience"
     ) as mock_add_experience:
-        mock_resolve.return_value = EncounterCombatResult(
-            winner="b", rounds=1, melee_swings=(MeleeSwing(attacker="b", hit=True, damage=3),)
+        mock_resolve.return_value = ChallengeCombatOutcome(
+            winner="b", melee_swings=(MeleeSwing(attacker="b", hit=True, damage=3),)
         )
         execute_patrol(
             state, 1, _melee_request(2), ScriptedRandom([0.5]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
@@ -703,15 +706,84 @@ def test_execute_patrol_all_miss_credits_nothing():
     state.add_leader(patroller)
     state.add_leader(target)
 
-    with patch("ak_engine.turn.patrol_execution.resolve_melee_duel") as mock_resolve, patch(
+    with patch("ak_engine.turn.patrol_execution.resolve_challenge_combat") as mock_resolve, patch(
         "ak_engine.turn.patrol_execution.add_experience"
     ) as mock_add_experience:
-        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+        mock_resolve.return_value = ChallengeCombatOutcome(winner=None)
         execute_patrol(
             state, 1, _melee_request(2), ScriptedRandom([0.5]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
         )
 
     mock_add_experience.assert_not_called()
+
+
+def _give_request(target_id: int, item_id: int) -> PursueRequest:
+    return PursueRequest(target_character_id=target_id, unconfirmed_extra0=0, tactics=[SearchTactic(Maneuver.GIVE, item_id)])
+
+
+def _steal_request(target_id: int) -> PursueRequest:
+    return PursueRequest(target_character_id=target_id, unconfirmed_extra0=0, tactics=[SearchTactic(Maneuver.STEAL)])
+
+
+def test_execute_patrol_give_only_plan_now_reaches_combat_dispatch_and_transfers_the_item():
+    # Backlog #6: a Give-only Patrol plan used to bypass combat dispatch
+    # entirely -- has_combat_intent()'s own [3.12]-scoped definition
+    # doesn't count Give as combat intent either, and execute_patrol()'s
+    # own gate used to be exactly that function, with no dispatch-walk
+    # fallback behind it the way Challenge/Pursue already had. Fixed by
+    # switching to plan_needs_combat_dispatch()/resolve_challenge_combat()
+    # (module docstring's own 2026-11-06 addendum) -- the exact same fix
+    # already applied to Pursue's own identical gap (test_pursue_
+    # execution.py's own sibling test). Confirmed by the item actually
+    # moving from the patroller to the (co-located, armyless) intruder.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Patroller", location=HOME))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Intruder", location=HOME))
+    item = state.add_item(Treasure.ABILITY_MELEE, owner_leader_id=1)
+
+    with patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        result = execute_patrol(
+            state,
+            1,
+            _give_request(2, item.item_id),
+            ScriptedRandom([0.5]),
+            board_width=NORMAL_MAP_BOUNDS[0],
+            board_height=NORMAL_MAP_BOUNDS[1],
+        )
+
+    assert result.intercepted is True
+    assert result.combat_occurred is True
+    assert state.items[item.item_id].owner_leader_id == 2
+
+
+def test_execute_patrol_steal_only_plan_now_actually_attempts_the_steal():
+    # Backlog #6's other half: a Steal-only Patrol plan used to bypass
+    # combat dispatch the exact same way Give did -- same fix, mirroring
+    # test_challenge_execution.py's own identical sibling test.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Patroller", location=HOME))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Intruder", location=HOME))
+
+    with patch(
+        "ak_engine.turn.challenge_execution._resolve_steal_tactic", return_value=("evaded", 0, [])
+    ) as mock_steal, patch(
+        "ak_engine.turn.challenge_execution.resolve_melee_duel", return_value=EncounterCombatResult(winner=None, rounds=1)
+    ):
+        result = execute_patrol(
+            state,
+            1,
+            _steal_request(2),
+            ScriptedRandom([0.5]),
+            board_width=NORMAL_MAP_BOUNDS[0],
+            board_height=NORMAL_MAP_BOUNDS[1],
+        )
+
+    assert mock_steal.called
+    assert result.intercepted is True
+    assert result.combat_occurred is True
+    assert result.steal_outcome == "evaded"
 
 
 def test_execute_patrol_spy_assassinate_accepts_a_king_intruder():
@@ -724,14 +796,36 @@ def test_execute_patrol_spy_assassinate_accepts_a_king_intruder():
     )
     state.add_leader(LeaderState(2, kingdom_id=2, name="King", location=HOME, is_king=True))
 
-    with patch("ak_engine.turn.patrol_execution.resolve_melee_duel") as mock_resolve:
-        mock_resolve.return_value = EncounterCombatResult(winner=None, rounds=1)
+    with patch("ak_engine.turn.patrol_execution.resolve_challenge_combat") as mock_resolve:
+        mock_resolve.return_value = ChallengeCombatOutcome(winner=None)
         result = execute_patrol(
             state, 1, _melee_request(2), ScriptedRandom([]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
         )
 
     assert result.intercepted is True
     assert result.combat_occurred is True
+
+
+def test_execute_patrol_cowardly_target_refuses_the_encounter():
+    # Phase 1041 bug fix -- same gap pursue_execution.py's own Phase
+    # 1041 fix closes (see that module's test_execute_pursue_cowardly_
+    # target_refuses_an_armyless_encounter for the full sourcing):
+    # [5.6]'s Temper-based "Refusal to Meet" gate was never inherited
+    # here either, despite this module's own docstring claiming it now
+    # genuinely inherits the shared armyless-Encounter core.
+    state = _base_state()
+    state.add_leader(LeaderState(1, kingdom_id=1, name="Patroller", location=HOME))
+    state.add_leader(LeaderState(2, kingdom_id=2, name="Intruder", location=HOME, temper=Temper.COWARDLY))
+
+    # Co-located -> no wander-check roll; opponent_leads_army is always
+    # False here (the patroller is structurally armyless, rule (a)) ->
+    # the range's own low end, 51%; any roll under that refuses.
+    result = execute_patrol(
+        state, 1, _melee_request(2), ScriptedRandom([0.1]), board_width=NORMAL_MAP_BOUNDS[0], board_height=NORMAL_MAP_BOUNDS[1]
+    )
+
+    assert result.intercepted is True
+    assert result.reason == "encounter refused"
 
 
 def test_execute_patrol_sense_danger_talent_can_refuse_the_encounter():

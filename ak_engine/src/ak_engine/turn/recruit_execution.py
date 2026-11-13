@@ -173,11 +173,75 @@ several types at once, ``turn/recruit_decode.py``'s own ordinal list),
 letting e.g. ``[DINOSAURS, BOWMEN]`` in one order still recruit the
 Bowmen after the Dinosaur locked the province. Now re-checked at the
 top of every loop iteration, so the lock takes effect immediately once
-set, within the same call too. "Only in place of elven EL, LC or HC" is read
-as descriptive context for why this only applies in Elven provinces,
-not a literal cross-type slot-consumption formula -- no source gives a
-mechanism for how recruiting a Dinosaur would decrement a *different*
-army type's own ``recruited_this_turn`` counter, so none is invented.
+set, within the same call too.
+
+**Phase 980 addendum, user-confirmed: "only in place of elven EL, LC or
+HC" is a real province-level precondition, not just descriptive
+context.** The earlier reading above was right to reject a literal
+cross-type slot-*consumption* formula (recruiting a Dinosaur still never
+decrements a different type's own ``recruited_this_turn`` counter -- no
+source gives that mechanism, and none is invented here either), but it
+stopped short of implementing the plainer, confirmed half of the same
+sentence: the province must currently offer Elephants, Light Cavalry or
+Heavy Cavalry as one of its own two recruit slots (``ProvinceState.
+recruit_type_1``/``recruit_type_2``) for Dinosaurs to be recruitable
+there at all -- a real *precondition* check, independent of the
+``AdvancedAbility.DRUIDIC_DINOSAURS`` leader gate right above it.
+``_DINOSAUR_REQUIRED_PROVINCE_SLOT_TYPES`` below names the three
+qualifying types; blocked via the new ``RecruitExecutionResult.
+elven_slot_required``. Only enforced when this project actually has
+real per-province slot data (``recruit_type_1 is not None``, the same
+condition ``is_native_to_province`` above already gates on) -- a hand-
+built test fixture or any other caller that never populated real slots
+has no data to check this against, so the gate is silently satisfied
+rather than blocking everything, the same "approximate, don't invent,
+when real data is missing" precedent `is_native`'s own fallback already
+set.
+
+**Also Phase 980: the real "Race: Saurian" fact (already quoted
+verbatim in `models/advanced_ability.py ADVANCED_ABILITY_DESCRIPTION
+[DRUIDIC_DINOSAURS]`` since Phase 691, but never wired anywhere) now
+actually applies.** `models/army_type.py MONSTROUS_ARMY_RACE` gains
+``ArmyType.DINOSAURS: Race.SAURIAN`` -- every Dinosaur army now reports
+and fights as Saurian, not the owning (necessarily Elven, per the race
+gate above) Kingdom's own race. A real, user-supplied reverse-
+engineering report of ``REPORTS.PAS`` independently describes this as a
+report-generation-time correction (an Elven-race Dinosaur army gets
+mutated to Saurian the first time a report runs, with a one-time "The
+race of Dinosaurs has changed from Elven to Saurian" announcement) --
+not reproduced here verbatim: this project's armies are created with
+their final display race up front (`ArmyState` has no mutable race
+field of its own, and every other ``MONSTROUS_ARMY_RACE`` entry already
+works this way, fixed at creation, never corrected later), so there is
+no "was Elven, became Saurian" moment for an announcement to narrate in
+the first place -- a Dinosaur army is simply Saurian from the moment
+it's recruited.
+
+**Non-native double-cost recruiting now needs an existing unit of that
+type (2026-10-28), RULES.AK [3.4], sourced directly from the user**: "se
+non è possibile reclutare un certo tipo di unità militare perché non
+previsto per la popolazione nativa, si può comunque effettuare
+l'arruolamento se il comandante, o il personaggio a favore del quale
+viene dato l'ordine, ha già ai suoi ordini un'altra unità del tipo."
+Through this phase, Phase 407's own double-cost path (above) applied
+unconditionally to any race-compatible-but-non-native type -- a real gap,
+since the rulebook ties that option to a precondition, not an
+unconditional price bump. ``turn/recruit.py resolve_recruit()`` now takes
+``commander_already_has_type`` and raises a new, distinct
+``NonNativeTypeNotYetOwnedError`` (not ``IncompatibleRaceError`` -- the
+race *is* compatible here, only the ownership precondition fails) when
+it's ``False``; this module computes it fresh on every loop iteration
+(so a unit of that type recruited earlier in the very same request also
+counts) by scanning ``state.armies`` for one already ``commanded_by``
+the resolved ``commanded_by`` of this order. A Garrison-targeted order
+(``commanded_by is None``) has no commander roster to check against, so
+this precondition can never be satisfied for it -- the rulebook's own
+wording names "the commander, or the [...] favored character," never the
+garrison, so a Garrison-targeted recruit of a non-native type is always
+blocked, reported via the new ``RecruitExecutionResult.non_native_type_
+not_owned``, same "no sourced narrative template yet" convention as
+every other blocked-request list (see ``report/turn_report.py describe_
+recruit()``'s own docstring).
 """
 
 from __future__ import annotations
@@ -185,14 +249,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ak_engine.models.advanced_ability import AdvancedAbility
-from ak_engine.models.army_type import OVERFLIGHT_AIR, OVERFLIGHT_SEA, ArmyType
+from ak_engine.models.army_type import OVERFLIGHT_AIR, SEA_ARMY_TYPES, ArmyType, is_land_army
 from ak_engine.models.enums import Ability
 from ak_engine.models.game_state import ArmyState, GameState
 from ak_engine.models.office import Office
+from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.turn.combat import Quality
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.office_holder import resolve_office_holder
-from ak_engine.turn.recruit import IncompatibleRaceError, is_army_type_compatible_with_race, resolve_recruit
+from ak_engine.turn.recruit import (
+    IncompatibleRaceError,
+    NonNativeTypeNotYetOwnedError,
+    is_army_type_compatible_with_race,
+    resolve_recruit,
+)
 from ak_engine.turn.recruit_decode import RecruitRequest
 
 # Phase 691: Druid skill required for full Dinosaur quality
@@ -204,6 +274,13 @@ from ak_engine.turn.recruit_decode import RecruitRequest
 # down by tiers" convention without reusing `compute_druidic_
 # shortfall()`'s own differently-scoped kingdom-race check.
 DINOSAUR_FULL_QUALITY_DRUID_SKILL = 5
+
+# Phase 980: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own real description --
+# "only in place of elven EL, LC or HC" -- the three army types whose
+# own presence in a province's recruit slots unlocks Dinosaur recruiting
+# there (user-confirmed as a precondition check, not a slot-consumption
+# formula -- see this module's own Phase 980 docstring addendum).
+_DINOSAUR_REQUIRED_PROVINCE_SLOT_TYPES = frozenset({ArmyType.ELEPHANTS, ArmyType.LT_CAVALRY, ArmyType.HVY_CAVALRY})
 
 
 @dataclass(slots=True)
@@ -235,7 +312,32 @@ class RecruitExecutionResult:
     # `ProvinceState.recruit_locked_this_turn` from an earlier successful
     # Dinosaur recruit this same turn.
     province_locked: list[ArmyType] = field(default_factory=list)
+    # Phase 980: `AdvancedAbility.DRUIDIC_DINOSAURS`'s own "only in place
+    # of elven EL, LC or HC" -- a separate, province-level precondition
+    # from `province_locked` above (which fires only *after* a Dinosaur
+    # has already been recruited this turn); this one blocks the very
+    # first attempt when the province's own recruit slots don't qualify.
+    elven_slot_required: list[ArmyType] = field(default_factory=list)
+    # Sourced directly from the user (2026-10-28), RULES.AK [3.4]: a
+    # non-native type is recruitable at double cost only if the
+    # commander already has another unit of that same type under their
+    # command; without that, the type isn't recruitable here at all --
+    # a separate reason from `incompatible` (race-incompatible), so it
+    # gets its own bucket, matching this dataclass's own established
+    # one-field-per-distinct-block-reason convention.
+    non_native_type_not_owned: list[ArmyType] = field(default_factory=list)
     total_gold_spent: int = 0
+
+
+def _leader_holds_office(state: GameState, office: Office, leader_id: int) -> bool:
+    """Phase 1055: ``resolve_office_holder()`` then "is it this leader" --
+    the exact same two-line pair repeated for 5 separate Offices
+    (WINGMAN/MARSHAL/ADMIRAL/CHIEF_OF_STAFF/NEUTRAL_KING) just below,
+    extracted once confirmed byte-identical across all five.
+    """
+
+    holder = resolve_office_holder(state, office)
+    return holder is not None and holder.leader_id == leader_id
 
 
 def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: RecruitRequest) -> RecruitExecutionResult:
@@ -311,20 +413,26 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         result.treat_blocked.extend(request.army_types)
         return result
 
-    wingman_holder = resolve_office_holder(state, Office.WINGMAN)
-    leader_is_wingman = wingman_holder is not None and wingman_holder.leader_id == leader_id
-    marshal_holder = resolve_office_holder(state, Office.MARSHAL)
-    leader_is_marshal = marshal_holder is not None and marshal_holder.leader_id == leader_id
-    admiral_holder = resolve_office_holder(state, Office.ADMIRAL)
-    leader_is_admiral = admiral_holder is not None and admiral_holder.leader_id == leader_id
+    leader_is_wingman = _leader_holds_office(state, Office.WINGMAN, leader_id)
+    leader_is_marshal = _leader_holds_office(state, Office.MARSHAL, leader_id)
+    leader_is_admiral = _leader_holds_office(state, Office.ADMIRAL, leader_id)
     # Phase 663: Chief of Staff's own -1 gold discount (below), and
     # Neutral King's own separate "recruit mercenaries for 1 gold" flat
     # override (see the mercenary/fresh-levy branch below -- the real
     # text names mercenaries specifically, not fresh levies).
-    chief_of_staff_holder = resolve_office_holder(state, Office.CHIEF_OF_STAFF)
-    leader_is_chief_of_staff = chief_of_staff_holder is not None and chief_of_staff_holder.leader_id == leader_id
-    neutral_king_holder = resolve_office_holder(state, Office.NEUTRAL_KING)
-    leader_is_neutral_king = neutral_king_holder is not None and neutral_king_holder.leader_id == leader_id
+    leader_is_chief_of_staff = _leader_holds_office(state, Office.CHIEF_OF_STAFF, leader_id)
+    leader_is_neutral_king = _leader_holds_office(state, Office.NEUTRAL_KING, leader_id)
+    # Phase 1055: hoisted out of the per-army_type loop below -- location
+    # is loop-invariant, so re-scanning the whole state.armies table via
+    # state.mercenaries_at(location) on every iteration (a single real
+    # Recruit order can list several army_types at once) was wasted work.
+    # Filtered fresh per iteration below, same as before (and still
+    # checking `.is_mercenary` explicitly there, now that this list is no
+    # longer re-fetched live): an earlier iteration hiring one of these
+    # mercenaries sets its own `is_mercenary = False` in place, which a
+    # later iteration requesting the same army_type again must still see,
+    # to avoid "hiring" the same already-hired army a second time.
+    mercs_at_location = state.mercenaries_at(location)
 
     for army_type in request.army_types:
         # Phase (bug fix): re-checked on every iteration, not just once
@@ -339,10 +447,92 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         if province.recruit_locked_this_turn:
             result.province_locked.append(army_type)
             continue
-        if province.recruit_type_1 is not None:
+        # Phase 1054 bug fix: Garrison is recruitable (2/turn, recruit_
+        # limit()'s own real "any humanoid province, home or not" rule
+        # just above) in ANY humanoid province, regardless of whether it
+        # happens to be one of this specific province's two listed slot
+        # types -- it is never genuinely "native" by the slot-table
+        # sense the Phase 407 check below targets. Without this
+        # exemption, Garrison can never satisfy either `is_native` (real
+        # province data never lists GARRISON as a slot, confirmed absent
+        # from every cross-checked row) or `commander_already_has_type`
+        # (a Garrison-targeted order has no commander roster to check,
+        # per this same function's own comment below), so
+        # `resolve_recruit()` always raised `NonNativeTypeNotYetOwnedError`
+        # for it -- making `recruit_limit()`'s own `GARRISON_HUMANOID_
+        # PROVINCE_LIMIT` permanently unreachable for any real-data
+        # province.
+        # Phase 1054 bug fix: Dinosaurs' own complete cost is "Speed: 3;
+        # Pay: 3" per AdvancedAbility.DRUIDIC_DINOSAURS's own real
+        # description (models/army_type.py's own Phase 691 addendum) --
+        # no native/non-native doubling is mentioned anywhere in that
+        # sourced text, because the per-province native-type slot
+        # mechanic this `is_native` flag otherwise encodes doesn't
+        # conceptually apply to an ability-gated unit type at all (its
+        # own eligibility is already fully governed by the separate
+        # Race.ELVEN/AdvancedAbility/province-slot chain checked below).
+        # Without this exemption, `army_type in (recruit_type_1,
+        # recruit_type_2)` is always False for DINOSAURS (it is never
+        # itself a listed slot type), so `resolve_recruit()` silently
+        # doubled the price to 6 gold on every real recruit via this
+        # path, even with every real precondition satisfied.
+        if army_type is ArmyType.GARRISON and province.race in HUMANOID_RACES:
+            is_native = True
+        elif army_type is ArmyType.DINOSAURS:
+            is_native = True
+        elif province.recruit_type_1 is not None:
             is_native = army_type in (province.recruit_type_1, province.recruit_type_2)
         else:
             is_native = is_army_type_compatible_with_race(army_type, province.race)
+        # Sourced directly from the user (2026-10-28), RULES.AK [3.4]:
+        # "il comandante, o il personaggio a favore del quale viene dato
+        # l'ordine, ha già ai suoi ordini un'altra unità del tipo" --
+        # checked against `commanded_by` (the actual resolved commander
+        # for this order, already co-location-checked above), re-scanned
+        # fresh on every loop iteration so a unit of this same type
+        # recruited earlier in this SAME request also counts. A
+        # Garrison-targeted order (`commanded_by is None`) has no
+        # commander roster to check, so this precondition can never be
+        # met for it -- the literal text ties the exception to a named
+        # commander/favored character, not to the garrison.
+        #
+        # Dinosaurs are exempt: their own non-native-race eligibility is
+        # already fully governed by a separate, previously user-confirmed
+        # precondition chain (`AdvancedAbility.DRUIDIC_DINOSAURS` plus the
+        # province's own Elephants/Lt Cavalry/Hvy Cavalry slot requirement,
+        # Phase 691/980 above) -- that chain *is* this army type's own real
+        # "why a non-native type is recruitable here" story, not the
+        # generic one this new check targets. Layering the new check on
+        # top as well would make a first Dinosaur unit permanently
+        # unrecruitable anywhere (nobody can ever already own one), which
+        # would silently break that already-shipped, already-confirmed
+        # mechanic.
+        commander_already_has_type = army_type is ArmyType.DINOSAURS or (
+            commanded_by is not None
+            and any(army.commanded_by == commanded_by and army.army_type is army_type for army in state.armies.values())
+        )
+        # Phase 1054 bug fix: looked up BEFORE resolve_recruit() now (it
+        # used to be found only after that call succeeded, further down)
+        # specifically so its presence can bypass resolve_recruit()'s own
+        # race-compatibility/non-native-ownership gates below -- RULES.AK
+        # [3.4]: "mercenaries can be Recruited in any province by any
+        # character," a real carve-out from the whole "is this type
+        # native/race-compatible here" story those two checks otherwise
+        # enforce for a populace levy. Previously, a race-incompatible or
+        # merely non-native-but-already-present mercenary was rejected by
+        # one of those two exceptions before this lookup (further down)
+        # ever discovered it.
+        mercenary = next(
+            (
+                army
+                for army in mercs_at_location
+                if army.is_mercenary
+                and army.army_type is army_type
+                and army.quality >= Quality.AVERAGE
+                and not army.unhireable_this_turn
+            ),
+            None,
+        )
         try:
             resolution = resolve_recruit(
                 army_type,
@@ -352,9 +542,14 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
                 in_ally_territory=in_ally_territory,
                 is_former_home_province_now_allied=is_former_home_province_now_allied,
                 chief_of_staff_discount=leader_is_chief_of_staff,
+                commander_already_has_type=commander_already_has_type,
+                hiring_existing_mercenary=mercenary is not None,
             )
         except IncompatibleRaceError:
             result.incompatible.append(army_type)
+            continue
+        except NonNativeTypeNotYetOwnedError:
+            result.non_native_type_not_owned.append(army_type)
             continue
 
         # Phase 691: the race gate (Race.ELVEN, checked above via
@@ -366,25 +561,34 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
             result.incompatible.append(army_type)
             continue
 
+        # Phase 980: "only in place of elven EL, LC or HC" -- a real
+        # province-level precondition, independent of the leader-level
+        # ability gate just above. Only enforced when real per-province
+        # slot data exists (recruit_type_1 is not None), matching
+        # is_native's own fallback a few lines up.
+        if (
+            army_type is ArmyType.DINOSAURS
+            and province.recruit_type_1 is not None
+            and province.recruit_type_1 not in _DINOSAUR_REQUIRED_PROVINCE_SLOT_TYPES
+            and province.recruit_type_2 not in _DINOSAUR_REQUIRED_PROVINCE_SLOT_TYPES
+        ):
+            result.elven_slot_required.append(army_type)
+            continue
+
+        # Phase 1055: reuses models/army_type.py's own SEA_ARMY_TYPES/
+        # is_land_army() instead of reconstructing the identical naval/
+        # land classification inline -- the two previously independent
+        # encodings of "which army types are naval/land" could silently
+        # drift apart whenever that canonical classification changes
+        # (it already has once, per that module's own history).
         wingman_bonus = 1 if leader_is_wingman and army_type in OVERFLIGHT_AIR and is_native else 0
-        is_naval_type = army_type in OVERFLIGHT_SEA or army_type is ArmyType.FLEET
-        marshal_bonus = 1 if leader_is_marshal and army_type not in OVERFLIGHT_AIR and not is_naval_type and is_native else 0
-        admiral_bonus = 1 if leader_is_admiral and is_naval_type and is_native else 0
+        marshal_bonus = 1 if leader_is_marshal and is_land_army(army_type) and is_native else 0
+        admiral_bonus = 1 if leader_is_admiral and army_type in SEA_ARMY_TYPES and is_native else 0
         already_this_turn = province.recruited_this_turn.get(army_type, 0)
         if already_this_turn >= resolution.max_units + wingman_bonus + marshal_bonus + admiral_bonus:
             result.limit_blocked.append(army_type)
             continue
 
-        mercenary = next(
-            (
-                army
-                for army in state.mercenaries_at(location)
-                if army.army_type is army_type
-                and army.quality >= Quality.AVERAGE
-                and not army.unhireable_this_turn
-            ),
-            None,
-        )
         can_levy = province.owner_kingdom_id == kingdom_id or in_ally_territory
         if mercenary is None and not can_levy:
             result.territory_blocked.append(army_type)
@@ -411,6 +615,12 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
         if mercenary is not None:
             mercenary.kingdom_id = kingdom_id
             mercenary.commanded_by = commanded_by
+            # Bug fix (2026-10-25): a hired mercenary transitions out of
+            # the real `astate=Mercenary` state -- it's no longer
+            # "available to Recruit" (see `ArmyState.is_mercenary`'s own
+            # docstring) -- matching `Known_Merc`'s own real formula,
+            # which already requires `astate[an] = Mercenary`.
+            mercenary.is_mercenary = False
             army_id = mercenary.army_id
             hired = True
         else:
@@ -428,6 +638,7 @@ def execute_recruit(state: GameState, kingdom_id: int, leader_id: int, request: 
                     location=location,
                     commanded_by=commanded_by,
                     movement_points=0,
+                    recruited_this_turn=True,
                 )
             )
             hired = False

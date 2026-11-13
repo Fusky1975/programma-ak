@@ -182,11 +182,11 @@ from ak_engine.models.game_state import GameState, LeaderState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
 from ak_engine.models.race import HUMANOID_RACES
-from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle
+from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle, snapshot_army_types
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.challenge_execution import (
-    has_combat_intent,
     is_encounter_accepted,
+    plan_needs_combat_dispatch,
     resolve_challenge_combat,
     target_evades_via_sense_danger,
 )
@@ -209,6 +209,7 @@ from ak_engine.turn.encounter import (
     loot_defeated_leader,
     melee_mastery_damage_bonus,
     melee_mastery_offensive_hit_multiplier,
+    resolve_refusal_to_meet,
     weapon_defensive_hit_multiplier,
     weapon_grants_auto_invisibility,
     weapon_melee_damage_bonus,
@@ -216,7 +217,7 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.movement import MapBounds, hex_distance, neighbors
-from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.office_holder import cached_office_holder_leader_id
 from ak_engine.turn.sep_decode import target_uses_special_encounter_plan
 from ak_engine.turn.spy_table import pursue_catch_up_chance
 
@@ -225,7 +226,9 @@ def _spy_skill_of(state: GameState, leader: LeaderState) -> int:
     return effective_skill_level(state, leader, Ability.SPY)
 
 
-def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
+def _leader_combatant(
+    leader: LeaderState, state: GameState, *, office_cache: dict[Office, int | None] | None = None
+) -> Combatant:
     """Same construction as ``challenge_execution.py _leader_combatant`` (Phase 50),
     duplicated rather than shared -- established precedent in this project
     (see that function's own docstring) for small per-consumer lookups.
@@ -259,12 +262,12 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         kingdom = state.kingdoms.get(leader.kingdom_id)
         neutral_bonus = kingdom is not None and kingdom.alignment is Alignment.NEUTRAL
 
-    defender_office = resolve_office_holder(state, Office.DEFENDER)
-    damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
-    illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
-    always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
-    necro_mage_office = resolve_office_holder(state, Office.NECRO_MAGE)
-    is_necro_mage = necro_mage_office is not None and necro_mage_office.leader_id == leader.leader_id
+    defender_leader_id = cached_office_holder_leader_id(state, Office.DEFENDER, office_cache)
+    damage_reduction = 1 if defender_leader_id == leader.leader_id else 0
+    illus_mage_leader_id = cached_office_holder_leader_id(state, Office.ILLUS_MAGE, office_cache)
+    always_acts_first = illus_mage_leader_id == leader.leader_id
+    necro_mage_leader_id = cached_office_holder_leader_id(state, Office.NECRO_MAGE, office_cache)
+    is_necro_mage = necro_mage_leader_id == leader.leader_id
     has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
     effective_race = leader.race
     if effective_race is None and leader.kingdom_id is not None:
@@ -392,9 +395,7 @@ def _fight_army_pursuit_battle(
     for army in pursuer_armies:
         army.location = target.location
 
-    # Phase 736: snapshot army types before fight_battle() removes any
-    # of them -- see move_execution.py's own identical Phase 736 note.
-    army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
+    army_types_before_battle = snapshot_army_types(state)
     battle_report = fight_battle(
         state,
         pursuer.kingdom_id,
@@ -501,23 +502,41 @@ def execute_pursue(
     # bring along.
     pursuer.location = target.location
 
-    if not has_combat_intent(request):
+    if not plan_needs_combat_dispatch(request):
         return PursueExecutionResult(caught_up=True, combat_occurred=False, guessed_distance=guessed_distance)
 
+    has_spy_assassinate = AdvancedAbility.SPY_ASSASSINATE in pursuer.advanced_abilities
     accepted = is_encounter_accepted(
         target_is_king=target.is_king,
         target_leads_army=False,
         challenger_is_king=pursuer.is_king,
         mutual_encounter=mutual_encounter,
         rng=rng,
-        has_spy_assassinate=AdvancedAbility.SPY_ASSASSINATE in pursuer.advanced_abilities,
+        has_spy_assassinate=has_spy_assassinate,
         has_sense_danger_evasion=target_evades_via_sense_danger(state, target, pursuer),
     )
+    # Phase 1041 bug fix -- [5.6]'s own Temper-based "Refusal to Meet"
+    # gate (challenge_execution.py execute_challenge()'s own Phase 898
+    # addendum) was never inherited here, despite this module's own
+    # docstring claiming full Encounter-rule parity with Challenge
+    # ([3.16]: "All rules listed under the Encounter action apply to
+    # Pursuit encounters"). A Cowardly/Cautious non-King target used to
+    # have zero chance of refusing a Pursue encounter, unlike an
+    # otherwise-identical Challenge against the same target. Skipped
+    # when an unconditional-accept ability already fired, the same
+    # scoping Challenge's own Phase 898 addendum uses.
+    if accepted and not has_spy_assassinate:
+        if resolve_refusal_to_meet(target.temper, is_king=target.is_king, opponent_leads_army=pursuer_leads_army, rng=rng):
+            accepted = False
     if not accepted:
         return PursueExecutionResult(caught_up=True, reason="encounter refused", guessed_distance=guessed_distance)
 
-    pursuer_combatant = _leader_combatant(pursuer, state)
-    target_combatant = _leader_combatant(target, state)
+    # Efficiency (Phase 1193): one shared office-holder cache for both
+    # sibling Combatants built in this one call -- see
+    # cached_office_holder_leader_id()'s own docstring.
+    office_cache: dict[Office, int | None] = {}
+    pursuer_combatant = _leader_combatant(pursuer, state, office_cache=office_cache)
+    target_combatant = _leader_combatant(target, state, office_cache=office_cache)
     # Phase 674: this branch is only ever reached after the `if target_
     # leads_army: return ...` early return above, so the target is
     # already structurally guaranteed armyless -- `target_uses_special_

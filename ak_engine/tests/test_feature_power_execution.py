@@ -461,17 +461,28 @@ def test_new_sex_toggles():
 
 
 def test_new_temp_already_matched_is_a_real_no_op():
-    feature_type, feature_id = FeatureType.PYRAMID, 3
+    # Bug fix: (FeatureType.PYRAMID, feature_id=3) at coord (0, 0) does
+    # not actually derive to Power.NEW_TEMP at all (resolve_power()
+    # gives Power.PNONE for this combo) -- derive_feature_event() is
+    # deterministic with no state involved, so the `if event.power is
+    # Power.NEW_TEMP:` branch below was unreachable on every run, not
+    # just by chance; every real assertion lived inside it, so this
+    # test executed zero assertions while still reporting as passed.
+    # (FeatureType.TOMB, feature_id=34) at coord (2, 0) (found by
+    # search) is a real combo that derives Power.NEW_TEMP with a
+    # PC_NONE condition (no Scout/alignment/etc. gate in the way of
+    # reaching the already_matched check this test is actually about).
+    feature_type, feature_id = FeatureType.TOMB, 34
     from ak_engine.worldgen.internal_magical_locations import power_temper_parameter
 
     temper = power_temper_parameter(feature_type, feature_id)
     state = _state_with_leader(temper=temper)
-    feature = Feature(feature_id=feature_id, coord=HexCoord(0, 0), kind=feature_type)
+    feature = Feature(feature_id=feature_id, coord=HexCoord(2, 0), kind=feature_type)
     event = derive_feature_event(feature)
+    assert event.power is Power.NEW_TEMP
     result = resolve_feature_power_attempt(state, LEADER_ID, feature, event, random.Random(0))
-    if event.power is Power.NEW_TEMP:
-        assert result.already_matched is True
-        assert state.leaders[LEADER_ID].temper is temper
+    assert result.already_matched is True
+    assert state.leaders[LEADER_ID].temper is temper
 
 
 def test_up_skill_succeeds_and_increments_when_roll_favors_it():
@@ -691,6 +702,18 @@ def test_parse_sa_argument_full_sentence():
 
 def test_parse_sa_argument_no_digits_returns_none():
     assert parse_sa_argument("Take that!") is None
+
+
+def test_parse_sa_argument_returns_none_instead_of_crashing_on_an_oversized_digit_run():
+    # Bug fix (crash): Python 3.11+ caps int(str) conversion at 4300
+    # digits by default and raises ValueError above that. say_text comes
+    # straight from a Search order's SAY tactic free text (parser/
+    # k1_moves.py's own _recover_say_text(), no length cap), so this used
+    # to raise an unhandled ValueError on the second (regex-matched)
+    # int() conversion -- the first one (the bare-number path) was
+    # already guarded, this one wasn't.
+    assert parse_sa_argument("9" * 5000) is None
+    assert parse_sa_argument("Tell me about character " + "9" * 5000) is None
     assert parse_sa_argument("") is None
 
 
@@ -1401,6 +1424,27 @@ def test_resolve_feature_power_attempt_map_prov_reveals_three_to_five_unknown_pr
     assert len(set(result.revealed_province_coords)) == len(result.revealed_province_coords)
     for coord in result.revealed_province_coords:
         assert state.provinces[coord].known_to_kingdom(1) is True
+
+
+def test_resolve_feature_power_attempt_map_prov_grows_the_primary_region():
+    # Phase 1038. Order within a single reveal batch can affect which of
+    # several mutually-adjacent new columns join the tracked primary
+    # region in the same call (a documented limitation), so this only
+    # asserts the safe invariants: the pre-existing member survives, and
+    # nothing outside this reveal's own columns gets added.
+    state = _state_with_leader()
+    state.add_kingdom(KingdomState(1, "Testia", Race.HUMAN, Alignment.NEUTRAL, LOCATION))
+    state.kingdoms[1].map_primary_region_columns = {LOCATION.x}
+    feature = Feature(feature_id=1, coord=LOCATION, kind=FeatureType.PYRAMID)
+    state.add_feature(feature)
+    coords = [HexCoord(x, 0) for x in range(10)]
+    for coord in coords:
+        state.provinces[coord] = ProvinceState(coord=coord, terrain=Terrain.PLAINS, race=Race.HUMAN)
+
+    resolve_feature_power_attempt(state, LEADER_ID, feature, _map_prov_event(), random.Random(0))
+
+    assert LOCATION.x in state.kingdoms[1].map_primary_region_columns
+    assert state.kingdoms[1].map_primary_region_columns.issubset({LOCATION.x} | {c.x for c in coords})
 
 
 def test_resolve_feature_power_attempt_map_prov_caps_reveal_count_when_few_provinces_are_unknown():

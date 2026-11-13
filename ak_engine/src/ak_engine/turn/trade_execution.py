@@ -31,12 +31,19 @@ item, ``request.obj`` falls through to the gold path exactly as
 before.
 
 **When the gold path resolves, this module enforces the recipient side
-of [3.18]**: "You can give limited amounts of gold to *other Kings*" --
-not just "only a King may give," but the recipient must be a King too.
-``execute_gold_give()`` already checked the giver; ``execute_give()``
-adds the recipient check plus the co-location requirement the user's
-own description of the ``GI <item_or_gold> <target>`` order syntax
-confirms ("che si trova nella stessa provincia").
+of [3.18]**. ``execute_gold_give()`` already checked the giver;
+``execute_give()`` adds the recipient check plus the co-location
+requirement the user's own description of the ``GI <item_or_gold>
+<target>`` order syntax confirms ("che si trova nella stessa
+provincia"). **Stale as of 2026-10-29** -- this paragraph used to say
+the recipient "must be a King too," over-reading the English rule's
+own "You can give limited amounts of gold to other Kings" as a
+recipient restriction; the fuller RULES.AK/ADDEND.AK text (and the
+user's own fuller Italian text) both independently give the real,
+complete rule: "giving it to another player's character (King or
+Hero)" -- a Hero recipient is equally valid, the only real requirement
+being a genuinely different Kingdom (confirmed with the user), not
+King status.
 
 **Real, previously-unrendered SAY.PAS corroboration** (found while
 verifying the user's description against the Pascal source, ~lines
@@ -57,6 +64,54 @@ out to already be closed one level up: `models/treasure.py
 TREASURE_NAME` maps every `Treasure` type (`item.treasure`) to a real
 display name -- the only thing missing was *which* item moved, not how
 to name it.
+
+**2026-10-29 -- two further bug fixes, sourced directly from the user's
+own fuller Italian rulebook text, independently confirmed in both
+RULES.AK and ADDEND.AK verbatim.** (1) ``GOLD_GIVE_MINIMUM_FLOOR``: "he
+may always give out at least 10 gold if he has it in his treasury" --
+the 10% cap now has a real floor of 10 gold, raised only up to what the
+King actually has (``execute_gold_give()``). (2) The gold-recipient
+check in ``execute_give()`` now allows a Hero, not just a King --
+"giving it to another player's character (King or Hero)" -- the
+previous reading's "recipient must be a King" over-read the shorter
+English excerpt; still requires a genuinely different Kingdom
+(confirmed with the user), not King status.
+
+**2026-11-04 -- the "live treasury" gap above is closed.** The 10% cap
+now reads ``KingdomState.treasury_at_turn_start`` (a real snapshot,
+taken once at the very start of every ``run_turn()`` call -- see that
+field's own docstring), not the live treasury at the moment of each
+specific Give. Confirmed directly with the user that [3.18]'s own "in
+a gameturn" phrasing makes this a single cumulative *budget* for the
+whole turn, not a limit re-applied fresh to each individual Give
+order: ``KingdomState.gold_given_this_turn`` tracks how much of that
+budget a King has already spent, and a new explicit "enough gold on
+hand right now" check was added alongside it -- needed only now, since
+the cap's own basis no longer tracks the live treasury, so a King who
+already spent gold elsewhere this turn can have less on hand than his
+own remaining budget allows (the old live-treasury-based cap could
+never exceed the live treasury, by construction, so this check was
+never reachable before this fix).
+
+**2026-11-04 -- the conditional/barter Give mechanic ("the gift will be
+made only if the recipient Gives you a specified magic item in the
+same phase") needs no further code here, per the user's own explicit
+decision.** There is no wire field anywhere (``turn/trade_decode.py``'s
+own ``TradeRequest`` has exactly two real fields, neither of them a
+"what I want back" slot) to record *which* item a giver demands in
+return, or even *whether* a given Give order was meant to be
+conditional at all -- only the two independent parties' own real Give
+orders this phase. Asked directly what a one-sided cross-Kingdom Give
+(no reciprocal Give back this same phase) should do: **the gift still
+completes, unconditionally, exactly like any other Give** -- the user's
+own explicit choice, not a guess. Under that rule, a "conditional" Give
+and an ordinary one are behaviorally identical: each side's own Give
+order already resolves entirely on its own merits (ownership/treasury
+checks), regardless of what the other party orders, which is exactly
+what ``execute_give()`` already does, unchanged. "Conditional" Give is
+therefore a real [3.18] mechanic at the table -- two players privately
+agreeing to both submit matching Give orders the same phase -- with no
+corresponding engine-side gate to build; nothing here was a bug.
 """
 
 from __future__ import annotations
@@ -70,6 +125,12 @@ from ak_engine.turn.trade_decode import TradeRequest
 
 # Rulebook [3.18]: "no more than 10% of the size of his treasury."
 GOLD_GIVE_MAX_PERCENT = 10
+
+# Sourced directly from the user (2026-10-29), independently confirmed
+# in both RULES.AK and ADDEND.AK, verbatim: "(although he may always
+# give out at least 10 gold if he has it in his treasury.)" -- a real
+# floor on the 10% cap above, not just a round number.
+GOLD_GIVE_MINIMUM_FLOOR = 10
 
 
 @dataclass(slots=True)
@@ -103,10 +164,18 @@ def execute_gold_give(
     """Move gold from a King's own kingdom treasury to another kingdom's, enforcing
     rulebook [3.18]'s 10%-of-treasury cap and the giver-must-be-a-King
     rule. Low-level primitive -- prefer ``execute_give()`` for a real,
-    decoded ``TradeRequest`` (it additionally enforces co-location and
-    that the *recipient* is a King too). Kept separately since a future
-    caller may know a real recipient kingdom without going through a
-    full ``TradeRequest`` (e.g. a hand-built scenario).
+    decoded ``TradeRequest`` (it additionally enforces co-location).
+    Kept separately since a future caller may know a real recipient
+    kingdom without going through a full ``TradeRequest`` (e.g. a
+    hand-built scenario).
+
+    Phase 1054 bug fix: this docstring used to also claim ``execute_
+    give()`` "enforces... that the *recipient* is a King too" -- stale
+    since this module's own 2026-10-29 fix (see the module docstring's
+    own addendum above): the recipient only needs to be of a different
+    Kingdom (or kingdomless), never specifically a King. ``execute_
+    give()``'s actual code never checks ``recipient.is_king`` on this
+    gold-give path.
     """
 
     giver = state.leaders.get(giver_leader_id)
@@ -126,14 +195,39 @@ def execute_gold_give(
     if gold_amount <= 0:
         return TradeExecutionResult(applied=False, reason="gold amount must be positive")
 
-    cap = giver_kingdom.treasury * GOLD_GIVE_MAX_PERCENT // 100
-    if gold_amount > cap:
+    # 2026-11-04: the cap's own basis is now the turn-start snapshot
+    # (GameState.KingdomState.treasury_at_turn_start, see that field's
+    # own docstring), not the live treasury -- and, per the user's own
+    # confirmed reading of "in a gameturn," it's a single cumulative
+    # budget for the whole turn, tracked by gold_given_this_turn, not a
+    # fresh allowance re-applied to each individual Give.
+    cap = giver_kingdom.treasury_at_turn_start * GOLD_GIVE_MAX_PERCENT // 100
+    # Bug fix, sourced directly from the user (2026-10-29): "può
+    # tuttavia sempre dare per lo meno 10 pezzi d'oro purché disponga
+    # effettivamente di questa somma" -- the 10% cap has a real floor
+    # of GOLD_GIVE_MINIMUM_FLOOR, but only ever raised up to what the
+    # King actually had at the start of this turn (never invented above
+    # that real snapshot).
+    if cap < GOLD_GIVE_MINIMUM_FLOOR and giver_kingdom.treasury_at_turn_start >= GOLD_GIVE_MINIMUM_FLOOR:
+        cap = GOLD_GIVE_MINIMUM_FLOOR
+    remaining_budget = cap - giver_kingdom.gold_given_this_turn
+    if gold_amount > remaining_budget:
         # Matches SAY.PAS's own _LNHave narrative: "< didn't have on
         # hand the full # gold requested" -- see module/turn_report.py
         # docstrings.
-        return TradeExecutionResult(applied=False, reason=f"exceeds 10% treasury cap ({cap})")
+        return TradeExecutionResult(applied=False, reason=f"exceeds 10% treasury cap ({remaining_budget} left this turn)")
+    # The cap's own basis no longer tracks the live treasury (it's fixed
+    # for the whole turn), so a King who already spent gold elsewhere
+    # this turn (Recruit, an earlier Give, ...) can now have *less*
+    # live gold on hand than his own remaining budget allows -- this
+    # check, never needed before this fix (the old live-treasury-based
+    # cap was always <= the live treasury by construction), catches
+    # that case with the same narrative as the cap check above.
+    if gold_amount > giver_kingdom.treasury:
+        return TradeExecutionResult(applied=False, reason=f"exceeds 10% treasury cap (only {giver_kingdom.treasury} on hand)")
 
     giver_kingdom.treasury -= gold_amount
+    giver_kingdom.gold_given_this_turn += gold_amount
     recipient_kingdom.treasury += gold_amount
     return TradeExecutionResult(applied=True, gold_transferred=gold_amount)
 
@@ -149,8 +243,9 @@ def execute_give(
     resolves to an instance the giver actually owns, that item is
     transferred and the gold path is never considered ("si passa
     l'oggetto e non l'oro" -- item takes priority). Otherwise ``obj`` is
-    treated as a gold amount and the recipient's own King status plus
-    [3.18]'s 10% cap are enforced, exactly as before Phase 140.
+    treated as a gold amount and the recipient's own different-Kingdom
+    requirement plus [3.18]'s 10% cap (with its own real minimum floor,
+    see ``execute_gold_give()``'s own 2026-10-29 addendum) are enforced.
 
     **Phase 713 -- `AdvancedAbility.SPY_BLACKMAIL`'s own real, sourced
     exception**: the AKPROSE-recovered demand message states directly
@@ -161,8 +256,8 @@ def execute_give(
     ``KingdomState.active_blackmail`` claim, to the exact blackmailer's
     own Kingdom, the co-location check below is waived for that one
     transfer -- everything else (10% treasury cap, recipient-must-be-
-    a-King) still applies unchanged. A successful payment of at least
-    the claimed amount clears the claim and resets the spy's own
+    a-different-Kingdom) still applies unchanged. A successful payment
+    of at least the claimed amount clears the claim and resets the spy's own
     ``LeaderState.unpaid_blackmail_penalty_exponent``. See ``turn/
     blackmail.py``'s own module docstring for the full mechanic.
     """
@@ -212,13 +307,18 @@ def execute_give(
         state.transfer_item(request.obj, request.target_leader_id)
         return TradeExecutionResult(applied=True, item_transferred=True, item=item)
 
-    if not recipient.is_king:
-        # "You can give limited amounts of gold to other Kings" --
-        # the recipient, not just the giver, must be a King.
-        return TradeExecutionResult(applied=False, reason="gold Give recipient must be a King")
-
-    if recipient.kingdom_id is None:
-        return TradeExecutionResult(applied=False, reason="recipient has no kingdom")
+    # Bug fix, sourced directly from the user (2026-10-29), independently
+    # confirmed in both RULES.AK and ADDEND.AK, verbatim: "giving it to
+    # another player's character (King or Hero)" -- the earlier reading
+    # ("recipient must be a King") over-read the English rule's own
+    # "You can give ... to other Kings" as a recipient restriction, when
+    # the fuller text clarifies a Hero recipient is equally valid. Still
+    # "another player's" -- confirmed with the user as requiring a
+    # genuinely different Kingdom, not merely "not a King."
+    if recipient.kingdom_id is None or recipient.kingdom_id == giver.kingdom_id:
+        return TradeExecutionResult(
+            applied=False, reason="gold Give recipient must belong to a different Kingdom"
+        )
 
     result = execute_gold_give(state, giver_leader_id, recipient.kingdom_id, request.obj)
     if paying_off_blackmail and result.applied and result.gold_transferred >= blackmail_claim.amount:

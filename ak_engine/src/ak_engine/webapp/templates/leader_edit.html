@@ -1,0 +1,462 @@
+{% extends "base.html" %}
+{% block title %}{{ leader.name }} -- {{ meta.name }} -- GM Interface{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('leaders_list', slug=meta.slug) }}">&larr; Kings &amp; Heroes</a></p>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>{{ meta.name }} &mdash; {{ leader.name }}{% if leader.is_king %} (King){% endif %}</h2>
+
+  <form method="post" action="{{ url_for('leader_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <p>
+      <label for="name">Name</label><br>
+      <input type="text" id="name" name="name" value="{{ leader.name }}" required>
+    </p>
+
+    <p>
+      <label for="race">Race</label><br>
+      <select id="race" name="race">
+        {% for race in races %}
+          <option value="{{ race.name }}" {% if leader.race == race %}selected{% endif %}>{{ race|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="alignment">Alignment</label><br>
+      <select id="alignment" name="alignment">
+        <option value="">-- Unset --</option>
+        {% for alignment in alignments %}
+          <option value="{{ alignment.name }}" {% if leader.alignment == alignment %}selected{% endif %}>{{ alignment|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="temper">Temper</label><br>
+      <select id="temper" name="temper">
+        <option value="">-- Unset --</option>
+        {% for temper in tempers %}
+          <option value="{{ temper.name }}" {% if leader.temper == temper %}selected{% endif %}>{{ temper|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="sex">Sex</label><br>
+      <select id="sex" name="sex">
+        <option value="">-- Unset --</option>
+        {% for sex in sexes %}
+          <option value="{{ sex.name }}" {% if leader.sex == sex %}selected{% endif %}>{{ sex|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    {% if leader.is_king %}
+      <p>
+        <strong>Kingdom:</strong> {{ state.kingdoms[leader.kingdom_id].name if leader.kingdom_id in state.kingdoms else 'Independent' }}
+        <br><span class="hex-map-legend-note">A King's own service is locked to his own Kingdom -- not editable here.</span>
+      </p>
+    {% else %}
+      <p>
+        <label for="kingdom_id">Kingdom</label><br>
+        <select id="kingdom_id" name="kingdom_id">
+          <option value="" {% if leader.kingdom_id is none %}selected{% endif %}>-- Independent --</option>
+          {% for kingdom_id, kingdom in state.kingdoms.items() %}
+            <option value="{{ kingdom_id }}" {% if leader.kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+          {% endfor %}
+        </select>
+      </p>
+    {% endif %}
+
+    <p>
+      <label for="location_x">Location (x, y)</label><br>
+      <input type="number" id="location_x" name="location_x" value="{{ leader.location.x }}" required style="width: 6em;">
+      <input type="number" id="location_y" name="location_y" value="{{ leader.location.y }}" required style="width: 6em;">
+    </p>
+
+    <button type="submit">Save Hero</button>
+  </form>
+
+  <form method="post" action="{{ url_for('leader_delete', slug=meta.slug, leader_id=leader.leader_id) }}"
+        data-confirm="Permanently delete {{ leader.name }}?{% if leader.is_king %} This King rules a Kingdom -- deleting him leaves it without a King (no Royal Heir is installed, unlike an in-game death).{% endif %}">
+    <button type="submit" class="danger">Delete {{ 'King' if leader.is_king else 'Hero' }}</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Spell Effects</h2>
+  <p class="hex-map-legend-note">Lasting marks real casts leave on this Hero/King -- normally set by turn processing itself, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('leader_effects_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <p>
+      <label for="phantasmal_armies_level">Phantasmal Armies Level</label><br>
+      <input type="number" id="phantasmal_armies_level" name="phantasmal_armies_level" value="{{ leader.phantasmal_armies_level }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Boosts the apparent strength of every army this leader commands in battle; not auto-cleared.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="oratory_boosted_this_turn" {% if leader.oratory_boosted_this_turn %}checked{% endif %}> Oratory already boosted this turn</label>
+      <br><span class="hex-map-legend-note">Idempotency flag so a second Oratory cast the same turn is a no-op; cleared at the end of every gameturn.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="mystic_winds_active" {% if leader.mystic_winds_active %}checked{% endif %}> Mystic Winds active</label>
+      <br><span class="hex-map-legend-note">Cleared automatically the moment this leader gets involved in any military battle.</span>
+    </p>
+
+    <p>
+      <label for="clairvoyance_cast_target">Clairvoyance Target</label><br>
+      <select id="clairvoyance_cast_target" name="clairvoyance_cast_target">
+        <option value="" {% if leader.clairvoyance_cast_target is none %}selected{% endif %}>-- None --</option>
+        {% for other_id, other in state.leaders.items() %}
+          <option value="{{ other_id }}" {% if leader.clairvoyance_cast_target == other_id %}selected{% endif %}>{{ other.name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">This leader's own most recent Clairvoyance cast -- who's watching whom reaches the CHARACTERS report only for a caster holding Enhanced Clairvoyance, checked at report time, not here.</span>
+    </p>
+
+    <button type="submit">Save Spell Effects</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Origin &amp; Hire History</h2>
+  <p class="hex-map-legend-note">Real facts the Hero-pay formula reads -- normally set once at world generation or hire time, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('leader_history_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <p>
+      <label for="birth_x">Birth Coordinate (x, y)</label><br>
+      <input type="number" id="birth_x" name="birth_x" value="{{ leader.birth_x if leader.birth_x is not none else '' }}" style="width: 6em;">
+      <input type="number" id="birth_y" name="birth_y" value="{{ leader.birth_y if leader.birth_y is not none else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Feeds the required-pay formula's own personal-bias term and the "born in a province the King now owns" conquest surcharge. Leave both blank for not recorded.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="is_starting_companion" {% if leader.is_starting_companion %}checked{% endif %}> Starting Companion</label>
+      <br><span class="hex-map-legend-note">True only for one of a King's own two starting companions, placed directly into his service at world generation -- exempts this Hero from the conquest surcharge above even though he was born at the King's own Home.</span>
+    </p>
+
+    <p>
+      <label for="hire_turn">Hire Turn</label><br>
+      <input type="number" id="hire_turn" name="hire_turn" value="{{ leader.hire_turn }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">0 for a leader created at world generation (before turn 1 itself begins); the real GameState.turn_number at the moment a Hire order actually succeeded otherwise.</span>
+    </p>
+
+    <button type="submit">Save Origin &amp; Hire History</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Status &amp; Guild Effects</h2>
+  <p class="hex-map-legend-note">Lasting state turn processing itself writes and reads for this Hero/King -- normally set by in-game events, exposed here for the GM to set up a scenario directly or correct by hand.</p>
+  <form method="post" action="{{ url_for('leader_status_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <p>
+      <label><input type="checkbox" name="is_comatose" {% if leader.is_comatose %}checked{% endif %}> Comatose</label>
+      <br><span class="hex-map-legend-note">Every skill reads as 0 while set, and Practice is blocked; cleared only by a successful Resurrection cast targeting this leader.</span>
+    </p>
+
+    <p>
+      <label><input type="checkbox" name="is_royal_heir" {% if leader.is_royal_heir %}checked{% endif %}> Unfinalized Royal Heir</label>
+      <br><span class="hex-map-legend-note">Set automatically on a King's death until the Heir is finalized into a real King (see "Finalize Royal Heir" below); Resurrection eligibility is actually decided by total skill level, not this flag alone.</span>
+    </p>
+
+    <p>
+      <label for="assassination_guild_attempts">Assassins Guild Attempts</label><br>
+      <input type="number" id="assassination_guild_attempts" name="assassination_guild_attempts" value="{{ leader.assassination_guild_attempts }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Every resolved Guild attempt against this specific leader doubles the guard and halves the following attempt's chance; never reset by anything in this project.</span>
+    </p>
+
+    <p>
+      <label for="unpaid_blackmail_penalty_exponent">Unpaid Blackmail Penalty Exponent</label><br>
+      <input type="number" id="unpaid_blackmail_penalty_exponent" name="unpaid_blackmail_penalty_exponent" value="{{ leader.unpaid_blackmail_penalty_exponent }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Halves this Spy's next Blackmail demand each time one of their demands goes unpaid; reset to 0 once a matching payment clears the claim.</span>
+    </p>
+
+    <p>
+      <label for="double_agent_hired_by_kingdom_id">Double Agent Hired By</label><br>
+      <select id="double_agent_hired_by_kingdom_id" name="double_agent_hired_by_kingdom_id">
+        <option value="" {% if leader.double_agent_hired_by_kingdom_id is none %}selected{% endif %}>-- None --</option>
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}" {% if leader.double_agent_hired_by_kingdom_id == kingdom_id %}selected{% endif %}>{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">Set when a foreign Kingdom "apparently" hires this leader via Double Agent this turn -- real kingdom_id above stays unchanged; read and cleared the same turn by the end-of-turn intel grant.</span>
+    </p>
+
+    <p>
+      <label for="clairvoyance_watchers">Clairvoyance Watchers</label><br>
+      <select id="clairvoyance_watchers" name="clairvoyance_watchers" multiple size="{{ [state.kingdoms|length, 1]|max if state.kingdoms|length < 6 else 6 }}">
+        {% for kingdom_id, kingdom in state.kingdoms.items() %}
+          <option value="{{ kingdom_id }}" {% if kingdom_id in leader.clairvoyance_watchers %}selected{% endif %}>{{ kingdom.name }}</option>
+        {% endfor %}
+      </select>
+      <br><span class="hex-map-legend-note">Kingdoms currently watching this leader via a successful Clairvoyance cast -- not auto-cleared. Ctrl/Cmd-click to select more than one.</span>
+    </p>
+
+    <p>
+      <label for="valhalla_active_turn">Valhalla Active Turn</label><br>
+      <input type="number" id="valhalla_active_turn" name="valhalla_active_turn" value="{{ leader.valhalla_active_turn if leader.valhalla_active_turn is not none else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Only for the one reserved Valhalla visitor leader (id 199): the one gameturn they're allowed to act at all. Leave blank for every other leader, or once the visit has ended.</span>
+    </p>
+
+    <p>
+      <label for="valhalla_allowed_phase_count">Valhalla Allowed Phase Count</label><br>
+      <input type="number" id="valhalla_allowed_phase_count" name="valhalla_allowed_phase_count" value="{{ leader.valhalla_allowed_phase_count if leader.valhalla_allowed_phase_count is not none else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">How many of that turn's up-to-5 phases (P0-P4) may carry a real order, per VALHALLA.txt's own escalating table.</span>
+    </p>
+
+    <p>
+      <label for="valhalla_fixed_item_id">Valhalla Fixed Item ID</label><br>
+      <input type="number" id="valhalla_fixed_item_id" name="valhalla_fixed_item_id" value="{{ leader.valhalla_fixed_item_id if leader.valhalla_fixed_item_id is not none else '' }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">The ItemInstance.item_id of the visitor's own fixed magic item -- blocked from Give, and specifically identified for hand-off/drop on departure. None for the 2 heroes whose own item is unresolved.</span>
+    </p>
+
+    <button type="submit">Save Status &amp; Guild Effects</button>
+  </form>
+</div>
+
+{% if leader.is_royal_heir %}
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Finalize Royal Heir</h2>
+  <p class="hex-map-legend-note">Rulebook [2.1]: this Heir was installed automatically when the previous King died, and needs a name, Temper, Sex, and a fresh 4-point Talent allocation (at most 2 points per Ability) to become a real new King. Race and Alignment aren't re-chosen -- they already carry forward from the dead King. At most 1 Talent may end up above the dead King's own preserved skill in that same Ability, and then by at most 1 level -- the "dead_king_skill" column below (when a snapshot exists) is this leader's own preserved skill at death, for reference while choosing points, not an input.</p>
+  <form method="post" action="{{ url_for('leader_finalize_royal_heir', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <p>
+      <label for="heir_name">New King's Name</label><br>
+      <input type="text" id="heir_name" name="name" required>
+    </p>
+
+    <p>
+      <label for="heir_temper">Temper</label><br>
+      <select id="heir_temper" name="temper" required>
+        {% for temper in tempers %}
+          <option value="{{ temper.name }}">{{ temper|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <p>
+      <label for="heir_sex">Sex</label><br>
+      <select id="heir_sex" name="sex" required>
+        {% for sex in sexes %}
+          <option value="{{ sex.name }}">{{ sex|display_name }}</option>
+        {% endfor %}
+      </select>
+    </p>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Ability</th>
+          <th>Talent Points (0-2)</th>
+          <th>Dead King's Own Preserved Skill</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set dead_king = state.dead_leaders.get(leader.leader_id) %}
+        {% for ability in skill_abilities %}
+          <tr>
+            <td>{{ ability|display_name }}</td>
+            <td><input type="number" name="heir_talent_{{ ability.name }}" value="0" min="0" max="2" style="width: 4em;"></td>
+            <td>{{ dead_king.skills.pair_for_ability(ability)[0] if dead_king and dead_king.skills else '--' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <button type="submit">Finalize Royal Heir Into New King</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Items Held</h2>
+  {% if items %}
+    <ul class="game-list">
+      {% for item in items %}
+        <li>
+          <div class="game-name">#{{ item.item_id }} &mdash; {{ item.treasure|display_name }}{% if item.charges %} ({{ item.charges }} charges){% endif %}</div>
+          <form class="inline" method="post"
+                action="{{ url_for('leader_item_delete', slug=meta.slug, leader_id=leader.leader_id, item_id=item.item_id) }}"
+                data-confirm="Permanently remove this item from {{ leader.name }}?">
+            <button type="submit" class="danger">Remove</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No items held.</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('leader_item_create', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <div class="inline">
+      <label for="treasure">Treasure</label>
+      <select id="treasure" name="treasure" required>
+        {% for treasure in treasures %}
+          <option value="{{ treasure.name }}">{{ treasure|display_name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="charges">Charges</label>
+      <input type="number" id="charges" name="charges" value="0" min="0" style="width: 6em;">
+    </div>
+    <button type="submit">Add Item</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Advanced Abilities</h2>
+  <p class="hex-map-legend-note">Ordinarily granted automatically by Practice at skill levels 5-9 within a category (only the 5 magic colleges are wired to do so yet) -- this lets the GM grant or revoke one directly, e.g. for the other 10 categories, or for a one-off scenario.</p>
+  {% if advanced_abilities %}
+    <ul class="game-list">
+      {% for ability in advanced_abilities %}
+        <li>
+          <div class="game-name">{{ ability|display_name }}</div>
+          <form class="inline" method="post"
+                action="{{ url_for('leader_advanced_ability_delete', slug=meta.slug, leader_id=leader.leader_id, ability_name=ability.name) }}"
+                data-confirm="Revoke {{ ability|display_name }} from {{ leader.name }}?">
+            <button type="submit" class="danger">Remove</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">No Advanced Abilities held.</p>
+  {% endif %}
+
+  {% if available_advanced_abilities %}
+    <form method="post" action="{{ url_for('leader_advanced_ability_create', slug=meta.slug, leader_id=leader.leader_id) }}">
+      <div class="inline">
+        <label for="advanced_ability">Advanced Ability</label>
+        <select id="advanced_ability" name="advanced_ability" required>
+          {% for ability in available_advanced_abilities %}
+            <option value="{{ ability.name }}">{{ ability|display_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit">Add Advanced Ability</button>
+    </form>
+  {% endif %}
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Skills</h2>
+  {% if leader.skills is none %}
+    <p class="empty-state">No skill data recorded. Saving below starts one at all zero.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('leader_skills_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Ability</th>
+          <th>Skill (0-9)</th>
+          <th>Aptitude (0-9)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ability in skill_abilities %}
+          {% set pair = leader.skills.pair_for_ability(ability) if leader.skills is not none else (0, 0) %}
+          <tr>
+            <td>{{ ability|display_name }}</td>
+            <td><input type="number" name="skill_{{ ability.name }}" value="{{ pair[0] }}" min="0" max="9" style="width: 4em;"></td>
+            <td><input type="number" name="aptitude_{{ ability.name }}" value="{{ pair[1] }}" min="0" max="9" style="width: 4em;"></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <p>
+      <label for="trailing_value">Trailing Value (31st field)</label><br>
+      <input type="number" id="trailing_value" name="trailing_value" value="{{ leader.skills.raw_values[30] if leader.skills is not none else 0 }}" style="width: 6em;">
+      <br><span class="hex-map-legend-note">Real field (the skill-values line's own 31st integer), but its meaning is still unconfirmed by this project -- empirically it tracks a King's own Alignment (Druidic 1, Neutral 2, everyone else 3), constant per Kingdom across turns. Not auto-derived here since this form also applies to Heroes.</span>
+    </p>
+
+    <p>
+      <label for="experience_credit">Experience Credit</label><br>
+      <input type="number" id="experience_credit" name="experience_credit" value="{{ leader.experience_credit }}" min="0" style="width: 6em;">
+      <br><span class="hex-map-legend-note">One shared counter per leader, fed by both Practice and Add_Experience -- whichever ability's event happens to push it past 100 is the one that actually rises a level next (Add_Experience's own documented "occult rule"). A pure in-memory simulation value with no real GW-file byte of its own, so this is this project's only way to see or set how close a leader is to their next random skill-up.</span>
+    </p>
+
+    <button type="submit">Save Skills</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Merit Tally</h2>
+  <p class="hex-map-legend-note">The raw, cumulative, game-long inputs the Imperial Office Merit Point formulas read (rulebook page 51's "TABELLA DELLE CARICHE IMPERIALI") -- normally accumulated turn by turn as this Hero/King fights, explores, casts and discovers; exposed here for the GM to set up a scenario directly or correct by hand. See "Current Merit Points by Office" below for what these numbers currently translate to.</p>
+  <form method="post" action="{{ url_for('leader_merit_tally_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Counter</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for field_name, label, is_float in merit_tally_fields %}
+          <tr>
+            <td>{{ label }}</td>
+            <td>
+              <input type="number" {% if is_float %}step="any"{% endif %} name="{{ field_name }}"
+                     value="{{ leader.merit_tally|attr(field_name) }}"
+                     style="width: 7em;">
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit">Save Merit Tally</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Race Title Tally</h2>
+  <p class="hex-map-legend-note">The raw front-line-battle input to the 11 race-fanaticism title Merit Point formulas (Dragon Lord, Elven King, etc. -- one counter pair per race, doubled in the final score when it matches this leader's own race). No battle call site increments these yet, so they stay at 0 until the GM sets them directly. See "Current Merit Points by Office" below for what these currently translate to.</p>
+  <form method="post" action="{{ url_for('leader_race_title_tally_save', slug=meta.slug, leader_id=leader.leader_id) }}">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Race</th>
+          <th>Front-Line Battles Won</th>
+          <th>Front-Line Battles Lost</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for race in race_title_races %}
+          {% set tally = leader.race_title_tally.get(race) %}
+          <tr>
+            <td>{{ race_name[race] }}</td>
+            <td><input type="number" name="race_title_won_{{ race.name }}" value="{{ tally.front_line_battles_won_points if tally else 0 }}" style="width: 6em;"></td>
+            <td><input type="number" name="race_title_lost_{{ race.name }}" value="{{ tally.front_line_battles_lost_points if tally else 0 }}" style="width: 6em;"></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit">Save Race Title Tally</button>
+  </form>
+</div>
+
+<div class="panel" style="border-left: 6px solid var(--phase-editor);">
+  <h2>Current Merit Points by Office</h2>
+  <p class="hex-map-legend-note">This Hero/King's own current score for every real office they could stand for, computed live from the Merit Tally above (and, for Emperor, Kingdom tax base) -- not just whichever office they actually hold right now. Read-only: edit the Merit Tally above to change these.</p>
+  {% if office_merit_points %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Office</th>
+          <th>Merit Points</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for office, points in office_merit_points %}
+          <tr>
+            <td>{{ office_name[office] }}</td>
+            <td>{{ points }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-state">No office merit points to show.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

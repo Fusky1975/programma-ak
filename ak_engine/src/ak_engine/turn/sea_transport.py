@@ -146,13 +146,23 @@ def can_board(
     *,
     caster_has_druidic_whale_transport: bool = False,
     caster_has_druidic_transport: bool = False,
+    current_cargo_types: list[ArmyType] | None = None,
 ) -> bool:
     """Whether one more unit of `cargo_type` could legally board `carrier`
     right now, given whatever's already aboard. See module docstring
     for the full sourcing.
+
+    **Phase 1045**: `current_cargo_types`, when given, overrides the real
+    `cargo_aboard(state, carrier.army_id)` scan below -- lets a caller
+    dry-run a *planned*, not-yet-committed sequence of boardings (see
+    `turn/move_execution.py _plan_auto_board_transport_group()`) without
+    first mutating `state`. `None` (every pre-Phase-1045 caller, i.e.
+    `board_army()` just below, the only real caller) keeps reading the
+    real, already-committed cargo list -- completely unaffected.
     """
 
-    current_cargo_types = [army.army_type for army in cargo_aboard(state, carrier.army_id)]
+    if current_cargo_types is None:
+        current_cargo_types = [army.army_type for army in cargo_aboard(state, carrier.army_id)]
 
     if carrier.army_type is ArmyType.FLEET:
         if any(t in FLEET_MOUNTED_ARMY_TYPES for t in current_cargo_types):

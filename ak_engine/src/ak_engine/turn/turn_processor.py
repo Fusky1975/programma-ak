@@ -263,7 +263,7 @@ import random
 from dataclasses import dataclass
 
 from ak_engine.models.advanced_ability import AdvancedAbility
-from ak_engine.models.army_type import ARMY_TABLE, ArmyType
+from ak_engine.models.army_type import ARMY_TABLE, BASE_STRENGTH, GARRISON_DEFENSE_STRENGTH, ArmyType
 from ak_engine.models.enums import Ability, ActionCode
 from ak_engine.models.game_state import GameState
 from ak_engine.models.leader import Leader
@@ -274,15 +274,23 @@ from ak_engine.turn.battle_orchestrator import (
     MultiAttackerParty,
     fight_battle,
     fight_multi_attacker_battle,
+    snapshot_army_types,
 )
+from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
 from ak_engine.turn.aspy_defend_decode import decode_defend_phase
 from ak_engine.turn.blackmail import advance_blackmail_claims
+from ak_engine.turn.cast_decode import CHARACTER_TARGET_SPELLS, decode_cast_phase
+from ak_engine.turn.diplomacy import advance_pending_diplomacy, apply_treat_orders, is_attackable_at
+from ak_engine.turn.initiative import character_initiative
+from ak_engine.turn.recruit_decode import decode_recruit_phase
 from ak_engine.turn.sea_transport import apply_battle_carrier_destruction
 from ak_engine.turn.aspy_defend_decode import SpyProvinceRequest
 from ak_engine.turn.aspy_execution import execute_aspy
 from ak_engine.turn.cast_execution import maybe_dissolve_illusory_terrain
 from ak_engine.turn.challenge_execution import execute_challenge
-from ak_engine.turn.challenge_pursue_decode import decode_challenge_phase, decode_pursue_phase
+from ak_engine.turn.trade_decode import decode_trade_phase
+from ak_engine.turn.battle_line import estimate_win_probability
+from ak_engine.turn.challenge_pursue_decode import PursueRequest, decode_challenge_phase, decode_pursue_phase
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.defend_execution import DefendCoverage, DefendReinforcement, defend_coverage_area, defend_radius_for_leader
 from ak_engine.turn.diplomatic_merit import apply_diplomatic_merit
@@ -290,7 +298,6 @@ from ak_engine.turn.expenses import apply_turn_maintenance
 from ak_engine.turn.contested_province import (
     IllegalMoveFromContestedError,
     attacker_can_force_rebattle,
-    contested_battle_movement_cost,
     is_illegal_move_from_contested,
 )
 from ak_engine.turn.hex_numbering import decode_hex_number, encode_hex_number
@@ -305,9 +312,9 @@ from ak_engine.turn.move_execution import (
 )
 from ak_engine.turn.movement import MapBounds, resolve_move
 from ak_engine.turn.office_holder import apply_battle_fool_aptitude_escalation, apply_cravenest_temperament_escalation
-from ak_engine.turn.plan_dispatch import PhaseDispatchResult, dispatch_phase, run_leader_plan
+from ak_engine.turn.plan_dispatch import PhaseDispatchResult, _has_spy_super_sleuth, dispatch_phase, run_leader_plan
 from ak_engine.turn.practice_decode import decode_practice_phase
-from ak_engine.turn.practice_execution import execute_practice_group
+from ak_engine.turn.practice_execution import commit_pending_skill_advancements, execute_practice_group
 from ak_engine.turn.patrol_execution import execute_patrol
 from ak_engine.turn.pursue_execution import PursueExecutionResult, advance_pursuit, execute_pursue
 from ak_engine.turn.scientific_treaty import execute_scientific_treaties
@@ -442,7 +449,12 @@ def run_turn(
     active_defends: dict[int, DefendCoverage] = {}  # defender leader_id -> origin + coverage area
     active_pursuits: dict[int, _ActivePursuit] = {}  # pursuer/trailer leader_id -> ongoing chase
     active_move_chases: dict[int, _ActiveMoveChase] = {}  # mover leader_id -> ongoing non-adjacent Move chase
-    active_patrols: dict[int, object] = {}  # patroller leader_id -> its own PursueRequest (standing order)
+    # Phase 1041 bug fix -- now the real, persistent `GameState.active_
+    # patrols` (mutated in place throughout this call), not a local dict
+    # recreated empty on every `run_turn()` call -- see that field's own
+    # docstring for why Patrol, unlike Defend/Pursue/Trail, must survive
+    # the turn boundary.
+    active_patrols = state.active_patrols
     # Rulebook [3.15]'s other Defend-cancellation trigger ("cancelled if
     # he loses a battle"): once a leader loses the one battle their own
     # Defend order can ever draw them into (see
@@ -453,12 +465,46 @@ def run_turn(
     # across phases, unlike active_defends itself.
     defeated_while_defending: set[int] = set()
 
+    # 2026-11-04 -- RULES.AK [3.18]'s own "treasury at the start of the
+    # gameturn" basis for the Give Gold 10% cap -- taken before anything
+    # else in this call can touch any Kingdom's own treasury. See
+    # `KingdomState.treasury_at_turn_start`'s own docstring.
+    for kingdom in state.kingdoms.values():
+        kingdom.treasury_at_turn_start = kingdom.treasury
+        kingdom.gold_given_this_turn = 0
+
     # Phase 713 -- AdvancedAbility.SPY_BLACKMAIL: promote every Kingdom's
     # own still-pending demand (delivered last turn) into "active" (due
     # this turn), before any phase dispatches -- mirrors the real parsed
     # `pending_blackmailer_king_id`/`active_blackmailer_king_id` field
     # pair exactly. See `turn/blackmail.py`'s own module docstring.
     advance_blackmail_claims(state)
+
+    # 2026-11-03 -- freshly populated this call, read only after this
+    # same `run_turn()` call returns (`orchestrator.py process_turn()`'s
+    # own `compose_letter_report()` pass, strictly later) -- cleared here
+    # rather than by `_replenish_turn_scoped_state()` at this call's own
+    # end, which would wipe it before that later read ever happens. See
+    # `GameState.diplomacy_relation_change_notices`'s own docstring.
+    state.diplomacy_relation_change_notices = []
+
+    # 2026-11-03 -- promotes any ordinary King's own Break Treat order
+    # deferred last turn (RULES.AK [8.3]'s "alla fine del turno" timing,
+    # as opposed to Evil/Undead's own same-turn exception) into a real
+    # relation change, visible to *this* turn's own combat -- must run
+    # before this same turn's own fresh `apply_treat_orders()` call
+    # below, mirroring `advance_blackmail_claims()`'s own placement one
+    # call up. See `turn/diplomacy.py`'s own module docstring.
+    advance_pending_diplomacy(state)
+
+    # Phase 1026 -- RULES.AK [8.2]/[8.3]'s own Treat/Break Treat orders,
+    # resolved into real `diplomatic_relations` transitions before any
+    # phase dispatches -- see `turn/diplomacy.py`'s own module docstring
+    # for why this single early call (rather than a separate end-of-turn
+    # pass) is this project's own documented timing simplification for
+    # Treat; Break Treat's own timing is modeled for real as of
+    # 2026-11-03 (see `advance_pending_diplomacy()` right above).
+    apply_treat_orders(state)
 
     # Phase 669 -- rulebook [5.10]: each leader's own real, standing
     # Special Encounter Plan, decoded once here (before any phase
@@ -478,6 +524,13 @@ def run_turn(
         leader_state.special_encounter_plan = tuple(decode_special_encounter_plan(tl.leader.plan.segments[0]))
 
     for phase_index, label in enumerate(PHASE_LABELS):
+        # [3.13]: a Practice skill/aptitude rise earned last phase (or,
+        # carried across the turn boundary, last turn's own P4) takes
+        # effect starting now -- before anything else this phase reads
+        # a skill level. See LeaderState.pending_skill_advancement's own
+        # docstring and commit_pending_skill_advancements()'s.
+        commit_pending_skill_advancements(state)
+
         if phase_index > 0:
             results.extend(_dispatch_contested_rebattles(state, rng))
             newly_infected = resolve_plague_spread(state, rng, bounds)
@@ -488,7 +541,7 @@ def run_turn(
                 for coord in newly_infected
             )
 
-        entries = _collect_phase_entries(turn_leaders, label)
+        entries = _collect_phase_entries(turn_leaders, label, state)
         # A leader still mid-chase (Pursue/Trail, or a Move chase toward
         # a non-adjacent target) has this phase's own order preempted
         # entirely -- see "PERSISTENT PURSUE/TRAIL CHASE"/"PERSISTENT
@@ -499,6 +552,17 @@ def run_turn(
             for entry in entries
             if entry[0].leader.leader_id not in active_pursuits and entry[0].leader.leader_id not in active_move_chases
         ]
+        # [3.16]'s own same-Realm/same-starting-province Pursue ordering
+        # rule (see "SAME-KINGDOM PURSUE ORDERING" below) needs each
+        # leader's own location at the very start of this phase, before
+        # any of this phase's own dispatches (including the ones below
+        # this point, like active-chase continuations/Patrol/multi-
+        # attacker groups) can mutate it.
+        phase_start_location_by_leader_id: dict[int, HexCoord] = {}
+        for tl, _segment_index, _phase in entries:
+            leader_state = state.leaders.get(tl.leader.leader_id)
+            if leader_state is not None:
+                phase_start_location_by_leader_id[tl.leader.leader_id] = leader_state.location
         # Phase 252, [3.17] Trail's own "Actions" field: every leader's own
         # decoded action for this phase label, computed AFTER the mid-chase
         # filter above (Phase 817 fix -- this used to be built from the
@@ -509,7 +573,11 @@ def run_turn(
         # simply idle) has no real order this phase to report, the same
         # "no data" convention trail_execution.py's own module docstring
         # already uses for its other fields. See that docstring's Phase 252
-        # note.
+        # note. This snapshot is still taken BEFORE Patrol cancellation/
+        # preemption below, so it's pruned again once `patrol_preempted` is
+        # known (Phase 817 follow-up fix, same leaked-order failure mode but
+        # for a leader's own standing Patrol intercepting their own queued
+        # order this phase instead of a mid-chase filter).
         action_this_phase_by_leader = {tl.leader.leader_id: phase.action for tl, _segment_index, phase in entries}
         results.extend(_continue_active_pursuits(active_pursuits, label, state, rng, action_this_phase_by_leader))
         results.extend(_continue_active_move_chases(active_move_chases, label, state, board_width, explorer_skill, rng))
@@ -527,11 +595,33 @@ def run_turn(
             if tl.leader.leader_id in new_patrol_leader_ids:
                 active_patrols[tl.leader.leader_id] = decode_pursue_phase(phase)
         entries = [entry for entry in entries if entry[0].leader.leader_id not in new_patrol_leader_ids]
+        # Phase 1041 bug fix -- a self-targeting PURSUE is still a PURSUE
+        # order for rulebook [3.15]'s own Defend-cancellation purposes
+        # ("If he receives a Move, Pursue or Trail order, the Defend
+        # order is cancelled"), but it's already stripped out of
+        # ``entries`` above, before ``_apply_defend_cancellations()``
+        # ever runs -- so declaring a Patrol used to never cancel that
+        # same leader's own active Defend order. Cancelled directly here
+        # instead, the same ``.pop(leader_id, None)`` convention
+        # ``_apply_defend_cancellations()`` itself uses.
+        for leader_id in new_patrol_leader_ids:
+            active_defends.pop(leader_id, None)
 
         _apply_patrol_cancellations(active_patrols, entries)
         patrol_results, patrol_preempted = _dispatch_active_patrols(active_patrols, label, state, rng, bounds)
         results.extend(patrol_results)
         entries = [entry for entry in entries if entry[0].leader.leader_id not in patrol_preempted]
+        # Phase 817 follow-up fix: `action_this_phase_by_leader` was snapshotted
+        # above before this Patrol preemption was known, so a leader whose
+        # queued order this phase was just preempted by their own standing
+        # Patrol interception (`patrol_preempted`) still has that
+        # never-dispatched order in the map. Drop it here, before
+        # `_backfill_trail_actions` (and any other later consumer) reads it,
+        # so a Trail targeting that leader reports `None` instead of the
+        # preempted order's own ActionCode.
+        action_this_phase_by_leader = {
+            leader_id: action for leader_id, action in action_this_phase_by_leader.items() if leader_id not in patrol_preempted
+        }
 
         move_targets: dict[int, HexCoord] = {}
         for index, (_tl, _segment_index, phase) in enumerate(entries):
@@ -638,20 +728,54 @@ def run_turn(
 
         for target, indices in multi_attacker_groups:
             movers = [entries[i] for i in indices]
-            group_results = _dispatch_multi_attacker_lmove(movers, target, state, board_width, explorer_skill, rng)
+            # Phase 1041 bug fix -- unlike every ordinary single-leader
+            # phase (dispatched through `run_leader_plan()`, whose own
+            # broad `except Exception` keeps one leader's dispatch error
+            # from crashing the whole turn), this grouped dispatch had no
+            # isolation of its own: an exception here used to propagate
+            # straight out of `run_turn()`, discarding every already-
+            # computed `PhaseDispatchResult` for every other kingdom/
+            # leader processed earlier this same call.
+            try:
+                group_results = _dispatch_multi_attacker_lmove(movers, target, state, board_width, explorer_skill, rng)
+            except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
+                group_results = [
+                    PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, None, exc)
+                    for tl, segment_index, phase in movers
+                ]
             results.extend(group_results)
             _apply_defend_battle_loss(defeated_while_defending, reinforced_by_target, target, group_results)
+            _apply_defend_battle_win(active_pursuits, reinforced_by_target, target, group_results)
 
         for ability, indices in multi_practice_groups:
             movers = [entries[i] for i in indices]
-            results.extend(_dispatch_multi_practice(movers, ability, state, rng))
+            # Phase 1041 bug fix -- see the identical note above.
+            try:
+                group_results = _dispatch_multi_practice(movers, ability, state, rng)
+            except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
+                group_results = [
+                    PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, None, exc)
+                    for tl, segment_index, phase in movers
+                ]
+            results.extend(group_results)
 
         for index_a, index_b in mutual_encounter_pairs:
-            results.extend(_dispatch_mutual_encounter(entries[index_a], entries[index_b], state, rng))
+            # Phase 1041 bug fix -- see the identical note above.
+            try:
+                pair_results = _dispatch_mutual_encounter(entries[index_a], entries[index_b], state, rng)
+            except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
+                pair_results = [
+                    PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, None, exc)
+                    for tl, segment_index, phase in (entries[index_a], entries[index_b])
+                ]
+            results.extend(pair_results)
 
-        for index, (tl, segment_index, phase) in enumerate(entries):
-            if index in consumed:
-                continue
+        eligible_indices = [index for index in range(len(entries)) if index not in consumed]
+        dispatch_order = _order_same_kingdom_pursuits_after_their_target(
+            entries, eligible_indices, phase_start_location_by_leader_id
+        )
+        for index in dispatch_order:
+            tl, segment_index, phase = entries[index]
             dispatch_results = _dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng)
             results.extend(dispatch_results)
             if phase.action is ActionCode.TRAIL:
@@ -662,6 +786,7 @@ def run_turn(
                 target = move_targets.get(index)
                 if target is not None:
                     _apply_defend_battle_loss(defeated_while_defending, reinforced_by_target, target, dispatch_results)
+                    _apply_defend_battle_win(active_pursuits, reinforced_by_target, target, dispatch_results)
                     _register_move_chase_continuation(
                         active_move_chases, tl.leader.leader_id, tl.kingdom_id, target, dispatch_results
                     )
@@ -761,14 +886,32 @@ def run_turn(
         spy_province = state.provinces.get(spy.location)
         if spy_province is None or spy_province.owner_kingdom_id != hiring_kingdom_id:
             continue
-        double_agent_report = execute_aspy(
-            state,
-            spy.leader_id,
-            SpyProvinceRequest(target_province=0, unconfirmed_extra0=0),
-            board_width=state.board_width,
-            board_height=state.board_height,
-            rng=rng,
-        )
+        # Bug fix: same isolation convention as run_leader_plan()'s own
+        # per-phase try/except -- an exception for one Double Agent spy
+        # used to propagate straight out of run_turn(), discarding every
+        # already-computed PhaseDispatchResult for every other kingdom/
+        # leader processed earlier this same call.
+        try:
+            double_agent_report = execute_aspy(
+                state,
+                spy.leader_id,
+                SpyProvinceRequest(target_province=0, unconfirmed_extra0=0),
+                board_width=state.board_width,
+                board_height=state.board_height,
+                rng=rng,
+            )
+        except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
+            results.append(
+                PhaseDispatchResult(
+                    leader_id=spy.leader_id,
+                    segment_index=-1,
+                    phase_label="double-agent-report",
+                    action=None,
+                    result=None,
+                    error=exc,
+                )
+            )
+            continue
         if double_agent_report is not None:
             results.append(
                 PhaseDispatchResult(
@@ -917,6 +1060,12 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
       after a battle) could never be hired/recruited again, ever
       (`turn/recruit_execution.py`'s own ``not unhireable_this_turn``
       gate).
+    - ``ArmyState.recruited_this_turn`` -> ``False`` (2026-10-29) --
+      rulebook [3.9]'s own "can't Pick Up a freshly recruited unit this
+      same turn" is scoped to the turn the unit was recruited in, not
+      forever; otherwise a freshly levied army would stay permanently
+      un-Pick-Up-able for the rest of the game (`turn/plan_dispatch.py
+      _dispatch_pick_up()`'s own real consumer).
     - ``LeaderState.oratory_boosted_this_turn`` -> ``False`` -- otherwise
       a leader who ever benefited from Oratory once could never benefit
       from it again for the rest of the game (`turn/cast_execution.py`'s
@@ -964,6 +1113,11 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
       today) rather than leaving it to silently repeat the exact same
       "field forgotten, permission never expires" bug the moment a future
       phase wires a real Treat-order decoder in.
+    - ``GameState.break_treat_orders`` -> ``set()`` (Phase 1026) -- same
+      "this gameturn only" scope and same "caller's job, no decoder
+      exists" category as ``treat_permissions`` right above; see
+      ``turn/diplomacy.py`` for the one real reader (called before this
+      reset, early in ``run_turn()``).
     - ``ArmyState.flood_dams_exempt_at`` -> ``None`` (Phase 888) --
       Discovery.FLOOD_DAMS's own rest-of-turn exemption from the
       Flooded-province movement block (`turn/move_execution.py
@@ -971,6 +1125,28 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
       already-charged one-time toll being a per-cast event -- otherwise
       an army once excused at a given coord would stay excused there
       forever, for the rest of the game.
+    - ``ProvinceState.terrain_override`` -> ``None`` (Phase 1046) --
+      Part Sea's own quoted rule ([4.21.2], "transformed into a Plain
+      for the rest of the turn") and Flood's own analogous "for the
+      rest of the turn" framing both say this is turn-scoped, but
+      `models/game_state.py`'s own module docstring had flagged this
+      field as "not auto-cleared at a turn boundary... still has no
+      reset call anywhere" ever since Phase 59 -- the exact same
+      "sourced one-turn duration, never actually cleared" bug Phase 576
+      already fixed for ``illusory_fog_active`` right above, just not
+      yet audited here. A province Part Sea'd or Flooded stayed
+      permanently transformed for the rest of the game.
+    - ``ProvinceState.tax_modifier_percent``/``earthquake_flat_
+      reduction`` -> ``0`` (Phase 1046) -- Bless ([4.21.3], "+60% for
+      one turn") and Earthquake ([4.24.3], "-100%"/a flat Reinforced-
+      Concrete-defended reduction, "for one turn") are both explicitly
+      one-turn effects, but neither field had a reset call either --
+      the same unresolved gap `tax_modifier_percent`'s own module
+      docstring entry already flagged, and `earthquake_flat_reduction`'s
+      own field comment explicitly cross-references as sharing it
+      ("the caller resets it the same 'no auto-clear yet' way"). A
+      Blessed or Earthquake-struck province kept the modified tax rate
+      forever instead of for the one documented turn.
 
     ``GameState.gate_angel_candidates_this_turn`` is deliberately NOT
     touched here despite its own name -- it's already self-resetting,
@@ -1019,17 +1195,22 @@ def _replenish_turn_scoped_state(state: GameState) -> None:
         army.naval_bonus_applied_this_turn = False
         army.march_table_bonus_applied_this_turn = False
         army.unhireable_this_turn = False
+        army.recruited_this_turn = False
         army.flood_dams_exempt_at = None
     for province in state.provinces.values():
         province.recruited_this_turn = {}
         province.recruit_locked_this_turn = False
         province.illusory_fog_active = False
+        province.terrain_override = None
+        province.tax_modifier_percent = 0
+        province.earthquake_flat_reduction = 0
     for leader in state.leaders.values():
         leader.oratory_boosted_this_turn = False
     for kingdom in state.kingdoms.values():
         kingdom.treasury_raid_attempts_this_turn = 0
     state.action_casts_used = {}
     state.treat_permissions = set()
+    state.break_treat_orders = set()
 
 
 def _apply_werebeast_transformations(state: GameState) -> None:
@@ -1097,6 +1278,33 @@ def _apply_defend_cancellations(
             active_defends.pop(tl.leader.leader_id, None)
 
 
+def _army_strength(army) -> float:
+    """A cheap, real-data-backed combat-strength estimate for one army --
+    ``BASE_STRENGTH[army_type] * int(quality)``, the same "base x
+    quality" starting point ``turn/strength.py compute_effective_
+    strength()`` itself multiplies onward from, before any terrain/
+    defender/tactical bonus is layered on (2026-11-01, no dedicated
+    "is force A strong enough vs force B" function exists anywhere in
+    this project -- this is the cheapest honest reuse of real existing
+    numbers rather than an invented one). Garrison isn't in
+    ``BASE_STRENGTH`` at all (``models/army_type.py``'s own module
+    docstring: handled as two named constants instead, one per combat
+    role) -- a Defend reinforcement always fights on the defending side
+    of whatever battle it joins (rulebook: "le sue truppe
+    combatteranno a fianco dei difensori"), so ``GARRISON_DEFENSE_
+    STRENGTH`` is the one of the two that applies here. Used only by
+    ``_apply_defend_reinforcements()``'s own "intelligent reinforcement"
+    heuristic below -- not a new canonical strength formula.
+    """
+
+    if army.army_type is ArmyType.GARRISON:
+        return GARRISON_DEFENSE_STRENGTH * int(army.quality)
+    return BASE_STRENGTH.get(army.army_type, 0) * int(army.quality)
+
+
+_DEFEND_REINFORCEMENT_WIN_PROBABILITY_FLOOR = 0.5
+
+
 def _apply_defend_reinforcements(
     active_defends: dict[int, DefendCoverage],
     move_targets: dict[int, HexCoord],
@@ -1120,23 +1328,93 @@ def _apply_defend_reinforcements(
     province's owner is the defender's own Kingdom or an ally) against a
     **non-allied invader who actually brings an army** -- the same
     "attacking" criterion used throughout this module. Each defender's
-    coverage is **consumed after its first reinforcement this
-    ``run_turn()`` call**: once committed to one battle, they're no
+    coverage is **consumed only once a reinforcement actually happens**
+    this ``run_turn()`` call: once committed to one battle, they're no
     longer standing by to cover their original area for a second,
     unrelated invasion later in the turn (a documented simplification,
     not sourced -- the rulebook doesn't address a general reinforcing
-    twice in the same turn).
+    twice in the same turn). A phase where this defender's force can't
+    react at all, or deliberately stays home (see below), leaves the
+    coverage untouched for a later phase to still draw on.
+
+    **2026-11-01 additions, sourced directly from the user's own full
+    Italian [3.15] text, closing four previously-undocumented gaps**:
+
+    1. **Terrain/transport legality**: each of the defender's own armies
+       is checked individually via ``find_transport_illegality()`` (the
+       same pure legality gate ordinary Move already uses) against the
+       hop from this leader's own current province to the chosen
+       target -- "un generale non reagirà all'invasione se la sua
+       unità militare non può muovere nella zona invasa." An army that
+       fails this check (e.g. a land unit a Fleet can't carry, or a
+       Fleet trying a land-to-land hop) is simply excluded from the
+       pool of armies that can react, exactly like a wrong-terrain Move
+       would refuse that army. If no army passes, this defender can't
+       react to this invasion at all this phase.
+    2. **Movement Point cost**: "questi movimenti costano Punti
+       Movimento, e quindi un'unità che ha speso tutti i suoi Punti
+       Movimento non può più reagire." Each candidate army must have
+       ``movement_points >= movement_cost_for_move(battle_occurred=True)``
+       (the real per-hex-entered cost, always the "+1, a battle
+       happened" variant here since joining a defended province's own
+       fight is the entire premise) and is charged that same cost on
+       departure -- the same formula and field ordinary LMOVE already
+       uses, replenished only once per turn by ``_replenish_turn_
+       scoped_state()``, same semantics. **Deliberately not modeled**:
+       the rulebook's own "3 moves for a full defend-then-return trip"
+       (speed >= 3, or a good March Talent) -- this project's Defend
+       reinforcement has no "return home" leg at all (the general
+       simply relocates, permanently, same as before this round, modulo
+       the new pursuit-on-win addendum below), so there is no return
+       trip to charge a second/third move for; only the one real,
+       modeled leg (arriving to fight) is charged. March Talent's own
+       movement-point bonuses (``march_movement_point_bonus()``/
+       ``march_table_extra_movement()``) are also not threaded in here
+       -- a further, orthogonal refinement on top of the base cost
+       charged above, left for later rather than this round.
+    3. **"Intelligent" splitting**: only reachable when the defender's
+       own *current* province is **also** invaded this same phase (the
+       rulebook's own example: "invia unità militari in una provincia
+       difesa E in due province adiacenti" -- a genuine competing claim
+       on this general's forces). With no such competing claim (every
+       pre-existing test fixture, and surely the overwhelmingly common
+       case), the general still takes his *whole* eligible force to the
+       one covered province under attack, exactly as before this round.
+       When home *is* also under threat, the minimal prefix of the
+       defender's own armies (strongest first) whose summed strength
+       clears a 50% ``estimate_win_probability()`` against the chosen
+       invader is sent, **provided** the armies left behind still clear
+       that same 50% floor against the home invader; if no such split
+       exists (even the full force doesn't clear 50% at the target, or
+       any split that does leaves home with nothing or an indefensible
+       remainder), the general sends nobody -- "rimanere a difendere la
+       provincia." The 50% floor and the "strongest-first, minimal
+       sufficient prefix" selection are both documented interpretations,
+       not sourced formulas -- the rulebook names no numbers here, only
+       this project's own existing win_probability curve (anchored at
+       the rulebook's own real "1:1 -> 50%" Battle Odds data point) as
+       the least-invented building block to reuse. Strength per army is
+       ``_army_strength()``, above.
+    4. **Among 2+ simultaneously-invaded *covered* provinces** (as
+       distinct from (3)'s home-vs-neighbor split): "andrà in aiuto di
+       una provincia adiacente" (singular) is read as the single
+       biggest threat by summed invading strength, not the first one
+       encountered in iteration order -- also a documented judgment
+       call, the rulebook names no tiebreak. Ties keep the first-
+       encountered order, matching this function's own pre-existing,
+       untouched behavior when strength doesn't distinguish the choice.
 
     Returns ``{defender_leader_id: DefendReinforcement(origin, target)}``
     for every reinforcement performed this call -- ``run_turn()`` uses
     ``.target`` to look up that same battle's outcome once this phase's
-    LMOVE dispatch resolves it, for rule [3.15]'s other cancellation
-    trigger (see ``_apply_defend_cancellations``'s own docstring and
-    ``_extract_battle_winner``). ``.origin`` (the defender's own province
-    before relocating) exists solely for ``describe_defend_reinforcement()``
-    (Phase 422, ``SAY.PAS _LHearInv``'s own ``@`` marker) -- captured here
-    because ``defender_state.location`` is overwritten to ``target``
-    a few lines below, before this function returns.
+    LMOVE dispatch resolves it, for rule [3.15]'s own two reactive
+    cancellation/pursuit triggers (see ``_apply_defend_cancellations``'s
+    own docstring, ``_apply_defend_battle_loss``, and ``_apply_defend_
+    battle_win``). ``.origin`` (the defender's own province before
+    relocating) exists solely for ``describe_defend_reinforcement()``
+    (Phase 422, ``SAY.PAS _LHearInv``'s own ``@`` marker) -- captured
+    here because ``defender_state.location`` is overwritten to
+    ``target`` a few lines below, before this function returns.
     """
 
     reinforced: dict[int, DefendReinforcement] = {}
@@ -1147,11 +1425,24 @@ def _apply_defend_reinforcements(
     for index, target in move_targets.items():
         invaded_provinces.setdefault(target, []).append(index)
 
+    def _invading_strength(defender_kingdom_id: int, indices: list[int]) -> float | None:
+        total = 0.0
+        saw_invader = False
+        for i in indices:
+            mover_tl = entries[i][0]
+            mover_armies = state.armies_commanded_by(mover_tl.leader.leader_id)
+            if not mover_armies or state.is_allied(mover_tl.kingdom_id, defender_kingdom_id):
+                continue
+            saw_invader = True
+            total += sum(_army_strength(army) for army in mover_armies)
+        return total if saw_invader else None
+
     for defender_leader_id, coverage in list(active_defends.items()):
         defender_state = state.leaders.get(defender_leader_id)
         if defender_state is None or defender_state.kingdom_id is None:
             continue
 
+        candidates: list[tuple[HexCoord, float]] = []
         for target, indices in invaded_provinces.items():
             if target not in coverage.area:
                 continue
@@ -1161,24 +1452,89 @@ def _apply_defend_reinforcements(
             owner = target_province.owner_kingdom_id
             if owner != defender_state.kingdom_id and not state.is_allied(owner, defender_state.kingdom_id):
                 continue  # not friendly ground -- nothing to defend here
+            strength = _invading_strength(defender_state.kingdom_id, indices)
+            if strength is None:
+                continue  # no real invader among this phase's movers into target
+            candidates.append((target, strength))
 
-            invading = any(
-                state.armies_commanded_by(entries[i][0].leader.leader_id)
-                and not state.is_allied(entries[i][0].kingdom_id, defender_state.kingdom_id)
-                for i in indices
-            )
-            if not invading:
+        if not candidates:
+            continue
+
+        target, invading_strength = max(candidates, key=lambda pair: pair[1])
+        target_province = state.provinces[target]
+
+        home_location = defender_state.location
+        home_invading_strength: float | None = None
+        home_province = state.provinces.get(home_location)
+        if home_province is not None and home_province.owner_kingdom_id == defender_state.kingdom_id:
+            home_indices = invaded_provinces.get(home_location)
+            if home_indices is not None:
+                home_invading_strength = _invading_strength(defender_state.kingdom_id, home_indices)
+
+        origin_province = state.provinces.get(home_location)
+        eligible_armies = []
+        for army in state.armies_commanded_by(defender_leader_id):
+            if army.movement_points < movement_cost_for_move(battle_occurred=True):
                 continue
+            if find_transport_illegality([army], [army.army_id], origin_province, target_province) is not None:
+                continue
+            eligible_armies.append(army)
 
-            for army in state.armies_commanded_by(defender_leader_id):
-                army.location = target
-            origin = coverage.origin
-            defender_state.location = target
-            del active_defends[defender_leader_id]
-            reinforced[defender_leader_id] = DefendReinforcement(origin=origin, target=target)
-            break
+        if not eligible_armies:
+            continue  # can't physically/logistically react at all this phase
+
+        eligible_armies.sort(key=_army_strength, reverse=True)
+
+        if home_invading_strength is None:
+            armies_to_send = eligible_armies
+        else:
+            armies_to_send = None
+            running_strength = 0.0
+            for count, army in enumerate(eligible_armies, start=1):
+                running_strength += _army_strength(army)
+                if (
+                    estimate_win_probability(running_strength, invading_strength)
+                    < _DEFEND_REINFORCEMENT_WIN_PROBABILITY_FLOOR
+                ):
+                    continue
+                remaining = eligible_armies[count:]
+                if not remaining:
+                    continue  # would leave home with nothing while home is itself under threat
+                remaining_strength = sum(_army_strength(army) for army in remaining)
+                if (
+                    estimate_win_probability(remaining_strength, home_invading_strength)
+                    < _DEFEND_REINFORCEMENT_WIN_PROBABILITY_FLOOR
+                ):
+                    continue  # this split leaves home too exposed -- keep looking
+                armies_to_send = eligible_armies[:count]
+                break
+            if armies_to_send is None:
+                continue  # not strong enough to split safely -- stays to defend the home province
+
+        for army in armies_to_send:
+            army.location = target
+        origin = coverage.origin
+        defender_state.location = target
+        del active_defends[defender_leader_id]
+        reinforced[defender_leader_id] = DefendReinforcement(origin=origin, target=target)
 
     return reinforced
+
+
+def _extract_battle_report(result: object):
+    """Reads whichever ``BattleReport`` a dispatch result actually carries (``Move
+    ExecutionResult``/``MultiAttackerMoveResult`` are the only two battle-
+    bearing shapes this module's own Defend machinery ever dispatches
+    into), or ``None`` if ``result`` carries no battle at all. Shared by
+    ``_extract_battle_winner``/``_apply_defend_battle_win`` so both read
+    the exact same report.
+    """
+
+    if isinstance(result, MoveExecutionResult):
+        return result.battle_report
+    if isinstance(result, MultiAttackerMoveResult):
+        return result.battle.report
+    return None
 
 
 def _extract_battle_winner(result: object) -> str | None:
@@ -1189,12 +1545,7 @@ def _extract_battle_winner(result: object) -> str | None:
     Defend-reinforcement-triggered battle) is checked.
     """
 
-    if isinstance(result, MoveExecutionResult):
-        battle_report = result.battle_report
-    elif isinstance(result, MultiAttackerMoveResult):
-        battle_report = result.battle.report
-    else:
-        battle_report = None
+    battle_report = _extract_battle_report(result)
     return battle_report.battle_result.winner if battle_report is not None else None
 
 
@@ -1233,6 +1584,66 @@ def _apply_defend_battle_loss(
     )
     if winner == "attacker":
         defeated_while_defending.update(defender_leader_ids)
+
+
+def _apply_defend_battle_win(
+    active_pursuits: dict[int, _ActivePursuit],
+    reinforced_by_target: dict[HexCoord, list[int]],
+    target: HexCoord,
+    dispatch_results: list[PhaseDispatchResult],
+) -> None:
+    """Rulebook [3.15] (2026-11-01, previously unmodeled): "Se vince la
+    battaglia, inseguirà il generale che ha invaso la provincia
+    adiacente." Mirrors ``_apply_defend_battle_loss``'s own single-
+    battle-per-``target`` scan, but registers a brand-new chase instead
+    of cancelling one, the moment this phase's own LMOVE dispatch
+    resolves the exact battle a Defend reinforcement just drew
+    ``target``'s defender(s) into.
+
+    Constructs a synthetic ``_ActivePursuit`` directly rather than via
+    ``_register_pursuit_continuation()`` -- that function only ever re-
+    registers a *real*, already-decoded PURSUE phase this same leader
+    themselves issued and dispatched; a Defend-reinforcement win was
+    never such a phase, so there's no ``PlanPhase`` to re-decode.
+    ``PursueRequest.unconfirmed_extra0``/``.tactics`` carry no real wire
+    data for this synthetic case either way (``tactics=[]`` is also
+    functionally identical to any real combat tactic here, since the
+    one real consumer -- an army-leading loser next phase -- dispatches
+    through ``advance_pursuit()``'s own pure army-vs-army rebattle
+    branch, which never reads ``tactics`` at all). If the loser's own
+    armies were destroyed outright in this same battle (not merely
+    defeated), ``advance_pursuit()``'s own [3.16] army-leading-mismatch
+    check will find nothing left to chase and silently end the pursuit
+    next phase -- a real, pre-existing rule this registration simply
+    inherits, not a bug.
+
+    Reads the winning battle's own attacker commander off ``BattleReport.
+    attacker_commander_leader_id`` (falling back to the first entry of
+    ``.attacker_commanding_leader_ids`` for a Multiple-Contingents group
+    with no single elected duel commander) -- see ``turn/battle_
+    orchestrator.py BattleReport``'s own fields.
+    """
+
+    defender_leader_ids = reinforced_by_target.get(target)
+    if not defender_leader_ids or not dispatch_results:
+        return
+    for result in dispatch_results:
+        battle_report = _extract_battle_report(result.result)
+        if battle_report is None:
+            continue
+        if battle_report.battle_result.winner != "defender":
+            return
+        attacker_leader_id = battle_report.attacker_commander_leader_id
+        if attacker_leader_id is None and battle_report.attacker_commanding_leader_ids:
+            attacker_leader_id = battle_report.attacker_commanding_leader_ids[0]
+        if attacker_leader_id is None:
+            return
+        for defender_leader_id in defender_leader_ids:
+            active_pursuits[defender_leader_id] = _ActivePursuit(
+                kind="pursue",
+                request=PursueRequest(target_character_id=attacker_leader_id, unconfirmed_extra0=0, tactics=[]),
+            )
+        return
 
 
 _PURSUE_STILL_CHASING_REASON = "did not catch up this phase"
@@ -1302,6 +1713,17 @@ def _continue_active_pursuits(
             if result.spied_on:
                 result.actions = action_this_phase_by_leader.get(active.request.target_character_id)
 
+        # Phase 1041 bug fix -- the first-phase dispatch (plan_dispatch.py's
+        # own `_dispatch_pursue()`/`_dispatch_trail()`) always stamps
+        # `result.request` right after dispatching; this continuation path
+        # never did, so a real catch-up resolved here (a kill, loot, an
+        # intelligence report -- fully applied to `state`) had its
+        # `.request` left `None`, and `report/turn_report.py`'s own
+        # `describe_turn_results()` unconditionally skips narration
+        # whenever `.request` is `None` -- silently dropping the whole
+        # event from the player's turn report.
+        result.request = active.request
+
         if not still_chasing:
             del active_pursuits[leader_id]
 
@@ -1324,9 +1746,12 @@ def _backfill_trail_actions(
     """Phase 252, [3.17] Trail's own "Actions" field: for a freshly-dispatched Trail
     order that caught its target, stamps the target's own entry in
     ``action_this_phase_by_leader`` onto ``TrailExecutionResult.actions``
-    -- ``None`` if the target has no entry (idle, or itself mid-chase and
-    excluded from this phase's own entries). See ``turn/trail_execution.py``'s
-    own module docstring for why ``execute_trail()`` itself can't do this.
+    -- ``None`` if the target has no entry (idle, itself mid-chase and
+    excluded from this phase's own entries, or had this phase's own queued
+    order preempted by their own standing Patrol interception -- see the
+    Phase 817 follow-up fix where ``action_this_phase_by_leader`` is pruned
+    by ``patrol_preempted``). See ``turn/trail_execution.py``'s own module
+    docstring for why ``execute_trail()`` itself can't do this.
     """
 
     for entry in dispatch_results:
@@ -1334,6 +1759,33 @@ def _backfill_trail_actions(
         if not isinstance(result, TrailExecutionResult) or not result.spied_on or result.request is None:
             continue
         result.actions = action_this_phase_by_leader.get(result.request.target_character_id)
+
+
+def _main_dispatch_result(dispatch_results: list[PhaseDispatchResult], action: ActionCode) -> object | None:
+    """Finds this phase's own real dispatch result among ``dispatch_results``
+    -- by matching ``action``, not by assuming it's ``dispatch_results[-1]``.
+
+    **Phase 1041 bug fix**: a single dispatched phase can produce more than
+    one ``PhaseDispatchResult`` -- ``run_leader_plan()`` appends a trailing
+    random-encounter sentinel after an LMOVE/PURSUE/TRAIL phase whenever one
+    fires (``turn/random_encounter_execution.py``'s own ``_TRIGGERING_
+    ACTIONS``), and an LMOVE can additionally append its own Naval Hug
+    Coastline "unboarded stragglers" sentinel (Phase 766) -- and *both*
+    sentinel kinds are always recorded with ``action=None``, never the real
+    dispatched ``ActionCode`` (see each one's own append site). Blindly
+    indexing ``[-1]`` can therefore grab a sentinel instead of the real
+    result -- wrongly treating a dispatch that said "still chasing" as if it
+    had ended, which is exactly what used to make a persistent chase stop
+    one phase early whenever a random encounter fired on the same phase.
+    Matching on ``action`` instead finds the one real entry every time,
+    since a sentinel's own ``action`` is never the real dispatched one and
+    there is always exactly one real entry per dispatched phase.
+    """
+
+    for entry in dispatch_results:
+        if entry.action is action:
+            return entry.result
+    return None
 
 
 def _register_pursuit_continuation(
@@ -1349,9 +1801,7 @@ def _register_pursuit_continuation(
     reason) needs no follow-up. See module docstring.
     """
 
-    if not dispatch_results:
-        return
-    result = dispatch_results[-1].result
+    result = _main_dispatch_result(dispatch_results, phase.action)
 
     if phase.action is ActionCode.PURSUE:
         if not isinstance(result, PursueExecutionResult):
@@ -1436,9 +1886,14 @@ def _register_move_chase_continuation(
     and never registers here. See module docstring.
     """
 
-    if not dispatch_results:
-        return
-    result = dispatch_results[-1].result
+    # Phase 1041 bug fix -- see ``_main_dispatch_result()``'s own
+    # docstring: ``dispatch_results[-1]`` can be a trailing sentinel (a
+    # random encounter, or this same LMOVE's own Naval Hug Coastline
+    # straggler split) instead of the real move result, and both
+    # sentinel kinds are themselves ``MoveExecutionResult`` instances
+    # too, so an ``isinstance`` check alone can't tell them apart from
+    # the real one the way it can for Pursue/Trail.
+    result = _main_dispatch_result(dispatch_results, ActionCode.LMOVE)
     if not isinstance(result, MoveExecutionResult):
         return
     if result.reached_target or result.stopped_chasing:
@@ -1564,7 +2019,23 @@ def _dispatch_mutual_encounter(
         result = execute_challenge(state, tl.leader.leader_id, request, rng, mutual_encounter=True)
     else:
         request = decode_pursue_phase(phase)
-        result = execute_pursue(state, tl.leader.leader_id, request, rng, mutual_encounter=True)
+        # Phase 1041 bug fix -- the ordinary single-leader path
+        # (plan_dispatch.py's own `_dispatch_pursue()`) always computes
+        # and passes `has_spy_super_sleuth`; this mutual-encounter path
+        # used to silently omit it, defaulting to `False` regardless of
+        # whether the initiator actually holds the ability -- losing its
+        # documented "the catch-up roll is bypassed, success is
+        # automatic" guarantee (and the resulting `guessed_distance`)
+        # whenever a Spy-Super-Sleuth leader's own Pursue happened to
+        # form a same-phase mutual-encounter pair.
+        result = execute_pursue(
+            state,
+            tl.leader.leader_id,
+            request,
+            rng,
+            mutual_encounter=True,
+            has_spy_super_sleuth=_has_spy_super_sleuth(state, tl.leader.leader_id),
+        )
 
     return [
         PhaseDispatchResult(entry[0].leader.leader_id, entry[1], entry[2].label, entry[2].action, result, None)
@@ -1610,8 +2081,19 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
         if not attacker_can_force_rebattle(movement_by_army):
             continue  # "both armies will encamp" -- no more auto-rebattles this turn
 
+        # Phase 1192 bug fix: this used to be a bare `not state.is_allied(...)`
+        # check, missing diplomacy.py is_attackable_at()'s own [8.1]
+        # "triangle" rule -- an army physically present can still be
+        # shielded from this attacker because the *province's owner* (a
+        # third Kingdom) is Allied with the attacker, not just because
+        # the army's own Kingdom is. Without this, a province could stay
+        # "contested" with no genuinely attackable defender actually
+        # present, and fight_battle()'s own correct is_attackable_at()-
+        # based defender derivation below would then find zero real
+        # defenders and raise -- uncaught here, unlike the per-leader
+        # dispatch paths (see module docstring's own Phase 1041 note).
         defenders_present = any(
-            army.kingdom_id is not None and not state.is_allied(army.kingdom_id, attacker_kingdom_id)
+            army.kingdom_id is not None and is_attackable_at(state, army.kingdom_id, attacker_kingdom_id, province)
             for army in armies_here
         )
         if not defenders_present:
@@ -1626,19 +2108,40 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
         # rule (rulebook [7.4]) instead of falling back to the wrong
         # defender-style nearest-friendly-neighbor rule -- see
         # ProvinceState.contested_from_coord's own docstring.
-        # Phase 736: snapshot army types before fight_battle() removes
-        # any of them -- see move_execution.py's own identical note.
-        army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
-        report = fight_battle(
-            state,
-            attacker_kingdom_id,
-            coord,
-            army_ids,
-            attacker_origin=province.contested_from_coord,
-            apply_fanaticism=True,
-            use_real_duel_combat=True,
-            rng=rng,
-        )
+        army_types_before_battle = snapshot_army_types(state)
+        # Phase 1192 bug fix: isolate one contested province's own
+        # fight_battle() failure from poisoning every other contested
+        # province's own already-computed result this same call -- the
+        # same "one bad entity shouldn't discard the whole batch" fix
+        # Phase 1041 already applied to the other grouped dispatch loops
+        # a few hundred lines above. The defenders_present fix just above
+        # already prevents the one known real trigger (a stale "ally
+        # shields every army here" gap), but this keeps that guarantee
+        # even if some other, not-yet-identified edge case lets
+        # fight_battle() raise.
+        try:
+            report = fight_battle(
+                state,
+                attacker_kingdom_id,
+                coord,
+                army_ids,
+                attacker_origin=province.contested_from_coord,
+                apply_fanaticism=True,
+                use_real_duel_combat=True,
+                rng=rng,
+            )
+        except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
+            results.append(
+                PhaseDispatchResult(
+                    leader_id=0,
+                    segment_index=-1,
+                    phase_label="forced-rebattle",
+                    action=None,
+                    result=None,
+                    error=exc,
+                )
+            )
+            continue
         # Phase 716: the cargo sinks with the carrier.
         apply_battle_carrier_destruction(
             state,
@@ -1649,7 +2152,13 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
             army_types_before_battle=army_types_before_battle,
         )
 
-        cost = contested_battle_movement_cost(conquered=report.conquered)
+        # Phase 1192 bug fix: a battle has unconditionally just occurred
+        # above, so the real [7.7] extra-movement-point trigger always
+        # applies here (Phase 915, turn/conquest.py's own docstring) --
+        # reuse that shared, already-corrected formula directly instead
+        # of the removed contested_battle_movement_cost()'s stale
+        # "conquered-only" reading.
+        cost = movement_cost_for_move(battle_occurred=True, conquered=report.conquered)
         for army_id in army_ids:
             army = state.armies.get(army_id)
             if army is not None:
@@ -1685,7 +2194,7 @@ def _dispatch_multi_practice(
 
 
 def _collect_phase_entries(
-    turn_leaders: list[TurnLeader], label: str
+    turn_leaders: list[TurnLeader], label: str, state: GameState
 ) -> list[tuple[TurnLeader, int, PlanPhase]]:
     entries = []
     for tl in turn_leaders:
@@ -1693,7 +2202,386 @@ def _collect_phase_entries(
             phase = segment.phases.get(label)
             if phase is not None:
                 entries.append((tl, segment_index, phase))
-    return entries
+    return _order_phase_entries_by_initiative(entries, state)
+
+
+def _same_side(state: GameState, kingdom_a: int, kingdom_b: int) -> bool:
+    return kingdom_a == kingdom_b or state.is_allied(kingdom_a, kingdom_b)
+
+
+def _dropped_unled_army_locations(
+    request: ArmyListRequest, acting_leader_id: int, state: GameState
+) -> list[tuple[HexCoord, int]]:
+    """For a Leave order with no named target (``target_leader_id is
+    None`` -- dropped to the Garrison Commander), the ``(location,
+    kingdom_id)`` of every army it will actually set ``commanded_by =
+    None`` on. Mirrors ``plan_dispatch.py _dispatch_leave()``'s own
+    per-army eligibility check (``owns_or_may_pass_along``) exactly, so
+    this never invents a same-phase dependency for an army the real
+    dispatch would skip anyway (not already commanded by the acting
+    leader, not unled-and-co-located, or not that Kingdom's own) --
+    see ``_pick_up_beneficiary_for_untargeted_leave()``'s own docstring
+    for why this helper exists. Pure (no mutation), like every other
+    helper in this ordering pass -- it runs before any real dispatch.
+    """
+
+    acting_leader = state.leaders.get(acting_leader_id)
+    if acting_leader is None:
+        return []
+    army_ids = (
+        [army.army_id for army in state.armies_commanded_by(acting_leader_id)]
+        if request.all_armies
+        else request.army_ids
+    )
+    dropped: list[tuple[HexCoord, int]] = []
+    for army_id in army_ids:
+        army = state.armies.get(army_id)
+        if army is None or army.kingdom_id != acting_leader.kingdom_id:
+            continue
+        owns_or_may_pass_along = army.commanded_by == acting_leader_id or (
+            army.commanded_by is None and army.location == acting_leader.location
+        )
+        if owns_or_may_pass_along:
+            dropped.append((army.location, army.kingdom_id))
+    return dropped
+
+
+def _pick_up_beneficiary_for_untargeted_leave(
+    request: ArmyListRequest,
+    tl: TurnLeader,
+    state: GameState,
+    pick_up_all_armies_leaders: dict[int, tuple[HexCoord, int]],
+) -> int | None:
+    """RULES.AK [3]'s own "Prendere Unità Militari" case, left out of
+    `_same_phase_beneficiary_leader_id()`'s own ordinary named-target
+    handling by `_order_phase_entries_by_initiative()`'s own pre-
+    existing docstring addendum ("needs resolving which *army*, not
+    which *leader*, the dependency is keyed on"). An ordinary Leave with
+    a named target already has a leader to key the wait on; one with no
+    named target (dropped to the Garrison Commander) has none -- the
+    dependency here is instead on whichever *other* same-phase leader
+    has queued a "Pick Up all unled armies in the province" order
+    (``ArmyListRequest.all_armies``, ``plan_dispatch.py _dispatch_
+    pick_up()``'s own rulebook-quoted branch) and is standing exactly
+    where one of this Leave's own dropped armies will land, of the
+    exact same Kingdom (not merely allied -- `_dispatch_pick_up()`'s own
+    per-army check is ``army.kingdom_id == acting_leader.kingdom_id``,
+    not `_same_side()`'s looser ally-inclusive reading, so a same-
+    Kingdom match here is what actually determines whether that Pick_Up
+    would even succeed in claiming the army).
+
+    **Deliberately single-match, not a list**: two different same-
+    Kingdom Pick_Up(all_armies) leaders both standing at the same
+    dropped-army location in the same phase is a real but unsourced
+    corner case this project's own `ArmyListRequest`/rulebook text has
+    nothing to say about how to arbitrate between -- the first match in
+    ``pick_up_all_armies_leaders``' own (``base_order``-derived,
+    therefore deterministic) iteration order wins, the same "no source,
+    no guess, pick a deterministic tiebreak" stance `turn/patrol_
+    execution.py find_patrol_target()`'s own rule (h) already takes for
+    an analogous multi-candidate ambiguity.
+
+    **Only the ``all_armies`` Pick_Up form is timing-sensitive at all**:
+    a Pick_Up naming a specific army id never checks ``commanded_by`` in
+    ``_dispatch_pick_up()``, so it already succeeds regardless of
+    dispatch order -- no dependency needed for that form, and none is
+    computed here.
+    """
+
+    dropped = _dropped_unled_army_locations(request, tl.leader.leader_id, state)
+    if not dropped:
+        return None
+    for pick_up_leader_id, (location, kingdom_id) in pick_up_all_armies_leaders.items():
+        if pick_up_leader_id == tl.leader.leader_id:
+            continue
+        if any(location == d_location and kingdom_id == d_kingdom_id for d_location, d_kingdom_id in dropped):
+            return pick_up_leader_id
+    return None
+
+
+def _same_phase_beneficiary_leader_id(
+    tl: TurnLeader,
+    phase: PlanPhase,
+    state: GameState,
+    acting_leader_ids_this_phase: set[int],
+    pick_up_all_armies_leaders: dict[int, tuple[HexCoord, int]],
+) -> int | None:
+    """RULES.AK [3]'s own "un personaggio può attendere se un altro deve
+    fare qualcosa per lui" -- the leader_id of another, same-phase-
+    acting leader of ``tl``'s own or an allied Kingdom that this
+    entry's own order benefits, if any. See `_order_phase_entries_by_
+    initiative()`'s own docstring for the full rule, scope, and the
+    cases deliberately left out.
+
+    Each decode call here is pure (no mutation, no execution) -- this
+    runs *before* any real dispatch, purely to compute ordering.
+    """
+
+    target_leader_id: int | None = None
+    if phase.action is ActionCode.LEAVE:
+        request = decode_army_list_phase(phase)
+        target_leader_id = request.target_leader_id
+        if target_leader_id is None:
+            # 2026-11-06: the "Prendere Unità Militari" case this
+            # function's own docstring used to leave entirely out --
+            # see `_pick_up_beneficiary_for_untargeted_leave()`.
+            return _pick_up_beneficiary_for_untargeted_leave(request, tl, state, pick_up_all_armies_leaders)
+    elif phase.action is ActionCode.RECRUIT:
+        target_leader_id = decode_recruit_phase(phase).leader_id
+    elif phase.action is ActionCode.TRADE:
+        target_leader_id = decode_trade_phase(phase).target_leader_id
+    elif phase.action is ActionCode.CAST:
+        request = decode_cast_phase(phase)
+        if request.spell in CHARACTER_TARGET_SPELLS:
+            target_leader_id = request.target
+
+    if target_leader_id is None or target_leader_id == tl.leader.leader_id:
+        return None
+    if target_leader_id not in acting_leader_ids_this_phase:
+        # The target has no order of their own this phase -- idle, or
+        # (e.g. Resurrection's own target) dead -- so there is nothing
+        # to reorder against.
+        return None
+    target_leader = state.leaders.get(target_leader_id)
+    if target_leader is None or not _same_side(state, tl.kingdom_id, target_leader.kingdom_id):
+        return None
+    return target_leader_id
+
+
+def _order_phase_entries_by_initiative(
+    entries: list[tuple[TurnLeader, int, PlanPhase]], state: GameState
+) -> list[tuple[TurnLeader, int, PlanPhase]]:
+    """RULES.AK [3] AZIONI E INIZIATIVA, quoted in full (2026-11-03;
+    `turn/initiative.py`'s own module docstring already covers the
+    Initiative *score* formula -- this is its first real consumer for
+    *general* cross-leader sequencing, Phase 311's own narrower
+    neutral-province-invasion-priority use being the only prior one):
+
+        "Nell'elaborare le mosse, il computer esegue innanzitutto la
+        prima azione di ciascun personaggio, poi la seconda di
+        ciascuno e così via. Se due personaggi hanno la stessa
+        Iniziativa, è quello con il numero d'ordine più basso ad avere
+        la precedenza."
+
+        "Un personaggio può attendere se un altro deve fare qualcosa
+        per lui. Esempio: due personaggi sono nella stessa provincia e
+        il personaggio A vuole uscirne mentre quello B dello stesso
+        reame vuole, poniamo, reclutare delle unità militari per lui.
+        In una situazione del genere il personaggio A aspetterà che il
+        personaggio B abbia agito, anche se A ha un coefficiente
+        d'iniziativa superiore. Questa regola vale non soltanto per
+        Reclutare, ma anche per Abbandonare e Prendere Unità Militari,
+        Lanciare Incantesimi favorevoli, Dare oggetti magici e per gli
+        Incontri."
+
+        "Il personaggio che riceve l'ordine Defend è sempre l'ultimo
+        ad agire (perché deve reagire a tutti gli attacchi)."
+
+    Confirmed absent until now (`plan_dispatch.py _dispatch_leave()`'s
+    own 2026-10-29 addendum, `webapp/moves_compose.py`'s own matching
+    note): `_collect_phase_entries()` used to return ``entries`` in
+    bare ``turn_leaders`` order (this project's own K1-file-arrival
+    order) with no Initiative-based reordering or cross-leader
+    dependency mechanism at all.
+
+    **Base order**: every entry sorts by ``-character_initiative()``
+    (higher first), tie-broken by its original ``turn_leaders`` index
+    -- the user's own confirmed reading of "numero d'ordine" as K1-file
+    arrival order, since no other per-character ordinal exists anywhere
+    in this project's own data model. A leader not found in
+    ``state.leaders`` reads Initiative 0, the same permissive-missing-
+    data fallback every other Initiative-adjacent consumer already uses
+    (``multiple_contingents.py``'s own march_level=0, etc.). A `DEFEND`
+    entry sorts after every non-`DEFEND` entry regardless of Initiative
+    (the quoted "sempre l'ultimo" line), tied among themselves the same
+    Initiative/arrival-order way.
+
+    **Same-phase "waits for" override**: `_same_phase_beneficiary_
+    leader_id()` detects, per entry, whether this order benefits
+    another same-phase-acting leader of the same or an allied Kingdom
+    -- `LEAVE`'s own named target, `RECRUIT`'s own named leader,
+    `TRADE`'s own recipient (this project's only top-level "Dare"
+    action -- Steal is never decoded as `ActionCode.TRADE`, only as an
+    Encounter-tactic `Maneuver`, so every `TRADE` entry reaching here is
+    a real Give, gold or item alike -- the quoted text's own "oggetti
+    magici" example doesn't call out gold specifically, and there's no
+    principled reason a received gift of gold wouldn't enable the same
+    same-phase follow-on action an item would), and `CAST`'s own target
+    when the spell is one of `cast_decode.CHARACTER_TARGET_SPELLS` --
+    the same-or-allied-Kingdom filter alone is what separates a
+    "favorevole" cast (Oratory/Clairvoyance/Illus_Armies/Mystic_Winds on
+    one's own side) from a hostile one (Kill_Enemy/Charm on a real
+    enemy) without needing a second, separate "which spells count as
+    beneficial" table -- this project has no mechanism for a same-side
+    *hostile* cast anyway. Resurrection's own target is a dead leader
+    with no entry of their own this phase, so it never creates a
+    dependency edge either, with no special-casing needed.
+
+    Every detected edge becomes a "benefactor before beneficiary"
+    constraint, resolved via a stable topological sort seeded by the
+    base order above (Kahn's algorithm, always picking the earliest-
+    base-order entry whose constraints are already satisfied) -- this
+    is what makes a beneficiary wait exactly until its benefactor has
+    gone, not further, and never disturbs `DEFEND`'s own "always last"
+    position (a `DEFEND` entry's own action never matches any trigger
+    above, so it can only ever be a beneficiary, never a benefactor,
+    and the scan order keeps every non-`DEFEND` entry ahead of it
+    regardless of degree). A same-phase dependency cycle (e.g. a mutual
+    Give) has no source backing it and has never been seen -- rather
+    than loop forever or raise, it's broken by falling back to the base
+    order for whichever entries remain.
+
+    **2026-11-06 -- `PICK_UP`'s own more complex case closed too.**
+    Until now this paragraph flagged it as deliberately out of scope:
+    waiting for a same-phase `LEAVE` that drops an army to *no* named
+    leader, which this `PICK_UP` then separately claims, needs
+    resolving which *army*, not which *leader*, the dependency is keyed
+    on -- a structurally different lookup from the four named-target
+    cases above. `_pick_up_beneficiary_for_untargeted_leave()` (called
+    from `_same_phase_beneficiary_leader_id()`'s own `LEAVE` branch when
+    its target is `None`) closes this: it resolves which armies that
+    untargeted Leave actually drops (mirroring `plan_dispatch.py
+    _dispatch_leave()`'s own eligibility checks) and matches their
+    `(location, kingdom_id)` against every other same-phase leader who
+    has queued a same-Kingdom "Pick Up all unled armies in the
+    province" order -- the only Pick_Up form that's timing-sensitive at
+    all (a Pick_Up naming a specific army id never checks `commanded_by`
+    in `_dispatch_pick_up()`, so dispatch order never affects it). See
+    that function's own docstring for the deliberate single-match
+    tiebreak this still leaves for the (unsourced, real but rare) case
+    of two same-spot Pick_Up(all_armies) leaders.
+
+    "...e per gli Incontri" (Encounters) is still left out -- Challenge/
+    Pursue already has its own dedicated same-phase pairing/sequencing
+    machinery (mutual-encounter resolution, and [3.16]'s own separate
+    "inseguitore dopo l'inseguito" rule, `_order_same_kingdom_pursuits_
+    after_their_target()` right below), and no further, distinct gap
+    was found there beyond what those already cover.
+    """
+
+    def _initiative_sort_key(indexed_entry: tuple[int, tuple[TurnLeader, int, PlanPhase]]) -> tuple[bool, int, int]:
+        original_index, (tl, _segment_index, phase) = indexed_entry
+        leader_state = state.leaders.get(tl.leader.leader_id)
+        initiative = character_initiative(state, leader_state) if leader_state is not None else 0
+        return (phase.action is ActionCode.DEFEND, -initiative, original_index)
+
+    base_order = [entry for _original_index, entry in sorted(enumerate(entries), key=_initiative_sort_key)]
+
+    acting_leader_ids_this_phase = {tl.leader.leader_id for tl, _segment_index, _phase in entries}
+    position_by_leader_id = {tl.leader.leader_id: i for i, (tl, _segment_index, _phase) in enumerate(base_order)}
+
+    # 2026-11-06: every acting leader with a Pick_Up(all_armies) order
+    # this phase, by (location, kingdom_id) -- see
+    # _pick_up_beneficiary_for_untargeted_leave()'s own docstring. Built
+    # once, in base_order's own deterministic iteration order (that
+    # function's own documented single-match tiebreak relies on this).
+    pick_up_all_armies_leaders: dict[int, tuple[HexCoord, int]] = {}
+    for tl, _segment_index, phase in base_order:
+        if phase.action is not ActionCode.PICK_UP:
+            continue
+        if not decode_army_list_phase(phase).all_armies:
+            continue
+        pick_up_leader = state.leaders.get(tl.leader.leader_id)
+        if pick_up_leader is not None:
+            pick_up_all_armies_leaders[tl.leader.leader_id] = (pick_up_leader.location, pick_up_leader.kingdom_id)
+
+    must_precede: dict[int, set[int]] = {}
+    for i, (tl, _segment_index, phase) in enumerate(base_order):
+        beneficiary_id = _same_phase_beneficiary_leader_id(
+            tl, phase, state, acting_leader_ids_this_phase, pick_up_all_armies_leaders
+        )
+        if beneficiary_id is None:
+            continue
+        j = position_by_leader_id[beneficiary_id]
+        if j != i:
+            must_precede.setdefault(i, set()).add(j)
+
+    if not must_precede:
+        return base_order
+
+    n = len(base_order)
+    remaining_in_degree = [0] * n
+    for successors in must_precede.values():
+        for j in successors:
+            remaining_in_degree[j] += 1
+
+    placed = [False] * n
+    ordered_positions: list[int] = []
+    while len(ordered_positions) < n:
+        picked = next((i for i in range(n) if not placed[i] and remaining_in_degree[i] == 0), None)
+        if picked is None:
+            picked = next(i for i in range(n) if not placed[i])
+        placed[picked] = True
+        ordered_positions.append(picked)
+        for j in must_precede.get(picked, ()):
+            remaining_in_degree[j] -= 1
+
+    return [base_order[i] for i in ordered_positions]
+
+
+def _order_same_kingdom_pursuits_after_their_target(
+    entries: list[tuple[TurnLeader, int, PlanPhase]],
+    eligible_indices: list[int],
+    phase_start_location_by_leader_id: dict[int, HexCoord],
+) -> list[int]:
+    """[3.16]: "Se il personaggio ne insegue o pedina un altro che
+    appartiene al proprio Reame ed entrambi partono dalla stessa
+    provincia, l'inseguitore eseguirà l'azione dopo l'inseguito." --
+    confirmed never cross-checked anywhere in this project before
+    (2026-11-01, user-pasted rulebook text); the two existing "[3.16]
+    quoted in full" docstrings in ``turn/pursue_execution.py``/``turn/
+    challenge_pursue_decode.py`` both silently omit this sentence.
+
+    Only reorders among ``eligible_indices`` (the entries reaching the
+    ordinary, single-leader ``_dispatch_single`` path this phase, i.e.
+    not already consumed by a multi-attacker/multi-practice group or a
+    mutual Challenge/Pursue pair) -- a one-directional Pursue whose own
+    target isn't dispatched here too (idle this phase, pre-empted by
+    its own active chase/Patrol, or already consumed by one of those
+    other group dispatches, all of which run *before* this function is
+    even called) has nothing to reorder against, since that target's
+    own state is already settled by the time this phase's ordinary
+    dispatch loop runs anyway.
+
+    ``phase_start_location_by_leader_id`` must be captured once, at the
+    very start of the phase, before any of this phase's own dispatches
+    -- "partono dalla stessa provincia" ("they start from the same
+    province") is a precondition on the phase's own beginning, not a
+    live value this function could safely recompute mid-loop.
+
+    Implementation: for each one-directional Pursue entry (not already
+    part of a mutual pair, which is excluded by never appearing in
+    ``eligible_indices`` to begin with -- mutual pairs are consumed and
+    resolved separately, before this function runs) whose caster and
+    target share both ``TurnLeader.kingdom_id`` and their phase-start
+    location, the pursuer is moved to immediately after its target in
+    the returned order. A simple move-after, not a general topological
+    sort -- the rulebook never specifies a resolution order for a
+    layered chain of such pairs (A pursuing B, B pursuing C, all same
+    Realm/province) beyond "each pursuer follows its own target," which
+    this already guarantees one pair at a time.
+    """
+
+    order = list(eligible_indices)
+    index_by_leader_id = {entries[i][0].leader.leader_id: i for i in eligible_indices}
+    for index in eligible_indices:
+        tl, _segment_index, phase = entries[index]
+        if phase.action is not ActionCode.PURSUE:
+            continue
+        target_index = index_by_leader_id.get(phase.obj)
+        if target_index is None or target_index == index:
+            continue
+        target_tl = entries[target_index][0]
+        if tl.kingdom_id != target_tl.kingdom_id:
+            continue
+        pursuer_start = phase_start_location_by_leader_id.get(tl.leader.leader_id)
+        target_start = phase_start_location_by_leader_id.get(target_tl.leader.leader_id)
+        if pursuer_start is None or pursuer_start != target_start:
+            continue
+        if order.index(index) < order.index(target_index):
+            order.remove(index)
+            order.insert(order.index(target_index) + 1, index)
+    return order
 
 
 def _sees_nonallied_defender(
@@ -1701,13 +2589,35 @@ def _sees_nonallied_defender(
 ) -> bool:
     """Same "attacking" criterion ``execute_move`` uses: a mover with no army never
     triggers combat, regardless of what's at the target (rulebook [3.1]).
+
+    Phase 1044 bug fix -- this used to apply only half of ``turn/
+    diplomacy.py is_attackable_at()``'s own [8.1] "triangle" rule (not
+    allied with the defender), never the other half (a third Kingdom's
+    own Allied-owned territory shields every army present there,
+    regardless of that army's own alliance with the mover). Every other
+    defender-gathering call site (``turn/move_execution.py``, ``turn/
+    battle_orchestrator.py``) already calls the shared primitive
+    precisely so these two project-wide "who's a legitimate target
+    here" checks never drift apart -- this LMOVE-grouping detector is
+    now a third, consistent caller of it instead of a narrower,
+    independently-reimplemented copy.
     """
 
     tl, _segment_index, _phase = entry
     if not state.armies_commanded_by(tl.leader.leader_id):
         return False
+    target_province = state.provinces.get(target)
+    if target_province is None:
+        # Every in-bounds hex gets a real ProvinceState at worldgen time
+        # (confirmed in the Batch 2b review of battle_orchestrator.py),
+        # so this is not expected to be reachable -- kept as a graceful
+        # fallback to the old, narrower check rather than a crash.
+        return any(
+            army.kingdom_id is not None and not state.is_allied(army.kingdom_id, tl.kingdom_id)
+            for army in state.armies_at(target)
+        )
     return any(
-        army.kingdom_id is not None and not state.is_allied(army.kingdom_id, tl.kingdom_id)
+        army.kingdom_id is not None and is_attackable_at(state, army.kingdom_id, tl.kingdom_id, target_province)
         for army in state.armies_at(target)
     )
 
@@ -1750,8 +2660,24 @@ def _dispatch_multi_attacker_lmove(
     bounds = MapBounds(board_width, state.board_height)
 
     parties: list[MultiAttackerParty] = []
-    valid: list[tuple[TurnLeader, int, PlanPhase, list[int], HexCoord]] = []
-    exploration_new_percent: int | None = None
+    # Bug fix: `exploration_new_percent` (per mover) used to carry over
+    # into `record_kingdom_exploration()`/`reveal_adjacent_provinces()`/
+    # the `target_province.explored_percent` write below, called
+    # unconditionally inside this same loop for every mover that passed
+    # validation -- before this function yet knew whether it would go
+    # on to actually unite them into a real multi-attacker battle. When
+    # fewer than 2 parties survive validation, every surviving mover is
+    # instead re-dispatched through the ordinary `_dispatch_single()` ->
+    # `execute_move()` pipeline just below, which performs the exact
+    # same real move resolution (including these same three calls) a
+    # second time for the same province entry -- double-crediting this
+    # mover's own exploration percentage, merit tally, and discovered
+    # features, and re-revealing already-revealed neighbors (harmless on
+    # its own, but a symptom of the same double-dispatch). Each mover's
+    # own `exploration_new_percent` is now carried in `valid` instead of
+    # a function-level scalar, and the three mutating calls are deferred
+    # until after the `len(parties) < 2` fallback has already returned.
+    valid: list[tuple[TurnLeader, int, PlanPhase, list[int], HexCoord, int | None]] = []
 
     for tl, segment_index, phase in movers:
         army_ids = [army.army_id for army in state.armies_commanded_by(tl.leader.leader_id)]
@@ -1770,6 +2696,19 @@ def _dispatch_multi_attacker_lmove(
             )
             if is_illegal_move_from_contested(origin_contested_by_mover, target_owner_is_enemy):
                 raise IllegalMoveFromContestedError("illegal to move from a contested province to an adjacent enemy province")
+            # Phase 1041 bug fix -- this function's own separate movement
+            # logic (see the Phase 737 note just below) never had the
+            # single-attacker path's own movement-points gate
+            # (move_execution.py execute_move(): "an army with no
+            # movement points left this gameturn can't move", raised
+            # *before* the move proceeds). find_transport_illegality()
+            # just below is a pure terrain/transport legality check and
+            # never looks at movement_points either, so an army already
+            # at (or below) 0 used to be let into the battle and then
+            # have `movement_points -= cost` applied unconditionally,
+            # driving it further negative with no recorded error.
+            if armies and any(army.movement_points < 1 for army in armies):
+                raise ValueError("an army with no movement points left this gameturn can't move")
             # Phase 737: this function has its own separate movement
             # logic (never calls execute_move()), so it needs its own
             # copy of the same real transport-legality gate -- see
@@ -1798,13 +2737,6 @@ def _dispatch_multi_attacker_lmove(
                 occupied_by_enemy=True,
             )
             exploration_new_percent = move_result.exploration.new_percent
-            # Phase 69: each mover's own kingdom gets its own tracked
-            # percentage here, unlike the single shared exploration_new_percent
-            # scalar above (which only the last mover in this loop wins).
-            record_kingdom_exploration(
-                target_province, tl.kingdom_id, explorer_skill, partial=True, state=state, rng=rng, leader_id=tl.leader.leader_id
-            )
-            reveal_adjacent_provinces(state, target_province, tl.kingdom_id, bounds)
         except Exception as exc:  # noqa: BLE001 -- same broad-catch convention as run_leader_plan
             results.append(PhaseDispatchResult(tl.leader.leader_id, segment_index, phase.label, phase.action, None, exc))
             continue
@@ -1812,22 +2744,36 @@ def _dispatch_multi_attacker_lmove(
         parties.append(
             MultiAttackerParty(leader_id=tl.leader.leader_id, kingdom_id=tl.kingdom_id, army_ids=army_ids, origin_province=origin)
         )
-        valid.append((tl, segment_index, phase, army_ids, origin))
-
-    if target_province is not None and exploration_new_percent is not None:
-        target_province.explored_percent = exploration_new_percent
+        valid.append((tl, segment_index, phase, army_ids, origin, exploration_new_percent))
 
     if len(parties) < 2:
         # Not enough survived validation to actually unite -- whoever's
-        # left dispatches individually and normally instead.
-        for tl, segment_index, phase, _army_ids, _origin in valid:
+        # left dispatches individually and normally instead, through the
+        # ordinary single-mover pipeline that applies its own real
+        # exploration-discovery side effects exactly once.
+        for tl, segment_index, phase, _army_ids, _origin, _exploration_new_percent in valid:
             results.extend(_dispatch_single(tl, segment_index, phase, state, board_width, explorer_skill, rng))
         return results
+
+    # Only now, having committed to a genuine united multi-attacker
+    # battle, apply each surviving mover's own exploration-discovery side
+    # effects -- see this function's own Bug fix note above for why this
+    # can't run inside the validation loop above.
+    for tl, segment_index, phase, _army_ids, _origin, exploration_new_percent in valid:
+        if target_province is not None and exploration_new_percent is not None:
+            # Phase 69: each mover's own kingdom gets its own tracked
+            # percentage via record_kingdom_exploration() below, unlike this
+            # single shared scalar (which only the last mover in this loop wins).
+            target_province.explored_percent = exploration_new_percent
+        record_kingdom_exploration(
+            target_province, tl.kingdom_id, explorer_skill, partial=True, state=state, rng=rng, leader_id=tl.leader.leader_id
+        )
+        reveal_adjacent_provinces(state, target_province, tl.kingdom_id, bounds)
 
     battles = fight_multi_attacker_battle(state, target, parties, apply_fanaticism=True, use_real_duel_combat=True, rng=rng)
     battle_by_leader = {leader_id: battle for battle in battles for leader_id in battle.leader_ids}
 
-    for tl, segment_index, phase, army_ids, origin in valid:
+    for tl, segment_index, phase, army_ids, origin, _exploration_new_percent in valid:
         battle = battle_by_leader[tl.leader.leader_id]
         conquered = battle.report.conquered
         cost = movement_cost_for_move(battle_occurred=True, conquered=conquered)

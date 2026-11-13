@@ -116,8 +116,8 @@ Actions above, this data all genuinely exists on `GameState` already
 `ProvinceState.owner_kingdom_id` -- so assembling it needed no new
 data model, only a new result type to carry it.
 ``TrailExecutionResult.king_intelligence`` is a ``KingIntelligence``
-(``treasury``, ``allied_kingdom_ids``, ``controlled_provinces``),
-populated only when ``target.is_king`` is ``True`` and ``None``
+(``treasury``, ``allied_kingdom_ids``, ``enemy_kingdom_ids``,
+``controlled_provinces``), populated only when ``target.is_king`` is ``True`` and ``None``
 otherwise (a Hero's Trail result never carries one -- matches the
 rulebook's own "if the character is a King" conditional exactly).
 ``allied_kingdom_ids`` is computed by checking every other registered
@@ -125,16 +125,21 @@ kingdom against `GameState.is_allied()` -- no bulk "all allies of X"
 helper existed to reuse, so this walks `state.kingdoms` directly, the
 same shape `friendly_provinces_for()` already uses for provinces.
 
-**"Enemies" is deliberately left out of `KingIntelligence`, not
-silently mapped to "not allied."** This project has no positive
-enemy/hostile-diplomacy registry anywhere -- only `GameState.
-allied_kingdoms`, a registry of friendly pairs. Treating "not in
-`allied_kingdoms`" as "enemy" would misclassify every merely-unknown
-or neutral kingdom as hostile, which is worse than reporting nothing:
-it would silently invent a diplomatic stance this project has no data
-for. Same reasoning this project already applies elsewhere (`LCost`,
-`Ofc_Pts`) -- confirmed absent from the available source, not merely
-unmodeled, so not guessed at.
+**"Enemies" (2026-11-04) -- the gap this paragraph used to describe is
+closed.** This used to say the project had no positive enemy/hostile-
+diplomacy registry anywhere, only `GameState.allied_kingdoms` (a
+registry of friendly pairs), so treating "not allied" as "enemy" would
+have misclassified every merely-unknown or neutral kingdom as hostile
+-- worse than reporting nothing. That blocker is gone: `turn/
+diplomacy.py`'s own RULES.AK [8] state machine now tracks a real third
+state (`GameState.diplomatic_relation()`, `DiplomaticRelation.ENEMY`),
+written by a real Break Treat order (`apply_treat_orders()`/`advance_
+pending_diplomacy()`) or bridged from a real mid-game save file
+(`parser/gw_world_bridge.py`). `KingIntelligence.enemy_kingdom_ids`
+(`_build_king_intelligence()` below) now reads that real relation
+directly, the exact same shape `allied_kingdom_ids` already uses for
+`is_allied()` -- a Neutral kingdom still correctly reports as neither
+allied nor enemy, not guessed into either list.
 
 **Phase 68 -- the same scoped multi-phase chase step Phase 66 added for
 Pursue.** [3.17] itself draws the parallel explicitly: "Like the Pursue
@@ -184,6 +189,7 @@ from ak_engine.models.map import HexCoord
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.models.temper import Temper
+from ak_engine.parser.gw_world import DiplomaticRelation
 from ak_engine.turn.blackmail import maybe_detect_blackmail
 from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.experience import add_experience
@@ -200,12 +206,13 @@ def _spy_skill_of(state: GameState, leader: LeaderState) -> int:
 
 @dataclass(slots=True, frozen=True)
 class KingIntelligence:
-    """[3.17]'s King-target aggregate case -- Phase 166. See module docstring
-    for why "enemies" has no field here.
+    """[3.17]'s King-target aggregate case -- Phase 166, Enemies closed
+    2026-11-04. See module docstring for the full "enemies" sourcing.
     """
 
     treasury: int
     allied_kingdom_ids: tuple[int, ...]
+    enemy_kingdom_ids: tuple[int, ...]
     controlled_provinces: tuple[HexCoord, ...]
 
 
@@ -342,7 +349,19 @@ def execute_trail(
 
     add_experience(trailer, Ability.SPY, 10, rng)
 
-    race = state.kingdoms[target.kingdom_id].race if target.kingdom_id is not None else None
+    # Phase 1041 bug fix -- `.get()` instead of a bare subscript, same
+    # guarded pattern every sibling `_leader_combatant()` builder already
+    # uses for this identical "leader.kingdom_id -> KingdomState" lookup
+    # (pursue_execution.py/patrol_execution.py/random_encounter_
+    # execution.py). `turn/kingdom_bridge.py`'s own sync_leaders_from_
+    # kingdom()/sync_leaders_from_gw_world() write a leader's own
+    # `kingdom_id` from an unchecked external source (a move file's
+    # `.K<N>` filename suffix, or a world-file "Liege" field) with no
+    # check that the id actually exists in `state.kingdoms` -- the only
+    # validation for that lives one layer up, in the webapp's own
+    # upload-time filtering, not in this core engine function.
+    target_kingdom = state.kingdoms.get(target.kingdom_id) if target.kingdom_id is not None else None
+    race = target_kingdom.race if target_kingdom is not None else None
     king_intelligence = (
         _build_king_intelligence(state, target.kingdom_id) if target.is_king and target.kingdom_id is not None else None
     )
@@ -375,12 +394,21 @@ def _build_king_intelligence(state: GameState, kingdom_id: int) -> KingIntellige
     allied_kingdom_ids = tuple(
         other_id for other_id in state.kingdoms if other_id != kingdom_id and state.is_allied(kingdom_id, other_id)
     )
+    enemy_kingdom_ids = tuple(
+        other_id
+        for other_id in state.kingdoms
+        if other_id != kingdom_id and state.diplomatic_relation(kingdom_id, other_id) is DiplomaticRelation.ENEMY
+    )
     controlled_provinces = tuple(
         province.coord for province in state.provinces.values() if province.owner_kingdom_id == kingdom_id
     )
+    # Phase 1041 bug fix -- same `.get()` guard as the `race` lookup
+    # above, for the same reachable dangling-`kingdom_id` reason.
+    kingdom = state.kingdoms.get(kingdom_id)
     return KingIntelligence(
-        treasury=state.kingdoms[kingdom_id].treasury,
+        treasury=kingdom.treasury if kingdom is not None else 0,
         allied_kingdom_ids=allied_kingdom_ids,
+        enemy_kingdom_ids=enemy_kingdom_ids,
         controlled_provinces=controlled_provinces,
     )
 

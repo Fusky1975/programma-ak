@@ -55,7 +55,7 @@ from ak_engine.models.game_state import GameState
 from ak_engine.models.map import HexCoord
 from ak_engine.models.monster import Monster
 from ak_engine.models.rumor import Rumor, RumorContent
-from ak_engine.models.treasure import Treasure
+from ak_engine.models.treasure import TREASURE_NAME, Treasure
 from ak_engine.turn.movement import hex_distance
 
 RUMOR_CHANCE_BY_ACTION: dict[ActionCode, float] = {
@@ -110,7 +110,11 @@ def _build_rumor(
                 other_monsters = [m for m in Monster if m is not Monster.NOMONSTER and m is not feature.guardian_monster]
                 described_monster = rng.choice(other_monsters)
             else:
-                other_treasures = [t for t in Treasure if t is not feature.treasure]
+                # Exclude the UNUSED_EXTENSION ordinals (99-112): real
+                # placeholder slots with no display name, so describe_rumor()'s
+                # own TREASURE_NAME[...] lookup would crash if one were ever
+                # picked as a false rumor's "corrupted" treasure.
+                other_treasures = [t for t in Treasure if t is not feature.treasure and t in TREASURE_NAME]
                 described_treasure = rng.choice(other_treasures)
         else:
             other_provinces = [coord for coord in state.provinces.keys() if coord != feature.coord]

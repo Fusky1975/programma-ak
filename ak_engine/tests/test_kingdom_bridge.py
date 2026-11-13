@@ -166,6 +166,26 @@ def test_gw_world_sync_sets_a_kings_own_race_alignment_but_leaves_his_kingdom_id
     assert bradipo.is_king is True  # is_king IS derivable from the record shape alone
 
 
+def test_gw_world_sync_treats_an_ambiguous_name_as_not_found_rather_than_guessing():
+    # Phase 1192 bug fix: two different LeaderStates sharing the same
+    # name (plausible with generic Hero names reused across Kingdoms)
+    # used to silently collapse onto whichever one a plain dict
+    # comprehension happened to keep last, misattributing the record's
+    # own data to the wrong leader. Now treated as unresolvable, same
+    # as a genuinely unmatched name -- never a silent guess.
+    records = parse_gw_leaders(GW_FIXTURE)
+    state = GameState()
+    state.add_leader(LeaderState(13, kingdom_id=1, name="Ningarl", location=LOCATION))
+    state.add_leader(LeaderState(14, kingdom_id=2, name="Ningarl", location=LOCATION))
+
+    report = sync_leaders_from_gw_world(records, state)
+
+    assert "Ningarl" in report.not_found_names
+    assert "Ningarl" not in report.synced_names
+    assert state.leaders[13].kingdom_id == 1  # untouched
+    assert state.leaders[14].kingdom_id == 2  # untouched
+
+
 def test_gw_world_sync_reports_unmatched_names_without_creating_new_leaderstates():
     records = parse_gw_leaders(GW_FIXTURE)
     state = GameState()  # no leaders tracked at all yet
