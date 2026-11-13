@@ -41,15 +41,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from ak_engine.models.game_state import GameState
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.movement import MapBounds, is_adjacent
 from ak_engine.turn.scientific_treaty import ScientificTreatyResult
-
-
-def _king_leader_id(state: GameState, kingdom_id: int) -> int | None:
-    for leader in state.leaders.values():
-        if leader.kingdom_id == kingdom_id and leader.is_king:
-            return leader.leader_id
-    return None
 
 
 def _kingdoms_are_adjacent(state: GameState, kingdom_a_id: int, kingdom_b_id: int, bounds: MapBounds) -> bool:
@@ -75,10 +69,9 @@ def apply_diplomatic_merit(
     kingdom_ids = list(state.kingdoms.keys())
 
     for receiver_id in kingdom_ids:
-        king_id = _king_leader_id(state, receiver_id)
-        if king_id is None:
+        king = find_king_of_kingdom(state, receiver_id)
+        if king is None:
             continue
-        king = state.leaders[king_id]
 
         for partner_id in kingdom_ids:
             if partner_id == receiver_id:

@@ -274,6 +274,7 @@ from ak_engine.turn.battle_orchestrator import (
     MultiAttackerParty,
     fight_battle,
     fight_multi_attacker_battle,
+    snapshot_army_types,
 )
 from ak_engine.turn.army_list_decode import ArmyListRequest, decode_army_list_phase
 from ak_engine.turn.aspy_defend_decode import decode_defend_phase
@@ -2107,9 +2108,7 @@ def _dispatch_contested_rebattles(state: GameState, rng: random.Random) -> list[
         # rule (rulebook [7.4]) instead of falling back to the wrong
         # defender-style nearest-friendly-neighbor rule -- see
         # ProvinceState.contested_from_coord's own docstring.
-        # Phase 736: snapshot army types before fight_battle() removes
-        # any of them -- see move_execution.py's own identical note.
-        army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
+        army_types_before_battle = snapshot_army_types(state)
         # Phase 1192 bug fix: isolate one contested province's own
         # fight_battle() failure from poisoning every other contested
         # province's own already-computed result this same call -- the

@@ -12390,7 +12390,9 @@ _DIPLOMACY_NEUTRAL_INTRO = (
 _DIPLOMACY_NONE_AT_PRESENT = "None at present"
 
 
-def _kingdom_display_name(state: GameState, other_kingdom_id: int) -> str:
+def _kingdom_display_name(
+    state: GameState, other_kingdom_id: int, *, king_cache: dict[int, int | None] | None = None
+) -> str:
     """`"<name> (#<kingdom_id>)"`, resolving the kingdom's own King via
     `_king_leader_id()` (Phase 217) with a `KingdomState.name` fallback
     -- the bare-name half `_diplomacy_entry()` below extends with the
@@ -12398,9 +12400,19 @@ def _kingdom_display_name(state: GameState, other_kingdom_id: int) -> str:
     project needs to name a kingdom by its King (GIR/battle world
     events), which have no "viewing kingdom" of their own and so can't
     use `_diplomacy_entry()`'s own enrichment.
+
+    ``king_cache`` (Phase 1193 efficiency): optional, see
+    `_king_leader_id()`'s own docstring -- only `compose_letter_report()`
+    passes one (built once in `orchestrator.py`, shared across every
+    Kingdom's own letter report, since that one pass is read-only and
+    composed strictly after every turn-processing mutation is done).
+    Every other caller (the GIR/battle-world-event recorders above,
+    which run *during* active turn processing, before that point) omits
+    it and gets the original always-fresh lookup, since a King could
+    still change between one recorded event and the next.
     """
 
-    king_id = _king_leader_id(state, other_kingdom_id)
+    king_id = _king_leader_id(state, other_kingdom_id, cache=king_cache)
     name = state.leaders[king_id].name if king_id is not None else state.kingdoms[other_kingdom_id].name
     return f"{name} (#{other_kingdom_id})"
 
@@ -12411,6 +12423,8 @@ def _diplomacy_entry(
     other_kingdom_id: int,
     known_tax: dict[int, int],
     known_treasury: dict[int, int],
+    *,
+    king_cache: dict[int, int | None] | None = None,
 ) -> str:
     """One DIPLOMACY entry (Phase 640), extended with `Write_List`'s own
     real per-entry enrichment (`REPORTS.PAS` lines 128-158): tax-base/
@@ -12426,7 +12440,7 @@ def _diplomacy_entry(
     than behind one combined branch.
     """
 
-    entry = _kingdom_display_name(state, other_kingdom_id)
+    entry = _kingdom_display_name(state, other_kingdom_id, king_cache=king_cache)
     if other_kingdom_id in known_tax:
         entry += f", {known_tax[other_kingdom_id]}g taxbase"
     if other_kingdom_id in known_treasury:
@@ -12441,7 +12455,9 @@ def _diplomacy_entry(
     return entry
 
 
-def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
+def describe_diplomacy_report(
+    state: GameState, kingdom_id: int, *, king_cache: dict[int, int | None] | None = None
+) -> list[str]:
     """Assembles the "DIPLOMACY" section (Phase 218) -- Allied/At War/
     Neutral lists of every other kingdom, from this kingdom's own
     point of view.
@@ -12490,7 +12506,7 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
     neutral_ids = [k for k in other_kingdom_ids if k not in allied_ids and k not in war_ids]
 
     bounds = MapBounds(state.board_width, state.board_height)
-    viewer_king_id = _king_leader_id(state, kingdom_id)
+    viewer_king_id = _king_leader_id(state, kingdom_id, cache=king_cache)
     known_tax: dict[int, int] = {}
     known_treasury: dict[int, int] = {}
     if viewer_king_id is not None:
@@ -12498,11 +12514,20 @@ def describe_diplomacy_report(state: GameState, kingdom_id: int) -> list[str]:
         known_treasury = known_bordering_kingdom_treasuries(state, bounds, viewer_king_id) or {}
 
     lines = ["DIPLOMACY", _DIPLOMACY_ALLIED_INTRO]
-    lines.extend([_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury) for k in allied_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
+    lines.extend(
+        [_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury, king_cache=king_cache) for k in allied_ids]
+        or [_DIPLOMACY_NONE_AT_PRESENT]
+    )
     lines.append(_DIPLOMACY_WAR_INTRO)
-    lines.extend([_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury) for k in war_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
+    lines.extend(
+        [_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury, king_cache=king_cache) for k in war_ids]
+        or [_DIPLOMACY_NONE_AT_PRESENT]
+    )
     lines.append(_DIPLOMACY_NEUTRAL_INTRO)
-    lines.extend([_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury) for k in neutral_ids] or [_DIPLOMACY_NONE_AT_PRESENT])
+    lines.extend(
+        [_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury, king_cache=king_cache) for k in neutral_ids]
+        or [_DIPLOMACY_NONE_AT_PRESENT]
+    )
 
     return lines
 
@@ -13608,10 +13633,6 @@ def _leader_ability_description(state: GameState, leader: LeaderState) -> str:
     return f"(a {RACE_NAME[race]} {phrase}{ABILITY_NAME[ability]})"
 
 
-def _king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | None:
-    return next((leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king), None)
-
-
 def _stranger_descriptor(state: GameState, target: LeaderState, *, viewer_kingdom_id: int) -> str:
     """The "as" descriptor string (`REPORTS.PAS Desc_Stranger`, Phase
     638), capped at 26 characters like the real `Delete(as,27,99)`:
@@ -13664,7 +13685,7 @@ def _stranger_descriptor(state: GameState, target: LeaderState, *, viewer_kingdo
     elif target.is_king:
         descriptor = ": a King character"
     else:
-        king = _king_of_kingdom(state, target.kingdom_id)
+        king = find_king_of_kingdom(state, target.kingdom_id)
         descriptor = f": {king.name}'s Hero" if king is not None else ": a Hero"
     return descriptor[:26]
 
@@ -13716,6 +13737,24 @@ def _was_clairved(state: GameState, target_leader_id: int, kingdom_id: int) -> b
         and AdvancedAbility.ENHANCED_CLAIRVOYANCE in leader.advanced_abilities
         for leader in state.leaders.values()
     )
+
+
+def _clairvoyance_watch_targets(owned: list[LeaderState]) -> set[int]:
+    """Every ``leader_id`` any of ``owned`` (one kingdom's own leaders)
+    currently holds an Enhanced-Clairvoyance-backed watch on -- the same
+    predicate as ``_was_clairved()`` above, restated as a set built once
+    per kingdom instead of rescanned per candidate foreign leader (that
+    function's own per-call ``state.leaders.values()`` scan, called once
+    per OTHER kingdom's leader, was O(leaders^2) per kingdom's CHARACTERS
+    report every turn).
+    """
+
+    return {
+        leader.clairvoyance_cast_target
+        for leader in owned
+        if leader.clairvoyance_cast_target is not None
+        and AdvancedAbility.ENHANCED_CLAIRVOYANCE in leader.advanced_abilities
+    }
 
 
 def _characters_report_display_name(state: GameState, leader: LeaderState) -> str:
@@ -14118,10 +14157,11 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
     # resolved from `owned` alone, before this merge, so a Was_Clairved
     # leader who happens to be a foreign King is never mistaken for this
     # kingdom's own King by any row's `leader_pay()` call below.
+    clairvoyance_watch_targets = _clairvoyance_watch_targets(owned)
     clairved = [
         leader
         for leader in state.leaders.values()
-        if leader.kingdom_id != kingdom_id and _was_clairved(state, leader.leader_id, kingdom_id)
+        if leader.kingdom_id != kingdom_id and leader.leader_id in clairvoyance_watch_targets
     ]
     displayed = owned + clairved
     displayed.sort(key=lambda leader: leader.leader_id)
@@ -15170,11 +15210,23 @@ _LETTER_REPORTS_NONE = "There are no letters from anyone at this time."
 _LETTER_SALUTATION = "Honored Sovereign,"
 
 
-def _king_leader_id(state: GameState, kingdom_id: int) -> int | None:
-    for leader in state.leaders.values():
-        if leader.kingdom_id == kingdom_id and leader.is_king:
-            return leader.leader_id
-    return None
+def _king_leader_id(
+    state: GameState, kingdom_id: int, *, cache: dict[int, int | None] | None = None
+) -> int | None:
+    """``cache`` (Phase 1193 efficiency): an optional ``{kingdom_id:
+    king_leader_id}`` dict a caller may reuse across many kingdoms --
+    see ``_kingdom_display_name()``'s own docstring for which callers
+    may safely share one and why. ``None`` (every pre-existing caller)
+    preserves the original always-recompute behavior exactly.
+    """
+
+    if cache is not None and kingdom_id in cache:
+        return cache[kingdom_id]
+    king = find_king_of_kingdom(state, kingdom_id)
+    leader_id = king.leader_id if king is not None else None
+    if cache is not None:
+        cache[kingdom_id] = leader_id
+    return leader_id
 
 
 def _random_encounter_king_name(state: GameState, coord: HexCoord) -> str:
@@ -15437,16 +15489,23 @@ def describe_final_standings_report(state: GameState) -> list[str]:
     if report is None:
         return []
 
+    # Efficiency (Phase 1193): a Kingdom can appear in more than one of
+    # the 3 lists below (standings/all_star_qualifiers/valhalla_
+    # qualifiers) -- one shared cache for this one call avoids
+    # re-resolving the same King twice. Safe within one call: nothing
+    # mutates state.leaders between these 3 loops.
+    king_cache: dict[int, int | None] = {}
+
     lines = [_FINAL_STANDINGS_HEADER, _FINAL_STANDINGS_INTRO]
     for rank, kingdom_id in enumerate(report.standings, start=1):
         kingdom = state.kingdoms[kingdom_id]
-        king_leader_id = _king_leader_id(state, kingdom_id)
+        king_leader_id = _king_leader_id(state, kingdom_id, cache=king_cache)
         king_name = state.leaders[king_leader_id].name if king_leader_id is not None else "no King"
         points = _format_victory_points(report.kingdom_points[kingdom_id])
         lines.append(f"{rank}. {king_name} of {kingdom.name}: {points} Victory Points")
 
     for kingdom_id in report.all_star_qualifiers:
-        king_leader_id = _king_leader_id(state, kingdom_id)
+        king_leader_id = _king_leader_id(state, kingdom_id, cache=king_cache)
         if king_leader_id is None:
             continue
         king_name = state.leaders[king_leader_id].name
@@ -15454,7 +15513,7 @@ def describe_final_standings_report(state: GameState) -> list[str]:
         lines.append(f"{king_name} of {kingdom_name} has qualified for an all-star game of Adventurer-Kings.")
 
     for kingdom_id in report.valhalla_qualifiers:
-        king_leader_id = _king_leader_id(state, kingdom_id)
+        king_leader_id = _king_leader_id(state, kingdom_id, cache=king_cache)
         if king_leader_id is None:
             continue
         king_name = state.leaders[king_leader_id].name
@@ -16914,7 +16973,9 @@ _GENERAL_INTELLIGENCE_REPORT_HEADER = "GENERAL INTELLIGENCE REPORT"
 _GENERAL_INTELLIGENCE_REPORT_NONE = "None at present"
 
 
-def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> list[str]:
+def describe_general_intelligence_report(
+    state: GameState, kingdom_id: int, *, king_cache: dict[int, int | None] | None = None
+) -> list[str]:
     """Assembles the "GENERAL INTELLIGENCE REPORT" section (Phase 231) --
     the real cross-kingdom world-news feed, confirmed directly from
     ~15 real `SE3__T*.K*` fixture files: one `Kingdom of <Name> (#<id>):`
@@ -17044,7 +17105,7 @@ def describe_general_intelligence_report(state: GameState, kingdom_id: int) -> l
         lines.append(_GENERAL_INTELLIGENCE_REPORT_NONE)
         return lines
     for owner in order:
-        lines.append(f"Kingdom of {_kingdom_display_name(state, owner)}:")
+        lines.append(f"Kingdom of {_kingdom_display_name(state, owner, king_cache=king_cache)}:")
         lines.extend(groups[owner])
     return lines
 
@@ -17059,6 +17120,7 @@ def compose_letter_report(
     board_width: int | None = None,
     election_outcome: "ElectionResult | ElectionCallOutcome | None" = None,
     include_home_province_narrative: bool = False,
+    king_cache: dict[int, int | None] | None = None,
 ) -> list[str]:
     """Assembles a single King's own end-of-turn letter report (Phase 215) by
     stitching together this project's already-built section composers, in
@@ -17119,6 +17181,17 @@ def compose_letter_report(
     "Birthright" reports -- `webapp/reports.py turn_zero_report()` is
     the one caller that passes `True`; a regular turn's own report
     (every other caller) is unaffected.
+
+    **Phase 1193 efficiency**: a new optional `king_cache` keyword
+    parameter (default `None`, every pre-existing caller/test
+    unaffected) threads an optional `{kingdom_id: king_leader_id}` dict
+    down into DIPLOMACY/GENERAL INTELLIGENCE's own king-name lookups.
+    `orchestrator.py` builds one shared dict and passes it into every
+    Kingdom's own `compose_letter_report()` call within its single
+    `letter_reports = {...}` comprehension -- safe because that whole
+    pass is read-only, composed strictly after every turn-processing
+    mutation for this turn is already done (see `_kingdom_display_
+    name()`'s own docstring for why no other caller may share it).
 
     **All 10 real sections were wired here as of Phase 231** (STATE OF THE
     NATION makes 11, Phase 561) -- ACTION REPORT, LETTER REPORTS, STATE OF
@@ -17524,7 +17597,7 @@ def compose_letter_report(
     state_of_the_nation_lines = describe_state_of_the_nation_report()
     _emit_section(state_of_the_nation_lines[0], state_of_the_nation_lines[1:])
 
-    diplomacy_lines = describe_diplomacy_report(state, kingdom_id)
+    diplomacy_lines = describe_diplomacy_report(state, kingdom_id, king_cache=king_cache)
     if diplomacy_lines:
         _emit_section(diplomacy_lines[0], diplomacy_lines[1:])
 
@@ -17576,7 +17649,7 @@ def compose_letter_report(
     if adventure_lines:
         _emit_section(adventure_lines[0], adventure_lines[1:])
 
-    general_intelligence_lines = describe_general_intelligence_report(state, kingdom_id)
+    general_intelligence_lines = describe_general_intelligence_report(state, kingdom_id, king_cache=king_cache)
     if general_intelligence_lines:
         _emit_section(general_intelligence_lines[0], general_intelligence_lines[1:])
 

@@ -229,10 +229,11 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.initiative import character_initiative
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.merit_points import battle_quality_points
 from ak_engine.turn.movement import MapBounds, neighbors
 from ak_engine.turn.multiple_contingents import Attacker, group_attackers_into_battles, is_march_immune_party
-from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.office_holder import cached_office_holder_leader_id, resolve_office_holder
 from ak_engine.turn.pursuit import resolve_pursuit
 from ak_engine.turn.race_titles import RACE_TITLE_OFFICE
 from ak_engine.turn.retreat import find_retreat_destination, select_attacker_retreat_destination
@@ -832,6 +833,12 @@ def _build_battle_units(
             _title_office_holder_cache[office] = holder.leader_id if holder is not None else None
         return _title_office_holder_cache[office]
 
+    # Efficiency: every unled army of the same race in this one battle
+    # gets the identical King-Druidic-shortfall result (see
+    # king_druidic_shortfall_for()'s own docstring) -- shared across
+    # this call's own loop instead of re-resolving the King per army.
+    king_shortfall_cache: dict[tuple[Race, HexCoord], int] = {}
+
     units = []
     for army in armies:
         # Bug fix (crash): an unowned mercenary (`army.kingdom_id is
@@ -875,7 +882,9 @@ def _build_battle_units(
                 is_fanatical = roll_title_fanaticism(title_office, rng)
                 if is_fanatical and race_fanatic_units is not None:
                     race_fanatic_units.append((army.army_id, army_race, army.commanded_by))
-        druidic_shortfall = druidic_shortfall_for(army, state, army_race, province_coord)
+        druidic_shortfall = druidic_shortfall_for(
+            army, state, army_race, province_coord, king_shortfall_cache=king_shortfall_cache
+        )
         phantasmal_armies_level = _phantasmal_armies_level_for(army, state)
         mystic_winds_active = mystic_winds_active_for(army, state)
         illusory_fog_affected = illusory_fog_active and is_illusory_fog_affected_air_unit(
@@ -990,7 +999,14 @@ def _build_battle_units(
     return units
 
 
-def druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race, province_coord: HexCoord) -> int:
+def druidic_shortfall_for(
+    army: ArmyState,
+    state: GameState,
+    army_race: Race,
+    province_coord: HexCoord,
+    *,
+    king_shortfall_cache: dict[tuple[Race, HexCoord], int] | None = None,
+) -> int:
     """Rulebook [4.32] Druid Table -- see ``_build_battle_units``'s docstring for scope.
 
     Public (Phase 279, dropped its leading underscore): the ARMIES
@@ -998,6 +1014,9 @@ def druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race, pr
     reuses this exact resolution outside of an active battle -- a
     peacetime army still has a real commander (or lacks one) the same
     way, so no logic changed, only visibility.
+
+    ``king_shortfall_cache`` -- see ``king_druidic_shortfall_for()``'s
+    own docstring; only reached (and so only matters) for an unled army.
     """
 
     if army.commanded_by is not None:
@@ -1008,10 +1027,16 @@ def druidic_shortfall_for(army: ArmyState, state: GameState, army_race: Race, pr
         leader_druidic_skill = effective_skill_level(state, leader, Ability.DRUID)
         return compute_druidic_shortfall(leader_race, army_race, leader_druidic_skill)
 
-    return king_druidic_shortfall_for(state, army_race, province_coord)
+    return king_druidic_shortfall_for(state, army_race, province_coord, cache=king_shortfall_cache)
 
 
-def king_druidic_shortfall_for(state: GameState, army_race: Race, province_coord: HexCoord) -> int:
+def king_druidic_shortfall_for(
+    state: GameState,
+    army_race: Race,
+    province_coord: HexCoord,
+    *,
+    cache: dict[tuple[Race, HexCoord], int] | None = None,
+) -> int:
     """Phase 42, rulebook [4.32]: "If a unit is under the garrison commander of a
     province, and is of a different race than the King, then the King's
     druidic ability is used" -- the province's *owning* kingdom's King
@@ -1020,24 +1045,39 @@ def king_druidic_shortfall_for(state: GameState, army_race: Race, province_coord
     or no King identified for it, falls back to 0 -- insufficient data,
     not a guessed penalty. Public since Phase 279 -- see
     ``druidic_shortfall_for``'s own note.
+
+    ``cache`` (Phase 1193 efficiency): this function's own result
+    depends only on ``(army_race, province_coord)``, never on which
+    specific unled army is asking -- every unled army of the same race
+    fighting in the same battle province gets the identical shortfall.
+    An optional ``{(army_race, province_coord): shortfall}`` dict the
+    caller may reuse across every unled army in one single battle's own
+    unit-building pass. Safe only within one such read-only pass
+    (nothing mutates `state.leaders`/kingdoms mid-pass); ``None``
+    (every pre-existing caller) preserves the original always-recompute
+    behavior exactly.
     """
+
+    key = (army_race, province_coord)
+    if cache is not None and key in cache:
+        return cache[key]
 
     province = state.provinces.get(province_coord)
     if province is None or province.owner_kingdom_id is None:
+        if cache is not None:
+            cache[key] = 0
         return 0
     king = find_king_of_kingdom(state, province.owner_kingdom_id)
     if king is None or king.kingdom_id is None:
+        if cache is not None:
+            cache[key] = 0
         return 0
     king_race = state.kingdoms[king.kingdom_id].race
     king_druidic_skill = effective_skill_level(state, king, Ability.DRUID)
-    return compute_druidic_shortfall(king_race, army_race, king_druidic_skill)
-
-
-def find_king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | None:
-    for leader in state.leaders.values():
-        if leader.kingdom_id == kingdom_id and leader.is_king:
-            return leader
-    return None
+    shortfall = compute_druidic_shortfall(king_race, army_race, king_druidic_skill)
+    if cache is not None:
+        cache[key] = shortfall
+    return shortfall
 
 
 def race_item_bonus_for(state: GameState, army_race: Race | None, commanded_by: int | None) -> int:
@@ -1376,7 +1416,9 @@ class _DuelOutcome:
     loser_fled: bool = False
 
 
-def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
+def _commander_combatant(
+    commander: Commander, state: GameState, *, office_cache: dict[Office, int | None] | None = None
+) -> Combatant:
     """Build an ``encounter.Combatant`` for a Supreme Commander (Phase 49, opt-in real duel combat).
 
     ``leader_id=None`` (the provincial garrison commander, rulebook
@@ -1419,13 +1461,13 @@ def _commander_combatant(commander: Commander, state: GameState) -> Combatant:
     hit_points_bonus = 0
     if leader is not None:
         hit_points_bonus = arcane_valor_hit_points_bonus(state, leader)
-        defender_office = resolve_office_holder(state, Office.DEFENDER)
-        if defender_office is not None and defender_office.leader_id == leader.leader_id:
+        defender_leader_id = cached_office_holder_leader_id(state, Office.DEFENDER, office_cache)
+        if defender_leader_id == leader.leader_id:
             damage_reduction = 1
-        illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
-        always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
-        necro_mage_office = resolve_office_holder(state, Office.NECRO_MAGE)
-        if necro_mage_office is not None and necro_mage_office.leader_id == leader.leader_id:
+        illus_mage_leader_id = cached_office_holder_leader_id(state, Office.ILLUS_MAGE, office_cache)
+        always_acts_first = illus_mage_leader_id == leader.leader_id
+        necro_mage_leader_id = cached_office_holder_leader_id(state, Office.NECRO_MAGE, office_cache)
+        if necro_mage_leader_id == leader.leader_id:
             regenerates_hp = 1
             regenerates_hp_interval = 2
         has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
@@ -1865,8 +1907,12 @@ def _maybe_fight_duel(
             return _DuelOutcome(attacker_commander.leader_id, defender_commander.leader_id, "defender", loser_fled=True)
 
     if use_real_duel_combat and state is not None:
-        attacker_combatant = _commander_combatant(attacker_commander, state)
-        defender_combatant = _commander_combatant(defender_commander, state)
+        # Efficiency (Phase 1193): one shared office-holder cache for
+        # both sibling Combatants built in this one call -- see
+        # cached_office_holder_leader_id()'s own docstring.
+        office_cache: dict[Office, int | None] = {}
+        attacker_combatant = _commander_combatant(attacker_commander, state, office_cache=office_cache)
+        defender_combatant = _commander_combatant(defender_commander, state, office_cache=office_cache)
         attacker_leader = (
             state.leaders.get(attacker_commander.leader_id) if attacker_commander.leader_id is not None else None
         )
@@ -2275,6 +2321,14 @@ def _qual_modfr_score_by_army_id(
     """
 
     scores: dict[int, int] = {}
+    # Efficiency: shared by every army on this side (doesn't depend on
+    # the loop variable at all), so this is hoisted above the loop
+    # instead of rescanning `armies` once per army -- was O(armies^2).
+    camel_corps_present = any(a.army_type is ArmyType.CAMEL_CORPS for a in armies)
+    # Efficiency: see _build_battle_units()'s own identical note --
+    # king_druidic_shortfall_for()'s result only depends on (army_race,
+    # province_coord), shared across every unled army of the same race.
+    king_shortfall_cache: dict[tuple[Race, HexCoord], int] = {}
     for army in armies:
         # Bug fix (crash): same root cause as _build_battle_units()'s own
         # fix -- an unowned mercenary (`army.kingdom_id is None`) has no
@@ -2285,12 +2339,10 @@ def _qual_modfr_score_by_army_id(
         kingdom = state.kingdoms.get(army.kingdom_id) if army.kingdom_id is not None else None
         army_race = MONSTROUS_ARMY_RACE.get(army.army_type, kingdom.race if kingdom is not None else None)
         is_home = kingdom is not None and province_coord == kingdom.home_province
-        desert_without_camels = (
-            terrain is Terrain.DESERT
-            and not explorer_find_water
-            and not any(a.army_type is ArmyType.CAMEL_CORPS for a in armies)
+        desert_without_camels = terrain is Terrain.DESERT and not explorer_find_water and not camel_corps_present
+        druidic_shortfall = druidic_shortfall_for(
+            army, state, army_race, province_coord, king_shortfall_cache=king_shortfall_cache
         )
-        druidic_shortfall = druidic_shortfall_for(army, state, army_race, province_coord)
         race_item_bonus = race_item_bonus_for(state, army_race, army.commanded_by)
         scores[army.army_id] = quality_modifier_delta(
             desert_without_camels=desert_without_camels,
@@ -2601,6 +2653,38 @@ def _supreme_commander_exploration_override(
     office = Office.ADMIRAL if terrain is Terrain.SEA else Office.DRUID_KING
     holder = resolve_office_holder(state, office)
     return 100 if holder is not None and holder.leader_id == commander_leader.leader_id else None
+
+
+def snapshot_army_types(state: GameState) -> dict[int, ArmyType]:
+    """Phase 736: a ``{army_id: army_type}`` snapshot of every army
+    currently in ``state``, taken *before* ``fight_battle()`` removes
+    any of them -- ``turn/sea_transport.py apply_battle_carrier_
+    destruction()`` needs a sunk carrier's own type to record a real
+    sinking event, but the carrier is already gone from ``state.armies``
+    by the time that function runs.
+
+    Previously this exact one-line dict comprehension was written out
+    identically at all 4 real call sites (this module's own
+    ``fight_multi_attacker_battle()``, ``turn/move_execution.py
+    execute_move()``, ``turn/pursue_execution.py execute_pursue()``,
+    ``turn/turn_processor.py``'s forced-rebattle continuation), each
+    one's own comment cross-referencing the others as "the same Phase
+    736 note." Extracted here, next to ``fight_battle()`` itself (every
+    call site already imports from this module for ``fight_battle``/
+    ``BattleReport``, so this needs no new import path anywhere).
+
+    Snapshots every army in the game, not just this battle's own
+    participants -- deliberately unchanged from the original inline
+    version: narrowing it to "only this battle's own attacker/defender
+    army ids" would mean re-deriving the defender side's own army list
+    a second time outside of ``fight_battle()``'s own resolution of it,
+    risking drift if that resolution logic ever changes. The redundant
+    work this does is bounded by the total army count, not battle size,
+    and this project has no indication that count is ever large enough
+    to matter in practice.
+    """
+
+    return {army.army_id: army.army_type for army in state.armies.values()}
 
 
 def fight_battle(
@@ -3452,9 +3536,7 @@ def fight_multi_attacker_battle(
             for army in state.armies_at(province_coord)
         )
         if defenders_present:
-            # Phase 736: snapshot army types before fight_battle() removes
-            # any of them -- see move_execution.py's own identical note.
-            army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
+            army_types_before_battle = snapshot_army_types(state)
             report = fight_battle(
                 state,
                 claiming_kingdom_id,

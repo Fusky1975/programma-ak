@@ -165,6 +165,24 @@ def test_admiral_merit_points_independent_hero_has_no_rich_sea_bonus():
     assert admiral_merit_points(state, hero) == 0
 
 
+def test_admiral_merit_points_rich_sea_cache_matches_the_uncached_result():
+    # Phase 1193 efficiency: rich_sea_cache is an optional, purely
+    # additive memoization (resolve_all_office_holders() reuses one
+    # across every leader/office it resolves in one call) -- passing it
+    # must never change the result, only how many times the underlying
+    # province scan actually runs.
+    state = make_state()
+    state.add_leader(LeaderState(2, 1, "Borin", HOME))
+    state.add_province(ProvinceState(HexCoord(0, 1), Terrain.SEA, Race.NO_RACE, owner_kingdom_id=1, tax=5))
+    cache: dict[int, int] = {}
+
+    first = admiral_merit_points(state, state.leaders[1], rich_sea_cache=cache)
+    second = admiral_merit_points(state, state.leaders[2], rich_sea_cache=cache)
+
+    assert first == second == admiral_merit_points(state, state.leaders[1])
+    assert cache == {1: 1}
+
+
 # -- Phase 308: quality-weighted Marshal/Admiral battle scoring -------------
 
 

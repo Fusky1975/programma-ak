@@ -25,6 +25,7 @@ from ak_engine.turn.office_holder import (
     apply_cravenest_temperament_escalation,
     army_office_rank,
     army_office_rival_best_points,
+    cached_office_holder_leader_id,
     commit_army_office_holders,
     commit_office_holders,
     kingdom_best_army_candidate,
@@ -174,6 +175,34 @@ def test_resolve_office_holder_tiebreak_falls_through_to_lower_leader_id():
 
     assert holder is not None
     assert holder.leader_id == 3
+
+
+def test_cached_office_holder_leader_id_matches_the_uncached_result():
+    # Phase 1193 efficiency: the cache is an optional, purely additive
+    # memoization (several files' own duplicate _leader_combatant()-
+    # style Combatant builders share one across 2 sibling Combatants
+    # built in the same call) -- passing it must never change the
+    # result, only how many times resolve_office_holder() actually runs.
+    state = make_state()
+    leader = LeaderState(1, 1, "Aldric", HOME, is_king=True)
+    leader.merit_tally.monster_hp_defeated = 10
+    state.add_leader(leader)
+    cache: dict = {}
+
+    first = cached_office_holder_leader_id(state, Office.DEFENDER, cache)
+    second = cached_office_holder_leader_id(state, Office.DEFENDER, cache)
+
+    assert first == second == 1
+    assert cache == {Office.DEFENDER: 1}
+
+
+def test_cached_office_holder_leader_id_caches_a_none_result_too():
+    state = make_state()
+    cache: dict = {}
+
+    assert cached_office_holder_leader_id(state, Office.DEFENDER, cache) is None
+    assert Office.DEFENDER in cache
+    assert cache[Office.DEFENDER] is None
 
 
 def test_resolve_office_holder_previous_holder_wins_a_tie_over_more_treasury():

@@ -273,6 +273,7 @@ from ak_engine.models.temper import raise_temper_one_level
 from ak_engine.models.race import Race
 from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.tax_base import compute_tax_base
 from ak_engine.turn.merit_points import (
     admiral_merit_points,
@@ -377,7 +378,14 @@ class OfficeHolder:
     merit_points: int | float
 
 
-def _leader_merit_points(office: Office, state: GameState, leader: LeaderState) -> int | float:
+def _leader_merit_points(
+    office: Office,
+    state: GameState,
+    leader: LeaderState,
+    *,
+    tax_base_cache: dict[int, int] | None = None,
+    rich_sea_cache: dict[int, int] | None = None,
+) -> int | float:
     if office is Office.CHANCELLOR:
         return chancellor_merit_points(state, leader)
     if office is Office.TREASURER:
@@ -385,7 +393,7 @@ def _leader_merit_points(office: Office, state: GameState, leader: LeaderState) 
     if office is Office.MARSHAL:
         return marshal_merit_points(leader)
     if office is Office.ADMIRAL:
-        return admiral_merit_points(state, leader)
+        return admiral_merit_points(state, leader, rich_sea_cache=rich_sea_cache)
     if office is Office.DEFENDER:
         return defender_merit_points(leader)
     if office is Office.PRIEST:
@@ -393,21 +401,21 @@ def _leader_merit_points(office: Office, state: GameState, leader: LeaderState) 
     if office is Office.MAGE:
         return mage_merit_points(state, leader)
     if office is Office.EVIL_KING:
-        return evilking_merit_points(state, leader)
+        return evilking_merit_points(state, leader, tax_base_cache=tax_base_cache)
     if office is Office.THIEF_PRINCE:
         return thiefprince_merit_points(state, leader)
     if office is Office.DIVINE_KING:
-        return divinearchangel_merit_points(state, leader)
+        return divinearchangel_merit_points(state, leader, tax_base_cache=tax_base_cache)
     if office is Office.GOOD_KING:
-        return goodking_merit_points(state, leader)
+        return goodking_merit_points(state, leader, tax_base_cache=tax_base_cache)
     if office is Office.DRUID_KING:
-        return druidking_merit_points(state, leader)
+        return druidking_merit_points(state, leader, tax_base_cache=tax_base_cache)
     if office is Office.NEUTRAL_KING:
-        return neutralking_merit_points(state, leader)
+        return neutralking_merit_points(state, leader, tax_base_cache=tax_base_cache)
     if office is Office.PAGAN_KING:
-        return paganking_merit_points(state, leader)
+        return paganking_merit_points(state, leader, tax_base_cache=tax_base_cache)
     if office is Office.UNDEAD_KING:
-        return undeadking_merit_points(state, leader)
+        return undeadking_merit_points(state, leader, tax_base_cache=tax_base_cache)
     if office is Office.CHIEF_OF_STAFF:
         return chiefofstaff_merit_points(state, leader)
     if office is Office.DIPLOMAT:
@@ -465,28 +473,43 @@ def leader_office_merit_points(office: Office, state: GameState, leader: LeaderS
     return _leader_merit_points(office, state, leader)
 
 
-def _king_leader_id(state: GameState, kingdom_id: int) -> int | None:
-    for leader in state.leaders.values():
-        if leader.kingdom_id == kingdom_id and leader.is_king:
-            return leader.leader_id
-    return None
-
-
-def resolve_office_holder(state: GameState, office: Office) -> OfficeHolder | None:
+def resolve_office_holder(
+    state: GameState,
+    office: Office,
+    *,
+    _tax_base_cache: dict[int, int] | None = None,
+    _rich_sea_cache: dict[int, int] | None = None,
+) -> OfficeHolder | None:
     """The leader who currently holds `office`, and their own Merit
     Points -- or `None` if nobody qualifies yet. See module docstring
     for Emperor's own special-cased resolution, the Rank-contest rules
     governing the other 47, and the Phase 475 addendum for the
     ``state.office_holders``-backed tier-1 tie-break below.
+
+    ``_tax_base_cache``/``_rich_sea_cache`` (Phase 1193 efficiency,
+    leading underscore since they're an internal performance detail, not
+    part of this function's own public contract): optional ``{kingdom_id:
+    value}`` dicts ``resolve_all_office_holders()`` builds once and
+    shares across all 47 offices it resolves in one call -- see ``turn/
+    merit_points.py _alignment_king_merit_points()``/``_rich_sea_
+    province_count()``'s own docstrings for why reusing them across
+    offices (not just across leaders within *this* one office's own
+    loop below) is still safe: resolving every office is one atomic,
+    read-only pass over `state`, with no mutation between offices either.
+    A caller that resolves just one office in isolation (every pre-
+    existing caller) gets a fresh, call-scoped dict instead -- still
+    removes the redundant per-leader rescan within this one call's own
+    loop, just not the cross-office rescan `resolve_all_office_holders()`
+    additionally avoids.
     """
 
     if office is Office.EMPEROR:
         if state.emperor_kingdom_id is None:
             return None
-        leader_id = _king_leader_id(state, state.emperor_kingdom_id)
-        if leader_id is None:
+        king = find_king_of_kingdom(state, state.emperor_kingdom_id)
+        if king is None:
             return None
-        return OfficeHolder(leader_id, emperor_merit_points(state, state.emperor_kingdom_id))
+        return OfficeHolder(king.leader_id, emperor_merit_points(state, state.emperor_kingdom_id))
 
     if office not in RANKED_OFFICES:
         raise ValueError(f"{office} is not one of the 47 real Imperial Offices this project models")
@@ -500,6 +523,8 @@ def resolve_office_holder(state: GameState, office: Office) -> OfficeHolder | No
     previous_holder_id = state.office_holders.get(office)
     best: OfficeHolder | None = None
     best_tiebreak: tuple[int, int, int, int] | None = None
+    tax_base_cache = _tax_base_cache if _tax_base_cache is not None else {}
+    rich_sea_cache = _rich_sea_cache if _rich_sea_cache is not None else {}
 
     for leader_id, leader in state.leaders.items():
         if leader_id == VALHALLA_VISITOR_LEADER_ID:
@@ -512,7 +537,7 @@ def resolve_office_holder(state: GameState, office: Office) -> OfficeHolder | No
             # their own Merit Points happen to be during their one active
             # turn -- confirmed indispensable to reproduce that save.
             continue
-        points = _leader_merit_points(office, state, leader)
+        points = _leader_merit_points(office, state, leader, tax_base_cache=tax_base_cache, rich_sea_cache=rich_sea_cache)
         if points < min_points:
             continue
         stickiness = 1 if leader_id == previous_holder_id else 0
@@ -524,12 +549,45 @@ def resolve_office_holder(state: GameState, office: Office) -> OfficeHolder | No
     return best
 
 
-def resolve_all_office_holders(state: GameState) -> dict[Office, OfficeHolder | None]:
-    """All 47 real Imperial Offices at once, each resolved via
-    `resolve_office_holder()`.
+def cached_office_holder_leader_id(
+    state: GameState, office: Office, cache: dict[Office, int | None] | None = None
+) -> int | None:
+    """``resolve_office_holder(state, office)``'s own ``leader_id``,
+    optionally memoized in a caller-supplied ``{Office: leader_id}``
+    dict -- the same "safe only within one atomic read-only pass"
+    reasoning as this module's own ``resolve_all_office_holders()``
+    cache parameters (Phase 1193 efficiency). Used by several files'
+    own duplicate ``_leader_combatant()``-style Combatant builders
+    (``turn/patrol_execution.py``, ``turn/pursue_execution.py``, ``turn/
+    challenge_execution.py``, ``turn/battle_orchestrator.py
+    _commander_combatant``; see each one's own docstring for why the
+    builders themselves stay duplicated, not merged) to avoid re-
+    resolving the same turn-global office 3 times when building 2
+    sibling Combatants (e.g. challenger+target) in one call.
     """
 
-    return {office: resolve_office_holder(state, office) for office in ALL_OFFICES}
+    if cache is not None and office in cache:
+        return cache[office]
+    holder = resolve_office_holder(state, office)
+    leader_id = holder.leader_id if holder is not None else None
+    if cache is not None:
+        cache[office] = leader_id
+    return leader_id
+
+
+def resolve_all_office_holders(state: GameState) -> dict[Office, OfficeHolder | None]:
+    """All 47 real Imperial Offices at once, each resolved via
+    `resolve_office_holder()`. Shares one ``tax_base``/``rich_sea``
+    cache pair across every office resolved this call -- see that
+    function's own docstring for why that's safe here specifically.
+    """
+
+    tax_base_cache: dict[int, int] = {}
+    rich_sea_cache: dict[int, int] = {}
+    return {
+        office: resolve_office_holder(state, office, _tax_base_cache=tax_base_cache, _rich_sea_cache=rich_sea_cache)
+        for office in ALL_OFFICES
+    }
 
 
 def commit_office_holders(state: GameState) -> dict[Office, OfficeHolder | None]:

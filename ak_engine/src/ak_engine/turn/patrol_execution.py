@@ -168,7 +168,7 @@ from ak_engine.turn.encounter import (
 )
 from ak_engine.turn.experience import add_experience
 from ak_engine.turn.movement import MapBounds, neighbors
-from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.office_holder import cached_office_holder_leader_id
 from ak_engine.turn.sep_decode import target_uses_special_encounter_plan
 
 _MAGIC_ABILITIES = (Ability.WHITE, Ability.NECROMANCY, Ability.ELEMENTAL, Ability.PSYCHIC, Ability.ILLUSION)
@@ -242,7 +242,9 @@ def find_patrol_target(state: GameState, patroller_leader_id: int, bounds: MapBo
     return candidates[0]
 
 
-def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
+def _leader_combatant(
+    leader: LeaderState, state: GameState, *, office_cache: dict[Office, int | None] | None = None
+) -> Combatant:
     """Same construction as ``pursue_execution.py``/``challenge_execution.py``'s own
     ``_leader_combatant`` -- duplicated per this project's own established
     small-per-consumer-lookup precedent (see module docstring).
@@ -297,12 +299,12 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         kingdom = state.kingdoms.get(leader.kingdom_id)
         neutral_bonus = kingdom is not None and kingdom.alignment is Alignment.NEUTRAL
 
-    defender_office = resolve_office_holder(state, Office.DEFENDER)
-    damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
-    illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
-    always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
-    necro_mage_office = resolve_office_holder(state, Office.NECRO_MAGE)
-    is_necro_mage = necro_mage_office is not None and necro_mage_office.leader_id == leader.leader_id
+    defender_leader_id = cached_office_holder_leader_id(state, Office.DEFENDER, office_cache)
+    damage_reduction = 1 if defender_leader_id == leader.leader_id else 0
+    illus_mage_leader_id = cached_office_holder_leader_id(state, Office.ILLUS_MAGE, office_cache)
+    always_acts_first = illus_mage_leader_id == leader.leader_id
+    necro_mage_leader_id = cached_office_holder_leader_id(state, Office.NECRO_MAGE, office_cache)
+    is_necro_mage = necro_mage_leader_id == leader.leader_id
     has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
     effective_race = leader.race
     if effective_race is None and leader.kingdom_id is not None:
@@ -436,8 +438,12 @@ def execute_patrol(
     if not accepted:
         return PatrolExecutionResult(intercepted=True, target_leader_id=target.leader_id, reason="encounter refused")
 
-    patroller_combatant = _leader_combatant(patroller, state)
-    target_combatant = _leader_combatant(target, state)
+    # Efficiency (Phase 1193): one shared office-holder cache for both
+    # sibling Combatants built in this one call -- see
+    # cached_office_holder_leader_id()'s own docstring.
+    office_cache: dict[Office, int | None] = {}
+    patroller_combatant = _leader_combatant(patroller, state, office_cache=office_cache)
+    target_combatant = _leader_combatant(target, state, office_cache=office_cache)
     # Same target_tactics lookup as pursue_execution.py execute_pursue()'s
     # own armyless case -- the target is structurally armyless here too
     # (find_patrol_target()'s own rule (a) filter), so [5.10]'s own

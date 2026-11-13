@@ -628,10 +628,25 @@ def marshal_merit_points(leader: LeaderState) -> int:
     return tally.land_battles_won_points - tally.land_battles_lost_points
 
 
-def _rich_sea_province_count(state: GameState, kingdom_id: int | None) -> int:
+def _rich_sea_province_count(
+    state: GameState, kingdom_id: int | None, *, cache: dict[int, int] | None = None
+) -> int:
+    """``cache`` (Phase 1193 efficiency): an optional ``{kingdom_id:
+    count}`` dict the caller may reuse across several leaders of the
+    same Kingdom within one ``resolve_office_holder(Office.ADMIRAL)``
+    call -- this value depends only on ``kingdom_id``, not on which
+    leader is being scored, so a per-kingdom candidate loop otherwise
+    recomputes it once per candidate for no reason. Safe only within
+    one such read-only scan (nothing mutates ``state.provinces`` mid-
+    loop); ``None`` (every pre-existing caller) preserves the original
+    always-recompute behavior exactly.
+    """
+
     if kingdom_id is None:
         return 0
-    return sum(
+    if cache is not None and kingdom_id in cache:
+        return cache[kingdom_id]
+    count = sum(
         1
         for province in state.provinces.values()
         if province.owner_kingdom_id == kingdom_id
@@ -639,18 +654,22 @@ def _rich_sea_province_count(state: GameState, kingdom_id: int | None) -> int:
         and province.tax is not None
         and province.tax >= 2
     )
+    if cache is not None:
+        cache[kingdom_id] = count
+    return count
 
 
-def admiral_merit_points(state: GameState, leader: LeaderState) -> int:
+def admiral_merit_points(state: GameState, leader: LeaderState, *, rich_sea_cache: dict[int, int] | None = None) -> int:
     """Same won/lost-unit formula as Marshal (naval battles), plus a live
     Naval-skill term and a live "rich sea province" per-kingdom bonus --
     see module docstring for footnote 1's "applies to every character of
-    the Kingdom" reading.
+    the Kingdom" reading. ``rich_sea_cache`` -- see ``_rich_sea_province_
+    count()``'s own docstring.
     """
 
     tally = leader.merit_tally
     naval_skill = _skill_level_sum(state, leader, (Ability.NAVAL,))
-    rich_sea_provinces = _rich_sea_province_count(state, leader.kingdom_id)
+    rich_sea_provinces = _rich_sea_province_count(state, leader.kingdom_id, cache=rich_sea_cache)
     return tally.naval_battles_won_points - tally.naval_battles_lost_points + naval_skill + rich_sea_provinces
 
 
@@ -687,13 +706,13 @@ def mage_merit_points(state: GameState, leader: LeaderState) -> int:
     return skill_sum + wand_count
 
 
-def evilking_merit_points(state: GameState, leader: LeaderState) -> int:
+def evilking_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """King of Pain (Office.EVIL_KING) -- King-only, Evil-alignment-only,
     reformulated Phase 369: plain `Tax_Base(King)`, nothing else. See
     module docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.EVIL)
+    return _alignment_king_merit_points(state, leader, Alignment.EVIL, tax_base_cache=tax_base_cache)
 
 
 def thiefprince_merit_points(state: GameState, leader: LeaderState) -> int:
@@ -723,63 +742,80 @@ def _king_of_alignment(state: GameState, leader: LeaderState, alignment: Alignme
     return state.kingdoms[leader.kingdom_id].alignment is alignment
 
 
-def _alignment_king_merit_points(state: GameState, leader: LeaderState, alignment: Alignment) -> int:
+def _alignment_king_merit_points(
+    state: GameState, leader: LeaderState, alignment: Alignment, *, tax_base_cache: dict[int, int] | None = None
+) -> int:
     """The one real formula shared by all 7 alignment-King titles: plain
     `Tax_Base(King)`, gated to the King of the matching `Alignment`. See
     module docstring's Phase 369 addendum.
+
+    ``tax_base_cache`` (Phase 1193 efficiency): an optional ``{kingdom_id:
+    tax_base}`` dict the caller may reuse across all 7 alignment-King
+    offices within one ``resolve_all_office_holders()`` pass -- the same
+    King's own Kingdom has exactly one real `Tax_Base`, independent of
+    which of the 7 alignments is being checked, so resolving all 7
+    separately otherwise recomputes it 7 times for the same King. Safe
+    only within one such read-only pass (nothing mutates `state.
+    provinces`/taxation mid-pass); ``None`` (every pre-existing caller)
+    preserves the original always-recompute behavior exactly.
     """
 
     if not _king_of_alignment(state, leader, alignment):
         return 0
-    return compute_tax_base(state, leader.kingdom_id)
+    if tax_base_cache is not None and leader.kingdom_id in tax_base_cache:
+        return tax_base_cache[leader.kingdom_id]
+    tax_base = compute_tax_base(state, leader.kingdom_id)
+    if tax_base_cache is not None:
+        tax_base_cache[leader.kingdom_id] = tax_base
+    return tax_base
 
 
-def divinearchangel_merit_points(state: GameState, leader: LeaderState) -> int:
+def divinearchangel_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """Office.DIVINE_KING -- Divine-alignment Kings only. See module
     docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.DIVINE)
+    return _alignment_king_merit_points(state, leader, Alignment.DIVINE, tax_base_cache=tax_base_cache)
 
 
-def goodking_merit_points(state: GameState, leader: LeaderState) -> int:
+def goodking_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """Office.GOOD_KING (Most Blessed of Kings) -- Good-alignment Kings
     only. See module docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.GOOD)
+    return _alignment_king_merit_points(state, leader, Alignment.GOOD, tax_base_cache=tax_base_cache)
 
 
-def druidking_merit_points(state: GameState, leader: LeaderState) -> int:
+def druidking_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """Office.DRUID_KING (Great Druid of Life) -- Druid-alignment Kings
     only. See module docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.DRUID)
+    return _alignment_king_merit_points(state, leader, Alignment.DRUID, tax_base_cache=tax_base_cache)
 
 
-def neutralking_merit_points(state: GameState, leader: LeaderState) -> int:
+def neutralking_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """Office.NEUTRAL_KING (Defender of Freedom) -- Neutral-alignment
     Kings only. See module docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.NEUTRAL)
+    return _alignment_king_merit_points(state, leader, Alignment.NEUTRAL, tax_base_cache=tax_base_cache)
 
 
-def paganking_merit_points(state: GameState, leader: LeaderState) -> int:
+def paganking_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """Office.PAGAN_KING (Warlock of the Pagan Gods) -- Pagan-alignment
     Kings only. See module docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.PAGAN)
+    return _alignment_king_merit_points(state, leader, Alignment.PAGAN, tax_base_cache=tax_base_cache)
 
 
-def undeadking_merit_points(state: GameState, leader: LeaderState) -> int:
+def undeadking_merit_points(state: GameState, leader: LeaderState, *, tax_base_cache: dict[int, int] | None = None) -> int:
     """Office.UNDEAD_KING (Angel of Death) -- Undead-alignment Kings
     only. See module docstring's Phase 369 addendum.
     """
 
-    return _alignment_king_merit_points(state, leader, Alignment.UNDEAD)
+    return _alignment_king_merit_points(state, leader, Alignment.UNDEAD, tax_base_cache=tax_base_cache)
 
 
 def chiefofstaff_merit_points(state: GameState, leader: LeaderState) -> int:

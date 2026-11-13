@@ -38,6 +38,17 @@ class ProvinceAlreadyAHomeError(Exception):
     """Raised when the chosen province is already some Kingdom's own Home."""
 
 
+def coord_is_a_kingdom_home_province(state: GameState, coord: HexCoord) -> bool:
+    """Is ``coord`` already registered as some Kingdom's own Home
+    province? Shared by this module's own ``create_kingdom()`` validation
+    below and ``webapp/app.py``'s province-edit/province-delete
+    validation -- previously the same one-line scan duplicated in all 3
+    places.
+    """
+
+    return any(kingdom.home_province == coord for kingdom in state.kingdoms.values())
+
+
 def create_kingdom(
     state: GameState,
     *,
@@ -70,7 +81,7 @@ def create_kingdom(
         raise NoProvinceAtCoordError(coord)
     if province.owner_kingdom_id is not None:
         raise ProvinceAlreadyOwnedError(state.kingdoms[province.owner_kingdom_id].name)
-    if any(kingdom.home_province == coord for kingdom in state.kingdoms.values()):
+    if coord_is_a_kingdom_home_province(state, coord):
         raise ProvinceAlreadyAHomeError(coord)
 
     kingdom_id = state.new_kingdom_id()

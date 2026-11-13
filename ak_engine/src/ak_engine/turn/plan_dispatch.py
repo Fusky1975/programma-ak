@@ -409,6 +409,7 @@ from ak_engine.turn.exploration import SOCIETY_MAPS_EXPLORE_COUNT_RANGE, receive
 from ak_engine.turn.hex_numbering import decode_hex_number
 from ak_engine.turn.hire_fire_decode import FireRequest, HireRequest, decode_fire_phase, decode_hire_phase
 from ak_engine.turn.hire_pay import RARE_ALIGNMENT_EXCEPTION_PAY, required_pay, roll_rare_alignment_exception
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.move_execution import (
     MoveExecutionResult,
     execute_move,
@@ -1431,10 +1432,7 @@ def _dispatch_hire(
         # same province."
         return HireExecutionResult(request, hired=False, reason="not co-located")
 
-    king = next(
-        (leader for leader in state.leaders.values() if leader.kingdom_id == kingdom_id and leader.is_king),
-        None,
-    )
+    king = find_king_of_kingdom(state, kingdom_id)
     pay = required_pay(state, hero, king)
     rare_exception = False
 

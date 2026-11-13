@@ -514,6 +514,15 @@ ARMY_TYPE_BY_ORDINAL: dict[int, ArmyType] = {
 NO_LEADER_SENTINEL = 255
 
 
+def resolve_leader_id(raw: int) -> int | None:
+    """``NO_LEADER_SENTINEL`` decoded to ``None`` -- shared by every
+    decode module that reads a raw leader-id field able to carry this
+    sentinel (``turn/recruit_decode.py``, ``turn/army_list_decode.py``).
+    """
+
+    return None if raw == NO_LEADER_SENTINEL else raw
+
+
 # CTBOTH.PAS `atname` (~line 1316), verbatim, positional with the `army`
 # enum -- confirmed real and used via RUMORS.PAS's own
 # `Say(Concat(tms,' ',atname[_atype]),spytype)`, matching PROSE.TXT's own

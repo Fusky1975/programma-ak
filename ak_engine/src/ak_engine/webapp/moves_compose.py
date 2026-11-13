@@ -1184,9 +1184,10 @@ from ak_engine.turn.cast_decode import (
 from ak_engine.turn.cast_execution import is_unfinalized_royal_heir
 from ak_engine.turn.combat import QUALITY_NAME, Quality
 from ak_engine.turn.hex_numbering import encode_hex_number
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.office_holder import resolve_office_holder
 from ak_engine.turn.plan_dispatch import SUPPORTED_ACTIONS
-from ak_engine.turn.recruit import is_army_type_compatible_with_race, recruit_limit
+from ak_engine.turn.recruit import is_army_type_compatible_with_race, recruit_limit, resolve_recruit
 
 # Search's own "tl" slot (``turn/search_decode.py SearchRequest.
 # unconfirmed_extra0``, always 0 in every real sample) followed by the
@@ -1668,8 +1669,19 @@ def recruit_type_options(state: GameState, leader_id: int) -> list[tuple[str, st
             is_native = army_type in (province.recruit_type_1, province.recruit_type_2)
         else:
             is_native = True
-        base_pay = ARMY_TABLE[army_type].pay
-        cost = base_pay if is_native else base_pay * 2
+        # Reuses the real resolver's own gold_per_unit formula instead of
+        # recomputing the native/non-native doubling by hand -- this is
+        # a preview label only (the real eligibility check happens at
+        # actual Recruit-order dispatch time), so commander_already_has_
+        # type=True bypasses resolve_recruit()'s own NonNativeTypeNotYet
+        # OwnedError just to read the cost it would charge.
+        cost = resolve_recruit(
+            army_type,
+            province.race,
+            is_home_province=is_home_province,
+            is_native_to_province=is_native,
+            commander_already_has_type=True,
+        ).gold_per_unit
         label = f"{ARMY_TYPE_NAME[army_type]} ({'native' if is_native else 'non-native'}, {cost} gold"
         if not is_native:
             label += " -- needs an existing unit of this type"
@@ -1886,10 +1898,7 @@ def _trade_recipient_blackmail_king(state: GameState, leader: LeaderState) -> Le
     claim = giver_kingdom.active_blackmail if giver_kingdom is not None else None
     if claim is None:
         return None
-    return next(
-        (other for other in state.leaders.values() if other.kingdom_id == claim.spy_kingdom_id and other.is_king),
-        None,
-    )
+    return find_king_of_kingdom(state, claim.spy_kingdom_id)
 
 
 def _trade_recipient_is_eligible(state: GameState, leader: LeaderState, candidate_id: int) -> bool:

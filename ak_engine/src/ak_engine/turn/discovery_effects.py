@@ -69,6 +69,7 @@ from ak_engine.models.treasure import (
     TREASURE_ABILITY_ITEM,
     Treasure,
 )
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.practice_execution import MAX_SKILL_LEVEL
 
 
@@ -385,13 +386,6 @@ def holds_monster_command_item_for(state: GameState, leader_id: int, guardian_sp
     return any(item.treasure is treasure for item in state.items_held_by(leader_id))
 
 
-def _king_of_kingdom(state: GameState, kingdom_id: int) -> LeaderState | None:
-    for candidate in state.leaders.values():
-        if candidate.kingdom_id == kingdom_id and candidate.is_king:
-            return candidate
-    return None
-
-
 def _item_count(state: GameState, leader_id: int, treasure: Treasure) -> int:
     return sum(1 for item in state.items_held_by(leader_id) if item.treasure is treasure)
 
@@ -442,7 +436,7 @@ def arcane_valor_artifact_bonus(state: GameState, leader: LeaderState, ability: 
         if leader.alignment is Alignment.UNDEAD:
             n += _item_count(state, leader.leader_id, Treasure.NAMED_UNIQUE_FANG_VAMPIRE)
 
-    king = _king_of_kingdom(state, leader.kingdom_id) if leader.kingdom_id is not None else None
+    king = find_king_of_kingdom(state, leader.kingdom_id) if leader.kingdom_id is not None else None
     if king is not None:
         king_holds_crown = _item_count(state, king.leader_id, Treasure.NAMED_UNIQUE_CROWN_ROHAN) > 0
         king_holds_amulet = _item_count(state, king.leader_id, Treasure.NAMED_UNIQUE_AMULET_POWER) > 0
@@ -483,7 +477,7 @@ def arcane_valor_hit_points_bonus(state: GameState, leader: LeaderState) -> int:
     if _item_count(state, leader.leader_id, Treasure.NAMED_UNIQUE_SCEPTER_LIFE) > 0:
         n += ARCANE_VALOR_SCEPTER_PERSONAL_HIT_POINTS_BONUS
     if leader.kingdom_id is not None:
-        king = _king_of_kingdom(state, leader.kingdom_id)
+        king = find_king_of_kingdom(state, leader.kingdom_id)
         if king is not None and _item_count(state, king.leader_id, Treasure.NAMED_UNIQUE_SCEPTER_LIFE) > 0:
             n += ARCANE_VALOR_SCEPTER_KINGDOM_HIT_POINTS_BONUS
     return n
@@ -518,7 +512,7 @@ def emperor_holds_arcanes_valor_unification(state: GameState) -> bool:
         return False
     if state.emperor_kingdom_id is None:
         return False
-    emperor = _king_of_kingdom(state, state.emperor_kingdom_id)
+    emperor = find_king_of_kingdom(state, state.emperor_kingdom_id)
     if emperor is None:
         return False
 

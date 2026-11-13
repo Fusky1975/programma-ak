@@ -11008,6 +11008,24 @@ def test_describe_diplomacy_report_no_other_kingdoms_renders_all_none():
     ]
 
 
+def test_describe_diplomacy_report_king_cache_matches_the_uncached_result():
+    # Phase 1193 efficiency: king_cache is an optional, purely additive
+    # memoization (orchestrator.py shares one across every Kingdom's own
+    # compose_letter_report() call) -- passing it must never change the
+    # rendered text, only how many times the underlying King lookup
+    # actually runs.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))
+    state.add_kingdom(KingdomState(2, "Otherland", Race.ELVEN, Alignment.GOOD, HexCoord(1, 1)))
+    state.add_leader(LeaderState(9, 2, "Kwoth", HexCoord(1, 1), is_king=True))
+    cache: dict = {}
+
+    cached_lines = describe_diplomacy_report(state, 1, king_cache=cache)
+
+    assert cached_lines == describe_diplomacy_report(state, 1)
+    assert cache == {1: None, 2: 9}
+
+
 def test_describe_diplomacy_report_unallied_kingdom_is_neutral():
     state = GameState()
     state.add_kingdom(KingdomState(1, "Testland", Race.HUMAN, Alignment.NEUTRAL, HexCoord(0, 0)))

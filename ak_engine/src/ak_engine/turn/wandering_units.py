@@ -41,6 +41,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.race import Race
 from ak_engine.turn.combat import Quality
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.movement import MapBounds, hex_distance_wrapped
 from ak_engine.turn.office_holder import resolve_office_holder
 
@@ -136,7 +137,7 @@ def _roll_step_direction(rng: random.Random, main_direction: int) -> int:
 
 
 def _kingdom_has_king(state: GameState, kingdom_id: int) -> bool:
-    return any(leader.kingdom_id == kingdom_id and leader.is_king for leader in state.leaders.values())
+    return find_king_of_kingdom(state, kingdom_id) is not None
 
 
 def _accept_wander_direction(

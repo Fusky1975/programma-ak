@@ -375,7 +375,7 @@ from ak_engine.turn.encounter import (
     words_of_healing_heal,
 )
 from ak_engine.turn.experience import add_experience
-from ak_engine.turn.office_holder import resolve_office_holder
+from ak_engine.turn.office_holder import cached_office_holder_leader_id, resolve_office_holder
 from ak_engine.turn.search_decode import SearchTactic
 from ak_engine.turn.sep_decode import plan_intent, sep_accepts_challenge, target_uses_special_encounter_plan
 
@@ -741,7 +741,9 @@ def is_encounter_accepted(
     return True  # "Heroes who don't lead armies can always be Encountered by other Heroes"
 
 
-def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
+def _leader_combatant(
+    leader: LeaderState, state: GameState, *, office_cache: dict[Office, int | None] | None = None
+) -> Combatant:
     """Same construction as ``battle_orchestrator.py _commander_combatant`` (Phase 49),
     duplicated rather than shared -- a Duel commander and an Encounter
     participant are different concepts that happen to need the same
@@ -756,12 +758,12 @@ def _leader_combatant(leader: LeaderState, state: GameState) -> Combatant:
         kingdom = state.kingdoms.get(leader.kingdom_id)
         neutral_bonus = kingdom is not None and kingdom.alignment is Alignment.NEUTRAL
 
-    defender_office = resolve_office_holder(state, Office.DEFENDER)
-    damage_reduction = 1 if defender_office is not None and defender_office.leader_id == leader.leader_id else 0
-    illus_mage_office = resolve_office_holder(state, Office.ILLUS_MAGE)
-    always_acts_first = illus_mage_office is not None and illus_mage_office.leader_id == leader.leader_id
-    necro_mage_office = resolve_office_holder(state, Office.NECRO_MAGE)
-    is_necro_mage = necro_mage_office is not None and necro_mage_office.leader_id == leader.leader_id
+    defender_leader_id = cached_office_holder_leader_id(state, Office.DEFENDER, office_cache)
+    damage_reduction = 1 if defender_leader_id == leader.leader_id else 0
+    illus_mage_leader_id = cached_office_holder_leader_id(state, Office.ILLUS_MAGE, office_cache)
+    always_acts_first = illus_mage_leader_id == leader.leader_id
+    necro_mage_leader_id = cached_office_holder_leader_id(state, Office.NECRO_MAGE, office_cache)
+    is_necro_mage = necro_mage_leader_id == leader.leader_id
     has_melee_hit_points_ability = AdvancedAbility.MELEE_HIT_POINTS in leader.advanced_abilities
     effective_race = leader.race
     if effective_race is None and leader.kingdom_id is not None:
@@ -2944,8 +2946,12 @@ def execute_challenge(
         _apply_bravest_talk_inspiration(state, challenger, target)
         _apply_spy_brainwash_alignment_shift(challenger, target)
 
-    challenger_combatant = _leader_combatant(challenger, state)
-    target_combatant = _leader_combatant(target, state)
+    # Efficiency (Phase 1193): one shared office-holder cache for both
+    # sibling Combatants built in this one call -- see
+    # cached_office_holder_leader_id()'s own docstring.
+    office_cache: dict[Office, int | None] = {}
+    challenger_combatant = _leader_combatant(challenger, state, office_cache=office_cache)
+    target_combatant = _leader_combatant(target, state, office_cache=office_cache)
     # Phase 674: rulebook [5.10]'s own "used in every Encounter
     # solicited by another character" (only when the target commands no
     # armies -- `target_leads_army` above already gives that answer).

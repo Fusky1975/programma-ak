@@ -293,7 +293,7 @@ from ak_engine.models.map import HexCoord, Terrain
 from ak_engine.models.office import Office
 from ak_engine.models.treasure import Treasure
 from ak_engine.parser.gw_world import DiplomaticRelation
-from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle, mystic_winds_active_for
+from ak_engine.turn.battle_orchestrator import BattleReport, fight_battle, mystic_winds_active_for, snapshot_army_types
 from ak_engine.turn.cast_execution import ILLUSORY_FOG_EXTRA_MOVEMENT_COST, is_illusory_fog_affected_air_unit
 from ak_engine.turn.conquest import movement_cost_for_move
 from ak_engine.turn.contested_province import IllegalMoveFromContestedError, is_illegal_move_from_contested
@@ -1979,11 +1979,7 @@ def execute_move(
     battle_report = None
     conquered = False
     if occupied_by_enemy:
-        # Phase 736: snapshot army types *before* fight_battle() removes
-        # any of them -- apply_battle_carrier_destruction() needs the
-        # carrier's own type to record a real sinking event, but the
-        # carrier is already gone from state.armies by the time it runs.
-        army_types_before_battle = {army.army_id: army.army_type for army in state.armies.values()}
+        army_types_before_battle = snapshot_army_types(state)
         battle_report = fight_battle(
             state,
             kingdom_id,

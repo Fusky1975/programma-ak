@@ -136,6 +136,7 @@ from ak_engine.webapp.kingdom_create import (
     NoProvinceAtCoordError,
     ProvinceAlreadyAHomeError,
     ProvinceAlreadyOwnedError,
+    coord_is_a_kingdom_home_province,
     create_kingdom,
 )
 from ak_engine.webapp.kingdom_delete import KingdomHasEmperorError, delete_kingdom
@@ -660,7 +661,7 @@ def create_app(games_root: Path | None = None) -> Flask:
                     error=f"({x}, {y}) is already owned by {state.kingdoms[province.owner_kingdom_id].name}.",
                 )
             )
-        if any(kingdom.home_province == coord for kingdom in state.kingdoms.values()):
+        if coord_is_a_kingdom_home_province(state, coord):
             return redirect(
                 url_for(
                     "province_edit", slug=slug, x=x, y=y, error=f"({x}, {y}) is already another Kingdom's Home province."
@@ -1618,7 +1619,7 @@ def create_app(games_root: Path | None = None) -> Flask:
         # execution.py`'s own docstrings) -- deleting one of those out
         # from under a live game would crash the very next turn processed.
         # Refuse rather than silently corrupt the save.
-        if any(kingdom.home_province == coord for kingdom in state.kingdoms.values()):
+        if coord_is_a_kingdom_home_province(state, coord):
             return _edit_error("This is a Kingdom's Home province and can't be deleted -- set a different Home first.")
         if state.armies_at(coord):
             return _edit_error("This province has Armies present and can't be deleted -- move or remove them first.")

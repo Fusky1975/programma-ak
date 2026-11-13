@@ -130,6 +130,7 @@ from dataclasses import dataclass
 
 from ak_engine.models.map import Terrain
 from ak_engine.models.plan import PlanPhase
+from ak_engine.turn.decode_utils import phase_extra0, terrain_from_extra
 
 
 @dataclass(slots=True)
@@ -151,13 +152,7 @@ def decode_use_mi_phase(phase: PlanPhase) -> UseMIRequest:
     ``Terrain | int``, matching ``cast_decode.py``'s own convention.
     """
 
-    target = phase.extra[0] if phase.extra else 0
-
-    terrain: Terrain | int | None = None
-    if len(phase.extra) > 1:
-        try:
-            terrain = Terrain(phase.extra[1])
-        except ValueError:
-            terrain = phase.extra[1]
+    target = phase_extra0(phase)
+    terrain = terrain_from_extra(phase.extra, 1)
 
     return UseMIRequest(item_instance_id=phase.obj, target=target, terrain=terrain)

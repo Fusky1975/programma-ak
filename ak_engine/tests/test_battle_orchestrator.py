@@ -41,6 +41,7 @@ from ak_engine.turn.battle_orchestrator import (
     _qual_modfr_score_by_army_id,
     _record_battle_merit,
     _select_side_commander,
+    king_druidic_shortfall_for,
     side_has_present_leader_with_ability,
     fight_battle,
     fight_multi_attacker_battle,
@@ -2578,6 +2579,25 @@ def test_build_battle_units_prefers_monstrous_army_race_over_owning_kingdoms_rac
     wrong = compute_effective_strength(ArmyType.DRAGON_WING, Race.HUMAN, Quality.AVERAGE, Terrain.PLAINS)
     assert units[0].effective_strength == pytest.approx(expected)
     assert units[0].effective_strength != pytest.approx(wrong)
+
+
+def test_king_druidic_shortfall_for_cache_matches_the_uncached_result():
+    # Phase 1193 efficiency: king_shortfall_cache is an optional, purely
+    # additive memoization (_build_battle_units()/_qual_modfr_score_by_
+    # army_id() share one across every unled army in a single battle) --
+    # passing it must never change the result, only how many times the
+    # underlying King lookup actually runs.
+    state = GameState()
+    state.add_kingdom(KingdomState(1, "Humania", Race.HUMAN, Alignment.NEUTRAL, home_province=FIELD))
+    state.add_province(ProvinceState(FIELD, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1))
+    state.add_leader(LeaderState(1, kingdom_id=1, name="King", location=FIELD, is_king=True))
+    cache: dict = {}
+
+    first = king_druidic_shortfall_for(state, Race.DRAGONS, FIELD, cache=cache)
+    second = king_druidic_shortfall_for(state, Race.DRAGONS, FIELD, cache=cache)
+
+    assert first == second == king_druidic_shortfall_for(state, Race.DRAGONS, FIELD)
+    assert cache == {(Race.DRAGONS, FIELD): 4}
 
 
 def test_build_battle_units_marks_an_overflight_unit_rear_targeting_blocked_when_shortfall_is_positive():

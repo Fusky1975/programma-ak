@@ -43,6 +43,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ak_engine.models.plan import PlanPhase
+from ak_engine.turn.decode_utils import phase_extra0
 
 
 @dataclass(slots=True)
@@ -59,8 +60,7 @@ class FireRequest:
 def decode_hire_phase(phase: PlanPhase) -> HireRequest:
     """Decode a Hire PlanPhase's target Hero id and gold offer."""
 
-    gold_offer = phase.extra[0] if phase.extra else 0
-    return HireRequest(hero_id=phase.obj, gold_offer=gold_offer)
+    return HireRequest(hero_id=phase.obj, gold_offer=phase_extra0(phase))
 
 
 def decode_fire_phase(phase: PlanPhase) -> FireRequest:

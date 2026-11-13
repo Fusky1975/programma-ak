@@ -654,6 +654,7 @@ from ak_engine.turn.feature_power_execution import (
     parse_sa_argument,
     resolve_feature_power_attempt,
 )
+from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.monster_raids import (
     apply_fulfill_pacification,
     guardian_undeterred,
@@ -1710,10 +1711,7 @@ def _grant_search_treasure(state: GameState, leader_id: int, treasure: Treasure)
         leader_id == VALHALLA_VISITOR_LEADER_ID and visitor is not None and visitor.valhalla_active_turn == state.turn_number
     )
     if is_active_visitor and TREASURE_CATEGORY.get(treasure) is TreasureCategory.GOLD_HOARD:
-        king = next(
-            (king for king in state.leaders.values() if king.kingdom_id == visitor.kingdom_id and king.is_king),
-            None,
-        )
+        king = find_king_of_kingdom(state, visitor.kingdom_id)
         if king is not None:
             state.add_item(treasure, king.leader_id)
             return
