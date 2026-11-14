@@ -489,7 +489,7 @@
               <td class="compose-tactic-cast-cell">
                 <select name="sep_tactic_spell_{{ leader.leader_id }}_0_{{ slot }}">
                   <option value="">-- choose a spell --</option>
-                  {% for value, label in spell_choices %}
+                  {% for value, label in spell_choices_by_leader[leader.leader_id] %}
                     <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
@@ -605,7 +605,7 @@
                         <td class="compose-tactic-cast-cell">
                           <select name="tactic_spell_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
                             <option value="">-- choose a spell --</option>
-                            {% for value, label in spell_choices %}
+                            {% for value, label in spell_choices_by_leader[leader.leader_id] %}
                               <option value="{{ value }}">{{ label }}</option>
                             {% endfor %}
                           </select>
@@ -769,7 +769,7 @@
                         <td class="compose-tactic-cast-cell">
                           <select name="challenge_tactic_spell_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
                             <option value="">-- choose a spell --</option>
-                            {% for value, label in spell_choices %}
+                            {% for value, label in spell_choices_by_leader[leader.leader_id] %}
                               <option value="{{ value }}">{{ label }}</option>
                             {% endfor %}
                           </select>
@@ -822,7 +822,7 @@
                         <td class="compose-tactic-cast-cell">
                           <select name="pursue_tactic_spell_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
                             <option value="">-- choose a spell --</option>
-                            {% for value, label in spell_choices %}
+                            {% for value, label in spell_choices_by_leader[leader.leader_id] %}
                               <option value="{{ value }}">{{ label }}</option>
                             {% endfor %}
                           </select>
