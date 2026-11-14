@@ -12513,17 +12513,27 @@ def describe_diplomacy_report(
         known_tax = known_bordering_kingdom_tax_bases(state, bounds, viewer_king_id) or {}
         known_treasury = known_bordering_kingdom_treasuries(state, bounds, viewer_king_id) or {}
 
-    lines = ["DIPLOMACY", _DIPLOMACY_ALLIED_INTRO]
+    # Cosmetic fix (2026-11-14, user-requested): a blank line now
+    # separates each intro sentence from its own list/"None at present"
+    # fallback, and that block from the next intro -- purely for
+    # readability, no wording changed. No trailing blank after the
+    # final (Neutral) block: compose_letter_report()'s own between-
+    # section spacing already covers that gap.
+    lines = ["DIPLOMACY", _DIPLOMACY_ALLIED_INTRO, ""]
     lines.extend(
         [_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury, king_cache=king_cache) for k in allied_ids]
         or [_DIPLOMACY_NONE_AT_PRESENT]
     )
+    lines.append("")
     lines.append(_DIPLOMACY_WAR_INTRO)
+    lines.append("")
     lines.extend(
         [_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury, king_cache=king_cache) for k in war_ids]
         or [_DIPLOMACY_NONE_AT_PRESENT]
     )
+    lines.append("")
     lines.append(_DIPLOMACY_NEUTRAL_INTRO)
+    lines.append("")
     lines.extend(
         [_diplomacy_entry(state, kingdom_id, k, known_tax, known_treasury, king_cache=king_cache) for k in neutral_ids]
         or [_DIPLOMACY_NONE_AT_PRESENT]
@@ -12802,10 +12812,15 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
     rng = rng if rng is not None else random.Random()
     king_name = _leader_name(state, _king_leader_id(state, kingdom_id)) or kingdom.name
 
+    # Cosmetic fix (2026-11-14, user-requested): blank lines now separate
+    # the opening paragraph, the figures block, the Discoveries intro,
+    # the Discoveries list/"None at present", and the closing treasury
+    # sentence -- purely for readability, no wording changed.
     lines = [
         "FINANCES",
         _FINANCES_OPENING,
         render_finance_report_opening(king_name, rng),
+        "",
         f"Gold in treasury: {kingdom.treasury:>3}",
     ]
     evilking_holder = resolve_office_holder(state, Office.EVIL_KING)
@@ -12842,7 +12857,9 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
         lines.append(render_finance_army_costs(army_cost, rng))
         lines.extend(describe_desertions(maintenance, state, king_name=king_name, rng=rng))
     lines.append(f"Expected Expenses: {compute_expected_expenses(state, kingdom_id):>3}")
+    lines.append("")
     lines.append(_FINANCES_DISCOVERIES_INTRO)
+    lines.append("")
     if kingdom.discoveries:
         for discovery in sorted_kingdom_discoveries(kingdom.discoveries):
             lines.append(describe_discovery_line(discovery))
@@ -12854,6 +12871,7 @@ def describe_finances_report(state: GameState, kingdom_id: int, rng: random.Rand
                 lines.append(_discovery_exchange_line("Sent to", sent_to))
     else:
         lines.append(_FINANCES_NONE_AT_PRESENT)
+    lines.append("")
     lines.append(render_finance_treasury(king_name, kingdom.treasury, rng))
     return lines
 

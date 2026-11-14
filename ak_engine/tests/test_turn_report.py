@@ -11000,10 +11000,15 @@ def test_describe_diplomacy_report_no_other_kingdoms_renders_all_none():
     assert lines == [
         "DIPLOMACY",
         _DIPLOMACY_ALLIED_INTRO,
+        "",
         "None at present",
+        "",
         _DIPLOMACY_WAR_INTRO,
+        "",
         "None at present",
+        "",
         _DIPLOMACY_NEUTRAL_INTRO,
+        "",
         "None at present",
     ]
 
@@ -11040,10 +11045,15 @@ def test_describe_diplomacy_report_unallied_kingdom_is_neutral():
     assert lines == [
         "DIPLOMACY",
         _DIPLOMACY_ALLIED_INTRO,
+        "",
         "None at present",
+        "",
         _DIPLOMACY_WAR_INTRO,
+        "",
         "None at present",
+        "",
         _DIPLOMACY_NEUTRAL_INTRO,
+        "",
         "Kwoth (#2)",
     ]
 
@@ -11060,10 +11070,15 @@ def test_describe_diplomacy_report_allied_kingdom_is_listed_as_allied():
     assert lines == [
         "DIPLOMACY",
         _DIPLOMACY_ALLIED_INTRO,
+        "",
         "Kwoth (#2)",
+        "",
         _DIPLOMACY_WAR_INTRO,
+        "",
         "None at present",
+        "",
         _DIPLOMACY_NEUTRAL_INTRO,
+        "",
         "None at present",
     ]
 
@@ -11077,7 +11092,7 @@ def test_describe_diplomacy_report_war_renders_none_at_present_with_no_enemy_rel
     lines = describe_diplomacy_report(state, 1)
 
     war_index = lines.index(_DIPLOMACY_WAR_INTRO)
-    assert lines[war_index + 1] == "None at present"
+    assert lines[war_index + 2] == "None at present"
 
 
 def test_describe_diplomacy_report_enemy_relation_is_listed_as_at_war():
@@ -11095,10 +11110,15 @@ def test_describe_diplomacy_report_enemy_relation_is_listed_as_at_war():
     assert lines == [
         "DIPLOMACY",
         _DIPLOMACY_ALLIED_INTRO,
+        "",
         "None at present",
+        "",
         _DIPLOMACY_WAR_INTRO,
+        "",
         "Kwoth (#2)",
+        "",
         _DIPLOMACY_NEUTRAL_INTRO,
+        "",
         "None at present",
     ]
 
@@ -11124,7 +11144,7 @@ def test_describe_diplomacy_report_lists_multiple_kingdoms_sorted_by_id():
     lines = describe_diplomacy_report(state, 1)
 
     neutral_index = lines.index(_DIPLOMACY_NEUTRAL_INTRO)
-    assert lines[neutral_index + 1 :] == ["Bertha (#2)", "Cyrus (#3)"]
+    assert lines[neutral_index + 2 :] == ["Bertha (#2)", "Cyrus (#3)"]
 
 
 # -- 2026-11-03: describe_diplomacy_change_notices() -- a Break Treat
@@ -11382,11 +11402,15 @@ def test_describe_finances_report_shows_treasury():
         "FINANCES",
         _FINANCES_OPENING,
         "here is the financial report for Testland's kingdom: ",
+        "",
         "Gold in treasury: 250",
         "Expected Revenues:   0",
         "Expected Expenses:   0",
+        "",
         _FINANCES_DISCOVERIES_INTRO,
+        "",
         "None at present",
+        "",
         "Testland was left with 250 gold in the treasury.",
     ]
 
@@ -11397,7 +11421,7 @@ def test_describe_finances_report_zero_treasury():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[3] == "Gold in treasury:   0"
+    assert lines[4] == "Gold in treasury:   0"
 
 
 def test_describe_finances_report_discoveries_none_at_present_when_kingdom_owns_none():
@@ -11406,7 +11430,8 @@ def test_describe_finances_report_discoveries_none_at_present_when_kingdom_owns_
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-3:-1] == [_FINANCES_DISCOVERIES_INTRO, "None at present"]
+    assert lines[-5] == _FINANCES_DISCOVERIES_INTRO
+    assert lines[-3] == "None at present"
     assert "+Invention Bonus" not in "\n".join(lines)
 
 
@@ -11420,9 +11445,9 @@ def test_describe_finances_report_lists_owned_discoveries():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-3] == _FINANCES_DISCOVERIES_INTRO
-    assert lines[-2] == describe_discovery_line(Discovery.COMPASS)
-    assert lines[-2] == "  Compass" + " " * 18 + "(+1 skill in Exploring)"
+    assert lines[-5] == _FINANCES_DISCOVERIES_INTRO
+    assert lines[-3] == describe_discovery_line(Discovery.COMPASS)
+    assert lines[-3] == "  Compass" + " " * 18 + "(+1 skill in Exploring)"
 
 
 def test_describe_finances_report_discoveries_sorted_by_real_display_value():
@@ -11433,7 +11458,7 @@ def test_describe_finances_report_discoveries_sorted_by_real_display_value():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-3:-1] == [
+    assert lines[-4:-2] == [
         describe_discovery_line(Discovery.PONY_EXPRESS),
         describe_discovery_line(Discovery.COMPASS),
     ]
@@ -11450,7 +11475,7 @@ def test_describe_finances_report_shows_received_from_line():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-3:-1] == [
+    assert lines[-4:-2] == [
         describe_discovery_line(Discovery.COMPASS),
         "(Received from player(s) #3 by scientific treaty)",
     ]
@@ -11465,7 +11490,7 @@ def test_describe_finances_report_received_from_joins_multiple_givers():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-2] == "(Received from player(s) #3, 7 by scientific treaty)"
+    assert lines[-3] == "(Received from player(s) #3, 7 by scientific treaty)"
 
 
 def test_describe_finances_report_shows_sent_to_line():
@@ -11476,7 +11501,7 @@ def test_describe_finances_report_shows_sent_to_line():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-3:-1] == [
+    assert lines[-4:-2] == [
         describe_discovery_line(Discovery.COMPASS),
         "(Sent to player(s) #5 by scientific treaty)",
     ]
@@ -11491,7 +11516,7 @@ def test_describe_finances_report_received_from_and_sent_to_both_appear_in_order
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-4:-1] == [
+    assert lines[-5:-2] == [
         describe_discovery_line(Discovery.COMPASS),
         "(Received from player(s) #3 by scientific treaty)",
         "(Sent to player(s) #5 by scientific treaty)",
@@ -11505,7 +11530,7 @@ def test_describe_finances_report_no_exchange_lines_without_a_recorded_exchange(
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-2] == describe_discovery_line(Discovery.COMPASS)
+    assert lines[-3] == describe_discovery_line(Discovery.COMPASS)
     assert "scientific treaty" not in "\n".join(lines)
 
 
@@ -11537,7 +11562,7 @@ def test_describe_finances_report_reads_only_the_given_kingdoms_own_treasury():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[3] == "Gold in treasury:  10"
+    assert lines[4] == "Gold in treasury:  10"
 
 
 def test_describe_finances_report_expected_revenues_uses_compute_tax_base():
@@ -11554,7 +11579,7 @@ def test_describe_finances_report_expected_revenues_uses_compute_tax_base():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[4] == "Expected Revenues:  10"
+    assert lines[5] == "Expected Revenues:  10"
 
 
 # -- Phase 277: King of Pain / Prince of Thieves FINANCES bonus notes --
@@ -11579,8 +11604,8 @@ def test_describe_finances_report_shows_black_knights_note_for_this_kingdoms_kin
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[3] == "Gold in treasury:  50"
-    assert lines[4] == "(Including +5 Black Knights)"
+    assert lines[4] == "Gold in treasury:  50"
+    assert lines[5] == "(Including +5 Black Knights)"
 
 
 def test_describe_finances_report_omits_black_knights_note_for_another_kingdoms_king_of_pain():
@@ -11667,10 +11692,10 @@ def test_describe_finances_report_shows_both_notes_in_order_when_both_are_earned
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[3] == "Gold in treasury:  50"
-    assert lines[4] == "(Including +5 Black Knights)"
-    assert lines[5] == "(Including +10 Thieves Guild)"
-    assert lines[6] == "Expected Revenues:  30"
+    assert lines[4] == "Gold in treasury:  50"
+    assert lines[5] == "(Including +5 Black Knights)"
+    assert lines[6] == "(Including +10 Thieves Guild)"
+    assert lines[7] == "Expected Revenues:  30"
 
 
 # -- Phase 670: monster-raid/Thunderbird-intervention narration ----------
@@ -11727,8 +11752,8 @@ def test_describe_finances_report_no_raid_events_leaves_lines_unchanged():
 
     lines = describe_finances_report(state, 1, random.Random(0))
 
-    assert lines[4] == "Expected Revenues:   0"
-    assert lines[5] == "Expected Expenses:   0"
+    assert lines[5] == "Expected Revenues:   0"
+    assert lines[6] == "Expected Expenses:   0"
 
 
 # -- Phase 741: render_blackmail_penalty() / its own FINANCES-report wiring --
@@ -11770,8 +11795,8 @@ def test_describe_finances_report_no_blackmail_penalties_leaves_lines_unchanged(
 
     lines = describe_finances_report(state, 1, random.Random(0))
 
-    assert lines[4] == "Expected Revenues:   0"
-    assert lines[5] == "Expected Expenses:   0"
+    assert lines[5] == "Expected Revenues:   0"
+    assert lines[6] == "Expected Expenses:   0"
 
 
 # -- Phase 747: Inv_Bonus really credits gold -- FINANCES-section wiring --
@@ -13945,10 +13970,15 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "DIPLOMACY",
         "",
         "My lord, the following Kings have wisely allied with thy ever-victorious majesty:",
+        "",
         "None at present",
+        "",
         "My lord, the following Kings are foolishly at war with thy ever-victorious majesty:",
+        "",
         "None at present",
+        "",
         "My lord, the following Kings are cautiously neutral with thy ever-victorious majesty:",
+        "",
         "None at present",
         "",
         "",
@@ -13957,11 +13987,15 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "O Great One, I submit for thy examination the following figures "
         "concerning the finances of our great nation:",
         "here is the financial report for Aldric's kingdom: ",
+        "",
         "Gold in treasury:   0",
         "Expected Revenues:   0",
         "Expected Expenses:   6",
+        "",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
+        "",
         "None at present",
+        "",
         "Aldric was left with 0 gold in the treasury.",
         "",
         "",
@@ -14203,10 +14237,15 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "DIPLOMACY",
         "",
         "My lord, the following Kings have wisely allied with thy ever-victorious majesty:",
+        "",
         "None at present",
+        "",
         "My lord, the following Kings are foolishly at war with thy ever-victorious majesty:",
+        "",
         "None at present",
+        "",
         "My lord, the following Kings are cautiously neutral with thy ever-victorious majesty:",
+        "",
         "None at present",
         "",
         "",
@@ -14215,11 +14254,15 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "O Great One, I submit for thy examination the following figures "
         "concerning the finances of our great nation:",
         "here is the financial report for Testland's kingdom: ",
+        "",
         "Gold in treasury:   0",
         "Expected Revenues:   0",
         "Expected Expenses:   0",
+        "",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
+        "",
         "None at present",
+        "",
         "Testland was left with 0 gold in the treasury.",
         "",
         "",
