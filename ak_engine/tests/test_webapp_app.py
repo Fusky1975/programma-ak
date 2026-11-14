@@ -8966,7 +8966,7 @@ def test_turns_diplomacy_mutual_treat_upgrades_relation_once_the_turn_is_process
 
     client.post(
         f"/games/{meta.slug}/turns/diplomacy",
-        data={"order_1_2": "treat", "order_2_1": "treat"},
+        data={"treat_1_2": "on", "treat_2_1": "on"},
     )
     _, state = open_game(tmp_path, meta.slug)
     assert state.treat_permissions == {(1, 2), (2, 1)}
