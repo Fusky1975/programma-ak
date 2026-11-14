@@ -13480,6 +13480,19 @@ _CHARACTERS_UNKNOWN_ABBREVIATION = "Unkn"
 # added on top of this).
 _CHARACTERS_APTITUDE_ROW_INDENT = " " * 40
 
+# Bug fix (2026-11-14, same user report, second round): the leading
+# move-precedence number itself still rendered one column narrower than
+# line 1's own Ini/pay field (width 3, not 4) -- `_ability_value_row(...,
+# tactical_widens=False)`'s own Tactical column is, correctly per the real
+# `Desc_Apt` formula, one character narrower than the skill row's own
+# Tactical (see that function's own docstring), so this leading field
+# needs to be one character WIDER than `pay`'s own width to compensate --
+# not the same width, as the first round's fix assumed. Getting this one
+# character right re-aligns every single ability column after Tactical
+# too (a uniform 1-column shift propagates through string concatenation),
+# not just Tactical's own.
+_CHARACTERS_APTITUDE_ROW_NUMBER_WIDTH = 4
+
 
 def _ability_value_row(values: list[int], *, tactical_widens: bool) -> str:
     """Renders 15 per-`Ability` values (enum order) as the real report's
@@ -14239,7 +14252,9 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         aptitude_values = [skills.pair_for_ability(ability)[1] if skills is not None else 0 for ability in Ability]
         aptitude_row = _ability_value_row(aptitude_values, tactical_widens=False)
         total_skill_and_march = _total_skill(state, leader) + effective_skill_level(state, leader, Ability.MARCH) * 2
-        lines.append(f"{_CHARACTERS_APTITUDE_ROW_INDENT}{total_skill_and_march:>3} {aptitude_row}")
+        lines.append(
+            f"{_CHARACTERS_APTITUDE_ROW_INDENT}{total_skill_and_march:>{_CHARACTERS_APTITUDE_ROW_NUMBER_WIDTH}} {aptitude_row}"
+        )
 
         held_items = state.items_held_by(leader.leader_id)
         if held_items:
