@@ -10458,7 +10458,7 @@ def test_describe_armies_report_led_army_line():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Sir Aldric     Bowmen                Human  Average  Veteran",
+        "Capital City      Sir Aldric     1st Bowmen            Human  Average  Veteran",
     ]
 
 
@@ -10471,7 +10471,7 @@ def test_describe_armies_report_unled_army_shows_garrison():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Garrison       Phalanx               Human  Veteran    Crack",
+        "Capital City      Garrison       1st Phalanx           Human  Veteran    Crack",
     ]
 
 
@@ -10486,7 +10486,7 @@ def test_describe_armies_report_names_a_commander_who_died_earlier_this_same_tur
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Sir Aldric     Bowmen                Human  Average  Veteran",
+        "Capital City      Sir Aldric     1st Bowmen            Human  Average  Veteran",
     ]
 
 
@@ -10499,7 +10499,7 @@ def test_describe_armies_report_monstrous_army_uses_its_own_fixed_race():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Garrison       Dragons              Dragon    Elite    Elite",
+        "Capital City      Garrison       1st Dragons          Dragon    Elite    Elite",
     ]
 
 
@@ -10521,7 +10521,7 @@ def test_describe_armies_report_dinosaurs_show_as_saurian_not_the_owning_kingdom
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Garrison       Dinosaurs           Dinosaur  Average  Veteran",
+        "Capital City      Garrison       1st Dinosaurs       Dinosaur  Average  Veteran",
     ]
 
 
@@ -10546,7 +10546,7 @@ def test_describe_armies_report_unnamed_province_falls_back_to_coordinates():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "(3, 4)            Garrison       Bowmen                Human  Average  Average",
+        "(3, 4)            Garrison       1st Bowmen            Human  Average  Average",
     ]
 
 
@@ -10561,8 +10561,8 @@ def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Garrison       Bowmen                Human  Average  Veteran",
-        "Second Province   Garrison       Axemen                Human  Average  Average",
+        "Capital City      Garrison       1st Bowmen            Human  Average  Veteran",
+        "Second Province   Garrison       2nd Axemen            Human  Average  Average",
     ]
 
 
@@ -10584,9 +10584,9 @@ def test_describe_armies_report_same_province_groups_by_leader_index_not_army_id
     lines = describe_armies_report(state, 1)
 
     assert lines[4:] == [
-        "Capital City      Sir Aldric     Bowmen                Human  Average  Veteran",
-        "(#0)              Lady Brenna    Axemen                Human  Average  Veteran",
-        "                  Garrison       Phalanx               Human  Average  Veteran",
+        "Capital City      Sir Aldric     3rd Bowmen            Human  Average  Veteran",
+        "(#0)              Lady Brenna    2nd Axemen            Human  Average  Veteran",
+        "                  Garrison       1st Phalanx           Human  Average  Veteran",
     ]
 
 
@@ -10602,9 +10602,9 @@ def test_describe_armies_report_suppresses_province_column_after_the_second_army
     lines = describe_armies_report(state, 1)
 
     assert lines[4:] == [
-        "Capital City      Garrison       Bowmen                Human  Average  Veteran",
-        "(#0)              Garrison       Axemen                Human  Average  Veteran",
-        "                  Garrison       Phalanx               Human  Average  Veteran",
+        "Capital City      Garrison       1st Bowmen            Human  Average  Veteran",
+        "(#0)              Garrison       2nd Axemen            Human  Average  Veteran",
+        "                  Garrison       3rd Phalanx           Human  Average  Veteran",
     ]
 
 
@@ -10621,7 +10621,7 @@ def test_describe_armies_report_skeletal_army_uses_skel_designation():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Garrison       Skel Lt Cav           Human  Average  Veteran",
+        "Capital City      Garrison       1st Skel Lt Cav       Human  Average  Veteran",
     ]
 
 
@@ -10636,7 +10636,7 @@ def test_describe_armies_report_non_skeletal_army_still_uses_atname():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Garrison       Light Cavalry         Human  Average  Veteran",
+        "Capital City      Garrison       1st Light Cavalry     Human  Average  Veteran",
     ]
 
 
@@ -10658,7 +10658,7 @@ def test_describe_armies_report_known_mercenary_in_owned_province():
         _ARMIES_MERCENARY_INTRO,
         _ARMIES_MERCENARY_CAPTION_LINE_1,
         _ARMIES_MERCENARY_COLUMN_HEADER,
-        "Capital City                     Bowmen                Human  Average",
+        "Capital City                     9th Bowmen            Human  Average",
     ]
 
 
@@ -10750,8 +10750,8 @@ def test_describe_armies_report_mercenary_suppresses_province_column_after_the_s
 
     rows = lines[lines.index(_ARMIES_MERCENARY_COLUMN_HEADER) + 1 :]
     assert rows == [
-        "Capital City                     Bowmen                Human  Average",
-        "(#0)                             Axemen                Human  Average",
+        "Capital City                     9th Bowmen            Human  Average",
+        "(#0)                             10th Axemen           Human  Average",
     ]
 
 
@@ -11000,10 +11000,15 @@ def test_describe_diplomacy_report_no_other_kingdoms_renders_all_none():
     assert lines == [
         "DIPLOMACY",
         _DIPLOMACY_ALLIED_INTRO,
+        "",
         "None at present",
+        "",
         _DIPLOMACY_WAR_INTRO,
+        "",
         "None at present",
+        "",
         _DIPLOMACY_NEUTRAL_INTRO,
+        "",
         "None at present",
     ]
 
@@ -11040,10 +11045,15 @@ def test_describe_diplomacy_report_unallied_kingdom_is_neutral():
     assert lines == [
         "DIPLOMACY",
         _DIPLOMACY_ALLIED_INTRO,
+        "",
         "None at present",
+        "",
         _DIPLOMACY_WAR_INTRO,
+        "",
         "None at present",
+        "",
         _DIPLOMACY_NEUTRAL_INTRO,
+        "",
         "Kwoth (#2)",
     ]
 
@@ -11060,10 +11070,15 @@ def test_describe_diplomacy_report_allied_kingdom_is_listed_as_allied():
     assert lines == [
         "DIPLOMACY",
         _DIPLOMACY_ALLIED_INTRO,
+        "",
         "Kwoth (#2)",
+        "",
         _DIPLOMACY_WAR_INTRO,
+        "",
         "None at present",
+        "",
         _DIPLOMACY_NEUTRAL_INTRO,
+        "",
         "None at present",
     ]
 
@@ -11077,7 +11092,7 @@ def test_describe_diplomacy_report_war_renders_none_at_present_with_no_enemy_rel
     lines = describe_diplomacy_report(state, 1)
 
     war_index = lines.index(_DIPLOMACY_WAR_INTRO)
-    assert lines[war_index + 1] == "None at present"
+    assert lines[war_index + 2] == "None at present"
 
 
 def test_describe_diplomacy_report_enemy_relation_is_listed_as_at_war():
@@ -11095,10 +11110,15 @@ def test_describe_diplomacy_report_enemy_relation_is_listed_as_at_war():
     assert lines == [
         "DIPLOMACY",
         _DIPLOMACY_ALLIED_INTRO,
+        "",
         "None at present",
+        "",
         _DIPLOMACY_WAR_INTRO,
+        "",
         "Kwoth (#2)",
+        "",
         _DIPLOMACY_NEUTRAL_INTRO,
+        "",
         "None at present",
     ]
 
@@ -11124,7 +11144,7 @@ def test_describe_diplomacy_report_lists_multiple_kingdoms_sorted_by_id():
     lines = describe_diplomacy_report(state, 1)
 
     neutral_index = lines.index(_DIPLOMACY_NEUTRAL_INTRO)
-    assert lines[neutral_index + 1 :] == ["Bertha (#2)", "Cyrus (#3)"]
+    assert lines[neutral_index + 2 :] == ["Bertha (#2)", "Cyrus (#3)"]
 
 
 # -- 2026-11-03: describe_diplomacy_change_notices() -- a Break Treat
@@ -11382,11 +11402,15 @@ def test_describe_finances_report_shows_treasury():
         "FINANCES",
         _FINANCES_OPENING,
         "here is the financial report for Testland's kingdom: ",
+        "",
         "Gold in treasury: 250",
         "Expected Revenues:   0",
         "Expected Expenses:   0",
+        "",
         _FINANCES_DISCOVERIES_INTRO,
+        "",
         "None at present",
+        "",
         "Testland was left with 250 gold in the treasury.",
     ]
 
@@ -11397,7 +11421,7 @@ def test_describe_finances_report_zero_treasury():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[3] == "Gold in treasury:   0"
+    assert lines[4] == "Gold in treasury:   0"
 
 
 def test_describe_finances_report_discoveries_none_at_present_when_kingdom_owns_none():
@@ -11406,7 +11430,8 @@ def test_describe_finances_report_discoveries_none_at_present_when_kingdom_owns_
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-3:-1] == [_FINANCES_DISCOVERIES_INTRO, "None at present"]
+    assert lines[-5] == _FINANCES_DISCOVERIES_INTRO
+    assert lines[-3] == "None at present"
     assert "+Invention Bonus" not in "\n".join(lines)
 
 
@@ -11420,9 +11445,9 @@ def test_describe_finances_report_lists_owned_discoveries():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-3] == _FINANCES_DISCOVERIES_INTRO
-    assert lines[-2] == describe_discovery_line(Discovery.COMPASS)
-    assert lines[-2] == "  Compass" + " " * 18 + "(+1 skill in Exploring)"
+    assert lines[-5] == _FINANCES_DISCOVERIES_INTRO
+    assert lines[-3] == describe_discovery_line(Discovery.COMPASS)
+    assert lines[-3] == "  Compass" + " " * 18 + "(+1 skill in Exploring)"
 
 
 def test_describe_finances_report_discoveries_sorted_by_real_display_value():
@@ -11433,7 +11458,7 @@ def test_describe_finances_report_discoveries_sorted_by_real_display_value():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-3:-1] == [
+    assert lines[-4:-2] == [
         describe_discovery_line(Discovery.PONY_EXPRESS),
         describe_discovery_line(Discovery.COMPASS),
     ]
@@ -11450,7 +11475,7 @@ def test_describe_finances_report_shows_received_from_line():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-3:-1] == [
+    assert lines[-4:-2] == [
         describe_discovery_line(Discovery.COMPASS),
         "(Received from player(s) #3 by scientific treaty)",
     ]
@@ -11465,7 +11490,7 @@ def test_describe_finances_report_received_from_joins_multiple_givers():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-2] == "(Received from player(s) #3, 7 by scientific treaty)"
+    assert lines[-3] == "(Received from player(s) #3, 7 by scientific treaty)"
 
 
 def test_describe_finances_report_shows_sent_to_line():
@@ -11476,7 +11501,7 @@ def test_describe_finances_report_shows_sent_to_line():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-3:-1] == [
+    assert lines[-4:-2] == [
         describe_discovery_line(Discovery.COMPASS),
         "(Sent to player(s) #5 by scientific treaty)",
     ]
@@ -11491,7 +11516,7 @@ def test_describe_finances_report_received_from_and_sent_to_both_appear_in_order
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-4:-1] == [
+    assert lines[-5:-2] == [
         describe_discovery_line(Discovery.COMPASS),
         "(Received from player(s) #3 by scientific treaty)",
         "(Sent to player(s) #5 by scientific treaty)",
@@ -11505,7 +11530,7 @@ def test_describe_finances_report_no_exchange_lines_without_a_recorded_exchange(
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[-2] == describe_discovery_line(Discovery.COMPASS)
+    assert lines[-3] == describe_discovery_line(Discovery.COMPASS)
     assert "scientific treaty" not in "\n".join(lines)
 
 
@@ -11537,7 +11562,7 @@ def test_describe_finances_report_reads_only_the_given_kingdoms_own_treasury():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[3] == "Gold in treasury:  10"
+    assert lines[4] == "Gold in treasury:  10"
 
 
 def test_describe_finances_report_expected_revenues_uses_compute_tax_base():
@@ -11554,7 +11579,7 @@ def test_describe_finances_report_expected_revenues_uses_compute_tax_base():
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[4] == "Expected Revenues:  10"
+    assert lines[5] == "Expected Revenues:  10"
 
 
 # -- Phase 277: King of Pain / Prince of Thieves FINANCES bonus notes --
@@ -11579,8 +11604,8 @@ def test_describe_finances_report_shows_black_knights_note_for_this_kingdoms_kin
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[3] == "Gold in treasury:  50"
-    assert lines[4] == "(Including +5 Black Knights)"
+    assert lines[4] == "Gold in treasury:  50"
+    assert lines[5] == "(Including +5 Black Knights)"
 
 
 def test_describe_finances_report_omits_black_knights_note_for_another_kingdoms_king_of_pain():
@@ -11667,10 +11692,10 @@ def test_describe_finances_report_shows_both_notes_in_order_when_both_are_earned
 
     lines = describe_finances_report(state, 1)
 
-    assert lines[3] == "Gold in treasury:  50"
-    assert lines[4] == "(Including +5 Black Knights)"
-    assert lines[5] == "(Including +10 Thieves Guild)"
-    assert lines[6] == "Expected Revenues:  30"
+    assert lines[4] == "Gold in treasury:  50"
+    assert lines[5] == "(Including +5 Black Knights)"
+    assert lines[6] == "(Including +10 Thieves Guild)"
+    assert lines[7] == "Expected Revenues:  30"
 
 
 # -- Phase 670: monster-raid/Thunderbird-intervention narration ----------
@@ -11727,8 +11752,8 @@ def test_describe_finances_report_no_raid_events_leaves_lines_unchanged():
 
     lines = describe_finances_report(state, 1, random.Random(0))
 
-    assert lines[4] == "Expected Revenues:   0"
-    assert lines[5] == "Expected Expenses:   0"
+    assert lines[5] == "Expected Revenues:   0"
+    assert lines[6] == "Expected Expenses:   0"
 
 
 # -- Phase 741: render_blackmail_penalty() / its own FINANCES-report wiring --
@@ -11770,8 +11795,8 @@ def test_describe_finances_report_no_blackmail_penalties_leaves_lines_unchanged(
 
     lines = describe_finances_report(state, 1, random.Random(0))
 
-    assert lines[4] == "Expected Revenues:   0"
-    assert lines[5] == "Expected Expenses:   0"
+    assert lines[5] == "Expected Revenues:   0"
+    assert lines[6] == "Expected Expenses:   0"
 
 
 # -- Phase 747: Inv_Bonus really credits gold -- FINANCES-section wiring --
@@ -12633,9 +12658,11 @@ _CHARACTERS_HEADER_LINES = [
 
 # The real skill row (`_ability_value_row(..., tactical_widens=True)`) and
 # aptitude row (`_ability_value_row(..., tactical_widens=False)` prefixed by
-# the Total_Skill+March*2 leading value) for 15 all-zero `Ability` values.
+# the Total_Skill+March*2 leading value, itself indented by
+# `_CHARACTERS_APTITUDE_ROW_INDENT` to line up under line 1's own Ini/pay
+# and ability columns) for 15 all-zero `Ability` values.
 _NO_SKILLS_LINE = "  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0"
-_NO_APTITUDE_LINE = " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0"
+_NO_APTITUDE_LINE = "                                          0  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0"
 
 
 # -- Phase 625: _discovery_skill_modifier_row() -- the sk_mod `^`/`^^`
@@ -13466,7 +13493,7 @@ def test_describe_characters_report_renders_recorded_skill_levels():
     # aptitude (uncapped) prefixed by Total_Skill(leader) +
     # effective_skill_level(leader, MARCH)*2 == 110 + 2*2 == 114.
     assert lines[7] == "Aldric           0  Unkn  Unkn     Human  1   0 2 4 6 8  9 9 9 9 9  9 9 9 9 9"
-    assert lines[8] == "114   1 3 5 7 9 1113151719 2123252729"
+    assert lines[8] == "                                        114  1 3 5 7 9 1113151719 2123252729"
 
 
 def test_describe_characters_report_sorts_by_leader_id():
@@ -13943,10 +13970,15 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "DIPLOMACY",
         "",
         "My lord, the following Kings have wisely allied with thy ever-victorious majesty:",
+        "",
         "None at present",
+        "",
         "My lord, the following Kings are foolishly at war with thy ever-victorious majesty:",
+        "",
         "None at present",
+        "",
         "My lord, the following Kings are cautiously neutral with thy ever-victorious majesty:",
+        "",
         "None at present",
         "",
         "",
@@ -13955,11 +13987,15 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "O Great One, I submit for thy examination the following figures "
         "concerning the finances of our great nation:",
         "here is the financial report for Aldric's kingdom: ",
+        "",
         "Gold in treasury:   0",
         "Expected Revenues:   0",
         "Expected Expenses:   6",
+        "",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
+        "",
         "None at present",
+        "",
         "Aldric was left with 0 gold in the treasury.",
         "",
         "",
@@ -13997,11 +14033,11 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Character      Loc Align  Temp M/F  Race Ini TaMaNaArMe WhNeElPsIl DrThExSpSa",
         " " * 77,
         "Aldric           0  Unkn  Unkn     Human  0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
-        " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        "                                          0  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         "Borin            0  Unkn  Unkn     Human  2   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
-        " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        "                                          0  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         "Elena            0  Unkn  Unkn     Human  2   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
-        " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        "                                          0  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         "",
         "",
         "ARMIES",
@@ -14010,7 +14046,7 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
         "                                                              Normal  Modified",
         "Province          Leader         Designation           Race   Quality  Quality",
-        "Capital City      Garrison       Bowmen                Human  Average  Veteran",
+        "Capital City      Garrison       1st Bowmen            Human  Average  Veteran",
         "",
         "",
         "IMPERIAL OFFICE REPORT",
@@ -14201,10 +14237,15 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "DIPLOMACY",
         "",
         "My lord, the following Kings have wisely allied with thy ever-victorious majesty:",
+        "",
         "None at present",
+        "",
         "My lord, the following Kings are foolishly at war with thy ever-victorious majesty:",
+        "",
         "None at present",
+        "",
         "My lord, the following Kings are cautiously neutral with thy ever-victorious majesty:",
+        "",
         "None at present",
         "",
         "",
@@ -14213,11 +14254,15 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "O Great One, I submit for thy examination the following figures "
         "concerning the finances of our great nation:",
         "here is the financial report for Testland's kingdom: ",
+        "",
         "Gold in treasury:   0",
         "Expected Revenues:   0",
         "Expected Expenses:   0",
+        "",
         "Our Kingdom is also benefited by the following Discoveries of the Sages:",
+        "",
         "None at present",
+        "",
         "Testland was left with 0 gold in the treasury.",
         "",
         "",
