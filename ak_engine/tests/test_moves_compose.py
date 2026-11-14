@@ -490,23 +490,31 @@ def test_tactic_options_includes_say_everywhere_but_excludes_none():
         assert int(Maneuver.NONE) not in values
 
 
-def test_tactic_options_excludes_give_everywhere():
-    # Give isn't a Search Encounter Plan tactic at all (sourced directly
-    # from the user, 2026-10-28): it's used only after Challenge (EN) or
-    # Pursue (PU), never against a monster encountered in a Feature.
+def test_tactic_options_excludes_give_by_default():
+    # tactic_options()'s own default (no allow_give) excludes Give --
+    # each caller that offers it (Search/Challenge/Pursue, all active
+    # plans) passes allow_give=True explicitly; the passive Special
+    # Encounter Plan's own caller does not (2026-11-14, user-confirmed:
+    # Give/Steal/Talk are each real only in an active plan, never a
+    # leader's own standing one).
     for slot in (0, 1):
         values = {value for value, _ in tactic_options(slot)}
         assert int(Maneuver.GIVE) not in values
 
 
-def test_search_phase_rejects_give_even_via_a_direct_tampered_value():
-    form = _search_form(tactics={0: int(Maneuver.GIVE)}, subs={0: 7})
+def test_search_phase_allows_give_as_a_tactic():
+    # 2026-11-14 correction (user-confirmed): Give used to be rejected
+    # here on the (stale) claim that it's real only after Challenge/
+    # Pursue -- it's real after Search too, same as Talk/Steal, just
+    # never in a leader's own standing Special Encounter Plan.
+    state = _state()
+    item = state.add_item(Treasure.ABILITY_MELEE, KING_ID)
+    form = _search_form(tactics={0: int(Maneuver.GIVE)})
+    form[f"tactic_give_item_{KING_ID}_0_0"] = str(item.item_id)
 
-    try:
-        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
-        assert False, "expected InvalidComposedMovesError"
-    except InvalidComposedMovesError as exc:
-        assert "Give isn't usable in a Search Encounter Plan" in str(exc)
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [0, int(Maneuver.GIVE), item.item_id, -1]
 
 
 def test_tactic_options_excludes_beg_everywhere():
@@ -527,6 +535,106 @@ def test_search_phase_rejects_beg_even_via_a_direct_tampered_value():
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "Beg isn't a real Encounter Plan tactic" in str(exc)
+
+
+def test_tactic_options_excludes_squeeze_everywhere():
+    # Squeeze (2026-11-14, user-confirmed) is only ever the Pascal
+    # source's own internal narration label for the Hand of Death
+    # spell's damage type (turn/encounter.py's own confirmed finding),
+    # never a real player-orderable tactic -- excluded for every slot
+    # and every caller, active or passive alike.
+    for slot in (0, 1):
+        for kwargs in ({}, {"allow_give": True}, {"allow_fulfill_scout": True}, {"passive": True}):
+            values = {value for value, _ in tactic_options(slot, **kwargs)}
+            assert int(Maneuver.SQUEEZE) not in values
+
+
+def test_search_phase_rejects_squeeze_even_via_a_direct_tampered_value():
+    form = _search_form(tactics={0: int(Maneuver.SQUEEZE)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Squeeze isn't a real Encounter Plan tactic" in str(exc)
+
+
+def test_tactic_options_excludes_talk_from_a_passive_plan():
+    # 2026-11-14, user-confirmed: Talk is real only in an active plan
+    # (generated after Search/Challenge/Trail/Pursue), never a leader's
+    # own standing, passive Special Encounter Plan -- even at slot 0.
+    values = {value for value, _ in tactic_options(0, passive=True)}
+    assert int(Maneuver.TALK) not in values
+
+
+def test_tactic_options_excludes_fulfill_and_scout_from_challenge_and_pursue():
+    # 2026-11-14, user-confirmed: Fulfill/Scout are real only after a
+    # Search (SE) order -- not Challenge/Pursue's own active plans, and
+    # not the passive Special Encounter Plan either.
+    for kwargs in ({"allow_give": True}, {"passive": True}, {}):
+        values = {value for value, _ in tactic_options(0, **kwargs)}
+        assert int(Maneuver.FULFILL) not in values
+        assert int(Maneuver.SCOUT) not in values
+
+
+def test_challenge_phase_rejects_fulfill_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    form = _challenge_form(tactics={0: int(Maneuver.FULFILL)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Fulfill is only usable in a Search (SE) Encounter Plan" in str(exc)
+
+
+def test_pursue_phase_rejects_scout_even_via_a_direct_tampered_value():
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    form = _pursue_form(tactics={0: int(Maneuver.SCOUT)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Scout is only usable in a Search (SE) Encounter Plan" in str(exc)
+
+
+def test_special_encounter_plan_rejects_talk_even_via_a_direct_tampered_value():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"sep_tactic_{KING_ID}_0_0"] = str(int(Maneuver.TALK))
+
+    try:
+        build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Talk isn't usable in a standing Special Encounter Plan" in str(exc)
+
+
+def test_special_encounter_plan_rejects_steal_even_via_a_direct_tampered_value():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"sep_tactic_{KING_ID}_0_0"] = str(int(Maneuver.STEAL))
+
+    try:
+        build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Steal isn't usable in a standing Special Encounter Plan" in str(exc)
+
+
+def test_special_encounter_plan_rejects_fulfill_even_via_a_direct_tampered_value():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"sep_tactic_{KING_ID}_0_0"] = str(int(Maneuver.FULFILL))
+
+    try:
+        build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Fulfill is only usable in a Search (SE) Encounter Plan" in str(exc)
 
 
 def test_spell_options_lists_exactly_the_18_encounter_plan_castable_spells():
@@ -713,9 +821,11 @@ def test_tactic_options_offers_steal_in_every_slot():
     # Unlike Talk, Steal's own position rule depends on the *previous*
     # slot's own content (slot 0, or right after Cast Invisibility), not
     # the slot index alone -- so there's no static per-slot filtering to
-    # apply here the way Talk's "slot 0 only" rule allows.
+    # apply here the way Talk's "slot 0 only" rule allows. Gated by
+    # allow_give (2026-11-14, same as Give/Talk: real only in an active
+    # plan, never the passive Special Encounter Plan).
     for slot in (0, 1, 3):
-        values = {value for value, _ in tactic_options(slot)}
+        values = {value for value, _ in tactic_options(slot, allow_give=True)}
         assert int(Maneuver.STEAL) in values
 
 
@@ -858,9 +968,11 @@ def test_tactic_options_offers_scout_in_every_slot_with_no_restriction():
     # Unlike Talk/Steal (position) or Flee (at-most-once), Scout's own
     # position is irrelevant and a second occurrence is a real, distinct
     # input (the game's own consent signal for costed Feature Powers),
-    # so nothing filters it out of any slot.
+    # so nothing filters it out of any slot. Gated by allow_fulfill_scout
+    # (2026-11-14): real only after a Search (SE) order, never Challenge/
+    # Pursue's own active plan or the passive Special Encounter Plan.
     for slot in (0, 1, 3):
-        values = {value for value, _ in tactic_options(slot)}
+        values = {value for value, _ in tactic_options(slot, allow_fulfill_scout=True)}
         assert int(Maneuver.SCOUT) in values
 
 
@@ -4303,20 +4415,26 @@ def test_special_encounter_plan_reads_a_composed_tactic():
     assert kingdom.leaders[0].plan.segments[0].sp == (int(Maneuver.MELEE), -1)
 
 
-def test_special_encounter_plan_allows_give():
-    # turn/sep_decode.py's own Plan_Intent() port lists CGive as a real,
-    # Pascal-sourced SEP tactic (unlike Search's own rulebook-barred
-    # exclusion) -- confirmed composable here via the same dedicated,
-    # ownership-filtered item dropdown Challenge/Pursue/Patrol already use.
+def test_special_encounter_plan_rejects_give_even_via_a_direct_tampered_value():
+    # 2026-11-14 correction (user-confirmed): this used to allow Give,
+    # on the reasoning that turn/sep_decode.py's own Plan_Intent() port
+    # classifies CGive as a real SEP tactic -- true for decoding an
+    # already-submitted real plan, but Give/Steal/Talk are each real
+    # only in an *active* plan (Search/Challenge/Trail/Pursue), never a
+    # leader's own standing, passive one. The dropdown never offers it
+    # here any more; this confirms a direct, tampered POST is rejected
+    # too.
     state = _state()
     item = state.add_item(Treasure.WAND_FIREBALL, KING_ID, charges=1)
     form = _all_defend_form(KING_ID)
     form[f"sep_tactic_{KING_ID}_0_0"] = str(int(Maneuver.GIVE))
     form[f"sep_tactic_give_item_{KING_ID}_0_0"] = str(item.item_id)
 
-    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
-
-    assert kingdom.leaders[0].plan.segments[0].sp == (int(Maneuver.GIVE), item.item_id, -1)
+    try:
+        build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "Give isn't usable in a standing Special Encounter Plan" in str(exc)
 
 
 def test_special_encounter_plan_rejects_beg_even_via_a_direct_tampered_value():

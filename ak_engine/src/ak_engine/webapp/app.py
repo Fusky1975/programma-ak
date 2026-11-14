@@ -3247,7 +3247,7 @@ def create_app(games_root: Path | None = None) -> Flask:
                 tactic_options(slot, allow_give=True) for slot in range(TACTIC_SLOT_COUNT)
             ],
             sep_tactic_choices_by_slot=[
-                tactic_options(slot, allow_give=True) for slot in range(TACTIC_SLOT_COUNT)
+                tactic_options(slot, passive=True) for slot in range(TACTIC_SLOT_COUNT)
             ],
             defend_action_value=int(ActionCode.DEFEND),
             hire_action_value=int(ActionCode.HIRE),
@@ -3295,7 +3295,9 @@ def create_app(games_root: Path | None = None) -> Flask:
                 leader.leader_id: feature_options(state, leader_id=leader.leader_id) for leader in roster
             },
             tactic_slot_numbers=range(TACTIC_SLOT_COUNT),
-            tactic_choices_by_slot=[tactic_options(slot) for slot in range(TACTIC_SLOT_COUNT)],
+            tactic_choices_by_slot=[
+                tactic_options(slot, allow_give=True, allow_fulfill_scout=True) for slot in range(TACTIC_SLOT_COUNT)
+            ],
             talk_value=int(Maneuver.TALK),
             fulfill_value=int(Maneuver.FULFILL),
             steal_value=int(Maneuver.STEAL),

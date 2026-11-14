@@ -2412,29 +2412,44 @@ def kill_enemy_target_options(state: GameState, leader_id: int) -> list[tuple[st
     return options
 
 
-def tactic_options(slot: int, *, allow_give: bool = False) -> list[tuple[int, str]]:
+def tactic_options(
+    slot: int, *, allow_give: bool = False, allow_fulfill_scout: bool = False, passive: bool = False
+) -> list[tuple[int, str]]:
     """Every composable ``Maneuver`` for one Encounter Plan tactic slot,
     as ``(value, display_name)`` pairs -- ``Maneuver.TALK`` is only ever
-    included for ``slot == 0`` (see this module's own docstring for the
-    user-sourced "Talk can only be the first tactic" rule); every other
-    slot gets the same ``_COMPOSABLE_MANEUVERS`` list minus Talk.
-    ``Maneuver.BEG`` is excluded for every slot and every caller -- it
-    is never a real Encounter Plan tactic anywhere, Search or Challenge/
-    Pursue alike (see this module's own docstring for the user-sourced
-    rationale). ``Maneuver.GIVE`` is excluded too unless ``allow_give``
-    is set -- real only after Challenge (EN) or Pursue (PU), rulebook
-    [3.12]/[3.16], never inside a Search Encounter Plan (2026-10-31,
-    confirmed directly in ``turn/challenge_execution.py``'s own
-    docstring; Search's own caller leaves ``allow_give`` at its default
-    ``False``, Challenge's own sets it ``True``).
+    included for ``slot == 0`` *and* an active plan (``passive=False``,
+    see below); every other slot gets the same ``_COMPOSABLE_MANEUVERS``
+    list minus Talk. ``Maneuver.BEG``/``Maneuver.SQUEEZE`` are excluded
+    for every slot and every caller -- neither is a real, GM-composable
+    Encounter Plan tactic anywhere: Beg per this module's own docstring
+    (user-sourced rationale), Squeeze per ``turn/encounter.py``'s own
+    confirmed finding that it's only ever the Pascal source's own
+    internal narration label for the Hand of Death spell's damage type,
+    never a real player-orderable tactic.
+
+    **2026-11-14 correction (user-confirmed, supersedes the 2026-10-31
+    note this docstring used to cite)**: Talk/Give/Steal are each real
+    only in an *active* Encounter Plan -- one generated after a Search
+    (SE), Challenge (EN), Trail (TR) or Pursue (PU) order -- never in a
+    leader's own standing, *passive* Special Encounter Plan [5.10]
+    (``passive=True``). Fulfill/Scout are narrower still: real only
+    after a Search (SE) order specifically, gated by their own
+    ``allow_fulfill_scout`` flag -- not Challenge/Pursue/Trail's own
+    active plans, and not the passive one either. Every caller now
+    passes the flags matching its own context (Search sets both
+    ``allow_give`` and ``allow_fulfill_scout``; Challenge/Pursue set
+    only ``allow_give``; the Special Encounter Plan sets neither and
+    passes ``passive=True``).
     """
 
     return [
         (int(maneuver), "Fire Arrow" if maneuver is Maneuver.SHOOT else maneuver.name.replace("_", " ").title())
         for maneuver in _COMPOSABLE_MANEUVERS
         if maneuver is not Maneuver.BEG
-        and (maneuver is not Maneuver.GIVE or allow_give)
-        and (maneuver is not Maneuver.TALK or slot == 0)
+        and maneuver is not Maneuver.SQUEEZE
+        and (maneuver not in (Maneuver.GIVE, Maneuver.STEAL) or allow_give)
+        and (maneuver is not Maneuver.TALK or (slot == 0 and not passive))
+        and (maneuver not in (Maneuver.FULFILL, Maneuver.SCOUT) or allow_fulfill_scout)
     ]
 
 
@@ -3901,6 +3916,8 @@ def _parse_search_tactics(
     state: GameState,
     field_prefix: str = "tactic",
     allow_give: bool = False,
+    allow_fulfill_scout: bool = False,
+    passive: bool = False,
 ) -> list[int | str]:
     """Reads this phase's own ``<field_prefix>_<leader_id>_<n>_<slot>``/
     ``<field_prefix>_sub_<leader_id>_<n>_<slot>``/``<field_prefix>_say_
@@ -3917,8 +3934,13 @@ def _parse_search_tactics(
     the default) without colliding on the same POST field names --
     ``tactic_options()``'s own dropdown ``value``s are the same
     ``Maneuver`` ordinals either way, so no other change is needed per
-    caller besides this and ``allow_give`` (2026-10-31). ``state`` is only needed
-    for Use Item's own ownership/category/charge lookup -- every
+    caller besides this, ``allow_give``, ``allow_fulfill_scout`` and
+    ``passive`` (2026-11-14, see ``tactic_options()``'s own docstring
+    for the full active-vs-passive rule each of these three flags now
+    enforces here too, as defense in depth against a tampered POST
+    naming an ordinal that caller's own dropdown never offers).
+    ``state`` is only needed for Use Item's own ownership/category/charge
+    lookup -- every
     other tactic's own validation is state-independent.
     """
 
@@ -3951,22 +3973,48 @@ def _parse_search_tactics(
             # dropdown, but a direct, tampered POST could still name
             # its real ordinal.
             raise InvalidComposedMovesError(f"{phase_label}: tactic slot {slot + 1} isn't composable here yet.")
-        if maneuver is Maneuver.GIVE and not allow_give:
-            # Defense in depth: Give is never offered in a Search tactic
-            # slot's own dropdown (see tactic_options()), but a direct,
-            # tampered POST could still name its real ordinal.
+        if maneuver in (Maneuver.GIVE, Maneuver.STEAL) and not allow_give:
+            # Defense in depth (2026-11-14): Give/Steal are never
+            # offered in a passive Special Encounter Plan's own
+            # dropdown (see tactic_options()), but a direct, tampered
+            # POST could still name either real ordinal.
             raise InvalidComposedMovesError(
-                f"{phase_label}: tactic slot {slot + 1}: Give isn't usable in a Search Encounter Plan -- "
-                "only after Challenge (EN) or Pursue (PU)."
+                f"{phase_label}: tactic slot {slot + 1}: {maneuver.name.title()} isn't usable in a standing "
+                "Special Encounter Plan -- only in an active plan, generated after a Search (SE), Challenge "
+                "(EN), Trail (TR) or Pursue (PU) order."
             )
-        if maneuver is Maneuver.BEG:
-            # Defense in depth: Beg is never offered in a Search tactic
-            # slot's own dropdown (see tactic_options()), but a direct,
-            # tampered POST could still name its real ordinal.
+        if maneuver in (Maneuver.BEG, Maneuver.SQUEEZE):
+            # Defense in depth: neither Beg nor Squeeze is ever offered
+            # in a tactic slot's own dropdown (see tactic_options()),
+            # but a direct, tampered POST could still name either real
+            # ordinal. Squeeze is only ever the Pascal source's own
+            # internal narration label for the Hand of Death spell's
+            # damage type (turn/encounter.py's own confirmed finding),
+            # never a real player-orderable tactic.
             raise InvalidComposedMovesError(
-                f"{phase_label}: tactic slot {slot + 1}: Beg isn't a real Encounter Plan tactic."
+                f"{phase_label}: tactic slot {slot + 1}: {maneuver.name.title()} isn't a real Encounter Plan tactic."
+            )
+        if maneuver in (Maneuver.FULFILL, Maneuver.SCOUT) and not allow_fulfill_scout:
+            # Defense in depth (2026-11-14): Fulfill/Scout are only
+            # ever offered after a Search (SE) order's own dropdown
+            # (see tactic_options()), but a direct, tampered POST
+            # could still name either real ordinal from a Challenge/
+            # Pursue/Special Encounter Plan context.
+            raise InvalidComposedMovesError(
+                f"{phase_label}: tactic slot {slot + 1}: {maneuver.name.title()} is only usable in a Search "
+                "(SE) Encounter Plan."
             )
         if maneuver is Maneuver.TALK:
+            if passive:
+                # Defense in depth (2026-11-14): Talk is never offered
+                # in a passive Special Encounter Plan's own dropdown
+                # (see tactic_options()), but a direct, tampered POST
+                # could still name its real ordinal.
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: tactic slot {slot + 1}: Talk isn't usable in a standing Special Encounter "
+                    "Plan -- only in an active plan, generated after a Search (SE), Challenge (EN), Trail (TR) "
+                    "or Pursue (PU) order."
+                )
             if slot != 0:
                 raise InvalidComposedMovesError(
                     f"{phase_label}: Talk can only be the first tactic in the Encounter Plan."
@@ -4093,10 +4141,17 @@ def _parse_special_encounter_plan(form: dict[str, str], leader_id: int, *, state
     real wire shape.
 
     Reuses ``_parse_search_tactics()`` directly (``field_prefix=
-    "sep_tactic"``, ``allow_give=True`` -- ``turn/sep_decode.py``'s own
-    docstring confirms ``Plan_Intent()``'s real Pascal source treats
-    ``CGive`` as a legitimate SEP tactic, unlike Search's own rulebook-
-    barred exclusion), with a fixed ``n=0`` -- there is exactly one SEP
+    "sep_tactic"``, ``passive=True``). **2026-11-14 correction
+    (user-confirmed)**: this used to pass ``allow_give=True`` instead,
+    on the reasoning that ``turn/sep_decode.py``'s own ``Plan_Intent()``
+    classifies ``CGive`` as a real SEP tactic -- true for *decoding* an
+    already-submitted plan (a real player's own file could contain
+    anything), but wrong for what the GM should be able to *compose*
+    here: Talk/Give/Steal are each real only in an active plan generated
+    after a Search/Challenge/Trail/Pursue order, never in a leader's own
+    standing, passive Special Encounter Plan -- see ``tactic_options()``'s
+    own docstring for the full rule. With a fixed ``n=0`` -- there is
+    exactly one SEP
     per leader per turn, not one per phase, so ``n`` here is only ever
     used to keep this plan's own field names distinct from every real
     phase's (``_parse_search_tactics()`` never reads ``n`` for anything
@@ -4130,7 +4185,7 @@ def _parse_special_encounter_plan(form: dict[str, str], leader_id: int, *, state
     """
 
     tactics = _parse_search_tactics(
-        form, leader_id, 0, phase_label="Special Encounter Plan", state=state, field_prefix="sep_tactic", allow_give=True
+        form, leader_id, 0, phase_label="Special Encounter Plan", state=state, field_prefix="sep_tactic", passive=True
     )
     if tactics == [-1]:
         return DEFAULT_SP
@@ -4273,7 +4328,12 @@ def parse_phase_inputs(
             obj = _parse_search_feature(
                 form.get(f"search_feature_{leader_id}_{n}", ""), phase_label=f"P{n}", state=state
             )
-            extra = [0, *_parse_search_tactics(form, leader_id, n, phase_label=f"P{n}", state=state)]
+            extra = [
+                0,
+                *_parse_search_tactics(
+                    form, leader_id, n, phase_label=f"P{n}", state=state, allow_give=True, allow_fulfill_scout=True
+                ),
+            ]
         elif action is ActionCode.RECRUIT:
             obj = _parse_recruit_target(
                 form.get(f"recruit_target_{leader_id}_{n}", ""), leader_id=leader_id, phase_label=f"P{n}", state=state
