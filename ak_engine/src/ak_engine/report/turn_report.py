@@ -14504,8 +14504,12 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
     results()`'s Phase 612/827 addenda and BATLDR's Phase 649 addendum).
     """
 
+    # Cosmetic fix (2026-11-14, user-requested): blank lines now separate
+    # the opening paragraph, the caption/column-header block, and the
+    # row table itself -- same treatment as DIPLOMACY/FINANCES above, no
+    # wording changed and no blank *between* individual rows of one table.
     kingdom = state.kingdoms[kingdom_id]
-    lines = ["ARMIES", _ARMIES_REPORT_OPENING]
+    lines = ["ARMIES", _ARMIES_REPORT_OPENING, ""]
 
     owned = [army for army in state.armies.values() if army.kingdom_id == kingdom_id]
     if not owned:
@@ -14513,6 +14517,7 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
     else:
         lines.append(_ARMIES_CAPTION_LINE_1)
         lines.append(_ARMIES_COLUMN_HEADER)
+        lines.append("")
 
         # Phase 926: REPORTS.PAS Rep_Armies's own middle loop (`FOR l:=
         # 0 TO nleaders DO ... IF l = nleaders THEN ldr:= noleader ELSE
@@ -14569,9 +14574,12 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
         if known_mercenary(state, army, kingdom_id, board_width=state.board_width)
     ]
     if mercenaries:
+        lines.append("")
         lines.append(_ARMIES_MERCENARY_INTRO)
+        lines.append("")
         lines.append(_ARMIES_MERCENARY_CAPTION_LINE_1)
         lines.append(_ARMIES_MERCENARY_COLUMN_HEADER)
+        lines.append("")
 
         mercenaries.sort(key=lambda army: (army.location.x, army.location.y, army.army_id))
 

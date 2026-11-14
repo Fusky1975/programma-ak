@@ -10438,7 +10438,7 @@ def test_describe_armies_report_no_armies_renders_none_at_present():
     state = _armies_state()
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["None at present"]
+    assert lines[2:] == ["", "None at present"]
 
 
 # REPORTS.PAS Rep_Armies Doit (~lines 945-950), Hired-pass variant,
@@ -10456,8 +10456,10 @@ def test_describe_armies_report_led_army_line():
     lines = describe_armies_report(state, 1)
 
     assert lines[2:] == [
+        "",
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
+        "",
         "Capital City      Sir Aldric     1st Bowmen            Human  Average  Veteran",
     ]
 
@@ -10469,8 +10471,10 @@ def test_describe_armies_report_unled_army_shows_garrison():
     lines = describe_armies_report(state, 1)
 
     assert lines[2:] == [
+        "",
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
+        "",
         "Capital City      Garrison       1st Phalanx           Human  Veteran    Crack",
     ]
 
@@ -10484,8 +10488,10 @@ def test_describe_armies_report_names_a_commander_who_died_earlier_this_same_tur
     lines = describe_armies_report(state, 1)
 
     assert lines[2:] == [
+        "",
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
+        "",
         "Capital City      Sir Aldric     1st Bowmen            Human  Average  Veteran",
     ]
 
@@ -10497,8 +10503,10 @@ def test_describe_armies_report_monstrous_army_uses_its_own_fixed_race():
     lines = describe_armies_report(state, 1)
 
     assert lines[2:] == [
+        "",
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
+        "",
         "Capital City      Garrison       1st Dragons          Dragon    Elite    Elite",
     ]
 
@@ -10519,8 +10527,10 @@ def test_describe_armies_report_dinosaurs_show_as_saurian_not_the_owning_kingdom
     lines = describe_armies_report(state, 1)
 
     assert lines[2:] == [
+        "",
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
+        "",
         "Capital City      Garrison       1st Dinosaurs       Dinosaur  Average  Veteran",
     ]
 
@@ -10532,7 +10542,7 @@ def test_describe_armies_report_excludes_other_kingdoms_armies():
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["None at present"]
+    assert lines[2:] == ["", "None at present"]
 
 
 def test_describe_armies_report_unnamed_province_falls_back_to_coordinates():
@@ -10544,8 +10554,10 @@ def test_describe_armies_report_unnamed_province_falls_back_to_coordinates():
     lines = describe_armies_report(state, 1)
 
     assert lines[2:] == [
+        "",
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
+        "",
         "(3, 4)            Garrison       1st Bowmen            Human  Average  Average",
     ]
 
@@ -10559,8 +10571,10 @@ def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
     lines = describe_armies_report(state, 1)
 
     assert lines[2:] == [
+        "",
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
+        "",
         "Capital City      Garrison       1st Bowmen            Human  Average  Veteran",
         "Second Province   Garrison       2nd Axemen            Human  Average  Average",
     ]
@@ -10583,7 +10597,7 @@ def test_describe_armies_report_same_province_groups_by_leader_index_not_army_id
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[4:] == [
+    assert lines[6:] == [
         "Capital City      Sir Aldric     3rd Bowmen            Human  Average  Veteran",
         "(#0)              Lady Brenna    2nd Axemen            Human  Average  Veteran",
         "                  Garrison       1st Phalanx           Human  Average  Veteran",
@@ -10601,7 +10615,7 @@ def test_describe_armies_report_suppresses_province_column_after_the_second_army
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[4:] == [
+    assert lines[6:] == [
         "Capital City      Garrison       1st Bowmen            Human  Average  Veteran",
         "(#0)              Garrison       2nd Axemen            Human  Average  Veteran",
         "                  Garrison       3rd Phalanx           Human  Average  Veteran",
@@ -10619,8 +10633,10 @@ def test_describe_armies_report_skeletal_army_uses_skel_designation():
     lines = describe_armies_report(state, 1)
 
     assert lines[2:] == [
+        "",
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
+        "",
         "Capital City      Garrison       1st Skel Lt Cav       Human  Average  Veteran",
     ]
 
@@ -10634,8 +10650,10 @@ def test_describe_armies_report_non_skeletal_army_still_uses_atname():
     lines = describe_armies_report(state, 1)
 
     assert lines[2:] == [
+        "",
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
+        "",
         "Capital City      Garrison       1st Light Cavalry     Human  Average  Veteran",
     ]
 
@@ -10654,10 +10672,14 @@ def test_describe_armies_report_known_mercenary_in_owned_province():
     lines = describe_armies_report(state, 1)
 
     assert lines[2:] == [
+        "",
         "None at present",
+        "",
         _ARMIES_MERCENARY_INTRO,
+        "",
         _ARMIES_MERCENARY_CAPTION_LINE_1,
         _ARMIES_MERCENARY_COLUMN_HEADER,
+        "",
         "Capital City                     9th Bowmen            Human  Average",
     ]
 
@@ -10698,7 +10720,7 @@ def test_describe_armies_report_unknown_mercenary_is_absent():
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2:] == ["None at present"]
+    assert lines[2:] == ["", "None at present"]
     assert _ARMIES_MERCENARY_INTRO not in lines
 
 
@@ -10737,7 +10759,7 @@ def test_describe_armies_report_mercenary_section_appears_even_with_no_owned_arm
 
     lines = describe_armies_report(state, 1)
 
-    assert lines[2] == "None at present"  # Hired pass, empty
+    assert lines[3] == "None at present"  # Hired pass, empty
     assert _ARMIES_MERCENARY_INTRO in lines  # Mercenary pass, real content
 
 
@@ -10748,7 +10770,7 @@ def test_describe_armies_report_mercenary_suppresses_province_column_after_the_s
 
     lines = describe_armies_report(state, 1)
 
-    rows = lines[lines.index(_ARMIES_MERCENARY_COLUMN_HEADER) + 1 :]
+    rows = lines[lines.index(_ARMIES_MERCENARY_COLUMN_HEADER) + 2 :]
     assert rows == [
         "Capital City                     9th Bowmen            Human  Average",
         "(#0)                             10th Axemen           Human  Average",
@@ -14044,8 +14066,10 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
+        "",
         "                                                              Normal  Modified",
         "Province          Leader         Designation           Race   Quality  Quality",
+        "",
         "Capital City      Garrison       1st Bowmen            Human  Average  Veteran",
         "",
         "",
@@ -14306,6 +14330,7 @@ def test_compose_letter_report_all_four_wired_sections_present_even_when_empty()
         "",
         "Excellence, thy armies have trained hard and honed their weapons to a fine "
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
+        "",
         "None at present",
         "",
         "",
