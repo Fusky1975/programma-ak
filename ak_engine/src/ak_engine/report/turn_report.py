@@ -13451,6 +13451,17 @@ _CHARACTERS_COLUMN_HEADER = "Character      Loc Align  Temp M/F  Race Ini TaMaNa
 # text for "not recorded" to quote.
 _CHARACTERS_UNKNOWN_ABBREVIATION = "Unkn"
 
+# Bug fix (2026-11-14, user-confirmed against a real report sample): line 2
+# ("move precedence and aptitude") used to start flush at column 0, under
+# the leader's own *name* -- it needs to line up instead under line 1's own
+# Ini/pay number and ability columns, which start only after the name/loc/
+# align/temp/sex/race fields. 40 blank chars = name(14)+loc(4)+align(6)+
+# temp(6)+sex(3)+race(7), matching line 1's own field widths one-for-one
+# (see `_discovery_skill_modifier_row()`'s own docstring for the confirmed
+# 44-char prefix width once `pay`'s own 3 chars + 1 trailing space are
+# added on top of this).
+_CHARACTERS_APTITUDE_ROW_INDENT = " " * 40
+
 
 def _ability_value_row(values: list[int], *, tactical_widens: bool) -> str:
     """Renders 15 per-`Ability` values (enum order) as the real report's
@@ -14210,7 +14221,7 @@ def describe_characters_report(state: GameState, kingdom_id: int) -> list[str]:
         aptitude_values = [skills.pair_for_ability(ability)[1] if skills is not None else 0 for ability in Ability]
         aptitude_row = _ability_value_row(aptitude_values, tactical_widens=False)
         total_skill_and_march = _total_skill(state, leader) + effective_skill_level(state, leader, Ability.MARCH) * 2
-        lines.append(f"{total_skill_and_march:>2}  {aptitude_row}")
+        lines.append(f"{_CHARACTERS_APTITUDE_ROW_INDENT}{total_skill_and_march:>3} {aptitude_row}")
 
         held_items = state.items_held_by(leader.leader_id)
         if held_items:

@@ -12633,9 +12633,11 @@ _CHARACTERS_HEADER_LINES = [
 
 # The real skill row (`_ability_value_row(..., tactical_widens=True)`) and
 # aptitude row (`_ability_value_row(..., tactical_widens=False)` prefixed by
-# the Total_Skill+March*2 leading value) for 15 all-zero `Ability` values.
+# the Total_Skill+March*2 leading value, itself indented by
+# `_CHARACTERS_APTITUDE_ROW_INDENT` to line up under line 1's own Ini/pay
+# and ability columns) for 15 all-zero `Ability` values.
 _NO_SKILLS_LINE = "  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0"
-_NO_APTITUDE_LINE = " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0"
+_NO_APTITUDE_LINE = "                                          0  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0"
 
 
 # -- Phase 625: _discovery_skill_modifier_row() -- the sk_mod `^`/`^^`
@@ -13466,7 +13468,7 @@ def test_describe_characters_report_renders_recorded_skill_levels():
     # aptitude (uncapped) prefixed by Total_Skill(leader) +
     # effective_skill_level(leader, MARCH)*2 == 110 + 2*2 == 114.
     assert lines[7] == "Aldric           0  Unkn  Unkn     Human  1   0 2 4 6 8  9 9 9 9 9  9 9 9 9 9"
-    assert lines[8] == "114   1 3 5 7 9 1113151719 2123252729"
+    assert lines[8] == "                                        114  1 3 5 7 9 1113151719 2123252729"
 
 
 def test_describe_characters_report_sorts_by_leader_id():
@@ -13997,11 +13999,11 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "Character      Loc Align  Temp M/F  Race Ini TaMaNaArMe WhNeElPsIl DrThExSpSa",
         " " * 77,
         "Aldric           0  Unkn  Unkn     Human  0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
-        " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        "                                          0  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         "Borin            0  Unkn  Unkn     Human  2   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
-        " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        "                                          0  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         "Elena            0  Unkn  Unkn     Human  2   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
-        " 0   0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
+        "                                          0  0 0 0 0 0  0 0 0 0 0  0 0 0 0 0",
         "",
         "",
         "ARMIES",
