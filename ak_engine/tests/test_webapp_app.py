@@ -8507,6 +8507,10 @@ def test_turns_compose_save_cast_an_encounter_plan_spell(tmp_path):
     meta = _game_with_world(tmp_path, client)
     _, state = open_game(tmp_path, meta.slug)
     king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    # 2026-11-14: Gate Angel is one of the 6 skill-gated secret spells now --
+    # needs White skill 5+ (SECRET_SPELL_SKILL_THRESHOLD).
+    king.skills.set_pair_for_ability(Ability.WHITE, 5, 5)
+    save_game(tmp_path, meta.slug, state)
     roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
     feature_id = next(iter(state.features))
 

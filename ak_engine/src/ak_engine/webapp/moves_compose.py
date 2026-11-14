@@ -1183,6 +1183,7 @@ from ak_engine.turn.cast_decode import (
 )
 from ak_engine.turn.cast_execution import is_unfinalized_royal_heir
 from ak_engine.turn.combat import QUALITY_NAME, Quality
+from ak_engine.turn.discovery_effects import effective_skill_level
 from ak_engine.turn.hex_numbering import encode_hex_number
 from ak_engine.turn.leader_queries import find_king_of_kingdom
 from ak_engine.turn.office_holder import resolve_office_holder
@@ -1325,6 +1326,53 @@ CAST_ACTION_SPELLS: frozenset[Spell] = (
     | CAST_NO_TARGET_SPELLS
     | CAST_ITEM_TARGET_SPELLS
 )
+
+# Bug fix (2026-11-14, user-requested): 6 of the 10 undocumented
+# "secret" spells (``Spell`` class's own docstring, ordinals 25-34,
+# ``ADDEND.AK`` [2.0]: "Secret special spells and capabilities are
+# attainable at high levels of ability") used to appear in the Cast
+# dropdown unconditionally, for every leader regardless of skill --
+# these 6 are only real for a leader who's actually reached skill 5+
+# in the governing magical Ability (``CTBOTH.PAS``'s own ``spdex``
+# lookup table), confirmed by the user this round. The other 4 secret
+# spells (Scar Terrain/Mystic Winds/Locate Object/Illusory Fog) are
+# deliberately NOT included here -- each already has its own, real
+# ``AdvancedAbility``-gated unlock mechanism (``turn/cast_execution.py``'s
+# own ``SCAR_TERRAIN_SPELL``/``MYSTIC_WINDS_SPELL``/``LOCATE_OBJECT_
+# SPELL``/``ILLUS_FOG_SPELL``), a one-time grant rather than a live
+# skill-level re-check -- out of this round's narrower scope.
+#
+# Checking ``effective_skill_level()`` at compose time (rather than
+# needing a separate "as of last turn" snapshot) already gives exactly
+# that: the GM composes turn N's own moves against the skill level
+# ``leader.skills`` held at the *end* of turn N-1, since turn N's own
+# Practice/experience gains are only ever applied during that turn's
+# own processing, strictly after this page is rendered.
+SECRET_SPELL_SKILL_THRESHOLD = 5
+SECRET_SPELL_ABILITY: dict[Spell, Ability] = {
+    Spell.GATE_ANGEL: Ability.WHITE,
+    Spell.HEAL: Ability.WHITE,
+    Spell.GATE_DEMON: Ability.NECROMANCY,
+    Spell.LAVA_POOL: Ability.ELEMENTAL,
+    Spell.AUGUR_COMBAT: Ability.PSYCHIC,
+    Spell.ILLUS_HERO: Ability.ILLUSION,
+}
+
+
+def _leader_knows_secret_spell(state: GameState, leader: LeaderState, spell: Spell) -> bool:
+    """``True`` unless ``spell`` is one of ``SECRET_SPELL_ABILITY``'s own
+    six gated spells and this leader's own current ``effective_skill_
+    level()`` in its governing Ability falls short of ``SECRET_SPELL_
+    SKILL_THRESHOLD`` -- every other spell is unconditionally available,
+    unaffected by this check.
+    """
+
+    ability = SECRET_SPELL_ABILITY.get(spell)
+    if ability is None:
+        return True
+    return effective_skill_level(state, leader, ability) >= SECRET_SPELL_SKILL_THRESHOLD
+
+
 # Every real Terrain a GM could plausibly pick for Illusory Terrain's
 # own fake-terrain field -- ``Terrain.NO_TERRAIN`` is a placeholder
 # sentinel that "never actually appears on a generated map"
@@ -1436,7 +1484,7 @@ def feature_options(state: GameState, *, leader_id: int | None = None) -> list[t
     return options
 
 
-def spell_options() -> list[tuple[int, str]]:
+def spell_options(state: GameState | None = None, leader_id: int | None = None) -> list[tuple[int, str]]:
     """Every spell a Cast tactic can actually use inside a Search
     Encounter Plan (``ENCOUNTER_PLAN_CASTABLE_SPELLS``), as ``(value,
     display_name)`` pairs for the Cast tactic's own dedicated spell
@@ -1444,11 +1492,21 @@ def spell_options() -> list[tuple[int, str]]:
     named dropdown instead of the generic numeric sub-object field
     every other ``TACTICS_WITH_SUB_OBJECT`` maneuver uses. Sorted by
     the spell's own real ordinal.
+
+    ``state``/``leader_id`` (2026-11-14, both optional): when given and
+    resolvable, also drops any of ``SECRET_SPELL_ABILITY``'s own six
+    gated spells this leader hasn't actually reached skill 5+ for yet
+    (``_leader_knows_secret_spell()``) -- omitted (the nested-plan
+    nested_hero/not-yet-resolvable case, where the real leader casting
+    isn't known at render time) returns the full, unfiltered list, same
+    as before this round.
     """
 
+    leader = state.leaders.get(leader_id) if state is not None and leader_id is not None else None
     return [
         (int(spell), SPELL_NAME.get(spell, spell.name.replace("_", " ").title()))
         for spell in sorted(ENCOUNTER_PLAN_CASTABLE_SPELLS, key=int)
+        if leader is None or state is None or _leader_knows_secret_spell(state, leader, spell)
     ]
 
 
@@ -2213,6 +2271,12 @@ def cast_spell_options() -> list[tuple[int, str]]:
     execute_cast()``'s own exhaustive dispatch only ever has a real
     branch for these spells, any other falling to a generic "spell
     effect not modeled" result. Sorted by the spell's own real ordinal.
+
+    None of ``SECRET_SPELL_ABILITY``'s own six skill-gated secret
+    spells are ever members of ``CAST_ACTION_SPELLS`` (every one of
+    them is Encounter-Plan-only, like ``Spell.GATE_ANGEL`` -- see that
+    frozenset's own docstring), so unlike ``spell_options()`` this
+    dropdown needs no per-leader skill filtering at all.
     """
 
     return [(int(spell), SPELL_NAME.get(spell, spell.name.replace("_", " ").title())) for spell in sorted(CAST_ACTION_SPELLS, key=int)]
@@ -4066,6 +4130,16 @@ def _parse_search_tactics(
                 raise InvalidComposedMovesError(
                     f"{phase_label}: tactic slot {slot + 1}: "
                     f"{SPELL_NAME.get(spell, spell.name)} can't be cast in an Encounter Plan."
+                )
+            tactic_caster = state.leaders.get(leader_id)
+            if tactic_caster is not None and not _leader_knows_secret_spell(state, tactic_caster, spell):
+                # Defense in depth (2026-11-14): same six skill-gated
+                # secret spells as the top-level Cast dropdown -- this
+                # leader hasn't reached skill 5+ in the governing
+                # magical Ability yet.
+                raise InvalidComposedMovesError(
+                    f"{phase_label}: tactic slot {slot + 1}: this leader hasn't discovered "
+                    f"{SPELL_NAME.get(spell, spell.name)} yet."
                 )
             sub_object = int(spell)
             tokens.append(sub_object)

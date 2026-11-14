@@ -3306,7 +3306,12 @@ def create_app(games_root: Path | None = None) -> Flask:
             say_value=int(Maneuver.SAY),
             say_text_max_length=SAY_TEXT_MAX_LENGTH,
             cast_value=int(Maneuver.CAST),
+            # 2026-11-14: unfiltered here -- the nested-hero-not-yet-
+            # resolved rows still use this bare list, since the real
+            # casting leader isn't known at render time. Top-level rows
+            # use the per-leader-filtered dict below instead.
             spell_choices=spell_options(),
+            spell_choices_by_leader={leader.leader_id: spell_options(state, leader.leader_id) for leader in roster},
             # Both Cast and Use Item now get their own dedicated named
             # dropdown (spell / this leader's own owned items) instead
             # of a generic numeric sub-object field -- nothing in

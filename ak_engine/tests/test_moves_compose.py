@@ -654,11 +654,71 @@ def test_search_phase_cast_an_encounter_plan_spell_is_included():
 
 
 def test_search_phase_cast_gate_angel_is_included():
+    # 2026-11-14: Gate Angel is one of the 6 skill-gated secret spells
+    # now -- needs White skill 5+ (SECRET_SPELL_SKILL_THRESHOLD).
+    state = _state()
+    state.leaders[KING_ID].skills.set_pair_for_ability(Ability.WHITE, 5, 5)
     form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: int(Spell.GATE_ANGEL)})
 
-    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
 
     assert phases[0].extra == [0, int(Maneuver.CAST), int(Spell.GATE_ANGEL), -1]
+
+
+def test_search_phase_cast_rejects_gate_angel_even_via_a_direct_tampered_value():
+    # 2026-11-14 bug fix (user-requested): the Encounter Plan's own Cast
+    # tactic dropdown no longer offers Gate Angel (or the other 5
+    # skill-gated secret spells) to a leader below the required skill --
+    # but a direct, tampered POST could still name it.
+    state = _state()
+    form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: int(Spell.GATE_ANGEL)})
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "hasn't discovered Gate Angel yet" in str(exc)
+
+
+def test_spell_options_excludes_secret_spells_below_the_skill_threshold():
+    state = _state()
+
+    values = {value for value, _ in spell_options(state, KING_ID)}
+
+    assert int(Spell.GATE_ANGEL) not in values
+    assert int(Spell.GATE_DEMON) not in values
+    assert int(Spell.HEAL) not in values
+    assert int(Spell.LAVA_POOL) not in values
+    assert int(Spell.AUGUR_COMBAT) not in values
+    assert int(Spell.ILLUS_HERO) not in values
+    assert int(Spell.FIREBALL) in values  # unaffected, ordinary spell
+
+
+def test_spell_options_includes_secret_spells_at_the_skill_threshold():
+    state = _state()
+    state.leaders[KING_ID].skills.set_pair_for_ability(Ability.WHITE, 5, 5)
+    state.leaders[KING_ID].skills.set_pair_for_ability(Ability.NECROMANCY, 5, 5)
+    state.leaders[KING_ID].skills.set_pair_for_ability(Ability.ELEMENTAL, 5, 5)
+    state.leaders[KING_ID].skills.set_pair_for_ability(Ability.PSYCHIC, 5, 5)
+    state.leaders[KING_ID].skills.set_pair_for_ability(Ability.ILLUSION, 5, 5)
+
+    values = {value for value, _ in spell_options(state, KING_ID)}
+
+    assert int(Spell.GATE_ANGEL) in values
+    assert int(Spell.GATE_DEMON) in values
+    assert int(Spell.HEAL) in values
+    assert int(Spell.LAVA_POOL) in values
+    assert int(Spell.AUGUR_COMBAT) in values
+    assert int(Spell.ILLUS_HERO) in values
+
+
+def test_cast_spell_options_lists_the_same_19_spells_regardless_of_skill():
+    # 2026-11-14: none of the 6 skill-gated secret spells are ever
+    # members of CAST_ACTION_SPELLS (each is Encounter-Plan-only, like
+    # Gate Angel -- see that frozenset's own docstring), so unlike
+    # spell_options() this dropdown needs no per-leader skill
+    # filtering, and takes no state/leader_id arguments at all.
+    assert {value for value, _ in cast_spell_options()} == {int(spell) for spell in CAST_ACTION_SPELLS}
 
 
 def test_search_phase_cast_kill_enemy_is_included():
@@ -1306,7 +1366,10 @@ def test_build_composed_kingdom_round_trips_a_double_scout_consent_signal():
 
 
 def test_build_composed_kingdom_round_trips_a_cast_gate_angel():
+    # 2026-11-14: Gate Angel is one of the 6 skill-gated secret spells
+    # now -- needs White skill 5+ (SECRET_SPELL_SKILL_THRESHOLD).
     state = _state()
+    state.leaders[KING_ID].skills.set_pair_for_ability(Ability.WHITE, 5, 5)
     form = _search_form(tactics={0: int(Maneuver.CAST)}, spells={0: int(Spell.GATE_ANGEL)})
 
     kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
