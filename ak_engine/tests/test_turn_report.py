@@ -10458,7 +10458,7 @@ def test_describe_armies_report_led_army_line():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Sir Aldric     Bowmen                Human  Average  Veteran",
+        "Capital City      Sir Aldric     1st Bowmen            Human  Average  Veteran",
     ]
 
 
@@ -10471,7 +10471,7 @@ def test_describe_armies_report_unled_army_shows_garrison():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Garrison       Phalanx               Human  Veteran    Crack",
+        "Capital City      Garrison       1st Phalanx           Human  Veteran    Crack",
     ]
 
 
@@ -10486,7 +10486,7 @@ def test_describe_armies_report_names_a_commander_who_died_earlier_this_same_tur
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Sir Aldric     Bowmen                Human  Average  Veteran",
+        "Capital City      Sir Aldric     1st Bowmen            Human  Average  Veteran",
     ]
 
 
@@ -10499,7 +10499,7 @@ def test_describe_armies_report_monstrous_army_uses_its_own_fixed_race():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Garrison       Dragons              Dragon    Elite    Elite",
+        "Capital City      Garrison       1st Dragons          Dragon    Elite    Elite",
     ]
 
 
@@ -10521,7 +10521,7 @@ def test_describe_armies_report_dinosaurs_show_as_saurian_not_the_owning_kingdom
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Garrison       Dinosaurs           Dinosaur  Average  Veteran",
+        "Capital City      Garrison       1st Dinosaurs       Dinosaur  Average  Veteran",
     ]
 
 
@@ -10546,7 +10546,7 @@ def test_describe_armies_report_unnamed_province_falls_back_to_coordinates():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "(3, 4)            Garrison       Bowmen                Human  Average  Average",
+        "(3, 4)            Garrison       1st Bowmen            Human  Average  Average",
     ]
 
 
@@ -10561,8 +10561,8 @@ def test_describe_armies_report_sorts_multiple_armies_by_location_then_id():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Garrison       Bowmen                Human  Average  Veteran",
-        "Second Province   Garrison       Axemen                Human  Average  Average",
+        "Capital City      Garrison       1st Bowmen            Human  Average  Veteran",
+        "Second Province   Garrison       2nd Axemen            Human  Average  Average",
     ]
 
 
@@ -10584,9 +10584,9 @@ def test_describe_armies_report_same_province_groups_by_leader_index_not_army_id
     lines = describe_armies_report(state, 1)
 
     assert lines[4:] == [
-        "Capital City      Sir Aldric     Bowmen                Human  Average  Veteran",
-        "(#0)              Lady Brenna    Axemen                Human  Average  Veteran",
-        "                  Garrison       Phalanx               Human  Average  Veteran",
+        "Capital City      Sir Aldric     3rd Bowmen            Human  Average  Veteran",
+        "(#0)              Lady Brenna    2nd Axemen            Human  Average  Veteran",
+        "                  Garrison       1st Phalanx           Human  Average  Veteran",
     ]
 
 
@@ -10602,9 +10602,9 @@ def test_describe_armies_report_suppresses_province_column_after_the_second_army
     lines = describe_armies_report(state, 1)
 
     assert lines[4:] == [
-        "Capital City      Garrison       Bowmen                Human  Average  Veteran",
-        "(#0)              Garrison       Axemen                Human  Average  Veteran",
-        "                  Garrison       Phalanx               Human  Average  Veteran",
+        "Capital City      Garrison       1st Bowmen            Human  Average  Veteran",
+        "(#0)              Garrison       2nd Axemen            Human  Average  Veteran",
+        "                  Garrison       3rd Phalanx           Human  Average  Veteran",
     ]
 
 
@@ -10621,7 +10621,7 @@ def test_describe_armies_report_skeletal_army_uses_skel_designation():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Garrison       Skel Lt Cav           Human  Average  Veteran",
+        "Capital City      Garrison       1st Skel Lt Cav       Human  Average  Veteran",
     ]
 
 
@@ -10636,7 +10636,7 @@ def test_describe_armies_report_non_skeletal_army_still_uses_atname():
     assert lines[2:] == [
         _ARMIES_CAPTION_LINE_1,
         _ARMIES_COLUMN_HEADER,
-        "Capital City      Garrison       Light Cavalry         Human  Average  Veteran",
+        "Capital City      Garrison       1st Light Cavalry     Human  Average  Veteran",
     ]
 
 
@@ -10658,7 +10658,7 @@ def test_describe_armies_report_known_mercenary_in_owned_province():
         _ARMIES_MERCENARY_INTRO,
         _ARMIES_MERCENARY_CAPTION_LINE_1,
         _ARMIES_MERCENARY_COLUMN_HEADER,
-        "Capital City                     Bowmen                Human  Average",
+        "Capital City                     9th Bowmen            Human  Average",
     ]
 
 
@@ -10750,8 +10750,8 @@ def test_describe_armies_report_mercenary_suppresses_province_column_after_the_s
 
     rows = lines[lines.index(_ARMIES_MERCENARY_COLUMN_HEADER) + 1 :]
     assert rows == [
-        "Capital City                     Bowmen                Human  Average",
-        "(#0)                             Axemen                Human  Average",
+        "Capital City                     9th Bowmen            Human  Average",
+        "(#0)                             10th Axemen           Human  Average",
     ]
 
 
@@ -14012,7 +14012,7 @@ def test_compose_letter_report_stitches_all_four_wired_sections_in_the_real_orde
         "edge.  Proudly they serve thy imperial majesty, and they await thy commands.",
         "                                                              Normal  Modified",
         "Province          Leader         Designation           Race   Quality  Quality",
-        "Capital City      Garrison       Bowmen                Human  Average  Veteran",
+        "Capital City      Garrison       1st Bowmen            Human  Average  Veteran",
         "",
         "",
         "IMPERIAL OFFICE REPORT",

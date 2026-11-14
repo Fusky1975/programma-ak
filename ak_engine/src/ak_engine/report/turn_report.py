@@ -14324,10 +14324,11 @@ def _render_army_row(
     own `IF passtype = Hired THEN WRITE(...aq...)` branch).
     """
 
+    ordinal = make_army_ordinal(army.army_id)
     if army.is_skeletal:
-        designation = f"Skel {ARMY_TYPE_DESIGNATION[army.army_type]}"
+        designation = f"{ordinal} Skel {ARMY_TYPE_DESIGNATION[army.army_type]}"
     else:
-        designation = ARMY_TYPE_NAME[army.army_type]
+        designation = f"{ordinal} {ARMY_TYPE_NAME[army.army_type]}"
     race = MONSTROUS_ARMY_RACE.get(army.army_type, default_race)
     race_name = RACE_NAME[race]
     quality_name = QUALITY_NAME[army.quality]
@@ -14382,14 +14383,16 @@ def describe_armies_report(state: GameState, kingdom_id: int) -> list[str]:
       previously claimed ``ArmyState`` had no equivalent flag at all --
       wrong: ``ArmyState.is_skeletal`` (Phase 236) is exactly that flag,
       already set by every Skeletal_Army cast (``turn/cast_execution.py
-      _execute_skeletal_army()``), just never read here. Wired directly
-      (the branch logic only, not `make_army_display_name()`'s own
-      ordinal-number prefix, since this composer's "province -- leader:
-      designation" line never rendered a per-army ordinal to begin
-      with -- a distinct, already-documented formatting choice above,
-      not reopened here). Cross-checked against the same real sample
-      `turn/army_naming.py`'s own docstring already cites
-      (`SE3__T0.K1:135`, "108th Skel Bowmen").
+      _execute_skeletal_army()``), just never read here.
+    - **Bug fix (2026-11-14, user-confirmed against a real report
+      sample)**: this row's own designation column used to render just
+      `make_army_display_name()`'s "Skel <designation>"/"<name>" branch
+      logic, deliberately dropping that same function's own leading
+      ordinal-number prefix (`make_army_ordinal(army.army_id)`) --
+      despite the exact real sample this module's own docstring already
+      cites, `SE3__T0.K1:135`, showing it WITH the ordinal ("108th Skel
+      Bowmen", not "Skel Bowmen"). Now prefixed the same way, e.g.
+      "3rd Skel Legion"/"130th Bowmen".
     - **Phase 433 adds the real column widths** (`_ARMIES_CAPTION_LINE_1`/
       `_ARMIES_COLUMN_HEADER`, quoted verbatim from `REPORTS.PAS Doit`
       ~lines 945-950 -- province 18, leader 15, designation 20, race 7,
