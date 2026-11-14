@@ -8081,13 +8081,12 @@ def test_turns_compose_save_say_then_another_tactic_then_full_turn_processes_cle
     assert saved.exists()
 
 
-def test_turns_compose_does_not_offer_give_in_the_search_tactic_dropdown(tmp_path):
-    # Give (Maneuver.GIVE) is now a real tactic for Challenge/Pursue's
-    # own Encounter Plan (2026-10-31), so it legitimately appears in
-    # *that* cell's own tactic dropdown -- this test is scoped to
-    # Search's own cell specifically (sliced out by its own, and the
-    # next column's own, `data-action` marker) to keep pinning down
-    # the one real restriction: Give still isn't a Search tactic.
+def test_turns_compose_offers_give_in_the_search_tactic_dropdown(tmp_path):
+    # 2026-11-14 correction (user-confirmed): Give used to be excluded
+    # from Search's own tactic dropdown on the (stale) claim that it's
+    # real only after Challenge/Pursue -- it's real after Search too,
+    # same as Talk/Steal, just never in a leader's own standing Special
+    # Encounter Plan (see tactic_options()'s own docstring).
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
 
@@ -8103,7 +8102,7 @@ def test_turns_compose_does_not_offer_give_in_the_search_tactic_dropdown(tmp_pat
     # dropdown's own `value="5"` option -- matching the value *and*
     # label together is what actually pins this down to a tactic
     # dropdown's own Give option.
-    assert f'value="{int(Maneuver.GIVE)}">Give<' not in search_cell_html
+    assert f'value="{int(Maneuver.GIVE)}">Give<' in search_cell_html
 
 
 def test_turns_compose_offers_give_in_the_challenge_tactic_dropdown(tmp_path):
@@ -8120,11 +8119,18 @@ def test_turns_compose_offers_give_in_the_challenge_tactic_dropdown(tmp_path):
     assert f'value="{int(Maneuver.GIVE)}">Give<' in challenge_cell_html
 
 
-def test_turns_compose_save_give_tactic_shows_an_error(tmp_path):
+def test_turns_compose_save_give_tactic_in_search_succeeds(tmp_path):
+    # 2026-11-14 correction (user-confirmed): this used to assert an
+    # error here -- Give is real in a Search Encounter Plan now, same
+    # as Talk/Steal (never in the passive Special Encounter Plan).
+    from ak_engine.parser.k1_moves import parse_k1_moves_file
+
     client = _client(tmp_path)
     meta = _game_with_world(tmp_path, client)
     _, state = open_game(tmp_path, meta.slug)
     king = next(leader for leader in state.leaders.values() if leader.kingdom_id == 1 and leader.is_king)
+    item = state.add_item(Treasure.ABILITY_MELEE, king.leader_id)
+    save_game(tmp_path, meta.slug, state)
     roster_ids = [leader.leader_id for leader in kingdom_leaders_for_compose(state, 1)]
     feature_id = next(iter(state.features))
 
@@ -8132,12 +8138,17 @@ def test_turns_compose_save_give_tactic_shows_an_error(tmp_path):
     form[f"action_{king.leader_id}_0"] = str(int(ActionCode.SEARCH))
     form[f"search_feature_{king.leader_id}_0"] = str(feature_id)
     form[f"tactic_{king.leader_id}_0_0"] = str(int(Maneuver.GIVE))
-    form[f"tactic_sub_{king.leader_id}_0_0"] = "7"
+    form[f"tactic_give_item_{king.leader_id}_0_0"] = str(item.item_id)
 
     response = client.post(f"/games/{meta.slug}/turns/1/compose", data=form, follow_redirects=True)
 
     assert response.status_code == 200
-    assert b"isn&#39;t usable in a Search Encounter Plan" in response.data
+    assert b"error-banner" not in response.data
+    saved = game_dir(tmp_path, meta.slug) / "moves" / "turn_1" / "AKThird_CampaignT1.K1"
+    kingdom = parse_k1_moves_file(saved)
+    king_block = next(leader for leader in kingdom.leaders if leader.leader_id == king.leader_id)
+    search_phase = king_block.plan.segments[0].phases["P0"]
+    assert search_phase.extra == [0, int(Maneuver.GIVE), item.item_id, -1]
 
 
 def test_turns_compose_shows_a_give_item_dropdown_in_the_challenge_and_pursue_tables(tmp_path):
