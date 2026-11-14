@@ -3000,16 +3000,28 @@ def create_app(games_root: Path | None = None) -> Flask:
         except GameNotFoundError:
             return redirect(url_for("games_list", error="Game not found."))
 
+        # 2026-11-14 bug fix (user-requested): a King may try a Treat or a
+        # Break Treat toward several other Kingdoms the same turn -- the
+        # real move-file shape this mirrors (`KingdomMoveHeader.allreq`/
+        # `.brreq`, see turn/diplomacy.py's own module docstring) is a
+        # per-Kingdom-id request *bitmask*, not a single target. The old
+        # one-dropdown-per-ordered-pair table could only ever express one
+        # choice (none/treat/break) per pair anyway, so it never actually
+        # blocked multiple simultaneous targets -- but it forced the GM to
+        # scroll every possible pair to find them. Two independent
+        # checkbox groups per issuing King (`treat_<issuer>_<target>`/
+        # `break_<issuer>_<target>`) let the GM pick several targets for
+        # each order type directly, while still writing the exact same
+        # `treat_permissions`/`break_treat_orders` pairs as before.
         treat_pairs: set[tuple[int, int]] = set()
         break_pairs: set[tuple[int, int]] = set()
         for issuer_id in state.kingdoms:
             for target_id in state.kingdoms:
                 if issuer_id == target_id:
                     continue
-                choice = request.form.get(f"order_{issuer_id}_{target_id}", "none")
-                if choice == "treat":
+                if request.form.get(f"treat_{issuer_id}_{target_id}"):
                     treat_pairs.add((issuer_id, target_id))
-                elif choice == "break":
+                if request.form.get(f"break_{issuer_id}_{target_id}"):
                     break_pairs.add((issuer_id, target_id))
 
         try:

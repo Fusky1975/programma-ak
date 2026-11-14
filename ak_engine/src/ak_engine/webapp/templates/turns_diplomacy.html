@@ -54,35 +54,38 @@
     only if <strong>both</strong> Kings issue it toward each other this turn. A Break Treat order demotes it one
     step unilaterally (straight to Enemy if both sides issue it on a currently-Allied pair). A Treat order is
     also what lets your ally recruit in your own territory this turn, even if you're already allied.</p>
+  <p class="hex-map-legend-note">A King may try a Treat (or a Break Treat) toward several other Kingdoms the
+    same turn -- tick as many as apply in each list below.</p>
   <form method="post" action="{{ url_for('turns_diplomacy_save', slug=meta.slug) }}">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Issuing King</th>
-          <th>Toward</th>
-          <th>Order</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for issuer_id, issuer in state.kingdoms.items() %}
+    {% for issuer_id, issuer in state.kingdoms.items() %}
+      <div class="panel" style="margin: 0 0 1rem 0;">
+        <h3 style="margin-top: 0;">{{ issuer.name }}</h3>
+        <p style="margin: 0 0 0.5rem 0;"><strong>Treat with:</strong></p>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin-bottom: 1rem;">
           {% for target_id, target in state.kingdoms.items() %}
-            {% if issuer_id != target_id %}
-              <tr>
-                <td>{{ issuer.name }}</td>
-                <td>{{ target.name }}</td>
-                <td>
-                  <select name="order_{{ issuer_id }}_{{ target_id }}">
-                    <option value="none" {% if (issuer_id, target_id) not in state.treat_permissions and (issuer_id, target_id) not in state.break_treat_orders %}selected{% endif %}>No order</option>
-                    <option value="treat" {% if (issuer_id, target_id) in state.treat_permissions %}selected{% endif %}>Treat</option>
-                    <option value="break" {% if (issuer_id, target_id) in state.break_treat_orders %}selected{% endif %}>Break Treat</option>
-                  </select>
-                </td>
-              </tr>
+            {% if target_id != issuer_id %}
+              <label style="display: flex; align-items: center; gap: 0.4rem; font-weight: normal;">
+                <input type="checkbox" name="treat_{{ issuer_id }}_{{ target_id }}"
+                       {% if (issuer_id, target_id) in state.treat_permissions %}checked{% endif %}>
+                {{ target.name }}
+              </label>
             {% endif %}
           {% endfor %}
-        {% endfor %}
-      </tbody>
-    </table>
+        </div>
+        <p style="margin: 0 0 0.5rem 0;"><strong>Break Treat with:</strong></p>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem;">
+          {% for target_id, target in state.kingdoms.items() %}
+            {% if target_id != issuer_id %}
+              <label style="display: flex; align-items: center; gap: 0.4rem; font-weight: normal;">
+                <input type="checkbox" name="break_{{ issuer_id }}_{{ target_id }}"
+                       {% if (issuer_id, target_id) in state.break_treat_orders %}checked{% endif %}>
+                {{ target.name }}
+              </label>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
     <button type="submit">Save Orders for Turn {{ state.turn_number }}</button>
   </form>
 </div>
