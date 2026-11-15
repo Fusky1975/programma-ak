@@ -17,7 +17,7 @@
     still undesigned), Recruit has its own commander dropdown plus repeated army-type slots (cost/limit/
     mercenary preview only -- the engine is still the real arbiter at turn-processing time), Disband has its
     own repeated army-target slots (pre-filtered to exactly what this leader could actually Disband) plus a
-    "Disband ALL I command" pseudo-option in the first slot, Leave has its own "to" dropdown (another
+    "ALL" pseudo-option in the first slot, Leave has its own "to" dropdown (another
     co-located, allied leader, or the Garrison Commander) plus the same repeated army-target slot shape as
     Disband, Pick Up has the same repeated army-target slot shape too (no separate target dropdown -- it
     always acts for the ordering leader himself), Give (the Action internally still named "Trade" -- see
@@ -88,7 +88,7 @@
      that loses no real expressiveness). #}
   {% macro nested_row(field_prefix, leader, outer_n, nested_n) %}
     <tr>
-      <td>P{{ nested_n }}</td>
+      <td>{{ phase_display_name[nested_n] }}</td>
       <td>
         <select class="compose-action" name="{{ field_prefix }}_action_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
           <option value="">-- no order --</option>
@@ -173,7 +173,7 @@
         </table>
       </td>
       <td class="compose-special-cell" data-action="{{ disband_action_value }}">
-        <span class="hex-map-legend-note">Armies to disband (empty slots stop the list there; "Disband ALL I command" must be alone):</span>
+        <span class="hex-map-legend-note">Armies to disband (empty slots stop the list there; "ALL" must be alone):</span>
         <table class="data-table compose-army-all-plan" data-all-value="{{ disband_all_value }}">
           <tbody>
             {% for slot in disband_slot_numbers %}
@@ -544,7 +544,7 @@
         <tbody>
           {% for n in phase_numbers %}
             <tr>
-              <td>P{{ n }}</td>
+              <td>{{ phase_display_name[n] }}</td>
               <td>
                 <select class="compose-action" name="action_{{ leader.leader_id }}_{{ n }}">
                   {% for action in actions %}
@@ -554,10 +554,14 @@
                        "-- no order --" placeholder. A GM who saved without touching every row
                        either hit Defend's own required-target validation, or picked something
                        just to get the form through, issuing real unintended Defend orders.
-                       WAIT is this engine's own established neutral no-op (already used as the
-                       default for an unfilled nested-plan phase, see moves_compose.py's own
-                       ActionCode.WAIT remap) and needs no extra field filled in to save cleanly. #}
-                    <option value="{{ action.value }}" {% if action.name == "WAIT" %}selected{% endif %}>{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
+                       NO_ACTION (WAIT until 2026-11-15, when the user had both it and
+                       MOVE_ABORT dropped from this dropdown entirely -- see ACTION_UI_HIDDEN_
+                       VALUES) is this engine's own established neutral no-op and needs no
+                       extra field filled in to save cleanly -- and, as this engine's own real
+                       "this leader submitted no real order" sentinel (turn/turn_processor.py's
+                       own _kingdom_submitted_real_orders()), it's the semantically correct
+                       default for a row the GM never touched, not just a harmless filler. #}
+                    <option value="{{ action.value }}" {% if action.name == "NO_ACTION" %}selected{% endif %}>{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
                   {% endfor %}
                 </select>
               </td>
@@ -572,10 +576,11 @@
               <td class="compose-special-cell" data-action="{{ move_action_value }}">
                 <select name="move_target_{{ leader.leader_id }}_{{ n }}">
                   <option value="">-- choose a province --</option>
-                  {% for value, label in province_choices %}
+                  {% for value, label in move_target_choices_by_leader[leader.leader_id] %}
                     <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
+                or <input type="text" name="move_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="province #" size="6">
               </td>
               <td class="compose-special-cell hex-map-legend-note" data-action="{{ explore_action_value }}">No input needed -- explores wherever this leader currently is.</td>
               <td class="compose-special-cell" data-action="{{ search_action_value }}">
@@ -648,7 +653,7 @@
                 </table>
               </td>
               <td class="compose-special-cell" data-action="{{ disband_action_value }}">
-                <span class="hex-map-legend-note">Armies to disband (empty slots stop the list there; "Disband ALL I command" must be alone):</span>
+                <span class="hex-map-legend-note">Armies to disband (empty slots stop the list there; "ALL" must be alone):</span>
                 <table class="data-table compose-army-all-plan" data-all-value="{{ disband_all_value }}">
                   <tbody>
                     {% for slot in disband_slot_numbers %}

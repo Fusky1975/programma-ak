@@ -93,6 +93,7 @@ from ak_engine.webapp.moves_compose import (
     LEAVE_ALL_VALUE,
     LEAVE_SLOT_COUNT,
     PHASE_COUNT,
+    PHASE_DISPLAY_NAME,
     PICK_UP_ALL_VALUE,
     PICK_UP_SLOT_COUNT,
     RECRUIT_TYPE_SLOT_COUNT,
@@ -293,6 +294,32 @@ def _parse_king_form_fields(form) -> tuple[str, Race, Alignment, Temper, dict[Ab
     return name, race, alignment, temper, talent_allocation
 
 
+# User-sourced renames (2026-11-15) for the Action dropdown -- this
+# project's own internal `ActionCode` member names ("Lmove"/"Aspy"/
+# "Challenge"/bare "Recruit") were never meant as player-facing text,
+# just the closest bare identifier `display_name()`'s own fallback
+# could title-case. These 4 swap in the real boardgame order's own
+# name, with its own two-letter order-sheet code appended for the GM's
+# convenience. Every other ActionCode member (Defend, Hire, Give, ...)
+# is unaffected, still falling back to the same bare-identifier
+# title-casing as before.
+ACTION_NAME: dict[ActionCode, str] = {
+    ActionCode.LMOVE: "Move (MO)",
+    ActionCode.ASPY: "Spy (SP)",
+    ActionCode.CHALLENGE: "Encounter (EN)",
+    ActionCode.RECRUIT: "Recruit (RE)",
+}
+
+# User-sourced (2026-11-15): WAIT and MOVE_ABORT are real, harmless
+# no-ops (`turn/plan_dispatch.py`'s own dispatch, `ActionCode.WAIT`/
+# `ActionCode.MOVE_ABORT` both resolve to the same `NoOpResult` as
+# `NO_ACTION`), but the user found no practical use for offering either
+# one on this screen -- NO_ACTION alone covers "nothing ordered this
+# phase." Still real, valid ``SUPPORTED_ACTIONS`` members server-side
+# (a tampered POST naming either one is still accepted, unchanged), so
+# this only narrows the Action dropdown's own displayed option list.
+ACTION_UI_HIDDEN_VALUES: frozenset[ActionCode] = frozenset({ActionCode.WAIT, ActionCode.MOVE_ABORT})
+
 # Every enum this interface renders in a dropdown or table, mapped to this
 # project's own curated "real display name" dict (e.g. `models/race.py
 # RACE_NAME`: "Elf" not "Elven", "Light Cavalry" not "Lt Cavalry" --
@@ -325,6 +352,7 @@ _ENUM_DISPLAY_NAMES: dict[type, dict] = {
     Quality: QUALITY_NAME,
     Discovery: DISCOVERY_NAME,
     AdvancedAbility: ADVANCED_ABILITY_NAME,
+    ActionCode: ACTION_NAME,
 }
 
 
@@ -3166,6 +3194,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             kingdom=state.kingdoms[kingdom_id],
             roster=roster,
             phase_numbers=range(PHASE_COUNT),
+            phase_display_name=PHASE_DISPLAY_NAME,
             # 2026-11-07 bug fix: this used to offer every ActionCode
             # member, including SUCC_TRAIL (ordinal 20) -- the one
             # ActionCode plan_dispatch.py's own SUPPORTED_ACTIONS
@@ -3175,7 +3204,20 @@ def create_app(games_root: Path | None = None) -> Flask:
             # turn-processing time (caught only by run_leader_plan()'s
             # own broad per-phase exception handler) instead of simply
             # never being offered in the first place.
-            actions=[action for action in ActionCode if action in SUPPORTED_ACTIONS],
+            #
+            # 2026-11-15 (user-requested): WAIT and MOVE_ABORT are
+            # likewise still accepted server-side (still real, harmless
+            # no-ops in plan_dispatch.py's own dispatch -- see this
+            # module's own ACTION_UI_HIDDEN_VALUES) but no longer
+            # *offered* here -- the user found no real use for either
+            # one on this screen. NO_ACTION alone stays, and becomes the
+            # default below, since it's this engine's own real "this
+            # leader submitted no real order" sentinel (``turn/turn_
+            # processor.py``'s own ``_kingdom_submitted_real_orders()``)
+            # -- exactly the state an untouched row is actually in.
+            actions=[
+                action for action in ActionCode if action in SUPPORTED_ACTIONS and action not in ACTION_UI_HIDDEN_VALUES
+            ],
             move_action_value=int(ActionCode.LMOVE),
             explore_action_value=int(ActionCode.EXPLORE),
             search_action_value=int(ActionCode.SEARCH),
@@ -3290,7 +3332,17 @@ def create_app(games_root: Path | None = None) -> Flask:
                 leader.leader_id: use_mi_item_options(state, leader.leader_id) for leader in roster
             },
             use_mi_item_spell_by_id=use_mi_item_spell_by_id(state),
+            # 2026-11-15: unfiltered here -- Defend's and Cast's/Use
+            # Item's own province-target dropdowns, out of this round's
+            # narrower scope, still show the whole map. Move's own
+            # destination dropdown uses the per-leader-filtered dict
+            # below instead (a real information leak the user flagged:
+            # a GM composing one Kingdom's moves shouldn't see every
+            # province's real identity, only what that Kingdom knows).
             province_choices=province_options(state),
+            move_target_choices_by_leader={
+                leader.leader_id: province_options(state, leader.leader_id) for leader in roster
+            },
             feature_choices_by_leader={
                 leader.leader_id: feature_options(state, leader_id=leader.leader_id) for leader in roster
             },

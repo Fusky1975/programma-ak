@@ -115,7 +115,24 @@ def _state() -> GameState:
     )
     state.add_province(ProvinceState(HOME, Terrain.PLAINS, Race.HUMAN, owner_kingdom_id=1, name="Numenor"))
     state.add_province(ProvinceState(HexCoord(3, 2), Terrain.FOREST, Race.HUMAN, name=None))
-    state.add_feature(Feature(feature_id=3, coord=HOME, kind=FeatureType.ALTAR, guardian_monster=Monster.NEC_MAGE))
+    # 2026-11-15: known_to_kingdom()/discovery_level() filtering now
+    # narrows province_options()/feature_options() to what this test
+    # Kingdom actually knows -- matching webapp/kingdom_create.py's own
+    # real "home province starts 100% explored" seeding (production
+    # never auto-seeds feature discovery the same way; this fixture's
+    # own feature is marked known too so the many existing Search tests
+    # below keep exercising Search's own parsing, not this orthogonal
+    # discovery concern).
+    state.provinces[HOME].explored_percent_by_kingdom[1] = 100
+    state.add_feature(
+        Feature(
+            feature_id=3,
+            coord=HOME,
+            kind=FeatureType.ALTAR,
+            guardian_monster=Monster.NEC_MAGE,
+            discovered_by_kingdom={1: 1},
+        )
+    )
     state.add_item(Treasure.WAND_FIREBALL, KING_ID, charges=3)
     return state
 
@@ -1704,7 +1721,7 @@ def test_disband_target_options_labels_a_garrison_commanded_army():
 def test_disband_target_options_slot_zero_offers_disband_all():
     state = _state()
     options = disband_target_options(state, KING_ID, slot=0)
-    assert (DISBAND_ALL_VALUE, "Disband ALL I command") in options
+    assert (DISBAND_ALL_VALUE, "ALL") in options
 
 
 def test_disband_target_options_other_slots_do_not_offer_disband_all():
