@@ -1382,6 +1382,20 @@ CAST_TERRAIN_CHOICES: tuple[Terrain, ...] = tuple(terrain for terrain in Terrain
 
 PHASE_COUNT = 5  # P0..P4 -- every real AK3__T*.K1 sample's own leader block shape.
 
+# User-sourced (2026-11-15) display names for this interface's own compose
+# table row labels -- the real AK3__T*.K1 wire format's own "P0".."P4"
+# phase-label convention stays completely unchanged everywhere else (every
+# field name, every compose-time validation error's own ``phase_label``),
+# this only renumbers what the GM actually *sees* in the table's own
+# leftmost column, 1-indexed with the boardgame's own season name attached.
+PHASE_DISPLAY_NAME: dict[int, str] = {
+    0: "P1 -- Spring",
+    1: "P2 -- Early Summer",
+    2: "P3 -- Late Summer",
+    3: "P4 -- Autumn",
+    4: "P5 -- Early Winter",
+}
+
 # "Nothing special configured" -- the one Special Encounter Plan value
 # every leader in this project's own real sample files shows (sourced
 # directly: no sample has ever shown a different SP: value). Every
@@ -1415,7 +1429,7 @@ def kingdom_leaders_for_compose(state: GameState, kingdom_id: int) -> list[Leade
     return leaders
 
 
-def province_options(state: GameState) -> list[tuple[str, str]]:
+def province_options(state: GameState, leader_id: int | None = None) -> list[tuple[str, str]]:
     """Every province as a ``(value, label)`` pair for a Move phase's own
     destination dropdown -- ``value`` is ``"x,y"`` (parsed back by
     ``_parse_move_target()``), ``label`` is the province's own real name
@@ -1431,11 +1445,26 @@ def province_options(state: GameState) -> list[tuple[str, str]]:
     the real province number is a different, display-only scheme from
     the internal Move-order encoding. Sorted in map reading order (row
     by row, left to right).
+
+    ``leader_id`` (2026-11-15, optional, same shape as ``feature_
+    options()``'s own ``leader_id``): when given and resolvable to a
+    leader with a real ``kingdom_id``, narrows the list to provinces
+    that Kingdom actually ``known_to_kingdom()`` (``models/game_state.py
+    ProvinceState``, Phase 623's "known provinces") -- Move's own
+    destination dropdown uses this (a GM composing one Kingdom's own
+    moves shouldn't be shown the whole map's real province identities,
+    a real information leak the user flagged this round). Every other
+    province-target dropdown (Defend, Cast's/Use Item's own province-
+    target spells) still calls this with no ``leader_id`` at all, out
+    of this round's narrower scope, and keeps the full unfiltered list.
     """
 
+    leader = state.leaders.get(leader_id) if leader_id is not None else None
     provinces = sorted(state.provinces.values(), key=lambda province: (province.coord.y, province.coord.x))
     options = []
     for province in provinces:
+        if leader is not None and leader.kingdom_id is not None and not province.known_to_kingdom(leader.kingdom_id):
+            continue
         value = f"{province.coord.x},{province.coord.y}"
         name_part = province.name if province.name else ""
         number = real_province_number(province.coord)
@@ -1468,11 +1497,35 @@ def feature_options(state: GameState, *, leader_id: int | None = None) -> list[t
     names -- there's no separate quest id to pick, only this same
     feature dropdown, so surfacing the one feature Fulfill would
     actually do something on here is the whole point.
+
+    **Also used, 2026-11-15 at the user's own request, to filter the
+    list down to features this leader's own Kingdom actually knows
+    about** (``Feature.discovery_level(kingdom_id) > 0``, the same
+    "known at all" floor ``describe_adventure_report()`` already uses
+    -- see that function's own docstring): a GM composing this
+    Kingdom's own moves shouldn't be able to target a feature that
+    Kingdom's real player could never have learned the number of, even
+    one sitting in a province that Kingdom doesn't own (a feature's own
+    discovery is independent of who owns its province -- rumors, Spy,
+    and Move/Explore's own passive reveal of a feature in an *adjacent*
+    province can all name one well outside this Kingdom's own borders).
+    A co-located Search against a feature this leader's Kingdom hasn't
+    actually discovered yet is separately, already rejected for real at
+    turn-processing time regardless of this dropdown (``turn/search_
+    execution.py execute_search()``'s own co-location check runs
+    against wherever the leader actually *is* once this phase dispatches,
+    which this compose-time snapshot can't always know -- an earlier
+    phase of the very same turn may still Move this leader there first
+    -- so this module deliberately adds no matching compose-time
+    co-location check of its own).
     """
 
+    leader = state.leaders.get(leader_id) if leader_id is not None else None
     features = sorted(state.features.values(), key=lambda feature: feature.feature_id)
     options = []
     for feature in features:
+        if leader is not None and leader.kingdom_id is not None and feature.discovery_level(leader.kingdom_id) <= 0:
+            continue
         province = state.provinces.get(feature.coord)
         place = province.name if province is not None and province.name else f"({feature.coord.x}, {feature.coord.y})"
         label = f"#{feature.feature_id} {FEATURE_TYPE_NAMES[feature.kind]} -- {place}"
@@ -1796,10 +1849,13 @@ def disband_target_options(state: GameState, leader_id: int, *, slot: int) -> li
     eroe"). Sorted by the army's own real id.
 
     ``slot`` controls whether the list's own dedicated ``DISBAND_ALL_
-    VALUE`` pseudo-option ("Disband ALL I command") is prepended --
-    only ever offered in slot 0, mirroring Talk's own "only the first
-    slot" shape in Search's Encounter Plan -- see this module's own
-    docstring for why it can't be combined with a specific army list.
+    VALUE`` pseudo-option ("ALL", shortened from "Disband ALL I
+    command" 2026-11-15 at the user's own request -- the Disband label
+    already says "Disband", so the dropdown option repeating it was
+    redundant) is prepended -- only ever offered in slot 0, mirroring
+    Talk's own "only the first slot" shape in Search's Encounter Plan --
+    see this module's own docstring for why it can't be combined with a
+    specific army list.
     """
 
     leader = state.leaders.get(leader_id)
@@ -1807,7 +1863,7 @@ def disband_target_options(state: GameState, leader_id: int, *, slot: int) -> li
         return []
     options: list[tuple[str, str]] = []
     if slot == 0:
-        options.append((DISBAND_ALL_VALUE, "Disband ALL I command"))
+        options.append((DISBAND_ALL_VALUE, "ALL"))
     for army in sorted(state.armies.values(), key=lambda army: army.army_id):
         if army.kingdom_id != leader.kingdom_id:
             continue
@@ -2579,6 +2635,35 @@ def _parse_extra(raw: str) -> list[int]:
     return values
 
 
+def _resolve_move_target_raw(form: dict[str, str], *, leader_id: int, n: int) -> str:
+    """Move's own destination field (2026-11-15, user-requested): reads
+    the ``move_target_<leader_id>_<n>`` dropdown first, same as always;
+    if that's empty, falls back to the sibling ``move_target_number_
+    <leader_id>_<n>`` free-text field, a hand-typed real province "#<N>"
+    ordinal (``report/turn_report.py real_province_number()``'s own
+    ``x*100 + y`` convention) -- for a destination this Kingdom knows
+    the number of (e.g. from a report) but ``province_options()``'s own
+    now-filtered dropdown (``known_to_kingdom()``) doesn't currently
+    offer by name. Converts it into the exact same ``"x,y"`` string the
+    dropdown itself would have posted, so the one real parser below
+    (``_parse_move_target()``, also reused by Cast's/Use Item's own
+    province-target spells, untouched by this round) still does all the
+    real validation either way. Returns ``""`` (unresolved) if neither
+    field is filled in, or the number isn't a plain non-negative whole
+    number -- ``_parse_move_target()``'s own existing empty-destination/
+    real-province checks already cover both cases with a clear error.
+    """
+
+    dropdown_raw = form.get(f"move_target_{leader_id}_{n}", "")
+    if dropdown_raw:
+        return dropdown_raw
+    number_raw = form.get(f"move_target_number_{leader_id}_{n}", "").strip().lstrip("#")
+    if not number_raw.isdigit():
+        return ""
+    x, y = divmod(int(number_raw), 100)
+    return f"{x},{y}"
+
+
 def _parse_move_target(raw: str, *, board_width: int, phase_label: str, state: GameState) -> int:
     """**2026-11-07 bug fix**: now validates the posted destination
     against ``state.provinces`` -- this used to be one of only two
@@ -2863,7 +2948,7 @@ def _parse_disband_targets(
 
     **2026-11-06 bug fix**: see ``_reject_single_army_sentinel_
     collision()`` -- a lone army #255 in the specific-list branch used
-    to silently compose identically to "Disband ALL I command."
+    to silently compose identically to "ALL."
     """
 
     leader = state.leaders.get(leader_id)
@@ -2871,7 +2956,7 @@ def _parse_disband_targets(
         for slot in range(1, DISBAND_SLOT_COUNT):
             if form.get(f"disband_target_{leader_id}_{n}_{slot}", ""):
                 raise InvalidComposedMovesError(
-                    f"{phase_label}: 'Disband ALL I command' can't be combined with another army in the same order."
+                    f"{phase_label}: 'ALL' can't be combined with another army in the same order."
                 )
         return [ALL_ARMIES_SENTINEL]
 
@@ -2906,9 +2991,7 @@ def _parse_disband_targets(
         army_ids.append(army_id)
     _reject_single_army_sentinel_collision(army_ids, phase_label, "Disband")
     if not army_ids:
-        raise InvalidComposedMovesError(
-            f"{phase_label}: choose at least one army to Disband (or 'Disband ALL I command')."
-        )
+        raise InvalidComposedMovesError(f"{phase_label}: choose at least one army to Disband (or 'ALL').")
     return army_ids
 
 
@@ -4384,7 +4467,7 @@ def parse_phase_inputs(
         nested_plan: "ActionPlan | None" = None
         if action is ActionCode.LMOVE:
             obj = _parse_move_target(
-                form.get(f"move_target_{leader_id}_{n}", ""),
+                _resolve_move_target_raw(form, leader_id=leader_id, n=n),
                 board_width=board_width,
                 phase_label=f"P{n}",
                 state=state,

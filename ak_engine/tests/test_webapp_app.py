@@ -6734,7 +6734,7 @@ def test_turns_compose_shows_a_disband_target_dropdown_and_all_option(tmp_path):
 
     assert response.status_code == 200
     assert b"disband_target_" in response.data
-    assert b"Disband ALL I command" in response.data
+    assert b">ALL</option>" in response.data
 
 
 def test_turns_compose_save_disband_order_encodes_the_target_army(tmp_path):
