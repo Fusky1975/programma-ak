@@ -6817,7 +6817,7 @@ def test_turns_compose_shows_a_leave_target_dropdown_and_all_option(tmp_path):
     assert response.status_code == 200
     assert b"leave_target_" in response.data
     assert b"Garrison Commander" in response.data
-    assert b"Leave ALL I command" in response.data
+    assert b">ALL</option>" in response.data
 
 
 def test_turns_compose_save_leave_order_encodes_target_and_army(tmp_path):
@@ -6907,7 +6907,7 @@ def test_turns_compose_shows_a_pick_up_target_dropdown_and_all_option(tmp_path):
 
     assert response.status_code == 200
     assert b"pick_up_target_" in response.data
-    assert b"Pick Up ALL unled armies here" in response.data
+    assert b">ALL</option>" in response.data
 
 
 def test_turns_compose_save_pick_up_order_encodes_the_target_army(tmp_path):

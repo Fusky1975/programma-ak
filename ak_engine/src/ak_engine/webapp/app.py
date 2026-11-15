@@ -103,7 +103,6 @@ from ak_engine.webapp.moves_compose import (
     InvalidComposedMovesError,
     build_composed_kingdom,
     cast_character_target_options,
-    cast_item_target_options,
     cast_spell_options,
     challenge_target_options,
     charm_target_options,
@@ -294,20 +293,32 @@ def _parse_king_form_fields(form) -> tuple[str, Race, Alignment, Temper, dict[Ab
     return name, race, alignment, temper, talent_allocation
 
 
-# User-sourced renames (2026-11-15) for the Action dropdown -- this
-# project's own internal `ActionCode` member names ("Lmove"/"Aspy"/
-# "Challenge"/bare "Recruit") were never meant as player-facing text,
-# just the closest bare identifier `display_name()`'s own fallback
-# could title-case. These 4 swap in the real boardgame order's own
-# name, with its own two-letter order-sheet code appended for the GM's
-# convenience. Every other ActionCode member (Defend, Hire, Give, ...)
-# is unaffected, still falling back to the same bare-identifier
-# title-casing as before.
+# User-sourced renames (2026-11-15, two rounds) for the Action
+# dropdown -- this project's own internal `ActionCode` member names
+# ("Lmove"/"Aspy"/"Challenge"/bare "Recruit"/"Use Mi"/...) were never
+# meant as player-facing text, just the closest bare identifier
+# `display_name()`'s own fallback could title-case. Every one of these
+# appends its own two-letter order-sheet code for the GM's own
+# convenience. `ActionCode.CHALLENGE`'s own real tactic, "Kill Enemy",
+# is renamed "Kill an Enemy" too (second round) -- see ``SPELL_NAME``'s
+# own override in ``models/enums.py`` for that one, a `Spell` member
+# rather than an `ActionCode`. Every other ActionCode member (Defend,
+# Give, ...) is unaffected, still falling back to the same bare-
+# identifier title-casing as before.
 ACTION_NAME: dict[ActionCode, str] = {
     ActionCode.LMOVE: "Move (MO)",
-    ActionCode.ASPY: "Spy (SP)",
-    ActionCode.CHALLENGE: "Encounter (EN)",
+    ActionCode.EXPLORE: "Explore (EX)",
+    ActionCode.SEARCH: "Search (SE)",
     ActionCode.RECRUIT: "Recruit (RE)",
+    ActionCode.DISBAND: "Disband (DI)",
+    ActionCode.HIRE: "Hire (HI)",
+    ActionCode.FIRE: "Fire (FI)",
+    ActionCode.LEAVE: "Leave (LE)",
+    ActionCode.PICK_UP: "Pick Up (PI)",
+    ActionCode.CAST: "Cast (CA)",
+    ActionCode.USE_MI: "Use Item (UI)",
+    ActionCode.CHALLENGE: "Encounter (EN)",
+    ActionCode.ASPY: "Spy (SP)",
 }
 
 # User-sourced (2026-11-15): WAIT and MOVE_ABORT are real, harmless
@@ -3304,7 +3315,6 @@ def create_app(games_root: Path | None = None) -> Flask:
             cast_action_value=int(ActionCode.CAST),
             cast_spell_choices=cast_spell_options(),
             cast_character_target_choices=cast_character_target_options(state),
-            cast_item_target_choices=cast_item_target_options(state),
             cast_terrain_choices=[(t.value, TERRAIN_NAME.get(t, t.name.title())) for t in CAST_TERRAIN_CHOICES],
             resurrection_target_choices_by_leader={
                 leader.leader_id: resurrection_target_options(state, leader.leader_id) for leader in roster
