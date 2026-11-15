@@ -574,7 +574,7 @@ The composer gets a dedicated, repeated army-target dropdown
 (``leave_army_target_options()``, ``LEAVE_SLOT_COUNT`` slots, reusing
 ``_disband_army_label()`` for each option's own label -- the same
 display shape already works for both) pre-filtered to exactly what
-this leader could actually Leave post-fix, plus a "Leave ALL I command"
+this leader could actually Leave post-fix, plus an "ALL"
 pseudo-option in slot 0 (``LEAVE_ALL_VALUE``, the same mutually-
 exclusive-with-a-specific-list shape ``DISBAND_ALL_VALUE`` already
 uses), and a dedicated target dropdown (``leave_target_options()``) --
@@ -623,8 +623,8 @@ turn previously succeeded).
 The composer gets a dedicated, repeated army-target dropdown
 (``pick_up_army_target_options()``, ``PICK_UP_SLOT_COUNT`` slots,
 reusing ``_disband_army_label()``) pre-filtered to exactly what this
-leader could actually Pick Up post-fix, plus a "Pick Up ALL unled
-armies here" pseudo-option in slot 0 (``PICK_UP_ALL_VALUE``, the same
+leader could actually Pick Up post-fix, plus an "ALL"
+pseudo-option in slot 0 (``PICK_UP_ALL_VALUE``, the same
 mutually-exclusive-with-a-specific-list shape ``DISBAND_ALL_VALUE``/
 ``LEAVE_ALL_VALUE`` already use) -- no separate target dropdown, since
 Pick Up always and only acts for the ordering leader himself.
@@ -957,12 +957,14 @@ options()``/``_parse_move_target()`` directly -- Part Sea/Bless/Plague/
 Flood/Tornado/Earthquake/Illusory Terrain/Hide Feature/Scar Terrain/
 Illusory Fog, the first of these additionally getting a ``Terrain``
 dropdown for its own fake terrain); no field at all (Skeletal Army, the
-one no-target spell left after excluding Gate Angel); and an item
-dropdown listing every item in the game, not just this leader's own
-(``cast_item_target_options()`` -- Locate Object, since the spell's own
-point is finding an item whose location isn't already known). Resurrection
-and Charm each get their own, deliberately more elaborate target
-handling instead of the generic character-target dropdown.
+one no-target spell left after excluding Gate Angel); and a plain
+free-text item-id field, no dropdown at all (Locate Object -- 2026-11-
+15, user-requested: an earlier dropdown listing every item in the game
+by name/owner, regardless of this leader's own, defeated the spell's
+whole point of finding an item whose location isn't already known --
+showing it *was* the location). Resurrection and Charm each get their
+own, deliberately more elaborate target handling instead of the
+generic character-target dropdown.
 Resurrection's own (``resurrection_target_options()``/``_parse_
 resurrection_target()``) merges all three of ``_execute_resurrection()``'s
 own eligibility branches (comatose cure, Royal Heir restoration,
@@ -1154,7 +1156,7 @@ from collections import ChainMap
 from dataclasses import dataclass
 
 from ak_engine.models.alignment import Alignment
-from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_BY_ORDINAL, ARMY_TYPE_NAME, NO_LEADER_SENTINEL
+from ak_engine.models.army_type import ARMY_TABLE, ARMY_TYPE_BY_ORDINAL, ARMY_TYPE_NAME, NO_LEADER_SENTINEL, ArmyType
 from ak_engine.models.enums import ABILITY_NAME, SPELL_NAME, TACTICS_WITH_SUB_OBJECT, Ability, ActionCode, Maneuver, Spell
 from ak_engine.models.feature import FEATURE_TYPE_NAMES
 from ak_engine.models.game_state import ArmyState, GameState, LeaderState
@@ -1164,6 +1166,7 @@ from ak_engine.models.map import TERRAIN_NAME, HexCoord, Terrain
 from ak_engine.models.monster import MONSTER_NAMES
 from ak_engine.models.office import Office
 from ak_engine.models.plan import ActionPlan, PlanPhase, PlanSegment
+from ak_engine.models.race import HUMANOID_RACES
 from ak_engine.models.treasure import (
     TREASURE_BOOK_ABILITY,
     TREASURE_CATEGORY,
@@ -1396,6 +1399,29 @@ PHASE_DISPLAY_NAME: dict[int, str] = {
     4: "P5 -- Early Winter",
 }
 
+# User-sourced rename (2026-11-15, second round): "Kill Enemy" (Spell
+# ordinal 5) is relabeled "Kill an Enemy" in this interface's own Cast
+# dropdowns only -- ``SPELL_NAME`` above stays the real, sourced
+# ``CTBOTH.PAS spname[]`` text verbatim (what real report/rumor prose
+# elsewhere actually prints), so this is a display-only override layered
+# on top of it here, never a change to that sourced table itself.
+_SPELL_UI_NAME_OVERRIDES: dict[Spell, str] = {
+    Spell.KILL_ENEMY: "Kill an Enemy",
+}
+
+
+def _spell_display_name(spell: Spell) -> str:
+    """``SPELL_NAME``'s own real display text, with this interface's own
+    ``_SPELL_UI_NAME_OVERRIDES`` swapped in first where one exists --
+    the one helper every Cast-spell dropdown builder below calls, so
+    the override can never drift out of sync between them.
+    """
+
+    override = _SPELL_UI_NAME_OVERRIDES.get(spell)
+    if override is not None:
+        return override
+    return SPELL_NAME.get(spell, spell.name.replace("_", " ").title())
+
 # "Nothing special configured" -- the one Special Encounter Plan value
 # every leader in this project's own real sample files shows (sourced
 # directly: no sample has ever shown a different SP: value). Every
@@ -1557,7 +1583,7 @@ def spell_options(state: GameState | None = None, leader_id: int | None = None) 
 
     leader = state.leaders.get(leader_id) if state is not None and leader_id is not None else None
     return [
-        (int(spell), SPELL_NAME.get(spell, spell.name.replace("_", " ").title()))
+        (int(spell), _spell_display_name(spell))
         for spell in sorted(ENCOUNTER_PLAN_CASTABLE_SPELLS, key=int)
         if leader is None or state is None or _leader_knows_secret_spell(state, leader, spell)
     ]
@@ -1776,7 +1802,24 @@ def recruit_type_options(state: GameState, leader_id: int) -> list[tuple[str, st
         army_type = ARMY_TYPE_BY_ORDINAL[ordinal]
         if army_type not in ARMY_TABLE or not is_army_type_compatible_with_race(army_type, province.race):
             continue
-        if province.recruit_type_1 is not None:
+        # Bug fix (2026-11-15, user-reported): this preview's own
+        # ``is_native`` used to skip the exact 2 exemptions ``turn/
+        # recruit_execution.py execute_recruit()``'s own real dispatch
+        # already applies (Phase 1054) -- Garrison (never actually a
+        # listed province slot type, but RULES.AK's own real "always
+        # recruitable, 1 gold, in any humanoid province" unit, see that
+        # function's own docstring) and Dinosaurs (an ability-gated
+        # type the per-province native-slot mechanic was never meant
+        # to price at all). Without this, the dropdown wrongly showed
+        # Garrison as "(non-native, 2 gold -- needs an existing unit of
+        # this type)" in every province whose own 2 listed slot types
+        # just don't happen to include it -- which is every province,
+        # since real data never lists it as one.
+        if army_type is ArmyType.GARRISON and province.race in HUMANOID_RACES:
+            is_native = True
+        elif army_type is ArmyType.DINOSAURS:
+            is_native = True
+        elif province.recruit_type_1 is not None:
             is_native = army_type in (province.recruit_type_1, province.recruit_type_2)
         else:
             is_native = True
@@ -1925,9 +1968,11 @@ def leave_army_target_options(state: GameState, leader_id: int, *, slot: int) ->
     offers a Garrison-commanded army at all for a non-King Hero.
 
     ``slot`` controls whether the list's own dedicated ``LEAVE_ALL_
-    VALUE`` pseudo-option ("Leave ALL I command") is prepended -- only
-    ever offered in slot 0, the same shape ``disband_target_options()``
-    already uses for ``DISBAND_ALL_VALUE``.
+    VALUE`` pseudo-option ("ALL", shortened from "Leave ALL I command"
+    2026-11-15 at the user's own request, same reasoning as Disband's
+    own "ALL" rename) is prepended -- only ever offered in slot 0, the
+    same shape ``disband_target_options()`` already uses for
+    ``DISBAND_ALL_VALUE``.
     """
 
     leader = state.leaders.get(leader_id)
@@ -1935,7 +1980,7 @@ def leave_army_target_options(state: GameState, leader_id: int, *, slot: int) ->
         return []
     options: list[tuple[str, str]] = []
     if slot == 0:
-        options.append((LEAVE_ALL_VALUE, "Leave ALL I command"))
+        options.append((LEAVE_ALL_VALUE, "ALL"))
     for army in sorted(state.armies.values(), key=lambda army: army.army_id):
         if army.kingdom_id != leader.kingdom_id:
             continue
@@ -1959,9 +2004,11 @@ def pick_up_army_target_options(state: GameState, leader_id: int, *, slot: int) 
     (``ArmyState.recruited_this_turn``).
 
     ``slot`` controls whether the list's own dedicated ``PICK_UP_ALL_
-    VALUE`` pseudo-option ("Pick Up ALL unled armies here") is
-    prepended -- only ever offered in slot 0, the same shape ``disband_
-    target_options()``/``leave_army_target_options()`` already use.
+    VALUE`` pseudo-option ("ALL", shortened from "Pick Up ALL unled
+    armies here" 2026-11-15 at the user's own request, same reasoning
+    as Disband's/Leave's own "ALL" rename) is prepended -- only ever
+    offered in slot 0, the same shape ``disband_target_options()``/
+    ``leave_army_target_options()`` already use.
     """
 
     leader = state.leaders.get(leader_id)
@@ -1969,7 +2016,7 @@ def pick_up_army_target_options(state: GameState, leader_id: int, *, slot: int) 
         return []
     options: list[tuple[str, str]] = []
     if slot == 0:
-        options.append((PICK_UP_ALL_VALUE, "Pick Up ALL unled armies here"))
+        options.append((PICK_UP_ALL_VALUE, "ALL"))
     for army in sorted(state.armies.values(), key=lambda army: army.army_id):
         if army.location != leader.location or army.kingdom_id != leader.kingdom_id:
             continue
@@ -2335,7 +2382,7 @@ def cast_spell_options() -> list[tuple[int, str]]:
     dropdown needs no per-leader skill filtering at all.
     """
 
-    return [(int(spell), SPELL_NAME.get(spell, spell.name.replace("_", " ").title())) for spell in sorted(CAST_ACTION_SPELLS, key=int)]
+    return [(int(spell), _spell_display_name(spell)) for spell in sorted(CAST_ACTION_SPELLS, key=int)]
 
 
 def cast_character_target_options(state: GameState) -> list[tuple[str, str]]:
@@ -2377,24 +2424,6 @@ def cast_character_target_options(state: GameState) -> list[tuple[str, str]]:
         options.append((str(other.leader_id), f"{other.name} ({title_part}, {kingdom_part})"))
     return options
 
-
-def cast_item_target_options(state: GameState) -> list[tuple[str, str]]:
-    """Every item in the game as a ``(value, label)`` pair for Locate
-    Object's own target dropdown -- the one real item-target Action-
-    Cast spell (``CAST_ITEM_TARGET_SPELLS``). Unlike an owned-item
-    dropdown (Give's/Use Item's own), this lists every item regardless
-    of owner -- Locate Object's whole point is finding an item whose
-    location isn't already known, so restricting it to this leader's
-    own owned items would make the spell pointless to compose.
-    """
-
-    options: list[tuple[str, str]] = []
-    for item in sorted(state.items.values(), key=lambda item: item.item_id):
-        item_name = TREASURE_NAME.get(item.treasure, item.treasure.name.replace("_", " ").title())
-        owner = state.leaders.get(item.owner_leader_id) if item.owner_leader_id is not None else None
-        owner_part = owner.name if owner is not None else "unowned"
-        options.append((str(item.item_id), f"#{item.item_id} {item_name} ({owner_part})"))
-    return options
 
 
 def resurrection_target_options(state: GameState, leader_id: int) -> list[tuple[str, str]]:
@@ -2662,6 +2691,27 @@ def _resolve_move_target_raw(form: dict[str, str], *, leader_id: int, n: int) ->
         return ""
     x, y = divmod(int(number_raw), 100)
     return f"{x},{y}"
+
+
+def _resolve_target_raw(form: dict[str, str], *, primary_field: str, number_field: str) -> str:
+    """The same "dropdown first, hand-typed id second" fallback
+    ``_resolve_move_target_raw()`` above uses, generalized for every
+    other leader/item-targeted field this round adds a free-text
+    override to (2026-11-15, user-requested: Hire's own target, and
+    Cast's/Use Item's own Resurrection/Charm/Kill Enemy/generic
+    character targets) -- unlike Move's own destination, none of these
+    need any further decoding: the dropdown's own value is already the
+    bare real id (a ``leader_id``), exactly the same shape a hand-typed
+    one would be, so this is a plain "first non-empty wins" read with
+    no conversion step at all. Returns ``""`` (unresolved) if neither
+    field is filled in -- the real parser's own existing empty-field
+    check already covers that with a clear error.
+    """
+
+    primary = form.get(primary_field, "")
+    if primary:
+        return primary
+    return form.get(number_field, "")
 
 
 def _parse_move_target(raw: str, *, board_width: int, phase_label: str, state: GameState) -> int:
@@ -3058,7 +3108,7 @@ def _parse_leave_army_targets(
 
     **2026-11-06 bug fix**: see ``_reject_single_army_sentinel_
     collision()`` -- a lone army #255 in the specific-list branch used
-    to silently compose identically to "Leave ALL I command."
+    to silently compose identically to "ALL."
     """
 
     leader = state.leaders.get(leader_id)
@@ -3066,7 +3116,7 @@ def _parse_leave_army_targets(
         for slot in range(1, LEAVE_SLOT_COUNT):
             if form.get(f"leave_army_{leader_id}_{n}_{slot}", ""):
                 raise InvalidComposedMovesError(
-                    f"{phase_label}: 'Leave ALL I command' can't be combined with another army in the same order."
+                    f"{phase_label}: 'ALL' can't be combined with another army in the same order."
                 )
         return [ALL_ARMIES_SENTINEL]
 
@@ -3104,9 +3154,7 @@ def _parse_leave_army_targets(
         army_ids.append(army_id)
     _reject_single_army_sentinel_collision(army_ids, phase_label, "Leave")
     if not army_ids:
-        raise InvalidComposedMovesError(
-            f"{phase_label}: choose at least one army to Leave (or 'Leave ALL I command')."
-        )
+        raise InvalidComposedMovesError(f"{phase_label}: choose at least one army to Leave (or 'ALL').")
     return army_ids
 
 
@@ -3122,7 +3170,7 @@ def _parse_pick_up_targets(
 
     **2026-11-06 bug fix**: see ``_reject_single_army_sentinel_
     collision()`` -- a lone army #255 in the specific-list branch used
-    to silently compose identically to "Pick Up ALL unled armies here."
+    to silently compose identically to "ALL."
     """
 
     leader = state.leaders.get(leader_id)
@@ -3130,8 +3178,7 @@ def _parse_pick_up_targets(
         for slot in range(1, PICK_UP_SLOT_COUNT):
             if form.get(f"pick_up_target_{leader_id}_{n}_{slot}", ""):
                 raise InvalidComposedMovesError(
-                    f"{phase_label}: 'Pick Up ALL unled armies here' can't be combined with another army "
-                    "in the same order."
+                    f"{phase_label}: 'ALL' can't be combined with another army in the same order."
                 )
         return [ALL_ARMIES_SENTINEL]
 
@@ -3167,9 +3214,7 @@ def _parse_pick_up_targets(
         army_ids.append(army_id)
     _reject_single_army_sentinel_collision(army_ids, phase_label, "Pick Up")
     if not army_ids:
-        raise InvalidComposedMovesError(
-            f"{phase_label}: choose at least one army to Pick Up (or 'Pick Up ALL unled armies here')."
-        )
+        raise InvalidComposedMovesError(f"{phase_label}: choose at least one army to Pick Up (or 'ALL').")
     return army_ids
 
 
@@ -3389,9 +3434,18 @@ def _parse_hire_target(form: dict[str, str], leader_id: int, n: int, *, phase_la
     [3.5]'s own co-location + "free Hero" + "never a King" requirements
     -- the same checks ``turn/plan_dispatch.py _dispatch_hire()`` itself
     makes.
+
+    Falls back to the sibling ``hire_target_number_<leader_id>_<n>``
+    free-text field (2026-11-15, user-requested: "posso provare a
+    reclutare eroi appena sconfitti in una provincia neutrale") when the
+    dropdown itself is empty -- ``_resolve_target_raw()``'s own generic
+    "dropdown first, hand-typed id second" shape. Every precondition
+    above still applies identically either way.
     """
 
-    raw = form.get(f"hire_target_{leader_id}_{n}", "")
+    raw = _resolve_target_raw(
+        form, primary_field=f"hire_target_{leader_id}_{n}", number_field=f"hire_target_number_{leader_id}_{n}"
+    )
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Hero to Hire.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Hire target")
@@ -3746,9 +3800,19 @@ def _parse_resurrection_target(
     ``"use_mi"`` so its own target dropdown gets a distinct field name,
     never colliding with Cast's own same-row field were both offered
     (see this module's own docstring's Use Magic Item section).
+
+    Falls back to the sibling ``<field_prefix>_resurrection_target_
+    number_<leader_id>_<n>`` free-text field (2026-11-15, user-
+    requested) when the dropdown itself is empty -- ``_resolve_target_
+    raw()``'s own generic "dropdown first, hand-typed id second" shape.
+    Every precondition above still applies identically either way.
     """
 
-    raw = form.get(f"{field_prefix}_resurrection_target_{leader_id}_{n}", "")
+    raw = _resolve_target_raw(
+        form,
+        primary_field=f"{field_prefix}_resurrection_target_{leader_id}_{n}",
+        number_field=f"{field_prefix}_resurrection_target_number_{leader_id}_{n}",
+    )
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Resurrection target.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Resurrection target")
@@ -3789,10 +3853,17 @@ def _parse_charm_target(
 
     ``field_prefix`` defaults to ``"cast"``; Use_MI's standalone
     Charm-wand phase passes ``"use_mi"``, same reasoning as
-    ``_parse_resurrection_target()``'s own docstring.
+    ``_parse_resurrection_target()``'s own docstring. Also falls back
+    to the sibling ``<field_prefix>_charm_target_number_<leader_id>_
+    <n>`` free-text field (2026-11-15, user-requested), same shape as
+    that function's own.
     """
 
-    raw = form.get(f"{field_prefix}_charm_target_{leader_id}_{n}", "")
+    raw = _resolve_target_raw(
+        form,
+        primary_field=f"{field_prefix}_charm_target_{leader_id}_{n}",
+        number_field=f"{field_prefix}_charm_target_number_{leader_id}_{n}",
+    )
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Charm target.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Charm target")
@@ -3831,10 +3902,17 @@ def _parse_kill_enemy_target(
 
     ``field_prefix`` defaults to ``"cast"``; Use_MI's standalone
     Kill-Enemy-wand phase passes ``"use_mi"``, same reasoning as
-    ``_parse_resurrection_target()``'s own docstring.
+    ``_parse_resurrection_target()``'s own docstring. Also falls back
+    to the sibling ``<field_prefix>_kill_enemy_target_number_
+    <leader_id>_<n>`` free-text field (2026-11-15, user-requested),
+    same shape as that function's own.
     """
 
-    raw = form.get(f"{field_prefix}_kill_enemy_target_{leader_id}_{n}", "")
+    raw = _resolve_target_raw(
+        form,
+        primary_field=f"{field_prefix}_kill_enemy_target_{leader_id}_{n}",
+        number_field=f"{field_prefix}_kill_enemy_target_number_{leader_id}_{n}",
+    )
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Kill Enemy target.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Kill Enemy target")
@@ -3953,7 +4031,15 @@ def _parse_cast_phase(
         return int(spell), [target], None
 
     if spell in CAST_CHARACTER_TARGET_SPELLS:
-        raw_target = form.get(f"cast_character_target_{leader_id}_{n}", "")
+        # Falls back to a hand-typed leader id (2026-11-15, user-
+        # requested, e.g. for Oratory/Phantasmal Armies) when the
+        # dropdown itself is empty -- see _resolve_target_raw()'s own
+        # docstring.
+        raw_target = _resolve_target_raw(
+            form,
+            primary_field=f"cast_character_target_{leader_id}_{n}",
+            number_field=f"cast_character_target_number_{leader_id}_{n}",
+        )
         target = _parse_cast_character_target(raw_target, phase_label=phase_label, state=state)
         nested_hero_id = target if spell in CAST_NESTED_PLAN_SPELLS else None
         return int(spell), [target], nested_hero_id
@@ -3991,9 +4077,16 @@ def _parse_use_mi_phase(
 
     A skill book needs no target field at all (rulebook [5.9]: a bare
     +1 to one Ability, self-consuming) -- ``extra`` is always ``[]``.
+
+    Falls back to the sibling ``use_mi_item_number_<leader_id>_<n>``
+    free-text field (2026-11-15, user-requested) when the dropdown
+    itself is empty -- ``_resolve_target_raw()``'s own generic shape.
+    Every precondition below still applies identically either way.
     """
 
-    raw_item = form.get(f"use_mi_item_{leader_id}_{n}", "")
+    raw_item = _resolve_target_raw(
+        form, primary_field=f"use_mi_item_{leader_id}_{n}", number_field=f"use_mi_item_number_{leader_id}_{n}"
+    )
     if not raw_item:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Magic Item to Use.")
     item_id = _parse_int(raw_item, field_label=f"{phase_label} Use Magic Item")
@@ -4035,7 +4128,11 @@ def _parse_use_mi_phase(
         return item_id, [target], None
 
     if spell in CAST_CHARACTER_TARGET_SPELLS:
-        raw_target = form.get(f"use_mi_character_target_{leader_id}_{n}", "")
+        raw_target = _resolve_target_raw(
+            form,
+            primary_field=f"use_mi_character_target_{leader_id}_{n}",
+            number_field=f"use_mi_character_target_number_{leader_id}_{n}",
+        )
         target = _parse_cast_character_target(raw_target, phase_label=phase_label, state=state)
         return item_id, [target], None
 

@@ -59,7 +59,6 @@ from ak_engine.webapp.moves_compose import (
     InvalidComposedMovesError,
     build_composed_kingdom,
     cast_character_target_options,
-    cast_item_target_options,
     cast_spell_options,
     challenge_target_options,
     charm_target_options,
@@ -1460,6 +1459,25 @@ def test_recruit_type_options_labels_non_native_type_at_double_cost_with_ownersh
     assert "non-native, 4 gold -- needs an existing unit of this type" in values[bowmen_value]
 
 
+def test_recruit_type_options_labels_garrison_native_even_without_a_listed_slot():
+    # 2026-11-15 bug fix (user-reported): Garrison is never itself one
+    # of a province's 2 listed native slot types in real data, but
+    # RULES.AK still makes it always recruitable, at base (1 gold)
+    # cost, in any humanoid-race province -- turn/recruit_execution.py
+    # execute_recruit()'s own real dispatch already exempts it
+    # (Phase 1054); this preview used to miss that same exemption and
+    # wrongly show "(non-native, 2 gold -- needs an existing unit of
+    # this type)" instead.
+    state = _state()
+    state.provinces[HOME].recruit_type_1 = ArmyType.BOWMEN
+    state.provinces[HOME].recruit_type_2 = ArmyType.AXEMEN
+    options = recruit_type_options(state, KING_ID)
+    values = dict(options)
+    garrison_value = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.GARRISON])
+    assert "native, 1 gold" in values[garrison_value]
+    assert "non-native" not in values[garrison_value]
+
+
 def test_recruit_type_options_excludes_race_incompatible_types():
     state = _state()  # HOME is a Human province
     options = recruit_type_options(state, KING_ID)
@@ -1978,7 +1996,7 @@ def test_leave_army_target_options_excludes_an_army_commanded_by_someone_else():
 def test_leave_army_target_options_slot_zero_offers_leave_all():
     state = _state()
     options = leave_army_target_options(state, KING_ID, slot=0)
-    assert (LEAVE_ALL_VALUE, "Leave ALL I command") in options
+    assert (LEAVE_ALL_VALUE, "ALL") in options
 
 
 def test_leave_army_target_options_other_slots_do_not_offer_leave_all():
@@ -2254,7 +2272,7 @@ def test_pick_up_army_target_options_includes_a_mercenary_recruited_this_turn():
 def test_pick_up_army_target_options_slot_zero_offers_pick_up_all():
     state = _state()
     options = pick_up_army_target_options(state, KING_ID, slot=0)
-    assert (PICK_UP_ALL_VALUE, "Pick Up ALL unled armies here") in options
+    assert (PICK_UP_ALL_VALUE, "ALL") in options
 
 
 def test_pick_up_army_target_options_other_slots_do_not_offer_pick_up_all():
@@ -3267,6 +3285,25 @@ def test_hire_phase_reads_its_own_target_and_gold_offer():
     assert hire_phase.nested_plan is None
 
 
+def test_hire_phase_reads_a_hand_typed_target_number_when_the_dropdown_is_empty():
+    # 2026-11-15, user-requested: "posso provare a reclutare eroi
+    # appena sconfitti in una provincia neutrale" -- hire_target's own
+    # dropdown stays untouched, hire_target_number is a sibling free-
+    # text fallback.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.HIRE))
+    form[f"hire_target_number_{KING_ID}_0"] = "2"
+    form[f"hire_gold_{KING_ID}_0"] = "3"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    hire_phase = phases[0]
+    assert hire_phase.obj == 2
+    assert hire_phase.extra == [3]
+
+
 def test_hire_phase_without_choosing_a_target_is_rejected():
     state = _state()
     form = _all_defend_form(KING_ID)
@@ -3796,17 +3833,6 @@ def test_cast_character_target_options_excludes_the_active_valhalla_visitor():
     assert str(VALHALLA_VISITOR_LEADER_ID) not in values
 
 
-def test_cast_item_target_options_lists_every_item_including_unowned():
-    state = _state()
-    unowned_item = state.add_item(Treasure.WAND_FIREBALL, owner_leader_id=None, charges=1)
-
-    options = cast_item_target_options(state)
-
-    values = {value for value, _label in options}
-    assert str(unowned_item.item_id) in values
-    assert len(options) == 2  # the King's own starting item (see _state()) plus this unowned one
-
-
 def test_resurrection_target_options_lists_comatose_heir_and_dead_colocated():
     state = _state()
     state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Comatose Hero", location=HOME, is_comatose=True))
@@ -3911,6 +3937,19 @@ def test_cast_phase_reads_a_generic_character_target_spell():
     assert phases[0].nested_plan is None
 
 
+def test_cast_phase_reads_a_hand_typed_character_target_number_when_the_dropdown_is_empty():
+    # 2026-11-15, user-requested: cast_character_target_number is a
+    # sibling free-text fallback to cast_character_target's own
+    # dropdown (Oratory/Phantasmal Armies/Clairvoyance/Mystic Winds).
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    form = _cast_form(cast_spell=str(int(Spell.ORATORY)), cast_character_target_number="2")
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [2]
+
+
 def test_cast_phase_rejects_the_active_valhalla_visitor_as_a_generic_character_target():
     from ak_engine.models.valhalla import VALHALLA_VISITOR_LEADER_ID
 
@@ -3947,6 +3986,18 @@ def test_cast_phase_charm_embeds_a_nested_plan():
     assert cast_phase.nested_plan is not None
     assert cast_phase.nested_plan.leader_id == 2
     assert cast_phase.nested_plan.segments[0].phases["P1"].action is ActionCode.WAIT
+
+
+def test_cast_phase_reads_a_hand_typed_charm_target_number_when_the_dropdown_is_empty():
+    # 2026-11-15, user-requested: cast_charm_target_number is a sibling
+    # free-text fallback to cast_charm_target's own dropdown.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=None, name="Free Hero", location=HOME))
+    form = _cast_form(cast_spell=str(int(Spell.CHARM)), cast_charm_target_number="2")
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [2]
 
 
 def test_cast_phase_charm_can_poach_a_foreign_kingdoms_hero():
@@ -4067,6 +4118,19 @@ def test_cast_phase_reads_a_kill_enemy_target():
     assert cast_phase.nested_plan is None
 
 
+def test_cast_phase_reads_a_hand_typed_kill_enemy_target_number_when_the_dropdown_is_empty():
+    # 2026-11-15, user-requested: cast_kill_enemy_target_number is a
+    # sibling free-text fallback to cast_kill_enemy_target's own
+    # dropdown.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    form = _cast_form(cast_spell=str(int(Spell.KILL_ENEMY)), cast_kill_enemy_target_number="2")
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [2]
+
+
 def test_cast_phase_kill_enemy_allows_an_army_leading_target():
     # Legal but penalized (halved roll), not blocked outright -- unlike
     # Charm's own army-count precondition failure.
@@ -4131,6 +4195,19 @@ def test_cast_phase_resurrection_embeds_a_nested_plan():
     assert cast_phase.nested_plan is not None
     assert cast_phase.nested_plan.leader_id == 2
     assert cast_phase.nested_plan.segments[0].phases["P1"].action is ActionCode.WAIT
+
+
+def test_cast_phase_reads_a_hand_typed_resurrection_target_number_when_the_dropdown_is_empty():
+    # 2026-11-15, user-requested: cast_resurrection_target_number is a
+    # sibling free-text fallback to cast_resurrection_target's own
+    # dropdown.
+    state = _state()
+    state.dead_leaders[2] = LeaderState(leader_id=2, kingdom_id=1, name="Dead Hero", location=HOME)
+    form = _cast_form(cast_spell=str(int(Spell.RESURRECTION)), cast_resurrection_target_number="2")
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [2]
 
 
 def test_cast_phase_resurrection_nested_spy_order_is_rejected_cleanly_not_a_crash():
@@ -4295,6 +4372,19 @@ def test_use_mi_phase_reads_a_no_target_wand():
     state = _state()
     wand = state.add_item(Treasure.WAND_SKELETAL_ARMY, KING_ID, charges=1)
     form = _use_mi_form(use_mi_item=str(wand.item_id))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].obj == wand.item_id
+    assert phases[0].extra == [0]
+
+
+def test_use_mi_phase_reads_a_hand_typed_item_number_when_the_dropdown_is_empty():
+    # 2026-11-15, user-requested: use_mi_item_number is a sibling
+    # free-text fallback to use_mi_item's own dropdown.
+    state = _state()
+    wand = state.add_item(Treasure.WAND_SKELETAL_ARMY, KING_ID, charges=1)
+    form = _use_mi_form(use_mi_item_number=str(wand.item_id))
 
     phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
 

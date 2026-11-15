@@ -192,7 +192,7 @@
         <select class="compose-nested-hero-field" data-hero-field="leave_target" name="{{ field_prefix }}_leave_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
           <option value="">-- choose a target --</option>
         </select>
-        <br><span class="hex-map-legend-note">Armies to leave (empty slots stop the list there; "Leave ALL I command" must be alone):</span>
+        <br><span class="hex-map-legend-note">Armies to leave (empty slots stop the list there; "ALL" must be alone):</span>
         <table class="data-table compose-army-all-plan" data-all-value="{{ leave_all_value }}">
           <tbody>
             {% for slot in leave_slot_numbers %}
@@ -208,7 +208,7 @@
         </table>
       </td>
       <td class="compose-special-cell" data-action="{{ pick_up_action_value }}">
-        <span class="hex-map-legend-note">Armies to pick up (empty slots stop the list there; "Pick Up ALL unled armies here" must be alone):</span>
+        <span class="hex-map-legend-note">Armies to pick up (empty slots stop the list there; "ALL" must be alone):</span>
         <table class="data-table compose-army-all-plan" data-all-value="{{ pick_up_all_value }}">
           <tbody>
             {% for slot in pick_up_slot_numbers %}
@@ -677,7 +677,7 @@
                     <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
-                <br><span class="hex-map-legend-note">Armies to leave (empty slots stop the list there; "Leave ALL I command" must be alone):</span>
+                <br><span class="hex-map-legend-note">Armies to leave (empty slots stop the list there; "ALL" must be alone):</span>
                 <table class="data-table compose-army-all-plan" data-all-value="{{ leave_all_value }}">
                   <tbody>
                     {% for slot in leave_slot_numbers %}
@@ -696,7 +696,7 @@
                 </table>
               </td>
               <td class="compose-special-cell" data-action="{{ pick_up_action_value }}">
-                <span class="hex-map-legend-note">Armies to pick up (empty slots stop the list there; "Pick Up ALL unled armies here" must be alone):</span>
+                <span class="hex-map-legend-note">Armies to pick up (empty slots stop the list there; "ALL" must be alone):</span>
                 <table class="data-table compose-army-all-plan" data-all-value="{{ pick_up_all_value }}">
                   <tbody>
                     {% for slot in pick_up_slot_numbers %}
@@ -860,6 +860,7 @@
                     <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
+                or <input type="text" class="compose-nested-trigger-number" name="hire_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="hero #" size="6">
                 <select name="hire_gold_{{ leader.leader_id }}_{{ n }}">
                   <option value="">-- gold offer --</option>
                   {% for amount in hire_gold_offer_choices %}
@@ -909,6 +910,7 @@
                       <option value="{{ value }}">{{ label }}</option>
                     {% endfor %}
                   </select>
+                  or <input type="text" name="cast_character_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="hero #" size="6">
                 </span>
                 <span class="compose-cast-resurrection-cell">
                   <br><select class="compose-nested-trigger" name="cast_resurrection_target_{{ leader.leader_id }}_{{ n }}">
@@ -917,6 +919,7 @@
                       <option value="{{ value }}">{{ label }}</option>
                     {% endfor %}
                   </select>
+                  or <input type="text" class="compose-nested-trigger-number" name="cast_resurrection_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="hero #" size="6">
                 </span>
                 <span class="compose-cast-charm-cell">
                   <br><select class="compose-nested-trigger" name="cast_charm_target_{{ leader.leader_id }}_{{ n }}">
@@ -925,6 +928,7 @@
                       <option value="{{ value }}">{{ label }}</option>
                     {% endfor %}
                   </select>
+                  or <input type="text" class="compose-nested-trigger-number" name="cast_charm_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="hero #" size="6">
                   {% if is_undead_king_by_leader[leader.leader_id] %}
                     <br><span class="hex-map-legend-note">As an Undead King, a successful Charm here may also attempt to convert the target toward Undead.</span>
                   {% endif %}
@@ -936,6 +940,7 @@
                       <option value="{{ value }}">{{ label }}</option>
                     {% endfor %}
                   </select>
+                  or <input type="text" name="cast_kill_enemy_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="hero #" size="6">
                 </span>
                 <span class="compose-cast-province-cell">
                   <br><select name="cast_province_target_{{ leader.leader_id }}_{{ n }}">
@@ -954,12 +959,7 @@
                   </select>
                 </span>
                 <span class="compose-cast-item-cell">
-                  <br><select name="cast_item_target_{{ leader.leader_id }}_{{ n }}">
-                    <option value="">-- choose an item --</option>
-                    {% for value, label in cast_item_target_choices %}
-                      <option value="{{ value }}">{{ label }}</option>
-                    {% endfor %}
-                  </select>
+                  <br><input type="text" name="cast_item_target_{{ leader.leader_id }}_{{ n }}" placeholder="item # for Locate Object" size="12">
                 </span>
                 <span class="compose-cast-nested-cell">
                   {% if n < 4 %}
@@ -992,6 +992,7 @@
                     <option value="{{ value }}" data-spell="{{ use_mi_item_spell_by_id.get(value|int, '') }}">{{ label }}</option>
                   {% endfor %}
                 </select>
+                or <input type="text" name="use_mi_item_number_{{ leader.leader_id }}_{{ n }}" placeholder="item #" size="6">
                 <span class="compose-use-mi-character-cell">
                   <br><select name="use_mi_character_target_{{ leader.leader_id }}_{{ n }}">
                     <option value="">-- choose a target --</option>
@@ -999,6 +1000,7 @@
                       <option value="{{ value }}">{{ label }}</option>
                     {% endfor %}
                   </select>
+                  or <input type="text" name="use_mi_character_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="hero #" size="6">
                 </span>
                 <span class="compose-use-mi-resurrection-cell">
                   <br><select class="compose-nested-trigger" name="use_mi_resurrection_target_{{ leader.leader_id }}_{{ n }}">
@@ -1007,6 +1009,7 @@
                       <option value="{{ value }}">{{ label }}</option>
                     {% endfor %}
                   </select>
+                  or <input type="text" class="compose-nested-trigger-number" name="use_mi_resurrection_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="hero #" size="6">
                 </span>
                 <span class="compose-use-mi-charm-cell">
                   <br><select class="compose-nested-trigger" name="use_mi_charm_target_{{ leader.leader_id }}_{{ n }}">
@@ -1015,6 +1018,7 @@
                       <option value="{{ value }}">{{ label }}</option>
                     {% endfor %}
                   </select>
+                  or <input type="text" class="compose-nested-trigger-number" name="use_mi_charm_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="hero #" size="6">
                 </span>
                 <span class="compose-use-mi-kill-enemy-cell">
                   <br><select name="use_mi_kill_enemy_target_{{ leader.leader_id }}_{{ n }}">
@@ -1023,6 +1027,7 @@
                       <option value="{{ value }}">{{ label }}</option>
                     {% endfor %}
                   </select>
+                  or <input type="text" name="use_mi_kill_enemy_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="hero #" size="6">
                 </span>
                 <span class="compose-use-mi-province-cell">
                   <br><select name="use_mi_province_target_{{ leader.leader_id }}_{{ n }}">
@@ -1426,7 +1431,18 @@
   }
 
   document.addEventListener("change", function (event) {
-    if (event.target.classList && event.target.classList.contains("compose-nested-trigger")) {
+    if (!event.target.classList) return;
+    // 2026-11-15 (user-requested): the same free-text "or type the
+    // hero's number" override Hire's/Resurrection's/Charm's own
+    // dropdowns now get (updateNestedTrigger() only ever reads
+    // .value/.closest(), both equally real on an <input>) still has to
+    // drive the nested-plan editor exactly like picking from the
+    // dropdown itself would -- a hand-typed id is a real choice, not a
+    // degraded one.
+    if (
+      event.target.classList.contains("compose-nested-trigger") ||
+      event.target.classList.contains("compose-nested-trigger-number")
+    ) {
       updateNestedTrigger(event.target);
     }
   });
