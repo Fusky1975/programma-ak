@@ -2878,6 +2878,23 @@ def test_hide_feature_fails_when_the_province_is_unknown():
     assert result.reason == "province not found or not in range"
 
 
+def test_hide_feature_fails_when_only_adjacent_not_co_located():
+    # 2026-11-16 correction (user-confirmed): unlike Part Sea/Bless/etc,
+    # which accept an adjacent province, Hide Feature requires the
+    # caster to actually be in the target province.
+    adjacent = neighbors(LOCATION, BOUNDS)[0]
+    state = build_state()
+    state.add_province(ProvinceState(adjacent, Terrain.PLAINS, Race.HUMAN))
+    state.add_feature(Feature(1, adjacent, FeatureType.SACRED_ROCK))
+    request = CastRequest(spell=Spell.HIDE_FEATURE, target=_target(adjacent))
+
+    result = execute_cast(state, kingdom_id=1, leader_id=CASTER_ID, request=request)
+
+    assert result.applied is False
+    assert result.reason == "not co-located with the target province"
+    assert state.features[1].magically_hidden is False
+
+
 # ---------------------------------------------------------------------------
 # Gate Angel / VALHALLA (Phase 194, corrected Phase 195) -- user-supplied
 # rule text, one of the 10 secret spells. GATE_ANGEL_ELIGIBLE_ALIGNMENTS is

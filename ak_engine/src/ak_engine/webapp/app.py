@@ -83,9 +83,10 @@ from ak_engine.parser.k1_moves_writer import K1WriteError, write_k1_moves_file
 from ak_engine.webapp.diplomacy_orders import InvalidDiplomacyOrderError, set_turn_diplomacy_orders
 from ak_engine.webapp.moves_compose import (
     CAST_CHARACTER_TARGET_SPELLS,
+    CAST_FEATURE_TARGET_SPELLS,
     CAST_ITEM_TARGET_SPELLS,
     CAST_NESTED_PLAN_SPELLS,
-    CAST_PROVINCE_TARGET_SPELLS,
+    CAST_PROVINCE_TARGET_UI_SPELLS,
     CAST_TERRAIN_CHOICES,
     DISBAND_ALL_VALUE,
     DISBAND_SLOT_COUNT,
@@ -98,8 +99,10 @@ from ak_engine.webapp.moves_compose import (
     PICK_UP_SLOT_COUNT,
     RECRUIT_TYPE_SLOT_COUNT,
     SAY_TEXT_MAX_LENGTH,
+    SEP_TACTIC_SLOT_COUNT,
     TACTIC_SLOT_COUNT,
     TRADE_GOLD_VALUE,
+    TRADE_ITEM_NUMBER_VALUE,
     InvalidComposedMovesError,
     build_composed_kingdom,
     cast_character_target_options,
@@ -293,7 +296,7 @@ def _parse_king_form_fields(form) -> tuple[str, Race, Alignment, Temper, dict[Ab
     return name, race, alignment, temper, talent_allocation
 
 
-# User-sourced renames (2026-11-15, two rounds) for the Action
+# User-sourced renames (2026-11-15/16, three rounds) for the Action
 # dropdown -- this project's own internal `ActionCode` member names
 # ("Lmove"/"Aspy"/"Challenge"/bare "Recruit"/"Use Mi"/...) were never
 # meant as player-facing text, just the closest bare identifier
@@ -302,9 +305,12 @@ def _parse_king_form_fields(form) -> tuple[str, Race, Alignment, Temper, dict[Ab
 # convenience. `ActionCode.CHALLENGE`'s own real tactic, "Kill Enemy",
 # is renamed "Kill an Enemy" too (second round) -- see ``SPELL_NAME``'s
 # own override in ``models/enums.py`` for that one, a `Spell` member
-# rather than an `ActionCode`. Every other ActionCode member (Defend,
-# Give, ...) is unaffected, still falling back to the same bare-
-# identifier title-casing as before.
+# rather than an `ActionCode`. `ActionCode.TRADE` (third round) folds
+# in what the template used to special-case on its own ("Give" instead
+# of the bare "Trade" this Action is still internally named) -- one
+# dict entry now, not a per-template-occurrence conditional. Every
+# other ActionCode member is unaffected, still falling back to the
+# same bare-identifier title-casing as before.
 ACTION_NAME: dict[ActionCode, str] = {
     ActionCode.LMOVE: "Move (MO)",
     ActionCode.EXPLORE: "Explore (EX)",
@@ -319,6 +325,11 @@ ACTION_NAME: dict[ActionCode, str] = {
     ActionCode.USE_MI: "Use Item (UI)",
     ActionCode.CHALLENGE: "Encounter (EN)",
     ActionCode.ASPY: "Spy (SP)",
+    ActionCode.PRACTICE: "Practice (PR)",
+    ActionCode.TRADE: "Give (GI)",
+    ActionCode.DEFEND: "Defend (DE)",
+    ActionCode.PURSUE: "Pursue (PU)",
+    ActionCode.TRAIL: "Trail (TR)",
 }
 
 # User-sourced (2026-11-15): WAIT and MOVE_ABORT are real, harmless
@@ -3273,6 +3284,7 @@ def create_app(games_root: Path | None = None) -> Flask:
             },
             trade_action_value=int(ActionCode.TRADE),
             trade_gold_value=TRADE_GOLD_VALUE,
+            trade_item_number_value=TRADE_ITEM_NUMBER_VALUE,
             trade_recipient_choices_by_leader={
                 leader.leader_id: trade_recipient_options(state, leader.leader_id) for leader in roster
             },
@@ -3299,9 +3311,16 @@ def create_app(games_root: Path | None = None) -> Flask:
             pursue_tactic_choices_by_slot=[
                 tactic_options(slot, allow_give=True) for slot in range(TACTIC_SLOT_COUNT)
             ],
+            # 2026-11-16 (user-requested): a much larger slot ceiling
+            # than every real phase's own TACTIC_SLOT_COUNT, pre-
+            # rendered but mostly hidden -- sep_tactic_slot_numbers
+            # below, not tactic_slot_numbers, drives this table's own
+            # row count; see SEP_TACTIC_SLOT_COUNT's own docstring.
             sep_tactic_choices_by_slot=[
-                tactic_options(slot, passive=True) for slot in range(TACTIC_SLOT_COUNT)
+                tactic_options(slot, passive=True) for slot in range(SEP_TACTIC_SLOT_COUNT)
             ],
+            sep_tactic_slot_numbers=range(SEP_TACTIC_SLOT_COUNT),
+            sep_default_visible_slot_count=TACTIC_SLOT_COUNT,
             defend_action_value=int(ActionCode.DEFEND),
             hire_action_value=int(ActionCode.HIRE),
             hire_target_choices_by_leader={
@@ -3332,7 +3351,15 @@ def create_app(games_root: Path | None = None) -> Flask:
                 leader.leader_id: leader.is_king and leader.alignment is Alignment.UNDEAD for leader in roster
             },
             cast_character_target_spell_values=[int(s) for s in CAST_CHARACTER_TARGET_SPELLS],
-            cast_province_target_spell_values=[int(s) for s in CAST_PROVINCE_TARGET_SPELLS],
+            # 2026-11-16: Hide Feature is carved out of this UI-facing
+            # list into its own cast_feature_target_spell_values below
+            # -- the real backend shape classification (CAST_PROVINCE_
+            # TARGET_SPELLS, still including Hide Feature) is untouched.
+            cast_province_target_spell_values=[int(s) for s in CAST_PROVINCE_TARGET_UI_SPELLS],
+            cast_feature_target_spell_values=[int(s) for s in CAST_FEATURE_TARGET_SPELLS],
+            cast_feature_target_choices_by_leader={
+                leader.leader_id: feature_options(state, leader_id=leader.leader_id) for leader in roster
+            },
             cast_item_target_spell_values=[int(s) for s in CAST_ITEM_TARGET_SPELLS],
             cast_illus_terrain_value=int(Spell.ILLUS_TERRAIN),
             cast_nested_plan_spell_values=[int(s) for s in CAST_NESTED_PLAN_SPELLS],
