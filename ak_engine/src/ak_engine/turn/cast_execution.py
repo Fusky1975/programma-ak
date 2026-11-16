@@ -3537,12 +3537,21 @@ def _execute_hide_feature(
     this project has no data to build. An empty-features province fails
     the same "check applicability first" way every other province spell
     here does, before any success roll.
+
+    **2026-11-16 correction (user-confirmed)**: unlike every other
+    province-target spell here, Hide Feature requires the caster to be
+    co-located with the target province, not merely adjacent to it --
+    ``_resolve_province_cast()``'s own default ``require_adjacent=True``
+    still accepts an adjacent province (the real rule for Part Sea/
+    Bless/etc.), so that's checked again, more strictly, here.
     """
 
     resolved = _resolve_province_cast(state, leader_id, request, board_width)
     if isinstance(resolved, CastExecutionResult):
         return resolved
     caster, coord, _province = resolved
+    if coord != caster.location:
+        return CastExecutionResult(request, applied=False, reason="not co-located with the target province")
     features = state.features_at(coord)
     if not features:
         return CastExecutionResult(request, applied=False, reason="no feature to hide")

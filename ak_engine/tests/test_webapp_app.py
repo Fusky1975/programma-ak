@@ -6991,7 +6991,7 @@ def test_turns_compose_shows_a_give_recipient_and_gift_dropdown(tmp_path):
     assert b"trade_recipient_" in response.data
     assert b"trade_gift_" in response.data
     assert b"Gold (type an amount)" in response.data
-    assert b">Give<" in response.data  # the Action dropdown's own relabeling of Trade
+    assert b">Give (GI)<" in response.data  # the Action dropdown's own relabeling of Trade
 
 
 def test_turns_compose_save_give_order_encodes_the_item_and_recipient(tmp_path):

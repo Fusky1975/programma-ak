@@ -272,6 +272,20 @@ def test_defend_phase_reads_its_own_dropdown_not_the_generic_object_field():
     assert defend_phase.extra == [0]
 
 
+def test_defend_phase_reads_a_hand_typed_province_number_when_the_dropdown_is_empty():
+    # 2026-11-16, user-requested: defend_target_number is a sibling
+    # free-text fallback to defend_target's own dropdown, same shape
+    # as Move's own.
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_2"] = str(int(ActionCode.DEFEND))
+    form[f"defend_target_{KING_ID}_2"] = ""
+    form[f"defend_target_number_{KING_ID}_2"] = "0302"  # real_province_number(HexCoord(3, 2))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+
+    assert decode_hex_number(phases[2].obj, BOARD_WIDTH) == HexCoord(3, 2)
+
+
 def test_defend_phase_without_a_chosen_target_is_rejected():
     form = _all_defend_form(KING_ID)
     form[f"defend_target_{KING_ID}_0"] = ""
@@ -2496,6 +2510,26 @@ def test_trade_phase_reads_its_own_dropdowns_for_an_item_gift():
     assert trade_phase.extra == [0, 2]
 
 
+def test_trade_phase_reads_a_hand_typed_item_number_via_its_own_pseudo_option():
+    # 2026-11-16, user-requested: selecting TRADE_ITEM_NUMBER_VALUE in
+    # the gift dropdown reveals trade_gift_number, a sibling free-text
+    # field naming the same item id the dropdown itself would.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HOME))
+    item_id = state.items_held_by(KING_ID)[0].item_id
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRADE))
+    form[f"trade_recipient_{KING_ID}_0"] = "2"
+    form[f"trade_gift_{KING_ID}_0"] = "item_number"
+    form[f"trade_gift_number_{KING_ID}_0"] = str(item_id)
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    trade_phase = phases[0]
+    assert trade_phase.obj == item_id
+    assert trade_phase.extra == [0, 2]
+
+
 def test_trade_phase_gold_gift_reads_the_free_text_amount():
     state = _state()
     state.add_kingdom(KingdomState(2, "Allia", Race.HUMAN, Alignment.GOOD, HexCoord(9, 9)))
@@ -2767,6 +2801,20 @@ def test_trail_phase_reads_its_own_target_dropdown():
     assert trail_phase.action is ActionCode.TRAIL
     assert trail_phase.obj == 2
     assert trail_phase.extra == [0]
+
+
+def test_trail_phase_reads_a_hand_typed_target_number_when_the_dropdown_is_empty():
+    # 2026-11-16, user-requested: trail_target_number is a sibling
+    # free-text fallback to trail_target's own dropdown.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.TRAIL))
+    form[f"trail_target_number_{KING_ID}_0"] = "2"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].obj == 2
 
 
 def test_trail_phase_without_choosing_a_target_is_rejected():
@@ -3133,6 +3181,20 @@ def test_pursue_phase_reads_its_own_target_and_tactics():
     assert pursue_phase.action is ActionCode.PURSUE
     assert pursue_phase.obj == 2
     assert pursue_phase.extra == [0, int(Maneuver.TALK), int(Maneuver.MELEE), -1]
+
+
+def test_pursue_phase_reads_a_hand_typed_target_number_when_the_dropdown_is_empty():
+    # 2026-11-16, user-requested: pursue_target_number is a sibling
+    # free-text fallback to pursue_target's own dropdown.
+    state = _state()
+    state.add_leader(LeaderState(leader_id=2, kingdom_id=1, name="Bram", location=HexCoord(9, 9)))
+    form = _pursue_form(tactics={0: int(Maneuver.MELEE)})
+    form[f"pursue_target_{KING_ID}_0"] = ""
+    form[f"pursue_target_number_{KING_ID}_0"] = "2"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].obj == 2
 
 
 def test_pursue_phase_allows_give_as_a_tactic():
@@ -3888,6 +3950,32 @@ def test_cast_phase_reads_a_province_target_spell():
     assert cast_phase.nested_plan is None
 
 
+def test_cast_phase_reads_a_hide_feature_target_as_a_feature_number():
+    # 2026-11-16, user-requested: Hide Feature's own dropdown picks a
+    # Feature (cast_feature_target), not a province -- the real wire
+    # encoding (province coordinate) is unchanged, just derived here.
+    state = _state()
+    feature = state.features[3]
+    form = _cast_form(cast_spell=str(int(Spell.HIDE_FEATURE)), cast_feature_target=str(feature.feature_id))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    cast_phase = phases[0]
+    assert cast_phase.obj == int(Spell.HIDE_FEATURE)
+    assert decode_hex_number(cast_phase.extra[0], BOARD_WIDTH) == feature.coord
+
+
+def test_cast_phase_rejects_an_unknown_hide_feature_target_even_via_a_direct_tampered_value():
+    state = _state()
+    form = _cast_form(cast_spell=str(int(Spell.HIDE_FEATURE)), cast_feature_target="99999")
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose a real Feature to Hide" in str(exc)
+
+
 def test_cast_phase_illus_terrain_reads_target_and_terrain():
     state = _state()
     form = _cast_form(
@@ -4351,6 +4439,22 @@ def test_use_mi_phase_reads_a_province_target_wand():
     assert use_mi_phase.nested_plan is None
 
 
+def test_use_mi_phase_reads_a_hide_feature_wand_target_as_a_feature_number():
+    # 2026-11-16, user-requested: same Feature-dropdown shape as the
+    # top-level Cast action's own Hide Feature target, mirrored here
+    # under its own use_mi_feature_target field.
+    state = _state()
+    feature = state.features[3]
+    wand = state.add_item(Treasure.WAND_HIDE_FEATURE, KING_ID, charges=1)
+    form = _use_mi_form(use_mi_item=str(wand.item_id), use_mi_feature_target=str(feature.feature_id))
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    use_mi_phase = phases[0]
+    assert use_mi_phase.obj == wand.item_id
+    assert decode_hex_number(use_mi_phase.extra[0], BOARD_WIDTH) == feature.coord
+
+
 def test_use_mi_phase_illus_terrain_wand_reads_target_and_terrain():
     state = _state()
     wand = state.add_item(Treasure.WAND_ILLUS_TERRAIN, KING_ID, charges=2)
@@ -4583,6 +4687,21 @@ def test_special_encounter_plan_reads_a_composed_tactic():
     kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
 
     assert kingdom.leaders[0].plan.segments[0].sp == (int(Maneuver.MELEE), -1)
+
+
+def test_special_encounter_plan_reads_more_tactics_than_a_real_phase_allows():
+    # 2026-11-16, user-requested "add as many tactics as you like" --
+    # SEP_TACTIC_SLOT_COUNT (25) is well past TACTIC_SLOT_COUNT (7),
+    # the real-sample-sourced cap every actual phase's own Encounter
+    # Plan still uses.
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    for slot in range(10):
+        form[f"sep_tactic_{KING_ID}_0_{slot}"] = str(int(Maneuver.MELEE))
+
+    kingdom = build_composed_kingdom(state, game_label="Testia", turn_number=1, kingdom_id=1, form=form)
+
+    assert kingdom.leaders[0].plan.segments[0].sp == tuple([int(Maneuver.MELEE)] * 10 + [-1])
 
 
 def test_special_encounter_plan_rejects_give_even_via_a_direct_tampered_value():

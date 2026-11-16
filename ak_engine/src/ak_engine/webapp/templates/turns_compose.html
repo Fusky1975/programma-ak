@@ -93,7 +93,7 @@
         <select class="compose-action" name="{{ field_prefix }}_action_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
           <option value="">-- no order --</option>
           {% for action in actions %}
-            <option value="{{ action.value }}">{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
+            <option value="{{ action.value }}">{{ action|display_name }}</option>
           {% endfor %}
         </select>
       </td>
@@ -383,6 +383,11 @@
             <option value="">-- choose a target --</option>
           </select>
         </span>
+        <span class="compose-cast-feature-cell">
+          <br><select class="compose-nested-hero-field" data-hero-field="cast_feature_target" name="{{ field_prefix }}_cast_feature_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose a Feature to Hide --</option>
+          </select>
+        </span>
         <span class="compose-cast-province-cell">
           <br><select name="{{ field_prefix }}_cast_province_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
             <option value="">-- choose a province --</option>
@@ -437,6 +442,11 @@
             <option value="">-- choose a target --</option>
           </select>
         </span>
+        <span class="compose-use-mi-feature-cell">
+          <br><select class="compose-nested-hero-field" data-hero-field="cast_feature_target" name="{{ field_prefix }}_use_mi_feature_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
+            <option value="">-- choose a Feature to Hide --</option>
+          </select>
+        </span>
         <span class="compose-use-mi-province-cell">
           <br><select name="{{ field_prefix }}_use_mi_province_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
             <option value="">-- choose a province --</option>
@@ -470,11 +480,11 @@
         entirely empty plan reads as an aggressive stance, the same real default every leader's own move file
         already carries.
       </p>
-      <table class="data-table compose-encounter-plan">
+      <table class="data-table compose-encounter-plan compose-sep-plan">
         <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th><th>Give Item</th></tr></thead>
         <tbody>
-          {% for slot in tactic_slot_numbers %}
-            <tr>
+          {% for slot in sep_tactic_slot_numbers %}
+            <tr{% if slot >= sep_default_visible_slot_count %} class="compose-sep-extra-row" style="display:none"{% endif %}>
               <td>
                 <select class="compose-tactic-slot" name="sep_tactic_{{ leader.leader_id }}_0_{{ slot }}">
                   <option value="">-- no tactic --</option>
@@ -514,6 +524,8 @@
           {% endfor %}
         </tbody>
       </table>
+      <button type="button" class="compose-sep-add-row">+ Add tactic</button>
+      <button type="button" class="compose-sep-remove-row">- Remove tactic</button>
       <table class="data-table">
         <thead>
           <tr>
@@ -561,7 +573,7 @@
                        "this leader submitted no real order" sentinel (turn/turn_processor.py's
                        own _kingdom_submitted_real_orders()), it's the semantically correct
                        default for a row the GM never touched, not just a harmless filler. #}
-                    <option value="{{ action.value }}" {% if action.name == "NO_ACTION" %}selected{% endif %}>{{ "Give" if action.name == "TRADE" else action|display_name }}</option>
+                    <option value="{{ action.value }}" {% if action.name == "NO_ACTION" %}selected{% endif %}>{{ action|display_name }}</option>
                   {% endfor %}
                 </select>
               </td>
@@ -572,6 +584,7 @@
                     <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
+                or <input type="text" name="defend_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="province #" size="6">
               </td>
               <td class="compose-special-cell" data-action="{{ move_action_value }}">
                 <select name="move_target_{{ leader.leader_id }}_{{ n }}">
@@ -730,6 +743,9 @@
                 <span class="compose-trade-gold-cell">
                   <input type="text" name="trade_gold_{{ leader.leader_id }}_{{ n }}" value="" size="6" placeholder="gold amount">
                 </span>
+                <span class="compose-trade-item-number-cell">
+                  <input type="text" name="trade_gift_number_{{ leader.leader_id }}_{{ n }}" value="" size="6" placeholder="item # (e.g. #21)">
+                </span>
               </td>
               <td class="compose-special-cell" data-action="{{ practice_action_value }}">
                 <select name="practice_ability_{{ leader.leader_id }}_{{ n }}">
@@ -746,6 +762,7 @@
                     <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
+                or <input type="text" name="trail_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="king/hero #" size="6">
               </td>
               <td class="compose-special-cell" data-action="{{ challenge_action_value }}">
                 <select name="challenge_target_{{ leader.leader_id }}_{{ n }}">
@@ -807,6 +824,7 @@
                     <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
+                or <input type="text" name="pursue_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="king/hero #" size="6">
                 <br><span class="hex-map-legend-note">Encounter Plan, used if/when the chase catches up (empty slots stop the list there):</span>
                 <table class="data-table compose-encounter-plan">
                   <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th><th>Give Item</th></tr></thead>
@@ -942,6 +960,14 @@
                   </select>
                   or <input type="text" name="cast_kill_enemy_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="hero #" size="6">
                 </span>
+                <span class="compose-cast-feature-cell">
+                  <br><select name="cast_feature_target_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- choose a Feature to Hide --</option>
+                    {% for value, label in cast_feature_target_choices_by_leader[leader.leader_id] %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </span>
                 <span class="compose-cast-province-cell">
                   <br><select name="cast_province_target_{{ leader.leader_id }}_{{ n }}">
                     <option value="">-- choose a province --</option>
@@ -1028,6 +1054,14 @@
                     {% endfor %}
                   </select>
                   or <input type="text" name="use_mi_kill_enemy_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="hero #" size="6">
+                </span>
+                <span class="compose-use-mi-feature-cell">
+                  <br><select name="use_mi_feature_target_{{ leader.leader_id }}_{{ n }}">
+                    <option value="">-- choose a Feature to Hide --</option>
+                    {% for value, label in cast_feature_target_choices_by_leader[leader.leader_id] %}
+                      <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
                 </span>
                 <span class="compose-use-mi-province-cell">
                   <br><select name="use_mi_province_target_{{ leader.leader_id }}_{{ n }}">
@@ -1241,6 +1275,11 @@
   // is what actually enforces which fields a given spell reads.
   var CAST_CHARACTER_TARGET_SPELLS = {{ cast_character_target_spell_values | tojson }};
   var CAST_PROVINCE_TARGET_SPELLS = {{ cast_province_target_spell_values | tojson }};
+  // 2026-11-16 (user-requested): Hide Feature is carved out of
+  // CAST_PROVINCE_TARGET_SPELLS above into its own value here -- it
+  // still encodes to a province (see moves_compose.py's own docstring),
+  // but is now composed by picking a Feature, not a province.
+  var CAST_FEATURE_TARGET_SPELLS = {{ cast_feature_target_spell_values | tojson }};
   var CAST_ITEM_TARGET_SPELLS = {{ cast_item_target_spell_values | tojson }};
   var CAST_NESTED_PLAN_SPELLS = {{ cast_nested_plan_spell_values | tojson }};
   var CAST_RESURRECTION_VALUE = {{ cast_resurrection_value }};
@@ -1261,6 +1300,7 @@
     show(".compose-cast-charm-cell", value === CAST_CHARM_VALUE);
     show(".compose-cast-kill-enemy-cell", value === CAST_KILL_ENEMY_VALUE);
     show(".compose-cast-province-cell", CAST_PROVINCE_TARGET_SPELLS.indexOf(value) !== -1);
+    show(".compose-cast-feature-cell", CAST_FEATURE_TARGET_SPELLS.indexOf(value) !== -1);
     show(".compose-cast-terrain-cell", value === CAST_ILLUS_TERRAIN_VALUE);
     show(".compose-cast-item-cell", CAST_ITEM_TARGET_SPELLS.indexOf(value) !== -1);
     show(".compose-cast-nested-cell", CAST_NESTED_PLAN_SPELLS.indexOf(value) !== -1);
@@ -1298,6 +1338,7 @@
     show(".compose-use-mi-charm-cell", value === CAST_CHARM_VALUE);
     show(".compose-use-mi-kill-enemy-cell", value === CAST_KILL_ENEMY_VALUE);
     show(".compose-use-mi-province-cell", CAST_PROVINCE_TARGET_SPELLS.indexOf(value) !== -1);
+    show(".compose-use-mi-feature-cell", CAST_FEATURE_TARGET_SPELLS.indexOf(value) !== -1);
     show(".compose-use-mi-terrain-cell", value === CAST_ILLUS_TERRAIN_VALUE);
     show(".compose-use-mi-nested-cell", CAST_NESTED_PLAN_SPELLS.indexOf(value) !== -1);
   }
@@ -1340,7 +1381,10 @@
   // Give's own gift dropdown reveals its free-text gold-amount field
   // only when "Gold" (TRADE_GOLD_VALUE) is chosen -- the same reveal-
   // on-selection shape Say's own free-text field already uses above.
+  // 2026-11-16 (user-requested): a second pseudo-option, TRADE_ITEM_
+  // NUMBER_VALUE, reveals a sibling free-text item-id field the same way.
   var TRADE_GOLD_VALUE = "{{ trade_gold_value }}";
+  var TRADE_ITEM_NUMBER_VALUE = "{{ trade_item_number_value }}";
 
   function updateTradeGiftCell(select) {
     var row = select.closest("tr");
@@ -1348,6 +1392,10 @@
     var goldCell = row.querySelector(".compose-trade-gold-cell");
     if (goldCell) {
       goldCell.style.display = select.value === TRADE_GOLD_VALUE ? "" : "none";
+    }
+    var itemNumberCell = row.querySelector(".compose-trade-item-number-cell");
+    if (itemNumberCell) {
+      itemNumberCell.style.display = select.value === TRADE_ITEM_NUMBER_VALUE ? "" : "none";
     }
   }
 
@@ -1445,6 +1493,60 @@
     ) {
       updateNestedTrigger(event.target);
     }
+  });
+
+  // Special Encounter Plan's own "add/remove tactic" buttons (2026-
+  // 11-16, user-requested): this table pre-renders every real row up
+  // to SEP_TACTIC_SLOT_COUNT (far more than the handful most leaders
+  // ever need), starting with only the first sep_default_visible_
+  // slot_count of them shown -- Add reveals the next hidden one,
+  // Remove hides (and clears, so a hidden row never silently
+  // resubmits a stale value) the last visible one. Progressive
+  // enhancement only, same as the rest of this page: every row's own
+  // fields are always real and submittable either way, and the real
+  // no-gaps rule is still enforced server-side
+  // (_parse_search_tactics()) regardless of which rows this button
+  // happens to leave visible.
+  function findPrecedingSepTable(el) {
+    var node = el.previousElementSibling;
+    while (node && !node.classList.contains("compose-sep-plan")) {
+      node = node.previousElementSibling;
+    }
+    return node;
+  }
+
+  document.querySelectorAll(".compose-sep-add-row").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var table = findPrecedingSepTable(button);
+      if (!table) return;
+      var rows = table.querySelectorAll("tbody tr");
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].style.display === "none") {
+          rows[i].style.display = "";
+          return;
+        }
+      }
+    });
+  });
+
+  document.querySelectorAll(".compose-sep-remove-row").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var table = findPrecedingSepTable(button);
+      if (!table) return;
+      var rows = table.querySelectorAll("tbody tr");
+      for (var i = rows.length - 1; i >= 0; i--) {
+        if (rows[i].style.display !== "none") {
+          rows[i].querySelectorAll("select").forEach(function (sel) {
+            sel.selectedIndex = 0;
+          });
+          rows[i].querySelectorAll("input[type=text]").forEach(function (inp) {
+            inp.value = "";
+          });
+          rows[i].style.display = "none";
+          return;
+        }
+      }
+    });
   });
 </script>
 

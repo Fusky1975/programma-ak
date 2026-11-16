@@ -1205,6 +1205,17 @@ EMPTY_SEARCH_EXTRA: list[int] = [0, -1]
 # not an arbitrary round number.
 TACTIC_SLOT_COUNT = 7
 
+# A Special Encounter Plan [5.10] is this leader's own *standing*
+# posture, not tied to any one real phase's own tactic list the way
+# TACTIC_SLOT_COUNT above (a real-sample-sourced max) is -- nothing in
+# the available source bounds how long it could be, so the user's own
+# request (2026-11-16) for an "add/remove as many as you like" UI here
+# needs a real, generous ceiling the backend will actually read beyond
+# the first TACTIC_SLOT_COUNT rows this table starts visible with.
+# This is a UI allowance, not a sourced number -- round and generous,
+# nothing more.
+SEP_TACTIC_SLOT_COUNT = 25
+
 # A generous, round slot count for a Recruit phase's own repeated
 # army-type dropdowns -- the rulebook's own worked example (a King's
 # home province: up to 2 units of each of up to 2 native types, plus 2
@@ -1260,6 +1271,14 @@ PICK_UP_ALL_VALUE = "all"
 # item" pseudo-option -- reveals a free-text gold-amount field, the
 # same shape Say's own free-text field already uses.
 TRADE_GOLD_VALUE = "gold"
+
+# Give [GI]'s own gift dropdown's second dedicated pseudo-option
+# (2026-11-16, user-requested): "give an item by its own hand-typed
+# order number instead" -- reveals a sibling free-text field, the same
+# reveal-on-selection shape ``TRADE_GOLD_VALUE`` above already uses --
+# for an item this leader owns but that ``trade_gift_options()``'s own
+# start-of-turn snapshot doesn't yet list.
+TRADE_ITEM_NUMBER_VALUE = "item_number"
 
 # Every Maneuver a GM can compose here -- Maneuver.NONE is a sentinel,
 # never a real tactic, so it's the only one excluded.
@@ -1329,6 +1348,24 @@ CAST_ACTION_SPELLS: frozenset[Spell] = (
     | CAST_NO_TARGET_SPELLS
     | CAST_ITEM_TARGET_SPELLS
 )
+
+# Hide Feature (2026-11-16, user-requested): the real wire shape
+# (``turn/cast_decode.py PROVINCE_TARGET_SPELLS``, confirmed against
+# every real sample) still only ever carries a province coordinate --
+# that part is unchanged, and still what ``_parse_hide_feature_target()``
+# below ultimately encodes into ``obj``. But composing it by picking a
+# *province* let a GM target one with no feature in it at all (an
+# always-dead order, silently rejected only once the turn actually
+# runs), when what the GM really has in mind is a specific feature's
+# own "#<N>" -- the same number a PROVINCES report's own "Features and
+# F#" column already gives for Search. This UI-only split (``CAST_
+# PROVINCE_TARGET_UI_SPELLS``/``CAST_FEATURE_TARGET_SPELLS``, used only
+# for this module's own dropdown/cell wiring) lets Hide Feature keep
+# its own dedicated feature dropdown while ``CAST_PROVINCE_TARGET_
+# SPELLS`` above -- the real backend shape classification, feeding
+# ``CAST_ACTION_SPELLS`` -- stays completely untouched.
+CAST_PROVINCE_TARGET_UI_SPELLS: frozenset[Spell] = CAST_PROVINCE_TARGET_SPELLS - {Spell.HIDE_FEATURE}
+CAST_FEATURE_TARGET_SPELLS: frozenset[Spell] = frozenset({Spell.HIDE_FEATURE})
 
 # Bug fix (2026-11-14, user-requested): 6 of the 10 undocumented
 # "secret" spells (``Spell`` class's own docstring, ordinals 25-34,
@@ -2168,9 +2205,18 @@ def trade_gift_options(state: GameState, leader_id: int) -> list[tuple[str, str]
     item_id``), which rulebook VALHALLA.txt says can never be given
     away at all (``turn/trade_execution.py execute_give()``'s own
     Phase 547 addendum).
+
+    ``TRADE_ITEM_NUMBER_VALUE`` (2026-11-16, user-requested) comes
+    right after Gold -- an item this leader owns but that this
+    dropdown's own start-of-turn snapshot doesn't yet list (looted
+    earlier the very same turn), named by its own hand-typed order
+    number instead.
     """
 
-    options: list[tuple[str, str]] = [(TRADE_GOLD_VALUE, "Gold (type an amount)")]
+    options: list[tuple[str, str]] = [
+        (TRADE_GOLD_VALUE, "Gold (type an amount)"),
+        (TRADE_ITEM_NUMBER_VALUE, "Item # (type below)"),
+    ]
     leader = state.leaders.get(leader_id)
     if leader is None:
         return options
@@ -2664,29 +2710,29 @@ def _parse_extra(raw: str) -> list[int]:
     return values
 
 
-def _resolve_move_target_raw(form: dict[str, str], *, leader_id: int, n: int) -> str:
-    """Move's own destination field (2026-11-15, user-requested): reads
-    the ``move_target_<leader_id>_<n>`` dropdown first, same as always;
-    if that's empty, falls back to the sibling ``move_target_number_
-    <leader_id>_<n>`` free-text field, a hand-typed real province "#<N>"
-    ordinal (``report/turn_report.py real_province_number()``'s own
-    ``x*100 + y`` convention) -- for a destination this Kingdom knows
-    the number of (e.g. from a report) but ``province_options()``'s own
-    now-filtered dropdown (``known_to_kingdom()``) doesn't currently
-    offer by name. Converts it into the exact same ``"x,y"`` string the
-    dropdown itself would have posted, so the one real parser below
-    (``_parse_move_target()``, also reused by Cast's/Use Item's own
-    province-target spells, untouched by this round) still does all the
-    real validation either way. Returns ``""`` (unresolved) if neither
-    field is filled in, or the number isn't a plain non-negative whole
-    number -- ``_parse_move_target()``'s own existing empty-destination/
-    real-province checks already cover both cases with a clear error.
+def _resolve_province_target_raw(form: dict[str, str], *, primary_field: str, number_field: str) -> str:
+    """Move's own destination field (2026-11-15, user-requested),
+    generalized (2026-11-16) for Defend's own target field too: reads
+    the dropdown's own ``primary_field`` first, same as always; if
+    that's empty, falls back to the sibling ``number_field`` free-text
+    field, a hand-typed real province "#<N>" ordinal (``report/turn_
+    report.py real_province_number()``'s own ``x*100 + y`` convention)
+    -- for a destination this Kingdom knows the number of (e.g. from a
+    report) but ``province_options()``'s own now-filtered dropdown
+    (``known_to_kingdom()``) doesn't currently offer by name. Converts
+    it into the exact same ``"x,y"`` string the dropdown itself would
+    have posted, so the one real parser the caller still uses
+    afterward does all the real validation either way. Returns ``""``
+    (unresolved) if neither field is filled in, or the number isn't a
+    plain non-negative whole number -- the caller's own existing
+    empty-destination/real-province checks already cover both cases
+    with a clear error.
     """
 
-    dropdown_raw = form.get(f"move_target_{leader_id}_{n}", "")
+    dropdown_raw = form.get(primary_field, "")
     if dropdown_raw:
         return dropdown_raw
-    number_raw = form.get(f"move_target_number_{leader_id}_{n}", "").strip().lstrip("#")
+    number_raw = form.get(number_field, "").strip().lstrip("#")
     if not number_raw.isdigit():
         return ""
     x, y = divmod(int(number_raw), 100)
@@ -2695,8 +2741,8 @@ def _resolve_move_target_raw(form: dict[str, str], *, leader_id: int, n: int) ->
 
 def _resolve_target_raw(form: dict[str, str], *, primary_field: str, number_field: str) -> str:
     """The same "dropdown first, hand-typed id second" fallback
-    ``_resolve_move_target_raw()`` above uses, generalized for every
-    other leader/item-targeted field this round adds a free-text
+    ``_resolve_province_target_raw()`` above uses, generalized for
+    every other leader/item-targeted field this round adds a free-text
     override to (2026-11-15, user-requested: Hire's own target, and
     Cast's/Use Item's own Resurrection/Charm/Kill Enemy/generic
     character targets) -- unlike Move's own destination, none of these
@@ -2810,6 +2856,49 @@ def _parse_search_feature(raw: str, *, phase_label: str, state: GameState) -> in
     if state.features.get(feature_id) is None:
         raise InvalidComposedMovesError(f"{phase_label}: choose a real Feature to Search.")
     return feature_id
+
+
+def _parse_hide_feature_target(
+    form: dict[str, str], leader_id: int, n: int, *, phase_label: str, state: GameState, board_width: int, field_prefix: str = "cast"
+) -> int:
+    """Reads Hide Feature's own ``<field_prefix>_feature_target_
+    <leader_id>_<n>`` field (``feature_options()``'s own dropdown,
+    same "known to this Kingdom" filtering Search's own feature
+    dropdown already uses) -- a real ``Feature.feature_id`` -- and
+    resolves it to *that feature's own province coordinate*, still
+    encoded via ``encode_hex_number()`` exactly like every other
+    province-target spell's own ``obj`` (2026-11-16, user-requested):
+    the real wire shape ``turn/cast_decode.py PROVINCE_TARGET_SPELLS``
+    confirms for Hide Feature is still a province, never a feature id
+    directly -- this only changes what the GM *picks by* here, not
+    what gets encoded.
+
+    ``field_prefix`` defaults to ``"cast"``; Use_MI's own Hide-Feature-
+    wand phase (``Treasure.WAND_HIDE_FEATURE`` is real) passes
+    ``"use_mi"``, same reasoning as ``_parse_resurrection_target()``'s
+    own docstring.
+
+    No co-location check here -- same reasoning as ``_parse_search_
+    feature()``'s own docstring (an earlier phase this same turn could
+    still Move this leader into the feature's own province before this
+    phase dispatches). The real, stricter-than-adjacency requirement
+    the user asked for ("se l'eroe o il Re... non si trova nella
+    provincia... l'incantesimo non parte") is enforced for real at
+    turn-processing time instead, in ``turn/cast_execution.py
+    _execute_hide_feature()`` itself.
+    """
+
+    raw = form.get(f"{field_prefix}_feature_target_{leader_id}_{n}", "")
+    if not raw:
+        raise InvalidComposedMovesError(f"{phase_label}: choose a Feature to Hide.")
+    feature_id = _parse_int(raw, field_label=f"{phase_label} Hide Feature target")
+    feature = state.features.get(feature_id)
+    if feature is None:
+        # Defense in depth: every dropdown-offered id is a real
+        # feature, but a direct, tampered POST could still name any
+        # other integer.
+        raise InvalidComposedMovesError(f"{phase_label}: choose a real Feature to Hide.")
+    return encode_hex_number(feature.coord, board_width)
 
 
 def _parse_recruit_target(raw: str, *, leader_id: int, phase_label: str, state: GameState) -> int:
@@ -3268,9 +3357,21 @@ def _parse_trade_gift(
     King"). Previously a GM composing e.g. "Give 12 gold" while owning
     item #12 got no warning here at all -- the order would silently
     transfer the item instead of the gold at turn-processing time.
+
+    **2026-11-16 (user-requested)**: the dropdown's own ``TRADE_ITEM_
+    NUMBER_VALUE`` pseudo-option reveals a sibling ``trade_gift_number_
+    <leader_id>_<n>`` free-text field (e.g. "#21") -- the same reveal-
+    on-selection shape ``TRADE_GOLD_VALUE`` already uses for its own
+    gold-amount field -- for an item this leader owns but that
+    ``trade_gift_options()``'s own start-of-turn snapshot doesn't yet
+    list (looted earlier the very same turn). Every ownership
+    precondition below still applies identically either way: this is
+    just a second way to name the same item id, not a bypass.
     """
 
     raw = form.get(f"trade_gift_{leader_id}_{n}", "")
+    if raw == TRADE_ITEM_NUMBER_VALUE:
+        raw = form.get(f"trade_gift_number_{leader_id}_{n}", "")
     if not raw or raw == TRADE_GOLD_VALUE:
         gold_raw = form.get(f"trade_gold_{leader_id}_{n}", "")
         if not gold_raw:
@@ -3342,9 +3443,16 @@ def _parse_trail_target(form: dict[str, str], leader_id: int, n: int, *, phase_l
     check ``turn/trail_execution.py execute_trail()`` itself makes
     (``GameState.armies_commanded_by()``), restricting the *trailer*
     only -- the target may freely command an army.
+
+    Falls back to the sibling ``trail_target_number_<leader_id>_<n>``
+    free-text field (2026-11-16, user-requested) when the dropdown
+    itself is empty -- ``_resolve_target_raw()``'s own generic shape.
+    Every precondition above still applies identically either way.
     """
 
-    raw = form.get(f"trail_target_{leader_id}_{n}", "")
+    raw = _resolve_target_raw(
+        form, primary_field=f"trail_target_{leader_id}_{n}", number_field=f"trail_target_number_{leader_id}_{n}"
+    )
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Trail target.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Trail target")
@@ -3381,9 +3489,15 @@ def _parse_pursue_target(form: dict[str, str], leader_id: int, n: int, *, phase_
     same shape as Trail's own unconditional ban, not Pursue's own soft
     mismatch -- so this one *is* enforced here, at compose time, same
     as ``_parse_trail_target()``'s own precedent.
+
+    Falls back to the sibling ``pursue_target_number_<leader_id>_<n>``
+    free-text field (2026-11-16, user-requested) when the dropdown
+    itself is empty -- ``_resolve_target_raw()``'s own generic shape.
     """
 
-    raw = form.get(f"pursue_target_{leader_id}_{n}", "")
+    raw = _resolve_target_raw(
+        form, primary_field=f"pursue_target_{leader_id}_{n}", number_field=f"pursue_target_number_{leader_id}_{n}"
+    )
     if not raw:
         raise InvalidComposedMovesError(f"{phase_label}: choose a Pursue target.")
     target_id = _parse_int(raw, field_label=f"{phase_label} Pursue target")
@@ -3531,6 +3645,7 @@ def nested_hero_option_bundle(state: GameState, hero_id: int) -> dict:
         leader = state.leaders.get(hero_id)
         return {
             "search_feature": feature_options(state, leader_id=hero_id),
+            "cast_feature_target": feature_options(state, leader_id=hero_id),
             "recruit_target": recruit_target_options(state, hero_id),
             "recruit_type": recruit_type_options(state, hero_id),
             "disband_target": [disband_target_options(state, hero_id, slot=slot) for slot in range(DISBAND_SLOT_COUNT)],
@@ -3591,10 +3706,12 @@ _NESTED_PLAIN_FIELD_TEMPLATES: tuple[str, ...] = (
     "cast_province_target",
     "cast_terrain",
     "cast_item_target",
+    "cast_feature_target",
     "cast_resurrection_target",
     "cast_charm_target",
     "cast_kill_enemy_target",
     "use_mi_item",
+    "use_mi_feature_target",
     "use_mi_character_target",
     "use_mi_province_target",
     "use_mi_terrain",
@@ -4044,6 +4161,12 @@ def _parse_cast_phase(
         nested_hero_id = target if spell in CAST_NESTED_PLAN_SPELLS else None
         return int(spell), [target], nested_hero_id
 
+    if spell is Spell.HIDE_FEATURE:
+        target = _parse_hide_feature_target(
+            form, leader_id, n, phase_label=phase_label, state=state, board_width=state.board_width
+        )
+        return int(spell), [target], None
+
     if spell in CAST_PROVINCE_TARGET_SPELLS:
         raw_target = form.get(f"cast_province_target_{leader_id}_{n}", "")
         target = _parse_move_target(raw_target, board_width=state.board_width, phase_label=phase_label, state=state)
@@ -4136,6 +4259,12 @@ def _parse_use_mi_phase(
         target = _parse_cast_character_target(raw_target, phase_label=phase_label, state=state)
         return item_id, [target], None
 
+    if spell is Spell.HIDE_FEATURE:
+        target = _parse_hide_feature_target(
+            form, leader_id, n, phase_label=phase_label, state=state, board_width=state.board_width, field_prefix="use_mi"
+        )
+        return item_id, [target], None
+
     if spell in CAST_PROVINCE_TARGET_SPELLS:
         raw_target = form.get(f"use_mi_province_target_{leader_id}_{n}", "")
         target = _parse_move_target(raw_target, board_width=state.board_width, phase_label=phase_label, state=state)
@@ -4162,12 +4291,13 @@ def _parse_search_tactics(
     allow_give: bool = False,
     allow_fulfill_scout: bool = False,
     passive: bool = False,
+    slot_count: int = TACTIC_SLOT_COUNT,
 ) -> list[int | str]:
     """Reads this phase's own ``<field_prefix>_<leader_id>_<n>_<slot>``/
     ``<field_prefix>_sub_<leader_id>_<n>_<slot>``/``<field_prefix>_say_
     <leader_id>_<n>_<slot>``/``<field_prefix>_spell_<leader_id>_<n>_
     <slot>``/``<field_prefix>_item_<leader_id>_<n>_<slot>`` fields
-    (``slot`` in ``0..TACTIC_SLOT_COUNT-1``) into a real, ``-1``-
+    (``slot`` in ``0..slot_count-1``) into a real, ``-1``-
     terminated Encounter Plan tactic list -- see this module's own
     docstring for the Talk-position, Steal-position, Steal/Talk/
     Fulfill-exclusion, Flee-at-most-once, Say free-text, Cast-spell-
@@ -4183,6 +4313,11 @@ def _parse_search_tactics(
     for the full active-vs-passive rule each of these three flags now
     enforces here too, as defense in depth against a tampered POST
     naming an ordinal that caller's own dropdown never offers).
+    ``slot_count`` defaults to ``TACTIC_SLOT_COUNT`` (every real phase's
+    own Encounter Plan); the Special Encounter Plan's own call (2026-
+    11-16, user-requested "add/remove as many as you like") passes
+    ``SEP_TACTIC_SLOT_COUNT`` instead -- a much larger, unsourced UI
+    ceiling, not a real-sample-confirmed one.
     ``state`` is only needed for Use Item's own ownership/category/charge
     lookup -- every
     other tactic's own validation is state-independent.
@@ -4197,7 +4332,7 @@ def _parse_search_tactics(
     stopped_at: int | None = None
     previous_maneuver: Maneuver | None = None
     previous_sub_object: int | None = None
-    for slot in range(TACTIC_SLOT_COUNT):
+    for slot in range(slot_count):
         raw = form.get(f"{field_prefix}_{leader_id}_{n}_{slot}", "")
         if not raw:
             if stopped_at is None:
@@ -4391,8 +4526,11 @@ def _parse_search_tactics(
 def _parse_special_encounter_plan(form: dict[str, str], leader_id: int, *, state: GameState) -> tuple[int | str, ...]:
     """Reads this leader's own standing Special Encounter Plan [5.10]
     (``sep_tactic_<leader_id>_0_<slot>``'s own repeated tactic slots,
-    ``slot`` in ``0..TACTIC_SLOT_COUNT-1``) into ``PlanSegment.sp``'s
-    real wire shape.
+    ``slot`` in ``0..SEP_TACTIC_SLOT_COUNT-1`` -- 2026-11-16, user-
+    requested: a much larger ceiling than every real phase's own
+    ``TACTIC_SLOT_COUNT``, since this table's own "add/remove as many
+    as you like" UI needs the backend to actually read whatever the GM
+    adds) into ``PlanSegment.sp``'s real wire shape.
 
     Reuses ``_parse_search_tactics()`` directly (``field_prefix=
     "sep_tactic"``, ``passive=True``). **2026-11-14 correction
@@ -4439,7 +4577,14 @@ def _parse_special_encounter_plan(form: dict[str, str], leader_id: int, *, state
     """
 
     tactics = _parse_search_tactics(
-        form, leader_id, 0, phase_label="Special Encounter Plan", state=state, field_prefix="sep_tactic", passive=True
+        form,
+        leader_id,
+        0,
+        phase_label="Special Encounter Plan",
+        state=state,
+        field_prefix="sep_tactic",
+        passive=True,
+        slot_count=SEP_TACTIC_SLOT_COUNT,
     )
     if tactics == [-1]:
         return DEFAULT_SP
@@ -4564,7 +4709,11 @@ def parse_phase_inputs(
         nested_plan: "ActionPlan | None" = None
         if action is ActionCode.LMOVE:
             obj = _parse_move_target(
-                _resolve_move_target_raw(form, leader_id=leader_id, n=n),
+                _resolve_province_target_raw(
+                    form,
+                    primary_field=f"move_target_{leader_id}_{n}",
+                    number_field=f"move_target_number_{leader_id}_{n}",
+                ),
                 board_width=board_width,
                 phase_label=f"P{n}",
                 state=state,
@@ -4572,7 +4721,13 @@ def parse_phase_inputs(
             extra: list[int | str] = []
         elif action is ActionCode.DEFEND:
             obj = _parse_defend_target(
-                form.get(f"defend_target_{leader_id}_{n}", ""), board_width=board_width, phase_label=f"P{n}"
+                _resolve_province_target_raw(
+                    form,
+                    primary_field=f"defend_target_{leader_id}_{n}",
+                    number_field=f"defend_target_number_{leader_id}_{n}",
+                ),
+                board_width=board_width,
+                phase_label=f"P{n}",
             )
             extra = [0]
         elif action is ActionCode.EXPLORE:
