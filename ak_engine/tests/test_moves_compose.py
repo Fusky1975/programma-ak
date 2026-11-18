@@ -1129,6 +1129,21 @@ def test_search_phase_with_a_simple_tactic_sequence():
     assert phases[0].extra == [0, int(Maneuver.MELEE), int(Maneuver.SCOUT), -1]
 
 
+def test_search_phase_reads_more_tactics_than_a_real_phase_typically_has():
+    # 2026-11-18, user-requested "add as many tactics as you like" for
+    # the ordinary per-phase Encounter Plan too (previously only the
+    # Special Encounter Plan got this) -- EXPANDABLE_TACTIC_SLOT_COUNT
+    # (25) is well past TACTIC_SLOT_COUNT (7), the real-sample-sourced
+    # typical max every actual Search phase's own table starts visible
+    # with, confirming the parser itself (not just the UI's own hidden
+    # extra rows) actually reads beyond slot 7.
+    form = _search_form(tactics={slot: int(Maneuver.MELEE) for slot in range(10)})
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+
+    assert phases[0].extra == [0, *([int(Maneuver.MELEE)] * 10), -1]
+
+
 
 
 def test_search_phase_talk_as_the_first_tactic_is_accepted():
@@ -1517,6 +1532,32 @@ def test_recruit_type_options_flags_mercenary_presence():
     assert "1 mercenary unit present" in values[bowmen_value]
 
 
+def test_recruit_type_options_offers_a_race_incompatible_mercenary_present_type():
+    # Bug fix (2026-11-18, user-reported): a mercenary band whose own
+    # type isn't race-compatible with this (Human) home province at
+    # all -- the user's own K1 worked example, a mercenary Whales band
+    # -- used to never appear in this dropdown, even though RULES.AK
+    # [3.4] ("mercenaries can be Recruited in any province by any
+    # character") and turn/recruit_execution.py execute_recruit()'s own
+    # hiring_existing_mercenary=True bypass both already let it
+    # actually be recruited at turn-processing time.
+    state = _state()  # HOME is a Human province
+    state.add_army(ArmyState(900, None, ArmyType.WHALES, Quality.VETERAN, HOME, is_mercenary=True))
+    options = recruit_type_options(state, KING_ID)
+    values = dict(options)
+    whales_value = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.WHALES])
+    assert whales_value in values
+    assert "mercenary only" in values[whales_value]
+    assert "1 mercenary unit present" in values[whales_value]
+
+
+def test_recruit_type_options_still_excludes_a_race_incompatible_type_with_no_mercenary():
+    state = _state()  # HOME is a Human province, no Whales band present
+    options = recruit_type_options(state, KING_ID)
+    values = [value for value, _label in options]
+    assert str(_ORDINAL_BY_ARMY_TYPE[ArmyType.WHALES]) not in values
+
+
 def test_recruit_phase_reads_its_own_dropdowns_not_the_generic_object_field():
     form = _all_defend_form(KING_ID)
     form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
@@ -1649,6 +1690,70 @@ def test_recruit_phase_rejects_a_type_excluded_from_its_own_dropdown():
         assert False, "expected InvalidComposedMovesError"
     except InvalidComposedMovesError as exc:
         assert "isn't a known army type" in str(exc)
+
+
+def test_recruit_phase_accepts_a_race_incompatible_mercenary_present_type():
+    # Bug fix (2026-11-18, user-reported): recruit_type_options() now
+    # also offers a race-incompatible type (Whales, in this Human home
+    # province) when a hireable mercenary band of that exact type is
+    # physically present -- this composer's own parser used to reject
+    # it anyway, unconditionally, even though it's exactly what the
+    # now-fixed dropdown offers.
+    state = _state()
+    state.add_army(ArmyState(900, None, ArmyType.WHALES, Quality.VETERAN, HOME, is_mercenary=True))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "self"
+    form[f"recruit_type_{KING_ID}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.WHALES])
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [0, int(_ORDINAL_BY_ARMY_TYPE[ArmyType.WHALES]), -1]
+
+
+def test_recruit_phase_type_slot_accepts_a_hand_typed_sigla_code():
+    # 2026-11-18, user-requested: a free-text fallback field next to
+    # the type dropdown, for typing the army type's own real 2-letter
+    # code ("sigla") directly -- here Whales ("WH"), a mercenary band
+    # physically present but not necessarily yet listed by this
+    # preview's own dropdown in every real scenario.
+    state = _state()
+    state.add_army(ArmyState(900, None, ArmyType.WHALES, Quality.VETERAN, HOME, is_mercenary=True))
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "self"
+    form[f"recruit_type_code_{KING_ID}_0_0"] = "wh"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+
+    assert phases[0].extra == [0, int(_ORDINAL_BY_ARMY_TYPE[ArmyType.WHALES]), -1]
+
+
+def test_recruit_phase_type_slot_dropdown_wins_over_a_hand_typed_code():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "self"
+    form[f"recruit_type_{KING_ID}_0_0"] = str(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN])
+    form[f"recruit_type_code_{KING_ID}_0_0"] = "ax"
+
+    phases = parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=_state())
+
+    assert phases[0].extra == [0, int(_ORDINAL_BY_ARMY_TYPE[ArmyType.BOWMEN]), -1]
+
+
+def test_recruit_phase_type_slot_rejects_an_unrecognized_code_as_empty():
+    state = _state()
+    form = _all_defend_form(KING_ID)
+    form[f"action_{KING_ID}_0"] = str(int(ActionCode.RECRUIT))
+    form[f"recruit_target_{KING_ID}_0"] = "self"
+    form[f"recruit_type_code_{KING_ID}_0_0"] = "zz"
+
+    try:
+        parse_phase_inputs(form, KING_ID, board_width=BOARD_WIDTH, state=state)
+        assert False, "expected InvalidComposedMovesError"
+    except InvalidComposedMovesError as exc:
+        assert "choose at least one army type to Recruit" in str(exc)
 
 
 def test_recruit_phase_can_list_several_types_in_one_order():
@@ -4691,9 +4796,9 @@ def test_special_encounter_plan_reads_a_composed_tactic():
 
 def test_special_encounter_plan_reads_more_tactics_than_a_real_phase_allows():
     # 2026-11-16, user-requested "add as many tactics as you like" --
-    # SEP_TACTIC_SLOT_COUNT (25) is well past TACTIC_SLOT_COUNT (7),
-    # the real-sample-sourced cap every actual phase's own Encounter
-    # Plan still uses.
+    # EXPANDABLE_TACTIC_SLOT_COUNT (25) is well past TACTIC_SLOT_COUNT
+    # (7), the real-sample-sourced cap every actual phase's own
+    # Encounter Plan still uses.
     state = _state()
     form = _all_defend_form(KING_ID)
     for slot in range(10):

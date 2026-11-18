@@ -119,11 +119,11 @@
           <option value="">-- choose a feature --</option>
         </select>
         <br><span class="hex-map-legend-note">Encounter Plan (empty slots stop the list there):</span>
-        <table class="data-table compose-encounter-plan">
+        <table class="data-table compose-encounter-plan compose-tactic-plan">
           <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th></tr></thead>
           <tbody>
             {% for slot in tactic_slot_numbers %}
-              <tr>
+              <tr{% if slot >= tactic_default_visible_slot_count %} class="compose-tactic-extra-row" style="display:none"{% endif %}>
                 <td>
                   <select class="compose-tactic-slot" name="{{ field_prefix }}_tactic_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
                     <option value="">-- no tactic --</option>
@@ -152,6 +152,8 @@
             {% endfor %}
           </tbody>
         </table>
+        <button type="button" class="compose-tactic-add-row">+ Add tactic</button>
+        <button type="button" class="compose-tactic-remove-row">- Remove tactic</button>
       </td>
       <td class="compose-special-cell" data-action="{{ recruit_action_value }}">
         <select class="compose-nested-hero-field" data-hero-field="recruit_target" name="{{ field_prefix }}_recruit_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
@@ -166,6 +168,7 @@
                   <select class="compose-nested-hero-field" data-hero-field="recruit_type" name="{{ field_prefix }}_recruit_type_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
                     <option value="">-- no type --</option>
                   </select>
+                  or <input type="text" name="{{ field_prefix }}_recruit_type_code_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}" placeholder="type code" size="4" maxlength="2">
                 </td>
               </tr>
             {% endfor %}
@@ -252,11 +255,11 @@
           <option value="">-- choose a Challenge target --</option>
         </select>
         <br><span class="hex-map-legend-note">Encounter Plan (empty slots stop the list there):</span>
-        <table class="data-table compose-encounter-plan">
+        <table class="data-table compose-encounter-plan compose-tactic-plan">
           <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th><th>Give Item</th></tr></thead>
           <tbody>
             {% for slot in tactic_slot_numbers %}
-              <tr>
+              <tr{% if slot >= tactic_default_visible_slot_count %} class="compose-tactic-extra-row" style="display:none"{% endif %}>
                 <td>
                   <select class="compose-tactic-slot" name="{{ field_prefix }}_challenge_tactic_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
                     <option value="">-- no tactic --</option>
@@ -290,17 +293,19 @@
             {% endfor %}
           </tbody>
         </table>
+        <button type="button" class="compose-tactic-add-row">+ Add tactic</button>
+        <button type="button" class="compose-tactic-remove-row">- Remove tactic</button>
       </td>
       <td class="compose-special-cell" data-action="{{ pursue_action_value }}">
         <select class="compose-nested-hero-field" data-hero-field="pursue_target" name="{{ field_prefix }}_pursue_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
           <option value="">-- choose a Pursue target --</option>
         </select>
         <br><span class="hex-map-legend-note">Encounter Plan, used if/when the chase catches up (empty slots stop the list there):</span>
-        <table class="data-table compose-encounter-plan">
+        <table class="data-table compose-encounter-plan compose-tactic-plan">
           <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th><th>Give Item</th></tr></thead>
           <tbody>
             {% for slot in tactic_slot_numbers %}
-              <tr>
+              <tr{% if slot >= tactic_default_visible_slot_count %} class="compose-tactic-extra-row" style="display:none"{% endif %}>
                 <td>
                   <select class="compose-tactic-slot" name="{{ field_prefix }}_pursue_tactic_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}_{{ slot }}">
                     <option value="">-- no tactic --</option>
@@ -334,6 +339,8 @@
             {% endfor %}
           </tbody>
         </table>
+        <button type="button" class="compose-tactic-add-row">+ Add tactic</button>
+        <button type="button" class="compose-tactic-remove-row">- Remove tactic</button>
       </td>
       <td class="compose-special-cell" data-action="{{ hire_action_value }}">
         <select class="compose-nested-hero-field" data-hero-field="hire_target" name="{{ field_prefix }}_hire_target_{{ leader.leader_id }}_{{ outer_n }}_{{ nested_n }}">
@@ -604,11 +611,11 @@
                   {% endfor %}
                 </select>
                 <br><span class="hex-map-legend-note">Encounter Plan (empty slots stop the list there):</span>
-                <table class="data-table compose-encounter-plan">
+                <table class="data-table compose-encounter-plan compose-tactic-plan">
                   <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th></tr></thead>
                   <tbody>
                     {% for slot in tactic_slot_numbers %}
-                      <tr>
+                      <tr{% if slot >= tactic_default_visible_slot_count %} class="compose-tactic-extra-row" style="display:none"{% endif %}>
                         <td>
                           <select class="compose-tactic-slot" name="tactic_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
                             <option value="">-- no tactic --</option>
@@ -640,6 +647,8 @@
                     {% endfor %}
                   </tbody>
                 </table>
+                <button type="button" class="compose-tactic-add-row">+ Add tactic</button>
+                <button type="button" class="compose-tactic-remove-row">- Remove tactic</button>
               </td>
               <td class="compose-special-cell" data-action="{{ recruit_action_value }}">
                 <select name="recruit_target_{{ leader.leader_id }}_{{ n }}">
@@ -659,6 +668,7 @@
                               <option value="{{ value }}">{{ label }}</option>
                             {% endfor %}
                           </select>
+                          or <input type="text" name="recruit_type_code_{{ leader.leader_id }}_{{ n }}_{{ slot }}" placeholder="type code" size="4" maxlength="2">
                         </td>
                       </tr>
                     {% endfor %}
@@ -772,11 +782,11 @@
                   {% endfor %}
                 </select>
                 <br><span class="hex-map-legend-note">Encounter Plan (empty slots stop the list there):</span>
-                <table class="data-table compose-encounter-plan">
+                <table class="data-table compose-encounter-plan compose-tactic-plan">
                   <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th><th>Give Item</th></tr></thead>
                   <tbody>
                     {% for slot in tactic_slot_numbers %}
-                      <tr>
+                      <tr{% if slot >= tactic_default_visible_slot_count %} class="compose-tactic-extra-row" style="display:none"{% endif %}>
                         <td>
                           <select class="compose-tactic-slot" name="challenge_tactic_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
                             <option value="">-- no tactic --</option>
@@ -816,6 +826,8 @@
                     {% endfor %}
                   </tbody>
                 </table>
+                <button type="button" class="compose-tactic-add-row">+ Add tactic</button>
+                <button type="button" class="compose-tactic-remove-row">- Remove tactic</button>
               </td>
               <td class="compose-special-cell" data-action="{{ pursue_action_value }}">
                 <select name="pursue_target_{{ leader.leader_id }}_{{ n }}">
@@ -826,11 +838,11 @@
                 </select>
                 or <input type="text" name="pursue_target_number_{{ leader.leader_id }}_{{ n }}" placeholder="king/hero #" size="6">
                 <br><span class="hex-map-legend-note">Encounter Plan, used if/when the chase catches up (empty slots stop the list there):</span>
-                <table class="data-table compose-encounter-plan">
+                <table class="data-table compose-encounter-plan compose-tactic-plan">
                   <thead><tr><th>Tactic</th><th>Say text</th><th>Spell</th><th>Item</th><th>Give Item</th></tr></thead>
                   <tbody>
                     {% for slot in tactic_slot_numbers %}
-                      <tr>
+                      <tr{% if slot >= tactic_default_visible_slot_count %} class="compose-tactic-extra-row" style="display:none"{% endif %}>
                         <td>
                           <select class="compose-tactic-slot" name="pursue_tactic_{{ leader.leader_id }}_{{ n }}_{{ slot }}">
                             <option value="">-- no tactic --</option>
@@ -870,6 +882,8 @@
                     {% endfor %}
                   </tbody>
                 </table>
+                <button type="button" class="compose-tactic-add-row">+ Add tactic</button>
+                <button type="button" class="compose-tactic-remove-row">- Remove tactic</button>
               </td>
               <td class="compose-special-cell" data-action="{{ hire_action_value }}">
                 <select class="compose-nested-trigger" name="hire_target_{{ leader.leader_id }}_{{ n }}">
@@ -1495,59 +1509,71 @@
     }
   });
 
-  // Special Encounter Plan's own "add/remove tactic" buttons (2026-
-  // 11-16, user-requested): this table pre-renders every real row up
-  // to SEP_TACTIC_SLOT_COUNT (far more than the handful most leaders
-  // ever need), starting with only the first sep_default_visible_
-  // slot_count of them shown -- Add reveals the next hidden one,
-  // Remove hides (and clears, so a hidden row never silently
-  // resubmits a stale value) the last visible one. Progressive
-  // enhancement only, same as the rest of this page: every row's own
-  // fields are always real and submittable either way, and the real
-  // no-gaps rule is still enforced server-side
-  // (_parse_search_tactics()) regardless of which rows this button
-  // happens to leave visible.
-  function findPrecedingSepTable(el) {
+  // Every Encounter Plan tactic table's own "add/remove tactic"
+  // buttons (2026-11-16, user-requested, Special Encounter Plan only;
+  // 2026-11-18, user-requested again for Search's/Challenge's/
+  // Pursue's own ordinary per-phase tables): each table pre-renders
+  // every real row up to EXPANDABLE_TACTIC_SLOT_COUNT (far more than
+  // the handful most leaders ever need), starting with only its own
+  // first *_default_visible_slot_count of them shown -- Add reveals
+  // the next hidden one, Remove hides (and clears, so a hidden row
+  // never silently resubmits a stale value) the last visible one.
+  // Progressive enhancement only, same as the rest of this page: every
+  // row's own fields are always real and submittable either way, and
+  // the real no-gaps rule is still enforced server-side
+  // (_parse_search_tactics()) regardless of which rows a button
+  // happens to leave visible. One shared implementation, parametrized
+  // by each table's own marker class, since a phase's Search/
+  // Challenge/Pursue table (nested arbitrarily deep inside that
+  // phase's own cell) and a leader's one SEP table both need the same
+  // "find the nearest preceding table of mine, not some other one on
+  // the page" scoping.
+  function findPrecedingTableWithClass(el, className) {
     var node = el.previousElementSibling;
-    while (node && !node.classList.contains("compose-sep-plan")) {
+    while (node && !node.classList.contains(className)) {
       node = node.previousElementSibling;
     }
     return node;
   }
 
-  document.querySelectorAll(".compose-sep-add-row").forEach(function (button) {
-    button.addEventListener("click", function () {
-      var table = findPrecedingSepTable(button);
-      if (!table) return;
-      var rows = table.querySelectorAll("tbody tr");
-      for (var i = 0; i < rows.length; i++) {
-        if (rows[i].style.display === "none") {
-          rows[i].style.display = "";
-          return;
+  function wireTacticAddRemoveButtons(tableClassName, addButtonClassName, removeButtonClassName) {
+    document.querySelectorAll("." + addButtonClassName).forEach(function (button) {
+      button.addEventListener("click", function () {
+        var table = findPrecedingTableWithClass(button, tableClassName);
+        if (!table) return;
+        var rows = table.querySelectorAll("tbody tr");
+        for (var i = 0; i < rows.length; i++) {
+          if (rows[i].style.display === "none") {
+            rows[i].style.display = "";
+            return;
+          }
         }
-      }
+      });
     });
-  });
 
-  document.querySelectorAll(".compose-sep-remove-row").forEach(function (button) {
-    button.addEventListener("click", function () {
-      var table = findPrecedingSepTable(button);
-      if (!table) return;
-      var rows = table.querySelectorAll("tbody tr");
-      for (var i = rows.length - 1; i >= 0; i--) {
-        if (rows[i].style.display !== "none") {
-          rows[i].querySelectorAll("select").forEach(function (sel) {
-            sel.selectedIndex = 0;
-          });
-          rows[i].querySelectorAll("input[type=text]").forEach(function (inp) {
-            inp.value = "";
-          });
-          rows[i].style.display = "none";
-          return;
+    document.querySelectorAll("." + removeButtonClassName).forEach(function (button) {
+      button.addEventListener("click", function () {
+        var table = findPrecedingTableWithClass(button, tableClassName);
+        if (!table) return;
+        var rows = table.querySelectorAll("tbody tr");
+        for (var i = rows.length - 1; i >= 0; i--) {
+          if (rows[i].style.display !== "none") {
+            rows[i].querySelectorAll("select").forEach(function (sel) {
+              sel.selectedIndex = 0;
+            });
+            rows[i].querySelectorAll("input[type=text]").forEach(function (inp) {
+              inp.value = "";
+            });
+            rows[i].style.display = "none";
+            return;
+          }
         }
-      }
+      });
     });
-  });
+  }
+
+  wireTacticAddRemoveButtons("compose-sep-plan", "compose-sep-add-row", "compose-sep-remove-row");
+  wireTacticAddRemoveButtons("compose-tactic-plan", "compose-tactic-add-row", "compose-tactic-remove-row");
 </script>
 
 {% endblock %}

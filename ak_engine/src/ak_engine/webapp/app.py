@@ -90,6 +90,7 @@ from ak_engine.webapp.moves_compose import (
     CAST_TERRAIN_CHOICES,
     DISBAND_ALL_VALUE,
     DISBAND_SLOT_COUNT,
+    EXPANDABLE_TACTIC_SLOT_COUNT,
     HIRE_GOLD_OFFER_RANGE,
     LEAVE_ALL_VALUE,
     LEAVE_SLOT_COUNT,
@@ -99,7 +100,6 @@ from ak_engine.webapp.moves_compose import (
     PICK_UP_SLOT_COUNT,
     RECRUIT_TYPE_SLOT_COUNT,
     SAY_TEXT_MAX_LENGTH,
-    SEP_TACTIC_SLOT_COUNT,
     TACTIC_SLOT_COUNT,
     TRADE_GOLD_VALUE,
     TRADE_ITEM_NUMBER_VALUE,
@@ -3302,24 +3302,27 @@ def create_app(games_root: Path | None = None) -> Flask:
                 leader.leader_id: challenge_target_options(state, leader.leader_id) for leader in roster
             },
             challenge_tactic_choices_by_slot=[
-                tactic_options(slot, allow_give=True) for slot in range(TACTIC_SLOT_COUNT)
+                tactic_options(slot, allow_give=True) for slot in range(EXPANDABLE_TACTIC_SLOT_COUNT)
             ],
             pursue_action_value=int(ActionCode.PURSUE),
             pursue_target_choices_by_leader={
                 leader.leader_id: pursue_target_options(state, leader.leader_id) for leader in roster
             },
             pursue_tactic_choices_by_slot=[
-                tactic_options(slot, allow_give=True) for slot in range(TACTIC_SLOT_COUNT)
+                tactic_options(slot, allow_give=True) for slot in range(EXPANDABLE_TACTIC_SLOT_COUNT)
             ],
-            # 2026-11-16 (user-requested): a much larger slot ceiling
-            # than every real phase's own TACTIC_SLOT_COUNT, pre-
-            # rendered but mostly hidden -- sep_tactic_slot_numbers
-            # below, not tactic_slot_numbers, drives this table's own
-            # row count; see SEP_TACTIC_SLOT_COUNT's own docstring.
+            # 2026-11-16 (user-requested, Special Encounter Plan), then
+            # 2026-11-18 (user-requested, the ordinary per-phase tables
+            # too): a much larger slot ceiling than every real phase's
+            # own TACTIC_SLOT_COUNT, pre-rendered but mostly hidden --
+            # tactic_default_visible_slot_count/sep_default_visible_
+            # slot_count below, not tactic_slot_numbers/sep_tactic_slot_
+            # numbers, drives each table's own visible row count; see
+            # EXPANDABLE_TACTIC_SLOT_COUNT's own docstring.
             sep_tactic_choices_by_slot=[
-                tactic_options(slot, passive=True) for slot in range(SEP_TACTIC_SLOT_COUNT)
+                tactic_options(slot, passive=True) for slot in range(EXPANDABLE_TACTIC_SLOT_COUNT)
             ],
-            sep_tactic_slot_numbers=range(SEP_TACTIC_SLOT_COUNT),
+            sep_tactic_slot_numbers=range(EXPANDABLE_TACTIC_SLOT_COUNT),
             sep_default_visible_slot_count=TACTIC_SLOT_COUNT,
             defend_action_value=int(ActionCode.DEFEND),
             hire_action_value=int(ActionCode.HIRE),
@@ -3383,9 +3386,11 @@ def create_app(games_root: Path | None = None) -> Flask:
             feature_choices_by_leader={
                 leader.leader_id: feature_options(state, leader_id=leader.leader_id) for leader in roster
             },
-            tactic_slot_numbers=range(TACTIC_SLOT_COUNT),
+            tactic_slot_numbers=range(EXPANDABLE_TACTIC_SLOT_COUNT),
+            tactic_default_visible_slot_count=TACTIC_SLOT_COUNT,
             tactic_choices_by_slot=[
-                tactic_options(slot, allow_give=True, allow_fulfill_scout=True) for slot in range(TACTIC_SLOT_COUNT)
+                tactic_options(slot, allow_give=True, allow_fulfill_scout=True)
+                for slot in range(EXPANDABLE_TACTIC_SLOT_COUNT)
             ],
             talk_value=int(Maneuver.TALK),
             fulfill_value=int(Maneuver.FULFILL),
